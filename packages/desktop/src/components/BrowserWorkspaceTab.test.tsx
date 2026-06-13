@@ -24,9 +24,11 @@ function bridge(): CadencrBrowserBridge {
         sessionProfileId: "ephemeral",
         isActive: true,
         devToolsOpen: false,
+        scopeId: 1,
       },
     ],
     activeTabId: "tab-1",
+    scopeId: 1,
     consoleEntries: [],
     networkEntries: [],
     knownOrigins: [],
@@ -113,22 +115,22 @@ describe("BrowserWorkspaceTab", () => {
   it("creates a normal tab that reuses cookies by default", async () => {
     const mockBridge = bridge();
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
     await userEvent.click(await screen.findByRole("button", { name: "New browser tab" }));
 
-    expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "default");
+    expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "default", 1);
   });
 
   it("opens a private tab with no cookies when Private mode is selected", async () => {
     const mockBridge = bridge();
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Private" }));
     await userEvent.click(screen.getByRole("button", { name: "New browser tab" }));
 
-    expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "fresh");
+    expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "fresh", 1);
   });
 
   it("opens the first tab in the saved default mode", async () => {
@@ -152,10 +154,10 @@ describe("BrowserWorkspaceTab", () => {
       }),
     );
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
     await waitFor(() => {
-      expect(mockBridge.createBrowserTab).toHaveBeenCalledWith(undefined, "fresh");
+      expect(mockBridge.createBrowserTab).toHaveBeenCalledWith(undefined, "fresh", 1);
     });
   });
 
@@ -174,9 +176,11 @@ describe("BrowserWorkspaceTab", () => {
             sessionProfileId: "ephemeral",
             isActive: true,
             devToolsOpen: false,
+            scopeId: 1,
           },
         ],
         activeTabId: "tab-1",
+        scopeId: 1,
         knownOrigins: [],
         consoleEntries: [
           {
@@ -206,7 +210,7 @@ describe("BrowserWorkspaceTab", () => {
       }),
     );
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
     expect(await screen.findByDisplayValue("http://localhost:1420/")).toBeInTheDocument();
     expect(screen.queryByText("Hydration failed")).not.toBeInTheDocument();
@@ -217,7 +221,7 @@ describe("BrowserWorkspaceTab", () => {
   it("loads Browser state and navigates from the URL bar", async () => {
     const mockBridge = bridge();
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
     expect(await screen.findByDisplayValue("http://localhost:1420/")).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText("Browser URL"));
@@ -242,7 +246,7 @@ describe("BrowserWorkspaceTab", () => {
       }),
     );
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
     // With no live tab the page-scoped actions are unavailable.
     expect(await screen.findByRole("button", { name: "Add comment" })).toBeDisabled();
@@ -256,7 +260,7 @@ describe("BrowserWorkspaceTab", () => {
     // Navigation with no active tab opens a fresh tab pointed at the URL
     // instead of calling navigate on a non-existent tab.
     await waitFor(() => {
-      expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith("localhost:4000", "default");
+      expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith("localhost:4000", "default", 1);
     });
     expect(mockBridge.navigateBrowserTab).not.toHaveBeenCalled();
   });
@@ -276,9 +280,11 @@ describe("BrowserWorkspaceTab", () => {
             sessionProfileId: "ephemeral",
             isActive: true,
             devToolsOpen: false,
+            scopeId: 1,
           },
         ],
         activeTabId: "tab-1",
+        scopeId: 1,
         consoleEntries: [],
         networkEntries: [],
         knownOrigins: [],
@@ -286,7 +292,7 @@ describe("BrowserWorkspaceTab", () => {
       }),
     );
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
     expect(await screen.findByText(/ERR_CONNECTION_REFUSED/)).toBeInTheDocument();
 
@@ -318,7 +324,7 @@ describe("BrowserWorkspaceTab", () => {
     );
     const onSendContext = vi.fn();
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={onSendContext} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={onSendContext} />);
 
     // Pick an element to start a comment; the picker resolves with its context
     // and anchors an on-page badge keyed by a generated id.
@@ -367,15 +373,18 @@ describe("BrowserWorkspaceTab", () => {
     }));
 
     try {
-      render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+      render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
       await screen.findByDisplayValue("http://localhost:1420/");
       await waitFor(() => {
-        expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith({
-          x: 140,
-          y: 260,
-          width: 800,
-          height: 500,
-        });
+        expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith(
+          {
+            x: 140,
+            y: 260,
+            width: 800,
+            height: 500,
+          },
+          1,
+        );
       });
 
       x = 176;
@@ -383,12 +392,15 @@ describe("BrowserWorkspaceTab", () => {
       window.dispatchEvent(new Event("resize"));
 
       await waitFor(() => {
-        expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith({
-          x: 176,
-          y: 312,
-          width: 800,
-          height: 500,
-        });
+        expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith(
+          {
+            x: 176,
+            y: 312,
+            width: 800,
+            height: 500,
+          },
+          1,
+        );
       });
     } finally {
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;

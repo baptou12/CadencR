@@ -13,6 +13,7 @@ function tabMeta(): BrowserTabMetadata {
     sessionProfileId: "ephemeral",
     isActive: true,
     devToolsOpen: false,
+    scopeId: null,
   };
 }
 

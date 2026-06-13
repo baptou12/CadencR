@@ -11,7 +11,7 @@ import {
 let animationFrameCallbacks: Array<FrameRequestCallback> = [];
 
 function TestViewport({ visible }: { visible: boolean }): ReactElement | null {
-  const ref = useBrowserViewportBounds(() => undefined);
+  const ref = useBrowserViewportBounds(7, () => undefined);
   const assignRef = useCallback((node: HTMLDivElement | null): void => ref(node), [ref]);
   return visible ? <div data-testid="viewport" ref={assignRef} /> : null;
 }
@@ -135,12 +135,15 @@ describe("useBrowserViewportBounds", () => {
     flushAnimationFrames();
 
     await waitFor(() => {
-      expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith({
-        x: 12,
-        y: 34,
-        width: 640,
-        height: 360,
-      });
+      expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith(
+        {
+          x: 12,
+          y: 34,
+          width: 640,
+          height: 360,
+        },
+        7,
+      );
     });
     expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
     flushAnimationFrames();
@@ -155,7 +158,10 @@ describe("useBrowserViewportBounds", () => {
     rerender(<TestViewport visible={false} />);
 
     await waitFor(() => {
-      expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 });
+      expect(mockBridge.setBrowserBounds).toHaveBeenCalledWith(
+        { x: 0, y: 0, width: 0, height: 0 },
+        7,
+      );
     });
   });
 });

@@ -22,9 +22,11 @@ const SNAPSHOT: BrowserStateSnapshot = {
       sessionProfileId: "ephemeral",
       isActive: true,
       devToolsOpen: false,
+      scopeId: 1,
     },
   ],
   activeTabId: "tab-1",
+  scopeId: 1,
   consoleEntries: [],
   networkEntries: [],
   knownOrigins: ["https://www.google.com", "http://localhost:5173"],
@@ -100,7 +102,7 @@ describe("BrowserWorkspaceTab URL suggestions", () => {
   it("captures a preview before suppressing the native browser view", async () => {
     const mockBridge = bridge();
     setDesktopBridgeOverrideForTests(mockBridge);
-    const { container } = render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    const { container } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
     const urlInput = await screen.findByLabelText("Browser URL");
 
     await userEvent.clear(urlInput);
@@ -132,7 +134,7 @@ describe("BrowserWorkspaceTab URL suggestions", () => {
       return () => undefined;
     });
     setDesktopBridgeOverrideForTests(mockBridge);
-    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
     const input = await screen.findByLabelText("Browser URL");
 
     await userEvent.clear(input);

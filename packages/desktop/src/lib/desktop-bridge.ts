@@ -144,12 +144,19 @@ export interface CadencrDesktopBridge {
 }
 
 export interface CadencrBrowserBridge extends CadencrDesktopBridge {
-  createBrowserTab: (url?: string, profileId?: string) => Promise<BrowserTabMetadata>;
-  listBrowserTabs: () => Promise<BrowserStateSnapshot>;
+  createBrowserTab: (
+    url?: string,
+    profileId?: string,
+    scopeId?: number | null,
+  ) => Promise<BrowserTabMetadata>;
+  listBrowserTabs: (scopeId?: number | null) => Promise<BrowserStateSnapshot>;
   navigateBrowserTab: (tabId: string, url: string) => Promise<BrowserTabMetadata>;
   activateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
   closeBrowserTab: (tabId: string) => Promise<BrowserStateSnapshot>;
-  setBrowserBounds: (bounds: BrowserBounds) => Promise<BrowserStateSnapshot>;
+  setBrowserBounds: (
+    bounds: BrowserBounds,
+    scopeId?: number | null,
+  ) => Promise<BrowserStateSnapshot>;
   setBrowserSuppressed: (value: boolean) => Promise<void>;
   listBrowserProfiles: () => Promise<BrowserProfileMetadata[]>;
   clearBrowserStorage: (profileId: string) => Promise<void>;

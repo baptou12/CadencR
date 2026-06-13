@@ -144,4 +144,49 @@ describe("BrowserManager", () => {
       clickCount: 1,
     });
   });
+
+  it("isolates tabs per feature scope", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const a = manager.createTab(undefined, "fresh", 1);
+    const b = manager.createTab(undefined, "fresh", 2);
+
+    // Each feature only sees — and treats as active — its own tab.
+    expect(manager.state(1).tabs.map((t) => t.id)).toEqual([a.id]);
+    expect(manager.state(2).tabs.map((t) => t.id)).toEqual([b.id]);
+    expect(manager.state(1).activeTabId).toBe(a.id);
+    expect(manager.state(2).activeTabId).toBe(b.id);
+    // The unscoped (agent/MCP) view still sees every tab.
+    expect(
+      manager
+        .state()
+        .tabs.map((t) => t.id)
+        .sort(),
+    ).toEqual([a.id, b.id].sort());
+  });
+
+  it("promotes the next tab in the same scope when a feature's active tab closes", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const a1 = manager.createTab(undefined, "fresh", 1);
+    const a2 = manager.createTab(undefined, "fresh", 1);
+    manager.createTab(undefined, "fresh", 2);
+
+    manager.closeTab(a2.id);
+
+    // Closing feature 1's active tab falls back to feature 1's other tab, never
+    // to feature 2's.
+    expect(manager.state(1).tabs.map((t) => t.id)).toEqual([a1.id]);
+    expect(manager.state(1).activeTabId).toBe(a1.id);
+  });
+
+  it("keeps the unscoped (agent/MCP) view active after a scope's last tab closes", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const a = manager.createTab(undefined, "fresh", 1);
+    const b = manager.createTab(undefined, "fresh", 2);
+
+    // Closing feature 2's only tab (the most-recently active) must not strand
+    // the unscoped view at null — it falls back to the surviving tab.
+    expect(manager.state().activeTabId).toBe(b.id);
+    manager.closeTab(b.id);
+    expect(manager.state().activeTabId).toBe(a.id);
+  });
 });

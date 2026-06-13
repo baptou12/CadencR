@@ -173,6 +173,7 @@ function WebSocketSessionFeatureBody(
   const tabs = useFeatureBlockTabs({
     sessionId,
     featureId,
+    layoutFeatureId,
     projectId,
     data,
     controls,
@@ -330,6 +331,7 @@ function focusTabTrigger(container: HTMLElement, layoutFeatureId: number, tab: T
 function useFeatureBlockTabs(args: {
   sessionId: string;
   featureId: number;
+  layoutFeatureId: number;
   projectId: number;
   data: ReturnType<typeof useSessionFeatureData>;
   controls: ReturnType<typeof useSessionControls>;
@@ -342,6 +344,7 @@ function useFeatureBlockTabs(args: {
   return useSessionTabs({
     sessionId: args.sessionId,
     featureId: args.featureId,
+    layoutFeatureId: args.layoutFeatureId,
     projectId: args.projectId,
     data: args.data,
     controls: args.controls,
