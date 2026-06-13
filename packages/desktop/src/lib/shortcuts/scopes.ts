@@ -42,6 +42,7 @@ export const SHORTCUT_SCOPES = [
     hint: "When text focus is inside a CodeMirror file buffer.",
   },
   { id: "terminal", label: "Terminal", hint: "When the Terminal tab has focus." },
+  { id: "browser", label: "Browser", hint: "When the Browser tab has focus." },
 ] as const;
 
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number];

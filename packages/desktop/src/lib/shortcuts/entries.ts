@@ -18,6 +18,7 @@
  * `useShortcut("comand-palette", …)` become compile errors.
  */
 import type { Shortcut } from "./types";
+import { BROWSER_SHORTCUTS } from "./entries-browser";
 import { EDITOR_SHORTCUTS } from "./entries-editor";
 import { TERMINAL_SHORTCUTS } from "./entries-terminal";
 
@@ -255,13 +256,6 @@ const APP_SHORTCUTS = [
     description: "Open compare / PR dialog",
     scope: "feature",
   },
-  {
-    id: "branch-picker",
-    keys: ["mod", "b"],
-    description: "Toggle branch picker",
-    scope: "feature",
-    aliases: ["checkout"],
-  },
 
   // ─── Agent & prompt ──────────────────────────────────────────────────
   {
@@ -377,6 +371,11 @@ const APP_SHORTCUTS = [
   },
 ] as const satisfies readonly Shortcut[];
 
-export const SHORTCUTS = [...APP_SHORTCUTS, ...TERMINAL_SHORTCUTS, ...EDITOR_SHORTCUTS] as const;
+export const SHORTCUTS = [
+  ...APP_SHORTCUTS,
+  ...TERMINAL_SHORTCUTS,
+  ...EDITOR_SHORTCUTS,
+  ...BROWSER_SHORTCUTS,
+] as const;
 
 export type ShortcutId = (typeof SHORTCUTS)[number]["id"];
