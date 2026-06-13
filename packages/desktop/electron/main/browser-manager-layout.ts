@@ -50,8 +50,20 @@ export function contentOffset(win: BrowserWindow | null): BrowserWindowOffset {
   return { x: content.x - frame.x, y: content.y - frame.y };
 }
 
-export function hiddenBounds(): BrowserBounds {
-  return { x: -10000, y: -10000, width: 1, height: 1 };
+/**
+ * Off-screen position for a view that should be hidden, preserving its size so
+ * the page doesn't reflow to a 1px box on every toggle. Sizing matters because
+ * we move a view off-screen *while it is still visible* (a hidden
+ * `WebContentsView` keeps its last hit-test region, so it would otherwise keep
+ * swallowing clicks meant for React overlays painted over the viewport).
+ */
+export function offscreenBounds(bounds: BrowserBounds): BrowserBounds {
+  return {
+    x: -10000 - Math.max(0, bounds.width),
+    y: 0,
+    width: bounds.width,
+    height: bounds.height,
+  };
 }
 
 export function browserBounds(bounds: BrowserBounds, devtoolsOpen: boolean): BrowserBounds {

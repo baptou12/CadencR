@@ -18,6 +18,10 @@ describe("browser-manager-utils", () => {
     expect(consoleLevelName(0)).toBe("verbose");
     expect(consoleLevelName(3)).toBe("error");
     expect(consoleLevelName(99)).toBe("info");
+    // Electron 42 reports levels as strings.
+    expect(consoleLevelName("warning")).toBe("warning");
+    expect(consoleLevelName("error")).toBe("error");
+    expect(consoleLevelName("debug")).toBe("verbose");
   });
 
   it("validates element-context payload shape", () => {

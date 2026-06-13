@@ -1,0 +1,59 @@
+import type { Input } from "electron";
+import { describe, expect, it } from "vitest";
+import { guestChrome } from "./browser-tab-events";
+
+// Build a guest-page keydown. `mod` maps to the platform's primary modifier
+// (Meta on macOS, Control elsewhere) so the assertions hold on any host.
+function keyDown(overrides: Partial<Input> & { key: string }): Input {
+  return {
+    type: "keyDown",
+    code: "",
+    meta: false,
+    control: false,
+    alt: false,
+    shift: false,
+    ...overrides,
+  } as Input;
+}
+
+function withMod(overrides: Partial<Input> & { key: string }): Input {
+  const modKey = process.platform === "darwin" ? { meta: true } : { control: true };
+  return keyDown({ ...overrides, ...modKey });
+}
+
+describe("guestChrome", () => {
+  it("maps the plain modifier chords", () => {
+    expect(guestChrome(withMod({ key: "t" }))).toBe("new-tab");
+    expect(guestChrome(withMod({ key: "w" }))).toBe("close-tab");
+    expect(guestChrome(withMod({ key: "l" }))).toBe("focus-url");
+    expect(guestChrome(withMod({ key: "s" }))).toBe("add-comment");
+  });
+
+  it("toggles DevTools on the Alt-modified chord", () => {
+    expect(guestChrome(withMod({ key: "i", alt: true }))).toBe("devtools");
+    expect(guestChrome(withMod({ key: "j", alt: true }))).toBeNull();
+  });
+
+  it("switches tabs via the physical bracket code, since Shift mangles the key", () => {
+    // Shift turns "[" into "{" / "]" into "}", so the relay must match `code`.
+    expect(guestChrome(withMod({ key: "{", code: "BracketLeft", shift: true }))).toBe("prev-tab");
+    expect(guestChrome(withMod({ key: "}", code: "BracketRight", shift: true }))).toBe("next-tab");
+  });
+
+  it("ignores a Shift chord on any other key", () => {
+    expect(guestChrome(withMod({ key: "t", code: "KeyT", shift: true }))).toBeNull();
+  });
+
+  it("ignores keys without the platform modifier", () => {
+    expect(guestChrome(keyDown({ key: "t" }))).toBeNull();
+    expect(guestChrome(keyDown({ key: "l" }))).toBeNull();
+  });
+
+  it("ignores key-up events", () => {
+    expect(guestChrome(withMod({ key: "t", type: "keyUp" }))).toBeNull();
+  });
+
+  it("returns null for an unmapped modifier chord", () => {
+    expect(guestChrome(withMod({ key: "k" }))).toBeNull();
+  });
+});

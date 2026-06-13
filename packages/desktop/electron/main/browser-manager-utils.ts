@@ -68,7 +68,7 @@ export function profileFromSelection(profileId: string): BrowserProfile {
 
 export function consoleEntry(
   tabId: string,
-  level: number,
+  level: number | string,
   message: string,
   lineNumber: number,
   sourceUrl: string,
@@ -84,7 +84,10 @@ export function consoleEntry(
   };
 }
 
-export function consoleLevelName(level: number): string {
+// Electron 42 reports the level as a string ('debug' | 'info' | 'warning' |
+// 'error'); older numeric levels (0–3) are still mapped for safety.
+export function consoleLevelName(level: number | string): string {
+  if (typeof level === "string") return level === "debug" ? "verbose" : level;
   return ["verbose", "info", "warning", "error"][level] ?? "info";
 }
 

@@ -21,6 +21,7 @@ function target(): BrowserMcpTarget {
     state: vi.fn(() => ({
       tabs: [],
       activeTabId: "tab-1",
+      knownOrigins: [],
       consoleEntries: [],
       networkEntries: [],
       error: null,
@@ -181,6 +182,7 @@ describe("dispatchBrowserMcpTool", () => {
     vi.mocked(fake.state).mockReturnValue({
       tabs: [],
       activeTabId: "tab-1",
+      knownOrigins: [],
       consoleEntries: [
         {
           id: "1",
@@ -215,6 +217,7 @@ describe("dispatchBrowserMcpTool", () => {
     vi.mocked(fake.state).mockReturnValue({
       tabs: [],
       activeTabId: "tab-1",
+      knownOrigins: [],
       consoleEntries: [],
       networkEntries: [
         {
@@ -252,6 +255,7 @@ describe("dispatchBrowserMcpTool", () => {
     vi.mocked(fake.state).mockReturnValue({
       tabs: [],
       activeTabId: "tab-1",
+      knownOrigins: [],
       consoleEntries: [],
       networkEntries: [
         {
@@ -279,6 +283,7 @@ describe("dispatchBrowserMcpTool", () => {
     vi.mocked(fake.state).mockReturnValue({
       tabs: [],
       activeTabId: null,
+      knownOrigins: [],
       consoleEntries: [],
       networkEntries: [],
       error: null,

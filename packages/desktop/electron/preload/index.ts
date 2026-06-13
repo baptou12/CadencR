@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   BrowserBounds,
+  BrowserCommentBadgeClick,
   BrowserProfileMetadata,
+  BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "../main/browser-types";
@@ -202,6 +204,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:close-tab", tabId),
   setBrowserBounds: (bounds: BrowserBounds): Promise<BrowserStateSnapshot> =>
     ipcRenderer.invoke("browser:set-bounds", bounds),
+  setBrowserSuppressed: (value: boolean): Promise<void> =>
+    ipcRenderer.invoke("browser:set-suppressed", value),
   listBrowserProfiles: (): Promise<BrowserProfileMetadata[]> =>
     ipcRenderer.invoke("browser:list-profiles"),
   clearBrowserStorage: (profileId: string): Promise<void> =>
@@ -230,10 +234,18 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:type", tabId, text),
   browserKeypress: (tabId: string, keyCode: string): Promise<void> =>
     ipcRenderer.invoke("browser:keypress", tabId, keyCode),
-  selectBrowserElementContext: (tabId: string): Promise<unknown> =>
-    ipcRenderer.invoke("browser:select-element-context", tabId),
+  selectBrowserElementContext: (tabId: string, anchorId: string): Promise<unknown> =>
+    ipcRenderer.invoke("browser:select-element-context", tabId, anchorId),
+  removeBrowserCommentBadge: (tabId: string, anchorId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:remove-comment-badge", tabId, anchorId),
+  clearBrowserCommentBadges: (tabId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:clear-comment-badges", tabId),
   onBrowserState: (cb: (state: BrowserStateSnapshot) => void): (() => void) =>
     onIpc("browser:state", cb),
+  onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void): (() => void) =>
+    onIpc("browser:shortcut", cb),
+  onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void): (() => void) =>
+    onIpc("browser:comment-badge-click", cb),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: (): Promise<void> => ipcRenderer.invoke("app:install-update"),
   fetchChangelog: (version: string): Promise<string | null> =>

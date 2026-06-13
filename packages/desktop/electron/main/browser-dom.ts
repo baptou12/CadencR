@@ -54,6 +54,20 @@ export async function captureScreenshot(wc: WebContents, clip?: BrowserBounds): 
   throw new Error("Browser screenshot did not return image data.");
 }
 
+/**
+ * Capture the visible viewport through Electron's native compositor. Preferred
+ * over the CDP `Page.captureScreenshot` path for the full-view overlay preview:
+ * CDP intermittently rejects with "Internal error" for child WebContentsViews,
+ * whereas `capturePage()` reads the already-composited frame and never attaches
+ * a debugger. Returns base64 PNG to match `captureScreenshot`.
+ */
+export async function capturePageImage(wc: WebContents): Promise<string> {
+  const image = await wc.capturePage();
+  // A freshly-created or blank tab has nothing composited yet; return "" so the
+  // caller shows no preview rather than a broken/empty image.
+  return image.isEmpty() ? "" : image.toPNG().toString("base64");
+}
+
 export async function captureDomSnapshot(
   wc: WebContents,
   selector?: string,
@@ -116,8 +130,9 @@ export async function captureElementContext(
   wc: WebContents,
   meta: { tabId: string; url: string; title: string; capturedAt: string },
   diagnostics: BrowserElementContext["diagnostics"],
+  anchorId: string | null,
 ): Promise<BrowserElementContext> {
-  const context = await wc.executeJavaScript(elementContextScript(), true);
+  const context = await wc.executeJavaScript(elementContextScript(anchorId), true);
   if (!isElementPayload(context)) throw new Error("Browser element context capture failed.");
   const screenshotPngBase64 = await captureScreenshot(wc, context.boundingBox);
   return { ...meta, screenshotPngBase64, element: context, diagnostics };

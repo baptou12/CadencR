@@ -38,6 +38,10 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
     assertTrustedSender(event, options.getMainWindow);
     return manager.setBounds(parseBounds(bounds));
   });
+  ipcMain.handle("browser:set-suppressed", (event, value: unknown) => {
+    assertTrustedSender(event, options.getMainWindow);
+    manager.setSuppressed(value === true);
+  });
   ipcMain.handle("browser:list-profiles", (event) => {
     assertTrustedSender(event, options.getMainWindow);
     return manager.listProfiles();
@@ -113,9 +117,23 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
     assertTrustedSender(event, options.getMainWindow);
     return manager.keypress(requiredString(tabId, "tab id"), requiredString(keyCode, "key"));
   });
-  ipcMain.handle("browser:select-element-context", (event, tabId: unknown) => {
+  ipcMain.handle("browser:select-element-context", (event, tabId: unknown, anchorId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
-    return manager.selectElementContext(requiredString(tabId, "tab id"));
+    return manager.selectElementContext(
+      requiredString(tabId, "tab id"),
+      requiredString(anchorId, "anchor id"),
+    );
+  });
+  ipcMain.handle("browser:remove-comment-badge", (event, tabId: unknown, anchorId: unknown) => {
+    assertTrustedSender(event, options.getMainWindow);
+    return manager.removeCommentBadge(
+      requiredString(tabId, "tab id"),
+      requiredString(anchorId, "anchor id"),
+    );
+  });
+  ipcMain.handle("browser:clear-comment-badges", (event, tabId: unknown) => {
+    assertTrustedSender(event, options.getMainWindow);
+    return manager.clearCommentBadges(requiredString(tabId, "tab id"));
   });
   return manager;
 }

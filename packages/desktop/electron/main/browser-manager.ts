@@ -5,13 +5,18 @@ import {
   captureDomOutline,
   captureDomSnapshot,
   captureElementContext,
+  capturePageImage,
   captureRegionScreenshot,
-  captureScreenshot,
   evaluateInPage,
   type BrowserDomOutline,
   type BrowserDomSnapshot,
   type BrowserEvalResult,
 } from "./browser-dom";
+import {
+  addCommentBadgeScript,
+  clearCommentBadgesScript,
+  removeCommentBadgeScript,
+} from "./browser-comment-overlay-script";
 import {
   clickTarget as clickTargetOnPage,
   fillTarget as fillTargetOnPage,
@@ -24,15 +29,10 @@ import {
   type ResolvedTarget,
 } from "./browser-interactions";
 import { BrowserNetworkCollector } from "./browser-network-collector";
+import { BrowserOriginStore } from "./browser-origin-store";
 import { installTabEvents, type ManagedTab } from "./browser-tab-events";
-import {
-  browserBounds,
-  contentOffset,
-  devtoolsBounds,
-  hiddenBounds,
-  scaleBounds,
-  windowRelativeBounds,
-} from "./browser-manager-layout";
+import { contentOffset, scaleBounds, windowRelativeBounds } from "./browser-manager-layout";
+import { BrowserViewLayout } from "./browser-view-layout";
 import {
   assertBrowserMutationAllowed,
   metadataFor,
@@ -48,6 +48,7 @@ import type {
   BrowserBounds,
   BrowserElementContext,
   BrowserProfileMetadata,
+  BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "./browser-types";
@@ -59,6 +60,9 @@ export class BrowserManager {
   private activeTabId: string | null = null;
   private bounds: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 };
   private lastError: string | null = null;
+  // Native-view attachment + geometry (incl. overlay suppression) lives here.
+  private readonly layout = new BrowserViewLayout(() => this.getMainWindow());
+  private readonly origins = new BrowserOriginStore();
   private readonly network = new BrowserNetworkCollector((webContentsId, entry) => {
     const tab = [...this.tabs.values()].find((t) => t.view.webContents.id === webContentsId);
     if (!tab) return;
@@ -83,13 +87,20 @@ export class BrowserManager {
       networkEntries: [],
     };
     this.tabs.set(id, tab);
-    this.attachView(id, view);
     installTabEvents(tab, {
       emitState: () => this.emitState(),
       setLastError: (message) => {
         this.lastError = message;
       },
       openChildTab: (url, profileId) => this.openChildTab(url, profileId),
+      recordOrigin: (url) => this.origins.record(url),
+      emitShortcut: (shortcut) => this.emitShortcut(shortcut),
+      emitCommentBadgeClick: (id, anchorId, box) =>
+        sendToWindow(this.getMainWindow(), "browser:comment-badge-click", {
+          tabId: id,
+          anchorId,
+          box,
+        }),
     });
     this.network.ensure(view.webContents.session);
     this.activateTab(id);
@@ -143,18 +154,29 @@ export class BrowserManager {
     this.activeTabId = tabId;
     for (const [id, item] of this.tabs) {
       item.metadata = { ...item.metadata, isActive: id === tabId };
-      item.view.setVisible(id === tabId);
-      item.view.setBounds(id === tabId ? this.bounds : hiddenBounds());
-      item.devtoolsView?.setVisible(id === tabId && item.metadata.devToolsOpen);
     }
+    this.applyLayout();
     this.emitState();
     return tab.metadata;
   }
 
+  /**
+   * Hide (or restore) every native view. Called when a renderer overlay opens
+   * so React dialogs/popovers aren't painted under the always-on-top guest
+   * page. Idempotent.
+   */
+  setSuppressed(value: boolean): void {
+    if (this.layout.setSuppressed(value)) this.applyLayout();
+  }
+
+  private applyLayout(): void {
+    this.layout.apply(this.tabs, this.activeTabId, this.bounds);
+  }
+
   closeTab(tabId: string): BrowserStateSnapshot {
     const tab = this.requireTab(tabId);
-    this.detachView(tab.view);
-    if (tab.devtoolsView) this.detachView(tab.devtoolsView);
+    this.layout.detach(tab.view);
+    if (tab.devtoolsView) this.layout.detach(tab.devtoolsView);
     tab.view.webContents.close();
     this.tabs.delete(tabId);
     if (this.activeTabId === tabId) this.activeTabId = this.tabs.keys().next().value ?? null;
@@ -167,16 +189,7 @@ export class BrowserManager {
     const win = this.getMainWindow();
     const zoomFactor = win?.webContents.getZoomFactor() ?? 1;
     this.bounds = windowRelativeBounds(scaleBounds(bounds, zoomFactor), contentOffset(win));
-    for (const [id, tab] of this.tabs) {
-      tab.view.setBounds(
-        id === this.activeTabId
-          ? browserBounds(this.bounds, tab.metadata.devToolsOpen)
-          : hiddenBounds(),
-      );
-      tab.devtoolsView?.setBounds(
-        id === this.activeTabId ? devtoolsBounds(this.bounds) : hiddenBounds(),
-      );
-    }
+    this.applyLayout();
     return this.state();
   }
 
@@ -204,14 +217,11 @@ export class BrowserManager {
       tab.devtoolsView = new WebContentsView({
         webPreferences: secureWebPreferences(createBrowserProfile("fresh")),
       });
-      this.attachView(`${tabId}:devtools`, tab.devtoolsView);
       tab.view.webContents.setDevToolsWebContents(tab.devtoolsView.webContents);
     }
     const open = !tab.metadata.devToolsOpen;
     tab.metadata = { ...tab.metadata, devToolsOpen: open };
-    tab.devtoolsView.setVisible(open && tab.metadata.isActive);
-    tab.devtoolsView.setBounds(open ? devtoolsBounds(this.bounds) : hiddenBounds());
-    tab.view.setBounds(browserBounds(this.bounds, open));
+    this.applyLayout();
     if (open) tab.view.webContents.openDevTools({ mode: "detach" });
     else tab.view.webContents.closeDevTools();
     this.emitState();
@@ -238,7 +248,7 @@ export class BrowserManager {
 
   async screenshot(tabId: string, clip?: BrowserBounds): Promise<string> {
     const wc = this.requireTab(tabId).view.webContents;
-    return clip ? captureRegionScreenshot(wc, clip) : captureScreenshot(wc);
+    return clip ? captureRegionScreenshot(wc, clip) : capturePageImage(wc);
   }
 
   async screenshotTarget(tabId: string, target: BrowserTarget): Promise<string> {
@@ -292,9 +302,9 @@ export class BrowserManager {
     return waitForOnPage(this.requireTab(tabId).view.webContents, opts, timeoutMs);
   }
 
-  async selectElementContext(tabId: string): Promise<BrowserElementContext> {
+  async selectElementContext(tabId: string, anchorId?: string): Promise<BrowserElementContext> {
     const tab = this.requireTab(tabId);
-    return captureElementContext(
+    const context = await captureElementContext(
       tab.view.webContents,
       {
         tabId,
@@ -303,6 +313,27 @@ export class BrowserManager {
         capturedAt: new Date().toISOString(),
       },
       tabDiagnostics(tab.consoleEntries, tab.networkEntries),
+      anchorId ?? null,
+    );
+    // Pin a numbered badge to the element the user just picked. The agent/MCP
+    // path passes no anchor and gets context without a badge.
+    if (anchorId) {
+      await tab.view.webContents.executeJavaScript(addCommentBadgeScript(anchorId), true);
+    }
+    return context;
+  }
+
+  async removeCommentBadge(tabId: string, anchorId: string): Promise<void> {
+    await this.requireTab(tabId).view.webContents.executeJavaScript(
+      removeCommentBadgeScript(anchorId),
+      true,
+    );
+  }
+
+  async clearCommentBadges(tabId: string): Promise<void> {
+    await this.requireTab(tabId).view.webContents.executeJavaScript(
+      clearCommentBadgesScript(),
+      true,
     );
   }
 
@@ -313,6 +344,7 @@ export class BrowserManager {
       activeTabId: this.activeTabId,
       consoleEntries: active?.consoleEntries ?? [],
       networkEntries: active?.networkEntries ?? [],
+      knownOrigins: this.origins.list(),
       error: this.lastError,
     };
   }
@@ -337,15 +369,11 @@ export class BrowserManager {
     return tab;
   }
 
-  private attachView(_id: string, view: WebContentsView): void {
-    this.getMainWindow()?.contentView.addChildView(view);
-  }
-
-  private detachView(view: WebContentsView): void {
-    this.getMainWindow()?.contentView.removeChildView(view);
-  }
-
   private emitState(): void {
     sendToWindow(this.getMainWindow(), "browser:state", this.state());
+  }
+
+  private emitShortcut(shortcut: BrowserShortcut): void {
+    sendToWindow(this.getMainWindow(), "browser:shortcut", shortcut);
   }
 }
