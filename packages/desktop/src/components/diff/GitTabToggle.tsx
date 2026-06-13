@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-export type GitViewMode = "uncommitted" | "vs-target";
+export type GitViewMode = "uncommitted" | "vs-target" | "graph";
 
 interface GitTabToggleProps {
   value: GitViewMode;
@@ -44,6 +44,12 @@ export const GitTabToggle = memo(function GitTabToggle({
         disabled={disabled}
         label={targetLabel}
         onClick={() => onChange("vs-target")}
+      />
+      <ToggleButton
+        active={value === "graph"}
+        disabled={disabled}
+        label="Graph"
+        onClick={() => onChange("graph")}
       />
     </div>
   );

@@ -7,11 +7,13 @@ use crate::error::AppError;
 mod blame;
 mod branch;
 mod diff;
+mod graph;
 mod worktree;
 
 pub use blame::*;
 pub use branch::*;
 pub use diff::*;
+pub use graph::*;
 pub use worktree::*;
 
 // ---------------------------------------------------------------------------

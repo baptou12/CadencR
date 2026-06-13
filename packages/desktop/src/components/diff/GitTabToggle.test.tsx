@@ -33,6 +33,16 @@ describe("GitTabToggle", () => {
     expect(onChange).toHaveBeenCalledWith("vs-target");
   });
 
+  it("renders the Graph tab and reports its value on click", () => {
+    const onChange = vi.fn();
+    render(<GitTabToggle value="graph" onChange={onChange} targetBranch="main" />);
+    const graphTab = screen.getByRole("tab", { name: "Graph" });
+    expect(graphTab).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(graphTab);
+    // Clicking the already-active tab still reports its value to the parent.
+    expect(onChange).toHaveBeenCalledWith("graph");
+  });
+
   it("disables both tabs when disabled is true", () => {
     render(<GitTabToggle value="uncommitted" onChange={vi.fn()} targetBranch="main" disabled />);
     expect(screen.getByRole("tab", { name: "Uncommitted" })).toBeDisabled();

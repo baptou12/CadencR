@@ -2,8 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@/test-utils";
 import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 
-const defaultCommitProps = { selectedCommit: null, onSelectCommit: vi.fn() };
-
 const mockFiles: ChangedFileEntry[] = [
   { file: "src/foo.ts", status: "M", additions: 5, deletions: 2 },
   { file: "src/bar.ts", status: "A", additions: 10, deletions: 0 },
@@ -19,7 +17,6 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
-        {...defaultCommitProps}
       />,
     );
     expect(screen.getByText("foo.ts")).toBeInTheDocument();
@@ -35,7 +32,6 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
-        {...defaultCommitProps}
       />,
     );
     expect(screen.getByText("No changed files")).toBeInTheDocument();
@@ -49,7 +45,6 @@ describe("DiffFileTree", () => {
         selectedFile="src/foo.ts"
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
-        {...defaultCommitProps}
       />,
     );
     // Selected file row has bg-accent class
@@ -66,7 +61,6 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={onSelectFile}
-        {...defaultCommitProps}
       />,
     );
     fireEvent.click(screen.getByTitle("src/foo.ts"));
@@ -82,7 +76,6 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={onToggleExpand}
         onSelectFile={vi.fn()}
-        {...defaultCommitProps}
       />,
     );
     // The expand/collapse button (Plus/Minus) is before the file name button
@@ -99,45 +92,12 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
-        {...defaultCommitProps}
       />,
     );
     const input = screen.getByPlaceholderText("Filter files...");
     fireEvent.change(input, { target: { value: "foo" } });
     expect(screen.getByText("foo.ts")).toBeInTheDocument();
     expect(screen.queryByText("bar.ts")).not.toBeInTheDocument();
-  });
-
-  it("renders commit dates correctly for git date format", () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    const dateStr = twoHoursAgo
-      .toISOString()
-      .replace("T", " ")
-      .replace(/\.\d+Z$/, " +0000");
-
-    render(
-      <DiffFileTree
-        files={mockFiles}
-        expandedFiles={new Set()}
-        selectedFile={null}
-        onToggleExpand={vi.fn()}
-        onSelectFile={vi.fn()}
-        selectedCommit={null}
-        onSelectCommit={vi.fn()}
-        commits={[
-          {
-            sha: "abc123",
-            shortSha: "abc123",
-            message: "test commit",
-            body: "",
-            author: "tester",
-            date: dateStr,
-            isPushed: false,
-          },
-        ]}
-      />,
-    );
-    expect(screen.getByText(/2h ago/)).toBeInTheDocument();
   });
 
   it("renders the staged badge only for is_staged files", () => {
@@ -152,7 +112,6 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
-        {...defaultCommitProps}
       />,
     );
     // Only one staged badge should render — on the staged file's row.
@@ -167,7 +126,6 @@ describe("DiffFileTree", () => {
         selectedFile={null}
         onToggleExpand={vi.fn()}
         onSelectFile={vi.fn()}
-        {...defaultCommitProps}
       />,
     );
     expect(screen.getByText("src")).toBeInTheDocument();

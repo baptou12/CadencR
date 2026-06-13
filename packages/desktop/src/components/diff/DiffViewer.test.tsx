@@ -55,7 +55,6 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/api/generated", () => ({
   useGetDiff: mocks.useGetDiffMock,
   useGetFileBlobShas: mocks.useGetFileBlobShasMock,
-  useGetCommitLog: vi.fn(() => ({ data: { commits: [], is_on_base_branch: true } })),
   useGetChangedFiles: vi.fn(() => ({ data: [] })),
   useGetFileContent: mocks.useGetFileContentMock,
   // Orval emits a mutation hook for batch endpoints — mirror the mutation

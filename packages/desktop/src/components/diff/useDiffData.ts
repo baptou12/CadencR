@@ -1,9 +1,8 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useGetFileBlobShas,
-  useGetCommitLog,
   useGetDiff,
   useGetChangedFiles,
   getGetFileContentQueryKey,
@@ -22,7 +21,6 @@ import {
 } from "@/api/generated";
 import { parseUnifiedDiff, countHunkStats } from "@/lib/parse-unified-diff";
 import { findStalePendingCommentIds } from "@/lib/diff-comment-validity";
-import type { CommitEntry } from "./DiffFileTree";
 
 // Module-scoped dedupe state for the auto-invalidation effect below. Multiple
 // `DiffViewer`s can mount simultaneously; using
@@ -103,10 +101,20 @@ export interface FileMeta {
  */
 export type DiffMode = "worktree" | "branch" | "uncommitted";
 
-export function useDiffData(featureId: number, mode: DiffMode, targetBranch?: string) {
+export function useDiffData(
+  featureId: number,
+  mode: DiffMode,
+  targetBranch?: string,
+  /**
+   * Controlled commit selection. When set, the diff query targets that single
+   * commit (`commit_sha`); the Git-tab Graph view drives this when a commit is
+   * opened. Left `undefined`/`null`, the diff shows the working-tree / branch
+   * comparison for `mode`.
+   */
+  commitSha?: string | null,
+) {
   const queryClient = useQueryClient();
-  const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
-  const [commitLimit, setCommitLimit] = useState(20);
+  const selectedCommit = commitSha ?? null;
 
   // ---- Diff & file content ----
   const { data: diffResponse, isLoading } = useGetDiff({
@@ -188,26 +196,6 @@ export function useDiffData(featureId: number, mode: DiffMode, targetBranch?: st
     },
   });
 
-  // ---- Commit log ----
-  const { data: commitData } = useGetCommitLog(
-    { feature_id: featureId, limit: commitLimit },
-    { query: { keepPreviousData: true } },
-  );
-  const commits = useMemo(
-    () =>
-      (commitData?.commits ?? []).map((c) => ({
-        sha: c.sha,
-        shortSha: c.short_sha,
-        message: c.message,
-        body: c.body,
-        author: c.author,
-        date: c.date,
-        isPushed: c.is_pushed,
-      })) as CommitEntry[],
-    [commitData],
-  );
-  const isOnBaseBranch = commitData?.is_on_base_branch ?? true;
-
   // ---- Comments ----
   const { data: comments = [] } = useListDiffComments(featureId);
 
@@ -277,11 +265,6 @@ export function useDiffData(featureId: number, mode: DiffMode, targetBranch?: st
     fileNames,
     stagedFiles,
     selectedCommit,
-    setSelectedCommit,
-    commits,
-    isOnBaseBranch,
-    commitLimit,
-    setCommitLimit,
     blobShas,
     viewedFilesSet,
     markViewed,

@@ -70,6 +70,22 @@ pub async fn get_commit_log_handler(
     Ok(Json(service::get_commit_log(&state, params).await?))
 }
 
+#[utoipa::path(get, path = "/api/git/commit-graph", params(("feature_id" = i64, Query,), ("skip" = Option<i64>, Query,), ("limit" = Option<i64>, Query,)), responses((status = 200, body = CommitGraphResponse)))]
+pub async fn get_commit_graph_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetCommitGraphParams>,
+) -> Result<Json<CommitGraphResponse>, AppError> {
+    Ok(Json(service::get_commit_graph(&state, params).await?))
+}
+
+#[utoipa::path(get, path = "/api/git/commit-url", params(("feature_id" = i64, Query,), ("sha" = String, Query,)), responses((status = 200, body = CommitUrlResponse)))]
+pub async fn get_commit_url_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetCommitUrlParams>,
+) -> Result<Json<CommitUrlResponse>, AppError> {
+    Ok(Json(service::get_commit_url(&state, params).await?))
+}
+
 #[utoipa::path(get, path = "/api/git/file-blob-shas", params(("feature_id" = i64, Query,)), responses((status = 200, body = Vec<FileBlobSha>)))]
 pub async fn get_file_blob_shas_handler(
     State(state): State<AppState>,
@@ -347,6 +363,8 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/file-content", get(get_file_content_handler))
         .route("/api/git/file-content-batch", post(get_file_content_batch_handler))
         .route("/api/git/commit-log", get(get_commit_log_handler))
+        .route("/api/git/commit-graph", get(get_commit_graph_handler))
+        .route("/api/git/commit-url", get(get_commit_url_handler))
         .route("/api/git/file-blob-shas", get(get_file_blob_shas_handler))
         .route("/api/git/files", get(list_files_handler))
         .route("/api/git/worktree/info", get(get_worktree_info_handler))
