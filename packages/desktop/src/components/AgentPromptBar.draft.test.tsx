@@ -4,7 +4,7 @@
  */
 import { forwardRef, useImperativeHandle, useRef, useState, type ForwardedRef } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@/test-utils";
+import { fireEvent, render, screen, waitFor } from "@/test-utils";
 
 vi.mock("@tanstack/react-hotkeys", () => ({ useHotkeys: vi.fn() }));
 
@@ -199,6 +199,38 @@ describe("AgentPromptBar conversation isolation", () => {
     });
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />);
     expect(screen.getByRole("textbox")).toHaveValue("restored from server");
+  });
+
+  it("does not re-inject the draft into the same feature after the user sends", async () => {
+    // Race regression: after sending, the input is empty, so the draft-restore
+    // guard that only checked `textRef` was open. A draft-query refetch
+    // re-delivering the not-yet-cleared draft would then repopulate the box —
+    // the message was "sent but kept in the prompt".
+    const okSend = vi.fn().mockResolvedValue(undefined);
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      draftFeatureId: null,
+    });
+    const { rerender } = render(
+      <AgentPromptBar onSend={okSend} onStop={onStop} status="idle" featureId={10} />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "ship it" } });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    await waitFor(() => expect(screen.getByRole("textbox")).toHaveValue(""));
+    expect(okSend).toHaveBeenCalledWith("ship it", undefined);
+
+    // The debounced draft save lands in the query cache and a refetch delivers
+    // it back for the SAME feature while the input sits empty.
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: "ship it",
+      draftFeatureId: 10,
+    });
+    rerender(<AgentPromptBar onSend={okSend} onStop={onStop} status="idle" featureId={10} />);
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
   });
 
   it("does not clear when the ws session changes inside the same feature", () => {

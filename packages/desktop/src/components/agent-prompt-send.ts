@@ -19,7 +19,7 @@
  *     handles the local UX (clearing/restoring text, busy flag).
  */
 import { useCallback, useMemo, useState } from "react";
-import type { RefObject } from "react";
+import type { MutableRefObject, RefObject } from "react";
 import type { ImageAttachment } from "@/hooks/useImageAttachments";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
@@ -37,6 +37,8 @@ export interface RunSendDeps {
   saveDraft: (text: string | null) => void;
   addHistoryEntry: (text: string) => void;
   getAttachments: () => ImageAttachment[];
+  /** Flipped true on send so a late draft refetch can't re-inject sent text. */
+  interactedRef: MutableRefObject<boolean>;
 }
 
 export interface AgentPromptSendApi {
@@ -59,11 +61,14 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
     saveDraft,
     addHistoryEntry,
     getAttachments,
+    interactedRef,
   } = deps;
   const [sending, setSending] = useState(false);
 
   const runSend = useCallback(
     async (send: SendFn, trimmed: string): Promise<void> => {
+      // Sending hands the input to the user, suppressing later draft restore.
+      interactedRef.current = true;
       const attachments = getAttachments();
       const payloadAttachments =
         attachments.length > 0
@@ -107,6 +112,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
       saveDraft,
       addHistoryEntry,
       getAttachments,
+      interactedRef,
     ],
   );
 
