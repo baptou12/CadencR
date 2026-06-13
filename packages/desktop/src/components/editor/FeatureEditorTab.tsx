@@ -19,7 +19,7 @@ import {
   selectFeatureLayout,
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
-import { GitBranch, PanelLeft } from "lucide-react";
+import { GitBranch, PanelLeft, Search } from "lucide-react";
 import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
@@ -32,9 +32,11 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { EditorSidebarLayout } from "./EditorSidebarLayout";
 import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
+import FileSearchDialog from "./FileSearchDialog";
 import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
@@ -79,6 +81,8 @@ const FeatureEditorTab = memo(
     const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
     const [pendingProceed, setPendingProceed] = useState<(() => void) | null>(null);
     const [isSavingAll, setIsSavingAll] = useState(false);
+    const [fileSearchOpen, setFileSearchOpen] = useState(false);
+    const openFileSearch = useCallback(() => setFileSearchOpen(true), []);
 
     const { value: persistedCollapsed, setValue: persistCollapsed } = useDebouncedSetting(
       EDITOR_SIDEBAR_COLLAPSED_SETTING,
@@ -250,23 +254,22 @@ const FeatureEditorTab = memo(
     // itself once a file is opened from the tree.
     const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
 
-    const projectName = useMemo(() => basenameOfPath(projectPath), [projectPath]);
     const isWorktree = useFeatureWorktreePath(featureId) !== null;
 
     const sidebar = useMemo(
       () => (
         <div className="glass-surface flex h-full flex-col border-r border-border/60 bg-sidebar">
           <SidebarHeader
-            projectName={projectName}
             isWorktree={isWorktree}
             onToggle={handleToggleSidebar}
+            onOpenFileSearch={openFileSearch}
           />
           <div className="flex-1 overflow-hidden">
             <FileTree projectId={projectId} featureId={featureId} />
           </div>
         </div>
       ),
-      [featureId, handleToggleSidebar, isWorktree, projectId, projectName],
+      [featureId, handleToggleSidebar, isWorktree, openFileSearch, projectId],
     );
 
     const editorPane = useMemo(
@@ -311,6 +314,15 @@ const FeatureEditorTab = memo(
           </DialogContent>
         </Dialog>
 
+        {fileSearchOpen && (
+          <FileSearchDialog
+            projectId={projectId}
+            featureId={featureId}
+            open={fileSearchOpen}
+            onOpenChange={setFileSearchOpen}
+          />
+        )}
+
         <EditorSidebarLayout
           sidebarVisible={sidebarVisible}
           sidebar={sidebar}
@@ -325,27 +337,18 @@ const FeatureEditorTab = memo(
 
 export default FeatureEditorTab;
 
-/** Last path segment of `projectPath`, handling both POSIX (`/`) and
- *  Windows (`\`) separators and stripping any trailing slashes. */
-function basenameOfPath(projectPath: string): string {
-  const trimmed = projectPath.replace(/[\\/]+$/, "");
-  const sep = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-  const name = sep === -1 ? trimmed : trimmed.slice(sep + 1);
-  return name || projectPath;
-}
-
 function SidebarHeader({
-  projectName,
   isWorktree,
   onToggle,
+  onOpenFileSearch,
 }: {
-  projectName: string;
   isWorktree: boolean;
   onToggle: () => void;
+  onOpenFileSearch: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border shrink-0">
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
         {isWorktree && (
           <ShortcutTooltip label="On a worktree branch" alignLeft>
             <GitBranch
@@ -354,12 +357,15 @@ function SidebarHeader({
             />
           </ShortcutTooltip>
         )}
-        <span
-          className="min-w-0 truncate text-xs font-medium uppercase tracking-wide text-muted-foreground"
-          title={projectName}
+        <button
+          type="button"
+          onClick={onOpenFileSearch}
+          className="group flex min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-border/60 bg-background/40 px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
         >
-          {projectName}
-        </span>
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Search files…</span>
+          <KbdShortcut keys={["cmd", "P"]} size="sm" />
+        </button>
       </div>
       <ShortcutTooltip label="Collapse sidebar" keys={["cmd", "E"]} alignRight>
         <button

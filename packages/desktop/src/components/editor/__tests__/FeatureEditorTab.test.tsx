@@ -98,7 +98,8 @@ vi.mock("../EditorSplitTree", () => ({
 }));
 
 vi.mock("../FileSearchDialog", () => ({
-  default: () => null,
+  default: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="file-search-dialog" /> : null,
 }));
 
 vi.mock("../ContentSearchDialog", () => ({
@@ -213,6 +214,27 @@ describe("FeatureEditorTab", () => {
     expect(screen.getByRole("button", { name: "Show file tree sidebar" })).toBeInTheDocument();
     expect(screen.getByTestId("editor-split-tree")).toBeInTheDocument();
     expect(mockEditorUnmount).not.toHaveBeenCalled();
+  });
+
+  it("renders a file-search trigger in the sidebar header", () => {
+    mockSidebarVisible = true;
+
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
+
+    expect(screen.getByRole("button", { name: /search files/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("file-search-dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens the file search dialog when the header trigger is clicked", async () => {
+    mockSidebarVisible = true;
+
+    const { user } = render(
+      <FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /search files/i }));
+
+    expect(screen.getByTestId("file-search-dialog")).toBeInTheDocument();
   });
 
   it("keeps the visible sidebar resizable", () => {

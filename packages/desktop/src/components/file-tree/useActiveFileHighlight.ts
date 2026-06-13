@@ -37,5 +37,14 @@ export function useActiveFileHighlight(model: FileTreeModel, activeFilePath: str
 function buildActiveFileCSS(activeFilePath: string | null): string {
   if (!activeFilePath) return "";
   const selector = `[data-item-path="${CSS.escape(activeFilePath)}"]`;
-  return `${selector},\n${selector}:hover {\n  background-color: color-mix(in oklch, var(--primary) 28%, transparent);\n}`;
+  const tint = "color-mix(in oklch, var(--primary) 28%, transparent)";
+  // `--truncate-marker-background-overlay-color` is the color Pierre's
+  // middle-truncation "…" marker paints over the tree background. Without
+  // it the marker keeps the opaque `--trees-bg`, leaving a dark box behind
+  // the ellipsis on the tinted active row. Match it to the row tint.
+  return (
+    `${selector},\n${selector}:hover {\n` +
+    `  background-color: ${tint};\n` +
+    `  --truncate-marker-background-overlay-color: ${tint};\n}`
+  );
 }
