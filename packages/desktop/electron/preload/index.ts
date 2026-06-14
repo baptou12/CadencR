@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 import type {
   BrowserBounds,
   BrowserCommentBadgeClick,
@@ -212,7 +212,12 @@ contextBridge.exposeInMainWorld("cadencr", {
   setBrowserBounds: (
     bounds: BrowserBounds,
     scopeId?: number | null,
-  ): Promise<BrowserStateSnapshot> => ipcRenderer.invoke("browser:set-bounds", bounds, scopeId),
+    // The bounds are zoomed CSS px from getBoundingClientRect; read the zoom
+    // factor here in the renderer so it matches the layout we just measured.
+    // Reading it in the main process instead races with zoom propagation and
+    // shifts the native view toward the window origin until the next zoom change.
+  ): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:set-bounds", bounds, scopeId, webFrame.getZoomFactor()),
   setBrowserSuppressed: (value: boolean): Promise<void> =>
     ipcRenderer.invoke("browser:set-suppressed", value),
   listBrowserProfiles: (): Promise<BrowserProfileMetadata[]> =>

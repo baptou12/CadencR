@@ -27,6 +27,10 @@ interface MockWebContents extends EventEmitter {
 }
 
 const webContentsById = new Map<number, MockWebContents>();
+const createdViews: Array<{
+  setVisible: ReturnType<typeof vi.fn>;
+  setBounds: ReturnType<typeof vi.fn>;
+}> = [];
 let nextWebContentsId = 1;
 
 vi.mock("electron", () => {
@@ -36,6 +40,7 @@ vi.mock("electron", () => {
     setBounds = vi.fn();
 
     constructor() {
+      createdViews.push(this);
       const contents = Object.assign(new EventEmitter(), {
         id: nextWebContentsId,
         session: {
@@ -108,7 +113,33 @@ function mainWindow(): MockMainWindow {
 describe("BrowserManager", () => {
   beforeEach(() => {
     webContentsById.clear();
+    createdViews.length = 0;
     nextWebContentsId = 1;
+  });
+
+  it("scales native bounds by the renderer-supplied zoom factor, not the main window's", () => {
+    // The main window reports zoom 1, but the renderer measured its bounds at
+    // zoom 2. Trusting the renderer's factor keeps the native view aligned with
+    // the placeholder even while a zoom change is still propagating to main.
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const view = createdViews[0];
+    view.setBounds.mockClear();
+
+    manager.setBounds({ x: 100, y: 50, width: 300, height: 200 }, 1, 2);
+
+    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 200, y: 100, width: 600, height: 400 });
+  });
+
+  it("falls back to the main window zoom factor when the renderer omits one", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const view = createdViews[0];
+    view.setBounds.mockClear();
+
+    manager.setBounds({ x: 100, y: 50, width: 300, height: 200 }, 1);
+
+    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 100, y: 50, width: 300, height: 200 });
   });
 
   it("validates mutating automation against the live WebContents URL", async () => {
