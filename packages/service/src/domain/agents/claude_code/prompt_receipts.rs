@@ -45,9 +45,7 @@ impl ClaudePromptReceipts {
             .iter()
             .position(|receipt| receipt.matches_observed_text(&observed_text))?;
         let receipt = pending.remove(idx)?;
-        Some(RuntimeEvent::prompt_received_event(
-            receipt.client_message_id,
-        ))
+        Some(receipt.into_event())
     }
 
     pub(super) fn discard(&self, client_message_id: &str) {
@@ -59,6 +57,14 @@ impl ClaudePromptReceipts {
             pending.remove(idx);
         }
     }
+
+    pub(super) fn acknowledge_all_pending(&self) -> Vec<RuntimeEvent> {
+        let mut pending = self.pending.lock().expect("ClaudePromptReceipts poisoned");
+        pending
+            .drain(..)
+            .map(PendingClaudePromptReceipt::into_event)
+            .collect()
+    }
 }
 
 impl PendingClaudePromptReceipt {
@@ -69,6 +75,10 @@ impl PendingClaudePromptReceipt {
         self.expected_text == observed_text
             || self.expected_text.starts_with(observed_text)
             || observed_text.contains(&self.expected_text)
+    }
+
+    fn into_event(self) -> RuntimeEvent {
+        RuntimeEvent::prompt_received_event(self.client_message_id)
     }
 }
 
@@ -186,6 +196,25 @@ mod tests {
                 }))
                 .is_none(),
             "mismatched replay should not acknowledge the oldest pending prompt"
+        );
+    }
+
+    #[test]
+    fn acknowledge_all_pending_consumes_every_pending_prompt() {
+        let receipts = ClaudePromptReceipts::default();
+        receipts.enqueue("client-1".to_string(), &json!("first prompt"));
+        receipts.enqueue("client-2".to_string(), &json!("second prompt"));
+
+        let events = receipts.acknowledge_all_pending();
+
+        let ids: Vec<_> = events
+            .iter()
+            .filter_map(|event| event.prompt_received_client_message_id())
+            .collect();
+        assert_eq!(ids, vec!["client-1", "client-2"]);
+        assert!(
+            receipts.acknowledge_all_pending().is_empty(),
+            "bulk acknowledgement should consume pending receipts exactly once"
         );
     }
 }
