@@ -52,8 +52,8 @@ fn browser_tool(name: &'static str) -> Tool {
 fn tool_description(name: &str) -> &'static str {
     match name {
         "browser_list_tabs" => "List open Browser workspace tabs with id, title, URL and load state.",
-        "browser_open_url" => "Open a localhost or local file:// URL in a new Browser tab (or navigate an existing tab when tab_id is given) and wait for the load to settle, returning the final URL and title. Only loopback (http/https) and file:// URLs are permitted; note that automation actions (click/fill/type/evaluate) still require a localhost tab.",
-        "browser_open_external_url" => "Open an arbitrary external website (any http/https URL) in a new Browser tab (or navigate an existing tab when tab_id is given) and wait for the load to settle, returning the final URL and title. Unlike browser_open_url this prompts for permission (per the agent's permission mode) because it reaches the open internet; once opened, the resulting tab can be fully automated (click/fill/type/evaluate). Use browser_open_url for localhost or file:// targets.",
+        "browser_open_url" => "Reuse the active Browser tab by default for a localhost or local file:// URL, or navigate an existing tab when tab_id is given. Pass new_tab:true only when you intentionally need another tab. Waits for the load to settle and returns the final URL and title. Only loopback (http/https) and file:// URLs are permitted; automation actions (click/fill/type/evaluate) still require a localhost tab.",
+        "browser_open_external_url" => "Reuse the active Browser tab by default for an arbitrary external website (any http/https URL), or navigate an existing tab when tab_id is given. Pass new_tab:true only when you intentionally need another tab. Unlike browser_open_url this prompts for permission (per the agent's permission mode) because it reaches the open internet; once opened, the resulting tab can be fully automated (click/fill/type/evaluate). Use browser_open_url for localhost or file:// targets.",
         "browser_get_console" => "Return recent console entries from the active Browser tab. Filter with `level` (e.g. 'error') and cap with `limit` (default 50, newest last).",
         "browser_get_network" => "Return recent network requests from the active Browser tab. Filter with `failed_only` or `url_contains`, cap with `limit` (default 50). Headers are omitted unless `include_headers` is true.",
         "browser_get_snapshot" => "Preferred way to understand the page. Defaults to a compact accessibility-style outline where every interactive element has a stable [ref] (e1, e2, …) you pass to browser_click/browser_fill/browser_hover/browser_screenshot. Pass format:'html' for raw outerHTML. `selector` scopes to a subtree; output truncates to `max_length` with a `truncated` flag. Refs reset on navigation and on every snapshot — re-snapshot after the page changes.",
@@ -74,6 +74,13 @@ fn tab_id_prop() -> serde_json::Value {
     json!({ "type": "string", "description": "Target tab id; defaults to the active tab." })
 }
 
+fn new_tab_prop() -> serde_json::Value {
+    json!({
+        "type": "boolean",
+        "description": "Create another Browser tab instead of reusing the active tab. Prefer the default active tab reuse for linear workflows."
+    })
+}
+
 fn tool_schema(name: &str) -> serde_json::Value {
     read_tool_schema(name).unwrap_or_else(|| action_tool_schema(name))
 }
@@ -85,6 +92,7 @@ fn read_tool_schema(name: &str) -> Option<serde_json::Value> {
             "properties": {
                 "url": { "type": "string", "description": "Loopback URL (e.g. http://localhost:3000) or local file URL (e.g. file:///path/to/index.html) to open." },
                 "tab_id": tab_id_prop(),
+                "new_tab": new_tab_prop(),
             },
             "required": ["url"],
         }),
@@ -93,6 +101,7 @@ fn read_tool_schema(name: &str) -> Option<serde_json::Value> {
             "properties": {
                 "url": { "type": "string", "description": "External website URL to open (e.g. https://example.com)." },
                 "tab_id": tab_id_prop(),
+                "new_tab": new_tab_prop(),
             },
             "required": ["url"],
         }),
@@ -294,6 +303,35 @@ impl ServerHandler for BrowserServer {
                 return Ok(error_result(&e));
             }
             Ok(run_browser_tool(request.name.as_ref(), args, self.ctx.feature_id).await)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{tool_description, tool_schema, BROWSER_OPEN_EXTERNAL_URL};
+
+    #[test]
+    fn open_url_schemas_expose_new_tab_flag() {
+        for name in ["browser_open_url", BROWSER_OPEN_EXTERNAL_URL] {
+            let schema = tool_schema(name);
+            let new_tab = &schema["properties"]["new_tab"];
+
+            assert_eq!(new_tab["type"], "boolean");
+            assert!(new_tab["description"]
+                .as_str()
+                .unwrap()
+                .contains("active tab"));
+        }
+    }
+
+    #[test]
+    fn open_url_descriptions_prefer_active_tab_reuse() {
+        for name in ["browser_open_url", BROWSER_OPEN_EXTERNAL_URL] {
+            let description = tool_description(name);
+
+            assert!(description.contains("Reuse"));
+            assert!(description.contains("new_tab"));
         }
     }
 }

@@ -24,6 +24,7 @@ interface MockWebContents extends EventEmitter {
   openDevTools: ReturnType<typeof vi.fn>;
   closeDevTools: ReturnType<typeof vi.fn>;
   executeJavaScript: ReturnType<typeof vi.fn>;
+  isLoading: ReturnType<typeof vi.fn>;
 }
 
 const webContentsById = new Map<number, MockWebContents>();
@@ -63,6 +64,7 @@ vi.mock("electron", () => {
         openDevTools: vi.fn(),
         closeDevTools: vi.fn(),
         executeJavaScript: vi.fn(),
+        isLoading: vi.fn(() => false),
       }) as MockWebContents;
       nextWebContentsId += 1;
       webContentsById.set(contents.id, contents);
@@ -213,5 +215,41 @@ describe("BrowserManager", () => {
     expect(manager.state().activeTabId).toBe(b.id);
     manager.closeTab(b.id);
     expect(manager.state().activeTabId).toBe(a.id);
+  });
+
+  it("reuses the active scoped tab when opening a URL without new_tab", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "fresh", 1);
+
+    const result = await manager.openUrl("http://localhost:3000/next", { scopeId: 1 });
+
+    expect(result.id).toBe(tab.id);
+    expect(manager.state(1).tabs.map((t) => t.id)).toEqual([tab.id]);
+    expect([...webContentsById.values()][0].loadURL).toHaveBeenCalledWith(
+      "http://localhost:3000/next",
+    );
+  });
+
+  it("creates a scoped tab when opening a URL without an active tab", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+
+    const result = await manager.openUrl("http://localhost:3000/first", { scopeId: 1 });
+
+    expect(manager.state(1).activeTabId).toBe(result.id);
+    expect(manager.state(1).tabs.map((t) => t.id)).toEqual([result.id]);
+  });
+
+  it("creates a new scoped tab when opening a URL with new_tab", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const first = manager.createTab(undefined, "fresh", 1);
+
+    const second = await manager.openUrl("http://localhost:3000/second", {
+      newTab: true,
+      scopeId: 1,
+    });
+
+    expect(second.id).not.toBe(first.id);
+    expect(manager.state(1).tabs.map((t) => t.id)).toEqual([first.id, second.id]);
+    expect(manager.state(1).activeTabId).toBe(second.id);
   });
 });

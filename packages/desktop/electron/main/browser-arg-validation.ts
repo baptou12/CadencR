@@ -18,6 +18,10 @@ export function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+export function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
 export function positiveInt(value: unknown, fallback: number): number {
   const parsed = optionalNumber(value);
   return parsed !== undefined && parsed > 0 ? Math.floor(parsed) : fallback;

@@ -45,6 +45,7 @@ import { sendToWindow } from "./safe-send";
 import type {
   BrowserBounds,
   BrowserElementContext,
+  BrowserOpenUrlOptions,
   BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
@@ -236,14 +237,13 @@ export class BrowserManager {
     return tab.metadata;
   }
 
-  async openUrl(
-    url: string,
-    tabId?: string,
-    scopeId: number | null = null,
-  ): Promise<BrowserTabMetadata> {
-    // A new agent tab is created in the calling feature's scope so it shows up in
-    // that feature's Browser panel; navigating an existing tab keeps its scope.
-    const meta = tabId ? this.navigate(tabId, url) : this.createTab(url, "fresh", scopeId);
+  async openUrl(url: string, options: BrowserOpenUrlOptions = {}): Promise<BrowserTabMetadata> {
+    const scopeId = options.scopeId ?? null;
+    const targetTabId =
+      options.tabId ?? (options.newTab === true ? null : this.scopes.activeTabId(scopeId));
+    const meta = targetTabId
+      ? this.navigate(targetTabId, url)
+      : this.createTab(url, "fresh", scopeId);
     await waitForLoad(this.requireTab(meta.id).view.webContents);
     return this.requireTab(meta.id).metadata;
   }
@@ -253,10 +253,9 @@ export class BrowserManager {
   // navigates to a different origin it re-locks (see assertMutatingAllowed).
   async openExternalUrl(
     url: string,
-    tabId?: string,
-    scopeId: number | null = null,
+    options: BrowserOpenUrlOptions = {},
   ): Promise<BrowserTabMetadata> {
-    const meta = await this.openUrl(url, tabId, scopeId);
+    const meta = await this.openUrl(url, options);
     const tab = this.requireTab(meta.id);
     tab.externalAutomationOrigin = originOf(tab.view.webContents.getURL());
     return tab.metadata;
