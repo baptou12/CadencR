@@ -190,12 +190,20 @@ export class BrowserManager {
     return this.state(scope);
   }
 
-  setBounds(bounds: BrowserBounds, scopeId: number | null = null): BrowserStateSnapshot {
+  setBounds(
+    bounds: BrowserBounds,
+    scopeId: number | null = null,
+    zoomFactor?: number,
+  ): BrowserStateSnapshot {
     const win = this.getMainWindow();
-    const zoomFactor = win?.webContents.getZoomFactor() ?? 1;
+    // Prefer the renderer-supplied zoom factor: it was read in the same process
+    // and instant as the getBoundingClientRect measurement, so bounds and factor
+    // always agree. Reading our own getZoomFactor() races with zoom propagation
+    // and mis-places the view toward the origin until the next zoom change.
+    const factor = zoomFactor ?? win?.webContents.getZoomFactor() ?? 1;
     this.scopes.setBounds(
       scopeId,
-      windowRelativeBounds(scaleBounds(bounds, zoomFactor), contentOffset(win)),
+      windowRelativeBounds(scaleBounds(bounds, factor), contentOffset(win)),
     );
     this.applyLayout();
     return this.state(scopeId);
