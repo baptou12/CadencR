@@ -44,7 +44,11 @@ export function appendLocalUserMessage(
     ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
     ...(options.promptDeliveryState ? { promptDeliveryState: options.promptDeliveryState } : {}),
   };
-  const blocks = movePendingPromptBlocksToTail([...session.blocks, block]);
+  const nextBlocks = [...session.blocks, block];
+  const blocks =
+    options.promptDeliveryState === "pending_agent"
+      ? movePendingPromptBlocksToTail(nextBlocks)
+      : nextBlocks;
   return {
     ...blocksPatchWithDerived(session.streamingState, blocks),
   };

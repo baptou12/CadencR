@@ -7,7 +7,7 @@ import { blocksPatchWithDerived } from "./ws-message-processing";
 import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
-import { deferTailPromptTurnBoundary, removePendingPromptBlocks } from "./ws-pending-prompts";
+import { removePendingPromptBlocks, trimTailPromptTurnBoundary } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
 
 /**
@@ -72,28 +72,19 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
     stream.parentToolUseId = null;
   }
 
-  const deferredPromptBoundary = deferTailPromptTurnBoundary(session.blocks);
-  if (deferredPromptBoundary.shouldDefer) {
-    if (deferredPromptBoundary.blocks !== session.blocks) {
-      ctx.set(
-        updateSession(
-          ctx.get(),
-          sessionId,
-          blocksPatchWithDerived(state, deferredPromptBoundary.blocks),
-        ),
-      );
-    }
-    return;
-  }
-
-  const blocks = removePendingPromptBlocks(session.blocks);
+  const tailPromptBoundary = trimTailPromptTurnBoundary(session.blocks);
+  const blocks = tailPromptBoundary.shouldTrim
+    ? tailPromptBoundary.blocks
+    : removePendingPromptBlocks(session.blocks);
+  const lifecycle = transitionTurn(session.lifecycle, {
+    type: "turn_ended",
+    reason: mapTerminalReason(parseEndedPayload(payload)?.reason),
+  });
+  if (blocks === session.blocks && lifecycle === session.lifecycle) return;
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...(blocks === session.blocks ? {} : blocksPatchWithDerived(state, blocks)),
-      lifecycle: transitionTurn(session.lifecycle, {
-        type: "turn_ended",
-        reason: mapTerminalReason(parseEndedPayload(payload)?.reason),
-      }),
+      lifecycle,
     }),
   );
 }

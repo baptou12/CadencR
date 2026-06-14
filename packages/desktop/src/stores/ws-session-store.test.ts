@@ -295,7 +295,7 @@ describe("ws-session-store", () => {
     expect(userBlock?.clientMessageId).toBeUndefined();
   });
 
-  it("keeps a pending steering prompt across old turn completion until receipt", async () => {
+  it("keeps a pending steering prompt after stop and clears it on resumed activity", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -366,26 +366,18 @@ describe("ws-session-store", () => {
       content: "steer now",
       promptDeliveryState: "pending_agent",
     });
-    expect(session.lifecycle).toEqual({ phase: "active" });
+    expect(session.lifecycle).toEqual({
+      phase: "terminal",
+      reason: "completed",
+    });
     expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(false);
 
+    store.sendPrompt("s1", "resume please");
     ws.simulateMessage({
       domain: "session",
       action: "prompt_received",
       payload: { client_message_id: sent.payload.client_message_id },
     });
-
-    userBlocks = useWsSessionStore
-      .getState()
-      .sessions["s1"].blocks.filter((block) => block.type === "user_message");
-    session = useWsSessionStore.getState().sessions["s1"];
-    expect(userBlocks).toHaveLength(1);
-    expect(userBlocks[0]).toMatchObject({
-      content: "steer now",
-      promptDeliveryState: "received_agent",
-    });
-    expect(session.lifecycle).toEqual({ phase: "active" });
-    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(false);
 
     ws.simulateMessage({
       domain: "session",
@@ -401,18 +393,29 @@ describe("ws-session-store", () => {
         ],
       },
     });
+
+    session = useWsSessionStore.getState().sessions["s1"];
+    userBlocks = session.blocks.filter((block) => block.type === "user_message");
+    expect(session.lifecycle).toEqual({ phase: "active" });
+    expect(userBlocks).toHaveLength(2);
+    expect(userBlocks[0]).toMatchObject({
+      content: "steer now",
+      promptDeliveryState: "received_agent",
+    });
+    expect(userBlocks[0].clientMessageId).toBeUndefined();
+    expect(userBlocks[1]).toMatchObject({ content: "resume please" });
+    expect(userBlocks[1].promptDeliveryState).toBeUndefined();
+    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(false);
+
     ws.simulateMessage({
       domain: "session",
       action: "ended",
       payload: { reason: "turn_complete" },
     });
-
-    session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.lifecycle).toEqual({
+    expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
       phase: "terminal",
       reason: "completed",
     });
-    expect(session.blocks.filter((block) => block.type === "user_message")).toHaveLength(1);
   });
 
   it("sendPrompt before initialized queues prompt and flushes after initialized", async () => {

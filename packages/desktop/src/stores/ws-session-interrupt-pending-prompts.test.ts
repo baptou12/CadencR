@@ -86,7 +86,7 @@ afterEach(() => {
 });
 
 describe("interrupt pending steering prompts", () => {
-  it("replays a pending steering prompt after interrupt without duplicating the local block", async () => {
+  it("keeps a pending steering prompt after the interrupted turn completes", async () => {
     const ws = await connectInitializedReceiptSession();
     const store = useWsSessionStore.getState();
 
@@ -97,17 +97,26 @@ describe("interrupt pending steering prompts", () => {
     store.interrupt("s1");
 
     const sent = ws.sent.map((raw) => JSON.parse(raw));
-    expect(sent.map((envelope) => envelope.action)).toEqual(["interrupt", "prompt.send"]);
-    expect(sent[1].payload).toMatchObject({
-      session_id: "srv-1",
-      text: "steer now",
-      client_message_id: originalPrompt.payload.client_message_id,
-      replay: true,
+    expect(sent.map((envelope) => envelope.action)).toEqual(["interrupt"]);
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "ended",
+      payload: { reason: "turn_complete" },
     });
-    expect(useWsSessionStore.getState().sessions.s1.blocks).toHaveLength(2);
+
+    const afterEnded = ws.sent.map((raw) => JSON.parse(raw));
+    expect(afterEnded.map((envelope) => envelope.action)).toEqual(["interrupt"]);
+    expect(
+      useWsSessionStore
+        .getState()
+        .sessions.s1.blocks.find(
+          (block) => block.clientMessageId === originalPrompt.payload.client_message_id,
+        )?.promptDeliveryState,
+    ).toBe("pending_agent");
   });
 
-  it("replays multiple pending steering prompts in order and skips received prompts", async () => {
+  it("does not replay pending steering prompts when an interrupted turn ends", async () => {
     const ws = await connectInitializedReceiptSession();
     const store = useWsSessionStore.getState();
 
@@ -125,9 +134,22 @@ describe("interrupt pending steering prompts", () => {
     store.interrupt("s1");
 
     const sent = ws.sent.map((raw) => JSON.parse(raw));
-    expect(sent.map((envelope) => envelope.action)).toEqual(["interrupt", "prompt.send"]);
-    expect(sent[1].payload.text).toBe("second");
-    expect(sent[1].payload.client_message_id).toBe(second.payload.client_message_id);
-    expect(sent[1].payload.replay).toBe(true);
+    expect(sent.map((envelope) => envelope.action)).toEqual(["interrupt"]);
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "ended",
+      payload: { reason: "turn_complete" },
+    });
+
+    const afterEnded = ws.sent.map((raw) => JSON.parse(raw));
+    expect(afterEnded.map((envelope) => envelope.action)).toEqual(["interrupt"]);
+    expect(
+      useWsSessionStore
+        .getState()
+        .sessions.s1.blocks.find(
+          (block) => block.clientMessageId === second.payload.client_message_id,
+        )?.promptDeliveryState,
+    ).toBe("pending_agent");
   });
 });
