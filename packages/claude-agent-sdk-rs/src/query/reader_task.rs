@@ -17,7 +17,7 @@ use super::permission_dispatch::handle_can_use_tool_request;
 use super::turn_state::TurnState;
 use super::wire::{
     build_success_ack, control_request_subtype, parse_control_response, parse_permission_request,
-    write_to_stdin, PendingControl,
+    write_to_stdin, InterruptAck, PendingControl,
 };
 
 pub(super) struct ReaderTask {
@@ -30,7 +30,7 @@ pub(super) struct ReaderTask {
     pub turn_state: Arc<Mutex<TurnState>>,
     pub pending_control: PendingControl,
     pub cancel_token: Option<CancellationToken>,
-    pub interrupt_rx: mpsc::Receiver<()>,
+    pub interrupt_rx: mpsc::Receiver<InterruptAck>,
     pub kill_rx: mpsc::Receiver<()>,
 }
 
@@ -63,11 +63,13 @@ impl ReaderTask {
     async fn next_action(&mut self) -> ReaderAction {
         tokio::select! {
             result = self.process.read_message() => self.handle_read_result(result).await,
-            _ = self.interrupt_rx.recv() => {
+            Some(ack) = self.interrupt_rx.recv() => {
                 debug!("interrupt signal received, sending SIGINT to CLI process");
-                if let Err(e) = self.process.interrupt().await {
-                    warn!("failed to interrupt CLI process: {e}");
+                let result = self.process.interrupt().await;
+                if let Err(error) = &result {
+                    warn!("failed to interrupt CLI process: {error}");
                 }
+                let _ = ack.send(result);
                 ReaderAction::Continue
             }
             _ = self.kill_rx.recv() => {

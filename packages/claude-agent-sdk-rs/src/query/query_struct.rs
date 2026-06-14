@@ -17,7 +17,7 @@ use crate::messages::SdkMessage;
 use crate::types::McpServerStatus;
 
 use super::turn_state::TurnState;
-use super::wire::PendingControl;
+use super::wire::{InterruptAck, PendingControl};
 
 /// A running Claude Code CLI query with streaming output and turn management.
 ///
@@ -66,8 +66,8 @@ pub struct Query {
     /// Background reader task handle (for cleanup).
     pub(super) reader_task: Option<tokio::task::JoinHandle<()>>,
 
-    /// Channel to signal the reader task to send SIGINT to the CLI process.
-    pub(super) interrupt_tx: mpsc::Sender<()>,
+    /// Channel to ask the reader task to send SIGINT to the CLI process.
+    pub(super) interrupt_tx: mpsc::Sender<InterruptAck>,
 
     /// Channel to signal the reader task to gracefully kill the CLI process.
     pub(super) kill_tx: mpsc::Sender<()>,
@@ -139,21 +139,6 @@ impl Query {
         self.turn_state.lock().await.clone()
     }
 
-    /// Interrupt the agent (SIGINT). The CLI will finish its current turn
-    /// and emit a `Result` message. The session can be resumed later.
-    ///
-    /// The signal is routed through a channel to the background reader task,
-    /// which owns the `CliProcess` and calls its `interrupt()` method.
-    /// This avoids caching a stale PID (the process could have exited and
-    /// the PID could have been reused by the OS).
-    pub async fn interrupt(&self) -> Result<(), SdkError> {
-        self.interrupt_tx
-            .send(())
-            .await
-            .map_err(|_| SdkError::InputClosed)?;
-        Ok(())
-    }
-
     /// Get the PID of the CLI subprocess (captured at spawn time).
     /// Returns `None` for test stubs or if the process had no PID.
     pub fn pid(&self) -> Option<u32> {
@@ -191,7 +176,7 @@ impl Query {
     pub fn new_test_stub(session_id: Option<String>) -> Self {
         let (msg_tx, message_rx) = mpsc::channel(1);
         drop(msg_tx); // close immediately so stream_input will fail
-        let (interrupt_tx, _interrupt_rx) = mpsc::channel(1);
+        let (interrupt_tx, _interrupt_rx) = mpsc::channel::<InterruptAck>(1);
         let (kill_tx, _kill_rx) = mpsc::channel(1);
         Self {
             message_rx,
