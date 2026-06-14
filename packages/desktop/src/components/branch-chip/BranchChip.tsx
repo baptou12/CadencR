@@ -88,6 +88,7 @@ export const BranchChip = memo(function BranchChip({
             <HoverCard.Content
               side="bottom"
               align="end"
+              data-slot="hover-card-content"
               className="z-50 w-72 rounded-md border bg-popover p-3 text-popover-foreground shadow-md"
             >
               <p className="font-medium text-xs mb-1">Shared worktree</p>
