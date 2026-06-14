@@ -9,20 +9,16 @@ Previous release: v0.4.1 - 2026-06-10
 - [**Desktop**] Added an embedded Browser workspace tab with per-feature tabs, an address bar, normal/private browsing modes, comments, keyboard shortcuts, permission-gated local-file and external-URL opens, and the `cadencr-browser` MCP tools agents need to test web work in-place: outline snapshots with element refs, scoped HTML snapshots, partial page screenshots, console and network inspection, waits, clicks, fills, hovers, keypresses, JavaScript evaluation, and user-selected element context.
 - [**Desktop**] Added a Git graph view with commit rows, changed-file diffs, and online commit links to make branch history easier to inspect from the Git tab.
 - [**Desktop**] Added Frost Dark and Frost Light glass themes with matching editor, diff, terminal, modal, and popover styling.
-- [**Desktop**] Added sidebar activity indicators for browser, shell, terminal, and custom-action activity so busy features are easier to spot.
+- [**Desktop**] Added sidebar activity indicators for busy feature surfaces so active work is easier to spot.
 
 ### 🔧 Changed
 
-- [**Desktop**] Scoped browser tabs to their feature, added browser default-mode and MCP-enable settings, and kept browser tabs integrated with the feature layout instead of sharing global tab state.
 - [**Desktop**] Replaced the file-tree worktree header with a file-search trigger so opening files from the editor area takes fewer clicks.
 - [**Desktop**] Switched the Cadencr wordmark to Figtree 800 across the splash screen, sidebar, and onboarding for more consistent branding.
 - [**Desktop**] Tuned Frost vibrancy, split-tab glass, modal scrims, overlays, popovers, and ambient halo animation, including throttling the halo while idle to reduce GPU use.
 
 ### 🐛 Fixed
 
-- [**Desktop**] Fixed embedded-browser sizing after app zoom changes by scaling native view bounds with the renderer zoom factor.
-- [**Desktop**] Fixed browser MCP URL opens so repeat opens reuse the active browser tab instead of spawning unnecessary tabs.
-- [**Desktop**] Fixed browser focus handling so the agent prompt keeps focus and browser tabs stay scoped to the current feature.
 - [**provider:claude**] Fixed queued Claude Code prompts and interrupted turns so prompts are acknowledged on the next response and interrupted turns wait for completion instead of leaving stale state behind.
 - [**Desktop**] Fixed pending steering prompts so they no longer keep turns active after the pending state has cleared.
 - [**Desktop**] Fixed sent prompt drafts so submitted text does not reappear in the input.
@@ -30,11 +26,6 @@ Previous release: v0.4.1 - 2026-06-10
 - [**Desktop**] Fixed dropdown submenus that were clipped by parent overflow by rendering them through a portal.
 - [**Desktop**] Fixed Git diff navigation so selecting a changed file reliably scrolls to that file.
 - [**Desktop**] Fixed Frost theme readability and blur behavior in packaged builds, including modal readability when `backdrop-filter` is unavailable and blurred Git graph hover cards.
-
-### 🔒 Security
-
-- [**Desktop**] Added permission-gated local-file and external-URL handling for the embedded browser so local files and external destinations are opened deliberately.
-- [**provider:codex**] Auto-allowed only trusted Cadencr browser MCP permissions for Codex sessions so browser automation can work without broadly approving unrelated MCP tools.
 
 ## v0.4.1 - 2026-06-10
 
