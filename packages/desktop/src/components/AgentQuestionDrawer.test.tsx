@@ -138,6 +138,51 @@ describe("AgentQuestionDrawer", () => {
     expect(screen.getAllByText("-").length).toBeGreaterThan(0);
   });
 
+  it("re-enables the digit badges on the next question after submitting Other via Enter", async () => {
+    // Regression: submitting the "Other" free-text via Enter unmounts the input
+    // before its onBlur fires, so the freeTextFocused flag leaked as `true` into
+    // the next question — leaving the 1-9 badges dimmed (showing "-") even though
+    // "Other" was never selected. resetState must clear the flag.
+    const user = userEvent.setup();
+    render(
+      <AgentQuestionDrawer
+        questions={[questionWithOptions, questionWithOptions]}
+        onSubmit={onSubmit}
+        open
+      />,
+    );
+
+    // Q1: open "Other", focus + type into the free-text input, submit with Enter.
+    const otherBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Other"))!;
+    await user.click(otherBtn);
+    const input = screen.getByRole("textbox");
+    await user.click(input);
+    await user.type(input, "custom answer{Enter}");
+
+    // Q2 is now shown with no input focused, so the digit badges must be active.
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.queryByText("-")).toBeNull();
+  });
+
+  it("re-enables the digit badges after submitting Other via Enter on the final question", async () => {
+    // Same leak, but on the last question: resetState runs after onSubmit, and the
+    // drawer stays mounted (open) showing question 1 again, so the badges must reset.
+    const user = userEvent.setup();
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+
+    const otherBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Other"))!;
+    await user.click(otherBtn);
+    const input = screen.getByRole("textbox");
+    await user.click(input);
+    await user.type(input, "custom answer{Enter}");
+
+    expect(onSubmit).toHaveBeenCalledWith([["custom answer"]]);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.queryByText("-")).toBeNull();
+  });
+
   it("shows first question when multiple questions provided", () => {
     render(
       <AgentQuestionDrawer
