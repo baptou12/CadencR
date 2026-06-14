@@ -84,6 +84,10 @@ export function AgentQuestionDrawer({
     setSelectedOptions(new Set());
     setFreeText("");
     setShowOther(false);
+    // Submitting via Enter (or any path that unmounts the input) never fires
+    // its onBlur, so clear the focus flag here — otherwise the 1-9 badges stay
+    // dimmed on the next question even though "Other" isn't selected.
+    setFreeTextFocused(false);
   }, []);
 
   const getCurrentAnswerText = useCallback((): string => {
@@ -232,6 +236,8 @@ export function AgentQuestionDrawer({
         setSelectedOptions(new Set(nextSaved.selectedOptions));
         setFreeText(nextSaved.freeText);
         setShowOther(nextSaved.showOther);
+        // The restored input isn't focused; clear the flag so 1-9 stay active.
+        setFreeTextFocused(false);
       } else {
         resetState();
       }
