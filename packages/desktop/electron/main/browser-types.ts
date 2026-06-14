@@ -4,6 +4,7 @@ export type {
   BrowserConsoleEntry,
   BrowserElementContext,
   BrowserNetworkEntry,
+  BrowserOpenUrlOptions,
   BrowserProfileMetadata,
   BrowserShortcut,
   BrowserStateSnapshot,

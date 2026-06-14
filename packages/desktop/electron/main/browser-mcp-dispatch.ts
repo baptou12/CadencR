@@ -2,11 +2,13 @@ import type {
   BrowserBounds,
   BrowserElementContext,
   BrowserNetworkEntry,
+  BrowserOpenUrlOptions,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "./browser-types";
 import type { BrowserTarget } from "./browser-interactions";
 import {
+  optionalBoolean,
   optionalNumber,
   optionalString,
   positiveInt,
@@ -16,12 +18,8 @@ import {
 
 export interface BrowserMcpTarget {
   state(scopeId?: number | null): BrowserStateSnapshot;
-  openUrl(url: string, tabId?: string, scopeId?: number | null): Promise<BrowserTabMetadata>;
-  openExternalUrl(
-    url: string,
-    tabId?: string,
-    scopeId?: number | null,
-  ): Promise<BrowserTabMetadata>;
+  openUrl(url: string, options?: BrowserOpenUrlOptions): Promise<BrowserTabMetadata>;
+  openExternalUrl(url: string, options?: BrowserOpenUrlOptions): Promise<BrowserTabMetadata>;
   snapshot(tabId: string, selector?: string, maxLength?: number, format?: string): Promise<unknown>;
   screenshot(tabId: string, clip?: BrowserBounds): Promise<string>;
   screenshotTarget(tabId: string, target: BrowserTarget): Promise<string>;
@@ -58,18 +56,14 @@ export async function dispatchBrowserMcpTool(
   switch (toolName) {
     case "browser_list_tabs":
       return text(target.state(scopeId));
-    case "browser_open_url":
-      return text(
-        await target.openUrl(requiredString(args.url, "url"), optionalString(args.tab_id), scopeId),
-      );
-    case "browser_open_external_url":
-      return text(
-        await target.openExternalUrl(
-          requiredString(args.url, "url"),
-          optionalString(args.tab_id),
-          scopeId,
-        ),
-      );
+    case "browser_open_url": {
+      const { url, options } = parseOpenUrlArgs(args, scopeId);
+      return text(await target.openUrl(url, options));
+    }
+    case "browser_open_external_url": {
+      const { url, options } = parseOpenUrlArgs(args, scopeId);
+      return text(await target.openExternalUrl(url, options));
+    }
     case "browser_get_console":
       return getConsole(target, args, scopeId);
     case "browser_get_network":
@@ -108,6 +102,20 @@ export async function dispatchBrowserMcpTool(
     default:
       throw new Error(`Unknown Browser MCP tool: ${toolName}`);
   }
+}
+
+function parseOpenUrlArgs(
+  args: Record<string, unknown>,
+  scopeId?: number | null,
+): { url: string; options: BrowserOpenUrlOptions } {
+  return {
+    url: requiredString(args.url, "url"),
+    options: {
+      tabId: optionalString(args.tab_id),
+      newTab: optionalBoolean(args.new_tab) ?? false,
+      scopeId,
+    },
+  };
 }
 
 async function screenshot(

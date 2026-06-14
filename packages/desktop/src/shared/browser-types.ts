@@ -24,6 +24,12 @@ export interface BrowserTabMetadata {
   scopeId: number | null;
 }
 
+export interface BrowserOpenUrlOptions {
+  tabId?: string;
+  newTab?: boolean;
+  scopeId?: number | null;
+}
+
 export interface BrowserConsoleEntry {
   id: string;
   tabId: string;

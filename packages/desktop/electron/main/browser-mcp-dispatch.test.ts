@@ -57,7 +57,24 @@ describe("dispatchBrowserMcpTool", () => {
     await dispatchBrowserMcpTool(fake, "browser_open_url", {
       url: "http://localhost:3000",
     });
-    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", undefined, undefined);
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", {
+      tabId: undefined,
+      newTab: false,
+      scopeId: undefined,
+    });
+  });
+
+  it("forwards new_tab for browser_open_url", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_open_url", {
+      url: "http://localhost:3000",
+      new_tab: true,
+    });
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", {
+      tabId: undefined,
+      newTab: true,
+      scopeId: undefined,
+    });
   });
 
   it("navigates an existing tab when browser_open_url includes tab_id", async () => {
@@ -66,13 +83,21 @@ describe("dispatchBrowserMcpTool", () => {
       tab_id: "tab-1",
       url: "http://localhost:3000",
     });
-    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", "tab-1", undefined);
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", {
+      tabId: "tab-1",
+      newTab: false,
+      scopeId: undefined,
+    });
   });
 
   it("opens an agent tab in the calling feature's scope", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_open_url", { url: "http://localhost:3000" }, 42);
-    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", undefined, 42);
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", {
+      tabId: undefined,
+      newTab: false,
+      scopeId: 42,
+    });
   });
 
   it("routes browser_open_external_url to the external opener", async () => {
@@ -80,7 +105,24 @@ describe("dispatchBrowserMcpTool", () => {
     await dispatchBrowserMcpTool(fake, "browser_open_external_url", {
       url: "https://example.com",
     });
-    expect(fake.openExternalUrl).toHaveBeenCalledWith("https://example.com", undefined, undefined);
+    expect(fake.openExternalUrl).toHaveBeenCalledWith("https://example.com", {
+      tabId: undefined,
+      newTab: false,
+      scopeId: undefined,
+    });
+  });
+
+  it("forwards new_tab for browser_open_external_url", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_open_external_url", {
+      url: "https://example.com",
+      new_tab: true,
+    });
+    expect(fake.openExternalUrl).toHaveBeenCalledWith("https://example.com", {
+      tabId: undefined,
+      newTab: true,
+      scopeId: undefined,
+    });
   });
 
   it("passes selector, max_length and format to browser_get_snapshot", async () => {

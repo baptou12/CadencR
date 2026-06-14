@@ -22,6 +22,10 @@ export class BrowserScopeState {
     this.globalActiveTabId = tabId;
   }
 
+  activeTabId(scopeId: number | null | undefined): string | null {
+    return scopeId === undefined ? this.globalActiveTabId : (this.active.get(scopeId) ?? null);
+  }
+
   /**
    * A zero-size viewport means the workspace is hidden/unmounted: drop the scope
    * so its tabs detach and it stops receiving state broadcasts.
