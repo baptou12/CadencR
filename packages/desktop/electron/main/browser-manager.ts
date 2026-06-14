@@ -54,6 +54,7 @@ const MAX_NETWORK_PER_TAB = 2000;
 
 export class BrowserManager {
   private readonly tabs = new Map<string, ManagedTab>();
+  private lastTabCountsByScope: Record<number, number> = {};
   // Per-feature-scope active-tab + viewport-bounds bookkeeping. Tabs are
   // isolated by scope so a tab opened in one feature's Browser never leaks into
   // another's.
@@ -93,6 +94,7 @@ export class BrowserManager {
       externalAutomationOrigin: null,
     };
     this.tabs.set(id, tab);
+    this.emitTabCountsIfChanged();
     installTabEvents(tab, {
       // Every tab event belongs to this tab's scope, so its state push targets
       // that scope alone.
@@ -121,6 +123,16 @@ export class BrowserManager {
 
   listTabs(scopeId?: number | null): BrowserTabMetadata[] {
     return this.state(scopeId).tabs;
+  }
+
+  tabCountsByScope(): Record<number, number> {
+    const counts: Record<number, number> = {};
+    for (const tab of this.tabs.values()) {
+      const scope = tab.metadata.scopeId;
+      if (scope === null) continue;
+      counts[scope] = (counts[scope] ?? 0) + 1;
+    }
+    return counts;
   }
 
   navigate(tabId: string, rawUrl: string): BrowserTabMetadata {
@@ -164,6 +176,7 @@ export class BrowserManager {
     if (tab.devtoolsView) this.layout.detach(tab.devtoolsView);
     tab.view.webContents.close();
     this.tabs.delete(tabId);
+    this.emitTabCountsIfChanged();
     // Closing a scope's active tab promotes the next tab *in the same scope*,
     // so closing a tab never reveals another feature's tab.
     const next = this.scopes.forget(scope, tabId, this.tabs);
@@ -341,11 +354,28 @@ export class BrowserManager {
    * Scopeless (agent/MCP) tabs have no UI workspace, so they aren't broadcast.
    */
   private emitState(scope: number | null): void {
+    const win = this.getMainWindow();
     if (scope === null) return;
-    sendToWindow(this.getMainWindow(), "browser:state", this.state(scope));
+    sendToWindow(win, "browser:state", this.state(scope));
+  }
+
+  private emitTabCountsIfChanged(): void {
+    const counts = this.tabCountsByScope();
+    if (tabCountRecordsEqual(this.lastTabCountsByScope, counts)) return;
+    this.lastTabCountsByScope = counts;
+    sendToWindow(this.getMainWindow(), "browser:tab-counts", counts);
   }
 
   private emitShortcut(shortcut: BrowserShortcut): void {
     sendToWindow(this.getMainWindow(), "browser:shortcut", shortcut);
   }
+}
+
+function tabCountRecordsEqual(a: Record<number, number>, b: Record<number, number>): boolean {
+  const leftKeys = Object.keys(a);
+  const rightKeys = Object.keys(b);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => a[Number(key)] === b[Number(key)])
+  );
 }

@@ -70,6 +70,12 @@ pub struct IsEmptyResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct FeatureActivity {
+    pub feature_id: i64,
+    pub shell_count: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct WorkingDirResponse {
     pub path: Option<String>,
 }

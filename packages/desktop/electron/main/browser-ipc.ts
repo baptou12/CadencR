@@ -32,6 +32,10 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
     assertTrustedSender(event, options.getMainWindow);
     return manager.state(optionalNumber(scopeId) ?? null);
   });
+  ipcMain.handle("browser:tab-counts-by-scope", (event) => {
+    assertTrustedSender(event, options.getMainWindow);
+    return manager.tabCountsByScope();
+  });
   ipcMain.handle("browser:navigate", (event, tabId: unknown, rawUrl: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
     return manager.navigate(requiredString(tabId, "tab id"), requiredString(rawUrl, "URL"));

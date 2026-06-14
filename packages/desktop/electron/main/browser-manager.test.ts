@@ -164,6 +164,31 @@ describe("BrowserManager", () => {
     ).toEqual([a.id, b.id].sort());
   });
 
+  it("counts open tabs by feature scope", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    manager.createTab(undefined, "fresh", 1);
+    manager.createTab(undefined, "fresh", 2);
+    manager.createTab(undefined, "fresh", null);
+
+    expect(manager.tabCountsByScope()).toEqual({ 1: 2, 2: 1 });
+  });
+
+  it("emits tab counts only when tab membership changes", () => {
+    const win = mainWindow();
+    const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "fresh", 1);
+
+    expect(win.webContents.send).toHaveBeenCalledWith("browser:tab-counts", { 1: 1 });
+    win.webContents.send.mockClear();
+
+    manager.navigate(tab.id, "http://localhost:1420");
+    expect(win.webContents.send).not.toHaveBeenCalledWith("browser:tab-counts", expect.anything());
+
+    manager.closeTab(tab.id);
+    expect(win.webContents.send).toHaveBeenCalledWith("browser:tab-counts", {});
+  });
+
   it("promotes the next tab in the same scope when a feature's active tab closes", () => {
     const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
     const a1 = manager.createTab(undefined, "fresh", 1);

@@ -6,6 +6,7 @@ import { shouldIgnoreFeatureRowKeyDown } from "./ProjectFeatureRow";
 import { resetMockIds } from "@/test-fixtures";
 import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
+import { useBrowserStore } from "@/stores/browser-store";
 
 type UserEvent = ReturnType<typeof userEvent.setup>;
 
@@ -33,11 +34,22 @@ interface MockFeatureWorktreeInfo {
   live: boolean;
 }
 
-const { mockListFeatureWorktrees, mockGetGitStatus } = vi.hoisted(() => ({
+interface MockStatsParams {
+  feature_id: number;
+}
+
+interface MockStatsResult {
+  data: { insertions: number; deletions: number } | undefined;
+}
+
+const { mockListFeatureWorktrees, mockGetGitStatus, mockUseGetStats } = vi.hoisted(() => ({
   mockListFeatureWorktrees: vi.fn<() => { data: MockFeatureWorktreeInfo[] }>(() => ({
     data: [],
   })),
   mockGetGitStatus: vi.fn(() => ({ data: undefined, isLoading: false })),
+  mockUseGetStats: vi.fn<(params: MockStatsParams) => MockStatsResult>(() => ({
+    data: undefined,
+  })),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -84,6 +96,19 @@ const mockFeatures = [
 vi.mock("@/api/generated", () => ({
   FeatureStatus: { active: "active", archived: "archived" },
   useListFeatures: vi.fn(() => ({ data: mockFeatures })),
+  useListFeatureActivity: vi.fn(() => ({
+    data: [
+      {
+        feature_id: 1,
+        shell_count: 2,
+      },
+      {
+        feature_id: 2,
+        shell_count: 0,
+      },
+    ],
+    error: null,
+  })),
   useUpdateFeatureLabel: vi.fn(
     (opts?: { onSuccess?: (data: unknown, variables: unknown) => void }) => ({
       mutate: (data: unknown) => {
@@ -124,7 +149,7 @@ vi.mock("@/api/generated", () => ({
   getGetFeatureSettingsQueryKey: vi.fn((id: number) => ["features", "settings", id]),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: mockListFeatureWorktrees,
-  useGetStats: vi.fn(() => ({ data: undefined })),
+  useGetStats: mockUseGetStats,
   getFeatureAgentState: vi.fn(() => Promise.resolve({ sessions: [] })),
   getGetFeatureAgentStateQueryKey: (id: number) => [`/api/features/${id}/agent-state`] as const,
   getBranch: vi.fn(() => Promise.resolve({ branch: "main" })),
@@ -150,7 +175,9 @@ describe("ProjectFeatures", () => {
     mockDeleteBranch.mockClear();
     mockListFeatureWorktrees.mockReturnValue({ data: [] });
     mockGetGitStatus.mockReturnValue({ data: undefined, isLoading: false });
+    mockUseGetStats.mockReturnValue({ data: undefined });
     useFeatureLayoutStore.setState({ features: {} });
+    useBrowserStore.setState({ snapshot: null, countsByScope: { 1: 3 } });
   });
 
   it("renders feature list", () => {
@@ -257,6 +284,50 @@ describe("ProjectFeatures", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Auto-rename" })).not.toBeInTheDocument();
+  });
+
+  it("renders per-feature shell and browser indicators when counts are nonzero", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("2 shell commands running")).toBeInTheDocument();
+    expect(screen.getByLabelText("3 browser tabs open")).toBeInTheDocument();
+    expect(screen.queryByLabelText("0 shell commands running")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("0 browser tabs open")).not.toBeInTheDocument();
+  });
+
+  it("places activity indicators directly after numstats on the second metadata line", () => {
+    mockUseGetStats.mockImplementation((params: { feature_id: number }) => ({
+      data: params.feature_id === 1 ? { insertions: 7, deletions: 4 } : undefined,
+    }));
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByText("Feature One").closest("[role=button]");
+    if (!row) throw new Error("Feature One row not found");
+
+    const metaLine = row.querySelector("[data-feature-meta-line]");
+    const indicators = row.querySelector("[data-feature-activity-indicators]");
+
+    expect(metaLine).not.toBeNull();
+    expect(indicators).not.toBeNull();
+    expect(indicators).not.toHaveClass("ml-auto");
+    expect(indicators?.previousElementSibling?.textContent).toContain("+7");
+    expect(indicators?.previousElementSibling?.textContent).toContain("-4");
+    expect(indicators?.contains(screen.getByLabelText("2 shell commands running"))).toBe(true);
+    expect(indicators?.contains(screen.getByLabelText("3 browser tabs open"))).toBe(true);
   });
 
   it("renders status badges for features", () => {

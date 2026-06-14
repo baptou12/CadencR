@@ -201,6 +201,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:create-tab", url, profileId, scopeId),
   listBrowserTabs: (scopeId?: number | null): Promise<BrowserStateSnapshot> =>
     ipcRenderer.invoke("browser:list-tabs", scopeId),
+  listBrowserTabCountsByScope: (): Promise<Record<number, number>> =>
+    ipcRenderer.invoke("browser:tab-counts-by-scope"),
   navigateBrowserTab: (tabId: string, url: string): Promise<BrowserTabMetadata> =>
     ipcRenderer.invoke("browser:navigate", tabId, url),
   activateBrowserTab: (tabId: string): Promise<BrowserTabMetadata> =>
@@ -249,6 +251,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:clear-comment-badges", tabId),
   onBrowserState: (cb: (state: BrowserStateSnapshot) => void): (() => void) =>
     onIpc("browser:state", cb),
+  onBrowserTabCounts: (cb: (counts: Record<number, number>) => void): (() => void) =>
+    onIpc("browser:tab-counts", cb),
   onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void): (() => void) =>
     onIpc("browser:shortcut", cb),
   onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void): (() => void) =>

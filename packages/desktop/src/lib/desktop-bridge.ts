@@ -150,6 +150,7 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
     scopeId?: number | null,
   ) => Promise<BrowserTabMetadata>;
   listBrowserTabs: (scopeId?: number | null) => Promise<BrowserStateSnapshot>;
+  listBrowserTabCountsByScope: () => Promise<Record<number, number>>;
   navigateBrowserTab: (tabId: string, url: string) => Promise<BrowserTabMetadata>;
   activateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
   closeBrowserTab: (tabId: string) => Promise<BrowserStateSnapshot>;
@@ -181,6 +182,7 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   /** Remove every on-page comment badge from the tab. */
   clearBrowserCommentBadges: (tabId: string) => Promise<void>;
   onBrowserState: (cb: (state: BrowserStateSnapshot) => void) => () => void;
+  onBrowserTabCounts: (cb: (counts: Record<number, number>) => void) => () => void;
   onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void) => () => void;
   /** A user click on an on-page comment badge, to reopen that comment's composer. */
   onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void) => () => void;
@@ -244,6 +246,7 @@ const browserBridge: CadencrBrowserBridge = {
 
   createBrowserTab: () => unavailable("createBrowserTab"),
   listBrowserTabs: () => unavailable("listBrowserTabs"),
+  listBrowserTabCountsByScope: () => Promise.resolve({}),
   navigateBrowserTab: () => unavailable("navigateBrowserTab"),
   activateBrowserTab: () => unavailable("activateBrowserTab"),
   closeBrowserTab: () => unavailable("closeBrowserTab"),
@@ -273,6 +276,7 @@ const browserBridge: CadencrBrowserBridge = {
   removeBrowserCommentBadge: () => Promise.resolve(),
   clearBrowserCommentBadges: () => Promise.resolve(),
   onBrowserState: () => () => undefined,
+  onBrowserTabCounts: () => () => undefined,
   onBrowserShortcut: () => () => undefined,
   onBrowserCommentBadgeClick: () => () => undefined,
   checkForUpdates: () => unavailable("checkForUpdates"),

@@ -11,7 +11,12 @@ use tokio::sync::{Mutex, Notify};
 /// fires. The map is keyed by the `custom_action_runs` row id.
 #[derive(Default)]
 pub struct CustomActionRunRegistry {
-    inner: Mutex<HashMap<i64, Arc<Notify>>>,
+    inner: Mutex<HashMap<i64, RunEntry>>,
+}
+
+struct RunEntry {
+    feature_id: i64,
+    cancel: Arc<Notify>,
 }
 
 impl CustomActionRunRegistry {
@@ -21,9 +26,15 @@ impl CustomActionRunRegistry {
 
     /// Register `run_id` and hand back its cancel signal. The run task holds the
     /// returned handle and awaits `notified()`.
-    pub async fn register(&self, run_id: i64) -> Arc<Notify> {
+    pub async fn register(&self, run_id: i64, feature_id: i64) -> Arc<Notify> {
         let notify = Arc::new(Notify::new());
-        self.inner.lock().await.insert(run_id, notify.clone());
+        self.inner.lock().await.insert(
+            run_id,
+            RunEntry {
+                feature_id,
+                cancel: notify.clone(),
+            },
+        );
         notify
     }
 
@@ -37,12 +48,20 @@ impl CustomActionRunRegistry {
     /// UI seeing it and the request landing.
     pub async fn cancel(&self, run_id: i64) -> bool {
         match self.inner.lock().await.get(&run_id) {
-            Some(notify) => {
-                notify.notify_one();
+            Some(entry) => {
+                entry.cancel.notify_one();
                 true
             }
             None => false,
         }
+    }
+
+    pub async fn counts_by_feature(&self) -> HashMap<i64, i64> {
+        let mut counts = HashMap::new();
+        for entry in self.inner.lock().await.values() {
+            *counts.entry(entry.feature_id).or_insert(0) += 1;
+        }
+        counts
     }
 }
 
@@ -59,7 +78,7 @@ mod tests {
     #[tokio::test]
     async fn registered_run_can_be_cancelled_then_unregistered() {
         let registry = CustomActionRunRegistry::new();
-        let signal = registry.register(7).await;
+        let signal = registry.register(7, 42).await;
 
         // The notify fires for the awaiting run task.
         let waiter = tokio::spawn(async move { signal.notified().await });
@@ -71,5 +90,18 @@ mod tests {
             !registry.cancel(7).await,
             "no longer tracked after unregister"
         );
+    }
+
+    #[tokio::test]
+    async fn counts_registered_runs_by_feature() {
+        let registry = CustomActionRunRegistry::new();
+        registry.register(7, 42).await;
+        registry.register(8, 42).await;
+        registry.register(9, 99).await;
+
+        let counts = registry.counts_by_feature().await;
+
+        assert_eq!(counts.get(&42), Some(&2));
+        assert_eq!(counts.get(&99), Some(&1));
     }
 }

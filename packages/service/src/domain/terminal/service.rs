@@ -56,6 +56,7 @@ pub struct PtyHandle {
     /// discover and attach to the feature's live shells instead of spawning a
     /// new one — the broadcast channel already supports multiple subscribers.
     pub feature_id: i64,
+    pub shell_process_group_leader: Option<i32>,
 }
 
 /// A live PTY belonging to a feature, surfaced so another client can attach.
@@ -115,6 +116,10 @@ impl PtyManager {
         // Clone a killer handle before moving child into the blocking task.
         let killer = child.clone_killer();
 
+        #[cfg(unix)]
+        let shell_process_group_leader = pair.master.process_group_leader();
+        #[cfg(not(unix))]
+        let shell_process_group_leader = None;
         let handle = Arc::new(PtyHandle {
             master: Arc::new(Mutex::new(pair.master)),
             master_writer: Arc::new(Mutex::new(writer)),
@@ -124,6 +129,7 @@ impl PtyManager {
             data_tx: data_tx.clone(),
             cwd: cwd.to_string(),
             feature_id,
+            shell_process_group_leader,
         });
 
         self.terminals.insert(pty_id.clone(), Arc::clone(&handle));

@@ -9,15 +9,31 @@ import type { BrowserStateSnapshot } from "@/shared/browser-types";
  */
 interface BrowserStore {
   snapshot: BrowserStateSnapshot | null;
+  countsByScope: Record<number, number>;
   setSnapshot: (snapshot: BrowserStateSnapshot) => void;
+  setCountsByScope: (counts: Record<number, number>) => void;
 }
 
 export const useBrowserStore = create<BrowserStore>((set) => ({
   snapshot: null,
+  countsByScope: {},
   setSnapshot: (snapshot) => set({ snapshot }),
+  setCountsByScope: (counts) =>
+    set((state) =>
+      countRecordsEqual(state.countsByScope, counts) ? state : { countsByScope: counts },
+    ),
 }));
 
 /** Number of open browser tabs, read synchronously (0 before the browser opens). */
 export function browserTabCount(): number {
   return useBrowserStore.getState().snapshot?.tabs.length ?? 0;
+}
+
+function countRecordsEqual(a: Record<number, number>, b: Record<number, number>): boolean {
+  const leftKeys = Object.keys(a);
+  const rightKeys = Object.keys(b);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => a[Number(key)] === b[Number(key)])
+  );
 }

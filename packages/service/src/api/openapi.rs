@@ -107,6 +107,7 @@ use crate::domain::workspace::routes as workspace_routes;
         projects_routes::get_project_provider_settings_handler,
         projects_routes::set_project_provider_setting_handler,
         features_routes::list_features_handler,
+        features_routes::list_feature_activity_handler,
         features_routes::create_feature_handler,
         features_routes::get_feature_handler,
         features_routes::delete_feature_handler,

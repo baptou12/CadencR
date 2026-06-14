@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use sqlx::SqlitePool;
 
 use super::models::{
-    CreateFeatureResponse, Feature, FeatureModelSettings, FeatureProviderSettings, FeatureSetting,
-    FeatureStatus, IsEmptyResponse, WorkingDirResponse,
+    CreateFeatureResponse, Feature, FeatureActivity, FeatureModelSettings, FeatureProviderSettings,
+    FeatureSetting, FeatureStatus, IsEmptyResponse, WorkingDirResponse,
 };
 use super::repository;
 use crate::error::AppError;
@@ -17,6 +19,33 @@ pub async fn list_by_project(
 
 pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, AppError> {
     repository::get_by_id(pool, id).await
+}
+
+pub async fn list_activity(
+    pool: &SqlitePool,
+    project_id: i64,
+    include_archived: bool,
+    terminal_counts: HashMap<i64, i64>,
+    custom_action_counts: HashMap<i64, i64>,
+) -> Result<Vec<FeatureActivity>, AppError> {
+    let features = repository::list_by_project(pool, project_id, include_archived).await?;
+    Ok(features
+        .into_iter()
+        .map(|feature| {
+            let foreground_terminal_count = terminal_counts
+                .get(&feature.id)
+                .copied()
+                .unwrap_or_default();
+            let background_custom_action_count = custom_action_counts
+                .get(&feature.id)
+                .copied()
+                .unwrap_or_default();
+            FeatureActivity {
+                feature_id: feature.id,
+                shell_count: foreground_terminal_count + background_custom_action_count,
+            }
+        })
+        .collect())
 }
 
 /// Create a feature row and persist worktree-mode preferences atomically so a
@@ -182,4 +211,67 @@ pub async fn get_feature_cwd(pool: &SqlitePool, feature_id: i64) -> Result<Strin
         .0;
     let path = repository::resolve_working_dir(pool, feature_id, project_id).await?;
     path.ok_or_else(|| AppError::NotFound(format!("no working dir for feature {feature_id}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn pool_with_features() -> (SqlitePool, i64, i64, i64) {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        crate::shared::migrate::run_migrations(
+            &crate::shared::migrate::MigrationContext::pool_only(&pool),
+        )
+        .await
+        .unwrap();
+        let project_id: i64 = sqlx::query_scalar(
+            "INSERT INTO projects (name, path) VALUES ('p', '/tmp/p') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let first_id: i64 = sqlx::query_scalar(
+            "INSERT INTO features (project_id, title, status) VALUES (?, 'one', 'active') RETURNING id",
+        )
+        .bind(project_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let second_id: i64 = sqlx::query_scalar(
+            "INSERT INTO features (project_id, title, status) VALUES (?, 'two', 'active') RETURNING id",
+        )
+        .bind(project_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        (pool, project_id, first_id, second_id)
+    }
+
+    #[tokio::test]
+    async fn list_activity_combines_terminal_and_custom_action_counts() {
+        let (pool, project_id, first_id, second_id) = pool_with_features().await;
+        let terminal_counts = [(second_id, 2)].into_iter().collect();
+        let custom_action_counts = [(first_id, 1)].into_iter().collect();
+
+        let activity = list_activity(
+            &pool,
+            project_id,
+            false,
+            terminal_counts,
+            custom_action_counts,
+        )
+        .await
+        .unwrap();
+
+        let first = activity
+            .iter()
+            .find(|item| item.feature_id == first_id)
+            .unwrap();
+        let second = activity
+            .iter()
+            .find(|item| item.feature_id == second_id)
+            .unwrap();
+        assert_eq!(first.shell_count, 1);
+        assert_eq!(second.shell_count, 2);
+    }
 }

@@ -92,6 +92,7 @@ pub async fn execute(
         state.write_pool.clone(),
         state.custom_action_runs.clone(),
         run_id,
+        feature_id,
         prepared,
     )
     .await;
@@ -117,7 +118,7 @@ pub async fn start(
     let pool = state.write_pool.clone();
     let runs = state.custom_action_runs.clone();
     tokio::spawn(async move {
-        run_and_finalize(pool, runs, run_id, prepared).await;
+        run_and_finalize(pool, runs, run_id, feature_id, prepared).await;
     });
     Ok(run_id)
 }
@@ -128,6 +129,7 @@ async fn run_and_finalize(
     pool: SqlitePool,
     runs: Arc<CustomActionRunRegistry>,
     run_id: i64,
+    feature_id: i64,
     prepared: Prepared,
 ) {
     let mut child = match spawn_shell(&prepared.command, &prepared.cwd) {
@@ -169,7 +171,7 @@ async fn run_and_finalize(
     // There is no timeout: custom actions are user-defined and may run
     // indefinitely (e.g. dev servers), so a run only ends when the command
     // exits or the user cancels it.
-    let cancel = runs.register(run_id).await;
+    let cancel = runs.register(run_id, feature_id).await;
     let wait = tokio::select! {
         res = child.wait() => match res {
             Ok(status) => WaitResult::Exited(status.code().map(i64::from).unwrap_or(-1)),

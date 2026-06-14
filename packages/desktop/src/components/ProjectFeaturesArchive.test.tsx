@@ -38,6 +38,7 @@ const mockFeatures = [
 vi.mock("@/api/generated", () => ({
   FeatureStatus: { active: "active", archived: "archived" },
   useListFeatures: vi.fn(() => ({ data: mockFeatures })),
+  useListFeatureActivity: vi.fn(() => ({ data: [], error: null })),
   useUpdateFeatureStatus: vi.fn((opts?: { mutation?: { onSuccess?: () => void } }) => ({
     mutate: (data: unknown) => {
       mockUpdateStatus(data);
