@@ -1,6 +1,4 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
-import { parseUserMessageContent } from "@/types/agent-types";
-import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { PromptDeliveryState } from "@/types/agent";
 
 export interface LocalUserMessageOptions {
@@ -8,15 +6,9 @@ export interface LocalUserMessageOptions {
   promptDeliveryState?: PromptDeliveryState;
 }
 
-export interface DeferredPromptTurnBoundary {
+export interface TailPromptTurnBoundary {
   blocks: AgentBlockData[];
-  shouldDefer: boolean;
-}
-
-export interface PendingPromptReplay {
-  clientMessageId: string;
-  text: string;
-  attachments?: PromptAttachmentPayload[];
+  shouldTrim: boolean;
 }
 
 export function movePendingPromptBlocksToTail(blocks: AgentBlockData[]): AgentBlockData[] {
@@ -48,21 +40,21 @@ export function markPromptReceived(
   return changed ? next : blocks;
 }
 
-export function deferTailPromptTurnBoundary(blocks: AgentBlockData[]): DeferredPromptTurnBoundary {
+export function trimTailPromptTurnBoundary(blocks: AgentBlockData[]): TailPromptTurnBoundary {
   const promptIndex = lastPromptDeliveryBlockIndex(blocks);
   if (promptIndex === -1) {
-    return { blocks, shouldDefer: false };
+    return { blocks, shouldTrim: false };
   }
 
   for (let index = promptIndex + 1; index < blocks.length; index += 1) {
     if (!isIgnorableTrailingPromptBlock(blocks[index])) {
-      return { blocks, shouldDefer: false };
+      return { blocks, shouldTrim: false };
     }
   }
 
   return {
     blocks: promptIndex === blocks.length - 1 ? blocks : blocks.slice(0, promptIndex + 1),
-    shouldDefer: true,
+    shouldTrim: true,
   };
 }
 
@@ -70,39 +62,6 @@ export function removePendingPromptBlocks(blocks: AgentBlockData[]): AgentBlockD
   if (!blocks.some(isPendingPromptBlock)) return blocks;
   const next = blocks.filter((block) => !isPendingPromptBlock(block));
   return next.length === blocks.length ? blocks : next;
-}
-
-export function collectPendingPromptReplays(blocks: AgentBlockData[]): PendingPromptReplay[] {
-  return blocks.flatMap((block) => {
-    if (
-      block.type !== "user_message" ||
-      block.promptDeliveryState !== "pending_agent" ||
-      !block.clientMessageId
-    ) {
-      return [];
-    }
-    const parsed = parseUserMessageContent(block.content);
-    const imageAttachments: PromptAttachmentPayload[] = parsed.images.map((image) => ({
-      base64: image.data,
-      fileName: "image",
-      kind: "image",
-      mimeType: image.mediaType,
-    }));
-    const attachments = [
-      ...imageAttachments,
-      ...parsed.attachments.filter(
-        (attachment): attachment is PromptAttachmentPayload =>
-          typeof attachment.base64 === "string",
-      ),
-    ];
-    return [
-      {
-        clientMessageId: block.clientMessageId,
-        text: parsed.text,
-        ...(attachments.length > 0 ? { attachments } : {}),
-      },
-    ];
-  });
 }
 
 function isPendingPromptBlock(block: AgentBlockData): boolean {

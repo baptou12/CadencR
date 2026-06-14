@@ -16,6 +16,7 @@
 //! - [`metadata`] — one-shot `supported_commands` / `supported_models`
 
 mod control_commands;
+mod interrupt;
 mod mcp_status;
 mod metadata;
 mod permission_dispatch;

@@ -7,7 +7,8 @@ use super::prompt_receipts::ClaudePromptReceipts;
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerConfig,
     RuntimeMcpServerStatus, RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionUpdate,
-    RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
+    RuntimeStreamEvent, RuntimeToolPermissionHandler, RuntimeToolPermissionRequest,
+    RuntimeToolPermissionResult,
 };
 
 pub struct ClaudeCodeSession {
@@ -113,23 +114,37 @@ impl AgentRuntimeSession for ClaudeCodeSession {
         let prompt_receipts = std::sync::Arc::clone(&self.prompt_receipts);
 
         tokio::spawn(async move {
-            while let Some(msg) = source_rx.recv().await {
-                if let Ok(sdk_msg) = &msg {
-                    if let Some(event) = acknowledge_user_prompt_receipt(sdk_msg, &prompt_receipts)
-                    {
-                        if tx.send(Ok(event)).await.is_err() {
+            'messages: while let Some(msg) = source_rx.recv().await {
+                match msg {
+                    Ok(sdk_msg) => {
+                        if let Some(event) =
+                            acknowledge_user_prompt_receipt(&sdk_msg, &prompt_receipts)
+                        {
+                            if tx.send(Ok(event)).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        if is_unmatched_replay_user_message(&sdk_msg) {
+                            continue;
+                        }
+                        let mapped = normalize_event(sdk_msg);
+                        for event in
+                            acknowledge_response_start_prompt_receipts(&mapped, &prompt_receipts)
+                        {
+                            if tx.send(Ok(event)).await.is_err() {
+                                break 'messages;
+                            }
+                        }
+                        if tx.send(Ok(mapped)).await.is_err() {
                             break;
                         }
-                        continue;
                     }
-                    if is_unmatched_replay_user_message(sdk_msg) {
-                        continue;
+                    Err(error) => {
+                        if tx.send(Err(RuntimeError::from(error))).await.is_err() {
+                            break;
+                        }
                     }
-                }
-
-                let mapped = msg.map(normalize_event).map_err(RuntimeError::from);
-                if tx.send(mapped).await.is_err() {
-                    break;
                 }
             }
         });
@@ -235,6 +250,19 @@ pub(super) fn acknowledge_user_prompt_receipt(
     prompt_receipts.acknowledge_replay(message)
 }
 
+pub(super) fn acknowledge_response_start_prompt_receipts(
+    event: &RuntimeEvent,
+    prompt_receipts: &ClaudePromptReceipts,
+) -> Vec<RuntimeEvent> {
+    if !matches!(
+        event.stream_event(),
+        Some(RuntimeStreamEvent::MessageStart { .. })
+    ) {
+        return Vec::new();
+    }
+    prompt_receipts.acknowledge_all_pending()
+}
+
 pub(super) fn is_unmatched_replay_user_message(msg: &claude_agent_sdk_rs::SdkMessage) -> bool {
     matches!(
         msg,
@@ -250,7 +278,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        acknowledge_user_prompt_receipt, is_unmatched_replay_user_message, map_permission_mode,
+        acknowledge_response_start_prompt_receipts, acknowledge_user_prompt_receipt,
+        is_unmatched_replay_user_message, map_permission_mode,
     };
     use crate::domain::agents::adapter::RuntimePermissionMode;
     use crate::domain::agents::claude_code::prompt_receipts::ClaudePromptReceipts;
@@ -294,6 +323,36 @@ mod tests {
         };
 
         assert!(is_unmatched_replay_user_message(&msg));
+    }
+
+    #[test]
+    fn acknowledges_pending_prompts_when_claude_starts_next_response() {
+        let receipts = ClaudePromptReceipts::default();
+        receipts.enqueue("client-1".to_string(), &json!("And the ts-check"));
+        receipts.enqueue("client-2".to_string(), &json!("Resume please"));
+        let msg = claude_agent_sdk_rs::SdkMessage::StreamEvent {
+            uuid: "u1".to_string(),
+            session_id: "session-1".to_string(),
+            parent_tool_use_id: None,
+            event: claude_agent_sdk_rs::StreamEventData::MessageStart {
+                message: claude_agent_sdk_rs::messages::MessageStartBody {
+                    id: "msg-1".to_string(),
+                    model: "claude-sonnet-4-20250514".to_string(),
+                    usage: None,
+                    msg_type: Some("message".to_string()),
+                },
+            },
+        };
+
+        let event = crate::domain::agents::claude_code::events::normalize_event(msg);
+        let events = acknowledge_response_start_prompt_receipts(&event, &receipts);
+
+        let ids: Vec<_> = events
+            .iter()
+            .filter_map(|event| event.prompt_received_client_message_id())
+            .collect();
+        assert_eq!(ids, vec!["client-1", "client-2"]);
+        assert!(acknowledge_response_start_prompt_receipts(&event, &receipts).is_empty());
     }
 
     #[test]

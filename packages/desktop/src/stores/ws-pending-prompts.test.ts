@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import {
-  deferTailPromptTurnBoundary,
   markPromptReceived,
   movePendingPromptBlocksToTail,
+  trimTailPromptTurnBoundary,
 } from "./ws-pending-prompts";
 
 function block(
@@ -66,27 +66,27 @@ describe("pending prompt delivery ordering", () => {
     expect(reordered[3].promptDeliveryState).toBe("pending_agent");
   });
 
-  it("defers stale turn boundaries for a received tail prompt", () => {
+  it("identifies a tail prompt boundary for a received prompt", () => {
     const received = markPromptReceived([block("user-1", "user_message", "client-1")], "client-1");
 
-    const deferred = deferTailPromptTurnBoundary(received);
-    const duplicate = deferTailPromptTurnBoundary(deferred.blocks);
+    const trimmed = trimTailPromptTurnBoundary(received);
+    const duplicate = trimTailPromptTurnBoundary(trimmed.blocks);
 
-    expect(deferred.shouldDefer).toBe(true);
-    expect(duplicate.shouldDefer).toBe(true);
-    expect(deferred.blocks[0].promptDeliveryState).toBe("received_agent");
+    expect(trimmed.shouldTrim).toBe(true);
+    expect(duplicate.shouldTrim).toBe(true);
+    expect(trimmed.blocks[0].promptDeliveryState).toBe("received_agent");
   });
 
   it("removes stale turn summaries after a pending tail prompt", () => {
-    const deferred = deferTailPromptTurnBoundary([block("user-1", "user_message", "client-1")]);
-    const summaryDeferred = deferTailPromptTurnBoundary([
-      ...deferred.blocks,
+    const trimmed = trimTailPromptTurnBoundary([block("user-1", "user_message", "client-1")]);
+    const summaryTrimmed = trimTailPromptTurnBoundary([
+      ...trimmed.blocks,
       { id: "summary-1", type: "turn_summary" as const, content: "1s" },
     ]);
 
-    expect(deferred.shouldDefer).toBe(true);
-    expect(summaryDeferred.shouldDefer).toBe(true);
-    expect(summaryDeferred.blocks).toHaveLength(1);
-    expect(summaryDeferred.blocks[0].promptDeliveryState).toBe("pending_agent");
+    expect(trimmed.shouldTrim).toBe(true);
+    expect(summaryTrimmed.shouldTrim).toBe(true);
+    expect(summaryTrimmed.blocks).toHaveLength(1);
+    expect(summaryTrimmed.blocks[0].promptDeliveryState).toBe("pending_agent");
   });
 });
