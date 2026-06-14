@@ -708,13 +708,17 @@
   filter: blur(80px);
   opacity: var(--ambient-opacity);
 }
+/* Each halo drifts via `steps(120, …)` rather than smooth easing: the motion is
+ * a 28–42s crawl, so 120 discrete steps over the duration (~3-4fps) is visually
+ * identical to per-vsync easing but caps composited frames at a few per second
+ * instead of the display's full refresh rate — the actual battery cost. */
 .ambient::before {
   width: 72vw;
   height: 72vw;
   top: -16vw;
   left: -8vw;
   background: radial-gradient(circle, var(--ambient-1), transparent 70%);
-  animation: frost-drift1 28s ease-in-out infinite alternate;
+  animation: frost-drift1 28s steps(120, jump-none) infinite alternate;
 }
 .ambient::after {
   width: 66vw;
@@ -722,7 +726,7 @@
   top: 8vh;
   right: -12vw;
   background: radial-gradient(circle, var(--ambient-2), transparent 70%);
-  animation: frost-drift2 36s ease-in-out infinite alternate;
+  animation: frost-drift2 36s steps(120, jump-none) infinite alternate;
 }
 .ambient .halo {
   width: 62vw;
@@ -730,7 +734,7 @@
   bottom: -22vw;
   left: 18vw;
   background: radial-gradient(circle, var(--ambient-3), transparent 70%);
-  animation: frost-drift3 42s ease-in-out infinite alternate;
+  animation: frost-drift3 42s steps(120, jump-none) infinite alternate;
 }
 .grain {
   position: fixed;
@@ -768,4 +772,14 @@
   to {
     transform: translate(10vw, -8vh) scale(1.08);
   }
+}
+
+/* Freeze the halo drift when the window is hidden or unfocused
+ * (`data-ambient-paused` is toggled by <AmbientBackground/>). The drift runs at
+ * the display refresh rate, so without this a backgrounded or off-screen window
+ * keeps the GPU compositing a fresh frame every vsync for motion no one can see. */
+:root[data-ambient-paused] .ambient::before,
+:root[data-ambient-paused] .ambient::after,
+:root[data-ambient-paused] .ambient .halo {
+  animation-play-state: paused;
 }
