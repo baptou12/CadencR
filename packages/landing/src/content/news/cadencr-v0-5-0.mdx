@@ -1,0 +1,39 @@
+---
+title: "Cadencr v0.5.0 adds a Browser workspace agents can actually use"
+date: 2026-06-14
+summary: "Cadencr v0.5.0 introduces the embedded Browser workspace: a new tab where agents can open your app, inspect precise page context, capture scoped screenshots and snapshots, and interact with the UI while they build."
+author: "Raphaël - RLE - Le Minor"
+tags: ["release", "browser", "agents"]
+---
+
+Cadencr v0.5.0 is a big release, and the headline is the new **Browser workspace**.
+
+This is not just a preview pane next to the chat. The Browser tab is built so an agent can test the thing it is changing, gather the right context, and understand what is happening on the page without asking you to copy-paste screenshots, DOM snippets, console output, or network failures back into the conversation.
+
+## A browser inside the feature workspace
+
+Each feature can now keep its own Browser tabs alongside the agent, editor, terminal, and Git views. Open a local dev server, a local file, or an approved external URL; switch between normal and private browsing modes; use the address bar and keyboard shortcuts directly from the workspace; and keep the browser state scoped to the work in front of you.
+
+That matters because browser state is part of the job. If an agent is working on a UI bug, a landing-page polish pass, or a full feature flow, the page it is testing should live with that feature instead of being a disconnected external window.
+
+## Context tools for agents, not just screenshots
+
+The new `cadencr-browser` MCP server gives agents a purpose-built browser tool surface. Agents can open the active tab, inspect console errors, read failed network requests, wait for text or selectors, click, fill, hover, type, press keys, and evaluate page JavaScript.
+
+The most important part is context quality. The agent can request compact page snapshots with stable element refs, scope snapshots to one part of the page, capture raw HTML when needed, and grab partial screenshots of a selected element, selector, ref, or viewport region. Partial screenshots and scoped snapshots keep the model focused on the exact thing it needs to reason about instead of flooding it with the whole page.
+
+There is also a user-selected element context flow: click an element in the Browser tab and Cadencr can return selector candidates, attributes, computed styles, diagnostics, and a region screenshot. That makes the handoff much sharper when the issue is visual, hover-only, or buried inside a specific component.
+
+## Safer automation defaults
+
+Browser automation is powerful, so v0.5.0 keeps the defaults deliberate. Localhost and local files are handled separately, arbitrary external URLs go through the normal permission flow, and browser tabs opened by an agent appear inside the same feature's Browser panel instead of a hidden global browser state.
+
+The workflow should feel simple: let the agent open the app, inspect the page, try the interaction, verify what changed, and come back with evidence.
+
+## Also in v0.5.0
+
+This release also adds a Git graph view with commit diffs and online links, Frost Dark and Frost Light glass themes, sidebar activity indicators for busy features, a Cadencr wordmark refresh, improved prompt and question handling, and more reliable Git diff navigation.
+
+For the full list, read the changelog in the [v0.5.0 GitHub release notes](https://github.com/merkr-software/CadencR/releases/tag/v0.5.0) once the release is live.
+
+[Download Cadencr v0.5.0](https://github.com/merkr-software/CadencR/releases/tag/v0.5.0) once the release is live, or read the full changelog from the same release page.
