@@ -9,7 +9,8 @@
 import { queryClient, invalidateByUrlPrefix } from "@/lib/queryClient";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
-import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
+import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
+import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
@@ -53,6 +54,11 @@ export function notifyTransition(
     notifyAgentNeedsInput(opts);
   } else if (nextStatus === "idle" && prevStatus === "agent") {
     notifyAgentDone({ ...opts, status: "completed" });
+    // The agent finished while the user wasn't looking — flag the sidebar row
+    // unread. (If they're already viewing it, there's nothing unread.)
+    if (!isViewingFeature(featureId)) {
+      useUnreadStore.getState().markUnread(featureId);
+    }
   }
 }
 

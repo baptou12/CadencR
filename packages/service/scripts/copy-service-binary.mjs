@@ -3,7 +3,8 @@ import { join } from "node:path";
 
 const profile = process.argv[2] === "debug" ? "debug" : "release";
 const exe = process.platform === "win32" ? ".exe" : "";
-const source = join("..", "..", "target", profile, `cadencr-service${exe}`);
+const targetDir = process.env.CARGO_TARGET_DIR || join("..", "..", "target");
+const source = join(targetDir, profile, `cadencr-service${exe}`);
 const electronDir = join("..", "desktop", "resources", "bin");
 
 mkdirSync(electronDir, { recursive: true });

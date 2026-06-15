@@ -26,6 +26,7 @@ import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
 import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
+import { useIsFeatureUnread } from "@/stores/unread-store";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",
@@ -97,6 +98,9 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   // hook ensures this row only re-renders when its own feature's
   // (status, kind) actually changes.
   const { status: liveStatus } = useFeatureStatus(feature.id);
+  // Blue dot: the agent finished while this conversation wasn't open. Only
+  // meaningful when idle — a working/asking agent already shows its own icon.
+  const isUnread = useIsFeatureUnread(feature.id);
   const isActive = activeFeatureId === feature.id;
   const { data: gitStats } = useGetStats(
     { feature_id: feature.id, mode: "worktree" },
@@ -161,10 +165,16 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           <SidebarShortcutBadge ref={badgeRef} />
 
           {/* Live status icon driven by the per-session backend store. */}
-          <div className="shrink-0 w-3.5">
+          <div className="flex shrink-0 w-3.5 items-center justify-center">
             {liveStatus === "agent" && <BotIcon className="size-3.5 text-blue-500 animate-pulse" />}
             {liveStatus === "question" && (
               <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />
+            )}
+            {liveStatus === "idle" && isUnread && (
+              <span
+                className="size-2 rounded-full bg-blue-500"
+                aria-label="Unread agent messages"
+              />
             )}
           </div>
 

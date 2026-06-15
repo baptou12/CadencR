@@ -10,6 +10,7 @@ packages/*/out/
 packages/*/.vite/
 packages/service/target/
 target/
+.shared-cargo-target/
 *.db
 *.db-shm
 *.db-wal
