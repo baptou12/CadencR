@@ -20,6 +20,7 @@ import {
 import { revealInFileTree } from "@/components/file-tree/revealInFileTree";
 import { useActiveFileHighlight } from "@/components/file-tree/useActiveFileHighlight";
 import { FileTreeContextMenu } from "./FileTreeContextMenu";
+import { copyFilePath } from "./copyFilePath";
 import { mergeFileTreeEntries, useLazyIgnoredFileTreeEntries } from "./lazyIgnoredFileTreeEntries";
 import { useFileTreeDraft, type DraftKind } from "./useFileTreeDraft";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -294,7 +295,7 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
   // ── Context-menu actions ───────────────────────────────────────────────
   const handleMenuAction = useCallback(
     (
-      action: "new-file" | "new-folder" | "open" | "reveal" | "rename" | "delete",
+      action: "new-file" | "new-folder" | "open" | "copy-path" | "reveal" | "rename" | "delete",
       item: FileTreeContextMenuItem,
       context: FileTreeContextMenuOpenContext,
     ) => {
@@ -313,6 +314,10 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
         case "open":
           context.close();
           openFile(activePaneId, fsItemPath, maxTabs);
+          return;
+        case "copy-path":
+          context.close();
+          copyFilePath(fsItemPath);
           return;
         case "reveal":
           context.close();

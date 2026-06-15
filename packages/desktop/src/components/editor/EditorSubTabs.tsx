@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
+import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
+import { formatCombo } from "@/lib/shortcuts/format";
 import { cn } from "@/lib/utils";
-import { copyToClipboard } from "@/lib/clipboard";
+import { copyFilePath } from "./copyFilePath";
 import { FileSymbolIcon } from "./file-icons";
 import { useEditorStore } from "@/stores/editor-store";
 import { saveFile } from "./editorSaveRegistry";
@@ -21,6 +23,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
@@ -55,6 +58,10 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
 
   const tabs = pane?.tabs ?? [];
   const activeFilePath = pane?.activeFilePath ?? null;
+
+  // Hint glyphs for the "Copy Path" menu item — reflects the user's current
+  // (possibly remapped) binding for the ⌘⇧C shortcut.
+  const copyPathHint = formatCombo(useResolvedShortcut("editor-copy-path").keys).join("");
 
   function requestClose(filePath: string, fileName: string, isDirty: boolean) {
     if (isDirty) {
@@ -203,8 +210,9 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => closeMany(() => true)}>Close All</ContextMenuItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem onSelect={() => void copyToClipboard(tab.filePath, "Path copied")}>
+                <ContextMenuItem onSelect={() => copyFilePath(tab.filePath)}>
                   Copy Path
+                  <ContextMenuShortcut>{copyPathHint}</ContextMenuShortcut>
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={() => void reveal(tab.filePath)}>
                   Reveal in File Manager

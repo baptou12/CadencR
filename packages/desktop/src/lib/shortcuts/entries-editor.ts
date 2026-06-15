@@ -51,6 +51,15 @@ export const EDITOR_SHORTCUTS = [
   },
   { id: "editor-close", keys: ["mod", "w"], description: "Close buffer", scope: "editor" },
   {
+    // ⌘⇧C — copy the active file's project-relative path (same value as the
+    // tab context-menu "Copy Path"). Capture-phase + editor-scoped so it
+    // fires even when focus is inside the CodeMirror buffer.
+    id: "editor-copy-path",
+    keys: ["mod", "shift", "c"],
+    description: "Copy file path",
+    scope: "editor",
+  },
+  {
     // Generic preview toggle — fires for markdown, HTML, and SVG files.
     // The editor decides per-file whether the chord is enabled and what
     // the preview surface renders (see `getPreviewKind`).
