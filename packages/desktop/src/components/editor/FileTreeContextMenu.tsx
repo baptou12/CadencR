@@ -23,7 +23,7 @@ interface FileTreeContextMenuProps {
    * opening a follow-up dialog or popover.
    */
   onAction: (
-    action: "new-file" | "new-folder" | "open" | "reveal" | "rename" | "delete",
+    action: "new-file" | "new-folder" | "open" | "copy-path" | "reveal" | "rename" | "delete",
     item: FileTreeContextMenuItem,
     context: FileTreeContextMenuOpenContext,
   ) => void;
@@ -49,6 +49,7 @@ function buildMenuItems(
     items.push({ label: "Open", onSelect: () => onAction("open", item, context) });
   }
   items.push(
+    { label: "Copy Path", onSelect: () => onAction("copy-path", item, context) },
     { label: "Reveal in File Manager", onSelect: () => onAction("reveal", item, context) },
     { label: "Rename", shortcut: "↵", onSelect: () => onAction("rename", item, context) },
     {

@@ -4,6 +4,7 @@ import { useEditorStore, isUntitledPath } from "@/stores/editor-store";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { isImageFile } from "@/lib/file-language";
 import EditorSubTabs from "./EditorSubTabs";
+import { copyFilePath } from "./copyFilePath";
 import { clearPaneSearch } from "./editor-search/search-cache";
 
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
@@ -115,6 +116,21 @@ export default function EditorPane({
       event.preventDefault();
       event.stopPropagation();
       openUntitledBuffer(featureId, paneId);
+    },
+    "editor",
+    { enabled: isFocusedPane },
+  );
+
+  // CMD+SHIFT+C: copy the active file's project-relative path. Capture-phase
+  // + editor-scoped so it works with CodeMirror focused; gated on the focused
+  // pane so a split layout copies the file the user is actually looking at.
+  useScopedGlobalShortcutById(
+    "editor-copy-path",
+    (event) => {
+      if (!isFocusedPane) return;
+      event.preventDefault();
+      event.stopPropagation();
+      copyFilePath(activeFilePath);
     },
     "editor",
     { enabled: isFocusedPane },
