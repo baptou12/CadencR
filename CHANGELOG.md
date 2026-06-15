@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.5.1 - 2026-06-16
+
+Previous release: v0.5.0 - 2026-06-14
+
+### ✨ Added
+
+- [**Desktop**] Added an explicit branch/worktree mode selector before the first prompt, so users can choose whether an agent runs on the selected branch or a new branch, and whether it uses the project folder or a dedicated worktree.
+- [**Desktop**] Added Browser reload and page-zoom shortcuts, with per-tab page zoom that does not resize the rest of the desktop app.
+- [**Desktop**] Added an editor Copy Path action, available from the file tree and active editor with `Cmd+Shift+C` / `Ctrl+Shift+C`, for copying the project-relative file path.
+- [**Desktop**] Added a Kill terminals cleanup option to archive and delete dialogs, including a `T` shortcut and live terminal count, so feature cleanup can stop lingering shells.
+- [**Desktop**] Added sidebar unread dots when an agent finishes while its conversation is not open, and clears them as soon as the conversation is viewed.
+
+### 🔧 Changed
+
+- [**Backend**] New “from branch” sessions now create their branch after the first prompt names the feature, so generated branch names match the feature title instead of a placeholder.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed Browser feature-pane shortcuts so they work while the embedded web page has keyboard focus, including focus handoff that prevents macOS error beeps after leaving the Browser pane.
+- [**Desktop**] Fixed “Agent finished” notifications so they are suppressed for the conversation currently open in the hash-routed desktop app.
+- [**Backend**] Fixed branch setup failures so the prompt is aborted with a visible branch setup error instead of silently running on the wrong branch.
+
 ## v0.5.0 - 2026-06-14
 
 Previous release: v0.4.1 - 2026-06-10
