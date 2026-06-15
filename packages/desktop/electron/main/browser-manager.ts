@@ -38,7 +38,9 @@ import {
   originOf,
   profileFromSelection,
   pushBounded,
+  reclaimFocusForShortcut,
   secureWebPreferences,
+  zoomWebContents,
 } from "./browser-manager-utils";
 import { createBrowserProfile } from "./browser-profiles";
 import { sendToWindow } from "./safe-send";
@@ -228,6 +230,14 @@ export class BrowserManager {
     this.requireTab(tabId).view.webContents.stop();
   }
 
+  zoomIn(tabId: string): void {
+    zoomWebContents(this.requireTab(tabId).view.webContents, "in");
+  }
+
+  zoomOut(tabId: string): void {
+    zoomWebContents(this.requireTab(tabId).view.webContents, "out");
+  }
+
   toggleDevTools(tabId: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
     if (!tab.devtoolsView) {
@@ -374,7 +384,9 @@ export class BrowserManager {
   }
 
   private emitShortcut(shortcut: BrowserShortcut): void {
-    sendToWindow(this.getMainWindow(), "browser:shortcut", shortcut);
+    const win = this.getMainWindow();
+    reclaimFocusForShortcut(win, shortcut);
+    sendToWindow(win, "browser:shortcut", shortcut);
   }
 }
 

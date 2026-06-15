@@ -168,6 +168,8 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   browserForward: (tabId: string) => Promise<void>;
   browserReload: (tabId: string) => Promise<void>;
   browserStop: (tabId: string) => Promise<void>;
+  browserZoomIn: (tabId: string) => Promise<void>;
+  browserZoomOut: (tabId: string) => Promise<void>;
   toggleBrowserDevTools: (tabId: string) => Promise<BrowserTabMetadata>;
   getBrowserConsole: () => Promise<BrowserConsoleEntry[]>;
   getBrowserNetwork: () => Promise<BrowserNetworkEntry[]>;
@@ -263,6 +265,8 @@ const browserBridge: CadencrBrowserBridge = {
   browserForward: () => unavailable("browserForward"),
   browserReload: () => unavailable("browserReload"),
   browserStop: () => unavailable("browserStop"),
+  browserZoomIn: () => unavailable("browserZoomIn"),
+  browserZoomOut: () => unavailable("browserZoomOut"),
   toggleBrowserDevTools: () => unavailable("toggleBrowserDevTools"),
   getBrowserConsole: () => unavailable("getBrowserConsole"),
   getBrowserNetwork: () => unavailable("getBrowserNetwork"),

@@ -42,6 +42,8 @@ export interface BrowserWorkspaceModel {
   forward: () => void;
   reload: () => void;
   stop: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
   devTools: () => void;
   runForActive: (action: (tab: BrowserTabMetadata) => Promise<void>) => Promise<void>;
 }
@@ -155,6 +157,14 @@ export function useBrowserWorkspaceModel(
     (): void => void runForActive((tab) => desktopBridge.browserStop(tab.id)),
     [runForActive],
   );
+  const zoomIn = useCallback(
+    (): void => void runForActive((tab) => desktopBridge.browserZoomIn(tab.id)),
+    [runForActive],
+  );
+  const zoomOut = useCallback(
+    (): void => void runForActive((tab) => desktopBridge.browserZoomOut(tab.id)),
+    [runForActive],
+  );
   const devTools = useCallback(
     (): void =>
       void runForActive((tab) => desktopBridge.toggleBrowserDevTools(tab.id).then(() => undefined)),
@@ -186,6 +196,8 @@ export function useBrowserWorkspaceModel(
     setUrlInput,
     state: visibleState,
     stop,
+    zoomIn,
+    zoomOut,
     urlInput,
     urlInputRef,
     viewportRef,
@@ -216,6 +228,8 @@ function useBrowserModelValue(model: BrowserWorkspaceModel): BrowserWorkspaceMod
       model.runForActive,
       model.setUrlEditing,
       model.stop,
+      model.zoomIn,
+      model.zoomOut,
       model.state,
       model.urlInput,
       model.viewportRef,

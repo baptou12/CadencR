@@ -102,6 +102,14 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
     assertTrustedSender(event, options.getMainWindow);
     manager.stop(requiredString(tabId, "tab id"));
   });
+  ipcMain.handle("browser:zoom-in", (event, tabId: unknown) => {
+    assertTrustedSender(event, options.getMainWindow);
+    manager.zoomIn(requiredString(tabId, "tab id"));
+  });
+  ipcMain.handle("browser:zoom-out", (event, tabId: unknown) => {
+    assertTrustedSender(event, options.getMainWindow);
+    manager.zoomOut(requiredString(tabId, "tab id"));
+  });
   ipcMain.handle("browser:toggle-devtools", (event, tabId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
     return manager.toggleDevTools(requiredString(tabId, "tab id"));

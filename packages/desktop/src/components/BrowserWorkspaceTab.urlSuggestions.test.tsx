@@ -76,6 +76,8 @@ function bridge(): CadencrBrowserBridge {
     browserForward: vi.fn(),
     browserReload: vi.fn(),
     browserStop: vi.fn(),
+    browserZoomIn: vi.fn(),
+    browserZoomOut: vi.fn(),
     toggleBrowserDevTools: vi.fn(),
     getBrowserConsole: vi.fn(),
     getBrowserNetwork: vi.fn(),

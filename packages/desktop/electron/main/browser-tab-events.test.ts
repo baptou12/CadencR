@@ -27,6 +27,21 @@ describe("guestChrome", () => {
     expect(guestChrome(withMod({ key: "w" }))).toBe("close-tab");
     expect(guestChrome(withMod({ key: "l" }))).toBe("focus-url");
     expect(guestChrome(withMod({ key: "s" }))).toBe("add-comment");
+    expect(guestChrome(withMod({ key: "r" }))).toBe("reload");
+  });
+
+  it("maps the zoom chords, including the shifted ⌘+ form", () => {
+    expect(guestChrome(withMod({ key: "=" }))).toBe("zoom-in");
+    expect(guestChrome(withMod({ key: "+", shift: true }))).toBe("zoom-in");
+    expect(guestChrome(withMod({ key: "-" }))).toBe("zoom-out");
+  });
+
+  it("maps the feature-pane chords (layout-aware via key, not code)", () => {
+    expect(guestChrome(withMod({ key: "a", code: "KeyA", shift: true }))).toBe("pane-agent");
+    expect(guestChrome(withMod({ key: "t", code: "KeyT", shift: true }))).toBe("pane-terminal");
+    expect(guestChrome(withMod({ key: "g", code: "KeyG", shift: true }))).toBe("pane-git");
+    expect(guestChrome(withMod({ key: "e", code: "KeyE", shift: true }))).toBe("pane-editor");
+    expect(guestChrome(withMod({ key: "b", code: "KeyB", shift: true }))).toBe("pane-browser");
   });
 
   it("toggles DevTools on the Alt-modified chord", () => {
@@ -40,8 +55,8 @@ describe("guestChrome", () => {
     expect(guestChrome(withMod({ key: "}", code: "BracketRight", shift: true }))).toBe("next-tab");
   });
 
-  it("ignores a Shift chord on any other key", () => {
-    expect(guestChrome(withMod({ key: "t", code: "KeyT", shift: true }))).toBeNull();
+  it("ignores a Shift chord on an unmapped key", () => {
+    expect(guestChrome(withMod({ key: "k", code: "KeyK", shift: true }))).toBeNull();
   });
 
   it("ignores keys without the platform modifier", () => {

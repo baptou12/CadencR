@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import type { BrowserWindow } from "electron";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertBrowserMutationAllowed,
   consoleLevelName,
@@ -6,7 +7,9 @@ import {
   isElementPayload,
   metadataFor,
   pushBounded,
+  reclaimFocusForShortcut,
 } from "./browser-manager-utils";
+import type { BrowserShortcut } from "./browser-types";
 
 describe("browser-manager-utils", () => {
   it("keeps bounded diagnostic buffers at their limit", () => {
@@ -68,6 +71,45 @@ describe("browser-manager-utils", () => {
       url: "about:blank",
       devToolsOpen: false,
       scopeId: 7,
+    });
+  });
+
+  describe("reclaimFocusForShortcut", () => {
+    function fakeWindow(): { win: BrowserWindow; focus: ReturnType<typeof vi.fn> } {
+      const focus = vi.fn();
+      return { win: { webContents: { focus } } as unknown as BrowserWindow, focus };
+    }
+
+    it("reclaims renderer focus for pane switches that leave the browser", () => {
+      for (const shortcut of [
+        "pane-agent",
+        "pane-terminal",
+        "pane-git",
+        "pane-editor",
+      ] as BrowserShortcut[]) {
+        const { win, focus } = fakeWindow();
+        reclaimFocusForShortcut(win, shortcut);
+        expect(focus).toHaveBeenCalledOnce();
+      }
+    });
+
+    it("leaves focus alone for shortcuts that stay in the browser", () => {
+      for (const shortcut of [
+        "pane-browser",
+        "reload",
+        "zoom-in",
+        "zoom-out",
+        "new-tab",
+        "focus-url",
+      ] as BrowserShortcut[]) {
+        const { win, focus } = fakeWindow();
+        reclaimFocusForShortcut(win, shortcut);
+        expect(focus).not.toHaveBeenCalled();
+      }
+    });
+
+    it("is a no-op when there is no window", () => {
+      expect(() => reclaimFocusForShortcut(null, "pane-agent")).not.toThrow();
     });
   });
 });
