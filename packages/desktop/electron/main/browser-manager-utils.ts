@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { BrowserWindow, WebContents } from "electron";
 import { browserAutomationAccess } from "./browser-policy";
 import {
   browserPartitionForProfile,
@@ -9,6 +10,7 @@ import type {
   BrowserConsoleEntry,
   BrowserElementContext,
   BrowserNetworkEntry,
+  BrowserShortcut,
   BrowserTabMetadata,
 } from "./browser-types";
 
@@ -40,6 +42,36 @@ export function originOf(url: string): string | null {
  */
 export function externalAutomationMatches(liveUrl: string, unlockedOrigin: string | null): boolean {
   return unlockedOrigin !== null && originOf(liveUrl) === unlockedOrigin;
+}
+
+// One ⌘+/⌘- step multiplies the guest page's own zoom factor (independent of
+// the desktop UI zoom), clamped to a usable range so a page can't shrink to
+// nothing or blow up past readability.
+const ZOOM_STEP = 1.2;
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 5;
+
+export function zoomWebContents(wc: WebContents, direction: "in" | "out"): void {
+  const multiplier = direction === "in" ? ZOOM_STEP : 1 / ZOOM_STEP;
+  wc.setZoomFactor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, wc.getZoomFactor() * multiplier)));
+}
+
+// Pane switches that move focus *out* of the browser. When one is relayed from a
+// focused guest page, OS keyboard focus stays on the (now-hidden) native view
+// unless we hand it back to the renderer window — otherwise the next keystroke
+// hits a dead responder (the macOS error beep) instead of the agent prompt.
+const PANE_SHORTCUTS_LEAVING_BROWSER = new Set<BrowserShortcut>([
+  "pane-agent",
+  "pane-terminal",
+  "pane-git",
+  "pane-editor",
+]);
+
+export function reclaimFocusForShortcut(
+  win: BrowserWindow | null,
+  shortcut: BrowserShortcut,
+): void {
+  if (win && PANE_SHORTCUTS_LEAVING_BROWSER.has(shortcut)) win.webContents.focus();
 }
 
 export function tabDiagnostics(

@@ -43,6 +43,12 @@ export const BROWSER_SHORTCUTS = [
     scope: "browser",
   },
   {
+    id: "browser-reload",
+    keys: ["mod", "r"],
+    description: "Reload the page",
+    scope: "browser",
+  },
+  {
     id: "browser-add-comment",
     keys: ["mod", "s"],
     description: "Add a page comment",

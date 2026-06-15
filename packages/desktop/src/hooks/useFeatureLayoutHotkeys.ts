@@ -1,11 +1,24 @@
 import { useCallback } from "react";
 
+import { useBrowserShortcutRelay } from "@/hooks/useBrowserShortcutRelay";
 import { useShortcut } from "@/hooks/useShortcut";
+import { type BrowserShortcut } from "@/lib/desktop-bridge";
 import { activateFeatureTab } from "@/stores/feature-layout-store";
 import type { TabKind } from "@/stores/feature-layout-schema";
 import type { FeatureTabActivationHandlers } from "@/components/feature-layout/types";
 
 type FeatureLayoutHotkeysOptions = FeatureTabActivationHandlers & { enabled?: boolean };
+
+// Pane chords relayed from a focused browser guest page → the tab they select.
+// A native WebContentsView swallows keydown before the renderer sees it, so
+// ⌘⇧A/T/G/E/B are forwarded from the main process (see `browser-tab-events.ts`).
+const PANE_BY_SHORTCUT: Partial<Record<BrowserShortcut, TabKind>> = {
+  "pane-agent": "agent",
+  "pane-terminal": "terminal",
+  "pane-git": "git",
+  "pane-editor": "editor",
+  "pane-browser": "browser",
+};
 
 /**
  * Preserves the existing Mod+Shift+A/T/G/E shortcuts. Each hotkey:
@@ -71,4 +84,13 @@ export function useFeatureLayoutHotkeys(
     },
     { enabled },
   );
+
+  // Relay path: when a browser guest page holds keyboard focus the renderer's
+  // window never sees ⌘⇧A/T/G/E/B, so the main process forwards them. Only the
+  // active feature (hotkeys enabled) reacts, since the relay carries no scope.
+  useBrowserShortcutRelay((shortcut: BrowserShortcut) => {
+    if (!enabled) return;
+    const tab = PANE_BY_SHORTCUT[shortcut];
+    if (tab) activate(tab);
+  });
 }

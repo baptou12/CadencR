@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 
-import { desktopBridge, type BrowserShortcut } from "@/lib/desktop-bridge";
+import { type BrowserShortcut } from "@/lib/desktop-bridge";
+import { useBrowserShortcutRelay } from "@/hooks/useBrowserShortcutRelay";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 
 import type { BrowserWorkspaceModel } from "./useBrowserWorkspaceModel";
@@ -71,6 +72,38 @@ export function useBrowserKeyboard(model: BrowserWorkspaceModel, addComment: () 
     "browser",
   );
   useScopedGlobalShortcutById(
+    "browser-reload",
+    (event) => {
+      event.preventDefault();
+      model.reload();
+    },
+    "browser",
+    { enabled: hasTab },
+  );
+  // ⌘+/⌘- zoom the guest page. The same combos drive the global desktop zoom
+  // (`useZoomHotkeys`), so stop propagation to keep the page zoom from also
+  // resizing the whole IDE while the Browser tab is focused.
+  useScopedGlobalShortcutById(
+    "zoom-in",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      model.zoomIn();
+    },
+    "browser",
+    { enabled: hasTab },
+  );
+  useScopedGlobalShortcutById(
+    "zoom-out",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      model.zoomOut();
+    },
+    "browser",
+    { enabled: hasTab },
+  );
+  useScopedGlobalShortcutById(
     "browser-add-comment",
     (event) => {
       event.preventDefault();
@@ -89,10 +122,8 @@ export function useBrowserKeyboard(model: BrowserWorkspaceModel, addComment: () 
     { enabled: hasTab },
   );
 
-  // Relay path (guest page focused). Subscribe once and read the latest
-  // handler from a ref so the IPC listener isn't re-bound on every render.
-  const handlerRef = useRef<(shortcut: BrowserShortcut) => void>(() => {});
-  handlerRef.current = (shortcut) => {
+  // Relay path (guest page focused): the main process forwards the chord.
+  useBrowserShortcutRelay((shortcut: BrowserShortcut) => {
     switch (shortcut) {
       case "new-tab":
         void model.newTab();
@@ -109,6 +140,15 @@ export function useBrowserKeyboard(model: BrowserWorkspaceModel, addComment: () 
       case "focus-url":
         model.focusUrlBar();
         break;
+      case "reload":
+        model.reload();
+        break;
+      case "zoom-in":
+        model.zoomIn();
+        break;
+      case "zoom-out":
+        model.zoomOut();
+        break;
       case "add-comment":
         if (hasTab) addComment();
         break;
@@ -116,6 +156,5 @@ export function useBrowserKeyboard(model: BrowserWorkspaceModel, addComment: () 
         if (hasTab) model.devTools();
         break;
     }
-  };
-  useEffect(() => desktopBridge.onBrowserShortcut((shortcut) => handlerRef.current(shortcut)), []);
+  });
 }

@@ -131,14 +131,14 @@ export function guestChrome(input: Input): BrowserShortcut | null {
   if (!mod) return null;
   // ⌘⌥I → toggle DevTools (the only combo that uses Alt).
   if (input.alt) return input.key.toLowerCase() === "i" ? "devtools" : null;
-  // ⌘⇧[ / ⌘⇧] → switch tabs. Shift mangles `key` ("{"/"}"), so match the
-  // physical code instead.
-  if (input.shift) {
-    if (input.code === "BracketLeft") return "prev-tab";
-    if (input.code === "BracketRight") return "next-tab";
-    return null;
-  }
+  // ⌘+ / ⌘- → zoom the guest page. ⌘+ is really ⌘⇧=, so check before the
+  // Shift branch. Matches the produced character, like the renderer registry.
+  const zoom = zoomChord(input.key);
+  if (zoom) return zoom;
+  if (input.shift) return guestShiftChrome(input);
   switch (input.key.toLowerCase()) {
+    case "r":
+      return "reload";
     case "t":
       return "new-tab";
     case "w":
@@ -147,6 +147,35 @@ export function guestChrome(input: Input): BrowserShortcut | null {
       return "focus-url";
     case "s":
       return "add-comment";
+    default:
+      return null;
+  }
+}
+
+// ⌘+ / ⌘- → zoom. "=" doubles as zoom-in so the unshifted key works too.
+function zoomChord(key: string): BrowserShortcut | null {
+  if (key === "+" || key === "=") return "zoom-in";
+  if (key === "-") return "zoom-out";
+  return null;
+}
+
+// Shift chords: tab switching (⌘⇧[ / ⌘⇧]) and feature-pane switching
+// (⌘⇧A/T/G/E/B). Brackets match the physical `code` because Shift mangles
+// "[" → "{"; letters stay layout-aware through `key`.
+function guestShiftChrome(input: Input): BrowserShortcut | null {
+  if (input.code === "BracketLeft") return "prev-tab";
+  if (input.code === "BracketRight") return "next-tab";
+  switch (input.key.toLowerCase()) {
+    case "a":
+      return "pane-agent";
+    case "t":
+      return "pane-terminal";
+    case "g":
+      return "pane-git";
+    case "e":
+      return "pane-editor";
+    case "b":
+      return "pane-browser";
     default:
       return null;
   }

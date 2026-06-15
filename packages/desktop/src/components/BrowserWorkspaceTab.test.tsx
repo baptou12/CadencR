@@ -87,6 +87,8 @@ function bridge(): CadencrBrowserBridge {
     browserForward: vi.fn(),
     browserReload: vi.fn(),
     browserStop: vi.fn(),
+    browserZoomIn: vi.fn(),
+    browserZoomOut: vi.fn(),
     toggleBrowserDevTools: vi.fn(() => Promise.resolve(state.tabs[0])),
     getBrowserConsole: vi.fn(() => Promise.resolve([])),
     getBrowserNetwork: vi.fn(() => Promise.resolve([])),

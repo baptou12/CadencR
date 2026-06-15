@@ -234,6 +234,8 @@ contextBridge.exposeInMainWorld("cadencr", {
   browserForward: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:forward", tabId),
   browserReload: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:reload", tabId),
   browserStop: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:stop", tabId),
+  browserZoomIn: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:zoom-in", tabId),
+  browserZoomOut: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:zoom-out", tabId),
   toggleBrowserDevTools: (tabId: string): Promise<BrowserTabMetadata> =>
     ipcRenderer.invoke("browser:toggle-devtools", tabId),
   getBrowserConsole: (): Promise<unknown[]> => ipcRenderer.invoke("browser:get-console"),
