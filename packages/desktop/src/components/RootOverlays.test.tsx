@@ -36,6 +36,8 @@ vi.mock("@/api/generated", () => ({
     isLoading: false,
   })),
   useGetGitStatus: vi.fn(() => ({ data: undefined, isLoading: false })),
+  useKillTerminalSessions: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useListFeatureActivity: vi.fn(() => ({ data: [] })),
 }));
 
 vi.mock("@/components/CommandPalette", () => ({

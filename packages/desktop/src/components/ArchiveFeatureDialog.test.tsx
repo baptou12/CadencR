@@ -5,11 +5,20 @@ import { render, screen } from "@/test-utils";
 import { ArchiveFeatureDialog } from "./ArchiveFeatureDialog";
 import type { Feature, GitStatusSnapshot } from "@/api/generated";
 
-const { mockDeleteWorktree, mockDeleteBranch, mockBranchCheck, mockGitStatus } = vi.hoisted(() => ({
+const {
+  mockDeleteWorktree,
+  mockDeleteBranch,
+  mockBranchCheck,
+  mockGitStatus,
+  mockKillTerminals,
+  mockListFeatureActivity,
+} = vi.hoisted(() => ({
   mockDeleteWorktree: vi.fn(),
   mockDeleteBranch: vi.fn(),
   mockBranchCheck: vi.fn(),
   mockGitStatus: vi.fn(),
+  mockKillTerminals: vi.fn(),
+  mockListFeatureActivity: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
@@ -17,6 +26,8 @@ vi.mock("@/api/generated", () => ({
   useDeleteFeatureBranch: vi.fn(() => ({ mutateAsync: mockDeleteBranch })),
   useCheckBranchDelete: mockBranchCheck,
   useGetGitStatus: mockGitStatus,
+  useKillTerminalSessions: vi.fn(() => ({ mutateAsync: mockKillTerminals })),
+  useListFeatureActivity: mockListFeatureActivity,
 }));
 
 vi.mock("sonner", () => ({
@@ -100,7 +111,15 @@ describe("ArchiveFeatureDialog", () => {
       isLoading: false,
     });
     mockGitStatus.mockReturnValue({ data: undefined, isLoading: false });
+    mockKillTerminals.mockResolvedValue({ killed: 0 });
+    mockListFeatureActivity.mockReturnValue({ data: [] });
   });
+
+  function withRunningShells(count: number): void {
+    mockListFeatureActivity.mockReturnValue({
+      data: [{ feature_id: 1, shell_count: count }],
+    });
+  }
 
   it("uses Cmd+Enter, not plain Enter, to confirm archiving", async () => {
     const user = userEvent.setup();
@@ -146,6 +165,34 @@ describe("ArchiveFeatureDialog", () => {
 
     expect(onArchive).toHaveBeenCalledTimes(1);
     expect(onArchive).toHaveBeenCalledWith(1);
+  });
+
+  it("hides the kill-terminals option when the feature has no live shells", () => {
+    renderDialog();
+    expect(screen.queryByText("Kill terminals")).not.toBeInTheDocument();
+  });
+
+  it("kills running terminals via the T shortcut when archiving", async () => {
+    withRunningShells(2);
+    const user = userEvent.setup();
+    renderDialog();
+
+    expect(screen.getByText(/Stop the 2 running shells/i)).toBeInTheDocument();
+
+    await user.keyboard("t");
+    await user.click(screen.getByRole("button", { name: /archive/i }));
+
+    expect(mockKillTerminals).toHaveBeenCalledWith({ params: { feature_id: 1 } });
+  });
+
+  it("does not kill terminals when the option is left unchecked", async () => {
+    withRunningShells(1);
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.click(screen.getByRole("button", { name: /archive/i }));
+
+    expect(mockKillTerminals).not.toHaveBeenCalled();
   });
 
   it("warns and force-removes dirty worktrees", async () => {

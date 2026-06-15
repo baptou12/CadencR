@@ -4,7 +4,7 @@ use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Query, State, WebSocketUpgrade};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use futures::SinkExt;
 use futures::StreamExt;
@@ -40,6 +40,7 @@ pub fn terminal_router() -> Router<AppState> {
             "/api/terminal/sessions",
             get(list_terminal_sessions_handler),
         )
+        .route("/api/terminal/kill", post(kill_terminal_sessions_handler))
 }
 
 /// A live terminal session a client can attach to (one PTY).
@@ -81,6 +82,31 @@ pub async fn list_terminal_sessions_handler(
         })
         .collect();
     Json(sessions)
+}
+
+/// How many shells were terminated by a kill request.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct KillTerminalsResponse {
+    pub killed: u32,
+}
+
+/// Kill every live shell belonging to a feature. Used when archiving or deleting
+/// a feature so its terminals don't keep running in a worktree that may be about
+/// to be removed.
+#[utoipa::path(
+    post,
+    path = "/api/terminal/kill",
+    params(("feature_id" = i64, Query, description = "Feature whose live terminals to kill")),
+    responses((status = 200, description = "Number of shells killed", body = KillTerminalsResponse)),
+)]
+pub async fn kill_terminal_sessions_handler(
+    Query(query): Query<TerminalSessionsQuery>,
+    State(state): State<AppState>,
+) -> Json<KillTerminalsResponse> {
+    let killed = state.pty_manager.kill_feature_ptys(query.feature_id);
+    Json(KillTerminalsResponse {
+        killed: killed as u32,
+    })
 }
 
 async fn terminal_ws_handler(

@@ -897,6 +897,14 @@ export interface IsEmptyResponse {
   empty: boolean;
 }
 
+/**
+ * How many shells were terminated by a kill request.
+ */
+export interface KillTerminalsResponse {
+  /** @minimum 0 */
+  killed: number;
+}
+
 export type LastRunSummaryEndedAt = string | null;
 
 /**
@@ -2024,6 +2032,13 @@ export type DeleteWorktreeParams = {
 
 export type ListProjectWorktreesParams = {
   project_id: number;
+};
+
+export type KillTerminalSessionsParams = {
+  /**
+   * Feature whose live terminals to kill
+   */
+  feature_id: number;
 };
 
 export type ListTerminalSessionsParams = {
@@ -10228,6 +10243,84 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
   TContext
 > => {
   const mutationOptions = getSaveSessionDraftMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+/**
+ * @summary Kill every live shell belonging to a feature. Used when archiving or deleting
+a feature so its terminals don't keep running in a worktree that may be about
+to be removed.
+ */
+export const killTerminalSessions = (params: KillTerminalSessionsParams, signal?: AbortSignal) => {
+  return customInstance<KillTerminalsResponse>({
+    url: `/api/terminal/kill`,
+    method: "POST",
+    params,
+    signal,
+  });
+};
+
+export const getKillTerminalSessionsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof killTerminalSessions>>,
+    TError,
+    { params: KillTerminalSessionsParams },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof killTerminalSessions>>,
+  TError,
+  { params: KillTerminalSessionsParams },
+  TContext
+> => {
+  const mutationKey = ["killTerminalSessions"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof killTerminalSessions>>,
+    { params: KillTerminalSessionsParams }
+  > = (props) => {
+    const { params } = props ?? {};
+
+    return killTerminalSessions(params);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type KillTerminalSessionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof killTerminalSessions>>
+>;
+
+export type KillTerminalSessionsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Kill every live shell belonging to a feature. Used when archiving or deleting
+a feature so its terminals don't keep running in a worktree that may be about
+to be removed.
+ */
+export const useKillTerminalSessions = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof killTerminalSessions>>,
+    TError,
+    { params: KillTerminalSessionsParams },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof killTerminalSessions>>,
+  TError,
+  { params: KillTerminalSessionsParams },
+  TContext
+> => {
+  const mutationOptions = getKillTerminalSessionsMutationOptions(options);
 
   return useMutation(mutationOptions);
 };

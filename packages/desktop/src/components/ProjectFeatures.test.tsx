@@ -134,6 +134,7 @@ vi.mock("@/api/generated", () => ({
   ),
   useDeleteWorktree: vi.fn(() => ({ mutateAsync: mockDeleteWorktree })),
   useDeleteFeatureBranch: vi.fn(() => ({ mutateAsync: mockDeleteBranch })),
+  useKillTerminalSessions: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useCheckBranchDelete: vi.fn(() => ({
     data: { branch: "feature/a", target_branch: "main", merged: true },
   })),
