@@ -1,5 +1,8 @@
 {
   "$schema": "https://v2-9-14.turborepo.dev/schema.json",
+  "globalEnv": [
+    "CARGO_TARGET_DIR"
+  ],
   "tasks": {
     "build": {
       "dependsOn": [
