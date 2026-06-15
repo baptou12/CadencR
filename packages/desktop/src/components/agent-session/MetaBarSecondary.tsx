@@ -44,10 +44,11 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
   projectPath,
   isRunning = false,
   onPause,
-  useWorktree,
-  onToggleWorktree,
+  worktreeMode,
+  onWorktreeModeChange,
   worktreeProjectId,
   worktreeDefaultBranch,
+  worktreeProjectPath,
   worktreeSelectedBranch,
   onWorktreeBranchChange,
 }: MetaBarSecondaryProps) {
@@ -63,10 +64,11 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
 
       {showWorktreeChip && (
         <WorktreeChip
-          useWorktree={useWorktree}
-          onToggleWorktree={onToggleWorktree}
           worktreeProjectId={worktreeProjectId}
           worktreeDefaultBranch={worktreeDefaultBranch}
+          worktreeProjectPath={worktreeProjectPath}
+          worktreeMode={worktreeMode}
+          onWorktreeModeChange={onWorktreeModeChange}
           worktreeSelectedBranch={worktreeSelectedBranch}
           onWorktreeBranchChange={onWorktreeBranchChange}
         />

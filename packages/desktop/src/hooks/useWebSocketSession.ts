@@ -18,7 +18,7 @@ import {
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
-import type { GateCloseReason, SessionConfig } from "@/lib/ws-envelope";
+import type { FirstPromptBranchSetup, GateCloseReason, SessionConfig } from "@/lib/ws-envelope";
 import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
 import type { LiveAgentStatus } from "@/types/agent";
 import {
@@ -89,7 +89,7 @@ export interface UseWebSocketSessionReturn {
   sendPrompt: (
     text: string,
     attachments?: PromptAttachmentPayload[],
-    useWorktree?: boolean,
+    branchSetup?: FirstPromptBranchSetup,
   ) => void;
   respondToPermission: (
     requestId: string,
@@ -238,8 +238,8 @@ function useSessionActions(sessionId: string): SessionActions {
       sendPrompt: (
         text: string,
         attachments?: PromptAttachmentPayload[],
-        useWorktree?: boolean,
-      ): void => s.sendPrompt(sessionId, text, attachments, useWorktree),
+        branchSetup?: FirstPromptBranchSetup,
+      ): void => s.sendPrompt(sessionId, text, attachments, branchSetup),
       respondToPermission: (
         requestId: string,
         decision: PermissionDecisionValue,

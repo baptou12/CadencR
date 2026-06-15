@@ -5,6 +5,7 @@ import { AgentTodoList } from "../AgentTodoList";
 import { AutoScrollChip } from "./AutoScrollChip";
 import { SessionInfoChip } from "./SessionInfoChip";
 import { WorktreeChip } from "./WorktreeChip";
+import type { WorktreeMode } from "@/lib/worktree-mode";
 import type { TodoItem } from "@/types/agent";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
@@ -36,16 +37,16 @@ export interface MetaBarProps {
   isCodexPermissionModePending?: boolean;
   onCodexPermissionModeChange?: (mode: CodexPermissionMode) => void;
   showWorktreeChip: boolean;
-  useWorktree?: boolean;
-  onToggleWorktree?: () => void;
   /**
-   * Optional richer two-chip worktree picker (Branch + Use worktree). When
-   * the embedder provides every field below, the chip group replaces the
-   * legacy on/off button. Embedders that don't supply these fall back to
-   * the bare toggle.
+   * Branch/worktree behavior picker (Branch chip + explicit mode menu). The
+   * chip renders only when the embedder supplies the project id, mode, and
+   * both setters.
    */
   worktreeProjectId?: number;
   worktreeDefaultBranch?: string;
+  worktreeProjectPath?: string;
+  worktreeMode?: WorktreeMode;
+  onWorktreeModeChange?: (mode: WorktreeMode) => void;
   worktreeSelectedBranch?: string | null;
   onWorktreeBranchChange?: (next: string | null) => void;
   onProviderChange?: (providerId: string) => void;
@@ -108,10 +109,11 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     isCodexPermissionModePending = false,
     onCodexPermissionModeChange,
     showWorktreeChip,
-    useWorktree,
-    onToggleWorktree,
+    worktreeMode,
+    onWorktreeModeChange,
     worktreeProjectId,
     worktreeDefaultBranch,
+    worktreeProjectPath,
     worktreeSelectedBranch,
     onWorktreeBranchChange,
     onProviderChange,
@@ -221,10 +223,11 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
           `MetaBarSecondary` strip below the prompt (`secondaryBelow`). */}
       {showWorktreeChip && !secondaryBelow && (
         <WorktreeChip
-          useWorktree={useWorktree}
-          onToggleWorktree={onToggleWorktree}
           worktreeProjectId={worktreeProjectId}
           worktreeDefaultBranch={worktreeDefaultBranch}
+          worktreeProjectPath={worktreeProjectPath}
+          worktreeMode={worktreeMode}
+          onWorktreeModeChange={onWorktreeModeChange}
           worktreeSelectedBranch={worktreeSelectedBranch}
           onWorktreeBranchChange={onWorktreeBranchChange}
         />

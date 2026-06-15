@@ -122,10 +122,11 @@ export const AgentSession = memo(
       slashCommandsLoading,
       hasMore,
       onLoadOlder,
-      useWorktree,
-      onToggleWorktree,
+      worktreeMode,
+      onWorktreeModeChange,
       worktreeProjectId,
       worktreeDefaultBranch,
+      worktreeProjectPath,
       worktreeSelectedBranch,
       onWorktreeBranchChange,
       agentTabActive = true,
@@ -282,9 +283,10 @@ export const AgentSession = memo(
     });
 
     // Same gate as `canChangeProvider` — see useAgentSessionModelState.
-    // Either the legacy on/off toggle is wired (`onToggleWorktree`) or the
-    // richer two-chip group is (toggle + branch picker + projectId).
-    const showWorktreeChip = blocks.length === 0 && !!onToggleWorktree;
+    // The branch/worktree chip shows before the first message when the
+    // embedder wires up the mode picker (mode + setter + project id).
+    const showWorktreeChip =
+      blocks.length === 0 && !!onWorktreeModeChange && worktreeProjectId != null;
     const showAutoScrollChip = !!shouldShowPromptBar;
 
     const verbositySetting = useDebouncedSetting(AGENT_VERBOSITY_SETTING_KEY);
@@ -325,10 +327,11 @@ export const AgentSession = memo(
         isCodexPermissionModePending={isCodexPermissionModePending}
         onCodexPermissionModeChange={onCodexPermissionModeChange}
         showWorktreeChip={showWorktreeChip}
-        useWorktree={useWorktree}
-        onToggleWorktree={onToggleWorktree}
+        worktreeMode={worktreeMode}
+        onWorktreeModeChange={onWorktreeModeChange}
         worktreeProjectId={worktreeProjectId}
         worktreeDefaultBranch={worktreeDefaultBranch}
+        worktreeProjectPath={worktreeProjectPath}
         worktreeSelectedBranch={worktreeSelectedBranch}
         onWorktreeBranchChange={onWorktreeBranchChange}
         onProviderChange={onProviderChange}
@@ -421,10 +424,11 @@ export const AgentSession = memo(
       isNarrow && hasSecondaryMeta && shouldShowPromptBar ? (
         <MetaBarSecondary
           showWorktreeChip={showWorktreeChip}
-          useWorktree={useWorktree}
-          onToggleWorktree={onToggleWorktree}
+          worktreeMode={worktreeMode}
+          onWorktreeModeChange={onWorktreeModeChange}
           worktreeProjectId={worktreeProjectId}
           worktreeDefaultBranch={worktreeDefaultBranch}
+          worktreeProjectPath={worktreeProjectPath}
           worktreeSelectedBranch={worktreeSelectedBranch}
           onWorktreeBranchChange={onWorktreeBranchChange}
           showAutoScrollChip={showAutoScrollChip}

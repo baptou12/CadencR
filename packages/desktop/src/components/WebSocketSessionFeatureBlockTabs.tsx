@@ -1,24 +1,17 @@
 import { lazy, Suspense, useCallback, useMemo, type ReactElement } from "react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { BotIcon, CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
 import { AgentSession } from "@/components/agent-session";
 import { SessionInfoMcpServersProvider } from "@/components/agent-session/SessionInfoChip";
-import { resolveWorktreeChoice } from "@/components/agent-session/WorktreePopover";
+import { resolveWorktreeChoice } from "@/lib/worktree-mode";
+import { checkoutSelectedBranch, saveWorktreeChoice } from "@/components/worktree-send-helpers";
+import type { FirstPromptBranchSetup } from "@/lib/ws-envelope";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabDef, FeatureTabs } from "@/components/feature-layout/types";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
-import {
-  getGetBranchQueryKey,
-  getGetGitStatusQueryKey,
-  getListBranchesQueryKey,
-  listBranches,
-  useCheckoutBranch,
-  useSetFeatureSetting,
-} from "@/api/generated";
-import { apiErrorMessage } from "@/lib/api-errors";
+import { useCheckoutBranch, useSetFeatureSetting } from "@/api/generated";
 import { PROVIDER_IDS } from "@/lib/providers";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type {
@@ -143,10 +136,11 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
             agentTabActive={agentVisible && hotkeysEnabled}
             hasMore={controls.ws.hasMore}
             onLoadOlder={controls.ws.loadOlderMessages}
-            useWorktree={controls.useWorktree}
-            onToggleWorktree={controls.toggleWorktree}
+            worktreeMode={controls.worktreeMode}
+            onWorktreeModeChange={controls.setWorktreeMode}
             worktreeProjectId={projectId}
             worktreeDefaultBranch={data.defaultBranch}
+            worktreeProjectPath={data.projectPath}
             worktreeSelectedBranch={controls.selectedBranch}
             onWorktreeBranchChange={controls.setSelectedBranch}
             className="h-full"
@@ -292,52 +286,46 @@ function useAgentSendHandler(args: {
         return;
       }
       const isFirstPrompt = (data.session?.blocks?.length ?? 0) === 0;
-      const branches = await loadBranchesForFirstPrompt({
-        isFirstPrompt,
-        projectId,
-        queryClient,
-        selectedBranch: controls.selectedBranch,
-      });
       const choice = resolveWorktreeChoice({
-        useWorktree: controls.useWorktree,
+        mode: controls.worktreeMode,
         selectedBranch: controls.selectedBranch,
-        branches,
+        defaultBranch: data.defaultBranch,
       });
-      if (isFirstPrompt && choice.kind !== "off") {
-        await saveWorktreeChoice({ choice, featureId, setFeatureSetting });
-      }
-      if (
-        isFirstPrompt &&
-        choice.kind === "off" &&
-        controls.selectedBranch != null &&
-        controls.selectedBranch !== data.defaultBranch
-      ) {
-        try {
-          await checkoutMutateAsync({
-            data: { project_id: projectId, branch: controls.selectedBranch },
-          });
-          queryClient.invalidateQueries({
-            queryKey: getGetBranchQueryKey({ project_id: projectId }),
-          });
-          queryClient.invalidateQueries({
-            queryKey: getListBranchesQueryKey({ project_id: projectId }),
-          });
-          queryClient.invalidateQueries({
-            queryKey: getGetGitStatusQueryKey({ feature_id: featureId }),
-          });
-        } catch (err) {
-          toast.error(apiErrorMessage(err, "git checkout failed"));
-          return;
+      // First-prompt branch provisioning the backend acts on *after* auto-naming
+      // (so the new branch carries the feature's name). `undefined` = no setup.
+      let branchSetup: FirstPromptBranchSetup | undefined;
+      if (isFirstPrompt) {
+        if (choice.backendMode === "skip") {
+          // "On branch": run in the project folder, switching to the picked
+          // branch first when it differs from the current one.
+          if (choice.checkout != null) {
+            const ok = await checkoutSelectedBranch({
+              branch: choice.checkout,
+              projectId,
+              featureId,
+              queryClient,
+              checkoutMutateAsync,
+            });
+            if (!ok) return;
+          }
+        } else if (choice.backendMode === "project_branch") {
+          // "From branch": the backend forks a project-path branch named after
+          // the feature once it has auto-named — no worktree, no pre-send git op.
+          branchSetup = { kind: "project_branch", base: choice.base };
+        } else {
+          // Worktree-provisioning modes persist their settings before send so
+          // the backend's `ensure_worktree` reads them. A failure throws + aborts.
+          await saveWorktreeChoice({ choice, featureId, setFeatureSetting });
+          branchSetup = { kind: "worktree" };
         }
       }
-      const shouldStartWorktree = isFirstPrompt && choice.kind !== "off";
-      controls.ws.sendPrompt(text, attachments, shouldStartWorktree ? true : undefined);
+      controls.ws.sendPrompt(text, attachments, branchSetup);
     },
     [
       checkoutMutateAsync,
       controls.activeProviderId,
       controls.selectedBranch,
-      controls.useWorktree,
+      controls.worktreeMode,
       controls.ws,
       data.defaultBranch,
       data.session?.blocks?.length,
@@ -347,61 +335,6 @@ function useAgentSendHandler(args: {
       setFeatureSetting,
     ],
   );
-}
-
-interface LoadBranchesParams {
-  isFirstPrompt: boolean;
-  projectId: number;
-  queryClient: QueryClient;
-  selectedBranch: string | null;
-}
-
-async function loadBranchesForFirstPrompt(
-  params: LoadBranchesParams,
-): Promise<Awaited<ReturnType<typeof listBranches>> | undefined> {
-  const { isFirstPrompt, projectId, queryClient, selectedBranch } = params;
-  if (!isFirstPrompt || selectedBranch == null) return undefined;
-  try {
-    return await queryClient.ensureQueryData({
-      queryKey: getListBranchesQueryKey({ project_id: projectId }),
-      queryFn: ({ signal }) => listBranches({ project_id: projectId }, signal),
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    toast.error(`Could not load branches: ${message}`);
-    throw err;
-  }
-}
-
-type WorktreeChoice = ReturnType<typeof resolveWorktreeChoice>;
-
-async function saveWorktreeChoice(params: {
-  choice: WorktreeChoice;
-  featureId: number;
-  setFeatureSetting: ReturnType<typeof useSetFeatureSetting>;
-}): Promise<void> {
-  const { choice, featureId, setFeatureSetting } = params;
-  try {
-    if (choice.kind === "reuse") {
-      await setFeatureSetting.mutateAsync({
-        id: featureId,
-        data: { key: "worktree_reuse_branch", value: choice.branch },
-      });
-    } else if (choice.kind === "new" && choice.base) {
-      await setFeatureSetting.mutateAsync({
-        id: featureId,
-        data: { key: "worktree_base_branch", value: choice.base },
-      });
-    }
-    await setFeatureSetting.mutateAsync({
-      id: featureId,
-      data: { key: "worktree_mode", value: choice.kind },
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    toast.error(`Could not save worktree settings: ${message}`);
-    throw err;
-  }
 }
 
 function handleModelChange(

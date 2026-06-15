@@ -229,6 +229,7 @@ mod tests {
             images: vec![],
             attachments: vec![],
             use_worktree: None,
+            new_project_branch: None,
             client_message_id: None,
             replay: false,
         };
@@ -350,6 +351,39 @@ mod tests {
     fn test_permission_decision_invalid_variant() {
         let result = serde_json::from_value::<PermissionDecision>(serde_json::json!("invalid"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn prompt_send_parses_new_project_branch() {
+        // "From branch": present with an explicit base ref.
+        let with_base: PromptSendPayload = serde_json::from_value(serde_json::json!({
+            "session_id": "s1",
+            "text": "hi",
+            "new_project_branch": { "base": "develop" },
+        }))
+        .unwrap();
+        assert_eq!(
+            with_base.new_project_branch.unwrap().base.as_deref(),
+            Some("develop")
+        );
+
+        // Present with null base → fork from current HEAD.
+        let from_head: PromptSendPayload = serde_json::from_value(serde_json::json!({
+            "session_id": "s1",
+            "text": "hi",
+            "new_project_branch": { "base": null },
+        }))
+        .unwrap();
+        let branch = from_head.new_project_branch.expect("should be present");
+        assert!(branch.base.is_none());
+
+        // Absent → not the "from branch" flow.
+        let absent: PromptSendPayload = serde_json::from_value(serde_json::json!({
+            "session_id": "s1",
+            "text": "hi",
+        }))
+        .unwrap();
+        assert!(absent.new_project_branch.is_none());
     }
 
     #[test]

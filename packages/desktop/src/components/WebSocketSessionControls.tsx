@@ -20,6 +20,11 @@ import {
   DEFAULT_WORKTREE_MODE_KEY,
   defaultWorktreeModeFromSettings,
 } from "@/lib/default-worktree-mode";
+import {
+  defaultWorktreeMode,
+  worktreeModeToProjectDefault,
+  type WorktreeMode,
+} from "@/lib/worktree-mode";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 import type { PermissionMode } from "@/types/permission-mode";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
@@ -32,9 +37,8 @@ import {
 type WsSession = ReturnType<typeof useWebSocketSession>;
 
 interface WorktreePreferenceControls {
-  useWorktree: boolean;
-  setUseWorktree: Dispatch<SetStateAction<boolean>>;
-  toggleWorktree: () => void;
+  worktreeMode: WorktreeMode;
+  setWorktreeMode: (mode: WorktreeMode) => void;
 }
 
 interface RuntimeSelectionControls {
@@ -67,38 +71,38 @@ export interface SessionControls
 }
 
 function useWorktreePreference(projectId: number): WorktreePreferenceControls {
-  const [useWorktree, setUseWorktree] = useState(false);
-  const worktreeDefaultProjectRef = useRef<number | null>(null);
+  const [worktreeMode, setWorktreeModeState] = useState<WorktreeMode>("on_branch");
+  const seededProjectRef = useRef<number | null>(null);
   const { data: projectSettingsData } = useGetProjectSettings(projectId);
   const setProjectSetting = useSetProjectSetting();
-  const defaultWorktreeMode = defaultWorktreeModeFromSettings(projectSettingsData, "skip");
+  const projectDefault = defaultWorktreeModeFromSettings(projectSettingsData, "skip");
+  // Seed the picker from the project's saved default once settings load — once
+  // per project so a later settle doesn't clobber an explicit choice.
   useEffect(() => {
-    if (projectSettingsData == null || worktreeDefaultProjectRef.current === projectId) {
+    if (projectSettingsData == null || seededProjectRef.current === projectId) {
       return;
     }
-    worktreeDefaultProjectRef.current = projectId;
-    setUseWorktree(defaultWorktreeMode === "new");
-  }, [defaultWorktreeMode, projectId, projectSettingsData]);
-  const toggleWorktree = useCallback((): void => {
-    const next = !useWorktree;
-    setUseWorktree(next);
-    setProjectSetting.mutate(
-      {
-        id: projectId,
-        data: { key: DEFAULT_WORKTREE_MODE_KEY, value: next ? "new" : "skip" },
-      },
-      {
-        onError: (err) => {
-          setUseWorktree(!next);
-          toast.error(apiErrorMessage(err, "Failed to save worktree preference"));
+    seededProjectRef.current = projectId;
+    setWorktreeModeState(defaultWorktreeMode(projectDefault));
+  }, [projectDefault, projectId, projectSettingsData]);
+  const setWorktreeMode = useCallback(
+    (next: WorktreeMode): void => {
+      setWorktreeModeState(next);
+      // Persist the project default only for the two modes that map cleanly to
+      // it; branch-specific modes (reuse / from_branch) leave it untouched. A
+      // failed save still keeps the local pick for this session.
+      const nextDefault = worktreeModeToProjectDefault(next);
+      if (nextDefault == null || nextDefault === projectDefault) return;
+      setProjectSetting.mutate(
+        { id: projectId, data: { key: DEFAULT_WORKTREE_MODE_KEY, value: nextDefault } },
+        {
+          onError: (err) => toast.error(apiErrorMessage(err, "Failed to save worktree preference")),
         },
-      },
-    );
-  }, [projectId, setProjectSetting, useWorktree]);
-  return useMemo(
-    () => ({ useWorktree, setUseWorktree, toggleWorktree }),
-    [toggleWorktree, useWorktree],
+      );
+    },
+    [projectDefault, projectId, setProjectSetting],
   );
+  return useMemo(() => ({ worktreeMode, setWorktreeMode }), [setWorktreeMode, worktreeMode]);
 }
 
 function useRuntimeSelection(

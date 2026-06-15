@@ -11,7 +11,12 @@ import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQues
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { WorktreeStatus } from "@/types/workflow";
 import type { WsConnection } from "@/lib/ws-connection";
-import type { GateCloseReason, WsEnvelope, SessionConfig } from "@/lib/ws-envelope";
+import type {
+  FirstPromptBranchSetup,
+  GateCloseReason,
+  WsEnvelope,
+  SessionConfig,
+} from "@/lib/ws-envelope";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
@@ -66,7 +71,7 @@ export interface PersistedStatePayload {
 export interface QueuedPrompt {
   text: string;
   attachments?: PromptAttachmentPayload[];
-  useWorktree?: boolean;
+  branchSetup?: FirstPromptBranchSetup;
 }
 
 export interface McpServerStatus {
@@ -247,7 +252,7 @@ export interface WsSessionStore {
     sessionId: string,
     text: string,
     attachments?: PromptAttachmentPayload[],
-    useWorktree?: boolean,
+    branchSetup?: FirstPromptBranchSetup,
   ) => void;
   respondToPermission: (
     sessionId: string,
