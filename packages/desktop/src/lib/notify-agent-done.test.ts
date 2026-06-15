@@ -4,6 +4,15 @@ const mockToastError = vi.hoisted(() => vi.fn());
 const mockToastMessage = vi.hoisted(() => vi.fn());
 vi.mock("sonner", () => ({ toast: { error: mockToastError, message: mockToastMessage } }));
 
+// Hash history: `isViewingFeature` parses `window.location.hash`, so drive the
+// route by stubbing the hash (`pathname` is always `/` under hash history).
+function setRoute(pathname: string): void {
+  Object.defineProperty(window, "location", {
+    value: { hash: pathname === "/" ? "" : `#${pathname}` },
+    writable: true,
+  });
+}
+
 import { queryClient } from "@/lib/queryClient";
 import {
   clearDesktopBridgeOverrideForTests,
@@ -109,10 +118,7 @@ describe("notifyAgentDone", () => {
     await initNotificationPermission();
     mockNotify.mockClear();
 
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/projects/2/features/1" },
-      writable: true,
-    });
+    setRoute("/projects/2/features/1");
 
     notifyAgentDone({ status: "completed", featureTitle: "My Feature", ...baseOpts });
     expect(mockNotify).toHaveBeenCalledWith({
@@ -131,10 +137,7 @@ describe("notifyAgentDone", () => {
     await initNotificationPermission();
     mockNotify.mockClear();
 
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/ws-session/ws-feature-1" },
-      writable: true,
-    });
+    setRoute("/ws-session/ws-feature-1");
 
     notifyAgentDone({
       status: "completed",
@@ -152,10 +155,7 @@ describe("notifyAgentDone", () => {
     await initNotificationPermission();
     mockNotify.mockClear();
 
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/projects/2/features/99" },
-      writable: true,
-    });
+    setRoute("/projects/2/features/99");
 
     notifyAgentDone({
       status: "completed",
@@ -180,10 +180,7 @@ describe("notifyAgentDone", () => {
     await initNotificationPermission();
     mockNotify.mockClear();
 
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/other" },
-      writable: true,
-    });
+    setRoute("/other");
 
     notifyAgentDone({
       status: "error",
@@ -207,10 +204,7 @@ describe("notifyAgentDone", () => {
     await initNotificationPermission();
     mockNotify.mockClear();
 
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/other" },
-      writable: true,
-    });
+    setRoute("/other");
 
     notifyAgentDone({ status: "needs_input", featureTitle: "Waiting Feature", ...baseOpts });
     expect(mockNotify).toHaveBeenCalledWith({
@@ -229,10 +223,7 @@ describe("notifyAgentDone", () => {
     await initNotificationPermission();
     mockNotify.mockClear();
 
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/other" },
-      writable: true,
-    });
+    setRoute("/other");
 
     notifyAgentDone({ status: "completed", featureTitle: "My Feature", ...baseOpts });
     expect(mockNotify).toHaveBeenCalledWith({
@@ -275,10 +266,7 @@ describe("notification mode from query cache", () => {
     mockNotify.mockResolvedValue(undefined);
     await initNotificationPermission();
     mockNotify.mockClear();
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/other" },
-      writable: true,
-    });
+    setRoute("/other");
   }
   const opts = { status: "completed" as const, featureTitle: "F", ...baseOpts };
 
@@ -381,10 +369,7 @@ describe("notifyAgentNeedsInput", () => {
     await initNotificationPermission();
     mockNotify.mockClear();
 
-    Object.defineProperty(window, "location", {
-      value: { pathname: "/other" },
-      writable: true,
-    });
+    setRoute("/other");
 
     notifyAgentNeedsInput({ featureTitle: "My Feature", agentKind: "Session", ...baseOpts });
     expect(mockNotify).toHaveBeenCalledWith({

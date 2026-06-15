@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { WebSocketSessionFeatureBlock } from "@/components/WebSocketSessionFeatureBlock";
 import { ResolvedModelProvider } from "@/contexts/ResolvedModelContext";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
+import { useMarkFeatureRead } from "@/stores/unread-store";
 import {
   getFocusedTab,
   selectFeatureLayout,
@@ -22,6 +23,8 @@ function WebSocketSessionPage() {
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
   useSaveLastOpenedFeature(projectId, featureId, focusedTabId);
+  // Opening a conversation reads it: clear any pending unread dot.
+  useMarkFeatureRead(featureId);
   return (
     <ResolvedModelProvider featureId={featureId} projectId={projectId}>
       <WebSocketSessionFeatureBlock

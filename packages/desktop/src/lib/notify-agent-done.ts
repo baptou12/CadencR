@@ -9,6 +9,7 @@ import {
 import { desktopBridge, type NotificationFallbackPayload } from "@/lib/desktop-bridge";
 import { NOTIFICATION_MODE_KEY, parseNotificationMode } from "@/lib/notification-mode";
 import { queryClient } from "@/lib/queryClient";
+import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 
 let permissionCache: boolean | null = null;
 
@@ -68,11 +69,20 @@ interface NotifyOptions {
   agentTitle?: string;
 }
 
-function isViewingFeature(opts: NotifyOptions): boolean {
-  const pathname = window.location.pathname;
-  // `ws-feature-${id}` is a legacy WS session ID prefix and unrelated to the
-  // (removed) ws-feature feature type.
-  return pathname === `/ws-session/ws-feature-${opts.featureId}`;
+/**
+ * True when this window is currently showing the given feature's conversation.
+ * Used to suppress notifications — and the sidebar unread dot — for the
+ * feature the user is already looking at.
+ *
+ * Reads the hash route, not `window.location.pathname`: the app uses hash
+ * history, so the route path lives in `window.location.hash` (`#/ws-session/…`)
+ * and `pathname` is always `/` (which silently defeated this guard). Parsed
+ * inline rather than via the router to avoid a router→routes→stores import
+ * cycle through this module.
+ */
+export function isViewingFeature(featureId: number): boolean {
+  const hashPath = window.location.hash.replace(/^#/, "").split("?")[0];
+  return hashPath === `/ws-session/${wsSessionIdFromFeature(featureId)}`;
 }
 
 function titleForStatus(status: NotifyOptions["status"]): string {
@@ -95,7 +105,7 @@ export function notifyAgentDone(opts: NotifyOptions): void {
   if (!permissionCache) return;
   const mode = readNotificationMode();
   if (mode === "off") return;
-  if (isViewingFeature(opts)) return;
+  if (isViewingFeature(opts.featureId)) return;
 
   const bodyParts = [opts.featureTitle];
   if (opts.agentKind) {
