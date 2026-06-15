@@ -1,6 +1,7 @@
 import type { Dispatch, ReactElement, SetStateAction } from "react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
+import { FeatureDeleteDialog } from "@/components/FeatureDeleteDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
@@ -10,10 +11,7 @@ import { ThemeDrawer } from "@/components/theme/ThemeDrawer";
 import { useRemoteUpdateCheck } from "@/hooks/useRemoteUpdateCheck";
 import { useListFeatureWorktrees, type Feature } from "@/api/generated";
 import { getArchiveCleanupAvailability } from "@/components/archive-cleanup-availability";
-import {
-  deleteFeatureDialogTitle,
-  type FeatureArchiveAction,
-} from "@/lib/feature-archive-decision";
+import { type FeatureArchiveAction } from "@/lib/feature-archive-decision";
 
 export interface ConfirmFeatureAction {
   action: FeatureArchiveAction;
@@ -92,19 +90,14 @@ export function RootOverlays({
         }}
         onArchive={onArchiveFeature}
       />
-      {deleteConfirmAction && (
-        <ConfirmDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setConfirmAction(null);
-          }}
-          title={deleteFeatureDialogTitle(deleteConfirmAction.feature)}
-          description="This cannot be undone."
-          confirmText="Delete"
-          variant="destructive"
-          onConfirm={() => onDeleteFeature(deleteConfirmAction.feature.id)}
-        />
-      )}
+      <FeatureDeleteDialog
+        open={deleteConfirmAction != null}
+        feature={deleteConfirmAction?.feature}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+        onDelete={onDeleteFeature}
+      />
       <ConfirmDialog
         open={appClose.showConfirm}
         onOpenChange={appClose.setShowConfirm}

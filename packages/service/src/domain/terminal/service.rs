@@ -225,6 +225,28 @@ impl PtyManager {
         Ok(())
     }
 
+    /// Kill every live PTY belonging to `feature_id`, returning how many shells
+    /// were signalled. Used when a feature is archived/deleted so its lingering
+    /// shells don't keep running in a worktree that may be about to be removed.
+    pub fn kill_feature_ptys(&self, feature_id: i64) -> usize {
+        let pty_ids = self
+            .terminals
+            .iter()
+            .filter(|entry| {
+                entry.value().feature_id == feature_id && entry.value().alive.borrow().is_none()
+            })
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        let mut killed = 0;
+        for pty_id in pty_ids {
+            match self.kill_pty(&pty_id) {
+                Ok(()) => killed += 1,
+                Err(error) => warn!(pty_id = %pty_id, error = %error, "Failed to kill feature PTY"),
+            }
+        }
+        killed
+    }
+
     pub fn kill_all(&self) {
         let pty_ids = self
             .terminals
@@ -328,6 +350,24 @@ mod tests {
 
         // Kill every spawned shell so each blocking `child.wait()` returns and the
         // test runtime can shut down — a lingering login shell would hang it.
+        manager.kill_all();
+    }
+
+    #[tokio::test]
+    async fn kill_feature_ptys_only_kills_that_feature() {
+        let manager = PtyManager::new();
+        let cwd = temp_existing_dir();
+        let (_pty_a, _) = manager.create_pty(7, &cwd, 80, 24).expect("spawn a");
+        let (_pty_b, _) = manager.create_pty(7, &cwd, 80, 24).expect("spawn b");
+        let (_pty_other, _) = manager.create_pty(99, &cwd, 80, 24).expect("spawn other");
+
+        let killed = manager.kill_feature_ptys(7);
+        assert_eq!(killed, 2, "both feature-7 shells are killed");
+        assert_eq!(manager.kill_feature_ptys(123), 0, "unknown feature => none");
+
+        // The other feature's shell is untouched, so its child is still running.
+        assert_eq!(manager.feature_ptys(99).len(), 1, "other feature untouched");
+
         manager.kill_all();
     }
 

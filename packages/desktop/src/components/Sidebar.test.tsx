@@ -56,6 +56,7 @@ vi.mock("../api/generated", () => ({
   useUpdateFeatureLabel: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteWorktree: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useDeleteFeatureBranch: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useKillTerminalSessions: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useCheckBranchDelete: vi.fn(() => ({
     data: { branch: "feature/a", target_branch: "main", merged: true },
     isLoading: false,

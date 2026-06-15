@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { toast } from "sonner";
-import { useDeleteFeatureBranch, useDeleteWorktree, type Feature } from "@/api/generated";
+import {
+  useDeleteFeatureBranch,
+  useDeleteWorktree,
+  useKillTerminalSessions,
+  type Feature,
+} from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { ArchiveCleanupOptions } from "@/components/ArchiveCleanupOptions";
+import { KillTerminalsOption } from "@/components/KillTerminalsOption";
+import { useKillTerminalsState } from "@/components/use-kill-terminals-state";
 import { useArchiveCleanupState } from "@/components/archive-cleanup-state";
 import {
   Dialog,
@@ -42,6 +49,8 @@ export function ArchiveFeatureDialog({
   const { isConfirming, lockConfirm } = useConfirmSubmissionLock(open);
   const deleteWorktree = useDeleteWorktree();
   const deleteBranch = useDeleteFeatureBranch();
+  const killTerminals = useKillTerminalSessions();
+  const killState = useKillTerminalsState(open, feature);
   const cleanupState = useArchiveCleanupState({
     open,
     feature,
@@ -57,22 +66,31 @@ export function ArchiveFeatureDialog({
     const featureId = feature.id;
     onArchive(featureId);
     onOpenChange(false);
-    if (!cleanupState.removeWorktree && !cleanupState.removeBranch) return;
-    const cleanup = cleanupFeature({
-      projectId,
-      featureId,
-      removeWorktree: cleanupState.removeWorktree,
-      removeBranch: cleanupState.removeBranch,
-      hasLiveWorktree,
-      forceBranchDelete: cleanupState.forceBranchDelete,
-      forceWorktreeDelete: cleanupState.forceWorktreeDelete,
-      deleteWorktree: deleteWorktree.mutateAsync,
-      deleteBranch: deleteBranch.mutateAsync,
-    });
+    const needsGitCleanup = cleanupState.removeWorktree || cleanupState.removeBranch;
+    if (!killState.killTerminals && !needsGitCleanup) return;
+    const cleanup = (async (): Promise<void> => {
+      // Kill shells before removing the worktree they may be running in.
+      if (killState.killTerminals) {
+        await killTerminals.mutateAsync({ params: { feature_id: featureId } });
+      }
+      if (needsGitCleanup) {
+        await cleanupFeature({
+          projectId,
+          featureId,
+          removeWorktree: cleanupState.removeWorktree,
+          removeBranch: cleanupState.removeBranch,
+          hasLiveWorktree,
+          forceBranchDelete: cleanupState.forceBranchDelete,
+          forceWorktreeDelete: cleanupState.forceWorktreeDelete,
+          deleteWorktree: deleteWorktree.mutateAsync,
+          deleteBranch: deleteBranch.mutateAsync,
+        });
+      }
+    })();
     toast.promise(cleanup, {
-      loading: "Archiving session; cleaning up Git resources…",
-      success: "Session archived and Git cleanup finished.",
-      error: (err) => apiErrorMessage(err, "Session archived, but Git cleanup failed"),
+      loading: "Archiving session; cleaning up…",
+      success: "Session archived and cleanup finished.",
+      error: (err) => apiErrorMessage(err, "Session archived, but cleanup failed"),
     });
   };
   useDialogSubmitShortcut({
@@ -93,6 +111,9 @@ export function ArchiveFeatureDialog({
           } else if (event.key.toLowerCase() === "b") {
             event.preventDefault();
             cleanupState.toggleBranch();
+          } else if (event.key.toLowerCase() === "t") {
+            event.preventDefault();
+            killState.toggleKillTerminals();
           }
         }}
       >
@@ -104,7 +125,16 @@ export function ArchiveFeatureDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ArchiveCleanupOptions {...cleanupState} hasLiveWorktree={hasLiveWorktree} />
+        <div className="space-y-3">
+          {killState.liveTerminalCount > 0 && (
+            <KillTerminalsOption
+              count={killState.liveTerminalCount}
+              checked={killState.killTerminals}
+              onToggle={killState.toggleKillTerminals}
+            />
+          )}
+          <ArchiveCleanupOptions {...cleanupState} hasLiveWorktree={hasLiveWorktree} />
+        </div>
 
         <ArchiveDialogFooter
           forceDelete={cleanupState.forceBranchDelete || cleanupState.forceWorktreeDelete}
