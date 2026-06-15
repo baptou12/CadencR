@@ -80,6 +80,31 @@ describe("ws-envelope", () => {
       });
     });
 
+    it("createPromptSend maps a worktree branchSetup to use_worktree", () => {
+      const env = createPromptSend("s1", "hello", { branchSetup: { kind: "worktree" } });
+      expect(env.payload).toEqual({ session_id: "s1", text: "hello", use_worktree: true });
+    });
+
+    it("createPromptSend maps a project_branch branchSetup to new_project_branch", () => {
+      const withBase = createPromptSend("s1", "hello", {
+        branchSetup: { kind: "project_branch", base: "develop" },
+      });
+      expect(withBase.payload).toEqual({
+        session_id: "s1",
+        text: "hello",
+        new_project_branch: { base: "develop" },
+      });
+      // A null base forks from the project's current HEAD.
+      const fromHead = createPromptSend("s1", "hello", {
+        branchSetup: { kind: "project_branch", base: null },
+      });
+      expect(fromHead.payload).toEqual({
+        session_id: "s1",
+        text: "hello",
+        new_project_branch: { base: null },
+      });
+    });
+
     it("createCommandsGet includes provider", () => {
       const env = createCommandsGet("/repo", "codex_cli");
       expect(env.domain).toBe("commands");

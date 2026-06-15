@@ -1,5 +1,5 @@
 import type { SessionEntry } from "./ws-session-types";
-import type { WsEnvelope } from "@/lib/ws-envelope";
+import type { FirstPromptBranchSetup, WsEnvelope } from "@/lib/ws-envelope";
 import { createModeSet, createPromptSend } from "@/lib/ws-envelope";
 import type { QueuedPrompt } from "./ws-session-types";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
@@ -58,11 +58,11 @@ export function buildQueuedPromptPatch(
   session: SessionEntry,
   text: string,
   attachments?: PromptAttachmentPayload[],
-  useWorktree?: boolean,
+  branchSetup?: FirstPromptBranchSetup,
 ): Pick<SessionEntry, "queuedPrompts"> {
   const queuedPrompt: QueuedPrompt = { text };
   if (attachments && attachments.length > 0) queuedPrompt.attachments = attachments;
-  if (useWorktree) queuedPrompt.useWorktree = true;
+  if (branchSetup) queuedPrompt.branchSetup = branchSetup;
   return {
     queuedPrompts: [...session.queuedPrompts, queuedPrompt],
   };
@@ -88,7 +88,7 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
     envelopes.push(
       createPromptSend(session.serverSessionId, prompt.text, {
         attachments: prompt.attachments,
-        useWorktree: prompt.useWorktree,
+        branchSetup: prompt.branchSetup,
       }),
     );
   }

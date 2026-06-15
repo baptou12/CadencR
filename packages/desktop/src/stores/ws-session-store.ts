@@ -15,6 +15,7 @@ import {
 } from "@/stores/connection-status-store";
 import {
   type SessionConfig,
+  type FirstPromptBranchSetup,
   type GateCloseReason,
   type WsEnvelope,
   parseEnvelope,
@@ -116,14 +117,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sessionId: string,
     text: string,
     attachments?: PromptAttachmentPayload[],
-    useWorktree?: boolean,
+    branchSetup?: FirstPromptBranchSetup,
   ): void {
     const session = getSession(sessionId);
     set(
       updateSession(
         get(),
         sessionId,
-        buildQueuedPromptPatch(session, text, attachments, useWorktree),
+        buildQueuedPromptPatch(session, text, attachments, branchSetup),
       ),
     );
   }
@@ -376,7 +377,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sessionId: string,
       text: string,
       attachments?: PromptAttachmentPayload[],
-      useWorktree?: boolean,
+      branchSetup?: FirstPromptBranchSetup,
     ) {
       const session = getSession(sessionId);
       const trackProviderReceipt = shouldTrackPromptReceipt(session);
@@ -386,12 +387,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           sessionId,
           createPromptSend(session.serverSessionId, text, {
             attachments,
-            useWorktree,
+            branchSetup,
             clientMessageId,
           }),
         );
       } else {
-        queuePrompt(sessionId, text, attachments, useWorktree);
+        queuePrompt(sessionId, text, attachments, branchSetup);
       }
 
       const content = buildUserMessageContent(text, attachments);

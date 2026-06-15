@@ -35,7 +35,21 @@ pub(super) async fn ensure_new_branch_name(
     if let Some(b) = get_setting(read_pool, feature_id, "worktree_branch").await {
         return Ok(b);
     }
+    let name = derive_branch_name(read_pool, feature_id, project_id).await?;
+    let _ = set_setting(write_pool, feature_id, "worktree_branch", &name).await;
+    Ok(name)
+}
 
+/// Derive a fresh branch name from the project's `branch_prefix` and the
+/// feature title — `{prefix}{slug}-{hex}`. Pure-ish: reads settings but
+/// persists nothing, so callers that don't want a worktree (the project-path
+/// "From branch" flow) don't leave a `worktree_branch` row behind that the UI
+/// would read as "this feature has a worktree".
+pub(super) async fn derive_branch_name(
+    read_pool: &SqlitePool,
+    feature_id: i64,
+    project_id: i64,
+) -> Result<String, String> {
     let prefix = sqlx::query_as::<_, (String,)>(
         "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
     )
@@ -67,9 +81,7 @@ pub(super) async fn ensure_new_branch_name(
     } else {
         title
     };
-    let name = build_branch_name(&prefix, &slug_source);
-    let _ = set_setting(write_pool, feature_id, "worktree_branch", &name).await;
-    Ok(name)
+    Ok(build_branch_name(&prefix, &slug_source))
 }
 
 /// Run `git worktree add -b <branch> <path> [<base>]`. When `base` is set,
@@ -110,6 +122,43 @@ pub(super) async fn add_new_worktree(
                 Ok(())
             } else {
                 Err(format!("git worktree add failed: {msg}"))
+            }
+        }
+    }
+}
+
+/// Run `git checkout -b <branch> [<base>]` in the project directory itself —
+/// the worktree-free "From branch" path (new branch, no worktree). When `base`
+/// is set the new branch forks from that ref; otherwise from the current HEAD.
+/// If the branch already exists (race / retry), fall back to a plain
+/// `git checkout <branch>` so the operation is idempotent.
+pub(super) async fn create_branch_in_project(
+    project_dir: &str,
+    branch: &str,
+    base: Option<&str>,
+) -> Result<(), String> {
+    let positionals: Vec<&str> = match base {
+        Some(b) => vec![b],
+        None => vec![],
+    };
+    match run_git_safe_refs(
+        &["checkout"],
+        &["-b", branch],
+        &positionals,
+        Path::new(project_dir),
+    )
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let msg = format!("{e}");
+            if msg.contains("already exists") {
+                run_git_safe_refs(&["checkout"], &[], &[branch], Path::new(project_dir))
+                    .await
+                    .map_err(|e2| format!("git checkout failed: {e2}"))?;
+                Ok(())
+            } else {
+                Err(format!("git checkout -b failed: {msg}"))
             }
         }
     }
@@ -261,5 +310,79 @@ mod tests {
             .current_dir(project.path())
             .status()
             .await;
+    }
+
+    #[tokio::test]
+    async fn create_branch_in_project_forks_from_base_and_checks_out() {
+        // `branch` mode: create a new branch forked from `develop` in the
+        // project dir itself, and verify the project's HEAD now points at the
+        // new branch sitting on develop's tip.
+        let project = tempfile::tempdir().unwrap();
+        init_repo(project.path()).await;
+        let project_dir = project.path().to_str().unwrap();
+
+        tokio::process::Command::new("git")
+            .args(["checkout", "-q", "-b", "develop"])
+            .current_dir(project.path())
+            .status()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "develop-only"])
+            .current_dir(project.path())
+            .status()
+            .await
+            .unwrap();
+        let develop_sha = tokio::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(project.path())
+            .output()
+            .await
+            .unwrap();
+        let develop_sha = String::from_utf8(develop_sha.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        // Move HEAD away from develop so the explicit base argument is what
+        // the new branch actually forks from.
+        tokio::process::Command::new("git")
+            .args(["checkout", "-q", "-b", "scratch"])
+            .current_dir(project.path())
+            .status()
+            .await
+            .unwrap();
+
+        create_branch_in_project(project_dir, "feat/from-develop", Some("develop"))
+            .await
+            .unwrap();
+
+        let current_branch = tokio::process::Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(project.path())
+            .output()
+            .await
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(current_branch.stdout).unwrap().trim(),
+            "feat/from-develop",
+        );
+        let head_sha = tokio::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(project.path())
+            .output()
+            .await
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(head_sha.stdout).unwrap().trim(),
+            develop_sha,
+            "new branch should fork from develop's tip",
+        );
+
+        // Idempotent: a retry on the existing branch falls back to a plain
+        // checkout instead of erroring.
+        create_branch_in_project(project_dir, "feat/from-develop", Some("develop"))
+            .await
+            .unwrap();
     }
 }

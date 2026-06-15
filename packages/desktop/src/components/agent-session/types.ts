@@ -14,6 +14,7 @@ import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import type { PermissionMode } from "@/types/permission-mode";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import type { WorktreeMode } from "@/lib/worktree-mode";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
 import type { AgentCatalog } from "@/api/agentRuntime";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
@@ -185,18 +186,17 @@ export interface AgentSessionProps {
    * anchoring through `historyPrependDisplayOffset`.
    */
   onLoadOlder?: () => Promise<number | void>;
-  /** Whether "use worktree" is toggled on (shown as chip before first message) */
-  useWorktree?: boolean;
-  /** Called when user toggles the "use worktree" chip */
-  onToggleWorktree?: () => void;
   /**
-   * Optional richer pre-first-prompt worktree picker — a two-chip group:
-   * a Branch chip (with chevron + virtualized branch list, default = the
-   * project's current branch) and a "Use worktree" toggle. Embedders that
-   * don't supply these fall back to the legacy boolean chip.
+   * Pre-first-prompt branch/worktree picker — a two-chip group: a Branch chip
+   * (chevron + virtualized branch list, default = the project's current
+   * branch) and an explicit behavior menu (`WorktreeMode`). The chip renders
+   * only when the embedder supplies the project id, mode, and both setters.
    */
   worktreeProjectId?: number;
   worktreeDefaultBranch?: string;
+  worktreeProjectPath?: string;
+  worktreeMode?: WorktreeMode;
+  onWorktreeModeChange?: (mode: WorktreeMode) => void;
   worktreeSelectedBranch?: string | null;
   onWorktreeBranchChange?: (next: string | null) => void;
   /**

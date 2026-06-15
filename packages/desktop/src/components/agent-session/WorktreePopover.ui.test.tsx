@@ -1,32 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import type { BranchInfo } from "@/api/generated";
+import type { WorktreeMode } from "@/lib/worktree-mode";
 import { WorktreeButtonGroup } from "./WorktreePopover";
 
 const mocks = vi.hoisted(() => ({
   mockUseListBranches: vi.fn(),
-  mockUseValidateCheckout: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
   useListBranches: mocks.mockUseListBranches,
-  useValidateCheckout: mocks.mockUseValidateCheckout,
 }));
 
-function branch(name: string, attached?: string | null): BranchInfo {
+function branch(name: string, opts?: { attached?: string | null; local?: boolean }): BranchInfo {
   return {
     name,
-    is_local: true,
-    attached_worktree_path: attached ?? null,
-    attached_feature_id: attached ? 7 : null,
+    is_local: opts?.local ?? true,
+    attached_worktree_path: opts?.attached ?? null,
+    attached_feature_id: opts?.attached ? 7 : null,
   } as unknown as BranchInfo;
 }
 
 function renderGroup(args: {
   branches: BranchInfo[];
   selectedBranch: string | null;
-  useWorktree: boolean;
-  onToggleWorktree: () => void;
+  mode: WorktreeMode;
+  projectPath?: string;
+  onModeChange?: () => void;
+  onSelectedBranchChange?: () => void;
 }): ReturnType<typeof render> {
   mocks.mockUseListBranches.mockReturnValue({
     data: args.branches,
@@ -34,63 +35,88 @@ function renderGroup(args: {
     isError: false,
     error: null,
   });
-  mocks.mockUseValidateCheckout.mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue({ success: true }),
-    isPending: false,
-  });
   return render(
     <WorktreeButtonGroup
       projectId={1}
       defaultBranch="main"
-      useWorktree={args.useWorktree}
-      onToggleWorktree={args.onToggleWorktree}
+      projectPath={args.projectPath ?? "/repo"}
+      mode={args.mode}
+      onModeChange={args.onModeChange ?? vi.fn()}
       selectedBranch={args.selectedBranch}
-      onSelectedBranchChange={vi.fn()}
+      onSelectedBranchChange={args.onSelectedBranchChange ?? vi.fn()}
     />,
   );
 }
 
 describe("WorktreeButtonGroup", () => {
-  it("does not let users turn off worktree mode for an attached selected branch", async () => {
-    const onToggleWorktree = vi.fn();
-    const { user } = renderGroup({
-      branches: [branch("feat/attached", "/tmp/feat-attached")],
-      selectedBranch: "feat/attached",
-      useWorktree: true,
-      onToggleWorktree,
-    });
-
-    await user.click(screen.getByRole("button", { name: /use worktree/i }));
-
-    expect(onToggleWorktree).not.toHaveBeenCalled();
+  it("shows the current mode label in the mode segment", () => {
+    renderGroup({ branches: [], selectedBranch: null, mode: "on_branch" });
+    expect(screen.getByRole("button", { name: /branch \/ worktree behavior/i })).toHaveTextContent(
+      "On branch",
+    );
   });
 
-  it("explains that locked worktree mode reuses the existing worktree", async () => {
-    const { user } = renderGroup({
-      branches: [branch("feat/attached", "/tmp/feat-attached")],
+  it("labels the worktree mode 'Reuse worktree' for a branch that already has one", () => {
+    renderGroup({
+      branches: [branch("feat/attached", { attached: "/tmp/wt" })],
       selectedBranch: "feat/attached",
-      useWorktree: true,
-      onToggleWorktree: vi.fn(),
+      mode: "branch_worktree",
     });
-
-    await user.click(screen.getByRole("button", { name: /use worktree/i }));
-
-    expect(await screen.findByText("Existing worktree selected")).toBeInTheDocument();
-    expect(screen.getByText(/Cadencr will reuse that existing worktree/i)).toBeInTheDocument();
-    expect(screen.getByText(/No new branch will be created/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /branch \/ worktree behavior/i })).toHaveTextContent(
+      "Reuse worktree",
+    );
   });
 
-  it("still lets users turn off worktree mode for an unattached selected branch", async () => {
-    const onToggleWorktree = vi.fn();
+  it("lists every explicit behavior and disables worktree-for-default-branch", async () => {
+    const { user } = renderGroup({ branches: [], selectedBranch: null, mode: "on_branch" });
+    await user.click(screen.getByRole("button", { name: /branch \/ worktree behavior/i }));
+
+    // Row labels unique to the menu (the trigger already shows "On branch").
+    expect(await screen.findByText("From branch")).toBeInTheDocument();
+    expect(screen.getByText("From branch with worktree")).toBeInTheDocument();
+    // The default branch can't be moved into a dedicated worktree.
+    const worktreeRow = screen.getByText("New worktree").closest("button");
+    expect(worktreeRow).toBeDisabled();
+  });
+
+  it("disables the worktree mode for a non-default branch checked out at the project path", async () => {
+    // Repro: the project path was switched to `toto`, which the user then picks
+    // in the selector. Its worktree attachment equals the project path, so
+    // "reuse/new worktree" must be off even though it isn't the default branch.
     const { user } = renderGroup({
-      branches: [branch("feat/unattached")],
-      selectedBranch: "feat/unattached",
-      useWorktree: true,
-      onToggleWorktree,
+      branches: [branch("toto", { attached: "/repo" })],
+      selectedBranch: "toto",
+      mode: "on_branch",
+      projectPath: "/repo",
     });
+    await user.click(screen.getByRole("button", { name: /branch \/ worktree behavior/i }));
+    const worktreeRow = (await screen.findByText("New worktree")).closest("button");
+    expect(worktreeRow).toBeDisabled();
+  });
 
-    await user.click(screen.getByRole("button", { name: /use worktree/i }));
+  it("selects a mode from the menu", async () => {
+    const onModeChange = vi.fn();
+    const { user } = renderGroup({
+      branches: [],
+      selectedBranch: null,
+      mode: "on_branch",
+      onModeChange,
+    });
+    await user.click(screen.getByRole("button", { name: /branch \/ worktree behavior/i }));
+    await user.click(await screen.findByText("From branch with worktree"));
+    expect(onModeChange).toHaveBeenCalledWith("from_branch_worktree");
+  });
 
-    expect(onToggleWorktree).toHaveBeenCalledTimes(1);
+  it("steers the mode to reuse when picking a branch that has a worktree", async () => {
+    const onModeChange = vi.fn();
+    const { user } = renderGroup({
+      branches: [branch("feat/attached", { attached: "/tmp/wt" })],
+      selectedBranch: null,
+      mode: "from_branch_worktree",
+      onModeChange,
+    });
+    await user.click(screen.getByRole("button", { name: /^main$|^branch$/i }));
+    await user.click(await screen.findByText("feat/attached"));
+    expect(onModeChange).toHaveBeenCalledWith("branch_worktree");
   });
 });

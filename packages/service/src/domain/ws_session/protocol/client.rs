@@ -33,6 +33,18 @@ pub struct PromptAttachmentPayload {
     pub kind: Option<String>,
 }
 
+/// "From branch" (project-path) provisioning, requested on the first prompt.
+/// When present, the backend auto-names the feature first, then forks a new
+/// branch *with that name* in the project folder — no worktree, no setup. The
+/// name must be derived server-side (after auto-naming), which is why this can
+/// not be a pre-send git call from the client. `base` of `None` forks from the
+/// project's current HEAD; `Some(ref)` forks from that ref.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewProjectBranchPayload {
+    #[serde(default)]
+    pub base: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptSendPayload {
     pub session_id: String,
@@ -42,6 +54,8 @@ pub struct PromptSendPayload {
     #[serde(default)]
     pub attachments: Vec<PromptAttachmentPayload>,
     pub use_worktree: Option<bool>,
+    #[serde(default)]
+    pub new_project_branch: Option<NewProjectBranchPayload>,
     #[serde(default)]
     pub client_message_id: Option<String>,
     #[serde(default)]

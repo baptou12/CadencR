@@ -55,9 +55,21 @@ export function createSessionInit(config: SessionConfig): WsEnvelope {
   });
 }
 
+/**
+ * First-prompt branch provisioning, resolved from the worktree-mode picker.
+ * The backend acts on this *after* auto-naming the feature, so the new branch
+ * (worktree or project-path) carries the prompt-derived name:
+ *   - `worktree` → backend `ensure_worktree` (reads persisted feature settings).
+ *   - `project_branch` → backend forks a project-path branch named after the
+ *     feature ("From branch"); `base` of `null` forks from the current HEAD.
+ */
+export type FirstPromptBranchSetup =
+  | { kind: "worktree" }
+  | { kind: "project_branch"; base: string | null };
+
 export interface PromptSendOptions {
   attachments?: PromptAttachmentPayload[];
-  useWorktree?: boolean;
+  branchSetup?: FirstPromptBranchSetup;
   clientMessageId?: string;
   replay?: boolean;
 }
@@ -67,13 +79,17 @@ export function createPromptSend(
   text: string,
   options: PromptSendOptions = {},
 ): WsEnvelope {
+  const { branchSetup } = options;
   return createEnvelope("session", "prompt.send", {
     session_id: sessionId,
     text,
     ...(options.attachments && options.attachments.length > 0
       ? { attachments: options.attachments }
       : {}),
-    ...(options.useWorktree ? { use_worktree: true } : {}),
+    ...(branchSetup?.kind === "worktree" ? { use_worktree: true } : {}),
+    ...(branchSetup?.kind === "project_branch"
+      ? { new_project_branch: { base: branchSetup.base } }
+      : {}),
     ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {}),
     ...(options.replay ? { replay: true } : {}),
   });

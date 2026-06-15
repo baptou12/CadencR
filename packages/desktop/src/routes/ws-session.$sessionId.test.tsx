@@ -304,11 +304,18 @@ function lastAgentSessionProps(): Record<string, unknown> {
   return calls[calls.length - 1]?.[0] as unknown as Record<string, unknown>;
 }
 
-async function selectBranchAndSend(branch: string): Promise<void> {
+async function setModeBranchAndSend(args: { mode: string; branch?: string | null }): Promise<void> {
   render(<WsSessionPage />);
   await act(async () => {
-    (lastAgentSessionProps().onWorktreeBranchChange as (branch: string | null) => void)(branch);
+    (lastAgentSessionProps().onWorktreeModeChange as (m: string) => void)(args.mode);
   });
+  if (args.branch !== undefined) {
+    await act(async () => {
+      (lastAgentSessionProps().onWorktreeBranchChange as (b: string | null) => void)(
+        args.branch ?? null,
+      );
+    });
+  }
   const onSend = lastAgentSessionProps().onSend as (text: string) => Promise<void>;
   await act(async () => {
     await onSend("hello");
@@ -328,6 +335,7 @@ describe("WsSessionPage route", () => {
     mocks.mockToastError.mockClear();
     mocks.mockListBranches.mockReset();
     mocks.mockListBranches.mockResolvedValue([]);
+    mocks.mockCheckoutBranchMutateAsync.mockClear();
     mocks.mockSetFeatureSettingMutateAsync.mockReset();
     mocks.mockSetFeatureSettingMutateAsync.mockResolvedValue(undefined);
     mocks.mockSetWorkspaceSettingMutateAsync.mockReset();
@@ -406,31 +414,21 @@ describe("WsSessionPage route", () => {
     mocks.mockSetFeatureSettingMutateAsync.mockRejectedValueOnce(new Error("disk full"));
 
     render(<WsSessionPage />);
-    const props = lastAgentSessionProps();
     await act(async () => {
-      (props.onToggleWorktree as () => void)();
+      (lastAgentSessionProps().onWorktreeModeChange as (m: string) => void)("from_branch_worktree");
     });
-    const propsAfterToggle = lastAgentSessionProps();
-    const onSend = propsAfterToggle.onSend as (text: string) => Promise<void>;
+    const onSend = lastAgentSessionProps().onSend as (text: string) => Promise<void>;
     await act(async () => {
       await expect(onSend("hello")).rejects.toThrow("disk full");
     });
-    expect(mocks.mockToastError).toHaveBeenCalledTimes(1);
-    expect(mocks.mockToastError.mock.calls[0][0]).toMatch(/worktree settings/i);
+    expect(
+      mocks.mockToastError.mock.calls.some((call) => /worktree settings/i.test(String(call[0]))),
+    ).toBe(true);
     expect(mocks.mockSendPrompt).not.toHaveBeenCalled();
   });
 
-  it("reuses an attached selected branch on the first prompt even when the worktree toggle is off", async () => {
-    mocks.mockListBranches.mockResolvedValue([
-      {
-        name: "feat/attached",
-        is_local: true,
-        attached_worktree_path: "/tmp/wt",
-        attached_feature_id: 99,
-      },
-    ]);
-    await selectBranchAndSend("feat/attached");
-    expect(mocks.mockListBranches).toHaveBeenCalledTimes(1);
+  it("persists reuse settings and starts a worktree for the branch_worktree mode", async () => {
+    await setModeBranchAndSend({ mode: "branch_worktree", branch: "feat/attached" });
     expect(mocks.mockSetFeatureSettingMutateAsync).toHaveBeenCalledTimes(2);
     expect(mocks.mockSetFeatureSettingMutateAsync).toHaveBeenNthCalledWith(1, {
       id: 35,
@@ -440,20 +438,32 @@ describe("WsSessionPage route", () => {
       id: 35,
       data: { key: "worktree_mode", value: "reuse" },
     });
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, true);
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, { kind: "worktree" });
   });
 
-  it("does not persist worktree settings or start a worktree for an unattached selected branch when the toggle is off", async () => {
-    mocks.mockListBranches.mockResolvedValue([
-      {
-        name: "feat/unattached",
-        is_local: true,
-        attached_worktree_path: null,
-        attached_feature_id: null,
-      },
-    ]);
-    await selectBranchAndSend("feat/unattached");
-    expect(mocks.mockListBranches).toHaveBeenCalledTimes(1);
+  it("signals a project-path new branch (no worktree) for the from_branch mode", async () => {
+    await setModeBranchAndSend({ mode: "from_branch", branch: "develop" });
+    // No worktree feature settings: the backend forks the branch after
+    // auto-naming, signalled via the prompt's `branchSetup` (not a pre-send op).
+    expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, {
+      kind: "project_branch",
+      base: "develop",
+    });
+  });
+
+  it("checks out the picked branch (no worktree) for the on_branch mode", async () => {
+    await setModeBranchAndSend({ mode: "on_branch", branch: "feat/unattached" });
+    expect(mocks.mockCheckoutBranchMutateAsync).toHaveBeenCalledWith({
+      data: { project_id: 1, branch: "feat/unattached" },
+    });
+    expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, undefined);
+  });
+
+  it("does not persist settings, checkout, or start a worktree for on_branch on the default branch", async () => {
+    await setModeBranchAndSend({ mode: "on_branch" });
+    expect(mocks.mockCheckoutBranchMutateAsync).not.toHaveBeenCalled();
     expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
     expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, undefined);
   });

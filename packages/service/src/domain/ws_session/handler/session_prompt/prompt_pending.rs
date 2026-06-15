@@ -20,7 +20,7 @@ use super::content::{
 use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
 use super::prompt_status::{mark_agent_running, mirror_user_message};
-use super::prompt_worktree::{prepare_worktree_if_requested, spawn_auto_name_if_needed};
+use super::prompt_worktree::{prepare_branch_provisioning, spawn_auto_name_if_needed};
 use super::runtime_mcp::{attach_current_cadencr_browser_mcp, browser_mcp_enabled};
 use super::stream_reader::spawn_stream_reader;
 
@@ -54,7 +54,13 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
         context.feature_id,
     )
     .await;
-    let use_worktree = prepare_worktree(&mut context).await;
+    let auto_name_handled = match prepare_worktree(&mut context).await {
+        Ok(handled) => handled,
+        Err(error) => {
+            report_branch_setup_error(context, error).await;
+            return;
+        }
+    };
     reresolve_worktree_and_resume(&mut context).await;
     attach_permission_bridge(&mut context);
     if let Err(error) = attach_cadencr_mcp(&mut context).await {
@@ -62,7 +68,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
         return;
     }
     validate_resume_id(adapter, &mut context);
-    spawn_runtime(context, adapter, use_worktree).await;
+    spawn_runtime(context, adapter, auto_name_handled).await;
 }
 
 async fn attach_cadencr_mcp(context: &mut PendingPromptContext) -> Result<(), String> {
@@ -179,8 +185,8 @@ async fn resolve_adapter_or_report(
     }
 }
 
-async fn prepare_worktree(context: &mut PendingPromptContext) -> bool {
-    prepare_worktree_if_requested(
+async fn prepare_worktree(context: &mut PendingPromptContext) -> Result<bool, String> {
+    prepare_branch_provisioning(
         &context.app_state,
         &context.app_state.write_pool,
         &context.sender,
@@ -190,6 +196,24 @@ async fn prepare_worktree(context: &mut PendingPromptContext) -> bool {
         &mut context.options,
     )
     .await
+}
+
+/// Abort the prompt when first-prompt branch setup fails (e.g. the "From
+/// branch" `git checkout -b` hit a dirty tree). Pauses the session and surfaces
+/// the git error so the agent never runs on an unexpected branch.
+async fn report_branch_setup_error(context: PendingPromptContext, message: String) {
+    error!(context.db_session_id, error = %message, "branch setup failed before spawn");
+    persist_pause_and_send_session_error(
+        &context.app_state.write_pool,
+        &context.app_state.session_status_tx,
+        &context.sender,
+        &context.envelope_id,
+        context.feature_id,
+        context.db_session_id,
+        "BRANCH_SETUP_ERROR",
+        &message,
+    )
+    .await;
 }
 
 fn attach_permission_bridge(context: &mut PendingPromptContext) {
@@ -230,7 +254,7 @@ fn validate_resume_id(
 async fn spawn_runtime(
     mut context: PendingPromptContext,
     adapter: &'static dyn AgentRuntimeAdapter,
-    use_worktree: bool,
+    auto_name_handled: bool,
 ) {
     info!(
         context.db_session_id,
@@ -248,7 +272,7 @@ async fn spawn_runtime(
         build_content_value_for_provider(&context.provider_id, &context.payload.text, &attachments);
     let options = std::mem::take(&mut context.options);
     match adapter.spawn(content_value, options).await {
-        Ok(runtime_session) => register_runtime(context, runtime_session, use_worktree).await,
+        Ok(runtime_session) => register_runtime(context, runtime_session, auto_name_handled).await,
         Err(error) => report_spawn_error(context, error.to_string()).await,
     }
 }
@@ -271,7 +295,7 @@ async fn report_spawn_error(context: PendingPromptContext, message: String) {
 async fn register_runtime(
     mut context: PendingPromptContext,
     mut runtime_session: Box<dyn crate::domain::agents::adapter::AgentRuntimeSession>,
-    use_worktree: bool,
+    auto_name_handled: bool,
 ) {
     info!(
         context.db_session_id,
@@ -311,7 +335,7 @@ async fn register_runtime(
     let stream_model = context.spawned_model.clone();
 
     spawn_auto_name_if_needed(
-        use_worktree,
+        auto_name_handled,
         context.app_state.write_pool.clone(),
         context.app_state.feature_events_tx.clone(),
         context.sender.clone(),

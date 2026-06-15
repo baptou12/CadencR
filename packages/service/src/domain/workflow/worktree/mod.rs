@@ -8,7 +8,8 @@
 //! - [`branch`] — branch-name construction.
 //! - [`db`] — `feature_settings` + project lookups shared across modes.
 //! - [`new_branch`] — `WorktreeMode::New` helpers (`ensure_new_branch_name`,
-//!   `add_new_worktree`).
+//!   `add_new_worktree`). Also hosts the worktree-free `create_branch_in_project`
+//!   used by [`create_project_branch`] (the "From branch" project-path flow).
 //! - [`reuse`] — `WorktreeMode::Reuse` (`attach_to_existing_branch`,
 //!   `WorktreeAttached`).
 //! - [`setup`] — `run_setup_commands`: streams the project's setup script
@@ -79,6 +80,26 @@ pub async fn ensure_worktree(
             ensure_new(read_pool, write_pool, feature_id, project_id, ws_sender).await
         }
     }
+}
+
+/// Create a new branch forked from `base` (or the project's current HEAD),
+/// checked out in the **project path itself** — no worktree, no setup script,
+/// no `worktree_*` settings persisted. This backs the "From branch" UX, which
+/// is deliberately worktree-free: the agent runs in the project folder exactly
+/// like "On branch", just on a freshly forked branch. Called from the prompt
+/// send flow *after* auto-naming (see `prepare_branch_provisioning`) so the
+/// branch name reflects the prompt-derived feature title, matching how the
+/// worktree path names its branch. Returns the new branch name.
+pub async fn create_project_branch(
+    read_pool: &SqlitePool,
+    feature_id: i64,
+    project_id: i64,
+    base: Option<&str>,
+) -> Result<String, String> {
+    let project_dir = get_project_directory(read_pool, project_id).await?;
+    let branch = new_branch::derive_branch_name(read_pool, feature_id, project_id).await?;
+    new_branch::create_branch_in_project(&project_dir, &branch, base).await?;
+    Ok(branch)
 }
 
 /// Read the user-selected worktree mode from feature settings, falling back
