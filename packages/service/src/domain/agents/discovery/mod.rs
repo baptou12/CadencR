@@ -115,8 +115,8 @@ mod tests {
     #[tokio::test]
     async fn read_override_setting_returns_none_for_empty_string() {
         let pool = test_pool_with_settings().await;
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('claude_cli_path', '')")
-            .execute(&pool)
+        // CLI path overrides are workspace settings, stored in the JSON store.
+        crate::domain::workspace::repository::set_setting(&pool, "claude_cli_path", "")
             .await
             .unwrap();
         assert!(read_override_setting(&pool, CLAUDE_CLI_PATH_KEY)
@@ -127,15 +127,14 @@ mod tests {
     #[tokio::test]
     async fn read_overrides_returns_both_values_in_one_pass() {
         let pool = test_pool_with_settings().await;
-        sqlx::query(
-            "INSERT INTO settings (key, value) VALUES \
-             ('claude_cli_path', '/c/claude'), \
-             ('opencode_cli_path', '/o/opencode'), \
-             ('codex_cli_path', '/x/codex')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        // CLI path overrides are workspace settings, which now live in the JSON
+        // store — seed them there (not the legacy SQLite `settings` table).
+        let set = crate::domain::workspace::repository::set_setting;
+        set(&pool, "claude_cli_path", "/c/claude").await.unwrap();
+        set(&pool, "opencode_cli_path", "/o/opencode")
+            .await
+            .unwrap();
+        set(&pool, "codex_cli_path", "/x/codex").await.unwrap();
         let overrides = read_overrides(&pool).await;
         assert_eq!(overrides.claude, Some(PathBuf::from("/c/claude")));
         assert_eq!(overrides.opencode, Some(PathBuf::from("/o/opencode")));

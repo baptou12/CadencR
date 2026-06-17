@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useListProjects, useListFeatures, useGetWorkspaceSetting } from "../api/generated";
-import { parseSavedFeature } from "@/lib/saved-feature";
+import { useListProjects, useListFeatures } from "../api/generated";
+import { readSavedFeature } from "@/lib/saved-feature";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -21,9 +21,8 @@ function HomePage() {
   const navigate = useNavigate();
   const { projectId: searchProjectId } = Route.useSearch();
 
-  const lastFeatureQuery = useGetWorkspaceSetting("lastOpenedFeature");
-  const lastFeatureRaw = lastFeatureQuery.data?.value;
-  const lastFeature = useMemo(() => parseSavedFeature(lastFeatureRaw), [lastFeatureRaw]);
+  // Per-device session restore — read synchronously from localStorage.
+  const lastFeature = useMemo(() => readSavedFeature(), []);
 
   const projectsQuery = useListProjects();
   const fallbackProjectId = projectsQuery.data?.[0]?.id ?? null;
@@ -35,13 +34,9 @@ function HomePage() {
   );
 
   const startupError =
-    lastFeatureQuery.error ??
-    projectsQuery.error ??
-    (targetProjectId != null ? featuresQuery.error : null);
+    projectsQuery.error ?? (targetProjectId != null ? featuresQuery.error : null);
 
   useEffect(() => {
-    if (lastFeatureQuery.isLoading) return;
-
     const features = featuresQuery.data;
     if (!features) return;
 
@@ -74,14 +69,7 @@ function HomePage() {
         replace: true,
       });
     }
-  }, [
-    lastFeatureQuery.isLoading,
-    lastFeature,
-    searchProjectId,
-    targetProjectId,
-    featuresQuery.data,
-    navigate,
-  ]);
+  }, [lastFeature, searchProjectId, targetProjectId, featuresQuery.data, navigate]);
 
   // Show helpful message if project exists but has no features
   if (

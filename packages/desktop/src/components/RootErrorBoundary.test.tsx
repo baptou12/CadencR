@@ -3,10 +3,11 @@ import { act, render, screen } from "@/test-utils";
 import { useState, type ReactNode } from "react";
 import { RootErrorBoundary } from "./RootErrorBoundary";
 
+const SAVED_FEATURE_KEY = "cadencr:last-opened-feature";
+
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   pathname: "/agents",
-  workspaceSettingData: undefined as { value?: string } | undefined,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -15,19 +16,15 @@ vi.mock("@tanstack/react-router", () => ({
     opts.select({ location: { pathname: mocks.pathname } }),
 }));
 
-vi.mock("@/api/generated", () => ({
-  useGetWorkspaceSetting: () => ({ data: mocks.workspaceSettingData }),
-}));
-
 function Boom(): never {
   throw new Error("kaboom");
 }
 
 describe("RootErrorBoundary", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     mocks.navigate.mockReset();
     mocks.pathname = "/agents";
-    mocks.workspaceSettingData = undefined;
   });
 
   it("renders children when nothing throws", () => {
@@ -98,9 +95,10 @@ describe("RootErrorBoundary", () => {
   });
 
   it("navigates to the saved most-recent conversation when available", async () => {
-    mocks.workspaceSettingData = {
-      value: JSON.stringify({ projectId: 7, featureId: 42, activeTab: "agent" }),
-    };
+    window.localStorage.setItem(
+      SAVED_FEATURE_KEY,
+      JSON.stringify({ projectId: 7, featureId: 42, activeTab: "agent" }),
+    );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { user } = render(
       <RootErrorBoundary>

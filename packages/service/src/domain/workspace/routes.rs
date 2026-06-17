@@ -1,10 +1,11 @@
 use axum::extract::{Json, Path, State};
 use axum::routing::get;
 use axum::Router;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
 use crate::domain::settings_allowlist;
+use crate::domain::settings_store::{self, SettingWarning};
 use crate::domain::workspace::models::*;
 use crate::domain::workspace::service;
 use crate::error::AppError;
@@ -12,6 +13,44 @@ use crate::error::AppError;
 #[derive(Serialize, utoipa::ToSchema)]
 pub struct SettingValueResponse {
     pub value: Option<String>,
+}
+
+/// The raw settings document plus its on-disk path and any non-blocking
+/// warnings (unknown keys, invalid values). Shared by the global and project
+/// "Edit JSON" / "Copy configuration path" surfaces.
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SettingsFileResponse {
+    pub path: String,
+    pub content: String,
+    pub warnings: Vec<SettingWarning>,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct WriteSettingsFileRequest {
+    pub content: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct WriteSettingsFileResponse {
+    pub warnings: Vec<SettingWarning>,
+}
+
+#[utoipa::path(get, path = "/api/workspace/settings-file", responses((status = 200, body = SettingsFileResponse)))]
+pub async fn get_settings_file_handler() -> Result<Json<SettingsFileResponse>, AppError> {
+    let (path, content, warnings) = settings_store::global_read_for_edit();
+    Ok(Json(SettingsFileResponse {
+        path: path.display().to_string(),
+        content,
+        warnings,
+    }))
+}
+
+#[utoipa::path(put, path = "/api/workspace/settings-file", request_body = WriteSettingsFileRequest, responses((status = 200, body = WriteSettingsFileResponse)))]
+pub async fn put_settings_file_handler(
+    Json(body): Json<WriteSettingsFileRequest>,
+) -> Result<Json<WriteSettingsFileResponse>, AppError> {
+    let warnings = settings_store::global_write_content(&body.content).await?;
+    Ok(Json(WriteSettingsFileResponse { warnings }))
 }
 
 #[utoipa::path(get, path = "/api/workspace/settings", responses((status = 200, body = Vec<Setting>)))]
@@ -88,6 +127,10 @@ pub async fn set_provider_setting_handler(
 pub fn workspace_router() -> Router<AppState> {
     Router::new()
         .route("/api/workspace/settings", get(list_settings_handler))
+        .route(
+            "/api/workspace/settings-file",
+            get(get_settings_file_handler).put(put_settings_file_handler),
+        )
         .route(
             "/api/workspace/settings/{key}",
             get(get_setting_handler).put(set_setting_handler),

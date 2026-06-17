@@ -7,6 +7,7 @@
  * notification trigger that the store imports.
  */
 import { queryClient, invalidateByUrlPrefix } from "@/lib/queryClient";
+import { invalidateSettingsDerivedQueries } from "@/lib/settingsInvalidation";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
@@ -227,6 +228,15 @@ export function handleAppEnvelope(
   }
   if (domain === "app" && action === "remote_connected") {
     showRemoteConnectedToast();
+    return true;
+  }
+  if (domain === "app" && action === "settings_event") {
+    // A settings JSON file changed on disk (our own write or an external edit).
+    // Refetch every settings-derived query — not just the raw settings
+    // endpoints but the model/provider/agent-catalog caches that resolve
+    // through the settings cascade — so the UI and warnings banners reflect the
+    // new file.
+    void invalidateSettingsDerivedQueries(queryClient);
     return true;
   }
   if (domain === "app" && action === "feature_event") {

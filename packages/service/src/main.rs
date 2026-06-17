@@ -83,6 +83,33 @@ async fn main() -> anyhow::Result<()> {
             .await?;
             let read_pool = db::create_read_pool(&db_path).await?;
 
+            // Resolve the JSON settings dir, migrate legacy SQLite settings into
+            // it (idempotent + non-destructive), and make it the process-wide
+            // settings location BEFORE anything reads settings (binary
+            // overrides, remote auto-start, agent warmups all do).
+            let settings_dir = domain::settings_store::dir::resolve_from_config(
+                config.settings_dir.as_deref(),
+                &db_path,
+            );
+            if let Err(e) = std::fs::create_dir_all(&settings_dir) {
+                tracing::warn!(dir = %settings_dir.display(), "failed to create settings dir: {e}");
+            }
+            // Resolve to an absolute path so the "Edit JSON" / "Copy path" UI
+            // shows a usable location. In dev the dir derives from a relative
+            // `--db-path`, which would otherwise surface as a confusing
+            // CWD-relative `./cadencr-settings/settings.json`.
+            let settings_dir = std::fs::canonicalize(&settings_dir).unwrap_or(settings_dir);
+            domain::settings_store::init(settings_dir.clone());
+            domain::settings_store::migrate::migrate_from_sqlite(&read_pool, &settings_dir).await;
+            // Strip per-device UI state (active tab, sidebar visibility,
+            // last-opened feature) that older versions wrote into the global
+            // file — it now lives in the frontend's localStorage.
+            match domain::settings_store::prune_ephemeral_global().await {
+                Ok(true) => info!("pruned legacy per-device UI keys from settings.json"),
+                Ok(false) => {}
+                Err(e) => tracing::warn!("failed to prune ephemeral settings keys: {e}"),
+            }
+
             // Mark any sessions left as 'running' from a previous crash as 'paused'
             domain::ws_session::persistence::WsSessionPersistence::cleanup_stale_sessions(
                 &write_pool,
@@ -114,6 +141,10 @@ async fn main() -> anyhow::Result<()> {
                 config.port,
                 remote_controller,
             );
+
+            // Watch the settings dir so external edits to the JSON files push a
+            // live refresh to connected clients.
+            domain::settings_store::watcher::start(&settings_dir, state.settings_events_tx.clone());
 
             // Push user-selected CLI binary paths into the SDK overrides
             // BEFORE the warmup runs — the opencode warmup spawns the server

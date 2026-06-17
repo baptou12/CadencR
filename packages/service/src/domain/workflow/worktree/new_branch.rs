@@ -50,15 +50,13 @@ pub(super) async fn derive_branch_name(
     feature_id: i64,
     project_id: i64,
 ) -> Result<String, String> {
-    let prefix = sqlx::query_as::<_, (String,)>(
-        "SELECT value FROM project_settings WHERE project_id = ? AND key = 'branch_prefix'",
-    )
-    .bind(project_id)
-    .fetch_optional(read_pool)
-    .await
-    .map_err(|e| format!("DB error looking up branch_prefix: {e}"))?
-    .map(|r| r.0)
-    .unwrap_or_else(|| "feature/".to_string());
+    // `branch_prefix` is a project setting and now lives in the JSON settings
+    // store (the legacy `project_settings` row is kept only as a backup).
+    let prefix = crate::domain::settings_store::project_get(read_pool, project_id, "branch_prefix")
+        .await
+        .map_err(|e| format!("error looking up branch_prefix: {e}"))?
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "feature/".to_string());
 
     let title = sqlx::query_as::<_, (String,)>("SELECT title FROM features WHERE id = ?")
         .bind(feature_id)

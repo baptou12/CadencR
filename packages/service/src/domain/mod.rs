@@ -43,6 +43,7 @@ pub mod session_status;
 pub mod sessions;
 pub mod settings;
 pub mod settings_allowlist;
+pub mod settings_store;
 pub mod terminal;
 pub mod workflow;
 pub mod workspace;

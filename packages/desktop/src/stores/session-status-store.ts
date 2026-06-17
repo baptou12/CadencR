@@ -182,6 +182,10 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         // created/deleted/archived on another device updates this sidebar
         // without a manual refresh.
         ws.send(JSON.stringify(createEnvelope("app", "subscribe.feature_events", {})));
+        // Subscribe to settings-file change events so external edits to the
+        // JSON settings files (or changes made on another device) refresh this
+        // client's settings without a manual reload.
+        ws.send(JSON.stringify(createEnvelope("app", "subscribe.settings_events", {})));
         // Host-only: subscribe to remote device-connection events so a phone
         // pairing/connecting shows a "Device connected" toast. Remote browsers
         // skip this so a device never toasts for its own connection.

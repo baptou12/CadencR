@@ -5,7 +5,14 @@ describe("sidecar process arguments", () => {
   it("does not expose the auth token on argv", () => {
     const args = serviceArgs("/tmp/cadencr.db");
 
-    expect(args).toEqual(["--db-path", "/tmp/cadencr.db", "--port", "5004"]);
+    expect(args).toEqual([
+      "--db-path",
+      "/tmp/cadencr.db",
+      "--settings-dir",
+      "/settings",
+      "--port",
+      "5004",
+    ]);
     expect(args).not.toContain("--auth-token");
   });
 
@@ -27,6 +34,8 @@ describe("sidecar process arguments", () => {
     expect(args).toEqual([
       "--db-path",
       "/tmp/cadencr.db",
+      "--settings-dir",
+      "/settings",
       "--port",
       "5004",
       "--app-version",
@@ -38,6 +47,8 @@ describe("sidecar process arguments", () => {
     expect(serviceArgs("/tmp/cadencr.db", undefined, "/res/renderer")).toEqual([
       "--db-path",
       "/tmp/cadencr.db",
+      "--settings-dir",
+      "/settings",
       "--port",
       "5004",
       "--renderer-dir",

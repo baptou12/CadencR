@@ -36,6 +36,30 @@ async fn report_setup_error(
     );
 }
 
+/// Resolve the project's `setup_worktree` commands for a feature.
+///
+/// `setup_worktree` is a project setting and now lives in the JSON settings store
+/// (the legacy `project_settings` row is kept only as a backup). Returns `None`
+/// when no non-empty setup script is configured.
+async fn resolve_setup_commands(
+    read_pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Option<String>, String> {
+    let project_id = sqlx::query_as::<_, (i64,)>("SELECT project_id FROM features WHERE id = ?")
+        .bind(feature_id)
+        .fetch_optional(read_pool)
+        .await
+        .map_err(|e| format!("Failed to look up project for feature: {e}"))?
+        .map(|r| r.0)
+        .ok_or_else(|| format!("Feature {feature_id} not found"))?;
+
+    let value = crate::domain::settings_store::project_get(read_pool, project_id, "setup_worktree")
+        .await
+        .map_err(|e| format!("Failed to query setup commands: {e}"))?
+        .filter(|v| !v.trim().is_empty());
+    Ok(value)
+}
+
 /// Run setup commands in the worktree (fire-and-forget via tokio::spawn).
 pub async fn run_setup_commands(
     read_pool: SqlitePool,
@@ -44,17 +68,10 @@ pub async fn run_setup_commands(
     worktree_path: PathBuf,
     ws_sender: WsSender,
 ) {
-    // 1. Query setup commands
-    let commands_str = match sqlx::query_as::<_, (String,)>(
-        "SELECT value FROM project_settings WHERE project_id = \
-         (SELECT project_id FROM features WHERE id = ?) AND key = 'setup_worktree'",
-    )
-    .bind(feature_id)
-    .fetch_optional(&read_pool)
-    .await
-    {
-        Ok(Some(row)) if !row.0.trim().is_empty() => row.0,
-        Ok(_) => {
+    // 1. Resolve setup commands from the project's JSON settings.
+    let commands_str = match resolve_setup_commands(&read_pool, feature_id).await {
+        Ok(Some(commands)) => commands,
+        Ok(None) => {
             // No setup commands
             let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
             let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", "").await;
@@ -69,8 +86,7 @@ pub async fn run_setup_commands(
             );
             return;
         }
-        Err(e) => {
-            let error = format!("Failed to query setup commands: {e}");
+        Err(error) => {
             let _ = set_setting(
                 &write_pool,
                 feature_id,
@@ -265,29 +281,32 @@ mod tests {
             .execute(&pool)
             .await
             .expect("features table");
-        sqlx::query(
-            "CREATE TABLE project_settings (project_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(project_id, key))",
-        )
-        .execute(&pool)
-        .await
-        .expect("project_settings table");
+        // `projects` is needed so the settings store can resolve the project's
+        // JSON file path. A unique name keeps this test's file from colliding
+        // with other tests sharing the process-wide settings dir fallback.
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL DEFAULT '')")
+            .execute(&pool)
+            .await
+            .expect("projects table");
         sqlx::query(
             "CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(feature_id, key))",
         )
         .execute(&pool)
         .await
         .expect("feature_settings table");
+        sqlx::query("INSERT INTO projects (id, name) VALUES (7, 'worktree-setup-test-project')")
+            .execute(&pool)
+            .await
+            .expect("project row");
         sqlx::query("INSERT INTO features (id, project_id) VALUES (1, 7)")
             .execute(&pool)
             .await
             .expect("feature row");
-        sqlx::query(
-            "INSERT INTO project_settings (project_id, key, value) VALUES (7, 'setup_worktree', ?)",
-        )
-        .bind(command)
-        .execute(&pool)
-        .await
-        .expect("setup setting");
+        // Seed the setup script through the JSON settings store (the same path
+        // production reads from), not the legacy `project_settings` table.
+        crate::domain::settings_store::project_set(&pool, 7, "setup_worktree", command)
+            .await
+            .expect("setup setting");
         pool
     }
 

@@ -43,6 +43,7 @@ import { LspServerList } from "@/components/settings/LspServerList";
 import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SettingsCard } from "@/components/settings/SettingsCard";
+import { WorkspaceJsonSettings } from "@/components/settings/SettingsJsonControls";
 import { SettingsSubsection } from "@/components/settings/SettingsSubsection";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { SettingsSwitchRow } from "@/components/settings/SettingsSwitchRow";
@@ -210,6 +211,10 @@ function SettingsPage() {
               Back
             </Button>
           </header>
+
+          <SettingsCard padded>
+            <WorkspaceJsonSettings />
+          </SettingsCard>
 
           <AppearanceSection />
           <EditorSection />

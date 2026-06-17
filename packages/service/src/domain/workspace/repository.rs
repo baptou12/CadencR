@@ -20,45 +20,30 @@ fn provider_keys() -> [(&'static str, String); 2] {
     ]
 }
 
-pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>, AppError> {
-    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
-        .bind(key)
-        .fetch_optional(pool)
-        .await?;
-    Ok(row.and_then(|r| r.0))
+// Global settings now live in `~/.cadencr/settings/settings.json` rather than
+// the SQLite `settings` table. These functions delegate to `settings_store`;
+// the `_pool` parameter is retained so the many call sites (routes, the
+// resolution cascade, binary-override startup) stay unchanged. The legacy
+// `settings` table is left intact as a backup but is no longer read or written.
+
+pub async fn get_setting(_pool: &SqlitePool, key: &str) -> Result<Option<String>, AppError> {
+    Ok(crate::domain::settings_store::global_get(key))
 }
 
-/// Like `get_setting` but treats empty/whitespace-only values as unset. The
-/// settings table stores user input verbatim — a stray empty string from the
-/// UI shouldn't look different from "no value set".
+/// Like `get_setting` but treats empty/whitespace-only values as unset.
 pub async fn get_nonempty_setting(
-    pool: &SqlitePool,
+    _pool: &SqlitePool,
     key: &str,
 ) -> Result<Option<String>, AppError> {
-    Ok(get_setting(pool, key)
-        .await?
-        .filter(|value| !value.trim().is_empty()))
+    Ok(crate::domain::settings_store::global_get_nonempty(key))
 }
 
-pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    )
-    .bind(key)
-    .bind(value)
-    .execute(pool)
-    .await?;
-    Ok(())
+pub async fn set_setting(_pool: &SqlitePool, key: &str, value: &str) -> Result<(), AppError> {
+    crate::domain::settings_store::global_set(key, value).await
 }
 
-pub async fn list_settings(pool: &SqlitePool) -> Result<Vec<Setting>, AppError> {
-    let rows: Vec<(String, Option<String>)> = sqlx::query_as("SELECT key, value FROM settings")
-        .fetch_all(pool)
-        .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(key, value)| Setting { key, value })
-        .collect())
+pub async fn list_settings(_pool: &SqlitePool) -> Result<Vec<Setting>, AppError> {
+    Ok(crate::domain::settings_store::global_list())
 }
 
 pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppError> {
@@ -222,42 +207,9 @@ mod tests {
         pool
     }
 
-    #[tokio::test]
-    async fn test_get_setting_found() {
-        let pool = setup_test_db().await;
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('theme', 'dark')")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let result = get_setting(&pool, "theme").await.unwrap();
-        assert_eq!(result, Some("dark".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_set_setting_insert_and_update() {
-        let pool = setup_test_db().await;
-
-        set_setting(&pool, "theme", "light").await.unwrap();
-        let result = get_setting(&pool, "theme").await.unwrap();
-        assert_eq!(result, Some("light".to_string()));
-
-        set_setting(&pool, "theme", "dark").await.unwrap();
-        let result = get_setting(&pool, "theme").await.unwrap();
-        assert_eq!(result, Some("dark".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_list_settings() {
-        let pool = setup_test_db().await;
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('a', '1'), ('b', '2'), ('c', '3')")
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let settings = list_settings(&pool).await.unwrap();
-        assert_eq!(settings.len(), 3);
-    }
+    // Global settings get/set/list moved to JSON files; their behavior is
+    // covered by `settings_store`'s own tests. The prompt-history helpers below
+    // remain SQLite-backed.
 
     #[tokio::test]
     async fn test_add_prompt_entry_basic() {

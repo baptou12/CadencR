@@ -96,6 +96,9 @@ pub struct AppState {
     pub pty_manager: PtyManager,
     /// Broadcast channel for file-system change events.
     pub file_change_tx: broadcast::Sender<FileChangeEvent>,
+    /// Broadcast when a settings JSON file changes on disk (our own writes or an
+    /// external editor). Drives the frontend to re-fetch settings live.
+    pub settings_events_tx: broadcast::Sender<crate::domain::settings_store::SettingsChangeEvent>,
     /// Broadcast when a remote device opens its first live socket. Subscribed
     /// host clients turn this into a "device connected" toast. Emitted once per
     /// device-connection (deduped at the live-session registry), not per socket.
@@ -185,6 +188,7 @@ impl AppState {
         let (session_status_tx, _) = broadcast::channel(64);
         let (feature_events_tx, _) = broadcast::channel(64);
         let (file_change_tx, _) = broadcast::channel(16);
+        let (settings_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
         Self {
             read_pool,
@@ -200,6 +204,7 @@ impl AppState {
             feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             pty_manager: PtyManager::new(),
             file_change_tx,
+            settings_events_tx,
             remote_events_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token,
@@ -229,6 +234,7 @@ impl AppState {
         let (session_status_tx, _) = broadcast::channel(64);
         let (feature_events_tx, _) = broadcast::channel(64);
         let (file_change_tx, _) = broadcast::channel(16);
+        let (settings_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
         Self {
             read_pool: pool.clone(),
@@ -247,6 +253,7 @@ impl AppState {
             feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             pty_manager: PtyManager::new(),
             file_change_tx,
+            settings_events_tx,
             remote_events_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token: "test-token".to_string(),

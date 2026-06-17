@@ -2,16 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import React from "react";
 
+const SAVED_FEATURE_KEY = "cadencr:last-opened-feature";
+
 const mocks = vi.hoisted(() => {
   interface MockQueryResult<TData> {
     data: TData;
     isSuccess: boolean;
-    error: Error | null;
-  }
-
-  interface MockSettingQueryResult {
-    data: { value: string } | undefined;
-    isLoading: boolean;
     error: Error | null;
   }
 
@@ -27,17 +23,11 @@ const mocks = vi.hoisted(() => {
     isSuccess: false,
     error: null,
   }));
-  const mockLastFeatureQuery = vi.fn<() => MockSettingQueryResult>(() => ({
-    data: undefined,
-    isLoading: false,
-    error: null,
-  }));
   return {
     mockNavigate,
     mockUseSearch,
     mockProjectsListQuery,
     mockFeaturesListQuery,
-    mockLastFeatureQuery,
   };
 });
 
@@ -62,10 +52,14 @@ vi.mock("../api/generated", () => ({
   useListProjects: () => mocks.mockProjectsListQuery(),
   getListProjectsQueryKey: vi.fn(() => ["projects"]),
   useListFeatures: () => mocks.mockFeaturesListQuery(),
-  useGetWorkspaceSetting: () => mocks.mockLastFeatureQuery(),
 }));
 
 import { Route } from "./index";
+
+/** Seed the last-opened feature the way `useSaveLastOpenedFeature` would. */
+function seedSavedFeature(feature: { projectId: number; featureId: number; activeTab?: string }) {
+  window.localStorage.setItem(SAVED_FEATURE_KEY, JSON.stringify(feature));
+}
 
 function HomePage() {
   (Route as unknown as { useSearch: typeof mocks.mockUseSearch }).useSearch = mocks.mockUseSearch;
@@ -77,9 +71,9 @@ function HomePage() {
 
 describe("HomePage route", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     mocks.mockNavigate.mockClear();
     mocks.mockUseSearch.mockReturnValue({});
-    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mocks.mockProjectsListQuery.mockReturnValue({ data: [], isSuccess: true, error: null });
     mocks.mockFeaturesListQuery.mockReturnValue({ data: [], isSuccess: true, error: null });
   });
@@ -139,11 +133,7 @@ describe("HomePage route", () => {
   });
 
   it("navigates to saved last-opened feature on startup", () => {
-    mocks.mockLastFeatureQuery.mockReturnValue({
-      data: { value: JSON.stringify({ projectId: 2, featureId: 10 }) },
-      isLoading: false,
-      error: null,
-    });
+    seedSavedFeature({ projectId: 2, featureId: 10 });
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [
         { id: 1, name: "P1", path: "/p1" },
@@ -170,11 +160,7 @@ describe("HomePage route", () => {
   });
 
   it("falls back to first feature when saved feature no longer exists", () => {
-    mocks.mockLastFeatureQuery.mockReturnValue({
-      data: { value: JSON.stringify({ projectId: 1, featureId: 999 }) },
-      isLoading: false,
-      error: null,
-    });
+    seedSavedFeature({ projectId: 1, featureId: 999 });
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "P1", path: "/p1" }],
       isSuccess: true,
@@ -194,8 +180,7 @@ describe("HomePage route", () => {
     );
   });
 
-  it("falls back to first feature when no saved setting exists", () => {
-    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+  it("falls back to first feature when no saved feature exists", () => {
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "P1", path: "/p1" }],
       isSuccess: true,
@@ -213,21 +198,5 @@ describe("HomePage route", () => {
         params: { projectId: "1", featureId: "5" },
       }),
     );
-  });
-
-  it("does not navigate while last-feature setting is still loading", () => {
-    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
-    mocks.mockProjectsListQuery.mockReturnValue({
-      data: [{ id: 1, name: "P1", path: "/p1" }],
-      isSuccess: true,
-      error: null,
-    });
-    mocks.mockFeaturesListQuery.mockReturnValue({
-      data: [{ id: 5, title: "Feature 1" }],
-      isSuccess: true,
-      error: null,
-    });
-    render(<HomePage />);
-    expect(mocks.mockNavigate).not.toHaveBeenCalled();
   });
 });
