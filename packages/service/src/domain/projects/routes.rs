@@ -7,6 +7,10 @@ use crate::app_state::AppState;
 use crate::domain::projects::models::*;
 use crate::domain::projects::service;
 use crate::domain::settings_allowlist;
+use crate::domain::settings_store;
+use crate::domain::workspace::routes::{
+    SettingsFileResponse, WriteSettingsFileRequest, WriteSettingsFileResponse,
+};
 use crate::error::AppError;
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -65,6 +69,31 @@ pub async fn set_project_setting_handler(
     }
     service::set_project_setting(&state.write_pool, id, &body.key, &body.value).await?;
     Ok(Json(SuccessResponse { success: true }))
+}
+
+#[utoipa::path(get, path = "/api/projects/{id}/settings-file", params(("id" = i64, Path,)), responses((status = 200, body = SettingsFileResponse)))]
+pub async fn get_project_settings_file_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<SettingsFileResponse>, AppError> {
+    let (path, content, warnings) =
+        settings_store::project_read_for_edit(&state.read_pool, id).await?;
+    Ok(Json(SettingsFileResponse {
+        path: path.display().to_string(),
+        content,
+        warnings,
+    }))
+}
+
+#[utoipa::path(put, path = "/api/projects/{id}/settings-file", params(("id" = i64, Path,)), request_body = WriteSettingsFileRequest, responses((status = 200, body = WriteSettingsFileResponse)))]
+pub async fn put_project_settings_file_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<WriteSettingsFileRequest>,
+) -> Result<Json<WriteSettingsFileResponse>, AppError> {
+    let warnings =
+        settings_store::project_write_content(&state.write_pool, id, &body.content).await?;
+    Ok(Json(WriteSettingsFileResponse { warnings }))
 }
 
 #[utoipa::path(get, path = "/api/projects/{id}/model-settings", params(("id" = i64, Path,)), responses((status = 200, body = ProjectModelSettings)))]
@@ -127,6 +156,10 @@ pub fn projects_router() -> Router<AppState> {
         .route(
             "/api/projects/{id}/settings",
             get(get_project_settings_handler).put(set_project_setting_handler),
+        )
+        .route(
+            "/api/projects/{id}/settings-file",
+            get(get_project_settings_file_handler).put(put_project_settings_file_handler),
         )
         .route(
             "/api/projects/{id}/model-settings",

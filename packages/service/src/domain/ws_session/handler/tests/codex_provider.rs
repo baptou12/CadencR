@@ -8,14 +8,15 @@ async fn test_provider_set_to_codex_persists_configured_access_mode() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
     let app_state = make_test_app_state().await;
-    sqlx::query("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-        .execute(&app_state.write_pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO settings (key, value) VALUES ('codex_permission_mode', 'autoReview')")
-        .execute(&app_state.write_pool)
-        .await
-        .unwrap();
+    // Workspace settings live in the JSON store now (not the SQLite `settings`
+    // table), so seed via the repository that production reads through.
+    crate::domain::workspace::repository::set_setting(
+        &app_state.write_pool,
+        "codex_permission_mode",
+        "autoReview",
+    )
+    .await
+    .unwrap();
 
     let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
     let db_id: i64 = session_id.parse().unwrap();

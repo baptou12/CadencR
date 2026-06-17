@@ -178,7 +178,12 @@ export function serviceArgs(
   appVersion?: string,
   rendererDir?: string | null,
 ): string[] {
-  const args = ["--db-path", dbPath, "--port", String(SIDECAR_PORT)];
+  // Settings JSON files live alongside the database under ~/.cadencr/settings
+  // (sibling of database/). Pass it explicitly so the service doesn't re-derive
+  // the layout; the service creates the dir on startup.
+  const settingsDir = path.join(path.dirname(path.dirname(dbPath)), "settings");
+
+  const args = ["--db-path", dbPath, "--settings-dir", settingsDir, "--port", String(SIDECAR_PORT)];
   if (appVersion) args.push("--app-version", appVersion);
   // Lets the service serve the SPA over the remote-access listener. Loopback
   // (the local window) loads from file:// regardless, so this only enables the

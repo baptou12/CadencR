@@ -1,4 +1,8 @@
+use std::path::Path;
+
 use sqlx::SqlitePool;
+
+use crate::domain::settings_store::{self, paths, store, Scope};
 
 /// Workspace setting key holding the last-used thinking effort for a given
 /// provider/model pair. Mirrors the frontend helper in
@@ -7,11 +11,9 @@ pub fn thinking_effort_model_key(provider_id: &str, model_id: &str) -> String {
     format!("thinking_effort_model_{provider_id}_{model_id}")
 }
 
-/// Columns that exist on both `features` and `projects` tables.
+/// Feature-level real columns still resolved from SQLite (feature settings did
+/// not migrate to JSON — they hold runtime/worktree state).
 const SHARED_COLUMNS: &[&str] = &["model_session", "agent_runtime_session"];
-
-/// Columns that only exist on the `projects` table.
-const PROJECT_ONLY_COLUMNS: &[&str] = &["branch_prefix"];
 
 async fn resolve_table_kv_setting(
     pool: &SqlitePool,
@@ -72,13 +74,10 @@ pub(crate) async fn resolve_table_column_setting(
     None
 }
 
-/// Resolve a setting using the cascade: feature column → project column → global EAV → default.
-///
-/// - For columns in `SHARED_COLUMNS`: feature → project → global → default.
-/// - For columns in `PROJECT_ONLY_COLUMNS`: project → global → default.
-/// - For anything else: global settings EAV table → default.
-///
-/// Only empty strings are treated as unset and fall through.
+/// Resolve a setting using the cascade: feature (SQLite) → project (JSON) →
+/// global (JSON) → default. Only empty strings are treated as unset and fall
+/// through. Global and project settings live in JSON files now; feature
+/// settings remain SQLite-backed.
 pub async fn resolve_setting(
     pool: &SqlitePool,
     key: &str,
@@ -86,7 +85,28 @@ pub async fn resolve_setting(
     project_id: Option<i64>,
     default_value: Option<&str>,
 ) -> Option<String> {
-    // 1. Feature-level (real column)
+    resolve_in(
+        &settings_store::global_dir(),
+        pool,
+        key,
+        feature_id,
+        project_id,
+        default_value,
+    )
+    .await
+}
+
+/// Cascade core parameterized on the settings directory so it is unit-testable
+/// against a temp dir.
+pub(crate) async fn resolve_in(
+    dir: &Path,
+    pool: &SqlitePool,
+    key: &str,
+    feature_id: Option<i64>,
+    project_id: Option<i64>,
+    default_value: Option<&str>,
+) -> Option<String> {
+    // 1. Feature-level (SQLite: real column then EAV).
     if let Some(fid) = feature_id {
         if SHARED_COLUMNS.contains(&key) {
             if let Some(v) = resolve_table_column_setting(pool, "features", fid, key).await {
@@ -98,22 +118,23 @@ pub async fn resolve_setting(
         }
     }
 
-    // 2. Project-level (real column)
+    // 2. Project-level (JSON file).
     if let Some(pid) = project_id {
-        if SHARED_COLUMNS.contains(&key) || PROJECT_ONLY_COLUMNS.contains(&key) {
-            if let Some(v) = resolve_table_column_setting(pool, "projects", pid, key).await {
-                return Some(v);
+        if let Ok(path) = paths::project_file(dir, pool, pid).await {
+            let (map, _warnings) = store::load(&path, Scope::Project);
+            if let Some(v) = map.get(key) {
+                if !v.is_empty() {
+                    return Some(v.clone());
+                }
             }
-        }
-        if let Some(v) = resolve_table_kv_setting(pool, "projects", pid, key).await {
-            return Some(v);
         }
     }
 
-    // 3. Global settings (EAV table)
-    if let Ok(Some(v)) = super::workspace::repository::get_setting(pool, key).await {
+    // 3. Global (JSON file).
+    let (global, _warnings) = store::load(&paths::global_file(dir), Scope::Workspace);
+    if let Some(v) = global.get(key) {
         if !v.is_empty() {
-            return Some(v);
+            return Some(v.clone());
         }
     }
 
@@ -123,8 +144,12 @@ pub async fn resolve_setting(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
-    async fn test_pool() -> SqlitePool {
+    /// Pool with a feature-level SQLite surface (features + feature_settings)
+    /// and a projects table for project-file name resolution. Project and
+    /// global settings now live in JSON, so those tables are gone.
+    async fn feature_pool() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::query(
             r#"CREATE TABLE features (
@@ -138,55 +163,69 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query(
-            r#"CREATE TABLE projects (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                path TEXT NOT NULL,
-                branch_prefix TEXT,
-                model_session TEXT,
-                agent_runtime_session TEXT
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL DEFAULT '/tmp')")
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query(
-            "CREATE TABLE feature_settings (feature_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(feature_id, key))",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "CREATE TABLE project_settings (project_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(project_id, key))",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("CREATE TABLE feature_settings (feature_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(feature_id, key))")
+            .execute(&pool)
+            .await
+            .unwrap();
         pool
     }
 
-    #[tokio::test]
-    async fn test_feature_level_wins() {
-        let pool = test_pool().await;
-        sqlx::query(
-            "INSERT INTO projects (id, name, path, model_session) VALUES (1, 'p', '/tmp', 'project-model')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "INSERT INTO features (id, project_id, title, model_session) VALUES (1, 1, 'f', 'feature-model')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+    async fn insert_project(pool: &SqlitePool, id: i64, name: &str) {
+        sqlx::query("INSERT INTO projects (id, name) VALUES (?, ?)")
+            .bind(id)
+            .bind(name)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
 
-        let result = resolve_setting(
+    async fn insert_feature(
+        pool: &SqlitePool,
+        id: i64,
+        project_id: i64,
+        model_session: Option<&str>,
+    ) {
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, model_session) VALUES (?, ?, 'f', ?)",
+        )
+        .bind(id)
+        .bind(project_id)
+        .bind(model_session)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    fn write_json(path: &std::path::Path, pairs: &[(&str, &str)]) {
+        let map: BTreeMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        settings_store::file::write_atomic(path, &settings_store::file::serialize_map(&map))
+            .unwrap();
+    }
+
+    async fn project_file(dir: &std::path::Path, pool: &SqlitePool, id: i64) -> std::path::PathBuf {
+        paths::project_file(dir, pool, id).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn feature_level_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = feature_pool().await;
+        insert_project(&pool, 1, "p").await;
+        insert_feature(&pool, 1, 1, Some("feature-model")).await;
+        write_json(
+            &project_file(dir.path(), &pool, 1).await,
+            &[("model_session", "project-model")],
+        );
+
+        let result = resolve_in(
+            dir.path(),
             &pool,
             "model_session",
             Some(1),
@@ -198,20 +237,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_project_level_fallback() {
-        let pool = test_pool().await;
-        sqlx::query(
-            "INSERT INTO projects (id, name, path, model_session) VALUES (1, 'p', '/tmp', 'project-model')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
-            .execute(&pool)
-            .await
-            .unwrap();
+    async fn project_level_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = feature_pool().await;
+        insert_project(&pool, 1, "p").await;
+        insert_feature(&pool, 1, 1, None).await;
+        write_json(
+            &project_file(dir.path(), &pool, 1).await,
+            &[("model_session", "project-model")],
+        );
 
-        let result = resolve_setting(
+        let result = resolve_in(
+            dir.path(),
             &pool,
             "model_session",
             Some(1),
@@ -223,22 +260,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_global_fallback() {
-        let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('model_session', 'global-model')")
-            .execute(&pool)
-            .await
-            .unwrap();
+    async fn global_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = feature_pool().await;
+        insert_project(&pool, 1, "p").await;
+        insert_feature(&pool, 1, 1, None).await;
+        write_json(
+            &paths::global_file(dir.path()),
+            &[("model_session", "global-model")],
+        );
 
-        let result = resolve_setting(
+        let result = resolve_in(
+            dir.path(),
             &pool,
             "model_session",
             Some(1),
@@ -250,18 +283,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_default_fallback() {
-        let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
-            .execute(&pool)
-            .await
-            .unwrap();
+    async fn default_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = feature_pool().await;
+        insert_project(&pool, 1, "p").await;
+        insert_feature(&pool, 1, 1, None).await;
 
-        let result = resolve_setting(
+        let result = resolve_in(
+            dir.path(),
             &pool,
             "model_session",
             Some(1),
@@ -273,43 +302,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_feature_kv_fallback_supports_non_column_keys() {
-        let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query(
-            "INSERT INTO project_settings (project_id, key, value) VALUES (1, 'custom_kv_key', 'medium')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'custom_kv_key', 'high')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+    async fn feature_kv_beats_project_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = feature_pool().await;
+        insert_project(&pool, 1, "p").await;
+        insert_feature(&pool, 1, 1, None).await;
+        sqlx::query("INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'custom_kv_key', 'high')")
+            .execute(&pool).await.unwrap();
+        write_json(
+            &project_file(dir.path(), &pool, 1).await,
+            &[("custom_kv_key", "medium")],
+        );
 
-        let result = resolve_setting(&pool, "custom_kv_key", Some(1), Some(1), None).await;
+        let result = resolve_in(dir.path(), &pool, "custom_kv_key", Some(1), Some(1), None).await;
         assert_eq!(result, Some("high".to_string()));
     }
 
     #[tokio::test]
-    async fn test_default_value_is_not_special() {
-        let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path, model_session) VALUES (1, 'p', '/tmp', 'default')")
-            .execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title, model_session) VALUES (1, 1, 'f', 'default')")
-            .execute(&pool).await.unwrap();
+    async fn default_value_is_not_special() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = feature_pool().await;
+        insert_project(&pool, 1, "p").await;
+        insert_feature(&pool, 1, 1, Some("default")).await;
 
-        // "default" is a regular value, not a magic keyword — feature level wins
-        let result = resolve_setting(
+        // "default" is a regular value, not a magic keyword — feature wins.
+        let result = resolve_in(
+            dir.path(),
             &pool,
             "model_session",
             Some(1),
@@ -321,69 +339,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_project_only_column() {
-        let pool = test_pool().await;
-        sqlx::query(
-            "INSERT INTO projects (id, name, path, branch_prefix) VALUES (1, 'p', '/tmp', 'feature/')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+    async fn project_only_key_from_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = feature_pool().await;
+        insert_project(&pool, 1, "p").await;
+        write_json(
+            &project_file(dir.path(), &pool, 1).await,
+            &[("branch_prefix", "feature/")],
+        );
 
-        let result = resolve_setting(&pool, "branch_prefix", None, Some(1), None).await;
+        let result = resolve_in(dir.path(), &pool, "branch_prefix", None, Some(1), None).await;
         assert_eq!(result, Some("feature/".to_string()));
     }
 
     #[tokio::test]
-    async fn test_missing_shared_column_falls_back_to_default() {
+    async fn missing_shared_column_falls_back_to_default() {
+        // features table without the model/runtime columns — the column probe
+        // must not error, and the cascade falls through to the default.
+        let dir = tempfile::tempdir().unwrap();
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::query(
-            r#"CREATE TABLE features (
-                id INTEGER PRIMARY KEY,
-                project_id INTEGER,
-                title TEXT
-            )"#,
+            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER, title TEXT)",
         )
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query(
-            r#"CREATE TABLE projects (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                path TEXT NOT NULL
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query(
-            "CREATE TABLE feature_settings (feature_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(feature_id, key))",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "CREATE TABLE project_settings (project_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(project_id, key))",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL DEFAULT '/tmp')")
+            .execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE feature_settings (feature_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(feature_id, key))")
+            .execute(&pool).await.unwrap();
+        insert_project(&pool, 1, "p").await;
         sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
             .execute(&pool)
             .await
             .unwrap();
 
-        let result = resolve_setting(
+        let result = resolve_in(
+            dir.path(),
             &pool,
             "agent_runtime_session",
             Some(1),
@@ -391,7 +383,6 @@ mod tests {
             Some("claude_code"),
         )
         .await;
-
         assert_eq!(result, Some("claude_code".to_string()));
     }
 }

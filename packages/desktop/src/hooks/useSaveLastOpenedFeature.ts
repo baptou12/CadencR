@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
-import { useSetWorkspaceSetting } from "@/api/generated";
 import type { TabKind } from "@/stores/feature-layout-schema";
+import { writeSavedFeature } from "@/lib/saved-feature";
 
 /**
- * Persists the current projectId/featureId/activeTab as the last-opened feature,
- * so the app can restore it on next startup.
+ * Persists the current projectId/featureId/activeTab as the last-opened feature
+ * (to localStorage), so the app can restore it on next startup.
  *
  * Belt-and-suspenders dedupe: even if a parent re-renders rapidly (e.g.
- * during route transition), we only fire the `PUT` when the persisted tuple
- * changes. The hook is intentionally route-level so callers don't have to
- * worry about double-mounting it inside a child component.
+ * during route transition), we only write when the persisted tuple changes. The
+ * hook is intentionally route-level so callers don't have to worry about
+ * double-mounting it inside a child component.
  */
 export function useSaveLastOpenedFeature(
   projectId: number,
@@ -17,7 +17,6 @@ export function useSaveLastOpenedFeature(
   activeTab?: TabKind,
   skip = false,
 ): void {
-  const { mutate } = useSetWorkspaceSetting();
   const lastPersistedRef = useRef<string | null>(null);
   useEffect(() => {
     if (skip) return;
@@ -25,11 +24,6 @@ export function useSaveLastOpenedFeature(
     const key = `${projectId}:${featureId}:${tab}`;
     if (lastPersistedRef.current === key) return;
     lastPersistedRef.current = key;
-    mutate({
-      key: "lastOpenedFeature",
-      data: {
-        value: JSON.stringify({ projectId, featureId, activeTab: tab }),
-      },
-    });
-  }, [projectId, featureId, activeTab, skip, mutate]);
+    writeSavedFeature({ projectId, featureId, activeTab: tab });
+  }, [projectId, featureId, activeTab, skip]);
 }

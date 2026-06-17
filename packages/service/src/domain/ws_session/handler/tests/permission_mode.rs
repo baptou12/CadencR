@@ -276,14 +276,13 @@ async fn claude_bypass_mode_set_rearms_existing_session_before_next_prompt() {
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
     let app_state = make_test_app_state().await;
 
-    sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
-        .execute(&app_state.write_pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "INSERT INTO settings (key, value) VALUES ('claude_bypass_permissions_enabled', 'true')",
+    // Workspace settings live in the JSON store now (not the SQLite `settings`
+    // table), so seed via the repository that production reads through.
+    crate::domain::workspace::repository::set_setting(
+        &app_state.write_pool,
+        "claude_bypass_permissions_enabled",
+        "true",
     )
-    .execute(&app_state.write_pool)
     .await
     .unwrap();
     sqlx::query(

@@ -16,6 +16,7 @@ pub(super) async fn handle_app_action(
             handle_subscribe_session_status(envelope, sender, app_state).await
         }
         "subscribe.feature_events" => handle_subscribe_feature_events(sender, app_state).await,
+        "subscribe.settings_events" => handle_subscribe_settings_events(sender, app_state).await,
         "subscribe.remote_events" => handle_subscribe_remote_events(sender, app_state).await,
         "subscribe.file_watcher" => {
             handle_subscribe_file_watcher(envelope, sender, app_state).await
@@ -216,6 +217,45 @@ async fn handle_subscribe_feature_events(sender: &WsSender, app_state: &AppState
                 // it invalidates regardless of which specific changes it missed.
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     let update = WsEnvelope::new("app", "feature_event", serde_json::json!({}));
+                    if sender
+                        .send(Message::Text(String::from(update).into()))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
+/// Subscribe the client to settings-file change events. No snapshot — each
+/// event is a cue to refetch settings (the file changed on disk, via our own
+/// write or an external editor). Forwards every [`SettingsChangeEvent`] as an
+/// `app/settings_event` envelope until the socket closes.
+async fn handle_subscribe_settings_events(sender: &WsSender, app_state: &AppState) {
+    let mut rx = app_state.settings_events_tx.subscribe();
+    let sender = sender.clone();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let update = WsEnvelope::new(
+                        "app",
+                        "settings_event",
+                        serde_json::to_value(&event).unwrap_or_else(|_| serde_json::json!({})),
+                    );
+                    if sender
+                        .send(Message::Text(String::from(update).into()))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                // A lagged client just refetches — send a bare event.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    let update = WsEnvelope::new("app", "settings_event", serde_json::json!({}));
                     if sender
                         .send(Message::Text(String::from(update).into()))
                         .is_err()

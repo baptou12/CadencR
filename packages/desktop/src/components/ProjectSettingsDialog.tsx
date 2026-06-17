@@ -17,6 +17,7 @@ import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { IconTile } from "@/components/settings/IconTile";
 import { ProjectColorPicker } from "@/components/settings/ProjectColorPicker";
+import { ProjectJsonSettings } from "@/components/settings/SettingsJsonControls";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 
 export function ProjectSettingsDialog({
@@ -93,7 +94,7 @@ export function ProjectSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] w-[90vw] flex-col gap-0 p-0 sm:max-w-[860px]">
+      <DialogContent className="flex max-h-[85vh] w-[90vw] flex-col gap-0 p-0 sm:max-w-6xl">
         <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle className="text-base font-semibold">
             Project settings — <span className="text-muted-foreground">{projectName}</span>
@@ -102,6 +103,12 @@ export function ProjectSettingsDialog({
         </DialogHeader>
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
+          <SettingsSection size="sm" title="Configuration" subtitle="Edit JSON · Copy path">
+            <SettingsCard padded>
+              <ProjectJsonSettings projectId={projectId} enabled={open} />
+            </SettingsCard>
+          </SettingsSection>
+
           <SettingsSection size="sm" title="Identity" subtitle="Color · Display">
             <SettingsCard padded>
               <div className="space-y-2">

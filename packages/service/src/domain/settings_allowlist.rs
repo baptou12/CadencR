@@ -59,8 +59,6 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "claude_bypass_permissions_enabled",
     "codex_full_access_enabled",
     "codex_permission_mode",
-    // Last-session restoration
-    "lastOpenedFeature",
     // UI chrome
     "sidebar_left_width",
     "sidebar_collapsed",
@@ -130,10 +128,6 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "browser_mcp_enabled",
 ];
 
-/// Prefixes for per-feature workspace keys whose suffix is a feature id. Must
-/// match the patterns used by `useDebouncedSetting` in the frontend.
-const WORKSPACE_NUMERIC_PREFIXES: &[&str] = &["editor_sidebar_visible_", "active_tab_"];
-
 /// Prefixes whose suffix is a free-form provider/model identifier. Suffix
 /// characters are restricted to ASCII alphanumerics plus `._-` to keep the
 /// allowlist tight while accepting real model ids like `claude-sonnet-4-5` or
@@ -150,12 +144,6 @@ pub fn is_project_key_allowed(key: &str) -> bool {
 
 pub fn is_workspace_key_allowed(key: &str) -> bool {
     if WORKSPACE_ALLOWED_KEYS.contains(&key) {
-        return true;
-    }
-    if WORKSPACE_NUMERIC_PREFIXES.iter().any(|p| {
-        key.strip_prefix(p)
-            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
-    }) {
         return true;
     }
     WORKSPACE_MODEL_PREFIXES.iter().any(|p| {
@@ -277,16 +265,13 @@ mod tests {
     }
 
     #[test]
-    fn workspace_accepts_dynamic_feature_keys() {
-        assert!(is_workspace_key_allowed("editor_sidebar_visible_42"));
-        assert!(is_workspace_key_allowed("active_tab_7"));
-    }
-
-    #[test]
-    fn workspace_rejects_malformed_dynamic_keys() {
-        assert!(!is_workspace_key_allowed("editor_sidebar_visible_"));
-        assert!(!is_workspace_key_allowed("active_tab_abc"));
-        assert!(!is_workspace_key_allowed("active_tab_1;drop"));
+    fn workspace_rejects_retired_per_device_ui_keys() {
+        // `active_tab_*`, `editor_sidebar_visible_*`, and `lastOpenedFeature`
+        // were per-device UI state; they now live in the frontend's
+        // localStorage and are no longer writable at any scope.
+        assert!(!is_workspace_key_allowed("editor_sidebar_visible_42"));
+        assert!(!is_workspace_key_allowed("active_tab_7"));
+        assert!(!is_workspace_key_allowed("lastOpenedFeature"));
     }
 
     #[test]

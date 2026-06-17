@@ -1523,6 +1523,27 @@ export interface SettingValueResponse {
 }
 
 /**
+ * A non-blocking warning surfaced to the user when a settings file contains a
+key/value the app can't fully honor. `key` is empty for file-level problems
+(e.g. the document isn't valid JSON).
+ */
+export interface SettingWarning {
+  key: string;
+  message: string;
+}
+
+/**
+ * The raw settings document plus its on-disk path and any non-blocking
+warnings (unknown keys, invalid values). Shared by the global and project
+"Edit JSON" / "Copy configuration path" surfaces.
+ */
+export interface SettingsFileResponse {
+  content: string;
+  path: string;
+  warnings: SettingWarning[];
+}
+
+/**
  * Lightweight pointer to another feature that shares the same worktree
 directory. Surfaced in the header so the user knows their changes will
 affect the donor feature's view too.
@@ -1760,6 +1781,14 @@ export interface WriteFileRequest {
 
 export interface WriteFileResponse {
   success: boolean;
+}
+
+export interface WriteSettingsFileRequest {
+  content: string;
+}
+
+export interface WriteSettingsFileResponse {
+  warnings: SettingWarning[];
 }
 
 export type GetAgentCatalogParams = {
@@ -9701,6 +9730,138 @@ export const useSetProjectSetting = <TError = ErrorType<unknown>, TContext = unk
   return useMutation(mutationOptions);
 };
 
+export const getProjectSettingsFile = (id: number, signal?: AbortSignal) => {
+  return customInstance<SettingsFileResponse>({
+    url: `/api/projects/${id}/settings-file`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetProjectSettingsFileQueryKey = (id?: number) => {
+  return [`/api/projects/${id}/settings-file`] as const;
+};
+
+export const getGetProjectSettingsFileQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectSettingsFile>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getProjectSettingsFile>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProjectSettingsFileQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProjectSettingsFile>>> = ({ signal }) =>
+    getProjectSettingsFile(id, signal);
+
+  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectSettingsFile>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectSettingsFileQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectSettingsFile>>
+>;
+export type GetProjectSettingsFileQueryError = ErrorType<unknown>;
+
+export function useGetProjectSettingsFile<
+  TData = Awaited<ReturnType<typeof getProjectSettingsFile>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getProjectSettingsFile>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectSettingsFileQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const putProjectSettingsFile = (
+  id: number,
+  writeSettingsFileRequest: WriteSettingsFileRequest,
+) => {
+  return customInstance<WriteSettingsFileResponse>({
+    url: `/api/projects/${id}/settings-file`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: writeSettingsFileRequest,
+  });
+};
+
+export const getPutProjectSettingsFileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putProjectSettingsFile>>,
+    TError,
+    { id: number; data: WriteSettingsFileRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof putProjectSettingsFile>>,
+  TError,
+  { id: number; data: WriteSettingsFileRequest },
+  TContext
+> => {
+  const mutationKey = ["putProjectSettingsFile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof putProjectSettingsFile>>,
+    { id: number; data: WriteSettingsFileRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return putProjectSettingsFile(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PutProjectSettingsFileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof putProjectSettingsFile>>
+>;
+export type PutProjectSettingsFileMutationBody = WriteSettingsFileRequest;
+export type PutProjectSettingsFileMutationError = ErrorType<unknown>;
+
+export const usePutProjectSettingsFile = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putProjectSettingsFile>>,
+    TError,
+    { id: number; data: WriteSettingsFileRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof putProjectSettingsFile>>,
+  TError,
+  { id: number; data: WriteSettingsFileRequest },
+  TContext
+> => {
+  const mutationOptions = getPutProjectSettingsFileMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const remoteRevokeDevice = (id: number) => {
   return customInstance<RemoteStatus>({ url: `/api/remote/devices/${id}`, method: "DELETE" });
 };
@@ -10694,6 +10855,124 @@ export function useListWorkspaceSettings<
 
   return query;
 }
+
+export const getSettingsFile = (signal?: AbortSignal) => {
+  return customInstance<SettingsFileResponse>({
+    url: `/api/workspace/settings-file`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetSettingsFileQueryKey = () => {
+  return [`/api/workspace/settings-file`] as const;
+};
+
+export const getGetSettingsFileQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSettingsFile>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getSettingsFile>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSettingsFileQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSettingsFile>>> = ({ signal }) =>
+    getSettingsFile(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSettingsFile>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSettingsFileQueryResult = NonNullable<Awaited<ReturnType<typeof getSettingsFile>>>;
+export type GetSettingsFileQueryError = ErrorType<unknown>;
+
+export function useGetSettingsFile<
+  TData = Awaited<ReturnType<typeof getSettingsFile>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getSettingsFile>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSettingsFileQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const putSettingsFile = (writeSettingsFileRequest: WriteSettingsFileRequest) => {
+  return customInstance<WriteSettingsFileResponse>({
+    url: `/api/workspace/settings-file`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: writeSettingsFileRequest,
+  });
+};
+
+export const getPutSettingsFileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putSettingsFile>>,
+    TError,
+    { data: WriteSettingsFileRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof putSettingsFile>>,
+  TError,
+  { data: WriteSettingsFileRequest },
+  TContext
+> => {
+  const mutationKey = ["putSettingsFile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof putSettingsFile>>,
+    { data: WriteSettingsFileRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return putSettingsFile(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PutSettingsFileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof putSettingsFile>>
+>;
+export type PutSettingsFileMutationBody = WriteSettingsFileRequest;
+export type PutSettingsFileMutationError = ErrorType<unknown>;
+
+export const usePutSettingsFile = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putSettingsFile>>,
+    TError,
+    { data: WriteSettingsFileRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof putSettingsFile>>,
+  TError,
+  { data: WriteSettingsFileRequest },
+  TContext
+> => {
+  const mutationOptions = getPutSettingsFileMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getWorkspaceSetting = (key: string, signal?: AbortSignal) => {
   return customInstance<SettingValueResponse>({

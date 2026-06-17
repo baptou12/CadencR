@@ -200,33 +200,37 @@ pub async fn set_active_profile(pool: &SqlitePool, name: &str) -> Result<(), App
     Ok(())
 }
 
-/// Resolve the active profile's name and env map in a single DB query.
+/// Resolve the active profile's name and env map.
 ///
-/// Returns `("default", None)` when no non-default profile is active, when the
-/// active row points to a deleted profile, or when a DB/parse error occurs.
-/// Errors are logged (without values) rather than propagated so a momentary DB
-/// hiccup can't break agent spawns — the safe fallback is no extra env.
+/// The active profile *name* lives in the JSON workspace settings (read via
+/// `get_active_profile_name`); only the profile's `env_json` is still
+/// SQLite-backed (the `claude_code_profiles` table). Returns `("default", None)`
+/// when no non-default profile is active, when the active name points to a
+/// deleted profile, or on a DB/parse error. Errors are logged (without values)
+/// rather than propagated so a momentary failure can't break agent spawns — the
+/// safe fallback is no extra env.
 pub async fn resolve_active_profile_env(
     pool: &SqlitePool,
 ) -> (String, Option<HashMap<String, String>>) {
-    let row: Result<Option<(String, Option<String>)>, _> = sqlx::query_as(
-        "SELECT s.value, p.env_json \
-         FROM settings s \
-         LEFT JOIN claude_code_profiles p ON p.name = s.value \
-         WHERE s.key = ?",
-    )
-    .bind(ACTIVE_PROFILE_KEY)
-    .fetch_optional(pool)
-    .await;
+    let name = match get_active_profile_name(pool).await {
+        Ok(name) => name,
+        Err(error) => {
+            tracing::warn!(%error, "failed to read active claude_code profile name");
+            return (DEFAULT_PROFILE_NAME.to_string(), None);
+        }
+    };
+    if name.trim().is_empty() || name.eq_ignore_ascii_case(DEFAULT_PROFILE_NAME) {
+        return (DEFAULT_PROFILE_NAME.to_string(), None);
+    }
+
+    let row: Result<Option<(Option<String>,)>, _> =
+        sqlx::query_as("SELECT env_json FROM claude_code_profiles WHERE name = ?")
+            .bind(&name)
+            .fetch_optional(pool)
+            .await;
 
     match row {
-        Ok(None) => (DEFAULT_PROFILE_NAME.to_string(), None),
-        Ok(Some((name, _)))
-            if name.trim().is_empty() || name.eq_ignore_ascii_case(DEFAULT_PROFILE_NAME) =>
-        {
-            (DEFAULT_PROFILE_NAME.to_string(), None)
-        }
-        Ok(Some((name, Some(env_json)))) => match parse_env_json(&env_json) {
+        Ok(Some((Some(env_json),))) => match parse_env_json(&env_json) {
             Ok(env) if !env.is_empty() => (name, Some(env)),
             Ok(_) => (name, None),
             Err(error) => {
@@ -234,13 +238,14 @@ pub async fn resolve_active_profile_env(
                 (name, None)
             }
         },
-        Ok(Some((name, None))) => {
+        Ok(Some((None,))) => (name, None),
+        Ok(None) => {
             tracing::warn!(profile = %name, "active claude_code profile no longer exists");
             (name, None)
         }
         Err(error) => {
-            tracing::warn!(%error, "failed to read active claude_code profile");
-            (DEFAULT_PROFILE_NAME.to_string(), None)
+            tracing::warn!(profile = %name, %error, "failed to read active claude_code profile env");
+            (name, None)
         }
     }
 }

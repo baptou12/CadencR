@@ -7,6 +7,13 @@ pub struct Config {
     #[arg(long, global = true, env = "CADENCR_DB_PATH")]
     pub db_path: Option<String>,
 
+    /// Directory holding the JSON settings files (`settings.json` and
+    /// `<project>.settings.json`). The desktop shell passes
+    /// `~/.cadencr/settings`; dev/CLI runs derive it from `--db-path` when
+    /// unset (see `settings_store::dir::resolve_from_config`).
+    #[arg(long, env = "CADENCR_SETTINGS_DIR")]
+    pub settings_dir: Option<String>,
+
     /// Port to listen on (overridable via CADENCR_RUST_PORT env var)
     #[arg(long, default_value = "5005", env = "CADENCR_RUST_PORT")]
     pub port: u16,

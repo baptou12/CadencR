@@ -25,16 +25,17 @@ pub async fn get_project_name(pool: &SqlitePool, project_id: i64) -> Result<Stri
 }
 
 /// Get the branch prefix for a project (defaults to "feature/").
+///
+/// `branch_prefix` is a project setting and now lives in the JSON settings store
+/// (the legacy `projects.branch_prefix` column is kept only as a backup). Reading
+/// the column here would ignore any prefix the user set after migration.
 pub async fn get_branch_prefix(pool: &SqlitePool, project_id: i64) -> Result<String, AppError> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT branch_prefix FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(pool)
-            .await?;
-
-    Ok(row
-        .and_then(|r| r.0)
-        .unwrap_or_else(|| "feature/".to_string()))
+    Ok(
+        crate::domain::settings_store::project_get(pool, project_id, "branch_prefix")
+            .await?
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or_else(|| "feature/".to_string()),
+    )
 }
 
 /// Get a single feature_settings value.

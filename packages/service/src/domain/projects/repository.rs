@@ -66,6 +66,21 @@ pub async fn create_project(
 }
 
 pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+    // Resolve the project's settings file path while the project row still
+    // exists (path derivation reads its name). We only remove the file after the
+    // DB delete commits, and only when no other project shares this name —
+    // same name = same configuration, so a surviving sibling still relies on it.
+    let shared = crate::domain::settings_store::name_is_shared(pool, id)
+        .await
+        .unwrap_or(false);
+    let settings_file = if shared {
+        None
+    } else {
+        crate::domain::settings_store::project_path(pool, id)
+            .await
+            .ok()
+    };
+
     let mut tx = pool.begin().await?;
 
     let feature_ids: Vec<i64> =
@@ -152,44 +167,29 @@ pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
         .await?;
 
     tx.commit().await?;
+
+    // Best-effort: drop the project's JSON settings file (ignore if absent).
+    if let Some(path) = settings_file {
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(path = %path.display(), "failed to remove project settings file: {e}");
+            }
+        }
+    }
+
     Ok(())
 }
+
+// Project settings now live in `~/.cadencr/settings/<name>.settings.json`
+// instead of the `project_settings` table + real columns on `projects`. These
+// functions delegate to `settings_store` (the legacy table/columns are left
+// intact as a backup, but no longer read or written).
 
 pub async fn get_project_settings(
     pool: &SqlitePool,
     project_id: i64,
 ) -> Result<Vec<ProjectSetting>, AppError> {
-    let column_row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT branch_prefix FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(pool)
-            .await?;
-
-    let mut settings: Vec<ProjectSetting> = Vec::new();
-
-    if let Some((branch_prefix,)) = column_row {
-        let column_settings = [("branch_prefix", branch_prefix)];
-        for (key, value) in column_settings {
-            if value.is_some() {
-                settings.push(ProjectSetting {
-                    key: key.to_string(),
-                    value,
-                });
-            }
-        }
-    }
-
-    let rows: Vec<(String, Option<String>)> =
-        sqlx::query_as("SELECT key, value FROM project_settings WHERE project_id = ?")
-            .bind(project_id)
-            .fetch_all(pool)
-            .await?;
-    settings.extend(
-        rows.into_iter()
-            .map(|(key, value)| ProjectSetting { key, value }),
-    );
-
-    Ok(settings)
+    crate::domain::settings_store::project_list(pool, project_id).await
 }
 
 pub async fn set_project_setting(
@@ -198,43 +198,17 @@ pub async fn set_project_setting(
     key: &str,
     value: &str,
 ) -> Result<(), AppError> {
-    let real_columns = ["model_session", "branch_prefix", "agent_runtime_session"];
-
-    if real_columns.contains(&key) {
-        let query = format!("UPDATE projects SET \"{}\" = ? WHERE id = ?", key);
-        sqlx::query(&query)
-            .bind(value)
-            .bind(project_id)
-            .execute(pool)
-            .await?;
-    } else {
-        sqlx::query(
-            "INSERT INTO project_settings (project_id, key, value) VALUES (?, ?, ?) ON CONFLICT(project_id, key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(project_id)
-        .bind(key)
-        .bind(value)
-        .execute(pool)
-        .await?;
-    }
-    Ok(())
+    crate::domain::settings_store::project_set(pool, project_id, key, value).await
 }
 
 pub async fn get_project_model_settings(
     pool: &SqlitePool,
     project_id: i64,
 ) -> Result<ProjectModelSettings, AppError> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT model_session FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(pool)
-            .await?;
-
-    let (session,) = row.unwrap_or_default();
-
-    Ok(ProjectModelSettings {
-        session: session.unwrap_or_default(),
-    })
+    let session = crate::domain::settings_store::project_get(pool, project_id, "model_session")
+        .await?
+        .unwrap_or_default();
+    Ok(ProjectModelSettings { session })
 }
 
 pub async fn set_project_model_setting(
@@ -250,30 +224,20 @@ pub async fn set_project_model_setting(
         )));
     }
     crate::domain::agents::runtime::reject_workspace_only(model_type, "project")?;
-    let col = format!("model_{}", model_type);
-    let query = format!("UPDATE projects SET \"{}\" = ? WHERE id = ?", col);
-    sqlx::query(&query)
-        .bind(model)
-        .bind(project_id)
-        .execute(pool)
-        .await?;
-    Ok(())
+    let key = format!("model_{}", model_type);
+    crate::domain::settings_store::project_set(pool, project_id, &key, model).await
 }
 
 pub async fn get_project_provider_settings(
     pool: &SqlitePool,
     project_id: i64,
 ) -> Result<ProjectProviderSettings, AppError> {
-    let row: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT agent_runtime_session FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_optional(pool)
-            .await?;
-
-    let (session,) = row.unwrap_or_default();
-
+    let session =
+        crate::domain::settings_store::project_get(pool, project_id, "agent_runtime_session")
+            .await?
+            .unwrap_or_default();
     Ok(ProjectProviderSettings {
-        session: session.unwrap_or_default(),
+        session,
         auto_name: String::new(),
     })
 }
@@ -291,14 +255,8 @@ pub async fn set_project_provider_setting(
         )));
     }
     crate::domain::agents::runtime::reject_workspace_only(provider_type, "project")?;
-    let col = runtime_setting_key(provider_type);
-    let query = format!("UPDATE projects SET \"{}\" = ? WHERE id = ?", col);
-    sqlx::query(&query)
-        .bind(provider)
-        .bind(project_id)
-        .execute(pool)
-        .await?;
-    Ok(())
+    let key = runtime_setting_key(provider_type);
+    crate::domain::settings_store::project_set(pool, project_id, &key, provider).await
 }
 
 #[cfg(test)]

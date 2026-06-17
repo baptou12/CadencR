@@ -10,8 +10,7 @@ import { AlertTriangleIcon, LayoutGridIcon, MessageSquareIcon } from "lucide-rea
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
-import { useGetWorkspaceSetting } from "@/api/generated";
-import { parseSavedFeature, type SavedFeature } from "@/lib/saved-feature";
+import { readSavedFeature, type SavedFeature } from "@/lib/saved-feature";
 
 interface RootErrorBoundaryState {
   error: Error | null;
@@ -63,8 +62,7 @@ interface RootErrorFallbackProps {
 
 function RootErrorFallback({ error, onReset }: RootErrorFallbackProps): ReactElement {
   const navigate = useNavigate();
-  const lastFeatureQuery = useGetWorkspaceSetting("lastOpenedFeature");
-  const lastFeature: SavedFeature | null = parseSavedFeature(lastFeatureQuery.data?.value);
+  const lastFeature: SavedFeature | null = readSavedFeature();
 
   // Drop the error state on any navigation away from the crashed route,
   // including sidebar / command-palette nav. Resetting on the initial mount
