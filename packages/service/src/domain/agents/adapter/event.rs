@@ -3,8 +3,8 @@ use serde_json::Value;
 use super::config::RuntimeUsage;
 use super::event_types::{
     RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeEvent, RuntimeEventKind,
-    RuntimeEventMetadata, RuntimeInitEvent, RuntimeStreamEvent, RuntimeStreamStatus,
-    RuntimeTurnStartedSource, RuntimeUserMessage,
+    RuntimeEventMetadata, RuntimeInitEvent, RuntimeProviderError, RuntimeStreamEvent,
+    RuntimeStreamStatus, RuntimeTurnStartedSource, RuntimeUserMessage,
 };
 use super::permission::RuntimeSlashCommand;
 
@@ -54,6 +54,24 @@ impl RuntimeEvent {
         }
     }
 
+    /// A non-fatal, user-facing provider error to surface (e.g. an API 5xx the
+    /// CLI reports as a synthetic assistant message). See
+    /// [`RuntimeEventKind::ProviderError`].
+    pub fn provider_error(&self) -> Option<RuntimeProviderError<'_>> {
+        match &self.kind {
+            RuntimeEventKind::ProviderError {
+                message,
+                code,
+                parent_tool_use_id,
+            } => Some(RuntimeProviderError {
+                message,
+                code: code.as_deref(),
+                parent_tool_use_id: parent_tool_use_id.as_deref(),
+            }),
+            _ => None,
+        }
+    }
+
     pub fn parent_tool_use_id(&self) -> Option<&str> {
         match &self.kind {
             RuntimeEventKind::AssistantMessage {
@@ -63,6 +81,9 @@ impl RuntimeEvent {
                 parent_tool_use_id, ..
             }
             | RuntimeEventKind::StreamEvent {
+                parent_tool_use_id, ..
+            }
+            | RuntimeEventKind::ProviderError {
                 parent_tool_use_id, ..
             } => parent_tool_use_id.as_deref(),
             _ => None,
@@ -82,6 +103,9 @@ impl RuntimeEvent {
                 parent_tool_use_id, ..
             }
             | RuntimeEventKind::StreamEvent {
+                parent_tool_use_id, ..
+            }
+            | RuntimeEventKind::ProviderError {
                 parent_tool_use_id, ..
             } => {
                 *parent_tool_use_id = parent.clone();

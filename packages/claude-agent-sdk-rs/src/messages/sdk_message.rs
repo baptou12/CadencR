@@ -82,6 +82,16 @@ pub enum SdkMessage {
         message: AssistantMessageBody,
         parent_tool_use_id: Option<String>,
         error: Option<String>,
+        /// `true` when the CLI synthesized this assistant message to report an
+        /// API failure (e.g. a 5xx) rather than a real model response. The
+        /// human-readable text lives in `message.content`; `model` is
+        /// `"<synthetic>"`.
+        #[serde(default, rename = "isApiErrorMessage")]
+        is_api_error_message: bool,
+        /// HTTP status of the API failure when `is_api_error_message` is set
+        /// (e.g. `529`). `None` for non-HTTP errors.
+        #[serde(default, rename = "apiErrorStatus")]
+        api_error_status: Option<u16>,
     },
 
     /// User message echo.

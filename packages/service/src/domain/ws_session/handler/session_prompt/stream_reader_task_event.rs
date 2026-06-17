@@ -56,6 +56,10 @@ impl StreamReaderTask {
         // and keep streaming the rest of the turn.
         let _ = self.send_mcp_servers_if_init(&runtime_event).await;
 
+        if self.handle_provider_error(&runtime_event).await {
+            return;
+        }
+
         if self.handle_non_result_signal(state, &runtime_event).await {
             return;
         }
@@ -155,6 +159,41 @@ impl StreamReaderTask {
             );
         }
         result
+    }
+
+    /// Surface a non-fatal provider error (e.g. an API 5xx the CLI reports as a
+    /// synthetic assistant message). Persist it as an `error` message so it
+    /// shows on history reload, and emit a live `session.error` envelope so it
+    /// appears immediately. Unlike [`Self::handle_stream_error`], this does NOT
+    /// stop the reader: the provider's own `Result` still ends the turn and the
+    /// subprocess stays alive for a retry. Returns `true` when handled.
+    async fn handle_provider_error(&self, runtime_event: &RuntimeEvent) -> bool {
+        let Some(error) = runtime_event.provider_error() else {
+            return false;
+        };
+        let code = error.code.unwrap_or("API_ERROR");
+        error!(self.db_session_id, code, "provider surfaced an API error");
+        WsSessionPersistence::persist_error_message_static(
+            &self.write_pool,
+            self.db_session_id,
+            error.message,
+            error.parent_tool_use_id,
+        )
+        .await;
+        let envelope = WsEnvelope::new(
+            "session",
+            "error",
+            serde_json::to_value(SessionErrorPayload {
+                code: code.to_string(),
+                message: error.message.to_string(),
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let _ = self
+            .send_and_mirror(Message::Text(String::from(envelope).into()))
+            .await;
+        true
     }
 
     async fn handle_non_result_signal(
