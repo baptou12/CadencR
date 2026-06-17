@@ -116,6 +116,38 @@ describe("interrupt pending steering prompts", () => {
     ).toBe("pending_agent");
   });
 
+  it("clears a stuck steering prompt when the backend acks it after the interrupt", async () => {
+    // Regression: a steering prompt sent right before an interrupt used to stay
+    // pending forever because nothing acked it. The backend now drains pending
+    // receipts on turn end, so a `prompt_received` arrives after `ended` and the
+    // frontend must resolve the block to "received_agent".
+    const ws = await connectInitializedReceiptSession();
+    const store = useWsSessionStore.getState();
+
+    store.sendPrompt("s1", "steer now");
+    const prompt = JSON.parse(ws.sent.at(-1) ?? "{}");
+    const blockId = useWsSessionStore
+      .getState()
+      .sessions.s1.blocks.find((b) => b.clientMessageId === prompt.payload.client_message_id)?.id;
+    expect(blockId).toBeDefined();
+
+    store.interrupt("s1");
+    ws.simulateMessage({
+      domain: "session",
+      action: "ended",
+      payload: { reason: "turn_complete" },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "prompt_received",
+      payload: { client_message_id: prompt.payload.client_message_id },
+    });
+
+    const block = useWsSessionStore.getState().sessions.s1.blocks.find((b) => b.id === blockId);
+    expect(block?.promptDeliveryState).toBe("received_agent");
+    expect(block?.clientMessageId).toBeUndefined();
+  });
+
   it("does not replay pending steering prompts when an interrupted turn ends", async () => {
     const ws = await connectInitializedReceiptSession();
     const store = useWsSessionStore.getState();

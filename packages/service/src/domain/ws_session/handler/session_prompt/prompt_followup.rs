@@ -13,7 +13,7 @@ use super::content::{
     build_content_value_for_provider, build_persist_content, payload_attachments,
 };
 use super::errors::persist_pause_and_send_session_error;
-use super::prompt_status::{mark_agent_running, mirror_user_message};
+use super::prompt_status::{clear_pending_prompt_receipt, mark_agent_running, mirror_user_message};
 
 pub(super) struct FollowupPromptContext {
     pub query: RuntimeSessionHandle,
@@ -89,13 +89,22 @@ async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptS
     let client_message_id = payload.client_message_id.clone();
     let query_guard = context.query.read().await;
     let stream_result = query_guard
-        .stream_input_with_client_message_id(content, client_message_id)
+        .stream_input_with_client_message_id(content, client_message_id.clone())
         .await;
     drop(query_guard);
 
     if let Err(error) = stream_result {
         let message = error.to_string();
         error!(context.db_session_id, error = %message, "stream_input failed");
+        if let Some(client_message_id) = client_message_id {
+            clear_pending_prompt_receipt(
+                &context.ws_feature_senders,
+                &context.sender,
+                context.feature_id,
+                client_message_id,
+            )
+            .await;
+        }
         persist_pause_and_send_session_error(
             &context.write_pool,
             &context.session_status_tx,
