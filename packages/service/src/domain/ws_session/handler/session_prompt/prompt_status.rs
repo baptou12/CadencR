@@ -1,7 +1,9 @@
 use axum::extract::ws::Message;
 
 use crate::domain::ws_session::persistence::WsSessionPersistence;
-use crate::domain::ws_session::protocol::{UserMessageMirrorPayload, WsEnvelope};
+use crate::domain::ws_session::protocol::{
+    PromptReceivedPayload, UserMessageMirrorPayload, WsEnvelope,
+};
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::WsSender;
@@ -26,6 +28,35 @@ pub(super) async fn mirror_user_message(
     );
     feature_senders
         .broadcast_others(feature_id, sender, &Message::Text(String::from(env).into()))
+        .await;
+}
+
+/// The `prompt_received` ack envelope — the signal that clears a prompt's
+/// "pending" decoration on the frontend. Built here so the live ack
+/// (`stream_reader_forward`) and the send-failure ack (`clear_pending_prompt_receipt`)
+/// share one wire shape.
+pub(super) fn prompt_received_envelope(client_message_id: String) -> WsEnvelope {
+    WsEnvelope::new(
+        "session",
+        "prompt_received",
+        serde_json::to_value(PromptReceivedPayload { client_message_id }).unwrap(),
+    )
+}
+
+/// Ack a tracked prompt the agent never received because the stream send
+/// failed. The backend receipt is already discarded; this only tells the
+/// client to stop the spinner (the accompanying `SDK_ERROR` envelope says why).
+/// Mirrored like the live ack so the original sender clears even when it is not
+/// the turn owner.
+pub(super) async fn clear_pending_prompt_receipt(
+    feature_senders: &WsFeatureSenderRegistry,
+    sender: &WsSender,
+    feature_id: i64,
+    client_message_id: String,
+) {
+    let msg = Message::Text(String::from(prompt_received_envelope(client_message_id)).into());
+    feature_senders
+        .send_and_mirror(feature_id, sender, msg)
         .await;
 }
 

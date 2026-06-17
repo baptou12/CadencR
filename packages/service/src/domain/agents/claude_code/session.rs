@@ -130,7 +130,7 @@ impl AgentRuntimeSession for ClaudeCodeSession {
                         }
                         let mapped = normalize_event(sdk_msg);
                         for event in
-                            acknowledge_response_start_prompt_receipts(&mapped, &prompt_receipts)
+                            acknowledge_turn_boundary_prompt_receipts(&mapped, &prompt_receipts)
                         {
                             if tx.send(Ok(event)).await.is_err() {
                                 break 'messages;
@@ -250,14 +250,23 @@ pub(super) fn acknowledge_user_prompt_receipt(
     prompt_receipts.acknowledge_replay(message)
 }
 
-pub(super) fn acknowledge_response_start_prompt_receipts(
+/// Drain every outstanding prompt receipt at a turn boundary: assistant
+/// `message_start` (Claude is responding, so it saw what we sent) or `Result`
+/// (turn end, including interrupt). The `Result` anchor is the deterministic
+/// fallback — an interrupt can drop both normal ack signals (text-matched
+/// replay, next `message_start`), leaving the receipt and its frontend
+/// "pending" decoration stuck until an app restart. Draining all is safe
+/// because a receipt only exists for the current turn (it is enqueued at
+/// stream time, after the prior turn's `Result`).
+pub(super) fn acknowledge_turn_boundary_prompt_receipts(
     event: &RuntimeEvent,
     prompt_receipts: &ClaudePromptReceipts,
 ) -> Vec<RuntimeEvent> {
-    if !matches!(
+    let is_response_start = matches!(
         event.stream_event(),
         Some(RuntimeStreamEvent::MessageStart { .. })
-    ) {
+    );
+    if !is_response_start && !event.is_result() {
         return Vec::new();
     }
     prompt_receipts.acknowledge_all_pending()
@@ -278,10 +287,12 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        acknowledge_response_start_prompt_receipts, acknowledge_user_prompt_receipt,
+        acknowledge_turn_boundary_prompt_receipts, acknowledge_user_prompt_receipt,
         is_unmatched_replay_user_message, map_permission_mode,
     };
-    use crate::domain::agents::adapter::RuntimePermissionMode;
+    use crate::domain::agents::adapter::{
+        RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimePermissionMode,
+    };
     use crate::domain::agents::claude_code::prompt_receipts::ClaudePromptReceipts;
 
     #[test]
@@ -345,14 +356,36 @@ mod tests {
         };
 
         let event = crate::domain::agents::claude_code::events::normalize_event(msg);
-        let events = acknowledge_response_start_prompt_receipts(&event, &receipts);
+        let events = acknowledge_turn_boundary_prompt_receipts(&event, &receipts);
 
         let ids: Vec<_> = events
             .iter()
             .filter_map(|event| event.prompt_received_client_message_id())
             .collect();
         assert_eq!(ids, vec!["client-1", "client-2"]);
-        assert!(acknowledge_response_start_prompt_receipts(&event, &receipts).is_empty());
+        assert!(acknowledge_turn_boundary_prompt_receipts(&event, &receipts).is_empty());
+    }
+
+    #[test]
+    fn acknowledges_pending_prompts_when_turn_ends() {
+        // A steering prompt sent right before an interrupt: the turn ends with a
+        // `Result` and no further `message_start` arrives, so the turn-end drain
+        // is the only thing that resolves the receipt. Without it the frontend
+        // block stays pending until the app restarts.
+        let receipts = ClaudePromptReceipts::default();
+        receipts.enqueue(
+            "client-1".to_string(),
+            &json!("interrupted steering prompt"),
+        );
+        let event = RuntimeEvent::new(RuntimeEventMetadata::default(), RuntimeEventKind::Result);
+        let events = acknowledge_turn_boundary_prompt_receipts(&event, &receipts);
+
+        let ids: Vec<_> = events
+            .iter()
+            .filter_map(|event| event.prompt_received_client_message_id())
+            .collect();
+        assert_eq!(ids, vec!["client-1"]);
+        assert!(acknowledge_turn_boundary_prompt_receipts(&event, &receipts).is_empty());
     }
 
     #[test]

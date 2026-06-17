@@ -4,10 +4,11 @@ use tracing::debug;
 use crate::domain::agents::adapter::RuntimeStreamStatus;
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeSlashCommandKind};
 use crate::domain::ws_session::protocol::{
-    CommandsUpdatedPayload, PromptReceivedPayload, SessionStreamStatusPayload,
-    SlashCommandKindPayload, SlashCommandPayload, StreamStatusState, WsEnvelope,
+    CommandsUpdatedPayload, SessionStreamStatusPayload, SlashCommandKindPayload,
+    SlashCommandPayload, StreamStatusState, WsEnvelope,
 };
 
+use super::prompt_status::prompt_received_envelope;
 use super::stream_reader_task::StreamReaderTask;
 
 pub(super) enum ForwardOutcome {
@@ -30,14 +31,7 @@ pub(super) async fn forward_immediate_event(
         return send_envelope(
             task,
             "prompt_received",
-            WsEnvelope::new(
-                "session",
-                "prompt_received",
-                serde_json::to_value(PromptReceivedPayload {
-                    client_message_id: client_message_id.to_string(),
-                })
-                .unwrap(),
-            ),
+            prompt_received_envelope(client_message_id.to_string()),
             true,
         )
         .await;
