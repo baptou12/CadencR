@@ -179,7 +179,8 @@ export interface ClaudeCodeCustomModelsResponse {
   models: RuntimeModelOption[];
 }
 
-export function useClaudeCodeProfiles() {
+export function useClaudeCodeProfiles(arg: boolean | QueryExtras = true) {
+  const { enabled = true, staleTime } = readQueryExtras(arg);
   return useQuery({
     queryKey: ["claude-code", "profiles"],
     queryFn: () =>
@@ -187,6 +188,8 @@ export function useClaudeCodeProfiles() {
         method: "GET",
         url: "/api/claude-code/profiles",
       }),
+    enabled,
+    staleTime,
   });
 }
 

@@ -67,9 +67,13 @@ export type FirstPromptBranchSetup =
   | { kind: "worktree" }
   | { kind: "project_branch"; base: string | null };
 
-export interface PromptSendOptions {
+export interface PromptDispatchOptions {
   attachments?: PromptAttachmentPayload[];
   branchSetup?: FirstPromptBranchSetup;
+  claudeProfile?: string;
+}
+
+export interface PromptSendOptions extends PromptDispatchOptions {
   clientMessageId?: string;
   replay?: boolean;
 }
@@ -92,6 +96,7 @@ export function createPromptSend(
       : {}),
     ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {}),
     ...(options.replay ? { replay: true } : {}),
+    ...(options.claudeProfile ? { claude_profile: options.claudeProfile } : {}),
   });
 }
 

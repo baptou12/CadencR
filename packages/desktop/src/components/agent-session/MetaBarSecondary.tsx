@@ -4,6 +4,7 @@ import { AutoScrollChip } from "./AutoScrollChip";
 import { SessionInfoChip } from "./SessionInfoChip";
 import { WorktreeChip, type WorktreeChipProps } from "./WorktreeChip";
 import type { TodoItem } from "@/types/agent";
+import type { ClaudeCodeProfile } from "@/api/agentRuntime";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 
 /**
@@ -31,6 +32,11 @@ export interface MetaBarSecondaryProps extends WorktreeChipProps {
   projectPath?: string;
   isRunning?: boolean;
   onPause?: () => void;
+  claudeProfile?: string;
+  claudeProfiles?: ClaudeCodeProfile[];
+  claudeProfilesLoading?: boolean;
+  claudeProfilesError?: boolean;
+  onClaudeProfileChange?: (profile: string) => void;
 }
 
 export const MetaBarSecondary = memo(function MetaBarSecondary({
@@ -44,6 +50,11 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
   projectPath,
   isRunning = false,
   onPause,
+  claudeProfile,
+  claudeProfiles = [],
+  claudeProfilesLoading = false,
+  claudeProfilesError = false,
+  onClaudeProfileChange,
   worktreeMode,
   onWorktreeModeChange,
   worktreeProjectId,
@@ -85,6 +96,11 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
             isRunning={isRunning}
             onPause={onPause}
             chipClass={META_BAR_CHIP}
+            claudeProfile={claudeProfile}
+            claudeProfiles={claudeProfiles}
+            claudeProfilesLoading={claudeProfilesLoading}
+            claudeProfilesError={claudeProfilesError}
+            onClaudeProfileChange={onClaudeProfileChange}
           />
         </div>
       )}

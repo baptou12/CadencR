@@ -17,6 +17,7 @@ import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import type { WorktreeMode } from "@/lib/worktree-mode";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
 import type { AgentCatalog } from "@/api/agentRuntime";
+import type { ClaudeProfileSelection } from "./useClaudeProfileSelection";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import type { TurnTimingState } from "@/stores/ws-turn-timing";
 
@@ -51,7 +52,11 @@ export interface AgentSessionProps {
    * failed pre-send step (e.g. saving worktree settings) doesn't drop the
    * user's text. Consumers should toast errors themselves.
    */
-  onSend: (message: string, attachments?: PromptAttachmentPayload[]) => void | Promise<void>;
+  onSend: (
+    message: string,
+    attachments?: PromptAttachmentPayload[],
+    claudeProfile?: string,
+  ) => void | Promise<void>;
   /** Called when the user clicks the stop button */
   onStop: () => void;
   /** Active questions from AskUserQuestion tool calls */
@@ -169,6 +174,8 @@ export interface AgentSessionProps {
   maximized?: boolean;
   /** Called when user clicks maximize/minimize */
   onToggleMaximize?: () => void;
+  /** Optional externally-owned Claude profile selector state. */
+  claudeProfileSelection?: ClaudeProfileSelection;
   /** Runtime provider ID backing this session */
   runtimeProvider?: string;
   /** Opaque runtime session ID to display above the prompt bar */

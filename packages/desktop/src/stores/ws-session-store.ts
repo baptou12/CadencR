@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { buildUserMessageContent, type PromptAttachmentPayload } from "@/types/agent-types";
+import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
 import {
@@ -15,8 +15,8 @@ import {
 } from "@/stores/connection-status-store";
 import {
   type SessionConfig,
-  type FirstPromptBranchSetup,
   type GateCloseReason,
+  type PromptDispatchOptions,
   type WsEnvelope,
   parseEnvelope,
   createEnvelope,
@@ -113,20 +113,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     get().connect(sessionId);
   }
 
-  function queuePrompt(
-    sessionId: string,
-    text: string,
-    attachments?: PromptAttachmentPayload[],
-    branchSetup?: FirstPromptBranchSetup,
-  ): void {
+  function queuePrompt(sessionId: string, text: string, options: PromptDispatchOptions = {}): void {
     const session = getSession(sessionId);
-    set(
-      updateSession(
-        get(),
-        sessionId,
-        buildQueuedPromptPatch(session, text, attachments, branchSetup),
-      ),
-    );
+    set(updateSession(get(), sessionId, buildQueuedPromptPatch(session, text, options)));
   }
 
   function flushQueuedInitActions(sessionId: string): void {
@@ -373,12 +362,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionInit(config));
     },
 
-    sendPrompt(
-      sessionId: string,
-      text: string,
-      attachments?: PromptAttachmentPayload[],
-      branchSetup?: FirstPromptBranchSetup,
-    ) {
+    sendPrompt(sessionId: string, text: string, options: PromptDispatchOptions = {}) {
       const session = getSession(sessionId);
       const trackProviderReceipt = shouldTrackPromptReceipt(session);
       const clientMessageId = trackProviderReceipt ? crypto.randomUUID() : undefined;
@@ -386,16 +370,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         sendRaw(
           sessionId,
           createPromptSend(session.serverSessionId, text, {
-            attachments,
-            branchSetup,
+            ...options,
             clientMessageId,
           }),
         );
       } else {
-        queuePrompt(sessionId, text, attachments, branchSetup);
+        queuePrompt(sessionId, text, options);
       }
 
-      const content = buildUserMessageContent(text, attachments);
+      const content = buildUserMessageContent(text, options.attachments);
       set(
         updateSession(
           get(),

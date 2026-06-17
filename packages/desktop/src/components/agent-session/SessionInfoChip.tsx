@@ -13,9 +13,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ProviderIcon } from "@/lib/provider-icons";
 import { getProviderMetadata, PROVIDER_IDS } from "@/lib/providers";
 import { buildResumeCommand } from "@/lib/provider-resume-command";
-import { useClaudeCodeProfiles } from "@/api/agentRuntime";
+import { DEFAULT_CLAUDE_PROFILE_NAME, type ClaudeCodeProfile } from "@/api/agentRuntime";
 import { cn } from "@/lib/utils";
 import type { McpServerStatus } from "@/stores/ws-session-types";
+import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
 
 interface SessionInfoChipProps {
   runtimeProvider: string | undefined;
@@ -24,6 +25,11 @@ interface SessionInfoChipProps {
   isRunning: boolean;
   onPause: () => void;
   chipClass: string;
+  claudeProfile?: string;
+  claudeProfiles?: ClaudeCodeProfile[];
+  claudeProfilesLoading?: boolean;
+  claudeProfilesError?: boolean;
+  onClaudeProfileChange?: (profile: string) => void;
 }
 
 const COPY_FEEDBACK_MS = 1500;
@@ -46,6 +52,11 @@ export function SessionInfoChip({
   isRunning,
   onPause,
   chipClass,
+  claudeProfile,
+  claudeProfiles = [],
+  claudeProfilesLoading = false,
+  claudeProfilesError = false,
+  onClaudeProfileChange,
 }: SessionInfoChipProps): ReactElement {
   const [copiedField, setCopiedField] = useState<"id" | "command" | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -103,6 +114,11 @@ export function SessionInfoChip({
           isRunning={isRunning}
           onCopySessionId={copySessionId}
           onCopyLaunchCommand={copyLaunchCommand}
+          claudeProfile={claudeProfile}
+          claudeProfiles={claudeProfiles}
+          claudeProfilesLoading={claudeProfilesLoading}
+          claudeProfilesError={claudeProfilesError}
+          onClaudeProfileChange={onClaudeProfileChange}
         />
       </PopoverContent>
     </Popover>
@@ -118,6 +134,11 @@ interface SessionInfoContentProps {
   isRunning: boolean;
   onCopySessionId: () => Promise<void>;
   onCopyLaunchCommand: () => Promise<void>;
+  claudeProfile?: string;
+  claudeProfiles: ClaudeCodeProfile[];
+  claudeProfilesLoading: boolean;
+  claudeProfilesError: boolean;
+  onClaudeProfileChange?: (profile: string) => void;
 }
 
 function SessionInfoContent({
@@ -129,13 +150,26 @@ function SessionInfoContent({
   isRunning,
   onCopySessionId,
   onCopyLaunchCommand,
+  claudeProfile,
+  claudeProfiles,
+  claudeProfilesLoading,
+  claudeProfilesError,
+  onClaudeProfileChange,
 }: SessionInfoContentProps): ReactElement {
   const providerMeta = getProviderMetadata(runtimeProvider);
   return (
     <>
       <ProviderRow providerId={runtimeProvider} providerLabel={providerMeta?.label} />
       <McpServersRow servers={mcpServers} />
-      {runtimeProvider === PROVIDER_IDS.CLAUDE_CODE && <ProfileRow />}
+      {runtimeProvider === PROVIDER_IDS.CLAUDE_CODE && (
+        <ProfileRow
+          profile={claudeProfile}
+          profiles={claudeProfiles}
+          isLoading={claudeProfilesLoading}
+          isError={claudeProfilesError}
+          onProfileChange={onClaudeProfileChange}
+        />
+      )}
       <SessionIdRow
         runtimeSessionId={runtimeSessionId}
         copied={copiedField === "id"}
@@ -290,17 +324,46 @@ function mcpStatusClass(status: string): string {
   }
 }
 
-function ProfileRow(): ReactElement {
-  const { data, isLoading, isError } = useClaudeCodeProfiles();
+function ProfileRow({
+  profile,
+  profiles,
+  isLoading,
+  isError,
+  onProfileChange,
+}: {
+  profile?: string;
+  profiles: ClaudeCodeProfile[];
+  isLoading: boolean;
+  isError: boolean;
+  onProfileChange?: (profile: string) => void;
+}): ReactElement {
+  const selectedProfile = profile ?? DEFAULT_CLAUDE_PROFILE_NAME;
+
+  if (onProfileChange) {
+    return (
+      <div className="space-y-1.5">
+        <div className="text-[11px] font-medium text-muted-foreground">Active profile</div>
+        <ClaudeProfileCombobox
+          value={selectedProfile}
+          profiles={profiles}
+          isLoading={isLoading}
+          isError={isError}
+          onChange={onProfileChange}
+          triggerClassName="w-full justify-between"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Applies to the next prompt. Current running turn is not restarted.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-[11px] font-medium text-muted-foreground">Active profile</span>
       {isLoading && <span className="h-3 w-16 animate-pulse rounded bg-muted/60" />}
       {isError && <span className="text-[11px] text-destructive">Failed to load</span>}
-      {!isLoading && !isError && data && (
-        <span className="font-mono text-[11px]">{data.active}</span>
-      )}
+      {!isLoading && !isError && <span className="font-mono text-[11px]">{selectedProfile}</span>}
     </div>
   );
 }

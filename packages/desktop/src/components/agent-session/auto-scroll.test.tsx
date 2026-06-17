@@ -82,6 +82,7 @@ vi.mock("@/api/generated", async (importOriginal) => ({
 }));
 
 vi.mock("@/api/agentRuntime", () => ({
+  DEFAULT_CLAUDE_PROFILE_NAME: "default",
   useAgentCatalog: vi.fn(() => ({
     data: {
       default_provider: "claude_code",
@@ -96,6 +97,14 @@ vi.mock("@/api/agentRuntime", () => ({
       ],
     },
     isLoading: false,
+  })),
+  useClaudeCodeProfiles: vi.fn(() => ({
+    data: {
+      active: "default",
+      profiles: [{ name: "bedrock", env: {} }],
+    },
+    isLoading: false,
+    isError: false,
   })),
 }));
 
@@ -184,6 +193,9 @@ function userWheelUp(el: HTMLElement, scrollTop: number): void {
 
 describe("AgentSession auto-scroll", () => {
   beforeEach(() => {
+    Element.prototype.hasPointerCapture ??= vi.fn(() => false);
+    Element.prototype.setPointerCapture ??= vi.fn();
+    Element.prototype.releasePointerCapture ??= vi.fn();
     vi.clearAllMocks();
   });
 
@@ -418,6 +430,31 @@ describe("AgentSession auto-scroll", () => {
     expect(onSend).toHaveBeenCalled();
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
     expect(scroller.scrollTop).toBe(1000);
+  });
+
+  it("passes the selected Claude profile when sending the next prompt", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn(async () => {});
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="idle"
+        onSend={onSend}
+        onStop={vi.fn()}
+        currentProviderId="claude_code"
+        runtimeProvider="claude_code"
+        runtimeSessionId="runtime-1"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Session info" }));
+    await user.click(screen.getByLabelText("Claude profile"));
+    await user.click(screen.getByRole("option", { name: /bedrock/i }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Hi there" } });
+    await user.click(screen.getByLabelText("Send message"));
+
+    expect(onSend).toHaveBeenCalledWith("Hi there", undefined, "bedrock");
   });
 
   // On cold-open, item heights start at `defaultItemHeight` (96px) and grow

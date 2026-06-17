@@ -1,11 +1,3 @@
-/**
- * Unified agent UI component for all agent types.
- *
- * When `collapsible` is true, renders with a header and toggle (for workflow
- * view where multiple agents show).  When false, renders full-screen (for
- * standalone session view).
- */
-
 import {
   useState,
   useEffect,
@@ -15,43 +7,30 @@ import {
   forwardRef,
   memo,
 } from "react";
-import { parseThinkingEffort } from "@/shared/thinking-effort";
-import { cn, capitalize } from "@/lib/utils";
+import { capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
-import { AgentStream } from "../AgentStream";
-import { AgentPromptBar, type AgentPromptBarHandle } from "../AgentPromptBar";
-import { ContextUsageBar } from "../ContextUsageBar";
+import type { AgentPromptBarHandle } from "../AgentPromptBar";
 import { AGENT_ICONS } from "../agent-icons";
 import { useGetFeatureWorkingDir } from "../../api/generated";
 import { useAgentCatalog } from "../../api/agentRuntime";
-import { normalizeContextWindow } from "@/types/agent";
+import { PROVIDER_IDS } from "@/lib/providers";
 import { AGENT_LABELS, STATUS_BADGE } from "./constants";
 import type { AgentSessionProps, AgentSessionHandle } from "./types";
 import { shallowEqualSkipFunctions } from "./shallowEqualSkipFunctions";
 import { useAgentSessionScroll } from "./useAgentSessionScroll";
 import { useAgentSessionModelState } from "./useAgentSessionModelState";
-import { MetaBar, type MetaBarHandle } from "./MetaBar";
-import { MetaBarSecondary } from "./MetaBarSecondary";
+import type { MetaBarHandle } from "./MetaBar";
 import { useNarrowContainer } from "./useNarrowContainer";
-import { CollapsibleHeader } from "./CollapsibleHeader";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
-import { SessionHint } from "./SessionHint";
 import { useTurnWorkingLabel } from "@/components/TurnWorkingLabel";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { AGENT_VERBOSITY_SETTING_KEY, parseAgentVerbosityMode } from "@/lib/agent-verbosity";
+import { AgentSessionComposer } from "./AgentSessionComposer";
+import { AgentSessionFrame } from "./AgentSessionFrame";
+import { AgentSessionStreamContent } from "./AgentSessionStreamContent";
+import { useClaudeProfileSelection } from "./useClaudeProfileSelection";
 
-/**
- * Container width below which the auto-scroll, todos, and info chips slide
- * out of the inline `MetaBar` and into a `MetaBarSecondary` strip rendered
- * below the prompt. Picked to match the point at which the inline bar starts
- * clipping when the model picker + mode + worktree chips are all
- * visible.
- */
 const META_BAR_COMPACT_THRESHOLD_PX = 640;
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export const AgentSession = memo(
   forwardRef<AgentSessionHandle, AgentSessionProps>(function AgentSession(props, ref) {
@@ -67,7 +46,6 @@ export const AgentSession = memo(
       onSend,
       onStop,
       pendingQuestions,
-      onAnswerSubmit,
       disableShortcuts,
       label,
       icon,
@@ -75,60 +53,34 @@ export const AgentSession = memo(
       className,
       resumable,
       onResume,
-      disabled,
       open: controlledOpen,
       onToggle,
       navAgentIndex,
       canDelete,
       onDelete,
       todos,
-      permissionMode,
       onPermissionModeToggle,
-      enabledOptInModes,
-      providerModes,
-      codexPermissionMode,
-      codexPermissionDefaultMode,
-      isCodexPermissionModePending,
       onCodexPermissionModeChange,
       agentCatalog: providedAgentCatalog,
       pendingPlanApproval,
-      planApproveLabel,
-      planApprovalError,
-      onPlanApprove,
-      onPlanRequestChanges,
-      onPlanReject,
-      onGateClose,
-      contextUsage,
       currentProviderId,
       onProviderChange,
       currentModelId,
       onModelChange,
-      currentThinkingEffort,
       showReadOnlyModel,
-      onThinkingEffortChange,
       featureId,
       projectId,
-      sessionId,
       wsSessionId,
-      pendingPermission,
-      onPermissionDecision,
-      isSubmittingPermission,
       onMarkDone,
       maximized,
       onToggleMaximize,
+      claudeProfileSelection,
       runtimeProvider,
       runtimeSessionId,
-      slashCommandsOverride,
-      slashCommandsLoading,
       hasMore,
       onLoadOlder,
-      worktreeMode,
       onWorktreeModeChange,
       worktreeProjectId,
-      worktreeDefaultBranch,
-      worktreeProjectPath,
-      worktreeSelectedBranch,
-      onWorktreeBranchChange,
       agentTabActive = true,
     } = props;
 
@@ -181,19 +133,6 @@ export const AgentSession = memo(
       enabled: agentTabActive && !disableShortcuts,
       onEnableAutoScroll: scrollToBottom,
     });
-
-    // Sending a message is an explicit user action — they expect to see
-    // their prompt land at the bottom and the agent's reply stream in next
-    // to it. Force the chip back on and scroll before deferring to the
-    // caller's send handler so the new user_prompt block, when it arrives
-    // via WS, lands in view (followOutput keeps it pinned thereafter).
-    const handleSend = useCallback<typeof onSend>(
-      (message, images) => {
-        scrollToBottom();
-        return onSend(message, images);
-      },
-      [onSend, scrollToBottom],
-    );
 
     // Auto-open when agent starts running (uncontrolled mode only)
     useEffect(() => {
@@ -261,7 +200,9 @@ export const AgentSession = memo(
       if (!collapsible) return true;
       if (pendingPlanApproval) return true;
       return (
-        status !== "idle" || blocks.length > 0 || (pendingQuestions && pendingQuestions.length > 0)
+        status !== "idle" ||
+        blocks.length > 0 ||
+        !!(pendingQuestions && pendingQuestions.length > 0)
       );
     })();
 
@@ -282,11 +223,41 @@ export const AgentSession = memo(
       hasConversation: blocks.length > 0,
     });
 
+    const isClaudeProvider =
+      activeProviderId === PROVIDER_IDS.CLAUDE_CODE || runtimeProvider === PROVIDER_IDS.CLAUDE_CODE;
+
+    const localClaudeProfileSelection = useClaudeProfileSelection({
+      isClaudeProvider: isClaudeProvider && claudeProfileSelection == null,
+      wsSessionId,
+    });
+    const {
+      selectedClaudeProfile,
+      claudeProfiles,
+      claudeProfilesLoading,
+      claudeProfilesError,
+      handleClaudeProfileChange,
+    } = claudeProfileSelection ?? localClaudeProfileSelection;
+
+    // Sending a message is an explicit user action — they expect to see
+    // their prompt land at the bottom and the agent's reply stream in next
+    // to it. Force the chip back on and scroll before deferring to the
+    // caller's send handler so the new user_prompt block, when it arrives
+    // via WS, lands in view (followOutput keeps it pinned thereafter).
+    const handleSend = useCallback(
+      (message: string, images?: Parameters<AgentSessionProps["onSend"]>[1]) => {
+        scrollToBottom();
+        const claudeProfile = isClaudeProvider ? selectedClaudeProfile : undefined;
+        return onSend(message, images, claudeProfile);
+      },
+      [isClaudeProvider, onSend, scrollToBottom, selectedClaudeProfile],
+    );
+
     // Same gate as `canChangeProvider` — see useAgentSessionModelState.
     // The branch/worktree chip shows before the first message when the
     // embedder wires up the mode picker (mode + setter + project id).
     const showWorktreeChip =
       blocks.length === 0 && !!onWorktreeModeChange && worktreeProjectId != null;
+    const showClaudeProfileSelector = isClaudeProvider && blocks.length === 0;
     const showAutoScrollChip = !!shouldShowPromptBar;
 
     const verbositySetting = useDebouncedSetting(AGENT_VERBOSITY_SETTING_KEY);
@@ -301,257 +272,100 @@ export const AgentSession = memo(
       !!onPermissionModeToggle ||
       !!onCodexPermissionModeChange ||
       !!onModelChange ||
+      showClaudeProfileSelector ||
       !!showReadOnlyModel ||
       (showWorktreeChip && !isNarrow);
     const hasSecondaryMeta =
       showWorktreeChip ||
       showAutoScrollChip ||
-      (todos && todos.length > 0) ||
+      !!(todos && todos.length > 0) ||
       !!(runtimeSessionId && onStop);
     const hasMeta = hasInlineMeta || (hasSecondaryMeta && !isNarrow);
 
-    // ---- Shared sub-sections ----
-    const metaBar = hasMeta ? (
-      <MetaBar
-        ref={metaBarRef}
-        secondaryBelow={isNarrow}
-        showAutoScrollChip={showAutoScrollChip}
-        autoScrollEnabled={autoScrollEnabled}
-        onToggleAutoScroll={scrollToBottom}
-        permissionMode={permissionMode}
-        onPermissionModeToggle={onPermissionModeToggle}
-        enabledOptInModes={enabledOptInModes}
-        providerModes={providerModes}
-        codexPermissionMode={codexPermissionMode}
-        codexPermissionDefaultMode={codexPermissionDefaultMode}
-        isCodexPermissionModePending={isCodexPermissionModePending}
-        onCodexPermissionModeChange={onCodexPermissionModeChange}
-        showWorktreeChip={showWorktreeChip}
-        worktreeMode={worktreeMode}
-        onWorktreeModeChange={onWorktreeModeChange}
-        worktreeProjectId={worktreeProjectId}
-        worktreeDefaultBranch={worktreeDefaultBranch}
-        worktreeProjectPath={worktreeProjectPath}
-        worktreeSelectedBranch={worktreeSelectedBranch}
-        onWorktreeBranchChange={onWorktreeBranchChange}
-        onProviderChange={onProviderChange}
-        currentProviderId={activeProviderId}
-        onModelChange={onModelChange}
-        currentThinkingEffort={parseThinkingEffort(currentThinkingEffort)}
-        supportedThinkingEfforts={supportedThinkingEfforts}
-        onThinkingEffortChange={onThinkingEffortChange}
-        showReadOnlyModel={showReadOnlyModel}
-        currentModelId={currentModelId}
-        currentModelLabel={currentModelLabel}
-        isModelCatalogLoading={isCatalogLoading}
-        models={visibleModels}
-        providers={
-          canChangeProvider
-            ? providerOptions
-            : providerOptions.filter((provider) => provider.id === activeProviderId)
-        }
-        canChangeProvider={canChangeProvider}
-        todos={todos}
-        runtimeProvider={runtimeProvider}
-        runtimeSessionId={runtimeSessionId}
+    const visibleProviders = canChangeProvider
+      ? providerOptions
+      : providerOptions.filter((provider) => provider.id === activeProviderId);
+    const streamContent = (
+      <AgentSessionStreamContent
+        blocks={blocks}
+        rootBlocks={rootBlocks}
+        toolResultMap={toolResultMap}
+        isAgentWorking={isAgentWorking}
+        lifecycle={workingLifecycle}
+        workingLabel={workingLabel}
         projectPath={projectPath}
-        isRunning={status === "agent"}
-        onPause={onStop}
-        onModelSelected={() => promptBarRef.current?.focusInput()}
+        scrollContainerRef={scrollContainerRef}
+        virtuosoRef={virtuosoRef}
+        followOutput={followOutput}
+        onAtBottomStateChange={onAtBottomStateChange}
+        onTotalListHeightChanged={onTotalListHeightChanged}
+        onStartReached={onStartReached}
+        isLoadingOlder={isLoadingOlder}
+        historyPrependDisplayOffset={historyPrependDisplayOffset}
+        verbosityMode={verbosityMode}
       />
-    ) : null;
-
-    const streamContent =
-      blocks.length > 0 || isAgentWorking ? (
-        <AgentStream
-          blocks={blocks}
-          rootBlocks={rootBlocks}
-          toolResultMap={toolResultMap}
-          isStreaming={isAgentWorking}
-          lifecycle={workingLifecycle}
-          workingLabel={workingLabel}
-          basePath={projectPath}
-          scrollContainerRef={scrollContainerRef}
-          virtuosoRef={virtuosoRef}
-          followOutput={followOutput}
-          onAtBottomStateChange={onAtBottomStateChange}
-          onTotalListHeightChanged={onTotalListHeightChanged}
-          onStartReached={onStartReached}
-          isLoadingOlder={isLoadingOlder}
-          historyPrependDisplayOffset={historyPrependDisplayOffset}
-          verbosityMode={verbosityMode}
-        />
-      ) : null;
-
-    const promptBar = shouldShowPromptBar ? (
-      <AgentPromptBar
-        ref={promptBarRef}
-        onSend={handleSend}
-        onStop={onStop}
-        status={status}
-        disabled={disabled}
-        pendingQuestions={pendingQuestions}
-        onQuestionResponse={onAnswerSubmit}
-        disableShortcuts={disableShortcuts}
-        onCollapse={collapsible ? handleCollapse : undefined}
-        permissionMode={permissionMode}
-        onPermissionModeToggle={onPermissionModeToggle}
-        pendingPlanApproval={pendingPlanApproval}
-        planApproveLabel={planApproveLabel}
-        planApprovalError={planApprovalError}
-        onPlanApprove={onPlanApprove}
-        onPlanRequestChanges={onPlanRequestChanges}
-        onPlanReject={onPlanReject}
-        onGateClose={onGateClose}
-        onOpenModelPicker={onModelChange ? () => metaBarRef.current?.openModelPicker() : undefined}
-        agentTabActive={agentTabActive}
-        featureId={featureId}
-        projectId={projectId}
-        sessionId={sessionId}
-        wsSessionId={wsSessionId}
-        providerId={activeProviderId}
-        onToggleMaximize={onToggleMaximize}
-        noTopPadding={!!hasMeta}
-        slashCommandsOverride={slashCommandsOverride}
-        slashCommandsLoading={slashCommandsLoading}
-        pendingPermission={pendingPermission}
-        onPermissionDecision={onPermissionDecision}
-        isSubmittingPermission={isSubmittingPermission}
-      />
-    ) : null;
-
-    const secondaryBar =
-      isNarrow && hasSecondaryMeta && shouldShowPromptBar ? (
-        <MetaBarSecondary
-          showWorktreeChip={showWorktreeChip}
-          worktreeMode={worktreeMode}
-          onWorktreeModeChange={onWorktreeModeChange}
-          worktreeProjectId={worktreeProjectId}
-          worktreeDefaultBranch={worktreeDefaultBranch}
-          worktreeProjectPath={worktreeProjectPath}
-          worktreeSelectedBranch={worktreeSelectedBranch}
-          onWorktreeBranchChange={onWorktreeBranchChange}
-          showAutoScrollChip={showAutoScrollChip}
-          autoScrollEnabled={autoScrollEnabled}
-          onToggleAutoScroll={scrollToBottom}
-          todos={todos}
-          runtimeProvider={runtimeProvider}
-          runtimeSessionId={runtimeSessionId}
-          projectPath={projectPath}
-          isRunning={status === "agent"}
-          onPause={onStop}
-        />
-      ) : null;
-
-    const bottomSection = (
-      <div className="shrink-0">
-        {metaBar}
-        {promptBar}
-        {secondaryBar}
-        {normalizeContextWindow(contextUsage?.contextWindow) != null && (
-          // The context bar is the bottom-most element, so it owns its
-          // home-indicator clearance (matching MobileTerminalKeyBar): without it
-          // the bar sits in the phone's rounded-corner zone and its ends get
-          // clipped. `max()` keeps the desktop 6px gap (inset is 0 there).
-          <div className="flex items-center gap-2 px-3 pt-0 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
-            <ContextUsageBar
-              usage={contextUsage}
-              className="flex-1 px-0 py-0"
-              isStreaming={isAgentWorking}
-            />
-          </div>
-        )}
-      </div>
     );
 
-    // ==== Full-screen mode ====
-    if (!collapsible) {
-      return (
-        <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
-          {isIdle ? (
-            <div className="flex flex-1 items-center justify-center px-4 pt-4 pb-8">
-              <SessionHint />
-            </div>
-          ) : (
-            <div className="flex-1 min-h-0 px-4 pt-4 pb-8">{streamContent}</div>
-          )}
-          {bottomSection}
-        </div>
-      );
-    }
+    const bottomSection = (
+      <AgentSessionComposer
+        sessionProps={props}
+        promptBarRef={promptBarRef}
+        metaBarRef={metaBarRef}
+        onSend={handleSend}
+        onToggleAutoScroll={scrollToBottom}
+        onCollapse={handleCollapse}
+        shouldShowPromptBar={shouldShowPromptBar}
+        hasMeta={hasMeta}
+        isNarrow={isNarrow}
+        hasSecondaryMeta={!!hasSecondaryMeta}
+        showAutoScrollChip={showAutoScrollChip}
+        autoScrollEnabled={autoScrollEnabled}
+        showWorktreeChip={showWorktreeChip}
+        activeProviderId={activeProviderId}
+        currentModelLabel={currentModelLabel ?? ""}
+        isModelCatalogLoading={isCatalogLoading}
+        models={visibleModels}
+        providers={visibleProviders}
+        canChangeProvider={canChangeProvider}
+        supportedThinkingEfforts={supportedThinkingEfforts}
+        projectPath={projectPath}
+        isAgentWorking={isAgentWorking}
+        agentTabActive={agentTabActive}
+        collapsible={collapsible}
+        showClaudeProfileSelector={showClaudeProfileSelector}
+        claudeProfile={selectedClaudeProfile}
+        claudeProfiles={claudeProfiles}
+        claudeProfilesLoading={claudeProfilesLoading}
+        claudeProfilesError={claudeProfilesError}
+        onClaudeProfileChange={handleClaudeProfileChange}
+      />
+    );
 
-    // ==== Collapsible mode ====
     return (
-      <div
-        ref={containerRef}
-        className={cn(
-          "flex flex-col rounded-lg border border-border bg-background",
-          isOpen && maximized && "flex-1 min-h-0",
-          isOpen && !maximized && "h-[60vh] min-h-0 shrink-0 overflow-hidden",
-          !isOpen && "shrink-0",
-          className,
-        )}
-        {...(navAgentIndex != null ? { "data-agent-container": navAgentIndex } : {})}
-      >
-        <CollapsibleHeader
-          headerRef={headerRef}
-          onToggle={handleToggle}
-          isOpen={isOpen}
-          IconComponent={IconComponent}
-          badge={badge}
-          displayLabel={displayLabel}
-          navAgentIndex={navAgentIndex}
-          onMarkDone={onMarkDone}
-          resumable={resumable}
-          onResume={onResume}
-          canDelete={canDelete}
-          onDelete={onDelete}
-          maximized={maximized}
-          onToggleMaximize={onToggleMaximize}
-        />
-
-        {isOpen && (
-          <>
-            {blocks.length === 0 && status === "idle" ? (
-              <div className="flex flex-1 items-center justify-center border-t border-border/30 p-6 text-sm text-muted-foreground">
-                No output yet
-              </div>
-            ) : (
-              <div className="flex-1 min-h-0 border-t border-border/30 px-3 pb-6">
-                {streamContent}
-              </div>
-            )}
-
-            <div className="shrink-0">
-              {!hasMeta && (
-                <div
-                  className="pointer-events-none h-16 -mt-16"
-                  style={{
-                    background:
-                      "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
-                    backdropFilter: "blur(6px)",
-                    WebkitBackdropFilter: "blur(6px)",
-                    maskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
-                    WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
-                  }}
-                />
-              )}
-              {metaBar}
-              {promptBar}
-              {secondaryBar}
-              {contextUsage && (
-                <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
-                  <ContextUsageBar
-                    usage={contextUsage}
-                    className="flex-1 px-0 py-0"
-                    isStreaming={isAgentWorking}
-                  />
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+      <AgentSessionFrame
+        containerRef={containerRef}
+        headerRef={headerRef}
+        collapsible={collapsible}
+        className={className}
+        navAgentIndex={navAgentIndex}
+        maximized={maximized}
+        isOpen={isOpen}
+        isIdle={isIdle}
+        status={status}
+        blocks={blocks}
+        streamContent={streamContent}
+        bottomContent={bottomSection}
+        onToggle={handleToggle}
+        IconComponent={IconComponent}
+        badge={badge}
+        displayLabel={displayLabel}
+        onMarkDone={onMarkDone}
+        resumable={resumable}
+        onResume={onResume}
+        canDelete={canDelete}
+        onDelete={onDelete}
+        onToggleMaximize={onToggleMaximize}
+      />
     );
   }),
   shallowEqualSkipFunctions,

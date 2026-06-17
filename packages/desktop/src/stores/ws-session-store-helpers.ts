@@ -1,12 +1,11 @@
 import type { SessionEntry } from "./ws-session-types";
-import type { FirstPromptBranchSetup, WsEnvelope } from "@/lib/ws-envelope";
+import type { PromptDispatchOptions, WsEnvelope } from "@/lib/ws-envelope";
 import { createModeSet, createPromptSend } from "@/lib/ws-envelope";
 import type { QueuedPrompt } from "./ws-session-types";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
 import type { LocalUserMessageOptions } from "./ws-pending-prompts";
 import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { PromptAttachmentPayload } from "@/types/agent-types";
 export { buildSlashCommandsKey } from "@/lib/slash-command-key";
 
 /**
@@ -57,12 +56,13 @@ export function appendLocalUserMessage(
 export function buildQueuedPromptPatch(
   session: SessionEntry,
   text: string,
-  attachments?: PromptAttachmentPayload[],
-  branchSetup?: FirstPromptBranchSetup,
+  options: PromptDispatchOptions = {},
 ): Pick<SessionEntry, "queuedPrompts"> {
   const queuedPrompt: QueuedPrompt = { text };
-  if (attachments && attachments.length > 0) queuedPrompt.attachments = attachments;
-  if (branchSetup) queuedPrompt.branchSetup = branchSetup;
+  if (options.attachments && options.attachments.length > 0)
+    queuedPrompt.attachments = options.attachments;
+  if (options.branchSetup) queuedPrompt.branchSetup = options.branchSetup;
+  if (options.claudeProfile) queuedPrompt.claudeProfile = options.claudeProfile;
   return {
     queuedPrompts: [...session.queuedPrompts, queuedPrompt],
   };
@@ -89,6 +89,7 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
       createPromptSend(session.serverSessionId, prompt.text, {
         attachments: prompt.attachments,
         branchSetup: prompt.branchSetup,
+        claudeProfile: prompt.claudeProfile,
       }),
     );
   }

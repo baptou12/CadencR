@@ -6,10 +6,11 @@ import { SessionInfoChip, SessionInfoMcpServersProvider } from "./SessionInfoChi
 
 vi.mock("@/api/agentRuntime", () => ({
   useClaudeCodeProfiles: vi.fn(() => ({
-    data: { active: "default" },
+    data: { active: "default", profiles: [{ name: "bedrock", env: {} }] },
     isLoading: false,
     isError: false,
   })),
+  DEFAULT_CLAUDE_PROFILE_NAME: "default",
 }));
 
 describe("SessionInfoChip", () => {
@@ -67,5 +68,33 @@ describe("SessionInfoChip", () => {
     await user.click(screen.getByRole("button", { name: /session info/i }));
 
     expect(screen.getByText("MCPs not reported yet")).toBeInTheDocument();
+  });
+
+  it("renders an editable Claude profile combobox in the info popover", async () => {
+    Element.prototype.hasPointerCapture = vi.fn(() => false);
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
+    const user = userEvent.setup();
+    const onProfileChange = vi.fn();
+
+    render(
+      <SessionInfoChip
+        runtimeProvider={PROVIDER_IDS.CLAUDE_CODE}
+        runtimeSessionId="sess-123"
+        projectPath="/tmp/project"
+        isRunning={false}
+        onPause={vi.fn()}
+        chipClass="chip"
+        claudeProfile="default"
+        claudeProfiles={[{ name: "bedrock", env: {} }]}
+        onClaudeProfileChange={onProfileChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /session info/i }));
+    await user.click(screen.getByRole("combobox", { name: /Claude profile/i }));
+    await user.click(await screen.findByRole("option", { name: "bedrock" }));
+
+    expect(onProfileChange).toHaveBeenCalledWith("bedrock");
   });
 });

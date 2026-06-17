@@ -16,6 +16,7 @@ vi.mock("@/api/generated", async (importOriginal) => ({
 }));
 
 vi.mock("@/api/agentRuntime", () => ({
+  DEFAULT_CLAUDE_PROFILE_NAME: "default",
   useAgentCatalog: vi.fn(() => ({
     data: {
       default_provider: "claude_code",
@@ -30,6 +31,11 @@ vi.mock("@/api/agentRuntime", () => ({
       ],
     },
     isLoading: false,
+  })),
+  useClaudeCodeProfiles: vi.fn(() => ({
+    data: { active: "default", profiles: [{ name: "bedrock", env: {} }] },
+    isLoading: false,
+    isError: false,
   })),
 }));
 
