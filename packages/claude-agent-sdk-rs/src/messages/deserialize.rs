@@ -54,6 +54,10 @@ enum SdkMessageInner {
         message: AssistantMessageBody,
         parent_tool_use_id: Option<String>,
         error: Option<String>,
+        #[serde(default, rename = "isApiErrorMessage")]
+        is_api_error_message: bool,
+        #[serde(default, rename = "apiErrorStatus")]
+        api_error_status: Option<u16>,
     },
     #[serde(rename = "user")]
     User {
@@ -222,12 +226,16 @@ impl From<SdkMessageInner> for SdkMessage {
                 message,
                 parent_tool_use_id,
                 error,
+                is_api_error_message,
+                api_error_status,
             } => SdkMessage::Assistant {
                 uuid,
                 session_id,
                 message,
                 parent_tool_use_id,
                 error,
+                is_api_error_message,
+                api_error_status,
             },
             SdkMessageInner::User {
                 uuid,
@@ -390,6 +398,63 @@ impl<'de> Deserialize<'de> for SdkMessage {
         match SdkMessageInner::deserialize(&raw) {
             Ok(inner) => Ok(SdkMessage::from(inner)),
             Err(_) => Ok(SdkMessage::Unknown(raw)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn deserializes_api_error_markers_on_assistant() {
+        let msg: SdkMessage = serde_json::from_value(json!({
+            "type": "assistant",
+            "uuid": "u",
+            "session_id": "s",
+            "message": { "id": "syn", "model": "<synthetic>", "content": [] },
+            "error": "server_error",
+            "isApiErrorMessage": true,
+            "apiErrorStatus": 529
+        }))
+        .expect("valid assistant");
+
+        match msg {
+            SdkMessage::Assistant {
+                is_api_error_message,
+                api_error_status,
+                error,
+                ..
+            } => {
+                assert!(is_api_error_message);
+                assert_eq!(api_error_status, Some(529));
+                assert_eq!(error.as_deref(), Some("server_error"));
+            }
+            other => panic!("expected assistant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn defaults_api_error_markers_when_absent() {
+        let msg: SdkMessage = serde_json::from_value(json!({
+            "type": "assistant",
+            "uuid": "u",
+            "session_id": "s",
+            "message": { "id": "m", "model": "claude-opus-4-8", "content": [] }
+        }))
+        .expect("valid assistant");
+
+        match msg {
+            SdkMessage::Assistant {
+                is_api_error_message,
+                api_error_status,
+                ..
+            } => {
+                assert!(!is_api_error_message);
+                assert_eq!(api_error_status, None);
+            }
+            other => panic!("expected assistant, got {other:?}"),
         }
     }
 }

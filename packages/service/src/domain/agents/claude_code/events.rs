@@ -41,6 +41,30 @@ fn init_model_context_window(model: &str) -> Option<u64> {
     model.contains("[1m]").then_some(1_000_000)
 }
 
+/// Human-readable text for an API-error assistant message: the joined text
+/// blocks (e.g. "API Error: 529 Overloaded…"). Falls back to the synthetic
+/// `error` category string, then a generic message, when the CLI sent no text.
+fn api_error_text(
+    content: &[claude_agent_sdk_rs::types::ContentBlock],
+    error: Option<&str>,
+) -> String {
+    let text = content
+        .iter()
+        .filter_map(|block| match block {
+            claude_agent_sdk_rs::types::ContentBlock::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        error
+            .unwrap_or("The agent reported an API error.")
+            .to_string()
+    } else {
+        text
+    }
+}
+
 fn map_content_block(block: &claude_agent_sdk_rs::types::ContentBlock) -> RuntimeContentBlock {
     match block {
         claude_agent_sdk_rs::types::ContentBlock::Text { text } => {
@@ -180,6 +204,22 @@ pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEv
                     pre_tokens: Some(compact_metadata.pre_tokens),
                 }),
             },
+        },
+        claude_agent_sdk_rs::SdkMessage::Assistant {
+            message,
+            parent_tool_use_id,
+            error,
+            is_api_error_message,
+            api_error_status,
+            ..
+        } if is_api_error_message => RuntimeEventKind::ProviderError {
+            message: api_error_text(&message.content, error.as_deref()),
+            code: Some(
+                api_error_status
+                    .map(|status| format!("API_ERROR_{status}"))
+                    .unwrap_or_else(|| "API_ERROR".to_string()),
+            ),
+            parent_tool_use_id,
         },
         claude_agent_sdk_rs::SdkMessage::Assistant {
             message,
@@ -340,6 +380,78 @@ mod tests {
         // Bedrock-pinned or custom/proxy model. Defer to the CLI's Result.
         let event = normalize_event(init_message("us.anthropic.claude-sonnet-4-5"));
         assert_eq!(event.init().expect("init kind").context_window, None);
+    }
+
+    #[test]
+    fn normalize_event_maps_api_error_assistant_to_provider_error() {
+        // Regression: a 529 arrives as a synthetic assistant message
+        // (`model: "<synthetic>"`, `isApiErrorMessage: true`). It used to be
+        // dropped because the full-assistant-message path only reconciles
+        // ToolUse blocks. It must now surface as a ProviderError carrying the
+        // human-readable text and an HTTP-status-derived code.
+        let msg: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
+            "type": "assistant",
+            "uuid": "u-err",
+            "session_id": "s-err",
+            "message": {
+                "id": "syn",
+                "model": "<synthetic>",
+                "stop_reason": "stop_sequence",
+                "content": [{ "type": "text", "text": "API Error: 529 Overloaded." }]
+            },
+            "error": "server_error",
+            "isApiErrorMessage": true,
+            "apiErrorStatus": 529
+        }))
+        .expect("valid api error assistant");
+
+        let event = normalize_event(msg);
+        let error = event.provider_error().expect("provider error kind");
+        assert_eq!(error.message, "API Error: 529 Overloaded.");
+        assert_eq!(error.code, Some("API_ERROR_529"));
+        // It must NOT also look like a normal assistant message.
+        assert!(event.assistant_message().is_none());
+    }
+
+    #[test]
+    fn normalize_event_api_error_falls_back_to_error_category_when_no_text() {
+        // When the CLI sends no text content, the surfaced message falls back
+        // to the `error` category string so it's never empty.
+        let msg: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
+            "type": "assistant",
+            "uuid": "u-err",
+            "session_id": "s-err",
+            "message": { "id": "syn", "model": "<synthetic>", "content": [] },
+            "error": "server_error",
+            "isApiErrorMessage": true
+        }))
+        .expect("valid api error assistant");
+
+        let event = normalize_event(msg);
+        let error = event.provider_error().expect("provider error kind");
+        assert_eq!(error.message, "server_error");
+        // No HTTP status -> generic code.
+        assert_eq!(error.code, Some("API_ERROR"));
+    }
+
+    #[test]
+    fn normalize_event_keeps_plain_assistant_message() {
+        // A normal assistant message (no API-error markers) is unaffected.
+        let msg: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
+            "type": "assistant",
+            "uuid": "u",
+            "session_id": "s",
+            "message": {
+                "id": "m",
+                "model": "claude-opus-4-8",
+                "content": [{ "type": "text", "text": "Done." }]
+            }
+        }))
+        .expect("valid assistant");
+
+        let event = normalize_event(msg);
+        assert!(event.provider_error().is_none());
+        assert!(event.assistant_message().is_some());
     }
 
     #[test]

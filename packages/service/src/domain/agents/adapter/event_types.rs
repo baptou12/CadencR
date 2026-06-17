@@ -43,6 +43,17 @@ pub enum RuntimeEventKind {
         data: Value,
     },
     Result,
+    /// Provider surfaced a non-fatal, user-facing error mid-stream — e.g. an
+    /// API 5xx the CLI reports as a synthetic assistant message. Unlike
+    /// [`RuntimeError`](super::RuntimeError) (a dead transport, which tears the
+    /// reader down), the session stays alive and the provider's own `Result`
+    /// still ends the turn. This variant only carries the message to persist
+    /// and surface so it isn't silently dropped.
+    ProviderError {
+        message: String,
+        code: Option<String>,
+        parent_tool_use_id: Option<String>,
+    },
     CompactBoundary {
         metadata: Option<RuntimeCompactMetadata>,
     },
@@ -123,6 +134,15 @@ pub struct RuntimeInitEvent {
 pub struct RuntimeAssistantMessage {
     pub model: Option<String>,
     pub content: Vec<RuntimeContentBlock>,
+}
+
+/// Borrowed view of a [`RuntimeEventKind::ProviderError`], returned by
+/// [`RuntimeEvent::provider_error`](super::RuntimeEvent::provider_error).
+#[derive(Debug, Clone, Copy)]
+pub struct RuntimeProviderError<'a> {
+    pub message: &'a str,
+    pub code: Option<&'a str>,
+    pub parent_tool_use_id: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]
