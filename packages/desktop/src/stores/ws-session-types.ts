@@ -16,6 +16,7 @@ import type {
   GateCloseReason,
   WsEnvelope,
   SessionConfig,
+  PromptDispatchOptions,
 } from "@/lib/ws-envelope";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { StreamingState } from "./ws-message-processing";
@@ -72,6 +73,7 @@ export interface QueuedPrompt {
   text: string;
   attachments?: PromptAttachmentPayload[];
   branchSetup?: FirstPromptBranchSetup;
+  claudeProfile?: string;
 }
 
 export interface McpServerStatus {
@@ -248,12 +250,7 @@ export interface WsSessionStore {
 
   send: (sessionId: string, data: unknown) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
-  sendPrompt: (
-    sessionId: string,
-    text: string,
-    attachments?: PromptAttachmentPayload[],
-    branchSetup?: FirstPromptBranchSetup,
-  ) => void;
+  sendPrompt: (sessionId: string, text: string, options?: PromptDispatchOptions) => void;
   respondToPermission: (
     sessionId: string,
     requestId: string,

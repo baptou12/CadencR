@@ -4,6 +4,7 @@ mod errors;
 mod mcp_servers;
 mod prompt_followup;
 mod prompt_pending;
+mod prompt_runtime_config;
 mod prompt_send;
 mod prompt_status;
 mod prompt_worktree;

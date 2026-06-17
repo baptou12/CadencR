@@ -33,6 +33,11 @@ import {
   EMPTY_PROVIDER_MODES,
   usePermissionModeToggle,
 } from "@/components/WebSocketSessionPermissionMode";
+import { PROVIDER_IDS } from "@/lib/providers";
+import {
+  useClaudeProfileSelection,
+  type ClaudeProfileSelection,
+} from "@/components/agent-session/useClaudeProfileSelection";
 
 type WsSession = ReturnType<typeof useWebSocketSession>;
 
@@ -67,6 +72,7 @@ export interface SessionControls
   setSelectedBranch: Dispatch<SetStateAction<string | null>>;
   initializedRef: RefObject<string | null>;
   handlePermissionModeToggle: () => void;
+  claudeProfile: ClaudeProfileSelection;
   initialCwd: string;
 }
 
@@ -202,6 +208,10 @@ export function useSessionControls(
   const worktree = useWorktreePreference(projectId);
   const runtime = useRuntimeSelection(ws, effectiveCwd, options?.agentCatalogEnabled ?? true);
   const codex = useCodexAccessControls(ws);
+  const claudeProfile = useClaudeProfileSelection({
+    isClaudeProvider: runtime.activeProviderId === PROVIDER_IDS.CLAUDE_CODE,
+    wsSessionId: sessionId,
+  });
   const handlePermissionModeToggle = usePermissionModeToggle(
     sessionId,
     runtime.activeProviderId,
@@ -217,10 +227,12 @@ export function useSessionControls(
       initializedRef,
       ...runtime,
       handlePermissionModeToggle,
+      claudeProfile,
       ...codex,
       initialCwd: effectiveCwd,
     }),
     [
+      claudeProfile,
       codex,
       effectiveCwd,
       handlePermissionModeToggle,

@@ -230,6 +230,26 @@ describe("MetaBar mode chip", () => {
     expect(screen.getByText(MODEL_CATALOG_LOADING_LABEL)).toBeInTheDocument();
     expect(screen.queryByText("default/default")).toBeNull();
   });
+
+  it("places the pre-first-prompt Claude profile selector at the end of the top line", () => {
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CLAUDE_CODE,
+      showClaudeProfileSelector: true,
+      claudeProfile: "default",
+      claudeProfiles: [{ name: "bedrock", env: {} }],
+      claudeProfilesLoading: false,
+      claudeProfilesError: false,
+      onClaudeProfileChange: vi.fn(),
+      showReadOnlyModel: true,
+      showWorktreeChip: false,
+    });
+
+    const modelText = screen.getByText("claude-sonnet");
+    const profileCombobox = screen.getByRole("combobox", { name: /Claude profile/i });
+    expect(modelText.compareDocumentPosition(profileCombobox)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
 });
 
 describe("MetaBar secondaryBelow", () => {

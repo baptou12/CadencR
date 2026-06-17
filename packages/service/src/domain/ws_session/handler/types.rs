@@ -38,6 +38,7 @@ pub(super) struct SessionConfig {
     pub(super) thinking_effort: Option<String>,
     pub(super) system_prompt: Option<String>,
     pub(super) allow_bypass_permissions: bool,
+    pub(super) claude_profile: Option<String>,
     /// Extra env vars to inject when respawning the CLI (e.g. an active
     /// Claude Code profile). Carried through resume transitions so the
     /// process always sees the profile the user selected.
@@ -67,6 +68,10 @@ pub struct SdkHandle {
     pub(super) desired_thinking_effort: Option<String>,
     /// Thinking effort the runtime was last spawned with.
     pub(super) spawned_thinking_effort: Option<String>,
+    /// Claude profile the user wants for the next Claude process spawn.
+    pub(super) desired_claude_profile: Option<String>,
+    /// Claude profile the active runtime was last spawned with.
+    pub(super) spawned_claude_profile: Option<String>,
     /// Provider-local control endpoint for runtimes with a sidecar HTTP API.
     /// Currently populated by live runtime adapters when available;
     /// retained on the struct so the wider session-handle plumbing keeps

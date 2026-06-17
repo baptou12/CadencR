@@ -95,6 +95,7 @@ async fn test_replayed_prompt_send_streams_without_persisting_duplicate_user_mes
         handle.spawned_permission_mode = handle.desired_permission_mode.clone();
         handle.spawned_access_mode = handle.desired_access_mode.clone();
         handle.spawned_thinking_effort = handle.desired_thinking_effort.clone();
+        handle.spawned_claude_profile = handle.desired_claude_profile.clone();
     }
 
     let envelope = make_envelope(

@@ -117,6 +117,8 @@ fn make_refreshing_mcp_handle(feature_id: i64) -> SdkHandle {
         spawned_access_mode: None,
         desired_thinking_effort: None,
         spawned_thinking_effort: None,
+        desired_claude_profile: None,
+        spawned_claude_profile: None,
         runtime_control_endpoint: None,
         resume_session_id: None,
         config: SessionConfig {
@@ -127,6 +129,7 @@ fn make_refreshing_mcp_handle(feature_id: i64) -> SdkHandle {
             thinking_effort: None,
             system_prompt: None,
             allow_bypass_permissions: false,
+            claude_profile: None,
             env: None,
         },
         manual_compact_cancel: Arc::new(AtomicBool::new(false)),

@@ -368,6 +368,7 @@ async fn insert_active_session(
     let spawned_permission_mode = context.config.permission_mode.clone();
     let spawned_access_mode = context.config.access_mode.clone();
     let spawned_effort = context.spawned_thinking_effort.clone();
+    let spawned_claude_profile = context.config.claude_profile.clone();
     let mut sessions = context.sdk_sessions.lock().await;
     sessions.insert(
         context.db_session_id,
@@ -386,6 +387,8 @@ async fn insert_active_session(
             spawned_access_mode,
             desired_thinking_effort: spawned_effort.clone(),
             spawned_thinking_effort: spawned_effort,
+            desired_claude_profile: spawned_claude_profile.clone(),
+            spawned_claude_profile,
             runtime_control_endpoint,
             resume_session_id: None,
             config: context.config.clone(),

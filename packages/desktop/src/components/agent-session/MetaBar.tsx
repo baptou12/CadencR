@@ -12,10 +12,12 @@ import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
+import type { ClaudeCodeProfile } from "@/api/agentRuntime";
 import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 import { CodexAccessModePopover } from "./CodexAccessModePopover";
 import { getDisplayMode } from "./meta-bar-codex-modes";
+import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
 
 export interface MetaBarProps {
   showAutoScrollChip: boolean;
@@ -62,6 +64,12 @@ export interface MetaBarProps {
   currentThinkingEffort?: ThinkingEffortLevel;
   supportedThinkingEfforts?: ThinkingEffortLevel[];
   onThinkingEffortChange?: (thinkingEffort?: ThinkingEffortLevel) => void;
+  showClaudeProfileSelector?: boolean;
+  claudeProfile?: string;
+  claudeProfiles?: ClaudeCodeProfile[];
+  claudeProfilesLoading?: boolean;
+  claudeProfilesError?: boolean;
+  onClaudeProfileChange?: (profile: string) => void;
   showReadOnlyModel?: boolean;
   currentModelId?: string;
   currentModelLabel: string;
@@ -122,6 +130,12 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     currentThinkingEffort,
     supportedThinkingEfforts = [],
     onThinkingEffortChange,
+    showClaudeProfileSelector = false,
+    claudeProfile,
+    claudeProfiles = [],
+    claudeProfilesLoading = false,
+    claudeProfilesError = false,
+    onClaudeProfileChange,
     showReadOnlyModel = false,
     currentModelId,
     currentModelLabel,
@@ -183,6 +197,10 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
   const isStandalone = variant === "standalone";
   const shouldShowModel = !!onModelChange || showReadOnlyModel;
   const hasCodexAccessMode = !!codexPermissionMode && !!onCodexPermissionModeChange;
+  const hasProfileSelector =
+    showClaudeProfileSelector && !!claudeProfile && !!onClaudeProfileChange;
+  const hasTrailingGroup =
+    hasProfileSelector || hasCodexAccessMode || (!secondaryBelow && runtimeSessionId && onPause);
 
   return (
     <div
@@ -258,8 +276,20 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         <AgentTodoList todos={todos} chipClass={META_BAR_CHIP} />
       )}
 
-      {(hasCodexAccessMode || (!secondaryBelow && runtimeSessionId && onPause)) && (
+      {hasTrailingGroup && (
         <div className="ml-auto flex items-center gap-1.5">
+          {hasProfileSelector && (
+            <ClaudeProfileCombobox
+              value={claudeProfile}
+              profiles={claudeProfiles}
+              isLoading={claudeProfilesLoading}
+              isError={claudeProfilesError}
+              onChange={onClaudeProfileChange}
+              variant="compact"
+              label="Profile"
+            />
+          )}
+
           {/* Codex access chip — separate from collaboration mode; no keyboard shortcut. */}
           {codexPermissionMode && onCodexPermissionModeChange && (
             <CodexAccessModePopover
@@ -279,6 +309,11 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
               isRunning={isRunning}
               onPause={onPause}
               chipClass={META_BAR_CHIP}
+              claudeProfile={claudeProfile}
+              claudeProfiles={claudeProfiles}
+              claudeProfilesLoading={claudeProfilesLoading}
+              claudeProfilesError={claudeProfilesError}
+              onClaudeProfileChange={onClaudeProfileChange}
             />
           )}
         </div>

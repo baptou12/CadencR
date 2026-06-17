@@ -337,6 +337,8 @@ pub(crate) fn make_active_handle(feature_id: i64, session_id: Option<String>) ->
         spawned_access_mode: None,
         desired_thinking_effort: None,
         spawned_thinking_effort: None,
+        desired_claude_profile: None,
+        spawned_claude_profile: None,
         runtime_control_endpoint: None,
         resume_session_id: None,
         config: SessionConfig {
@@ -347,6 +349,7 @@ pub(crate) fn make_active_handle(feature_id: i64, session_id: Option<String>) ->
             thinking_effort: None,
             system_prompt: None,
             allow_bypass_permissions: false,
+            claude_profile: None,
             env: None,
         },
         manual_compact_cancel: Arc::new(AtomicBool::new(false)),
@@ -371,6 +374,8 @@ pub(crate) fn make_in_place_effort_handle(feature_id: i64) -> SdkHandle {
         spawned_access_mode: None,
         desired_thinking_effort: None,
         spawned_thinking_effort: None,
+        desired_claude_profile: None,
+        spawned_claude_profile: None,
         runtime_control_endpoint: None,
         resume_session_id: None,
         config: SessionConfig {
@@ -381,6 +386,7 @@ pub(crate) fn make_in_place_effort_handle(feature_id: i64) -> SdkHandle {
             thinking_effort: None,
             system_prompt: None,
             allow_bypass_permissions: false,
+            claude_profile: None,
             env: None,
         },
         manual_compact_cancel: Arc::new(AtomicBool::new(false)),

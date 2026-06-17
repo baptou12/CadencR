@@ -215,6 +215,23 @@ describe("ws-session-store", () => {
     expect(session.blocks[0].content).toBe("hello");
   });
 
+  it("sendPrompt includes selected Claude profile in prompt payload", async () => {
+    const { store, ws } = await connectInitializedSession();
+
+    store.sendPrompt("s1", "hello", { claudeProfile: "bedrock" });
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    expect(sent.at(-1)).toMatchObject({
+      domain: "session",
+      action: "prompt.send",
+      payload: {
+        session_id: "srv-1",
+        text: "hello",
+        claude_profile: "bedrock",
+      },
+    });
+  });
+
   it("sendPrompt marks mid-turn messages as pending when prompt receipts are supported", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");

@@ -235,6 +235,7 @@ vi.mock("@/contexts/ResolvedModelContext", () => ({
 }));
 
 vi.mock("@/api/agentRuntime", () => ({
+  DEFAULT_CLAUDE_PROFILE_NAME: "default",
   useAgentCatalog: vi.fn(() => ({
     data: {
       default_provider: "claude_code",
@@ -249,6 +250,11 @@ vi.mock("@/api/agentRuntime", () => ({
       ],
     },
     isLoading: false,
+  })),
+  useClaudeCodeProfiles: vi.fn(() => ({
+    data: { active: "default", profiles: [{ name: "bedrock", env: {} }] },
+    isLoading: false,
+    isError: false,
   })),
 }));
 
@@ -438,7 +444,11 @@ describe("WsSessionPage route", () => {
       id: 35,
       data: { key: "worktree_mode", value: "reuse" },
     });
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, { kind: "worktree" });
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+      attachments: undefined,
+      branchSetup: { kind: "worktree" },
+      claudeProfile: "default",
+    });
   });
 
   it("signals a project-path new branch (no worktree) for the from_branch mode", async () => {
@@ -446,9 +456,10 @@ describe("WsSessionPage route", () => {
     // No worktree feature settings: the backend forks the branch after
     // auto-naming, signalled via the prompt's `branchSetup` (not a pre-send op).
     expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, {
-      kind: "project_branch",
-      base: "develop",
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+      attachments: undefined,
+      branchSetup: { kind: "project_branch", base: "develop" },
+      claudeProfile: "default",
     });
   });
 
@@ -458,13 +469,40 @@ describe("WsSessionPage route", () => {
       data: { project_id: 1, branch: "feat/unattached" },
     });
     expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, undefined);
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+      attachments: undefined,
+      branchSetup: undefined,
+      claudeProfile: "default",
+    });
   });
 
   it("does not persist settings, checkout, or start a worktree for on_branch on the default branch", async () => {
     await setModeBranchAndSend({ mode: "on_branch" });
     expect(mocks.mockCheckoutBranchMutateAsync).not.toHaveBeenCalled();
     expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
-    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, undefined);
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+      attachments: undefined,
+      branchSetup: undefined,
+      claudeProfile: "default",
+    });
+  });
+
+  it("forwards the selected Claude profile with prompt sends", async () => {
+    render(<WsSessionPage />);
+    const onSend = lastAgentSessionProps().onSend as (
+      text: string,
+      attachments?: unknown[],
+      claudeProfile?: string,
+    ) => Promise<void>;
+
+    await act(async () => {
+      await onSend("hello", undefined, "bedrock");
+    });
+
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", {
+      attachments: undefined,
+      branchSetup: undefined,
+      claudeProfile: "bedrock",
+    });
   });
 });

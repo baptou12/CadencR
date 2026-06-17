@@ -211,6 +211,8 @@ async fn mode_set_rejection_keeps_accepted_mode_as_desired_mode() {
             spawned_access_mode: None,
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
+            desired_claude_profile: None,
+            spawned_claude_profile: None,
             runtime_control_endpoint: None,
             resume_session_id: None,
             config: SessionConfig {
@@ -221,6 +223,7 @@ async fn mode_set_rejection_keeps_accepted_mode_as_desired_mode() {
                 thinking_effort: None,
                 system_prompt: None,
                 allow_bypass_permissions: false,
+                claude_profile: None,
                 env: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),
@@ -309,6 +312,8 @@ async fn claude_bypass_mode_set_rearms_existing_session_before_next_prompt() {
             spawned_access_mode: None,
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
+            desired_claude_profile: None,
+            spawned_claude_profile: None,
             runtime_control_endpoint: None,
             resume_session_id: None,
             config: SessionConfig {
@@ -319,6 +324,7 @@ async fn claude_bypass_mode_set_rearms_existing_session_before_next_prompt() {
                 thinking_effort: None,
                 system_prompt: None,
                 allow_bypass_permissions: false,
+                claude_profile: None,
                 env: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),

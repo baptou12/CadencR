@@ -28,6 +28,7 @@ import { useAgentFirstNonAgentWork } from "@/components/useAgentFirstNonAgentWor
 import { useEditorStore } from "@/stores/editor-store";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { toRelativePath } from "@/lib/utils";
+import { PROVIDER_IDS } from "@/lib/providers";
 
 export interface WebSocketSessionFeatureBlockProps {
   sessionId: string;
@@ -375,10 +376,10 @@ function useSessionFeatureActions({
   );
   const sendPromptAndFocus = useCallback(
     (message: string): void => {
-      controls.ws.sendPrompt(message);
+      controls.ws.sendPrompt(message, { claudeProfile: claudeProfileForPrompt(controls) });
       requestAnimationFrame(() => refs.agent.current?.focusPromptBar());
     },
-    [controls.ws, refs.agent],
+    [controls, refs.agent],
   );
   const sendFromGitTab = useCallback(
     (message: string): void => {
@@ -388,6 +389,14 @@ function useSessionFeatureActions({
     [sendPromptAndFocus, setRootActive],
   );
   return { sendPromptAndFocus, sendFromGitTab };
+}
+
+function claudeProfileForPrompt(
+  controls: ReturnType<typeof useSessionControls>,
+): string | undefined {
+  return controls.activeProviderId === PROVIDER_IDS.CLAUDE_CODE
+    ? controls.claudeProfile.selectedClaudeProfile
+    : undefined;
 }
 
 interface SessionFeatureTopBarProps {

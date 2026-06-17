@@ -134,6 +134,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
             todos={agentVisible ? (data.session?.todos ?? null) : null}
             disableShortcuts={!hotkeysEnabled}
             agentTabActive={agentVisible && hotkeysEnabled}
+            claudeProfileSelection={controls.claudeProfile}
             hasMore={controls.ws.hasMore}
             onLoadOlder={controls.ws.loadOlderMessages}
             worktreeMode={controls.worktreeMode}
@@ -205,16 +206,16 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
   const { controls, nonAgentTabsEnabled, featureId } = args;
   const sendContext = useCallback(
     (message: string, images?: Array<{ base64: string; mimeType: string }>): void =>
-      controls.ws.sendPrompt(
-        message,
-        images?.map((image, index) => ({
+      controls.ws.sendPrompt(message, {
+        attachments: images?.map((image, index) => ({
           base64: image.base64,
           mimeType: image.mimeType,
           fileName: images.length > 1 ? `browser-context-${index + 1}.png` : "browser-context.png",
           kind: "image" as const,
         })),
-      ),
-    [controls.ws],
+        claudeProfile: claudeProfileForPrompt(controls),
+      }),
+    [controls],
   );
   return useMemo(
     () => ({
@@ -270,13 +271,17 @@ function useAgentSendHandler(args: {
   projectId: number;
   data: ReturnType<typeof useSessionFeatureData>;
   controls: ReturnType<typeof useSessionControls>;
-}): (text: string, attachments?: PromptAttachmentPayload[]) => Promise<void> {
+}): (
+  text: string,
+  attachments?: PromptAttachmentPayload[],
+  claudeProfile?: string,
+) => Promise<void> {
   const { featureId, projectId, data, controls } = args;
   const queryClient = useQueryClient();
   const setFeatureSetting = useSetFeatureSetting();
   const checkoutMutateAsync = useCheckoutBranch().mutateAsync;
   return useCallback(
-    async (text, attachments) => {
+    async (text, attachments, claudeProfile) => {
       if (text.trim() === "/clear") {
         controls.ws.clearSession();
         return;
@@ -319,11 +324,16 @@ function useAgentSendHandler(args: {
           branchSetup = { kind: "worktree" };
         }
       }
-      controls.ws.sendPrompt(text, attachments, branchSetup);
+      controls.ws.sendPrompt(text, {
+        attachments,
+        branchSetup,
+        claudeProfile: claudeProfile ?? claudeProfileForPrompt(controls),
+      });
     },
     [
       checkoutMutateAsync,
       controls.activeProviderId,
+      controls.claudeProfile.selectedClaudeProfile,
       controls.selectedBranch,
       controls.worktreeMode,
       controls.ws,
@@ -335,6 +345,14 @@ function useAgentSendHandler(args: {
       setFeatureSetting,
     ],
   );
+}
+
+function claudeProfileForPrompt(
+  controls: ReturnType<typeof useSessionControls>,
+): string | undefined {
+  return controls.activeProviderId === PROVIDER_IDS.CLAUDE_CODE
+    ? controls.claudeProfile.selectedClaudeProfile
+    : undefined;
 }
 
 function handleModelChange(
