@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+
 use tracing::{debug, info};
 
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
-use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{PromptSendPayload, WsEnvelope};
 
 use crate::domain::agents::adapter::RuntimeSessionHandle;
@@ -10,13 +11,13 @@ use crate::domain::agents::adapter::RuntimeSessionHandle;
 use super::super::{parse_session_id, send_error, QueryState, SdkHandle, SdkSessions, WsSender};
 use super::prompt_followup::{handle_followup_prompt, FollowupPromptContext};
 use super::prompt_pending::{handle_pending_prompt, PendingPromptContext};
+use super::prompt_runtime_config::{
+    apply_respawn_if_needed, dispatch_changes, log_dispatch_decision,
+};
 
-struct DispatchChanges {
-    model_changed: bool,
-    mode_changed: bool,
-    access_changed: bool,
-    effort_changed: bool,
-    needs_respawn: bool,
+struct PromptProfileUpdate {
+    name: String,
+    env: Option<HashMap<String, String>>,
 }
 
 /// Handle session.prompt.send: send prompt to runtime or spawn new query.
@@ -33,6 +34,14 @@ pub(crate) async fn handle_prompt_send(
         return;
     };
 
+    let profile_update = match resolve_prompt_profile_update(app_state, &payload).await {
+        Ok(update) => update,
+        Err(error) => {
+            send_error(sender, &envelope.id, "PROFILE_ERROR", &error);
+            return;
+        }
+    };
+
     // Phase 1 — this connection's own map. Apply any respawn-on-config-change,
     // then if we own the live turn, steer it directly (fast path).
     {
@@ -46,6 +55,7 @@ pub(crate) async fn handle_prompt_send(
             );
             return;
         };
+        apply_prompt_profile_update(handle, profile_update.as_ref());
         let changes = apply_respawn_if_needed(handle, app_state, db_session_id).await;
         log_dispatch_decision(handle, db_session_id, &changes);
 
@@ -71,10 +81,32 @@ pub(crate) async fn handle_prompt_send(
     // kept running via deferred teardown). Steer that live agent rather than
     // starting a second one: never spawn a new agent on an existing conversation.
     if let Some(owner) = app_state.active_turns.owner_sessions(db_session_id).await {
-        if let Some(context) =
-            owner_followup_context(&owner, db_session_id, sender, app_state, &envelope.id).await
+        if let Some(target) = owner_prompt_target(
+            &owner,
+            db_session_id,
+            sender,
+            app_state,
+            &envelope.id,
+            profile_update.as_ref(),
+        )
+        .await
         {
-            handle_followup_prompt(context, payload).await;
+            match target {
+                OwnerPromptTarget::Followup(context) => {
+                    handle_followup_prompt(context, payload).await;
+                }
+                OwnerPromptTarget::Pending(owner_sessions) => {
+                    spawn_pending_prompt(
+                        &envelope,
+                        sender,
+                        &owner_sessions,
+                        app_state,
+                        db_session_id,
+                        payload,
+                    )
+                    .await;
+                }
+            }
             return;
         }
     }
@@ -127,30 +159,44 @@ fn build_followup_context(
 /// Build a follow-up context against a live turn owned by *another* connection,
 /// resolved via the active-turn registry. Returns `None` when that connection's
 /// turn is no longer live.
-async fn owner_followup_context(
+enum OwnerPromptTarget {
+    Followup(FollowupPromptContext),
+    Pending(SdkSessions),
+}
+
+async fn owner_prompt_target(
     owner: &SdkSessions,
     db_session_id: i64,
     sender: &WsSender,
     app_state: &AppState,
     envelope_id: &str,
-) -> Option<FollowupPromptContext> {
+    profile_update: Option<&PromptProfileUpdate>,
+) -> Option<OwnerPromptTarget> {
     let (query, feature_id, provider_id) = {
-        let sessions = owner.lock().await;
-        let handle = sessions.get(&db_session_id)?;
+        let mut sessions = owner.lock().await;
+        let handle = sessions.get_mut(&db_session_id)?;
+        let changes = if profile_update.is_some() {
+            apply_prompt_profile_update(handle, profile_update);
+            apply_respawn_if_needed(handle, app_state, db_session_id).await
+        } else {
+            dispatch_changes(handle)
+        };
+        log_dispatch_decision(handle, db_session_id, &changes);
+
         match &handle.state {
             QueryState::Active { query, .. } => (
                 query.clone(),
                 handle.feature_id,
                 handle.runtime_provider.clone(),
             ),
-            QueryState::Pending(_) => return None,
+            QueryState::Pending(_) => return Some(OwnerPromptTarget::Pending(owner.clone())),
         }
     };
     info!(
         db_session_id,
         "steering live turn owned by another connection (no new agent)"
     );
-    Some(build_followup_context(
+    Some(OwnerPromptTarget::Followup(build_followup_context(
         query,
         feature_id,
         db_session_id,
@@ -159,7 +205,7 @@ async fn owner_followup_context(
         owner,
         app_state,
         envelope_id.to_string(),
-    ))
+    )))
 }
 
 /// First prompt (or respawn after a config change): take the stored spawn
@@ -229,6 +275,37 @@ async fn spawn_pending_prompt(
     handle_pending_prompt(context).await;
 }
 
+async fn resolve_prompt_profile_update(
+    app_state: &AppState,
+    payload: &PromptSendPayload,
+) -> Result<Option<PromptProfileUpdate>, String> {
+    let Some(profile_name) = payload.claude_profile.as_deref() else {
+        return Ok(None);
+    };
+    let (name, env) = crate::domain::agents::claude_code::profiles::resolve_profile_env_by_name(
+        &app_state.read_pool,
+        Some(profile_name),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(Some(PromptProfileUpdate { name, env }))
+}
+
+fn apply_prompt_profile_update(handle: &mut SdkHandle, update: Option<&PromptProfileUpdate>) {
+    if handle.runtime_provider != crate::domain::agents::claude_code::PROVIDER_ID {
+        return;
+    }
+    let Some(update) = update else {
+        return;
+    };
+    handle.desired_claude_profile = Some(update.name.clone());
+    handle.config.claude_profile = Some(update.name.clone());
+    handle.config.env = update.env.clone();
+    if let QueryState::Pending(options) = &mut handle.state {
+        options.env = update.env.clone();
+    }
+}
+
 fn parse_prompt_payload(envelope: &WsEnvelope, sender: &WsSender) -> Option<PromptSendPayload> {
     match serde_json::from_value(envelope.payload.clone()) {
         Ok(payload) => Some(payload),
@@ -256,116 +333,4 @@ fn parse_prompt_session_id(
             None
         }
     }
-}
-
-async fn apply_respawn_if_needed(
-    handle: &mut SdkHandle,
-    app_state: &AppState,
-    db_session_id: i64,
-) -> DispatchChanges {
-    let changes = dispatch_changes(handle);
-    if !changes.needs_respawn {
-        return changes;
-    }
-    log_respawn(handle, db_session_id);
-    let runtime_session_id = close_active_for_respawn(handle, app_state, db_session_id).await;
-    reset_handle_to_pending(handle, runtime_session_id);
-    changes
-}
-
-fn dispatch_changes(handle: &SdkHandle) -> DispatchChanges {
-    let model_changed = handle.desired_model != handle.spawned_model;
-    let mode_changed = handle.desired_permission_mode != handle.spawned_permission_mode;
-    let access_changed = handle.desired_access_mode != handle.spawned_access_mode;
-    let effort_changed = handle.desired_thinking_effort != handle.spawned_thinking_effort;
-    DispatchChanges {
-        model_changed,
-        mode_changed,
-        access_changed,
-        effort_changed,
-        needs_respawn: matches!(&handle.state, QueryState::Active { .. })
-            && (model_changed || mode_changed || access_changed || effort_changed),
-    }
-}
-
-fn log_respawn(handle: &SdkHandle, db_session_id: i64) {
-    info!(
-        db_session_id,
-        old_model = ?handle.spawned_model,
-        new_model = ?handle.desired_model,
-        old_mode = ?handle.spawned_permission_mode,
-        new_mode = ?handle.desired_permission_mode,
-        old_access_mode = ?handle.spawned_access_mode,
-        new_access_mode = ?handle.desired_access_mode,
-        old_effort = ?handle.spawned_thinking_effort,
-        new_effort = ?handle.desired_thinking_effort,
-        "runtime config changed, respawning runtime with --resume"
-    );
-}
-
-async fn close_active_for_respawn(
-    handle: &mut SdkHandle,
-    app_state: &AppState,
-    db_session_id: i64,
-) -> Option<String> {
-    let QueryState::Active { query, .. } = &handle.state else {
-        return None;
-    };
-    let session_id = query.read().await.session_id().await;
-    if let Some(ref runtime_session_id) = session_id {
-        WsSessionPersistence::persist_runtime_session_id_static(
-            &app_state.write_pool,
-            db_session_id,
-            &handle.runtime_provider,
-            runtime_session_id,
-        )
-        .await;
-    }
-    query.write().await.close().await;
-    session_id
-}
-
-fn reset_handle_to_pending(handle: &mut SdkHandle, resume_session_id: Option<String>) {
-    let options = RuntimeSpawnConfig {
-        cwd: handle.config.cwd.clone(),
-        permission_mode: handle.desired_permission_mode.clone(),
-        access_mode: handle.desired_access_mode.clone(),
-        model: handle.desired_model.clone(),
-        thinking_effort: handle.desired_thinking_effort.clone(),
-        system_prompt: handle.config.system_prompt.clone(),
-        resume_session_id,
-        allow_bypass_permissions: handle.config.allow_bypass_permissions,
-        env: handle.config.env.clone(),
-        ..RuntimeSpawnConfig::default()
-    };
-    handle.spawned_model = handle.desired_model.clone();
-    handle.spawned_permission_mode = handle.desired_permission_mode.clone();
-    handle.spawned_access_mode = handle.desired_access_mode.clone();
-    handle.spawned_thinking_effort = handle.desired_thinking_effort.clone();
-    handle.config.permission_mode = handle.desired_permission_mode.clone();
-    handle.config.access_mode = handle.desired_access_mode.clone();
-    handle.config.thinking_effort = handle.desired_thinking_effort.clone();
-    handle.state = QueryState::Pending(options);
-}
-
-fn log_dispatch_decision(handle: &SdkHandle, db_session_id: i64, changes: &DispatchChanges) {
-    info!(
-        db_session_id,
-        desired_model = ?handle.desired_model,
-        spawned_model = ?handle.spawned_model,
-        desired_mode = ?handle.desired_permission_mode,
-        spawned_mode = ?handle.spawned_permission_mode,
-        desired_effort = ?handle.desired_thinking_effort,
-        spawned_effort = ?handle.spawned_thinking_effort,
-        model_changed = changes.model_changed,
-        mode_changed = changes.mode_changed,
-        access_changed = changes.access_changed,
-        effort_changed = changes.effort_changed,
-        needs_respawn = changes.needs_respawn,
-        state = match &handle.state {
-            QueryState::Pending(_) => "pending",
-            QueryState::Active { .. } => "active",
-        },
-        "prompt_send dispatch decision"
-    );
 }

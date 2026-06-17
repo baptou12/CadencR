@@ -50,6 +50,8 @@ pub struct PromptSendPayload {
     pub session_id: String,
     pub text: String,
     #[serde(default)]
+    pub claude_profile: Option<String>,
+    #[serde(default)]
     pub images: Vec<ImagePayload>,
     #[serde(default)]
     pub attachments: Vec<PromptAttachmentPayload>,

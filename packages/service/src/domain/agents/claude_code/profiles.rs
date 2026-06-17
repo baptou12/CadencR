@@ -245,6 +245,27 @@ pub async fn resolve_active_profile_env(
     }
 }
 
+pub async fn resolve_profile_env_by_name(
+    pool: &SqlitePool,
+    name: Option<&str>,
+) -> Result<(String, Option<HashMap<String, String>>), AppError> {
+    let Some(profile_name) = name.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(resolve_active_profile_env(pool).await);
+    };
+    if profile_name.eq_ignore_ascii_case(DEFAULT_PROFILE_NAME) {
+        return Ok((DEFAULT_PROFILE_NAME.to_string(), None));
+    }
+    let profile = get_profile(pool, profile_name)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("profile '{profile_name}' not found")))?;
+    let env = if profile.env.is_empty() {
+        None
+    } else {
+        Some(profile.env)
+    };
+    Ok((profile.name, env))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,6 +415,42 @@ mod tests {
         set_active_profile(&pool, "default").await.unwrap();
         let (_, env) = resolve_active_profile_env(&pool).await;
         assert!(env.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_profile_env_by_name_returns_default_for_default() {
+        let pool = setup().await;
+        let (name, env) = resolve_profile_env_by_name(&pool, Some("default"))
+            .await
+            .unwrap();
+        assert_eq!(name, DEFAULT_PROFILE_NAME);
+        assert_eq!(env, None);
+    }
+
+    #[tokio::test]
+    async fn resolve_profile_env_by_name_returns_named_env() {
+        let pool = setup().await;
+        upsert_profile(&pool, "bedrock", &sample_env())
+            .await
+            .unwrap();
+
+        let (name, env) = resolve_profile_env_by_name(&pool, Some("bedrock"))
+            .await
+            .unwrap();
+
+        assert_eq!(name, "bedrock");
+        assert_eq!(env, Some(sample_env()));
+    }
+
+    #[tokio::test]
+    async fn resolve_profile_env_by_name_rejects_missing_profile() {
+        let pool = setup().await;
+
+        let err = resolve_profile_env_by_name(&pool, Some("missing"))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound(_)));
     }
 
     #[tokio::test]

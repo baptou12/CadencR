@@ -265,6 +265,7 @@ pub(super) async fn handle_init(
         &configured_codex_access_mode,
     );
     runtime_config.system_prompt = payload.system_prompt.clone();
+    let mut effective_claude_profile: Option<String> = None;
     if effective_provider == crate::domain::agents::claude_code::PROVIDER_ID {
         let profile_env = crate::domain::agents::claude_code::profiles::resolve_active_profile_env(
             &app_state.read_pool,
@@ -274,7 +275,9 @@ pub(super) async fn handle_init(
             Some(feature_id),
             Some(project_id),
         );
-        let ((_, profile_env), allow_bypass_permissions) = tokio::join!(profile_env, allow_bypass);
+        let ((profile_name, profile_env), allow_bypass_permissions) =
+            tokio::join!(profile_env, allow_bypass);
+        effective_claude_profile = Some(profile_name);
         runtime_config.env = profile_env;
         runtime_config.allow_bypass_permissions = allow_bypass_permissions;
         // `bypassPermissions` is the agent-equivalent of running as root, so it
@@ -318,6 +321,7 @@ pub(super) async fn handle_init(
         thinking_effort: runtime_config.thinking_effort.clone(),
         system_prompt: runtime_config.system_prompt.clone(),
         allow_bypass_permissions: runtime_config.allow_bypass_permissions,
+        claude_profile: effective_claude_profile.clone(),
         env: runtime_config.env.clone(),
     };
     let handle = SdkHandle {
@@ -332,6 +336,8 @@ pub(super) async fn handle_init(
         spawned_access_mode: None,
         desired_thinking_effort,
         spawned_thinking_effort: None,
+        desired_claude_profile: effective_claude_profile,
+        spawned_claude_profile: None,
         runtime_control_endpoint: None,
         resume_session_id: resume_session_id.clone(),
         config,
