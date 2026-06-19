@@ -127,6 +127,7 @@ fn compression_layer() -> tower_http::compression::CompressionLayer {
 pub fn build_router(state: AppState) -> Router {
     build_api_routes()
         .route("/api/browser-bridge", put(register_browser_bridge))
+        .merge(crate::domain::mcp::control::control_router())
         .merge(crate::domain::remote::loopback_router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

@@ -30,6 +30,8 @@ export type AgentBlockIsError = boolean | null;
 
 export type AgentBlockModel = string | null;
 
+export type AgentBlockOrigin = null | AgentMessageOrigin;
+
 export type AgentBlockParentToolUseId = string | null;
 
 export type AgentBlockSourceToolName = string | null;
@@ -56,6 +58,7 @@ export interface AgentBlock {
   id: string;
   isError?: AgentBlockIsError;
   model?: AgentBlockModel;
+  origin?: AgentBlockOrigin;
   parentToolUseId?: AgentBlockParentToolUseId;
   sourceToolName?: AgentBlockSourceToolName;
   toolArgs?: AgentBlockToolArgs;
@@ -72,6 +75,28 @@ reachable via `GET /api/sessions/messages/{id}/full`. */
 export interface AgentCatalogResponse {
   default_provider: string;
   providers: ProviderCatalogEntry[];
+}
+
+export type AgentMessageOriginCreatedAt = string | null;
+
+export type AgentMessageOriginNote = string | null;
+
+export type AgentMessageOriginSourceFeatureId = number | null;
+
+export type AgentMessageOriginSourceMessageId = number | null;
+
+export type AgentMessageOriginSourceProjectId = number | null;
+
+export type AgentMessageOriginSourceSessionId = number | null;
+
+export interface AgentMessageOrigin {
+  createdAt?: AgentMessageOriginCreatedAt;
+  note?: AgentMessageOriginNote;
+  originKind: string;
+  sourceFeatureId?: AgentMessageOriginSourceFeatureId;
+  sourceMessageId?: AgentMessageOriginSourceMessageId;
+  sourceProjectId?: AgentMessageOriginSourceProjectId;
+  sourceSessionId?: AgentMessageOriginSourceSessionId;
 }
 
 export interface AgentPinResponse {

@@ -37,6 +37,20 @@ pub struct AgentMessageRow {
     pub parent_tool_use_id: Option<String>,
     pub created_at: Option<String>,
     pub model: Option<String>,
+    #[sqlx(skip)]
+    pub origin: Option<AgentMessageOrigin>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageOrigin {
+    pub origin_kind: String,
+    pub source_session_id: Option<i64>,
+    pub source_feature_id: Option<i64>,
+    pub source_project_id: Option<i64>,
+    pub source_message_id: Option<i64>,
+    pub note: Option<String>,
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -71,6 +85,8 @@ pub struct AgentBlock {
     /// reachable via `GET /api/sessions/messages/{id}/full`.
     #[serde(rename = "truncatedContent", skip_serializing_if = "Option::is_none")]
     pub truncated_content: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<AgentMessageOrigin>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -249,6 +265,7 @@ mod tests {
             created_at: Some("2024-01-01".to_string()),
             model: None,
             truncated_content: None,
+            origin: None,
         };
         let json = serde_json::to_string(&block).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -276,6 +293,7 @@ mod tests {
             created_at: None,
             model: None,
             truncated_content: None,
+            origin: None,
         };
         let json = serde_json::to_string(&block).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -300,6 +318,7 @@ mod tests {
             created_at: None,
             model: None,
             truncated_content: None,
+            origin: None,
         };
         let parent = AgentBlock {
             id: "msg-task".to_string(),
@@ -315,6 +334,7 @@ mod tests {
             created_at: None,
             model: None,
             truncated_content: None,
+            origin: None,
         };
         let json = serde_json::to_string(&parent).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();

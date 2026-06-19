@@ -44,6 +44,7 @@ impl SettingSpec {
 
 const BOOL: ValueKind = ValueKind::Bool;
 const NUMBER: ValueKind = ValueKind::Number;
+const MCP_WRITE_POLICY: ValueKind = ValueKind::Enum(&["ask", "true", "false"]);
 
 /// Spec for a workspace/global key, or `None` for free-form keys.
 pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
@@ -60,9 +61,15 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         | "codex_full_access_enabled"
         | "onboarding_intro_shown" => SettingSpec::new(BOOL, Some("false")),
         // These default on.
-        "editor_auto_save" | "animations_enabled" | "browser_mcp_enabled" => {
-            SettingSpec::new(BOOL, Some("true"))
+        "editor_auto_save"
+        | "animations_enabled"
+        | "browser_mcp_enabled"
+        | "project_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
+        "workspace_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
+        "project_mcp_allow_spawn" | "project_mcp_allow_send_message" => {
+            SettingSpec::new(MCP_WRITE_POLICY, Some("ask"))
         }
+        "workspace_mcp_max_result_chars" => SettingSpec::new(NUMBER, Some("100000")),
         // Enums (mirrors the frontend option sets).
         "notification_mode" => SettingSpec::new(
             ValueKind::Enum(&["native", "in_app", "off"]),
@@ -112,6 +119,31 @@ mod tests {
         assert!(spec.is_valid("false"));
         assert!(!spec.is_valid("yes"));
         assert_eq!(spec.default, Some("true"));
+    }
+
+    #[test]
+    fn mcp_setting_defaults_enable_agent_mcp_tools_by_default() {
+        assert_eq!(
+            workspace_spec("project_mcp_enabled").unwrap().default,
+            Some("true")
+        );
+        assert_eq!(
+            workspace_spec("workspace_mcp_enabled").unwrap().default,
+            Some("true")
+        );
+        assert_eq!(
+            workspace_spec("workspace_mcp_max_result_chars")
+                .unwrap()
+                .default,
+            Some("100000")
+        );
+        assert_eq!(
+            workspace_spec("project_mcp_allow_spawn").unwrap().default,
+            Some("ask")
+        );
+        assert!(workspace_spec("project_mcp_allow_spawn")
+            .unwrap()
+            .is_valid("false"));
     }
 
     #[test]

@@ -126,6 +126,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // MCP is attached to agent turns — read in the session-prompt spawn path.
     "browser_default_mode",
     "browser_mcp_enabled",
+    "project_mcp_enabled",
+    "workspace_mcp_enabled",
+    "workspace_mcp_max_result_chars",
+    "project_mcp_allow_spawn",
+    "project_mcp_allow_send_message",
 ];
 
 /// Prefixes whose suffix is a free-form provider/model identifier. Suffix
@@ -159,7 +164,6 @@ pub fn is_workspace_key_allowed(key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn rejects_unknown_feature_key() {
         assert!(!is_feature_key_allowed("setup_worktree"));
@@ -170,7 +174,6 @@ mod tests {
         assert!(!is_feature_key_allowed("model_qa"));
         assert!(!is_feature_key_allowed("agent_runtime_qa"));
     }
-
     #[test]
     fn accepts_known_feature_keys() {
         assert!(is_feature_key_allowed("skip_worktree"));
@@ -178,7 +181,6 @@ mod tests {
         assert!(is_feature_key_allowed("layout_state"));
         assert!(is_feature_key_allowed("draft_prompt"));
     }
-
     #[test]
     fn rejects_retired_bypass_acknowledged_key() {
         // `bypass_acknowledged` was the gate for an old bypass design. The
@@ -189,7 +191,6 @@ mod tests {
         assert!(!is_project_key_allowed("bypass_acknowledged"));
         assert!(!is_workspace_key_allowed("bypass_acknowledged"));
     }
-
     #[test]
     fn rejects_legacy_thinking_effort_keys_everywhere() {
         // Per-agent-type thinking effort settings were removed in favour of
@@ -215,13 +216,11 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn project_allows_setup_worktree_but_feature_does_not() {
         assert!(is_project_key_allowed("setup_worktree"));
         assert!(!is_feature_key_allowed("setup_worktree"));
     }
-
     #[test]
     fn feature_allows_git_workflow_keys() {
         // Mirror how `skip_worktree` is scoped: writable on feature only.
@@ -246,14 +245,12 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn project_allows_default_worktree_mode_only() {
         assert!(is_project_key_allowed("default_worktree_mode"));
         assert!(!is_feature_key_allowed("default_worktree_mode"));
         assert!(!is_workspace_key_allowed("default_worktree_mode"));
     }
-
     #[test]
     fn rejects_worktree_path_everywhere() {
         assert!(!is_feature_key_allowed("worktree_path"));
@@ -263,7 +260,6 @@ mod tests {
         assert!(!is_feature_key_allowed("worktree_setup_step"));
         assert!(!is_feature_key_allowed("worktree_setup_log"));
     }
-
     #[test]
     fn workspace_rejects_retired_per_device_ui_keys() {
         // `active_tab_*`, `editor_sidebar_visible_*`, and `lastOpenedFeature`
@@ -273,12 +269,10 @@ mod tests {
         assert!(!is_workspace_key_allowed("active_tab_7"));
         assert!(!is_workspace_key_allowed("lastOpenedFeature"));
     }
-
     #[test]
     fn workspace_rejects_unknown_static_key() {
         assert!(!is_workspace_key_allowed("arbitrary"));
     }
-
     #[test]
     fn workspace_accepts_theme_current() {
         // Theme picker writes the active theme id (see
@@ -289,7 +283,6 @@ mod tests {
         assert!(is_workspace_key_allowed("theme_system_light"));
         assert!(is_workspace_key_allowed("theme_system_dark"));
     }
-
     #[test]
     fn workspace_accepts_per_model_thinking_effort_keys() {
         assert!(is_workspace_key_allowed(
@@ -303,7 +296,6 @@ mod tests {
             "thinking_effort_model_provider_model.v2"
         ));
     }
-
     #[test]
     fn workspace_rejects_malformed_per_model_thinking_effort_keys() {
         assert!(!is_workspace_key_allowed("thinking_effort_model_"));
@@ -311,7 +303,6 @@ mod tests {
         assert!(!is_workspace_key_allowed("thinking_effort_model_a;drop"));
         assert!(!is_workspace_key_allowed("thinking_effort_model_a b"));
     }
-
     #[test]
     fn workspace_accepts_notification_mode() {
         // Wired to packages/desktop/src/lib/notification-mode.ts —
@@ -321,14 +312,12 @@ mod tests {
         assert!(!is_feature_key_allowed("notification_mode"));
         assert!(!is_project_key_allowed("notification_mode"));
     }
-
     #[test]
     fn workspace_accepts_ui_collapse_settings() {
         assert!(is_workspace_key_allowed("editor_sidebar_collapsed"));
         assert!(is_workspace_key_allowed("git_sidebar_collapsed"));
         assert!(is_workspace_key_allowed("unified_agents_per_row"));
     }
-
     #[test]
     fn workspace_accepts_per_device_zoom_keys() {
         // Desktop and mobile persist independent zoom levels under separate keys;
@@ -336,7 +325,6 @@ mod tests {
         assert!(is_workspace_key_allowed("zoom_global"));
         assert!(is_workspace_key_allowed("zoom_mobile"));
     }
-
     #[test]
     fn workspace_accepts_dangerous_mode_toggles() {
         // DangerousModeToggle persists these via useDebouncedSetting → PUT
@@ -348,7 +336,6 @@ mod tests {
         assert!(is_workspace_key_allowed("codex_full_access_enabled"));
         assert!(is_workspace_key_allowed("codex_permission_mode"));
     }
-
     #[test]
     fn workspace_accepts_onboarding_keys() {
         // Used by the first-run OnboardingOverlay to persist the current step
@@ -357,7 +344,6 @@ mod tests {
         assert!(is_workspace_key_allowed("default_agent_provider"));
         assert!(is_workspace_key_allowed("onboarding_intro_shown"));
     }
-
     #[test]
     fn workspace_accepts_agent_stream_verbosity_mode() {
         // Persisted by the global Settings page → "Agent output verbosity"
@@ -367,7 +353,6 @@ mod tests {
         assert!(!is_feature_key_allowed("agent_stream_verbosity_mode"));
         assert!(!is_project_key_allowed("agent_stream_verbosity_mode"));
     }
-
     #[test]
     fn workspace_accepts_animations_enabled() {
         // Master switch for fluid UI animations, persisted from the Welcome
@@ -388,10 +373,13 @@ mod tests {
 
     #[test]
     fn workspace_accepts_browser_settings() {
-        // Browser tab default mode + the cadencr-browser MCP master switch are
-        // global UI/agent prefs, so they live on the workspace scope only.
         assert!(is_workspace_key_allowed("browser_default_mode"));
         assert!(is_workspace_key_allowed("browser_mcp_enabled"));
+        assert!(is_workspace_key_allowed("project_mcp_enabled"));
+        assert!(is_workspace_key_allowed("workspace_mcp_enabled"));
+        assert!(is_workspace_key_allowed("workspace_mcp_max_result_chars"));
+        assert!(is_workspace_key_allowed("project_mcp_allow_spawn"));
+        assert!(is_workspace_key_allowed("project_mcp_allow_send_message"));
         assert!(!is_feature_key_allowed("browser_mcp_enabled"));
         assert!(!is_project_key_allowed("browser_mcp_enabled"));
     }

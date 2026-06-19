@@ -1,18 +1,17 @@
 use sqlx::SqlitePool;
 use std::path::Path;
 use tracing::{info, warn};
-
 mod checksum_repair;
 mod checksum_repair_data;
 #[cfg(test)]
 mod codex_permission_mode_migration_tests;
+#[cfg(test)]
+mod mcp_orchestration_migration_tests;
 mod seed;
 mod support;
 #[cfg(test)]
 mod test_fixtures;
-
 use support::{backup_database, emit_phase, has_pending_migrations, table_exists};
-
 /// Inputs for a single startup migration pass.
 pub struct MigrationContext<'a> {
     pub pool: &'a SqlitePool,
@@ -22,7 +21,6 @@ pub struct MigrationContext<'a> {
     /// Version label used in the backup filename. Falls back to `"unknown"` if `None`.
     pub app_version: Option<&'a str>,
 }
-
 #[cfg(test)]
 impl<'a> MigrationContext<'a> {
     /// Pool-only context, intended for tests that don't care about backups.
@@ -34,7 +32,6 @@ impl<'a> MigrationContext<'a> {
         }
     }
 }
-
 /// Run database migrations defensively.
 ///
 /// For existing databases (detected by the presence of the old Electron `migrations` table),
@@ -44,7 +41,6 @@ impl<'a> MigrationContext<'a> {
 /// Returns an error if any migration fails — the caller must abort startup.
 pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
     let migrator = sqlx::migrate!("./migrations");
-
     if table_exists(ctx.pool, "migrations").await? {
         seed::seed_sqlx_migrations(ctx.pool, &migrator).await?;
     }
@@ -67,6 +63,7 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
     }
 
     checksum_repair::repair_known_sqlx_checksum_mismatches(ctx.pool, &migrator).await?;
+    seed::repair_agent_messages_content_column(ctx.pool).await?;
     migrator.run(ctx.pool).await?;
     seed::repair_agent_sessions_pin_column(ctx.pool).await?;
     seed::repair_agent_messages_perf_indexes(ctx.pool).await?;

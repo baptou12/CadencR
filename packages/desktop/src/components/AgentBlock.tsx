@@ -30,6 +30,7 @@ import { isTaskTodoTool } from "@/lib/tool-adapter";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 import { verbosityControlsCollapse, type AgentVerbosityMode } from "@/lib/agent-verbosity";
 import type { PromptDeliveryState } from "@/types/agent";
+import type { AgentMessageOrigin } from "@/api/generated";
 
 /** Block types that the agent stream can produce */
 export type BlockType =
@@ -91,6 +92,8 @@ export interface AgentBlockData {
   promptDeliveryState?: PromptDeliveryState;
   /** For `error` blocks — machine-readable code from the backend. */
   errorCode?: string;
+  /** Provenance for machine-generated user messages. */
+  origin?: AgentMessageOrigin | null;
 }
 
 interface AgentBlockProps {
@@ -211,6 +214,7 @@ export const AgentBlock = memo(function AgentBlock({
       return (
         <UserMessageBlock
           content={block.content}
+          origin={block.origin}
           deliveryState={
             block.promptDeliveryState === "pending_agent" ? block.promptDeliveryState : undefined
           }

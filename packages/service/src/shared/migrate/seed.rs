@@ -74,6 +74,22 @@ pub(super) async fn repair_agent_sessions_pin_column(pool: &SqlitePool) -> anyho
     Ok(())
 }
 
+/// Repair dev-era/minimal legacy schemas before migrations that build FTS over
+/// `agent_messages.content`. The canonical baseline has this column, but some
+/// historical fixtures and hand-edited dev DBs may not.
+pub(super) async fn repair_agent_messages_content_column(pool: &SqlitePool) -> anyhow::Result<()> {
+    if !table_exists(pool, "agent_messages").await? {
+        return Ok(());
+    }
+    if !table_has_column(pool, "agent_messages", "content").await? {
+        info!("Repairing missing agent_messages.content column");
+        sqlx::query("ALTER TABLE agent_messages ADD COLUMN content TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
 pub(super) async fn repair_agent_messages_perf_indexes(pool: &SqlitePool) -> anyhow::Result<()> {
     if !table_exists(pool, "agent_messages").await? {
         return Ok(());
