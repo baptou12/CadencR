@@ -252,7 +252,13 @@ export function handleUserMessageMirror(
   const p = parseUserMessageMirrorPayload(payload);
   if (!p) return;
   const session = ctx.getSession(sessionId);
-  ctx.set(updateSession(ctx.get(), sessionId, appendLocalUserMessage(session, p.text)));
+  ctx.set(
+    updateSession(
+      ctx.get(),
+      sessionId,
+      appendLocalUserMessage(session, p.text, { origin: p.origin }),
+    ),
+  );
 }
 
 export function handlePromptReceived(
