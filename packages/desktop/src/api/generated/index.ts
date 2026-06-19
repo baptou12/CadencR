@@ -1214,6 +1214,9 @@ export interface PushInputBody {
 
 export interface ReadFileResponse {
   content: string;
+  /** True when the file is at or above `file_size::LARGE_FILE_OPEN_BYTES`.
+The frontend opens these read-only with language features disabled. */
+  large: boolean;
   /** @minimum 0 */
   line_count: number;
 }
@@ -1606,6 +1609,11 @@ export interface TrashPathResponse {
   success: boolean;
 }
 
+export interface TreeCountResponse {
+  /** @minimum 0 */
+  count: number;
+}
+
 export type TriggeredBy = (typeof TriggeredBy)[keyof typeof TriggeredBy];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -1897,6 +1905,16 @@ When false (default) the walker traverses everything so the UI can
 display all files (gitignored dimmed). Callers that want the tree
 to paint quickly should issue the `exclude_gitignored=true` query
 first and then merge in the `exclude_gitignored=false` response.
+ */
+  exclude_gitignored?: boolean;
+};
+
+export type TreeCountParams = {
+  project_id: number;
+  feature_id?: number | null;
+  /**
+ * When true, gitignored sub-trees (`node_modules`, `target`, …) are not
+counted — matching the fast `tree-all` walk the editor renders.
  */
   exclude_gitignored?: boolean;
 };
@@ -4405,6 +4423,59 @@ export function useTreeAll<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeAll>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getTreeAllQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const treeCount = (params: TreeCountParams, signal?: AbortSignal) => {
+  return customInstance<TreeCountResponse>({
+    url: `/api/editor/tree-count`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getTreeCountQueryKey = (params?: TreeCountParams) => {
+  return [`/api/editor/tree-count`, ...(params ? [params] : [])] as const;
+};
+
+export const getTreeCountQueryOptions = <
+  TData = Awaited<ReturnType<typeof treeCount>>,
+  TError = ErrorType<unknown>,
+>(
+  params: TreeCountParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeCount>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getTreeCountQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof treeCount>>> = ({ signal }) =>
+    treeCount(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof treeCount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type TreeCountQueryResult = NonNullable<Awaited<ReturnType<typeof treeCount>>>;
+export type TreeCountQueryError = ErrorType<unknown>;
+
+export function useTreeCount<
+  TData = Awaited<ReturnType<typeof treeCount>>,
+  TError = ErrorType<unknown>,
+>(
+  params: TreeCountParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeCount>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getTreeCountQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

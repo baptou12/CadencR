@@ -33,6 +33,11 @@ interface UseLspArgs {
   filePath: string;
   featureId: number;
   paneId: string;
+  /**
+   * When false, acquire no client and return an empty extension array + an
+   * idle status. Used by large-file read-only mode. Defaults to true.
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -59,12 +64,23 @@ export interface UseLspResult {
 }
 
 /** @public */
-export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArgs): UseLspResult {
+export function useLsp({
+  workspaceRoot,
+  filePath,
+  featureId,
+  paneId,
+  enabled = true,
+}: UseLspArgs): UseLspResult {
   const [ready, setReady] = useState<{ client: LSPClient; workspace: CadencrWorkspace } | null>(
     null,
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const languageId = useMemo(() => getLspLanguageId(filePath), [filePath]);
+  // When disabled, behave exactly like an unsupported file: no language id,
+  // no client acquisition, empty extension array, idle status.
+  const languageId = useMemo(
+    () => (enabled ? getLspLanguageId(filePath) : null),
+    [enabled, filePath],
+  );
 
   // Step 1: acquire a refcounted client. Re-run when the workspace root or
   // language changes (i.e. the user opened a file in a different language).
