@@ -29,6 +29,11 @@ export class WebSocketLspTransport implements Transport {
   private readonly ws: WebSocket;
   private readonly handlers = new Set<(value: string) => void>();
   private closed = false;
+  /** Fired exactly once when the socket dies. `unexpected` is true for a
+   * server-side death / network error, false for a client-initiated
+   * `close()`. The client-manager uses this to drive auto-reconnect. */
+  private onCloseCb: ((unexpected: boolean) => void) | null = null;
+  private closeFired = false;
 
   /** Use `connectLspWs(sessionId)` instead — that handles the open-promise. */
   constructor(ws: WebSocket) {
@@ -36,6 +41,15 @@ export class WebSocketLspTransport implements Transport {
     this.ws.addEventListener("message", this.handleMessage);
     this.ws.addEventListener("close", this.handleClose);
     this.ws.addEventListener("error", this.handleClose);
+  }
+
+  /**
+   * Register the close callback. Replaces any previous one. Fired at most
+   * once per transport — a clean `close()` reports `unexpected=false`, an
+   * unsolicited socket death reports `unexpected=true`.
+   */
+  setOnClose(cb: (unexpected: boolean) => void): void {
+    this.onCloseCb = cb;
   }
 
   send(message: string): void {
@@ -53,7 +67,8 @@ export class WebSocketLspTransport implements Transport {
     this.handlers.delete(handler);
   }
 
-  /** Explicitly close the transport. Idempotent. */
+  /** Explicitly close the transport. Idempotent. Reports a *clean* close to
+   * any registered `onClose` callback (`unexpected=false`). */
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -63,6 +78,7 @@ export class WebSocketLspTransport implements Transport {
     if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
       this.ws.close(1000, "client");
     }
+    this.fireClose(false);
   }
 
   private handleMessage = (event: MessageEvent): void => {
@@ -81,8 +97,18 @@ export class WebSocketLspTransport implements Transport {
   };
 
   private handleClose = (): void => {
+    // Reached via the socket's `close`/`error` events — i.e. NOT through our
+    // own `close()`, which removes these listeners first. So this is always
+    // an unexpected death (idle timeout, server crash, network drop).
     this.closed = true;
+    this.fireClose(true);
   };
+
+  private fireClose(unexpected: boolean): void {
+    if (this.closeFired) return;
+    this.closeFired = true;
+    this.onCloseCb?.(unexpected);
+  }
 }
 
 type JsonRpcId = string | number | null;

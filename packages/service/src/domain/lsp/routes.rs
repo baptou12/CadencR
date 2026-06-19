@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use axum::extract::{Path, State, WebSocketUpgrade};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
@@ -26,6 +26,7 @@ use super::lifecycle::CrashKey;
 use super::probe::{probe_servers, ServerProbe};
 use super::proxy::run_proxy;
 use super::registry::SessionSpec;
+use super::root::lsp_root_handler;
 use super::spawn::{resolve_server, spawn_server};
 
 pub fn lsp_router() -> Router<AppState> {
@@ -36,6 +37,7 @@ pub fn lsp_router() -> Router<AppState> {
             get(connect_handler),
         )
         .route("/api/lsp/servers", get(list_servers_handler))
+        .route("/api/lsp/root", get(lsp_root_handler))
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -82,12 +84,13 @@ pub struct OpenLspSessionResponse {
     responses(
         (status = 200, body = OpenLspSessionResponse),
         (status = 400, description = "Unknown language id or invalid workspace path"),
+        (status = 503, description = "Language server crashing; Retry-After header set"),
     )
 )]
 pub async fn open_session_handler(
     State(state): State<AppState>,
     Json(req): Json<OpenLspSessionRequest>,
-) -> Result<Json<OpenLspSessionResponse>, AppError> {
+) -> Result<Response, AppError> {
     if req.language_id.is_empty() {
         return Err(AppError::BadRequest("language_id is required".into()));
     }
@@ -98,6 +101,21 @@ pub async fn open_session_handler(
             req.workspace_root
         )));
     }
+
+    // Crash backoff at reservation time, not just at WS upgrade: a non-101 WS
+    // status is invisible to the browser (bare `error` event, no body), so we
+    // surface "unhealthy, retry in N s" here where we can both return JSON AND
+    // set a machine-readable `Retry-After`. The renderer's auto-reconnect loop
+    // reads that header to pace its backoff instead of hammering a dead server.
+    let crash_key = CrashKey {
+        workspace_root: workspace_root.clone(),
+        language_id: req.language_id.clone(),
+    };
+    if let Err(remaining) = state.lsp_crashes.check(&crash_key).await {
+        let secs = remaining.as_secs().max(1);
+        return Ok(retry_after_response(secs, &req.language_id));
+    }
+
     // Do the full binary discovery (and, if necessary, the on-demand
     // download) at reservation time. The WS upgrade later can't surface
     // an informative error to the browser — a non-101 status appears as a
@@ -112,7 +130,22 @@ pub async fn open_session_handler(
             server,
         })
         .await;
-    Ok(Json(OpenLspSessionResponse { session_id }))
+    Ok(Json(OpenLspSessionResponse { session_id }).into_response())
+}
+
+/// Build a 503 carrying both a JSON error (for the toast) and a `Retry-After`
+/// header in seconds (for the reconnect loop's backoff pacing).
+fn retry_after_response(secs: u64, language_id: &str) -> Response {
+    let body = serde_json::json!({
+        "error": format!("language server for {language_id:?} crashed recently; retry in {secs}s"),
+        "code": "SERVICE_UNAVAILABLE",
+    });
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [(axum::http::header::RETRY_AFTER, secs.to_string())],
+        Json(body),
+    )
+        .into_response()
 }
 
 pub async fn connect_handler(

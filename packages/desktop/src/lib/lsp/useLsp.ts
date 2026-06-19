@@ -4,17 +4,21 @@
  *
  * 1. Maps the file extension to an LSP `languageId` (returns no extensions
  *    for unsupported files — cmd-click is a no-op there).
- * 2. Lazily ensures an `LSPClient` exists for `(workspaceRoot, languageId)`.
- * 3. Registers a `displayFile` handler so cross-file LSP navigation lands
+ * 2. Resolves the monorepo-aware LSP root for the opened file (nearest
+ *    ancestor config), falling back to the feature root.
+ * 3. Lazily ensures an `LSPClient` exists for `(resolvedRoot, languageId)`.
+ * 4. Registers a `displayFile` handler so cross-file LSP navigation lands
  *    in the same `(featureId, paneId)` the user clicked from.
- * 4. Returns the CodeMirror extensions the editor should mount + an
+ * 5. Returns the CodeMirror extensions the editor should mount + an
  *    observable `status` for the status-bar indicator.
  *
  * The extension array is `[]` while the client is being created, then a
  * stable array once ready, so callers can feed the result into a
- * `Compartment` and reconfigure without remount.
+ * `Compartment` and reconfigure without remount. When the underlying socket
+ * dies and the manager reconnects, the extension array gets a fresh identity
+ * so the editor re-mounts the LSP compartment onto the new client.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { keymap, type EditorView } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
 import { renameKeymap, serverCompletion, type LSPClient } from "@codemirror/lsp-client";
@@ -22,7 +26,15 @@ import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { getLspLanguageId } from "./language-id";
 import { pathToFileUri } from "./file-uri";
-import { acquireLspClient, releaseLspClient } from "./client-manager";
+import {
+  acquireLspClient,
+  releaseLspClient,
+  subscribeLspStatus,
+  getLspStatus,
+  getLspClient,
+  retryLspClient,
+} from "./client-manager";
+import { resolveLspRoot } from "./resolve-root";
 import { lspModClickExtension } from "./mod-click";
 import { lspModHoverExtension } from "./mod-hover";
 import { jumpToDefinitionKeymap } from "./definition";
@@ -47,10 +59,13 @@ interface UseLspArgs {
  *   extension — cmd-click and hover are no-ops.
  * - `starting`: session reserved / WebSocket negotiating / server booting.
  * - `ready`: client + workspace are live; LSP requests succeed.
- * - `error`: session-open or transport failure; `errorMessage` carries the
- *   backend-supplied install hint or transport error verbatim.
+ * - `reconnecting`: the socket died unexpectedly and the manager is
+ *   rebuilding the session with backoff. Cmd-click is briefly a no-op.
+ * - `error`: session-open or transport failure (or reconnect gave up);
+ *   `errorMessage` carries the backend-supplied install hint or transport
+ *   error verbatim. Clicking the indicator forces a retry.
  */
-export type LspStatus = "unsupported" | "starting" | "ready" | "error";
+export type LspStatus = "unsupported" | "starting" | "ready" | "reconnecting" | "error";
 
 export interface UseLspResult {
   /** CodeMirror extension to mount inside a Compartment. `[]` until ready. */
@@ -61,6 +76,11 @@ export interface UseLspResult {
   errorMessage?: string;
   /** Resolved LSP language id (e.g. `"typescript"`), or `null` if unsupported. */
   languageId: string | null;
+  /** Monorepo-resolved LSP root, or `null` while resolving / unsupported. */
+  resolvedRoot: string | null;
+  /** Force a fresh connection attempt. No-op unless a session exists. Wire
+   * to `EditorStatusBar`'s `onLspRetry` so the error indicator can retry. */
+  onRetry: () => void;
 }
 
 /** @public */
@@ -74,7 +94,11 @@ export function useLsp({
   const [ready, setReady] = useState<{ client: LSPClient; workspace: CadencrWorkspace } | null>(
     null,
   );
+  const [resolvedRoot, setResolvedRoot] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Bumped on every manager status transition so we re-read the live client
+  // (its identity changes after a reconnect) and re-derive status.
+  const [statusTick, setStatusTick] = useState(0);
   // When disabled, behave exactly like an unsupported file: no language id,
   // no client acquisition, empty extension array, idle status.
   const languageId = useMemo(
@@ -82,26 +106,44 @@ export function useLsp({
     [enabled, filePath],
   );
 
-  // Step 1: acquire a refcounted client. Re-run when the workspace root or
-  // language changes (i.e. the user opened a file in a different language).
-  // We always release on cleanup, even on error / unmount-before-resolve,
-  // so the refcount stays balanced — the client-manager's grace timer
-  // keeps the WS warm if the user re-mounts quickly.
+  const absPath = useMemo(() => {
+    if (!workspaceRoot) return null;
+    return filePath.startsWith("/") ? filePath : `${workspaceRoot.replace(/\/$/, "")}/${filePath}`;
+  }, [workspaceRoot, filePath]);
+
+  // Step 1: resolve the monorepo-aware LSP root for this file. Falls back to
+  // the feature root on any failure (single-package repos resolve here too).
+  useEffect(() => {
+    if (!workspaceRoot || !languageId || !absPath) {
+      setResolvedRoot(null);
+      return;
+    }
+    let cancelled = false;
+    void resolveLspRoot(workspaceRoot, languageId, absPath).then((root) => {
+      if (!cancelled) setResolvedRoot(root);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceRoot, languageId, absPath]);
+
+  // Step 2: acquire a refcounted client keyed by (resolvedRoot, languageId).
+  // We always release on cleanup, even on error / unmount-before-resolve, so
+  // the refcount stays balanced — the manager's grace timer keeps the WS
+  // warm if the user re-mounts quickly.
   useEffect(() => {
     setErrorMessage(null);
-    if (!workspaceRoot || !languageId) {
+    if (!resolvedRoot || !languageId) {
       setReady(null);
       return;
     }
     let cancelled = false;
-    let acquiredKey: { workspaceRoot: string; languageId: string } | null = null;
-    acquireLspClient(workspaceRoot, languageId)
+    let acquiredKey: { root: string; languageId: string } | null = null;
+    acquireLspClient(resolvedRoot, languageId)
       .then((entry) => {
-        acquiredKey = { workspaceRoot, languageId };
+        acquiredKey = { root: resolvedRoot, languageId };
         if (cancelled) {
-          // Lost the race against unmount; release immediately so the
-          // grace timer can run instead of leaking a refcount.
-          releaseLspClient(workspaceRoot, languageId);
+          releaseLspClient(resolvedRoot, languageId);
           return;
         }
         setReady(entry);
@@ -109,84 +151,95 @@ export function useLsp({
       .catch((err: unknown) => {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : "Failed to start language server";
-        // Toast for one-shot feedback; status-bar indicator keeps the error
-        // visible until the next acquire attempt so the user can retry by
-        // closing & reopening the file.
         toast.error(msg);
         setErrorMessage(msg);
       });
     return () => {
       cancelled = true;
-      if (acquiredKey) {
-        releaseLspClient(acquiredKey.workspaceRoot, acquiredKey.languageId);
-      }
+      if (acquiredKey) releaseLspClient(acquiredKey.root, acquiredKey.languageId);
     };
-  }, [workspaceRoot, languageId]);
+  }, [resolvedRoot, languageId]);
 
-  // Step 2: register the displayFile handler so jumpToDefinition lands in
-  // the same pane the click came from. The workspace is shared across
-  // editors of the same language, so the handler points at *this* pane only
-  // while this editor is mounted.
+  // Step 3: subscribe to manager status so reconnects re-bind the client and
+  // surface the reconnecting/error states in the status bar.
+  useEffect(() => {
+    if (!resolvedRoot || !languageId) return;
+    const onChange = (): void => {
+      // Re-read the live client (reconnect swaps its identity) and bump the
+      // tick so the extension memo re-runs.
+      const live = getLspClient(resolvedRoot, languageId);
+      if (live) setReady(live);
+      setStatusTick((t) => t + 1);
+    };
+    return subscribeLspStatus(resolvedRoot, languageId, onChange);
+  }, [resolvedRoot, languageId]);
+
+  // Step 4: register the displayFile handler so jumpToDefinition lands in the
+  // same pane the click came from.
   useEffect(() => {
     if (!ready) return;
-    const handler = async (absPath: string): Promise<EditorView | null> => {
-      // The store mutation is synchronous; the new editor for this tab will
-      // mount asynchronously (Suspense). The workspace's `openFile` callback
-      // will resolve the pending wait once that view appears.
-      useEditorStore.getState().openFile(featureId, paneId, absPath);
+    const handler = async (absTarget: string): Promise<EditorView | null> => {
+      useEditorStore.getState().openFile(featureId, paneId, absTarget);
       return null;
     };
     ready.workspace.setDisplayFileHandler(handler);
     return () => {
-      // Only clear if we're still the active handler — another editor may
-      // have replaced us already (e.g. user switched panes mid-navigation).
       ready.workspace.setDisplayFileHandler(null);
     };
   }, [ready, featureId, paneId]);
 
-  // Step 3: derive status from the inputs + acquire state.
-  const status: LspStatus = !languageId
-    ? "unsupported"
-    : errorMessage
-      ? "error"
-      : ready
-        ? "ready"
-        : "starting";
+  // Step 5: derive status from inputs + manager state. The manager status (if
+  // present) wins once a client exists, so reconnect/error are reflected live.
+  const status: LspStatus = useMemo(() => {
+    void statusTick;
+    if (!languageId) return "unsupported";
+    if (errorMessage) return "error";
+    if (resolvedRoot) {
+      const snapshot = getLspStatus(resolvedRoot, languageId);
+      if (snapshot) {
+        if (snapshot.status === "error") return "error";
+        if (snapshot.status === "reconnecting") return "reconnecting";
+        if (snapshot.status === "ready") return "ready";
+      }
+    }
+    return ready ? "ready" : "starting";
+  }, [languageId, errorMessage, resolvedRoot, ready, statusTick]);
 
-  // Step 4: build the extension list. Stable reference for the "not ready"
-  // case so React.memo'd parents don't re-render every tick.
+  const managerError = useMemo(() => {
+    void statusTick;
+    if (!resolvedRoot || !languageId) return null;
+    return getLspStatus(resolvedRoot, languageId)?.errorMessage ?? null;
+  }, [resolvedRoot, languageId, statusTick]);
+
+  // Step 6: build the extension list. Stable reference for the "not ready"
+  // case so React.memo'd parents don't re-render every tick. `ready` identity
+  // changes after a reconnect, forcing a fresh extension so the editor
+  // re-mounts the compartment onto the new client.
   const extension = useMemo<Extension>(() => {
-    if (!ready || !workspaceRoot || !languageId) return [];
-    const absPath = filePath.startsWith("/")
-      ? filePath
-      : `${workspaceRoot.replace(/\/$/, "")}/${filePath}`;
+    if (!ready || !resolvedRoot || !languageId || !absPath) return [];
     const uri = pathToFileUri(absPath);
     return [
       ready.client.plugin(uri, languageId),
-      // LSP-driven completion source. `editor-buffer-keymap` already mounts
-      // `autocompletion()` + `completionKeymap` (Ctrl-Space etc.), so this
-      // just plugs the server into the existing completion stack.
       serverCompletion(),
-      keymap.of([
-        ...jumpToDefinitionKeymap,
-        // F2 → textDocument/rename. Opens an inline rename panel.
-        // (⇧⌥F formatting was removed: on macOS the chord types "Ï"
-        // into the buffer because the OS swallows ⌥F to produce a dead
-        // key. Reintroduce via a toast-driven command if needed.)
-        ...renameKeymap,
-      ]),
-      lspModClickExtension(),
+      keymap.of([...jumpToDefinitionKeymap, ...renameKeymap]),
+      lspModClickExtension({ resolvedRoot, languageId }),
       lspModHoverExtension(),
     ];
-  }, [ready, workspaceRoot, languageId, filePath]);
+  }, [ready, resolvedRoot, languageId, absPath]);
+
+  const onRetry = useCallback(() => {
+    if (resolvedRoot && languageId) retryLspClient(resolvedRoot, languageId);
+  }, [resolvedRoot, languageId]);
 
   return useMemo<UseLspResult>(
     () => ({
       extension,
       status,
-      errorMessage: errorMessage ?? undefined,
+      errorMessage: errorMessage ?? managerError ?? undefined,
       languageId,
+      resolvedRoot,
+      onRetry,
     }),
-    [extension, status, errorMessage, languageId],
+    [extension, status, errorMessage, managerError, languageId, resolvedRoot, onRetry],
   );
 }

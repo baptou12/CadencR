@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { getPreviewKind } from "@/lib/file-language";
 import { getLanguageExtension, getLanguageName } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
+import { useGitGutter } from "@/lib/editor/git-gutter/useGitGutter";
+import { setGitGutterBaseline } from "@/lib/editor/git-gutter/git-gutter-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { EditorStatusBar } from "./EditorStatusBar";
@@ -134,6 +136,11 @@ export default function CodeMirrorEditor({
     },
   );
 
+  // Git change-marker gutter — diffs the live buffer against HEAD using existing
+  // git file-content data (frontend-only, no new backend route). Off in large
+  // mode to keep multi-MB read-only buffers lightweight.
+  const gitGutter = useGitGutter({ projectId, featureId, filePath, enabled: !largeMode });
+
   const setDirty = useEditorStore((s) => s.setDirty);
   const setCursorPosition = useEditorStore((s) => s.setCursorPosition);
   const clearPendingGoToLine = useEditorStore((s) => s.clearPendingGoToLine);
@@ -221,6 +228,14 @@ export default function CodeMirrorEditor({
     view.dispatch({ effects: lspCompartment.current.reconfigure(lsp.extension) });
   }, [lsp.extension]);
 
+  // Feed the HEAD baseline into the git-gutter extension. Re-runs when the
+  // baseline arrives/changes and once `data` flips so the editor is mounted.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: setGitGutterBaseline.of(gitGutter.baseline) });
+  }, [gitGutter.baseline, data]);
+
   const cursorExtension = useMemo(() => {
     return EditorView.updateListener.of((update) => {
       if (update.selectionSet) {
@@ -287,12 +302,16 @@ export default function CodeMirrorEditor({
         language={langExt}
         readOnly={largeMode}
         vimMode={isVimEnabled}
+        ergonomics={!largeMode}
         onChange={handleChange}
         onSave={handleSave}
         extraExtensions={[
           cursorExtension,
           blameCompartment.current.of([]),
           lspCompartment.current.of([]),
+          // Git gutter is static; large mode passes `enabled: false` to the
+          // hook so its baseline stays `null` and no markers render.
+          largeMode ? [] : gitGutter.extension,
           BUFFER_SEARCH_EXT,
           BUFFER_KEYMAP_EXT,
         ]}
@@ -339,6 +358,7 @@ export default function CodeMirrorEditor({
         lspStatus={lsp.status}
         lspLanguageId={lsp.languageId}
         lspError={lsp.errorMessage}
+        onLspRetry={lsp.onRetry}
         preview={previewToggle}
       />
     </div>

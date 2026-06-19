@@ -10,6 +10,12 @@ pub struct CatalogEntry {
     pub lsp_id: &'static str,
     /// LSP `TextDocumentItem` language ids served by this entry.
     pub language_ids: &'static [&'static str],
+    /// Filenames whose presence marks the LSP root for this language, in
+    /// priority order (most specific first). The root resolver walks UP from
+    /// an opened file to the nearest ancestor directory containing one of
+    /// these. Empty means "no monorepo rooting" — fall back to the feature
+    /// working dir (correct for whole-tree servers and standalone configs).
+    pub root_markers: &'static [&'static str],
     /// Bare binary name on `$PATH` or in a managed recipe.
     pub bin_name: &'static str,
     /// Args appended to every invocation.
@@ -66,9 +72,20 @@ pub(super) const NPM_WELL_KNOWN_RELATIVE_TO_HOME: &[&str] = &[
 ];
 pub(super) const HOMEBREW_WELL_KNOWN_ABSOLUTE: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
+/// Root markers for the JS/TS family (and TS-backed frameworks). Prefer the
+/// most specific config first so a nested package roots there rather than at
+/// the monorepo's top-level `package.json`.
+const JS_TS_ROOT_MARKERS: &[&str] = &["tsconfig.json", "jsconfig.json", "package.json"];
+
+/// Config-file language servers (json/yaml/html/css/shell/docker) have no
+/// meaningful per-package root — they reason about a single file — so they
+/// fall back to the feature working dir.
+const NO_ROOT_MARKERS: &[&str] = &[];
+
 const fn npm_catalog_entry(
     lsp_id: &'static str,
     language_ids: &'static [&'static str],
+    root_markers: &'static [&'static str],
     bin_name: &'static str,
     args: &'static [&'static str],
     version: &'static str,
@@ -77,6 +94,7 @@ const fn npm_catalog_entry(
     CatalogEntry {
         lsp_id,
         language_ids,
+        root_markers,
         bin_name,
         args,
         well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME,
@@ -104,6 +122,7 @@ pub const CATALOG: &[CatalogEntry] = &[
             "javascript",
             "javascriptreact",
         ],
+        JS_TS_ROOT_MARKERS,
         "typescript-language-server",
         &["--stdio"],
         "5.3.0",
@@ -112,6 +131,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "json-language-server",
         &["json", "jsonc"],
+        NO_ROOT_MARKERS,
         "vscode-json-language-server",
         &["--stdio"],
         "4.10.0",
@@ -120,6 +140,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "yaml-language-server",
         &["yaml"],
+        NO_ROOT_MARKERS,
         "yaml-language-server",
         &["--stdio"],
         "1.23.0",
@@ -128,6 +149,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "html-language-server",
         &["html"],
+        NO_ROOT_MARKERS,
         "vscode-html-language-server",
         &["--stdio"],
         "4.10.0",
@@ -136,6 +158,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "css-language-server",
         &["css", "scss", "less"],
+        NO_ROOT_MARKERS,
         "vscode-css-language-server",
         &["--stdio"],
         "4.10.0",
@@ -144,6 +167,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "svelte-language-server",
         &["svelte"],
+        JS_TS_ROOT_MARKERS,
         "svelteserver",
         &["--stdio"],
         "0.18.0",
@@ -152,6 +176,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "vue-language-server",
         &["vue"],
+        JS_TS_ROOT_MARKERS,
         "vue-language-server",
         &["--stdio"],
         "3.3.1",
@@ -160,6 +185,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "astro-ls",
         &["astro"],
+        JS_TS_ROOT_MARKERS,
         "astro-ls",
         &["--stdio"],
         "2.16.9",
@@ -168,6 +194,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "bash-language-server",
         &["shellscript"],
+        NO_ROOT_MARKERS,
         "bash-language-server",
         &["start"],
         "5.6.0",
@@ -176,6 +203,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     npm_catalog_entry(
         "docker-langserver",
         &["dockerfile"],
+        NO_ROOT_MARKERS,
         "docker-langserver",
         &["--stdio"],
         "0.15.0",
@@ -184,6 +212,10 @@ pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         lsp_id: "rust-analyzer",
         language_ids: &["rust"],
+        // rust-analyzer already roots at the cargo workspace itself, so this
+        // marker only ensures we hand it the crate/workspace dir rather than
+        // a feature root that might sit above multiple unrelated crates.
+        root_markers: &["Cargo.toml"],
         bin_name: "rust-analyzer",
         args: &[],
         well_known_relative_to_home: &[".cargo/bin"],
@@ -222,6 +254,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         lsp_id: "gopls",
         language_ids: &["go"],
+        root_markers: &["go.work", "go.mod"],
         bin_name: "gopls",
         args: &[],
         well_known_relative_to_home: &["go/bin"],
@@ -233,6 +266,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         lsp_id: "pyright",
         language_ids: &["python"],
+        root_markers: &["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"],
         bin_name: "pyright-langserver",
         args: &["--stdio"],
         well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME,
@@ -364,6 +398,32 @@ mod tests {
         // shadows the managed install and every LSP request hangs.
         let entry = lookup("rust").expect("rust");
         assert_eq!(entry.version_must_contain, Some("rust-analyzer"));
+    }
+
+    #[test]
+    fn typescript_family_roots_at_tsconfig_first() {
+        let entry = lookup("typescript").expect("typescript");
+        assert_eq!(
+            entry.root_markers,
+            &["tsconfig.json", "jsconfig.json", "package.json"]
+        );
+    }
+
+    #[test]
+    fn rust_roots_at_cargo_toml() {
+        let entry = lookup("rust").expect("rust");
+        assert_eq!(entry.root_markers, &["Cargo.toml"]);
+    }
+
+    #[test]
+    fn config_languages_have_no_root_markers() {
+        for lang in ["json", "yaml", "css", "html"] {
+            let entry = lookup(lang).expect(lang);
+            assert!(
+                entry.root_markers.is_empty(),
+                "{lang} should fall back to the feature root"
+            );
+        }
     }
 
     #[test]

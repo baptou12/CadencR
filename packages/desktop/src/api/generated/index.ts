@@ -931,6 +931,11 @@ export interface ListServersResponse {
   servers: ServerProbe[];
 }
 
+export interface LspRootResponse {
+  /** Absolute resolved LSP root. The feature root when no marker matched. */
+  root: string;
+}
+
 export interface MarkViewedRequest {
   blob_sha: string;
   feature_id: number;
@@ -2079,6 +2084,22 @@ export type DeleteWorktreeParams = {
 
 export type ListProjectWorktreesParams = {
   project_id: number;
+};
+
+export type LspRootParams = {
+  /**
+   * Absolute feature working dir; the resolved root never escapes this.
+   */
+  workspace_root: string;
+  /**
+   * Absolute path (or path under `workspace_root`) of the opened file.
+   */
+  file_path: string;
+  /**
+ * LSP `TextDocumentItem` language id (e.g. `"typescript"`). Selects which
+catalog `root_markers` to look for.
+ */
+  language_id: string;
 };
 
 export type KillTerminalSessionsParams = {
@@ -8787,6 +8808,62 @@ export function useGetImportJob<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getImportJob>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetImportJobQueryOptions(jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * @summary Resolve the nearest ancestor root for `file_path`, bounded by
+`workspace_root`. Pure + filesystem-reading, but takes no app state so it's
+unit-testable with a tempdir.
+ */
+export const lspRoot = (params: LspRootParams, signal?: AbortSignal) => {
+  return customInstance<LspRootResponse>({ url: `/api/lsp/root`, method: "GET", params, signal });
+};
+
+export const getLspRootQueryKey = (params?: LspRootParams) => {
+  return [`/api/lsp/root`, ...(params ? [params] : [])] as const;
+};
+
+export const getLspRootQueryOptions = <
+  TData = Awaited<ReturnType<typeof lspRoot>>,
+  TError = ErrorType<void>,
+>(
+  params: LspRootParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof lspRoot>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLspRootQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof lspRoot>>> = ({ signal }) =>
+    lspRoot(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof lspRoot>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LspRootQueryResult = NonNullable<Awaited<ReturnType<typeof lspRoot>>>;
+export type LspRootQueryError = ErrorType<void>;
+
+/**
+ * @summary Resolve the nearest ancestor root for `file_path`, bounded by
+`workspace_root`. Pure + filesystem-reading, but takes no app state so it's
+unit-testable with a tempdir.
+ */
+
+export function useLspRoot<TData = Awaited<ReturnType<typeof lspRoot>>, TError = ErrorType<void>>(
+  params: LspRootParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof lspRoot>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLspRootQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

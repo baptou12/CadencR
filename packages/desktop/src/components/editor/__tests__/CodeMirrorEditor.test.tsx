@@ -93,6 +93,14 @@ vi.mock("../editor-search/search-extension", () => ({
   bufferSearchExtension: vi.fn(() => []),
 }));
 
+vi.mock("@/lib/editor/git-gutter/useGitGutter", () => ({
+  useGitGutter: vi.fn(() => ({ extension: [], baseline: null })),
+}));
+
+vi.mock("@/lib/editor/git-gutter/git-gutter-extension", () => ({
+  setGitGutterBaseline: { of: vi.fn(() => ({})) },
+}));
+
 vi.mock("../editor-search/EditorSearchPanel", () => ({
   default: () => null,
 }));
