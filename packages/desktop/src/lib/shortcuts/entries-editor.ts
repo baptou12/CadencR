@@ -187,4 +187,14 @@ export const EDITOR_SHORTCUTS = [
     description: "Rename symbol",
     scope: "editor-buffer",
   },
+  {
+    // ⌘⇧I — "Format document" (VS Code's alternate chord; we avoid VS Code's
+    // default ⇧⌥F because ⌥+letter triggers a macOS dead key). Runs the
+    // project's configured formatter. Capture-phase so it fires while focus
+    // is inside the CodeMirror buffer.
+    id: "editor-format-document",
+    keys: ["mod", "shift", "i"],
+    description: "Format document",
+    scope: "editor-buffer",
+  },
 ] as const satisfies readonly Shortcut[];

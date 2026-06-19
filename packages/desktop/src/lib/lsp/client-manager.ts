@@ -1,6 +1,9 @@
 /**
  * Module-scoped manager for `LSPClient` instances keyed by
- * `${workspaceRoot}::${languageId}`. Lives outside Zustand on purpose:
+ * `${workspaceRoot}::${lspId}` (Phase 4: a file may run several servers, e.g. a
+ * type checker plus a linter, so the key is the concrete server id, not the
+ * language). `languageId` is still carried for `didOpen`. Lives outside Zustand
+ * on purpose:
  * `LSPClient` is a non-reactive object — components must never re-render when
  * its internal state changes, so a plain `Map` is the right shape.
  *
@@ -37,6 +40,8 @@ interface ClientEntry {
   client: LSPClient;
   workspace: CadencrWorkspace;
   transport: WebSocketLspTransport;
+  /** LSP language id for `didOpen`; carried so reconnect can rebuild. */
+  languageId: string;
   refCount: number;
   shutdownTimer: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -63,8 +68,8 @@ const clients = new Map<string, ClientEntry>();
 const pending = new Map<string, Promise<ClientEntry>>();
 const subscribers = new Map<string, Set<() => void>>();
 
-function keyFor(workspaceRoot: string, languageId: string): string {
-  return `${workspaceRoot}::${languageId}`;
+function keyFor(workspaceRoot: string, lspId: string): string {
+  return `${workspaceRoot}::${lspId}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +82,7 @@ export interface LspEntrySnapshot {
 }
 
 /**
- * Subscribe to status transitions for `(workspaceRoot, languageId)`. The
+ * Subscribe to status transitions for `(workspaceRoot, lspId)`. The
  * callback fires on every status change (and reconnect-driven client swap).
  * Returns an unsubscribe function. Safe to call before the entry exists.
  *
@@ -85,10 +90,10 @@ export interface LspEntrySnapshot {
  */
 export function subscribeLspStatus(
   workspaceRoot: string,
-  languageId: string,
+  lspId: string,
   cb: () => void,
 ): () => void {
-  const key = keyFor(workspaceRoot, languageId);
+  const key = keyFor(workspaceRoot, lspId);
   let set = subscribers.get(key);
   if (!set) {
     set = new Set();
@@ -104,19 +109,19 @@ export function subscribeLspStatus(
 }
 
 /**
- * Read the current status snapshot for `(workspaceRoot, languageId)`, or
+ * Read the current status snapshot for `(workspaceRoot, lspId)`, or
  * `null` if no entry exists yet.
  *
  * @public
  */
-export function getLspStatus(workspaceRoot: string, languageId: string): LspEntrySnapshot | null {
-  const entry = clients.get(keyFor(workspaceRoot, languageId));
+export function getLspStatus(workspaceRoot: string, lspId: string): LspEntrySnapshot | null {
+  const entry = clients.get(keyFor(workspaceRoot, lspId));
   if (!entry) return null;
   return { status: entry.status, errorMessage: entry.errorMessage };
 }
 
 /**
- * Read the live `{client, workspace}` for `(workspaceRoot, languageId)`, or
+ * Read the live `{client, workspace}` for `(workspaceRoot, lspId)`, or
  * `null` if no entry exists. Always returns the *current* client, which
  * changes identity after a reconnect — callers re-read on each `notify`.
  *
@@ -124,9 +129,9 @@ export function getLspStatus(workspaceRoot: string, languageId: string): LspEntr
  */
 export function getLspClient(
   workspaceRoot: string,
-  languageId: string,
+  lspId: string,
 ): { client: LSPClient; workspace: CadencrWorkspace } | null {
-  const entry = clients.get(keyFor(workspaceRoot, languageId));
+  const entry = clients.get(keyFor(workspaceRoot, lspId));
   if (!entry) return null;
   return { client: entry.client, workspace: entry.workspace };
 }
@@ -151,18 +156,20 @@ function setStatus(key: string, status: LspEntryStatus, errorMessage: string | n
 // ---------------------------------------------------------------------------
 
 /**
- * Acquire a refcounted LSP client for `(workspaceRoot, languageId)`. Bumps
- * the refcount and cancels any pending shutdown timer. Pair every call
- * with [`releaseLspClient`] on cleanup. Throws on server resolve /
- * transport failure — callers should surface a toast.
+ * Acquire a refcounted LSP client for `(workspaceRoot, lspId)`. `languageId`
+ * is the LSP language id used for `didOpen` / the default-server fallback when
+ * `lspId` resolves to the language default. Bumps the refcount and cancels any
+ * pending shutdown timer. Pair every call with [`releaseLspClient`] on
+ * cleanup. Throws on server resolve / transport failure — surface a toast.
  *
  * @public
  */
 export async function acquireLspClient(
   workspaceRoot: string,
+  lspId: string,
   languageId: string,
 ): Promise<{ client: LSPClient; workspace: CadencrWorkspace }> {
-  const key = keyFor(workspaceRoot, languageId);
+  const key = keyFor(workspaceRoot, lspId);
   const existing = clients.get(key);
   if (existing) {
     existing.refCount += 1;
@@ -178,7 +185,7 @@ export async function acquireLspClient(
     entry.refCount += 1;
     return { client: entry.client, workspace: entry.workspace };
   }
-  const promise = createEntry(workspaceRoot, languageId).finally(() => {
+  const promise = createEntry(workspaceRoot, lspId, languageId).finally(() => {
     pending.delete(key);
   });
   pending.set(key, promise);
@@ -190,14 +197,14 @@ export async function acquireLspClient(
 }
 
 /**
- * Decrement the refcount for `(workspaceRoot, languageId)`. When it
+ * Decrement the refcount for `(workspaceRoot, lspId)`. When it
  * reaches zero we arm a grace timer; the entry stays alive (and warm) for
  * `SHUTDOWN_GRACE_MS` so a quick re-acquire avoids a respawn.
  *
  * @public
  */
-export function releaseLspClient(workspaceRoot: string, languageId: string): void {
-  const key = keyFor(workspaceRoot, languageId);
+export function releaseLspClient(workspaceRoot: string, lspId: string): void {
+  const key = keyFor(workspaceRoot, lspId);
   const entry = clients.get(key);
   if (!entry) return;
   entry.refCount = Math.max(0, entry.refCount - 1);
@@ -217,12 +224,12 @@ export function releaseLspClient(workspaceRoot: string, languageId: string): voi
  *
  * @public
  */
-export function retryLspClient(workspaceRoot: string, languageId: string): void {
-  const key = keyFor(workspaceRoot, languageId);
+export function retryLspClient(workspaceRoot: string, lspId: string): void {
+  const key = keyFor(workspaceRoot, lspId);
   const entry = clients.get(key);
   if (!entry || entry.refCount === 0) return;
   entry.failCount = 0;
-  void reconnect(key, workspaceRoot, languageId);
+  void reconnect(key, workspaceRoot, lspId, entry.languageId);
 }
 
 function teardownEntry(key: string, entry: ClientEntry): void {
@@ -236,13 +243,21 @@ function teardownEntry(key: string, entry: ClientEntry): void {
 // Session construction + reconnect
 // ---------------------------------------------------------------------------
 
-async function createEntry(workspaceRoot: string, languageId: string): Promise<ClientEntry> {
-  const key = keyFor(workspaceRoot, languageId);
-  const parts = await buildSession(workspaceRoot, languageId);
+async function createEntry(
+  workspaceRoot: string,
+  lspId: string,
+  languageId: string,
+): Promise<ClientEntry> {
+  const key = keyFor(workspaceRoot, lspId);
+  // `lspId` is the concrete server id, except when the resolver passed the
+  // bare languageId (no explicit server) — in that case don't send an lsp_id.
+  const sessionLspId = lspId === languageId ? undefined : lspId;
+  const parts = await buildSession(workspaceRoot, languageId, sessionLspId);
   const entry: ClientEntry = {
     client: parts.client,
     workspace: parts.workspace,
     transport: parts.transport,
+    languageId,
     refCount: 0,
     shutdownTimer: null,
     reconnectTimer: null,
@@ -251,7 +266,7 @@ async function createEntry(workspaceRoot: string, languageId: string): Promise<C
     failCount: 0,
   };
   parts.transport.setOnClose((unexpected) =>
-    onTransportClose(key, workspaceRoot, languageId, unexpected),
+    onTransportClose(key, workspaceRoot, lspId, languageId, unexpected),
   );
   return entry;
 }
@@ -264,6 +279,7 @@ async function createEntry(workspaceRoot: string, languageId: string): Promise<C
 function onTransportClose(
   key: string,
   workspaceRoot: string,
+  lspId: string,
   languageId: string,
   unexpected: boolean,
 ): void {
@@ -273,7 +289,7 @@ function onTransportClose(
   // The dead client can't serve requests; drop it before reconnecting.
   entry.client.disconnect();
   setStatus(key, "reconnecting", null);
-  void reconnect(key, workspaceRoot, languageId);
+  void reconnect(key, workspaceRoot, lspId, languageId);
 }
 
 /**
@@ -281,7 +297,12 @@ function onTransportClose(
  * subscribers on success so editors re-bind to the fresh client; marks the
  * entry `error` after `MAX_RECONNECT_ATTEMPTS`.
  */
-async function reconnect(key: string, workspaceRoot: string, languageId: string): Promise<void> {
+async function reconnect(
+  key: string,
+  workspaceRoot: string,
+  lspId: string,
+  languageId: string,
+): Promise<void> {
   const entry = clients.get(key);
   if (!entry || entry.refCount === 0) return;
   if (entry.reconnectTimer != null) {
@@ -291,8 +312,9 @@ async function reconnect(key: string, workspaceRoot: string, languageId: string)
   // Share the single-inflight guard so concurrent acquires don't double-spawn.
   if (pending.has(key)) return;
   setStatus(key, "reconnecting", null);
+  const sessionLspId = lspId === languageId ? undefined : lspId;
   const attempt = (async (): Promise<ClientEntry> => {
-    const parts = await buildSession(workspaceRoot, languageId);
+    const parts = await buildSession(workspaceRoot, languageId, sessionLspId);
     const live = clients.get(key);
     if (!live) {
       parts.transport.close();
@@ -303,7 +325,7 @@ async function reconnect(key: string, workspaceRoot: string, languageId: string)
     live.transport = parts.transport;
     live.failCount = 0;
     parts.transport.setOnClose((unexpected) =>
-      onTransportClose(key, workspaceRoot, languageId, unexpected),
+      onTransportClose(key, workspaceRoot, lspId, languageId, unexpected),
     );
     return live;
   })().finally(() => pending.delete(key));
@@ -314,11 +336,17 @@ async function reconnect(key: string, workspaceRoot: string, languageId: string)
     // A fresh client identity means editors must re-mount the compartment.
     notify(key);
   } catch (err) {
-    scheduleRetry(key, workspaceRoot, languageId, err);
+    scheduleRetry(key, workspaceRoot, lspId, languageId, err);
   }
 }
 
-function scheduleRetry(key: string, workspaceRoot: string, languageId: string, err: unknown): void {
+function scheduleRetry(
+  key: string,
+  workspaceRoot: string,
+  lspId: string,
+  languageId: string,
+  err: unknown,
+): void {
   const entry = clients.get(key);
   if (!entry || entry.refCount === 0) return;
   entry.failCount += 1;
@@ -331,7 +359,7 @@ function scheduleRetry(key: string, workspaceRoot: string, languageId: string, e
   setStatus(key, "reconnecting", null);
   entry.reconnectTimer = setTimeout(() => {
     entry.reconnectTimer = null;
-    void reconnect(key, workspaceRoot, languageId);
+    void reconnect(key, workspaceRoot, lspId, languageId);
   }, delay);
 }
 
@@ -341,17 +369,17 @@ function scheduleRetry(key: string, workspaceRoot: string, languageId: string, e
 
 /**
  * Register a host-provided `displayFile` handler with the workspace for
- * `(workspaceRoot, languageId)`. The handler bridges LSP-driven navigation
+ * `(workspaceRoot, lspId)`. The handler bridges LSP-driven navigation
  * into Cadencr's tab system. Returns an unregister function.
  *
  * @public
  */
 export function setDisplayFileHandler(
   workspaceRoot: string,
-  languageId: string,
+  lspId: string,
   handler: DisplayFileHandler,
 ): () => void {
-  const entry = clients.get(keyFor(workspaceRoot, languageId));
+  const entry = clients.get(keyFor(workspaceRoot, lspId));
   if (!entry) return () => {};
   entry.workspace.setDisplayFileHandler(handler);
   return () => {

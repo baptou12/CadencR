@@ -38,6 +38,9 @@ type DefinitionResponse = LspLocation | LspLocation[] | null;
  * keymap can swallow the event. Errors surface as a single toast.
  */
 function runJumpToDefinition(view: EditorView): boolean {
+  // With multiple clients mounted (type checker + linters), `LSPPlugin.get`
+  // returns the FIRST mounted lspPlugin. `useLsp` mounts the type checker's
+  // plugin first precisely so navigation targets it, not a linter.
   const plugin = LSPPlugin.get(view);
   if (!plugin) return false;
   // `serverCapabilities` is null until the server's `initialize` response

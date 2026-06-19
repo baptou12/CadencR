@@ -80,6 +80,7 @@ use crate::domain::workspace::routes as workspace_routes;
         // so the generated react-query hook would just take a `customInstance<unknown>`
         // round-trip. The frontend calls the endpoint directly via Axios instead.
         editor_routes::write_file_handler,
+        crate::domain::editor::format::format_handler,
         editor_routes::tree_handler,
         editor_routes::tree_all_handler,
         editor_routes::tree_count_handler,
@@ -245,6 +246,8 @@ use crate::domain::workspace::routes as workspace_routes;
         editor_routes::ReadFileResponse,
         editor_routes::WriteFileRequest,
         editor_routes::WriteFileResponse,
+        crate::domain::editor::format::FormatRequest,
+        crate::domain::editor::format::FormatResponse,
         editor_routes::FileTreeEntry,
         editor_routes::TreeCountResponse,
         editor_routes::ContentMatch,
@@ -353,6 +356,7 @@ use crate::domain::workspace::routes as workspace_routes;
         crate::domain::lsp::root::LspRootResponse,
         crate::domain::lsp::probe::ServerProbe,
         crate::domain::lsp::probe::ServerProbeStatus,
+        crate::domain::lsp::catalog::ServerRole,
         imports_models::ImportConversationSummary,
         imports_models::ListImportConversationsResponse,
         imports_models::StartImportRequest,

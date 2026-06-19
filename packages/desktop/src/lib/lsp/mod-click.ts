@@ -27,7 +27,8 @@ const lastHintAt = new WeakMap<EditorView, number>();
 const HINT_SUPPRESS_MS = 8_000;
 
 interface ModClickArgs {
-  /** Resolved LSP root + language id, for live status lookup at click time. */
+  /** Resolved LSP root + the type checker's server id, for live status lookup
+   * at click time (status is keyed by `(root, lspId)`). */
   resolvedRoot: string | null;
   languageId: string | null;
 }

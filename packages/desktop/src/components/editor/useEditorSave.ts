@@ -14,6 +14,13 @@ interface UseEditorSaveArgs {
   /** Loaded file content, forwarded to the fresh-content sync hook. */
   content: string | undefined;
   viewRef: RefObject<EditorView | null>;
+  /**
+   * Optional pre-save step (format-on-save). Runs and is awaited BEFORE the
+   * buffer is read for writing, so the formatted text is what gets persisted.
+   * Errors are surfaced by the implementation (toast); we still save the
+   * current buffer if it rejects, so a formatter failure never blocks saving.
+   */
+  beforeWrite?: () => Promise<void>;
 }
 
 interface UseEditorSaveResult {
@@ -43,6 +50,7 @@ export function useEditorSave({
   filePath,
   content,
   viewRef,
+  beforeWrite,
 }: UseEditorSaveArgs): UseEditorSaveResult {
   const queryClient = useQueryClient();
   const setDirty = useEditorStore((s) => s.setDirty);
@@ -52,6 +60,10 @@ export function useEditorSave({
   const writeFile = useWriteFile();
   const mutateAsyncRef = useRef(writeFile.mutateAsync);
   mutateAsyncRef.current = writeFile.mutateAsync;
+
+  // Keep the latest format-on-save step without making `write` unstable.
+  const beforeWriteRef = useRef(beforeWrite);
+  beforeWriteRef.current = beforeWrite;
 
   const markLoadedContent = useFreshFileContentSync({ content, viewRef });
   const readFileQueryKey = useMemo(
@@ -72,6 +84,9 @@ export function useEditorSave({
   const write = useCallback(async (): Promise<string | null> => {
     const view = viewRef.current;
     if (!view) return null;
+    // Format-on-save runs first so the persisted text is the formatted text.
+    // It surfaces its own errors and never throws, so it can't block saving.
+    if (beforeWriteRef.current) await beforeWriteRef.current();
     const next = view.state.doc.toString();
     await mutateAsyncRef.current({
       data: { project_id: projectId, feature_id: featureId, file_path: filePath, content: next },

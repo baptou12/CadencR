@@ -738,6 +738,26 @@ export interface FileTreeEntry {
   path: string;
 }
 
+export type FormatRequestFeatureId = number | null;
+
+export interface FormatRequest {
+  /** Current buffer content to format. Sent on the formatter's stdin. */
+  content: string;
+  feature_id?: FormatRequestFeatureId;
+  /** Path (relative to the feature/project root) of the buffer being
+formatted; passed to the formatter so it can infer the parser. */
+  file_path: string;
+  /** Formatter id from `editor_formatter` (e.g. `"prettier"`). Never `"off"`
+— the renderer skips the request when formatting is disabled. */
+  formatter: string;
+  project_id: number;
+}
+
+export interface FormatResponse {
+  /** The formatted document. Identical to the input when already formatted. */
+  content: string;
+}
+
 export type GetFileContentBatchBodyCommitSha = string | null;
 
 export type GetFileContentBatchBodyTargetBranch = string | null;
@@ -1035,11 +1055,24 @@ export interface MovePathResponse {
   new_path: string;
 }
 
+/**
+ * Optional concrete server id (e.g. `"tsgo"`, `"biome"`). When present the
+service resolves that specific catalog entry instead of the language's
+default — this is how a project runs multiple servers per file. When
+absent, behavior is unchanged (default server for the language).
+ */
+export type OpenLspSessionRequestLspId = string | null;
+
 export interface OpenLspSessionRequest {
   /** LSP `TextDocumentItem` language id (e.g. `"typescript"`, `"rust"`,
 `"python"`). The renderer derives this from the same catalog the
 service uses; see `domain/lsp/spawn.rs::resolve_server`. */
   language_id: string;
+  /** Optional concrete server id (e.g. `"tsgo"`, `"biome"`). When present the
+service resolves that specific catalog entry instead of the language's
+default — this is how a project runs multiple servers per file. When
+absent, behavior is unchanged (default server for the language). */
+  lsp_id?: OpenLspSessionRequestLspId;
   /** Absolute path to the workspace root the language server should index. */
   workspace_root: string;
 }
@@ -1387,6 +1420,10 @@ in this language would trigger an automatic install. */
   lsp_id: string;
   /** Absolute path on disk when found. `None` otherwise. */
   path?: ServerProbePath;
+  /** The role this server fills (type checker, linter, …). Lets the renderer
+build the per-file active-server set from this catalog data instead of
+duplicating the catalog client-side. */
+  role: ServerRole;
   /** Where the binary was found, or `missing` if not installed. */
   status: ServerProbeStatus;
   /** Version string when reported by the binary itself (or pinned by the
@@ -1401,6 +1438,22 @@ export const ServerProbeStatus = {
   on_path: "on_path",
   managed: "managed",
   missing: "missing",
+} as const;
+
+/**
+ * The job an LSP server does for a file. Lets a project run several servers
+per language (e.g. a type checker plus a linter) without the catalog
+branching on provider identity. `lookup_all` returns every entry for a
+language id; `active-servers` on the frontend then picks one per role.
+ */
+export type ServerRole = (typeof ServerRole)[keyof typeof ServerRole];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ServerRole = {
+  type_checker: "type_checker",
+  linter: "linter",
+  formatter: "formatter",
+  general: "general",
 } as const;
 
 export type SessionStateContextWindow = number | null;
@@ -2097,9 +2150,15 @@ export type LspRootParams = {
   file_path: string;
   /**
  * LSP `TextDocumentItem` language id (e.g. `"typescript"`). Selects which
-catalog `root_markers` to look for.
+catalog `root_markers` to look for when no concrete `lsp_id` is given.
  */
   language_id: string;
+  /**
+ * Optional concrete server id (e.g. `"tsgo"`). When present its
+`root_markers` are used, so the resolved root matches the exact server
+the renderer is about to start. Falls back to the language default.
+ */
+  lsp_id?: string | null;
 };
 
 export type KillTerminalSessionsParams = {
@@ -3980,6 +4039,70 @@ export const useCreateEditorFolder = <TError = ErrorType<unknown>, TContext = un
   TContext
 > => {
   const mutationOptions = getCreateEditorFolderMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const format = (formatRequest: FormatRequest, signal?: AbortSignal) => {
+  return customInstance<FormatResponse>({
+    url: `/api/editor/format`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: formatRequest,
+    signal,
+  });
+};
+
+export const getFormatMutationOptions = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof format>>,
+    TError,
+    { data: FormatRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof format>>,
+  TError,
+  { data: FormatRequest },
+  TContext
+> => {
+  const mutationKey = ["format"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof format>>,
+    { data: FormatRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return format(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FormatMutationResult = NonNullable<Awaited<ReturnType<typeof format>>>;
+export type FormatMutationBody = FormatRequest;
+export type FormatMutationError = ErrorType<void>;
+
+export const useFormat = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof format>>,
+    TError,
+    { data: FormatRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof format>>,
+  TError,
+  { data: FormatRequest },
+  TContext
+> => {
+  const mutationOptions = getFormatMutationOptions(options);
 
   return useMutation(mutationOptions);
 };

@@ -113,6 +113,7 @@ vi.mock("@/components/Markdown", () => ({
 
 vi.mock("@/hooks/useShortcut", () => ({
   useScopedShortcut: vi.fn(),
+  useScopedGlobalShortcutById: vi.fn(),
 }));
 
 let mockReadFileReturn: { data: unknown; isLoading: boolean; error: Error | null } = {
@@ -135,6 +136,10 @@ vi.mock("@/api/generated", () => ({
   useWriteFile: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useGetBlame: vi.fn(() => mockBlameReturn),
   useGetFeatureWorkingDir: vi.fn(() => ({ data: undefined })),
+  // Consumed by useEditorFormat → useProjectEditorTooling.
+  useGetProjectSettings: vi.fn(() => ({ data: undefined })),
+  useGetWorkspaceSetting: vi.fn(() => ({ data: undefined })),
+  format: vi.fn(),
 }));
 
 vi.mock("@/lib/lsp/useLsp", () => ({

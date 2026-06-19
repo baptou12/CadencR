@@ -27,7 +27,7 @@ use super::probe::{probe_servers, ServerProbe};
 use super::proxy::run_proxy;
 use super::registry::SessionSpec;
 use super::root::lsp_root_handler;
-use super::spawn::{resolve_server, spawn_server};
+use super::spawn::{resolve_server, resolve_server_by_id, spawn_server};
 
 pub fn lsp_router() -> Router<AppState> {
     Router::new()
@@ -68,6 +68,12 @@ pub struct OpenLspSessionRequest {
     /// `"python"`). The renderer derives this from the same catalog the
     /// service uses; see `domain/lsp/spawn.rs::resolve_server`.
     pub language_id: String,
+    /// Optional concrete server id (e.g. `"tsgo"`, `"biome"`). When present the
+    /// service resolves that specific catalog entry instead of the language's
+    /// default — this is how a project runs multiple servers per file. When
+    /// absent, behavior is unchanged (default server for the language).
+    #[serde(default)]
+    pub lsp_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -107,9 +113,17 @@ pub async fn open_session_handler(
     // surface "unhealthy, retry in N s" here where we can both return JSON AND
     // set a machine-readable `Retry-After`. The renderer's auto-reconnect loop
     // reads that header to pace its backoff instead of hammering a dead server.
+    //
+    // The crash key's `language_id` field doubles as the per-server backoff
+    // discriminator: when a concrete `lsp_id` was requested we key on it so a
+    // crashing linter doesn't lock out the type checker for the same file.
+    let crash_discriminator = req
+        .lsp_id
+        .clone()
+        .unwrap_or_else(|| req.language_id.clone());
     let crash_key = CrashKey {
         workspace_root: workspace_root.clone(),
-        language_id: req.language_id.clone(),
+        language_id: crash_discriminator,
     };
     if let Err(remaining) = state.lsp_crashes.check(&crash_key).await {
         let secs = remaining.as_secs().max(1);
@@ -121,12 +135,17 @@ pub async fn open_session_handler(
     // an informative error to the browser — a non-101 status appears as a
     // bare `error` event with no body — so we have to fail visibly here
     // while we can still return JSON. Renderer reads `.error` and toasts.
-    let server = resolve_server(&req.language_id).await?;
+    let server = match &req.lsp_id {
+        Some(lsp_id) => resolve_server_by_id(lsp_id).await?,
+        None => resolve_server(&req.language_id).await?,
+    };
     let session_id = state
         .lsp_sessions
         .reserve(SessionSpec {
             workspace_root,
-            language_id: req.language_id,
+            // Keep the crash discriminator consistent between reserve and
+            // connect so the WS-side backoff check matches the POST-side one.
+            language_id: crash_key.language_id.clone(),
             server,
         })
         .await;

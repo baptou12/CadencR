@@ -18,7 +18,7 @@
  */
 import { lspRoot } from "@/api/generated";
 
-/** Cache keyed by `${workspaceRoot}::${languageId}::${containingDir}`. */
+/** Cache keyed by `${workspaceRoot}::${languageId}::${lspId}::${containingDir}`. */
 const rootCache = new Map<string, string>();
 
 function dirOf(absPath: string): string {
@@ -26,14 +26,18 @@ function dirOf(absPath: string): string {
   return idx <= 0 ? "/" : absPath.slice(0, idx);
 }
 
-function cacheKey(workspaceRoot: string, languageId: string, dir: string): string {
-  return `${workspaceRoot}::${languageId}::${dir}`;
+function cacheKey(workspaceRoot: string, languageId: string, lspId: string, dir: string): string {
+  return `${workspaceRoot}::${languageId}::${lspId}::${dir}`;
 }
 
 /**
  * Resolve the LSP root for `absFilePath`. Returns the nearest ancestor
- * directory containing a language-specific root marker, falling back to
- * `workspaceRoot`. Result is cached per containing directory.
+ * directory containing a root marker, falling back to `workspaceRoot`. Result
+ * is cached per containing directory.
+ *
+ * `lspId` selects which server's root markers to use — different servers in the
+ * same language may root differently. When omitted, the language default's
+ * markers are used.
  *
  * @public
  */
@@ -41,9 +45,10 @@ export async function resolveLspRoot(
   workspaceRoot: string,
   languageId: string,
   absFilePath: string,
+  lspId?: string,
 ): Promise<string> {
   const dir = dirOf(absFilePath);
-  const key = cacheKey(workspaceRoot, languageId, dir);
+  const key = cacheKey(workspaceRoot, languageId, lspId ?? "", dir);
   const cached = rootCache.get(key);
   if (cached) return cached;
   try {
@@ -51,6 +56,7 @@ export async function resolveLspRoot(
       workspace_root: workspaceRoot,
       file_path: absFilePath,
       language_id: languageId,
+      lsp_id: lspId ?? null,
     });
     const resolved = root || workspaceRoot;
     rootCache.set(key, resolved);

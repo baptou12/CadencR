@@ -43,6 +43,16 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     "default_worktree_mode",
     "color",
     "setup_worktree",
+    // Per-project editor tooling selection (Phase 4). Each falls back to the
+    // workspace-scoped default when unset on the project (see the matching
+    // entries in WORKSPACE_ALLOWED_KEYS). `editor_typescript_server` picks the
+    // TS type checker; `editor_linter` picks an optional linter; `editor_formatter`
+    // picks the format-on-save / format-command formatter; `editor_format_on_save`
+    // toggles auto-format on save.
+    "editor_typescript_server",
+    "editor_linter",
+    "editor_formatter",
+    "editor_format_on_save",
 ];
 
 /// Keys writable via `PUT /api/workspace/settings/{key}`.
@@ -81,6 +91,13 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "editor_auto_save",
     "editor_git_blame",
     "editor_max_tabs",
+    // Workspace-scoped DEFAULTS for the per-project editor tooling keys above.
+    // A project without an explicit value inherits these (frontend resolves
+    // project-then-workspace). Mirrored in PROJECT_ALLOWED_KEYS.
+    "editor_typescript_server",
+    "editor_linter",
+    "editor_formatter",
+    "editor_format_on_save",
     // File-tree icon set used by the editor's @pierre/trees-based file tree.
     // One of "minimal", "standard", or "complete" — defaulting to "standard"
     // when unset. Stored as a workspace setting because the choice is global,
@@ -243,6 +260,31 @@ mod tests {
             assert!(
                 !is_workspace_key_allowed(k),
                 "{k} must be rejected on workspace"
+            );
+        }
+    }
+
+    #[test]
+    fn editor_tooling_keys_allowed_on_project_and_workspace() {
+        // Per-project tooling with a workspace-scoped global default fallback,
+        // so the same keys must be writable at both scopes.
+        for k in [
+            "editor_typescript_server",
+            "editor_linter",
+            "editor_formatter",
+            "editor_format_on_save",
+        ] {
+            assert!(
+                is_project_key_allowed(k),
+                "{k} should be allowed on project"
+            );
+            assert!(
+                is_workspace_key_allowed(k),
+                "{k} should be allowed on workspace (global default)"
+            );
+            assert!(
+                !is_feature_key_allowed(k),
+                "{k} must not be writable on feature"
             );
         }
     }

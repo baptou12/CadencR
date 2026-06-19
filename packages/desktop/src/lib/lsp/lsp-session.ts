@@ -11,7 +11,7 @@ import { connectLspWs, type WebSocketLspTransport } from "./transport";
 import { CadencrWorkspace } from "./cadencr-workspace";
 import { pathToFileUri } from "./file-uri";
 import { buildLspNotificationHandlers } from "./notifications";
-import { cadencrServerDiagnostics } from "./diagnostics";
+import { cadencrServerDiagnostics, type ClientRef } from "./diagnostics";
 
 interface SessionParts {
   client: LSPClient;
@@ -19,19 +19,33 @@ interface SessionParts {
   transport: WebSocketLspTransport;
 }
 
-/** Build the LSP session (POST → WS → LSPClient). Throws on failure. */
+/**
+ * Build the LSP session (POST → WS → LSPClient). Throws on failure.
+ *
+ * `lspId` selects the concrete server (Phase 4: a project may run e.g. `tsgo`
+ * plus `biome`). It also keys this client's diagnostic bucket so several
+ * servers' diagnostics merge instead of clobbering each other. When `lspId` is
+ * absent the backend uses the language's default server, and the bucket is
+ * keyed by `languageId` (single-client behavior, unchanged).
+ */
 export async function buildSession(
   workspaceRoot: string,
   languageId: string,
+  lspId?: string,
 ): Promise<SessionParts> {
   const session = await openSession({
     workspace_root: workspaceRoot,
     language_id: languageId,
+    lsp_id: lspId ?? null,
   }).catch((err: unknown) => {
     throw new Error(extractSessionError(err));
   });
   const transport = await connectLspWs(session.session_id);
   let workspaceRef: CadencrWorkspace | null = null;
+  // The autoSync needs the client, but the client doesn't exist yet (the
+  // extension is a constructor arg). Fill the ref right after construction.
+  const clientRef: ClientRef = { current: null };
+  const bucketKey = lspId ?? languageId;
   const client = new LSPClient({
     rootUri: pathToFileUri(workspaceRoot),
     workspace: (c) => {
@@ -40,10 +54,11 @@ export async function buildSession(
     },
     // Route `window/showMessage` and `window/logMessage` to sonner toasts.
     notificationHandlers: buildLspNotificationHandlers(),
-    // Wires `publishDiagnostics` into `@codemirror/lint` and installs the
-    // doc-change autoSync.
-    extensions: [cadencrServerDiagnostics()],
+    // Wires `publishDiagnostics` into this client's merged-diagnostics bucket
+    // and installs the per-client doc-change autoSync.
+    extensions: [cadencrServerDiagnostics(bucketKey, clientRef)],
   });
+  clientRef.current = client;
   client.connect(transport);
   if (!workspaceRef) {
     transport.close();

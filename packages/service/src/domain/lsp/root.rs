@@ -29,8 +29,13 @@ pub struct LspRootParams {
     /// Absolute path (or path under `workspace_root`) of the opened file.
     pub file_path: String,
     /// LSP `TextDocumentItem` language id (e.g. `"typescript"`). Selects which
-    /// catalog `root_markers` to look for.
+    /// catalog `root_markers` to look for when no concrete `lsp_id` is given.
     pub language_id: String,
+    /// Optional concrete server id (e.g. `"tsgo"`). When present its
+    /// `root_markers` are used, so the resolved root matches the exact server
+    /// the renderer is about to start. Falls back to the language default.
+    #[serde(default)]
+    pub lsp_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -56,9 +61,11 @@ pub async fn lsp_root_handler(
 ) -> Result<Json<LspRootResponse>, AppError> {
     let workspace_root = canonical_workspace_root(&params.workspace_root)?;
     let start_dir = validated_start_dir(&workspace_root, &params.file_path)?;
-    let markers = catalog::lookup(&params.language_id)
-        .map(|entry| entry.root_markers)
-        .unwrap_or(&[]);
+    let entry = match &params.lsp_id {
+        Some(lsp_id) => catalog::lookup_by_id(lsp_id),
+        None => catalog::lookup(&params.language_id),
+    };
+    let markers = entry.map(|entry| entry.root_markers).unwrap_or(&[]);
     let root = nearest_root(&workspace_root, &start_dir, markers);
     Ok(Json(LspRootResponse {
         root: root.to_string_lossy().into_owned(),

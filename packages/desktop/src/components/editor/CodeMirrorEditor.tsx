@@ -18,6 +18,7 @@ import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { useLargeFileMode } from "./useLargeFileMode";
 import { useEditorSave } from "./useEditorSave";
+import { useEditorFormat } from "./useEditorFormat";
 import { LargeFileBanner } from "./LargeFileBanner";
 
 // Lazy so the Markdown bundle only loads once the user toggles a preview.
@@ -124,7 +125,14 @@ export default function CodeMirrorEditor({
     { query: { enabled: Boolean(featureId && projectId), refetchOnWindowFocus: false } },
   );
   const workspaceRoot = cwdQuery.data?.path ?? undefined;
-  const lsp = useLsp({ workspaceRoot, filePath, featureId, paneId, enabled: !largeMode });
+  const lsp = useLsp({
+    workspaceRoot,
+    filePath,
+    projectId,
+    featureId,
+    paneId,
+    enabled: !largeMode,
+  });
 
   const { data: blameData } = useGetBlame(
     { project_id: projectId, feature_id: featureId, file_path: filePath },
@@ -155,6 +163,14 @@ export default function CodeMirrorEditor({
         ?.pendingGoToLine,
   );
 
+  const { beforeWrite } = useEditorFormat({
+    projectId,
+    featureId,
+    filePath,
+    viewRef,
+    largeMode,
+  });
+
   const { save, saveQuiet, autoSavedVisible } = useEditorSave({
     projectId,
     featureId,
@@ -162,6 +178,7 @@ export default function CodeMirrorEditor({
     filePath,
     content: data?.content,
     viewRef,
+    beforeWrite,
   });
 
   const handleSave = useCallback(() => {
