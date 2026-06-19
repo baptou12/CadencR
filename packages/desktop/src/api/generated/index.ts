@@ -763,6 +763,26 @@ export interface FileTreeEntry {
   path: string;
 }
 
+export type FormatRequestFeatureId = number | null;
+
+export interface FormatRequest {
+  /** Current buffer content to format. Sent on the formatter's stdin. */
+  content: string;
+  feature_id?: FormatRequestFeatureId;
+  /** Path (relative to the feature/project root) of the buffer being
+formatted; passed to the formatter so it can infer the parser. */
+  file_path: string;
+  /** Formatter id from `editor_formatter` (e.g. `"prettier"`). Never `"off"`
+— the renderer skips the request when formatting is disabled. */
+  formatter: string;
+  project_id: number;
+}
+
+export interface FormatResponse {
+  /** The formatted document. Identical to the input when already formatted. */
+  content: string;
+}
+
 export type GetFileContentBatchBodyCommitSha = string | null;
 
 export type GetFileContentBatchBodyTargetBranch = string | null;
@@ -956,6 +976,11 @@ export interface ListServersResponse {
   servers: ServerProbe[];
 }
 
+export interface LspRootResponse {
+  /** Absolute resolved LSP root. The feature root when no marker matched. */
+  root: string;
+}
+
 export interface MarkViewedRequest {
   blob_sha: string;
   feature_id: number;
@@ -1055,11 +1080,24 @@ export interface MovePathResponse {
   new_path: string;
 }
 
+/**
+ * Optional concrete server id (e.g. `"tsgo"`, `"biome"`). When present the
+service resolves that specific catalog entry instead of the language's
+default — this is how a project runs multiple servers per file. When
+absent, behavior is unchanged (default server for the language).
+ */
+export type OpenLspSessionRequestLspId = string | null;
+
 export interface OpenLspSessionRequest {
   /** LSP `TextDocumentItem` language id (e.g. `"typescript"`, `"rust"`,
 `"python"`). The renderer derives this from the same catalog the
 service uses; see `domain/lsp/spawn.rs::resolve_server`. */
   language_id: string;
+  /** Optional concrete server id (e.g. `"tsgo"`, `"biome"`). When present the
+service resolves that specific catalog entry instead of the language's
+default — this is how a project runs multiple servers per file. When
+absent, behavior is unchanged (default server for the language). */
+  lsp_id?: OpenLspSessionRequestLspId;
   /** Absolute path to the workspace root the language server should index. */
   workspace_root: string;
 }
@@ -1239,6 +1277,9 @@ export interface PushInputBody {
 
 export interface ReadFileResponse {
   content: string;
+  /** True when the file is at or above `file_size::LARGE_FILE_OPEN_BYTES`.
+The frontend opens these read-only with language features disabled. */
+  large: boolean;
   /** @minimum 0 */
   line_count: number;
 }
@@ -1404,6 +1445,10 @@ in this language would trigger an automatic install. */
   lsp_id: string;
   /** Absolute path on disk when found. `None` otherwise. */
   path?: ServerProbePath;
+  /** The role this server fills (type checker, linter, …). Lets the renderer
+build the per-file active-server set from this catalog data instead of
+duplicating the catalog client-side. */
+  role: ServerRole;
   /** Where the binary was found, or `missing` if not installed. */
   status: ServerProbeStatus;
   /** Version string when reported by the binary itself (or pinned by the
@@ -1418,6 +1463,22 @@ export const ServerProbeStatus = {
   on_path: "on_path",
   managed: "managed",
   missing: "missing",
+} as const;
+
+/**
+ * The job an LSP server does for a file. Lets a project run several servers
+per language (e.g. a type checker plus a linter) without the catalog
+branching on provider identity. `lookup_all` returns every entry for a
+language id; `active-servers` on the frontend then picks one per role.
+ */
+export type ServerRole = (typeof ServerRole)[keyof typeof ServerRole];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ServerRole = {
+  type_checker: "type_checker",
+  linter: "linter",
+  formatter: "formatter",
+  general: "general",
 } as const;
 
 export type SessionStateContextWindow = number | null;
@@ -1629,6 +1690,11 @@ export interface TrashPathRequest {
 
 export interface TrashPathResponse {
   success: boolean;
+}
+
+export interface TreeCountResponse {
+  /** @minimum 0 */
+  count: number;
 }
 
 export type TriggeredBy = (typeof TriggeredBy)[keyof typeof TriggeredBy];
@@ -1926,6 +1992,16 @@ first and then merge in the `exclude_gitignored=false` response.
   exclude_gitignored?: boolean;
 };
 
+export type TreeCountParams = {
+  project_id: number;
+  feature_id?: number | null;
+  /**
+ * When true, gitignored sub-trees (`node_modules`, `target`, …) are not
+counted — matching the fast `tree-all` walk the editor renders.
+ */
+  exclude_gitignored?: boolean;
+};
+
 export type ListFeaturesParams = {
   project_id: number;
   include_archived?: boolean;
@@ -2086,6 +2162,28 @@ export type DeleteWorktreeParams = {
 
 export type ListProjectWorktreesParams = {
   project_id: number;
+};
+
+export type LspRootParams = {
+  /**
+   * Absolute feature working dir; the resolved root never escapes this.
+   */
+  workspace_root: string;
+  /**
+   * Absolute path (or path under `workspace_root`) of the opened file.
+   */
+  file_path: string;
+  /**
+ * LSP `TextDocumentItem` language id (e.g. `"typescript"`). Selects which
+catalog `root_markers` to look for when no concrete `lsp_id` is given.
+ */
+  language_id: string;
+  /**
+ * Optional concrete server id (e.g. `"tsgo"`). When present its
+`root_markers` are used, so the resolved root matches the exact server
+the renderer is about to start. Falls back to the language default.
+ */
+  lsp_id?: string | null;
 };
 
 export type KillTerminalSessionsParams = {
@@ -3970,6 +4068,70 @@ export const useCreateEditorFolder = <TError = ErrorType<unknown>, TContext = un
   return useMutation(mutationOptions);
 };
 
+export const format = (formatRequest: FormatRequest, signal?: AbortSignal) => {
+  return customInstance<FormatResponse>({
+    url: `/api/editor/format`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: formatRequest,
+    signal,
+  });
+};
+
+export const getFormatMutationOptions = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof format>>,
+    TError,
+    { data: FormatRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof format>>,
+  TError,
+  { data: FormatRequest },
+  TContext
+> => {
+  const mutationKey = ["format"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof format>>,
+    { data: FormatRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return format(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FormatMutationResult = NonNullable<Awaited<ReturnType<typeof format>>>;
+export type FormatMutationBody = FormatRequest;
+export type FormatMutationError = ErrorType<void>;
+
+export const useFormat = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof format>>,
+    TError,
+    { data: FormatRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof format>>,
+  TError,
+  { data: FormatRequest },
+  TContext
+> => {
+  const mutationOptions = getFormatMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const moveEditorPath = (movePathRequest: MovePathRequest, signal?: AbortSignal) => {
   return customInstance<MovePathResponse>({
     url: `/api/editor/move`,
@@ -4430,6 +4592,59 @@ export function useTreeAll<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeAll>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getTreeAllQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const treeCount = (params: TreeCountParams, signal?: AbortSignal) => {
+  return customInstance<TreeCountResponse>({
+    url: `/api/editor/tree-count`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getTreeCountQueryKey = (params?: TreeCountParams) => {
+  return [`/api/editor/tree-count`, ...(params ? [params] : [])] as const;
+};
+
+export const getTreeCountQueryOptions = <
+  TData = Awaited<ReturnType<typeof treeCount>>,
+  TError = ErrorType<unknown>,
+>(
+  params: TreeCountParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeCount>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getTreeCountQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof treeCount>>> = ({ signal }) =>
+    treeCount(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof treeCount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type TreeCountQueryResult = NonNullable<Awaited<ReturnType<typeof treeCount>>>;
+export type TreeCountQueryError = ErrorType<unknown>;
+
+export function useTreeCount<
+  TData = Awaited<ReturnType<typeof treeCount>>,
+  TError = ErrorType<unknown>,
+>(
+  params: TreeCountParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeCount>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getTreeCountQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -8741,6 +8956,62 @@ export function useGetImportJob<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getImportJob>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetImportJobQueryOptions(jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * @summary Resolve the nearest ancestor root for `file_path`, bounded by
+`workspace_root`. Pure + filesystem-reading, but takes no app state so it's
+unit-testable with a tempdir.
+ */
+export const lspRoot = (params: LspRootParams, signal?: AbortSignal) => {
+  return customInstance<LspRootResponse>({ url: `/api/lsp/root`, method: "GET", params, signal });
+};
+
+export const getLspRootQueryKey = (params?: LspRootParams) => {
+  return [`/api/lsp/root`, ...(params ? [params] : [])] as const;
+};
+
+export const getLspRootQueryOptions = <
+  TData = Awaited<ReturnType<typeof lspRoot>>,
+  TError = ErrorType<void>,
+>(
+  params: LspRootParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof lspRoot>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLspRootQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof lspRoot>>> = ({ signal }) =>
+    lspRoot(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof lspRoot>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LspRootQueryResult = NonNullable<Awaited<ReturnType<typeof lspRoot>>>;
+export type LspRootQueryError = ErrorType<void>;
+
+/**
+ * @summary Resolve the nearest ancestor root for `file_path`, bounded by
+`workspace_root`. Pure + filesystem-reading, but takes no app state so it's
+unit-testable with a tempdir.
+ */
+
+export function useLspRoot<TData = Awaited<ReturnType<typeof lspRoot>>, TError = ErrorType<void>>(
+  params: LspRootParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof lspRoot>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLspRootQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
