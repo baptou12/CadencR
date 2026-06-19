@@ -29,7 +29,7 @@ import EditorSearchPanel from "./editor-search/EditorSearchPanel";
 import { bufferSearchExtension } from "./editor-search/search-extension";
 import { editorBufferKeymap } from "./editor-buffer-keymap";
 import { EditorGoToLinePanel } from "./EditorGoToLinePanel";
-import { EditorBreadcrumbsSlot, EditorCommandsSlot } from "./lsp/EditorLspLayer";
+import { EditorCommandsSlot } from "./lsp/EditorLspLayer";
 
 interface CodeMirrorEditorProps {
   filePath: string;
@@ -240,11 +240,15 @@ export default function CodeMirrorEditor({
     view.dispatch({ effects: blameCompartment.current.reconfigure(ext) });
   }, [isBlameEnabled, blameData, data]);
 
+  // Re-apply the LSP extension whenever it changes OR the editor view becomes
+  // available. Depending on `editorView` (not just `lsp.extension`) closes a
+  // race where the extension resolves before the view exists: without it the
+  // plugin would never mount until the next extension change, which manifested
+  // as "Cmd+Click does nothing until I reopen the file".
   useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({ effects: lspCompartment.current.reconfigure(lsp.extension) });
-  }, [lsp.extension]);
+    if (!editorView) return;
+    editorView.dispatch({ effects: lspCompartment.current.reconfigure(lsp.extension) });
+  }, [lsp.extension, editorView]);
 
   // Feed the HEAD baseline into the git-gutter extension. Re-runs when the
   // baseline arrives/changes and once `data` flips so the editor is mounted.
@@ -315,9 +319,6 @@ export default function CodeMirrorEditor({
   return (
     <div className="h-full flex flex-col">
       {largeMode && <LargeFileBanner onEditAnyway={editAnyway} />}
-      {editorView && !largeMode && !isPreviewing && (
-        <EditorBreadcrumbsSlot view={editorView} ready={lsp.status === "ready"} />
-      )}
       <BaseCodeMirrorEditor
         initialContent={data.content}
         language={langExt}

@@ -95,6 +95,12 @@ export function useLspClients({
       return { lspId, root, client: entry.client, workspace: entry.workspace };
     };
 
+    // The type checker is the first id; its failure is the only one that makes
+    // the whole editor's LSP "error". A linter (any trailing id) that won't
+    // start — e.g. enabled in settings but not installed — must NOT mask a
+    // working type checker: it gets a one-shot toast, but go-to-def / hover /
+    // diagnostics from the type checker stay live.
+    const typeCheckerId = lspIds[0];
     void Promise.all(
       lspIds.map((id) => acquireOne(id).catch((err: unknown) => ({ id, err }))),
     ).then((results) => {
@@ -105,7 +111,7 @@ export function useLspClients({
         else if (r && "err" in r) {
           const msg = r.err instanceof Error ? r.err.message : "Failed to start language server";
           toast.error(msg);
-          setErrorMessage(msg);
+          if (r.id === typeCheckerId) setErrorMessage(msg);
         }
       }
       setReady(live);

@@ -106,20 +106,3 @@ export async function documentSymbols(view: EditorView): Promise<FlatSymbol[]> {
   }
   return out;
 }
-
-/**
- * Given the flat symbol list and a cursor offset, return the enclosing symbol
- * path (outermost → innermost) for the breadcrumbs bar. A symbol encloses the
- * cursor when the offset is within its range and it sits at a deeper level
- * than the previously matched ancestor.
- */
-export function symbolPathAt(symbols: FlatSymbol[], offset: number): FlatSymbol[] {
-  const path: FlatSymbol[] = [];
-  for (const s of symbols) {
-    if (offset < s.from || offset > s.to) continue;
-    // Keep only ancestors shallower than this symbol, then push it.
-    while (path.length > 0 && path[path.length - 1].depth >= s.depth) path.pop();
-    path.push(s);
-  }
-  return path;
-}

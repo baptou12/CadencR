@@ -17,7 +17,31 @@
  * default keymap so signature help is keyboard-reachable.
  */
 import type { Extension } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { hoverTooltips, signatureHelp } from "@codemirror/lsp-client";
 
+/**
+ * Bound the hover tooltip's size. The library's own base theme caps the
+ * *signature* tooltip at `30em` but leaves hover documentation
+ * (`.cm-lsp-documentation`) unconstrained, so a long type or JSDoc block can
+ * stretch the popover across the entire viewport. Cap it to a readable column
+ * with scrollable overflow, and force long unbroken tokens (deep generic types,
+ * URLs) to wrap instead of widening the box.
+ */
+const hoverTooltipTheme = EditorView.theme({
+  ".cm-tooltip.cm-tooltip-hover": {
+    maxWidth: "min(60ch, 90vw)",
+    maxHeight: "min(24em, 60vh)",
+    overflow: "auto",
+  },
+  ".cm-tooltip-hover .cm-lsp-documentation": {
+    overflowWrap: "anywhere",
+  },
+  ".cm-tooltip-hover .cm-lsp-documentation pre": {
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+  },
+});
+
 /** Hover tooltips + signature help, mounted on the type-checker client. */
-export const lspLanguageFeatures: Extension = [hoverTooltips(), signatureHelp()];
+export const lspLanguageFeatures: Extension = [hoverTooltips(), signatureHelp(), hoverTooltipTheme];
