@@ -39,13 +39,20 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::McpServe {
             agent_type,
             feature_id,
+            session_id,
         }) => {
             let db_path = config
                 .db_path
                 .clone()
                 .expect("--db-path or CADENCR_DB_PATH env var required for mcp-serve");
+            let settings_dir = domain::settings_store::dir::resolve_from_config(
+                config.settings_dir.as_deref(),
+                &db_path,
+            );
+            domain::settings_store::init(settings_dir);
 
-            domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id).await?;
+            domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id, *session_id)
+                .await?;
         }
         None => {
             if cfg!(debug_assertions) {

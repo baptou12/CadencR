@@ -17,7 +17,7 @@ use crate::domain::lsp::LspRegistry;
 use crate::domain::mcp::loopback::is_loopback_host;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
-use crate::domain::ws_session::handler::ActiveTurnRegistry;
+use crate::domain::ws_session::handler::{new_sdk_sessions, ActiveTurnRegistry};
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 use crate::remote::{RemoteConfig, RemoteController};
 
@@ -109,6 +109,9 @@ pub struct AppState {
     /// `X-Cadencr-Token` header) and WebSocket upgrade (via the
     /// `cadencr-token.<tok>` `Sec-WebSocket-Protocol` entry).
     pub auth_token: String,
+    /// Per-launch token accepted only by loopback `/internal/mcp/*` control
+    /// endpoints used by Cadencr-owned MCP subprocesses.
+    pub mcp_control_token: String,
     /// Frontend dev server port used for WebSocket origin allowlisting.
     pub frontend_port: u16,
     /// Listener port, pinned against the `Host` header for DNS-rebinding defense.
@@ -134,6 +137,11 @@ pub struct AppState {
     /// remote client answer a permission/question/plan against the host's live
     /// query, and carries the server-stamped turn start for synced timers.
     pub active_turns: Arc<ActiveTurnRegistry>,
+    /// Runtime-session owner map for turns started by internal MCP control
+    /// endpoints when no frontend WebSocket connection currently owns the
+    /// target session. Kept strongly referenced so `active_turns` weak entries
+    /// remain valid for follow-up delegation.
+    pub mcp_control_sessions: crate::domain::ws_session::handler::SdkSessions,
     /// Active explicit auto-rename requests keyed by feature_id. Prevents
     /// duplicate model runs racing to update the same title.
     pub auto_name_runs: Arc<FeatureRunRegistry>,
@@ -208,6 +216,7 @@ impl AppState {
             remote_events_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token,
+            mcp_control_token: uuid::Uuid::new_v4().to_string(),
             frontend_port,
             port,
             custom_action_scheduler: CustomActionScheduler::new(),
@@ -216,6 +225,7 @@ impl AppState {
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),
+            mcp_control_sessions: new_sdk_sessions(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
             lsp_sessions: LspRegistry::new(),
             lsp_crashes: CrashTracker::new(),
@@ -257,6 +267,7 @@ impl AppState {
             remote_events_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token: "test-token".to_string(),
+            mcp_control_token: "test-mcp-token".to_string(),
             frontend_port: 1420,
             port: 0,
             custom_action_scheduler: CustomActionScheduler::new(),
@@ -265,6 +276,7 @@ impl AppState {
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),
+            mcp_control_sessions: new_sdk_sessions(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
             lsp_sessions: LspRegistry::new(),
             lsp_crashes: CrashTracker::new(),

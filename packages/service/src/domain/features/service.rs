@@ -58,6 +58,7 @@ pub async fn create_feature_with_worktree(
     type_: Option<String>,
     worktree_mode: Option<String>,
     reuse_branch: Option<String>,
+    base_branch: Option<String>,
 ) -> Result<CreateFeatureResponse, AppError> {
     // After the ws-feature removal the only valid feature type is ws-session.
     // Reject any other value defensively in case an old client tries to
@@ -90,6 +91,9 @@ pub async fn create_feature_with_worktree(
     }
     if let Some(branch) = reuse_branch.as_deref() {
         set_feature_setting_in_tx(&mut tx, id, "worktree_reuse_branch", branch).await?;
+    }
+    if let Some(branch) = base_branch.as_deref() {
+        set_feature_setting_in_tx(&mut tx, id, "worktree_base_branch", branch).await?;
     }
     tx.commit().await?;
     Ok(CreateFeatureResponse { id })

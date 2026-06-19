@@ -93,6 +93,8 @@ async fn test_stream_reader_refreshes_mcp_servers_after_turn_result() {
         "claude_code".to_string(),
         None,
         None,
+        app_state.clone(),
+        false,
     );
 
     let payload = recv_mcp_servers_payload(&mut ws_rx).await;

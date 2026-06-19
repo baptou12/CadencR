@@ -69,6 +69,7 @@ pub async fn create_feature_handler(
         body.type_,
         worktree_mode,
         reuse_branch,
+        None,
     )
     .await?;
     // Tell every connected client (including remote devices) to refresh their
