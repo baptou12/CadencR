@@ -17,6 +17,8 @@ import type { Transport } from "@codemirror/lsp-client";
 
 import { resolveApiBaseUrlSync } from "@/api/client";
 import { getWsProtocols } from "@/lib/ws-url";
+import { applyServerEdit } from "./apply-edit-bridge";
+import type { LspWorkspaceEdit } from "./workspace-edit";
 
 /** How long we wait for the WebSocket to reach OPEN before treating the
  * connect as a failure. Long enough to absorb a single backend cold-start
@@ -86,6 +88,13 @@ export class WebSocketLspTransport implements Transport {
       // The Rust proxy only emits text frames; binary would mean a bug.
       return;
     }
+    // `workspace/applyEdit` is applied asynchronously (it writes files), so it
+    // can't go through the synchronous request-response path below.
+    const request = parseClientRequest(event.data);
+    if (request?.method === "workspace/applyEdit") {
+      void this.handleApplyEdit(request);
+      return;
+    }
     const response = buildClientRequestResponse(event.data);
     if (response) {
       this.send(response);
@@ -95,6 +104,19 @@ export class WebSocketLspTransport implements Transport {
       handler(event.data);
     }
   };
+
+  /** Apply a server-pushed `WorkspaceEdit` and reply with the outcome. */
+  private async handleApplyEdit(request: JsonRpcClientRequest): Promise<void> {
+    const params = request.params;
+    const edit =
+      isRecord(params) && isRecord(params.edit) ? (params.edit as LspWorkspaceEdit) : null;
+    const result = edit
+      ? await applyServerEdit(edit)
+      : { applied: false, failureReason: "Malformed workspace edit." };
+    if (this.closed) return;
+    const response: JsonRpcResponse = { jsonrpc: "2.0", id: request.id, result };
+    this.send(JSON.stringify(response));
+  }
 
   private handleClose = (): void => {
     // Reached via the socket's `close`/`error` events — i.e. NOT through our
@@ -171,11 +193,8 @@ function handledClientRequestResult(method: string, params: unknown): unknown | 
     case "workspace/inlineValue/refresh":
     case "workspace/semanticTokens/refresh":
       return null;
-    case "workspace/applyEdit":
-      return {
-        applied: false,
-        failureReason: "Cadencr does not apply LSP workspace edits yet.",
-      };
+    // `workspace/applyEdit` is handled out-of-band in `handleMessage` because
+    // applying the edit is asynchronous (it writes files).
     default:
       return undefined;
   }

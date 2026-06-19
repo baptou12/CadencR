@@ -29,6 +29,7 @@ import EditorSearchPanel from "./editor-search/EditorSearchPanel";
 import { bufferSearchExtension } from "./editor-search/search-extension";
 import { editorBufferKeymap } from "./editor-buffer-keymap";
 import { EditorGoToLinePanel } from "./EditorGoToLinePanel";
+import { EditorBreadcrumbsSlot, EditorCommandsSlot } from "./lsp/EditorLspLayer";
 
 interface CodeMirrorEditorProps {
   filePath: string;
@@ -314,6 +315,9 @@ export default function CodeMirrorEditor({
   return (
     <div className="h-full flex flex-col">
       {largeMode && <LargeFileBanner onEditAnyway={editAnyway} />}
+      {editorView && !largeMode && !isPreviewing && (
+        <EditorBreadcrumbsSlot view={editorView} ready={lsp.status === "ready"} />
+      )}
       <BaseCodeMirrorEditor
         initialContent={data.content}
         language={langExt}
@@ -354,6 +358,14 @@ export default function CodeMirrorEditor({
           replaceMode={searchReplaceMode}
           replaceFocusSignal={searchReplaceFocusSignal}
           onClose={onCloseSearch}
+        />
+      )}
+      {editorView && !largeMode && (
+        <EditorCommandsSlot
+          view={editorView}
+          projectId={projectId}
+          featureId={featureId}
+          workspaceRoot={workspaceRoot ?? null}
         />
       )}
       {goToLineOpen && editorView && !searchOpen && onCloseGoToLine && (

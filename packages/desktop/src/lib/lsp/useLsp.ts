@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { keymap, type EditorView } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
-import { renameKeymap, serverCompletion } from "@codemirror/lsp-client";
+import { serverCompletion } from "@codemirror/lsp-client";
 import { useEditorStore } from "@/stores/editor-store";
 import { getLspLanguageId } from "./language-id";
 import { pathToFileUri } from "./file-uri";
@@ -36,6 +36,7 @@ import { mergedDiagnostics } from "./merged-diagnostics";
 import { lspModClickExtension } from "./mod-click";
 import { lspModHoverExtension } from "./mod-hover";
 import { jumpToDefinitionKeymap } from "./definition";
+import { lspLanguageFeatures } from "./language-features";
 import type { LspStatus } from "./lsp-status";
 
 export type { LspStatus } from "./lsp-status";
@@ -138,7 +139,8 @@ export function useLsp({
       mergedDiagnostics(),
       ...plugins,
       serverCompletion(),
-      keymap.of([...jumpToDefinitionKeymap, ...renameKeymap]),
+      lspLanguageFeatures,
+      keymap.of([...jumpToDefinitionKeymap]),
       lspModClickExtension({ resolvedRoot, languageId: typeChecker?.lspId ?? languageId }),
       lspModHoverExtension(),
     ];
