@@ -13,6 +13,7 @@ use crate::domain::ws_session::protocol::{
 
 use super::super::send_runtime_session_id;
 use super::mcp_servers::{refresh_mcp_servers_for_active_session, send_mcp_servers_if_init};
+use super::stream_reader_background_agents::track_background_agents;
 use super::stream_reader_forward::{forward_immediate_event, ForwardOutcome};
 use super::stream_reader_task::{StreamReaderState, StreamReaderTask};
 
@@ -31,6 +32,7 @@ impl StreamReaderTask {
     ) {
         state.last_runtime_activity = tokio::time::Instant::now();
         self.forward_compaction_state(state, &runtime_event).await;
+        track_background_agents(&mut state.live_background_agents, &runtime_event);
 
         match forward_immediate_event(self, &runtime_event).await {
             // `prompt_received` / `commands.updated` / `stream_status` are
@@ -311,10 +313,15 @@ impl StreamReaderTask {
             .runtime_event_envelope(state, runtime_event, persisted_message, current_model)
             .await;
         // The event is already persisted and mirrored to any other connected
-        // device, so a gone owner socket is fine — keep streaming.
-        let _ = self
-            .send_and_mirror(Message::Text(String::from(envelope).into()))
-            .await;
+        // device, so a gone owner socket is fine — keep streaming. A `None`
+        // envelope means the turn-complete signal was intentionally withheld
+        // because a background agent is still alive (issue #58) — keep the turn
+        // lifecycle in `active` so the header timer doesn't reset on resume.
+        if let Some(envelope) = envelope {
+            let _ = self
+                .send_and_mirror(Message::Text(String::from(envelope).into()))
+                .await;
+        }
         if runtime_event.is_result() {
             let _ = self.refresh_mcp_servers_after_turn().await;
             self.drain_queued_message_after_result().await;

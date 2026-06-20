@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use axum::extract::ws::Message;
 use tokio::time::Instant;
 use tracing::{debug, info};
@@ -45,6 +47,22 @@ pub(super) struct StreamReaderState {
     pub(super) saw_result: bool,
     /// True while the runtime is inside a provider-reported compaction turn.
     pub(super) compacting: bool,
+    /// Opaque handles of background (run-in-background) agents that have
+    /// started but not yet finished. Non-empty means the session is still
+    /// working even though the launching turn's `Result` has arrived, so the
+    /// turn-complete path must keep it `running` instead of going idle (issue
+    /// #58). Keyed by [`BackgroundAgentSignal`](crate::domain::agents::adapter::BackgroundAgentSignal)'s `agent_id`.
+    ///
+    /// Entries are released on the agent's terminal `task_notification` (the
+    /// "came to rest" signal), matched permissively by `is_terminal_task_status`
+    /// so an unforeseen terminal label still drains the set. If that signal is
+    /// ever missed entirely, the stale entry keeps the session "working" only
+    /// until this reader's stream closes, which drops the whole state — it never
+    /// pins across reconnects. We accept that bounded risk rather than add a
+    /// timer/TTL: over-holding the spinner for one stream is recoverable, and a
+    /// premature eviction (e.g. on a nested-agent `MessageStart`) would wrongly
+    /// drop it mid-run.
+    pub(super) live_background_agents: HashSet<String>,
 }
 
 enum ReaderAction {
@@ -67,6 +85,7 @@ impl StreamReaderState {
             between_turns: true,
             saw_result: false,
             compacting: false,
+            live_background_agents: HashSet::new(),
         }
     }
 }

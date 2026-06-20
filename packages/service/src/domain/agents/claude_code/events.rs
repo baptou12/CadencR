@@ -166,6 +166,7 @@ fn map_user_message(message: &Value) -> RuntimeUserMessage {
 }
 
 pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEvent {
+    let background_agent = super::background_agents::background_agent_signal(&msg);
     let metadata = RuntimeEventMetadata {
         session_id: msg.session_id().map(ToOwned::to_owned),
         usage: msg.usage().map(|usage| RuntimeUsage {
@@ -265,7 +266,7 @@ pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEv
         _ => RuntimeEventKind::Other,
     };
 
-    RuntimeEvent::new(metadata, kind)
+    RuntimeEvent::new(metadata, kind).with_background_agent(background_agent)
 }
 
 #[cfg(test)]

@@ -41,7 +41,7 @@ impl StreamReaderTask {
         runtime_event: &RuntimeEvent,
         persisted_message: Option<PersistedMessageRef>,
         current_model: Option<&str>,
-    ) -> WsEnvelope {
+    ) -> Option<WsEnvelope> {
         if runtime_event.is_result() {
             return self.result_envelope(state).await;
         }
@@ -58,20 +58,40 @@ impl StreamReaderTask {
                 serde_json::Value::String(model.to_string()),
             );
         }
-        WsEnvelope::new(
+        Some(WsEnvelope::new(
             "session",
             "message",
             serde_json::to_value(SessionMessagePayload {
                 blocks: vec![block],
             })
             .unwrap(),
-        )
+        ))
     }
 
-    async fn result_envelope(&self, state: &mut StreamReaderState) -> WsEnvelope {
-        WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
+    async fn result_envelope(&self, state: &mut StreamReaderState) -> Option<WsEnvelope> {
         state.between_turns = true;
         state.saw_result = true;
+
+        // Issue #58: a `run_in_background` Agent/Task can still be alive after
+        // this turn's `Result` (it launches, the turn ends, then the CLI
+        // auto-resumes the main agent once the background agent finishes). While
+        // one is live the session is NOT idle: keep it `running` so the header
+        // shows the working spinner, the reconnect snapshot derives Agent (the
+        // DB stays `running`), and deferred teardown's `turn_running` guard
+        // won't kill the detached agent.
+        //
+        // Returning `None` here suppresses the turn-complete envelope, which is
+        // what keeps the header's "Working - Xs" timer ticking: that envelope is
+        // the only signal that flips the frontend turn lifecycle to `terminal`,
+        // and the CLI's auto-resume would otherwise start a brand-new turn,
+        // resetting elapsed time to 0s. The resume turn's final `Result` arrives
+        // with the set empty and ends the turn normally below.
+        if !state.live_background_agents.is_empty() {
+            WsSessionPersistence::mark_running_static(&self.write_pool, self.db_session_id).await;
+            return None;
+        }
+
+        WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
         let has_pending_user_input =
             WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
                 .await
@@ -86,14 +106,14 @@ impl StreamReaderTask {
             );
             state.last_signal_status = Some(AgentStatus::Idle);
         }
-        WsEnvelope::new(
+        Some(WsEnvelope::new(
             "session",
             "ended",
             serde_json::to_value(SessionEndedPayload {
                 reason: "turn_complete".into(),
             })
             .unwrap(),
-        )
+        ))
     }
 
     pub(super) async fn handle_stream_error(&self, error: RuntimeError) {
