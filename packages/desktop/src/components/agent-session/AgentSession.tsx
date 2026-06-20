@@ -105,8 +105,9 @@ export const AgentSession = memo(
     // mixing scopes created dual-source bugs where the header showed
     // "In Progress" next to a visible Resume button.
     const isAgentWorking = status === "agent";
-    const workingLifecycle = isAgentWorking && !isCompacting ? lifecycle : undefined;
-    const turnWorkingLabel = useTurnWorkingLabel(workingLifecycle, turnTiming);
+    const timerLifecycle = isAgentWorking && !isCompacting ? lifecycle : undefined;
+    const streamLifecycle = isAgentWorking ? lifecycle : undefined;
+    const turnWorkingLabel = useTurnWorkingLabel(timerLifecycle, turnTiming);
     const workingLabel = isCompacting ? COMPACTING_BADGE.label : turnWorkingLabel;
 
     // ---- Collapsible state ----
@@ -295,7 +296,7 @@ export const AgentSession = memo(
         rootBlocks={rootBlocks}
         toolResultMap={toolResultMap}
         isAgentWorking={isAgentWorking}
-        lifecycle={workingLifecycle}
+        lifecycle={streamLifecycle}
         workingLabel={workingLabel}
         projectPath={projectPath}
         scrollContainerRef={scrollContainerRef}

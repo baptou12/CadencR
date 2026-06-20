@@ -212,6 +212,26 @@ describe("AgentSession canonical running state", () => {
     expect(screen.queryByText(/Working/)).not.toBeInTheDocument();
   });
 
+  it("shows Compacting in the full-height stream cursor while compaction is in progress", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[]}
+        status="agent"
+        isCompacting
+        lifecycle={{ phase: "active" }}
+        turnTiming={turnTiming(5_000)}
+        contextUsage={makeUsage()}
+        onSend={onSend}
+        onStop={onStop}
+      />,
+    );
+
+    expect(screen.getByText("Compacting…")).toBeInTheDocument();
+    expect(screen.getByText("█")).toBeInTheDocument();
+    expect(screen.queryByText(/Working/)).not.toBeInTheDocument();
+  });
+
   it("does not show the Compacting badge once compaction completes", () => {
     render(
       <AgentSession
