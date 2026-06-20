@@ -11,6 +11,7 @@ mod prompt_status;
 mod prompt_worktree;
 mod runtime_mcp;
 mod stream_reader;
+mod stream_reader_background_agents;
 mod stream_reader_forward;
 mod stream_reader_resume;
 mod stream_reader_task;
