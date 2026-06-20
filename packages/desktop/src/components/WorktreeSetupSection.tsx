@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRightIcon,
   CheckCircle2Icon,
@@ -8,6 +8,7 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { useGetFeatureSettings } from "@/api/generated";
+import { settingsArrayToMap } from "@/api/settings";
 import type { WorktreeStatus } from "@/types/workflow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,14 +98,17 @@ export function WorktreeSetupSection({
   onRetrySetup?: () => void;
 }) {
   const useWsMode = wsWorktreeStatus != null && wsWorktreeStatus !== "idle";
+  const hasWsSetupOutput = (wsWorktreeSetupOutput?.length ?? 0) > 0;
+  const shouldLoadSettings = !useWsMode || !hasWsSetupOutput;
+  const wsSetupLog = useMemo(
+    () => (hasWsSetupOutput ? (wsWorktreeSetupOutput ?? []).join("\n") : ""),
+    [hasWsSetupOutput, wsWorktreeSetupOutput],
+  );
 
   const { data: settingsArray } = useGetFeatureSettings(featureId, {
-    query: { enabled: !useWsMode },
+    query: { enabled: shouldLoadSettings },
   });
-  const settings =
-    !useWsMode && settingsArray
-      ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
-      : undefined;
+  const settings = useMemo(() => settingsArrayToMap(settingsArray), [settingsArray]);
 
   const retryWorktreeSetup = onRetrySetup;
 
@@ -112,7 +116,7 @@ export function WorktreeSetupSection({
     ? wsStatusToStep(wsWorktreeStatus!)
     : dbStepToSetupStep(settings?.worktree_setup_step);
   const log = useWsMode
-    ? (wsWorktreeSetupOutput ?? []).join("\n")
+    ? wsSetupLog || (settings?.worktree_setup_log ?? "")
     : (settings?.worktree_setup_log ?? "");
   const branch = useWsMode ? (wsWorktreeBranch ?? "") : (settings?.worktree_branch ?? "");
   const setupError = useWsMode ? (wsWorktreeError ?? "") : (settings?.worktree_setup_error ?? "");
