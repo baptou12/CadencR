@@ -10,7 +10,6 @@ use crate::error::AppError;
 
 mod audit;
 pub(crate) mod message_queue;
-mod permissions;
 mod scope;
 mod send_message;
 mod spawn_session;
@@ -367,11 +366,6 @@ mod tests {
     }
 
     async fn seed_send_message_schema(pool: &sqlx::SqlitePool, target_status: &'static str) {
-        crate::domain::settings_store::global_write_content(
-            r#"{"project_mcp_allow_send_message":"true"}"#,
-        )
-        .await
-        .unwrap();
         sqlx::raw_sql(&format!(
             r#"
             CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL);

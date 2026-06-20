@@ -2,7 +2,6 @@ use axum::{extract::ws::Message, extract::State, Json};
 use serde::{Deserialize, Serialize};
 
 use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
-use super::permissions::ensure_side_effect_enabled;
 use super::scope::resolve_session_scope;
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
@@ -39,10 +38,6 @@ pub(super) async fn send_message_handler(
     Json(body): Json<SendMessageRequest>,
 ) -> Result<Json<SendMessageResponse>, AppError> {
     let started_at = std::time::Instant::now();
-    ensure_side_effect_enabled(
-        "project_mcp_allow_send_message",
-        "project_send_session_message",
-    )?;
     let message = body.message.trim();
     if message.is_empty() {
         return Err(AppError::BadRequest(

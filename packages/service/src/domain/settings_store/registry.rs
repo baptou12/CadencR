@@ -44,7 +44,6 @@ impl SettingSpec {
 
 const BOOL: ValueKind = ValueKind::Bool;
 const NUMBER: ValueKind = ValueKind::Number;
-const MCP_WRITE_POLICY: ValueKind = ValueKind::Enum(&["ask", "true", "false"]);
 
 /// Validators for the Phase-4 editor tooling keys. Shared between the workspace
 /// (global default) and project scopes so a value valid at one scope is valid
@@ -92,9 +91,6 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         | "browser_mcp_enabled"
         | "project_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
         "workspace_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
-        "project_mcp_allow_spawn" | "project_mcp_allow_send_message" => {
-            SettingSpec::new(MCP_WRITE_POLICY, Some("ask"))
-        }
         "workspace_mcp_max_result_chars" => SettingSpec::new(NUMBER, Some("100000")),
         // Enums (mirrors the frontend option sets).
         "notification_mode" => SettingSpec::new(
@@ -166,13 +162,8 @@ mod tests {
                 .default,
             Some("100000")
         );
-        assert_eq!(
-            workspace_spec("project_mcp_allow_spawn").unwrap().default,
-            Some("ask")
-        );
-        assert!(workspace_spec("project_mcp_allow_spawn")
-            .unwrap()
-            .is_valid("false"));
+        assert!(workspace_spec("project_mcp_allow_spawn").is_none());
+        assert!(workspace_spec("project_mcp_allow_send_message").is_none());
     }
 
     #[test]

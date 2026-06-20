@@ -2,7 +2,6 @@ use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
 use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
-use super::permissions::ensure_side_effect_enabled;
 use super::scope::resolve_session_scope;
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
@@ -49,7 +48,6 @@ pub(super) async fn spawn_session_handler(
     Json(body): Json<SpawnSessionRequest>,
 ) -> Result<Json<SpawnSessionResponse>, AppError> {
     let started_at = std::time::Instant::now();
-    ensure_side_effect_enabled("project_mcp_allow_spawn", "project_spawn_session")?;
     let source = resolve_session_scope(&state.write_pool, body.source_session_id).await?;
     if source.feature_id != body.source_feature_id {
         let message = "source_session_id does not belong to source_feature_id".to_string();
