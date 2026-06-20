@@ -68,7 +68,7 @@ pub async fn ensure_worktree(
         return Ok(existing);
     }
 
-    match mode {
+    let result = match mode {
         WorktreeMode::Skip => unreachable!("handled above"),
         WorktreeMode::Reuse(branch) => {
             ensure_reuse(
@@ -79,7 +79,20 @@ pub async fn ensure_worktree(
         WorktreeMode::New => {
             ensure_new(read_pool, write_pool, feature_id, project_id, ws_sender).await
         }
+    };
+
+    // Surface a provisioning failure on the worktree chip (which may already be
+    // showing "creating") before the error propagates up to pause the prompt —
+    // the caller must never fall back to running the agent in the project root.
+    if let Err(ref error) = result {
+        send_envelope(
+            ws_sender,
+            "workflow",
+            "worktree.setup_error",
+            serde_json::json!({ "feature_id": feature_id, "error": error }),
+        );
     }
+    result
 }
 
 /// Create a new branch forked from `base` (or the project's current HEAD),
