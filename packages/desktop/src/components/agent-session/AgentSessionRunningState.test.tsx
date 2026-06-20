@@ -188,4 +188,47 @@ describe("AgentSession canonical running state", () => {
     expect(screen.getAllByText("Working - 5s").length).toBeGreaterThan(0);
     expect(container.querySelector(".context-usage-glow")).toBeInTheDocument();
   });
+
+  it("shows a distinct Compacting badge while a manual compact is in progress", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Streaming output")]}
+        status="agent"
+        isCompacting
+        lifecycle={{ phase: "active" }}
+        turnTiming={turnTiming(5_000)}
+        contextUsage={makeUsage()}
+        onSend={onSend}
+        onStop={onStop}
+        collapsible
+      />,
+    );
+
+    // Compaction takes precedence over the generic working badge AND the
+    // in-stream progress cursor so the wait is never mistaken for an ordinary
+    // slow/hung turn (issue #60).
+    expect(screen.getAllByText("Compacting…").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Working/)).not.toBeInTheDocument();
+  });
+
+  it("does not show the Compacting badge once compaction completes", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Streaming output")]}
+        status="agent"
+        isCompacting={false}
+        lifecycle={{ phase: "active" }}
+        turnTiming={turnTiming(5_000)}
+        contextUsage={makeUsage()}
+        onSend={onSend}
+        onStop={onStop}
+        collapsible
+      />,
+    );
+
+    expect(screen.queryByText("Compacting…")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Working - 5s").length).toBeGreaterThan(0);
+  });
 });

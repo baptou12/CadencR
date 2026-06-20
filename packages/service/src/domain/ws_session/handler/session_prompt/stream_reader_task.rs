@@ -43,6 +43,8 @@ pub(super) struct StreamReaderState {
     /// just-started turn (whose first event hasn't arrived yet, so
     /// `between_turns` is still its initial `true`) is never torn down.
     pub(super) saw_result: bool,
+    /// True while the runtime is inside a provider-reported compaction turn.
+    pub(super) compacting: bool,
 }
 
 enum ReaderAction {
@@ -64,6 +66,7 @@ impl StreamReaderState {
             last_signal_status: None,
             between_turns: true,
             saw_result: false,
+            compacting: false,
         }
     }
 }

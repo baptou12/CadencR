@@ -14,7 +14,7 @@ import { AGENT_ICONS } from "../agent-icons";
 import { useGetFeatureWorkingDir } from "../../api/generated";
 import { useAgentCatalog } from "../../api/agentRuntime";
 import { PROVIDER_IDS } from "@/lib/providers";
-import { AGENT_LABELS, STATUS_BADGE } from "./constants";
+import { AGENT_LABELS, COMPACTING_BADGE, STATUS_BADGE } from "./constants";
 import type { AgentSessionProps, AgentSessionHandle } from "./types";
 import { shallowEqualSkipFunctions } from "./shallowEqualSkipFunctions";
 import { useAgentSessionScroll } from "./useAgentSessionScroll";
@@ -41,6 +41,7 @@ export const AgentSession = memo(
       toolResultMap,
       historyPrependDisplayOffset,
       status,
+      isCompacting = false,
       lifecycle,
       turnTiming,
       onSend,
@@ -104,8 +105,9 @@ export const AgentSession = memo(
     // mixing scopes created dual-source bugs where the header showed
     // "In Progress" next to a visible Resume button.
     const isAgentWorking = status === "agent";
-    const workingLifecycle = isAgentWorking ? lifecycle : undefined;
-    const workingLabel = useTurnWorkingLabel(workingLifecycle, turnTiming);
+    const workingLifecycle = isAgentWorking && !isCompacting ? lifecycle : undefined;
+    const turnWorkingLabel = useTurnWorkingLabel(workingLifecycle, turnTiming);
+    const workingLabel = isCompacting ? COMPACTING_BADGE.label : turnWorkingLabel;
 
     // ---- Collapsible state ----
     const [internalOpen, setInternalOpen] = useState(true);
@@ -190,9 +192,11 @@ export const AgentSession = memo(
     };
 
     const isIdle = status === "idle" && blocks.length === 0;
-    const badge = isAgentWorking
-      ? { ...STATUS_BADGE.agent, label: workingLabel }
-      : STATUS_BADGE[status];
+    const badge = isCompacting
+      ? COMPACTING_BADGE
+      : isAgentWorking
+        ? { ...STATUS_BADGE.agent, label: workingLabel }
+        : STATUS_BADGE[status];
     const IconComponent = icon ?? AGENT_ICONS[agentType] ?? Loader2Icon;
     const displayLabel = label ?? AGENT_LABELS[agentType] ?? capitalize(agentType);
 

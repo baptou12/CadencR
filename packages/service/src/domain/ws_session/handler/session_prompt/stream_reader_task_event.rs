@@ -1,7 +1,7 @@
 use axum::extract::ws::Message;
 use tracing::{debug, error, info};
 
-use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeEvent};
+use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeEvent, RuntimeTurnStartedSource};
 use crate::domain::runtime_stream::{
     capture_runtime_session_id, permission_request_payload, persist_usage,
 };
@@ -30,6 +30,7 @@ impl StreamReaderTask {
         runtime_event: RuntimeEvent,
     ) {
         state.last_runtime_activity = tokio::time::Instant::now();
+        self.forward_compaction_state(state, &runtime_event).await;
 
         match forward_immediate_event(self, &runtime_event).await {
             // `prompt_received` / `commands.updated` / `stream_status` are
@@ -191,6 +192,38 @@ impl StreamReaderTask {
             .send_and_mirror(Message::Text(String::from(envelope).into()))
             .await;
         true
+    }
+
+    /// Emit `session.compacting` when a provider reports a compaction start/end.
+    async fn forward_compaction_state(
+        &self,
+        state: &mut StreamReaderState,
+        runtime_event: &RuntimeEvent,
+    ) {
+        let next = if matches!(
+            runtime_event.turn_started_source(),
+            Some(RuntimeTurnStartedSource::ContextCompaction)
+                | Some(RuntimeTurnStartedSource::ManualCompact)
+        ) {
+            true
+        } else if runtime_event.is_compact_boundary() || runtime_event.is_result() {
+            false
+        } else {
+            return;
+        };
+
+        if state.compacting == next {
+            return;
+        }
+        state.compacting = next;
+        let envelope = WsEnvelope::new(
+            "session",
+            "compacting",
+            serde_json::json!({ "active": next }),
+        );
+        let _ = self
+            .send_and_mirror(Message::Text(String::from(envelope).into()))
+            .await;
     }
 
     async fn handle_non_result_signal(

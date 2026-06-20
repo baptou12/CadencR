@@ -2,6 +2,7 @@ import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import {
   parseClearedPayload,
+  parseCompactingPayload,
   parseGateClosedPayload,
   parseInitializedPayload,
   parseMcpServersPayload,
@@ -29,6 +30,14 @@ import { transitionTurn } from "./ws-turn-lifecycle";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
 import { markPromptReceived, movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
+
+export function handleCompacting(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseCompactingPayload(payload);
+  if (!p) return;
+  const session = ctx.getSession(sessionId);
+  if (session.runtimeCompacting === p.active) return;
+  ctx.set(updateSession(ctx.get(), sessionId, { runtimeCompacting: p.active }));
+}
 
 export function handleGateClosed(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseGateClosedPayload(payload);

@@ -199,6 +199,13 @@ export function parseFeatureUpdatedPayload(
   };
 }
 
+export function parseCompactingPayload(payload: unknown): { active: boolean } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const active = optionalBoolean(record, "active");
+  return active == null ? null : { active };
+}
+
 export function parseMessageBlocksPayload(payload: unknown): { blocks: unknown[] } | null {
   const record = asRecord(payload);
   if (!record) return null;
