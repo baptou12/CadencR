@@ -987,6 +987,17 @@ export interface MessageFullContentResponse {
   content: string;
 }
 
+export type MessagePreviewResponsePreview = string | null;
+
+/**
+ * Notification preview: the start of the agent's latest text reply for a
+feature, cleaned to a single line. `null` when the feature has no agent
+reply yet (callers fall back to the feature title).
+ */
+export interface MessagePreviewResponse {
+  preview?: MessagePreviewResponsePreview;
+}
+
 export type ModelCatalogEntryDescription = string | null;
 
 export type ModelCatalogEntrySupportedEffortLevels = string[] | null;
@@ -1210,6 +1221,36 @@ appends a `\n` if the caller didn't, since every prompt we care about
 export interface PushInputBody {
   feature_id: number;
   text: string;
+}
+
+/**
+ * Body of `POST /api/push/subscribe`. Mirrors `PushSubscription.toJSON()`.
+ */
+export interface PushSubscribeRequest {
+  endpoint: string;
+  keys: PushSubscriptionKeys;
+}
+
+/**
+ * The `keys` object a browser's `PushSubscription` exposes (base64url).
+ */
+export interface PushSubscriptionKeys {
+  auth: string;
+  p256dh: string;
+}
+
+/**
+ * Generic ack for the subscribe/unsubscribe mutations.
+ */
+export interface PushSubscriptionResponse {
+  ok: boolean;
+}
+
+/**
+ * Body of `DELETE /api/push/subscribe`.
+ */
+export interface PushUnsubscribeRequest {
+  endpoint: string;
 }
 
 export interface ReadFileResponse {
@@ -1755,6 +1796,14 @@ export type UpsertProfileRequestEnv = { [key: string]: string };
 
 export interface UpsertProfileRequest {
   env: UpsertProfileRequestEnv;
+}
+
+/**
+ * `GET /api/push/vapid-key` response: the server's VAPID public key, base64url,
+for the browser's `pushManager.subscribe({ applicationServerKey })`.
+ */
+export interface VapidKeyResponse {
+  public_key: string;
 }
 
 export type WorkingDirResponsePath = string | null;
@@ -5556,6 +5605,64 @@ export const useClearAllDiffViewed = <TError = ErrorType<unknown>, TContext = un
 
   return useMutation(mutationOptions);
 };
+
+export const getMessagePreview = (featureId: number, signal?: AbortSignal) => {
+  return customInstance<MessagePreviewResponse>({
+    url: `/api/features/${featureId}/message-preview`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetMessagePreviewQueryKey = (featureId?: number) => {
+  return [`/api/features/${featureId}/message-preview`] as const;
+};
+
+export const getGetMessagePreviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMessagePreview>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMessagePreview>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMessagePreviewQueryKey(featureId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMessagePreview>>> = ({ signal }) =>
+    getMessagePreview(featureId, signal);
+
+  return { queryKey, queryFn, enabled: !!featureId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMessagePreview>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMessagePreviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMessagePreview>>
+>;
+export type GetMessagePreviewQueryError = ErrorType<unknown>;
+
+export function useGetMessagePreview<
+  TData = Awaited<ReturnType<typeof getMessagePreview>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMessagePreview>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMessagePreviewQueryOptions(featureId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getSessions = (featureId: number, signal?: AbortSignal) => {
   return customInstance<AgentSessionRow[]>({
@@ -9861,6 +9968,185 @@ export const usePutProjectSettingsFile = <
 
   return useMutation(mutationOptions);
 };
+
+export const subscribe = (pushSubscribeRequest: PushSubscribeRequest, signal?: AbortSignal) => {
+  return customInstance<PushSubscriptionResponse>({
+    url: `/api/push/subscribe`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pushSubscribeRequest,
+    signal,
+  });
+};
+
+export const getSubscribeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof subscribe>>,
+    TError,
+    { data: PushSubscribeRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof subscribe>>,
+  TError,
+  { data: PushSubscribeRequest },
+  TContext
+> => {
+  const mutationKey = ["subscribe"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof subscribe>>,
+    { data: PushSubscribeRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return subscribe(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubscribeMutationResult = NonNullable<Awaited<ReturnType<typeof subscribe>>>;
+export type SubscribeMutationBody = PushSubscribeRequest;
+export type SubscribeMutationError = ErrorType<unknown>;
+
+export const useSubscribe = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof subscribe>>,
+    TError,
+    { data: PushSubscribeRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof subscribe>>,
+  TError,
+  { data: PushSubscribeRequest },
+  TContext
+> => {
+  const mutationOptions = getSubscribeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const unsubscribe = (pushUnsubscribeRequest: PushUnsubscribeRequest) => {
+  return customInstance<PushSubscriptionResponse>({
+    url: `/api/push/subscribe`,
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    data: pushUnsubscribeRequest,
+  });
+};
+
+export const getUnsubscribeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unsubscribe>>,
+    TError,
+    { data: PushUnsubscribeRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unsubscribe>>,
+  TError,
+  { data: PushUnsubscribeRequest },
+  TContext
+> => {
+  const mutationKey = ["unsubscribe"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unsubscribe>>,
+    { data: PushUnsubscribeRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return unsubscribe(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnsubscribeMutationResult = NonNullable<Awaited<ReturnType<typeof unsubscribe>>>;
+export type UnsubscribeMutationBody = PushUnsubscribeRequest;
+export type UnsubscribeMutationError = ErrorType<unknown>;
+
+export const useUnsubscribe = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unsubscribe>>,
+    TError,
+    { data: PushUnsubscribeRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unsubscribe>>,
+  TError,
+  { data: PushUnsubscribeRequest },
+  TContext
+> => {
+  const mutationOptions = getUnsubscribeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const vapidKey = (signal?: AbortSignal) => {
+  return customInstance<VapidKeyResponse>({ url: `/api/push/vapid-key`, method: "GET", signal });
+};
+
+export const getVapidKeyQueryKey = () => {
+  return [`/api/push/vapid-key`] as const;
+};
+
+export const getVapidKeyQueryOptions = <
+  TData = Awaited<ReturnType<typeof vapidKey>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof vapidKey>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getVapidKeyQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof vapidKey>>> = ({ signal }) =>
+    vapidKey(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof vapidKey>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type VapidKeyQueryResult = NonNullable<Awaited<ReturnType<typeof vapidKey>>>;
+export type VapidKeyQueryError = ErrorType<unknown>;
+
+export function useVapidKey<
+  TData = Awaited<ReturnType<typeof vapidKey>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof vapidKey>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getVapidKeyQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const remoteRevokeDevice = (id: number) => {
   return customInstance<RemoteStatus>({ url: `/api/remote/devices/${id}`, method: "DELETE" });

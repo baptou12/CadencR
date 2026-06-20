@@ -109,6 +109,10 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(discovery_router())
         .merge(imports_router())
         .merge(lsp_router())
+        // VAPID public key — shared, so the frontend can fetch it on either
+        // listener. Subscription management (device-keyed) is remote-only and
+        // merged separately in `build_remote_router`.
+        .merge(crate::domain::push::routes::vapid_key_router())
         .route("/ws", get(ws_handler))
         .route("/api/agent-catalog", get(get_agent_catalog))
 }
@@ -150,6 +154,9 @@ pub fn build_remote_router(
     let limiter = std::sync::Arc::new(middleware::RateLimiter::default());
     build_api_routes()
         .merge(crate::domain::remote::public_router())
+        // Device-keyed push subscription endpoints: remote-only, since they read
+        // the device id injected by `remote_auth_middleware` (loopback has none).
+        .merge(crate::domain::push::routes::remote_router())
         // Keep API misses API-shaped. Without this, an authenticated request for
         // a loopback-only or typoed `/api/*` path would fall through to
         // `index.html`, obscuring routing mistakes and weakening the "remote

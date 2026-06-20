@@ -21,4 +21,4 @@ mod test_support;
 
 pub use drafts::{get_draft, get_message_content, save_draft};
 pub use feature_state::get_feature_agent_state;
-pub use queries::{get_session_status_snapshot, get_sessions};
+pub use queries::{get_session_status_snapshot, get_sessions, latest_assistant_preview};

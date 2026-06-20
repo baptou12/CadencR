@@ -52,6 +52,12 @@ axum-server = { version = "0.7", features = ["tls-rustls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 subtle = "2.6"
 if-addrs = "0.13"
+# Web Push (PWA/remote background notifications): VAPID signing + RFC 8291
+# payload encryption. `hyper-client` avoids the default isahc/libcurl backend;
+# hyper-tls uses native-tls, already pulled in by reqwest. `jwt-simple`
+# (pure-rust, the same crate web-push uses for ES256) generates the VAPID keypair.
+web-push = { version = "0.11", default-features = false, features = ["hyper-client"] }
+jwt-simple = { version = "0.12", default-features = false, features = ["pure-rust"] }
 
 [[bin]]
 name = "dump-openapi"

@@ -24,6 +24,8 @@ use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
+use crate::domain::push::models as push_models;
+use crate::domain::push::routes as push_routes;
 use crate::domain::remote::models as remote_models;
 use crate::domain::remote::routes as remote_routes;
 use crate::domain::sessions::models as sessions_models;
@@ -162,6 +164,7 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
         sessions_routes::get_message_full_content_handler,
+        sessions_routes::get_message_preview_handler,
         terminal_routes::list_terminal_sessions_handler,
         terminal_routes::kill_terminal_sessions_handler,
         super::get_agent_catalog,
@@ -187,6 +190,9 @@ use crate::domain::workspace::routes as workspace_routes;
         remote_routes::revoke_handler,
         remote_routes::set_tunnel_host_handler,
         remote_routes::pair_handler,
+        push_routes::vapid_key_handler,
+        push_routes::subscribe_handler,
+        push_routes::unsubscribe_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -335,6 +341,7 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_models::SaveDraftRequest,
         sessions_models::SaveDraftResponse,
         sessions_models::MessageFullContentResponse,
+        sessions_models::MessagePreviewResponse,
         terminal_routes::TerminalSessionInfo,
         terminal_routes::KillTerminalsResponse,
         claude_code_routes::ProfileView,
@@ -366,6 +373,11 @@ use crate::domain::workspace::routes as workspace_routes;
         remote_models::PairRequest,
         remote_models::PairResponse,
         remote_models::TunnelHostRequest,
+        push_models::VapidKeyResponse,
+        push_models::PushSubscribeRequest,
+        push_models::PushUnsubscribeRequest,
+        push_models::PushSubscriptionKeys,
+        push_models::PushSubscriptionResponse,
     ))
 )]
 struct ApiDoc;

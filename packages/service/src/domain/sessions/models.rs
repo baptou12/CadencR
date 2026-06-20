@@ -199,6 +199,14 @@ pub struct MessageFullContentResponse {
     pub content: String,
 }
 
+/// Notification preview: the start of the agent's latest text reply for a
+/// feature, cleaned to a single line. `null` when the feature has no agent
+/// reply yet (callers fall back to the feature title).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MessagePreviewResponse {
+    pub preview: Option<String>,
+}
+
 /// Raw row used by `get_session_status_snapshot`. Boolean projections of
 /// the active `pending_*` columns keep the SQL → derive pipeline trivial.
 #[derive(Debug, sqlx::FromRow)]

@@ -37,6 +37,7 @@ pub mod lsp;
 pub mod mcp;
 pub mod permission_bridge;
 pub mod projects;
+pub mod push;
 pub mod remote;
 pub mod runtime_stream;
 pub mod session_status;
