@@ -1,31 +1,5 @@
 use super::support::*;
 
-fn spawn_test_stream_reader(
-    app_state: &AppState,
-    db_session_id: i64,
-    feature_id: i64,
-    msg_rx: RuntimeMessageRx,
-    ws_tx: WsSender,
-    sdk_sessions: SdkSessions,
-    runtime_provider: &str,
-) {
-    session_prompt::spawn_stream_reader(
-        db_session_id,
-        feature_id,
-        msg_rx,
-        ws_tx,
-        app_state.ws_feature_senders.clone(),
-        app_state.write_pool.clone(),
-        app_state.session_status_tx.clone(),
-        sdk_sessions,
-        runtime_provider.to_string(),
-        None,
-        None,
-        app_state.clone(),
-        false,
-    );
-}
-
 #[tokio::test]
 async fn test_stream_reader_transitions_active_to_pending_on_stream_close() {
     let app_state = make_test_app_state().await;

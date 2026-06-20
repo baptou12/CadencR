@@ -6,6 +6,8 @@
 
 mod support;
 
+mod reader_spawn;
+
 mod app;
 mod bidirectional_controls;
 mod codex_provider;
