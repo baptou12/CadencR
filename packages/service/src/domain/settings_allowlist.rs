@@ -148,13 +148,31 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "workspace_mcp_max_result_chars",
     "project_mcp_allow_spawn",
     "project_mcp_allow_send_message",
+    // Remote access (host UI). `remote_access_enabled` persists whether the
+    // remote listener auto-starts at launch; `remote_tunnel_host` holds an
+    // optional tunnel hostname (e.g. Tailscale) added to the Host/Origin
+    // allowlist. Both are written via the settings store, so we reference the
+    // canonical key constants to keep this allowlist in sync with their source.
+    crate::remote::REMOTE_ENABLED_SETTING,
+    crate::remote::REMOTE_TUNNEL_HOST_SETTING,
 ];
 
-/// Prefixes whose suffix is a free-form provider/model identifier. Suffix
-/// characters are restricted to ASCII alphanumerics plus `._-` to keep the
-/// allowlist tight while accepting real model ids like `claude-sonnet-4-5` or
-/// `claude_code_claude-opus-4`.
+/// Prefixes whose suffix is a free-form `<provider>_<model-id>` identifier.
+/// Models are discovered dynamically per provider, so the suffix can't be
+/// enumerated — it carries whatever characters a provider's ids use: OpenCode
+/// provider-scoped refs (`opencode_openai/gpt-5.4`, the `/`), the `[1m]`
+/// 1M-context suffix (`claude_code_claude-fable-5[1m]`, the brackets), version
+/// dots, and so on. The suffix is only ever a JSON object key whose value is a
+/// constrained effort level — it never reaches a path or shell — so we accept
+/// any non-empty suffix and reject only whitespace/control characters (which no
+/// real model id contains) rather than maintaining a brittle character set.
 const WORKSPACE_MODEL_PREFIXES: &[&str] = &["thinking_effort_model_"];
+
+/// Whether `suffix` is a plausible `<provider>_<model-id>` identifier: non-empty
+/// and free of whitespace and control characters.
+fn is_model_suffix(suffix: &str) -> bool {
+    !suffix.is_empty() && !suffix.chars().any(|c| c.is_whitespace() || c.is_control())
+}
 
 pub fn is_feature_key_allowed(key: &str) -> bool {
     FEATURE_ALLOWED_KEYS.contains(&key)
@@ -168,14 +186,9 @@ pub fn is_workspace_key_allowed(key: &str) -> bool {
     if WORKSPACE_ALLOWED_KEYS.contains(&key) {
         return true;
     }
-    WORKSPACE_MODEL_PREFIXES.iter().any(|p| {
-        key.strip_prefix(p).is_some_and(|rest| {
-            !rest.is_empty()
-                && rest
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        })
-    })
+    WORKSPACE_MODEL_PREFIXES
+        .iter()
+        .any(|p| key.strip_prefix(p).is_some_and(is_model_suffix))
 }
 
 #[cfg(test)]
@@ -337,13 +350,43 @@ mod tests {
         assert!(is_workspace_key_allowed(
             "thinking_effort_model_provider_model.v2"
         ));
+        // OpenCode provider-scoped refs carry a `/`, and the `[1m]` 1M-context
+        // suffix carries brackets — both are legitimate model ids and must be
+        // accepted, not flagged as unrecognized settings.
+        assert!(is_workspace_key_allowed(
+            "thinking_effort_model_opencode_openai/gpt-5.4"
+        ));
+        assert!(is_workspace_key_allowed(
+            "thinking_effort_model_claude_code_claude-fable-5[1m]"
+        ));
+        assert!(is_workspace_key_allowed(
+            "thinking_effort_model_claude_code_us.anthropic.claude-sonnet-4-6[1m]"
+        ));
+        // Dynamically discovered ids: a `-mini` variant the catalog grew later
+        // must be accepted without touching this file.
+        assert!(is_workspace_key_allowed(
+            "thinking_effort_model_opencode_openai/gpt-5.4-mini"
+        ));
     }
     #[test]
     fn workspace_rejects_malformed_per_model_thinking_effort_keys() {
+        // The suffix is an opaque model id (a JSON key, never a path/shell arg),
+        // so we reject only what no real id contains: emptiness, whitespace, and
+        // control characters.
         assert!(!is_workspace_key_allowed("thinking_effort_model_"));
-        assert!(!is_workspace_key_allowed("thinking_effort_model_a/b"));
-        assert!(!is_workspace_key_allowed("thinking_effort_model_a;drop"));
         assert!(!is_workspace_key_allowed("thinking_effort_model_a b"));
+        assert!(!is_workspace_key_allowed("thinking_effort_model_a\tb"));
+        assert!(!is_workspace_key_allowed("thinking_effort_model_a\nb"));
+    }
+    #[test]
+    fn workspace_accepts_remote_access_settings() {
+        // Written internally via the settings store (crate::remote), so the
+        // read-time validator must recognize them or it flags the user's own
+        // settings.json keys as unrecognized.
+        assert!(is_workspace_key_allowed("remote_access_enabled"));
+        assert!(is_workspace_key_allowed("remote_tunnel_host"));
+        assert!(!is_feature_key_allowed("remote_access_enabled"));
+        assert!(!is_project_key_allowed("remote_access_enabled"));
     }
     #[test]
     fn workspace_accepts_notification_mode() {
