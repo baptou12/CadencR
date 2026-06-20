@@ -161,11 +161,26 @@ pub async fn get_message_full_content_handler(
     Ok(Json(MessageFullContentResponse { content }))
 }
 
+#[utoipa::path(get, path = "/api/features/{feature_id}/message-preview",
+    params(("feature_id" = i64, Path,)),
+    responses((status = 200, body = MessagePreviewResponse)))]
+pub async fn get_message_preview_handler(
+    State(state): State<AppState>,
+    Path(feature_id): Path<i64>,
+) -> Result<Json<MessagePreviewResponse>, AppError> {
+    let preview = repository::latest_assistant_preview(&state.read_pool, feature_id).await?;
+    Ok(Json(MessagePreviewResponse { preview }))
+}
+
 pub fn sessions_router() -> Router<AppState> {
     Router::new()
         .route(
             "/api/features/{feature_id}/sessions",
             get(get_sessions_handler),
+        )
+        .route(
+            "/api/features/{feature_id}/message-preview",
+            get(get_message_preview_handler),
         )
         .route(
             "/api/features/{feature_id}/agent-state",

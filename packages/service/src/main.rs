@@ -153,6 +153,11 @@ async fn main() -> anyhow::Result<()> {
             // live refresh to connected clients.
             domain::settings_store::watcher::start(&settings_dir, state.settings_events_tx.clone());
 
+            // Background Web Push dispatcher: turns agent finished / needs-input
+            // transitions into native push for backgrounded remote PWAs. Cheap
+            // when no subscriptions exist; runs for the process lifetime.
+            tokio::spawn(domain::push::dispatcher::run(state.clone()));
+
             // Push user-selected CLI binary paths into the SDK overrides
             // BEFORE the warmup runs — the opencode warmup spawns the server
             // process, which needs to honor the override on first launch.

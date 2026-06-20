@@ -15,6 +15,7 @@ use crate::domain::imports::jobs::ImportJobRegistry;
 use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
 use crate::domain::mcp::loopback::is_loopback_host;
+use crate::domain::push::PushNotifier;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
 use crate::domain::ws_session::handler::{new_sdk_sessions, ActiveTurnRegistry};
@@ -162,6 +163,10 @@ pub struct AppState {
     /// Lifecycle owner for the optional remote-access TLS listener. Shared
     /// (`Arc`) and interior-mutable; the loopback server is unaffected.
     pub remote: Arc<RemoteController>,
+    /// Web Push (VAPID) keypair + client for PWA/remote background notifications.
+    /// Shared by the subscription endpoints and the push dispatcher. See
+    /// `domain::push`.
+    pub push: Arc<PushNotifier>,
 }
 
 impl AppState {
@@ -198,6 +203,16 @@ impl AppState {
         let (file_change_tx, _) = broadcast::channel(16);
         let (settings_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
+        // VAPID keys live next to the other remote secrets. Failure here is
+        // non-fatal — fall back to an ephemeral key so the loopback server still
+        // boots; push just won't survive a restart until the file is writable.
+        let push = Arc::new(
+            PushNotifier::load_or_generate(&crate::remote::paths::remote_data_dir())
+                .unwrap_or_else(|err| {
+                    tracing::warn!(%err, "VAPID key load/generate failed; using ephemeral key");
+                    PushNotifier::ephemeral()
+                }),
+        );
         Self {
             read_pool,
             write_pool,
@@ -231,6 +246,7 @@ impl AppState {
             lsp_crashes: CrashTracker::new(),
             import_jobs: ImportJobRegistry::new(),
             remote,
+            push,
         }
     }
 
@@ -286,6 +302,7 @@ impl AppState {
                 remote_port: 0,
                 data_dir: std::env::temp_dir().join("cadencr-remote-test"),
             })),
+            push: Arc::new(PushNotifier::ephemeral()),
         }
     }
 

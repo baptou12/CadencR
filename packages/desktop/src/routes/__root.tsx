@@ -34,6 +34,7 @@ import {
   listenForNotificationFailures,
   listenForNotificationFallbacks,
 } from "@/lib/notify-agent-done";
+import { listenForPushNavigation } from "@/lib/remote/push-register";
 import { useAppClose } from "@/hooks/useAppClose";
 import { useRemotePairingToast } from "@/hooks/useRemotePairingToast";
 import { SidebarContext } from "@/components/SidebarContext";
@@ -120,6 +121,9 @@ function RootLayout() {
   useEffect(() => listenForNotificationClicks(navigate, queryClient), [navigate, queryClient]);
   useEffect(() => listenForNotificationFallbacks(navigate, queryClient), [navigate, queryClient]);
   useEffect(() => listenForNotificationFailures(), []);
+  // Web Push (PWA/remote): route notification clicks to the right session. No-op
+  // in the desktop shell and when push is unsupported.
+  useEffect(() => listenForPushNavigation(navigate, queryClient), [navigate, queryClient]);
   const routerState = useRouterState();
   const routeParams = (routerState.location.pathname.match(
     /\/projects\/(\d+)(?:\/features\/(\d+))?/,
