@@ -23,21 +23,6 @@ fn provider_for_model(current_provider: &str, model: &str) -> String {
         })
 }
 
-fn should_clear_thinking_effort(
-    target_provider: &str,
-    target_model: &str,
-    current_effort: Option<&str>,
-) -> bool {
-    let Some(effort) = current_effort else {
-        return false;
-    };
-    adapter_for_model(target_model)
-        .map(|(_, adapter)| adapter)
-        .or_else(|| runtime_adapter(target_provider))
-        .and_then(|adapter| adapter.supports_thinking_effort_level(target_model, effort))
-        == Some(false)
-}
-
 /// Handle session.model.set: change the model and persist to DB.
 pub(crate) async fn handle_model_set(
     envelope: WsEnvelope,
@@ -91,7 +76,7 @@ pub(crate) async fn handle_model_set(
         return;
     }
 
-    let should_clear_effort = should_clear_thinking_effort(
+    let should_clear_effort = super::super::thinking_effort::should_clear_for_model(
         &target_provider,
         &payload.model,
         handle.desired_thinking_effort.as_deref(),
