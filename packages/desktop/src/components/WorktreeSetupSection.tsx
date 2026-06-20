@@ -199,47 +199,53 @@ export function WorktreeSetupSection({
         />
         <GitBranchIcon className="size-3.5 shrink-0" />
         <span className="shrink-0 text-xs font-medium">Worktree Setup</span>
-        {branch && (
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate text-xs font-mono text-muted-foreground">{branch}</span>
-            <CopyButton
-              text={branch}
-              label="Copy branch name"
-              copiedLabel="Copied branch name"
-              idleClassName="text-muted-foreground opacity-70"
-              iconClassName="size-3"
-              className="shrink-0 hover:text-foreground"
-            />
-          </div>
-        )}
-        <Badge
-          variant="secondary"
-          className={cn(
-            "shrink-0 gap-1 text-[10px] px-1.5 py-0",
-            isDone && "bg-green-500/15 text-green-400",
-            isRunning && "bg-blue-500/15 text-blue-400",
-            isError && "bg-red-500/15 text-red-400",
+        {/* The branch + status badge share one `flex-1` wrapper so the wrapper
+            gets a bounded width (mobile truncation still works), while the badge
+            stays glued to the branch name instead of being flushed to the row's
+            far right on wide desktop viewports. */}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {branch && (
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-xs font-mono text-muted-foreground">{branch}</span>
+              <CopyButton
+                text={branch}
+                label="Copy branch name"
+                copiedLabel="Copied branch name"
+                idleClassName="text-muted-foreground opacity-70"
+                iconClassName="size-3"
+                className="shrink-0 hover:text-foreground"
+              />
+            </div>
           )}
-        >
-          {isDone && (
-            <>
-              <CheckCircle2Icon className="size-2.5" />
-              ready
-            </>
-          )}
-          {isRunning && (
-            <>
-              <Loader2Icon className="size-2.5 animate-spin" />
-              running
-            </>
-          )}
-          {isError && (
-            <>
-              <AlertCircleIcon className="size-2.5" />
-              error
-            </>
-          )}
-        </Badge>
+          <Badge
+            variant="secondary"
+            className={cn(
+              "shrink-0 gap-1 text-[10px] px-1.5 py-0",
+              isDone && "bg-green-500/15 text-green-400",
+              isRunning && "bg-blue-500/15 text-blue-400",
+              isError && "bg-red-500/15 text-red-400",
+            )}
+          >
+            {isDone && (
+              <>
+                <CheckCircle2Icon className="size-2.5" />
+                ready
+              </>
+            )}
+            {isRunning && (
+              <>
+                <Loader2Icon className="size-2.5 animate-spin" />
+                running
+              </>
+            )}
+            {isError && (
+              <>
+                <AlertCircleIcon className="size-2.5" />
+                error
+              </>
+            )}
+          </Badge>
+        </div>
       </div>
 
       {/* Expanded details */}
