@@ -220,3 +220,60 @@ async fn test_opencode_model_set_clears_effort_when_new_model_does_not_support_i
             .unwrap();
     assert_eq!(persisted, None);
 }
+
+#[tokio::test]
+async fn test_opencode_init_clears_stored_effort_when_model_does_not_support_it() {
+    let app_state = make_test_app_state().await;
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let feature_id = 1i64;
+
+    let db_id = sqlx::query(
+        "INSERT INTO agent_sessions \
+         (feature_id, agent_type, status, model, runtime_provider, thinking_effort) \
+         VALUES (?, 'session', 'idle', 'openrouter/z-ai/glm-5.2', 'opencode', 'medium')",
+    )
+    .bind(feature_id)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+
+    let envelope = make_envelope(
+        "session",
+        "init",
+        serde_json::json!({
+            "cwd": "/tmp/test",
+            "feature_id": feature_id,
+        }),
+    );
+    dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+    let msg = rx.recv().await.unwrap();
+    let Message::Text(text) = msg else {
+        panic!("expected text message");
+    };
+    let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+    assert_eq!(env.action, "initialized");
+    let payload: SessionInitializedPayload = serde_json::from_value(env.payload).unwrap();
+    assert_eq!(payload.session_id, db_id.to_string());
+    assert_eq!(payload.thinking_effort, None);
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&db_id).unwrap();
+    assert_eq!(handle.desired_thinking_effort, None);
+    assert_eq!(handle.config.thinking_effort, None);
+    let QueryState::Pending(options) = &handle.state else {
+        panic!("expected pending session before first prompt");
+    };
+    assert_eq!(options.thinking_effort, None);
+    drop(sessions);
+
+    let persisted: Option<String> =
+        sqlx::query_scalar("SELECT thinking_effort FROM agent_sessions WHERE id = ?")
+            .bind(db_id)
+            .fetch_one(&app_state.read_pool)
+            .await
+            .unwrap();
+    assert_eq!(persisted, None);
+}
