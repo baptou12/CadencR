@@ -27,13 +27,14 @@ pub(crate) async fn dispatch_control_prompt(
     session_id: i64,
     text: &str,
 ) -> Result<(), AppError> {
-    let payload = replay_payload(session_id, text);
+    let mut payload = replay_payload(session_id, text, None);
     let sender = control_sender();
 
     if dispatch_to_active_owner(app_state, &sender, session_id, payload.clone()).await {
         return Ok(());
     }
 
+    payload.use_worktree = control_use_worktree(&app_state.read_pool, feature_id).await;
     ensure_control_pending_handle(app_state, feature_id, session_id).await?;
     dispatch_control_pending(
         app_state,
@@ -297,17 +298,79 @@ fn session_config(options: &RuntimeSpawnConfig) -> SessionConfig {
     }
 }
 
-fn replay_payload(session_id: i64, text: &str) -> PromptSendPayload {
+fn replay_payload(session_id: i64, text: &str, use_worktree: Option<bool>) -> PromptSendPayload {
     PromptSendPayload {
         session_id: session_id.to_string(),
         text: text.to_string(),
         claude_profile: None,
         images: Vec::new(),
         attachments: Vec::new(),
-        use_worktree: None,
+        use_worktree,
         new_project_branch: None,
         client_message_id: None,
         replay: true,
+    }
+}
+
+async fn control_use_worktree(pool: &sqlx::SqlitePool, feature_id: i64) -> Option<bool> {
+    match worktree::get_setting(pool, feature_id, "worktree_mode")
+        .await
+        .as_deref()
+    {
+        Some("new" | "reuse") => Some(true),
+        Some("skip") => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    use super::*;
+
+    async fn pool_with_feature_settings() -> sqlx::SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect(":memory:")
+            .await
+            .expect("pool");
+        sqlx::query(
+            "CREATE TABLE feature_settings (
+                feature_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (feature_id, key)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("schema");
+        pool
+    }
+
+    #[tokio::test]
+    async fn control_use_worktree_enables_spawned_worktree_features() {
+        let pool = pool_with_feature_settings().await;
+        worktree::set_setting(&pool, 42, "worktree_mode", "new")
+            .await
+            .expect("set worktree mode");
+
+        assert_eq!(control_use_worktree(&pool, 42).await, Some(true));
+    }
+
+    #[tokio::test]
+    async fn control_use_worktree_does_not_default_missing_mode_to_worktree() {
+        let pool = pool_with_feature_settings().await;
+
+        assert_eq!(control_use_worktree(&pool, 42).await, None);
+    }
+
+    #[test]
+    fn replay_payload_preserves_supplied_worktree_intent() {
+        let payload = replay_payload(7, "start", Some(true));
+
+        assert_eq!(payload.use_worktree, Some(true));
+        assert!(payload.replay);
     }
 }
 

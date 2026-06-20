@@ -207,6 +207,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn latest_limited_hydration_keeps_initial_user_message_anchor() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "completed").await;
+
+        let initial_id = insert_message(
+            &pool,
+            session_id,
+            "user_message",
+            "original spawned prompt",
+            None,
+            None,
+            None,
+        )
+        .await;
+        for i in 0..105 {
+            insert_message(
+                &pool,
+                session_id,
+                "tool_call",
+                "{}",
+                Some("Read"),
+                Some(&format!("tu-anchor-{i}")),
+                None,
+            )
+            .await;
+        }
+
+        let state = get_feature_agent_state(&pool, fid.0, None, Some(100), None)
+            .await
+            .unwrap();
+        let session = &state.sessions[0];
+
+        assert!(session.has_more);
+        assert_ne!(session.oldest_message_id, Some(initial_id));
+        assert!(
+            session
+                .blocks
+                .iter()
+                .any(|block| block.type_ == "user_message"
+                    && block.content == "original spawned prompt"),
+            "initial user prompt should remain visible even when latest-window hydration is limited"
+        );
+    }
+
+    #[tokio::test]
     async fn test_get_feature_agent_state_block_cap_trims_and_sets_has_more() {
         let pool = setup_test_db().await;
         let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
