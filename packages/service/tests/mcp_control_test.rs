@@ -48,8 +48,8 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
         (
             feature_id,
             "paused".into(),
-            "missing_provider".into(),
-            "missing-model".into(),
+            "claude_code".into(),
+            "opus".into(),
             "auto_review".into()
         )
     );

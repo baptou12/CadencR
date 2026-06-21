@@ -148,14 +148,37 @@ pub fn spawn_request_with_link(link_to_current_session: bool) -> Request<Body> {
 }
 
 pub fn spawn_request_with_branch(branch: Value, link_to_current_session: bool) -> Request<Body> {
+    spawn_request_with_provider_model(branch, link_to_current_session, "claude_code", "opus")
+}
+
+pub fn spawn_request_with_provider_model(
+    branch: Value,
+    link_to_current_session: bool,
+    provider: &str,
+    model: &str,
+) -> Request<Body> {
+    spawn_request_with_optional_provider_model(
+        branch,
+        link_to_current_session,
+        Some(provider),
+        model,
+    )
+}
+
+pub fn spawn_request_with_optional_provider_model(
+    branch: Value,
+    link_to_current_session: bool,
+    provider: Option<&str>,
+    model: &str,
+) -> Request<Body> {
     let body = json!({
         "source_feature_id": 42,
         "source_session_id": 777,
         "title": "Investigate flaky login test",
         "initial_message": "Please investigate and report findings.",
         "branch": branch,
-        "provider": "missing_provider",
-        "model": "missing-model",
+        "provider": provider,
+        "model": model,
         "permission_mode": "default",
         "codex_permission_mode": "auto_review",
         "source_note": "delegated by project MCP",

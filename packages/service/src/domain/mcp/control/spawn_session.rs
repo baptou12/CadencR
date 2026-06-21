@@ -4,8 +4,11 @@ use serde::{Deserialize, Serialize};
 use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
 use super::scope::resolve_session_scope;
 use crate::app_state::AppState;
+use crate::domain::agents::providers::validate_provider_model;
+use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::features::service::create_feature_with_worktree;
+use crate::domain::settings;
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
 use crate::error::AppError;
 
@@ -62,6 +65,11 @@ pub(super) async fn spawn_session_handler(
                 return Err(error);
             }
         };
+    if let Err(error) = validate_spawn_model(&state, &source, &body).await {
+        let message = error.to_string();
+        audit_spawn_error(&state, &source, &message, started_at).await?;
+        return Err(error);
+    }
     let created = create_feature_with_worktree(
         &state.write_pool,
         source.project_id,
@@ -182,6 +190,35 @@ fn branch_worktree_settings(
         trimmed_optional(branch.reuse_branch.as_deref()),
         base_branch,
     ))
+}
+
+async fn validate_spawn_model(
+    state: &AppState,
+    source: &super::scope::SessionScope,
+    body: &SpawnSessionRequest,
+) -> Result<(), AppError> {
+    let Some(model) = trimmed_optional(body.model.as_deref()) else {
+        return Ok(());
+    };
+    let provider = match trimmed_optional(body.provider.as_deref()) {
+        Some(provider) => provider,
+        None => inherited_session_provider(state, source.project_id).await,
+    };
+    validate_provider_model(&state.read_pool, &provider, &model)
+        .await
+        .map_err(|error| AppError::BadRequest(error.to_string()))
+}
+
+async fn inherited_session_provider(state: &AppState, project_id: i64) -> String {
+    settings::resolve_setting(
+        &state.read_pool,
+        &runtime_setting_key("session"),
+        None,
+        Some(project_id),
+        Some(DEFAULT_PROVIDER),
+    )
+    .await
+    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string())
 }
 
 async fn insert_spawned_session(

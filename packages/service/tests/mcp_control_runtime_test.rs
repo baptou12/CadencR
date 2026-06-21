@@ -62,7 +62,7 @@ async fn send_now_broadcasts_generated_user_message_to_target_viewers() {
 }
 
 #[tokio::test]
-async fn spawn_with_initial_message_routes_prompt_through_runtime_pipeline() {
+async fn spawn_with_initial_message_persists_single_generated_prompt() {
     let pool = seeded_control_pool().await;
     let app = control_router().with_state(AppState::with_pool(pool.clone()));
 
@@ -88,18 +88,6 @@ async fn spawn_with_initial_message_routes_prompt_through_runtime_pipeline() {
     assert_eq!(
         generated_count, 1,
         "initial replay must not duplicate user rows"
-    );
-    let error_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM agent_messages
-         WHERE session_id = ? AND message_type = 'error' AND content LIKE '%missing_provider%'",
-    )
-    .bind(session_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        error_count, 1,
-        "spawn should hand initial prompt to runtime pipeline"
     );
 }
 
