@@ -168,46 +168,28 @@ async fn project_send_message_ignores_legacy_write_policy_setting() {
 }
 
 #[tokio::test]
-async fn project_spawn_session_rejects_when_root_spawn_budget_is_exhausted() {
+async fn project_spawn_session_allows_spawning_beyond_legacy_descendant_cap() {
     let pool = seeded_control_pool().await;
-    seed_spawn_chain(&pool, 777, 5).await;
+    seed_spawn_chain(&pool, 777, 6).await;
     let app = control_router().with_state(AppState::with_pool(pool.clone()));
 
     let response = app.oneshot(spawn_request()).await.unwrap();
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::OK);
     let spawned_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM features WHERE title = 'Investigate flaky login test'",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(spawned_count, 0);
-}
-
-#[tokio::test]
-async fn project_spawn_session_audits_when_root_spawn_budget_is_exhausted() {
-    let pool = seeded_control_pool().await;
-    seed_spawn_chain(&pool, 777, 5).await;
-    let app = control_router().with_state(AppState::with_pool(pool.clone()));
-
-    let response = app.oneshot(spawn_request()).await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let audit: (String, i64, i64, i64, String, String) = sqlx::query_as(
-        "SELECT tool_name, source_session_id, source_feature_id, source_project_id, status, error
-         FROM mcp_tool_audit_log
-         WHERE tool_name = 'project_spawn_session'",
+    assert_eq!(spawned_count, 1);
+    let audit_status: String = sqlx::query_scalar(
+        "SELECT status FROM mcp_tool_audit_log WHERE tool_name = 'project_spawn_session'",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(audit.0, "project_spawn_session");
-    assert_eq!(audit.1, 777);
-    assert_eq!(audit.2, 42);
-    assert_eq!(audit.3, 7);
-    assert_eq!(audit.4, "error");
-    assert!(audit.5.contains("spawn limit exceeded"));
+    assert_eq!(audit_status, "ok");
 }
 
 #[tokio::test]
