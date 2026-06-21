@@ -90,7 +90,7 @@ pub(super) async fn spawn_session_handler(
         FeatureEventAction::Created,
     );
     if let Some(initial_message) = trimmed_optional(body.initial_message.as_deref()) {
-        dispatch_control_prompt(&state, created.id, session_id, &initial_message).await?;
+        dispatch_control_prompt(&state, created.id, session_id, &initial_message, true).await?;
     }
     let response = SpawnSessionResponse {
         feature_id: created.id,

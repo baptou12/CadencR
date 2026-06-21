@@ -83,6 +83,8 @@ async fn deliver_message(
         target_feature_id,
         target_session_id,
         &message.content,
+        // The user message was already persisted/broadcast above.
+        true,
     )
     .await
 }

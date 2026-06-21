@@ -21,13 +21,21 @@ use super::super::{
 use super::prompt_followup::{handle_followup_prompt, FollowupPromptContext};
 use super::prompt_pending::{handle_pending_prompt, PendingPromptContext};
 
+/// Inject a prompt into a session without a connected WS client.
+///
+/// `replay` controls whether the standard prompt path persists and broadcasts
+/// the inbound text as a user message. MCP callers persist the user message
+/// themselves (with agent-to-agent origin metadata) and pass `true` to suppress
+/// the duplicate; the scheduler passes `false` so a user-authored scheduled
+/// message is persisted and mirrored to clients like any other user message.
 pub(crate) async fn dispatch_control_prompt(
     app_state: &AppState,
     feature_id: i64,
     session_id: i64,
     text: &str,
+    replay: bool,
 ) -> Result<(), AppError> {
-    let mut payload = replay_payload(session_id, text, None);
+    let mut payload = replay_payload(session_id, text, None, replay);
     let sender = control_sender();
 
     if dispatch_to_active_owner(app_state, &sender, session_id, payload.clone()).await {
@@ -298,7 +306,12 @@ fn session_config(options: &RuntimeSpawnConfig) -> SessionConfig {
     }
 }
 
-fn replay_payload(session_id: i64, text: &str, use_worktree: Option<bool>) -> PromptSendPayload {
+fn replay_payload(
+    session_id: i64,
+    text: &str,
+    use_worktree: Option<bool>,
+    replay: bool,
+) -> PromptSendPayload {
     PromptSendPayload {
         session_id: session_id.to_string(),
         text: text.to_string(),
@@ -308,7 +321,7 @@ fn replay_payload(session_id: i64, text: &str, use_worktree: Option<bool>) -> Pr
         use_worktree,
         new_project_branch: None,
         client_message_id: None,
-        replay: true,
+        replay,
     }
 }
 
@@ -367,10 +380,17 @@ mod tests {
 
     #[test]
     fn replay_payload_preserves_supplied_worktree_intent() {
-        let payload = replay_payload(7, "start", Some(true));
+        let payload = replay_payload(7, "start", Some(true), true);
 
         assert_eq!(payload.use_worktree, Some(true));
         assert!(payload.replay);
+    }
+
+    #[test]
+    fn replay_payload_can_request_user_message_persistence() {
+        let payload = replay_payload(7, "scheduled", None, false);
+
+        assert!(!payload.replay);
     }
 }
 

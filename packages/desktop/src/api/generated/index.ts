@@ -1446,6 +1446,29 @@ export interface SaveDraftResponse {
 }
 
 /**
+ * A user message queued for future delivery to a conversation (feature).
+
+`scheduled_at` and `created_at` are serialised as ISO-8601 UTC (the
+repository formats them with a trailing `Z`) so the frontend can parse them
+unambiguously and render in the viewer's local timezone.
+ */
+export interface ScheduledMessage {
+  /** ISO-8601 UTC. */
+  created_at: string;
+  feature_id: number;
+  id: number;
+  /** ISO-8601 UTC, e.g. `2026-06-21T15:00:00Z`. */
+  scheduled_at: string;
+  /** `pending` | `sent` | `failed`. */
+  status: string;
+  text: string;
+}
+
+export interface ScheduledMessageDeleted {
+  deleted: boolean;
+}
+
+/**
  * Where a custom action is offered to the user. `Global` makes it visible on
 every project; `Project` scopes it to a single project.
  */
@@ -1627,6 +1650,16 @@ export interface SetProjectSettingRequest {
 export interface SetProviderSettingRequest {
   agent_type: string;
   provider_id: string;
+}
+
+/**
+ * Create-or-replace payload. There is at most one pending scheduled message per
+conversation, so a PUT replaces any existing pending row for that feature.
+ */
+export interface SetScheduledMessageRequest {
+  /** Target time as ISO-8601 (UTC). Normalised to SQLite UTC on insert. */
+  scheduled_at: string;
+  text: string;
 }
 
 export interface SetSettingRequest {
@@ -2080,6 +2113,8 @@ export type GetFeatureAgentStateParams = {
 export type UnmarkDiffViewedParams = {
   file_path: string;
 };
+
+export type GetScheduledMessage200 = null | ScheduledMessage;
 
 export type GetFeatureWorkingDirParams = {
   project_id: number;
@@ -5827,6 +5862,225 @@ export function useGetMessagePreview<
 
   return query;
 }
+
+/**
+ * @summary The pending scheduled message for a conversation, or `null` when none is
+queued.
+ */
+export const getScheduledMessage = (featureId: number, signal?: AbortSignal) => {
+  return customInstance<GetScheduledMessage200>({
+    url: `/api/features/${featureId}/scheduled-message`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetScheduledMessageQueryKey = (featureId?: number) => {
+  return [`/api/features/${featureId}/scheduled-message`] as const;
+};
+
+export const getGetScheduledMessageQueryOptions = <
+  TData = Awaited<ReturnType<typeof getScheduledMessage>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getScheduledMessage>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetScheduledMessageQueryKey(featureId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getScheduledMessage>>> = ({ signal }) =>
+    getScheduledMessage(featureId, signal);
+
+  return { queryKey, queryFn, enabled: !!featureId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getScheduledMessage>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetScheduledMessageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getScheduledMessage>>
+>;
+export type GetScheduledMessageQueryError = ErrorType<unknown>;
+
+/**
+ * @summary The pending scheduled message for a conversation, or `null` when none is
+queued.
+ */
+
+export function useGetScheduledMessage<
+  TData = Awaited<ReturnType<typeof getScheduledMessage>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getScheduledMessage>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetScheduledMessageQueryOptions(featureId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * @summary Create or replace the pending scheduled message for a conversation.
+ */
+export const setScheduledMessage = (
+  featureId: number,
+  setScheduledMessageRequest: SetScheduledMessageRequest,
+) => {
+  return customInstance<ScheduledMessage>({
+    url: `/api/features/${featureId}/scheduled-message`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: setScheduledMessageRequest,
+  });
+};
+
+export const getSetScheduledMessageMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setScheduledMessage>>,
+    TError,
+    { featureId: number; data: SetScheduledMessageRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setScheduledMessage>>,
+  TError,
+  { featureId: number; data: SetScheduledMessageRequest },
+  TContext
+> => {
+  const mutationKey = ["setScheduledMessage"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setScheduledMessage>>,
+    { featureId: number; data: SetScheduledMessageRequest }
+  > = (props) => {
+    const { featureId, data } = props ?? {};
+
+    return setScheduledMessage(featureId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetScheduledMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setScheduledMessage>>
+>;
+export type SetScheduledMessageMutationBody = SetScheduledMessageRequest;
+export type SetScheduledMessageMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create or replace the pending scheduled message for a conversation.
+ */
+export const useSetScheduledMessage = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setScheduledMessage>>,
+    TError,
+    { featureId: number; data: SetScheduledMessageRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setScheduledMessage>>,
+  TError,
+  { featureId: number; data: SetScheduledMessageRequest },
+  TContext
+> => {
+  const mutationOptions = getSetScheduledMessageMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+/**
+ * @summary Cancel the pending scheduled message for a conversation.
+ */
+export const deleteScheduledMessage = (featureId: number) => {
+  return customInstance<ScheduledMessageDeleted>({
+    url: `/api/features/${featureId}/scheduled-message`,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteScheduledMessageMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScheduledMessage>>,
+    TError,
+    { featureId: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteScheduledMessage>>,
+  TError,
+  { featureId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteScheduledMessage"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteScheduledMessage>>,
+    { featureId: number }
+  > = (props) => {
+    const { featureId } = props ?? {};
+
+    return deleteScheduledMessage(featureId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteScheduledMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteScheduledMessage>>
+>;
+
+export type DeleteScheduledMessageMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Cancel the pending scheduled message for a conversation.
+ */
+export const useDeleteScheduledMessage = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScheduledMessage>>,
+    TError,
+    { featureId: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteScheduledMessage>>,
+  TError,
+  { featureId: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteScheduledMessageMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getSessions = (featureId: number, signal?: AbortSignal) => {
   return customInstance<AgentSessionRow[]>({

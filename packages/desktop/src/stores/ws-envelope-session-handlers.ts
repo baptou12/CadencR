@@ -30,6 +30,8 @@ import { transitionTurn } from "./ws-turn-lifecycle";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
 import { markPromptReceived, movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
+import { queryClient } from "@/lib/queryClient";
+import { getGetScheduledMessageQueryKey } from "@/api/generated";
 
 export function handleCompacting(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseCompactingPayload(payload);
@@ -268,6 +270,16 @@ export function handleUserMessageMirror(
       appendLocalUserMessage(session, p.text, { origin: p.origin }),
     ),
   );
+  // A fired scheduled message arrives as this mirror; its row is already marked
+  // `sent` server-side, so refetch clears the pending card in lockstep with the
+  // bubble appearing (instead of waiting for the next poll). Only refetch when a
+  // pending row is actually cached — most mirrored messages aren't scheduled.
+  if (session.featureId != null) {
+    const queryKey = getGetScheduledMessageQueryKey(session.featureId);
+    if (queryClient.getQueryData(queryKey) != null) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  }
 }
 
 export function handlePromptReceived(
