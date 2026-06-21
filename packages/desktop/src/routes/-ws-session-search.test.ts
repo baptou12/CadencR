@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateWsSessionSearch } from "./ws-session-search";
+import { validateWsSessionSearch } from "./-ws-session-search";
 
 describe("validateWsSessionSearch", () => {
   it("accepts positive integer ids", () => {

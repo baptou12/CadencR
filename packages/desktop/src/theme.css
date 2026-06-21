@@ -977,19 +977,10 @@
   text-align: left;
 }
 
-/* In-conversation search (⌘F) match painting via the CSS Custom Highlight API.
-   `--acc-yellow` and `--code-bg` invert together per theme (light yellow + dark
-   text in dark themes, dark yellow + light text in light themes), so the match
-   fill always reads cleanly; the active match uses the brand primary so the
-   current occurrence stands apart from the rest. */
-::highlight(cadencr-conversation-match) {
-  background-color: var(--acc-yellow);
-  color: var(--code-bg);
-}
-::highlight(cadencr-conversation-match-active) {
-  background-color: var(--primary);
-  color: var(--primary-foreground);
-}
+/* In-conversation search (⌘F) match painting uses the CSS Custom Highlight API;
+   its `::highlight(...)` paint rules are injected at runtime from
+   `lib/conversation-search/highlight.ts` (Lightning CSS can't parse the
+   pseudo-element, so it can't live in this stylesheet). */
 
 /* Suppress the native number-input spinner for inputs that opt in via
    `className="no-spinner"`. Used by the custom-action schedule control. */
