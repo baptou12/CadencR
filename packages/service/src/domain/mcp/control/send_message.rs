@@ -149,7 +149,8 @@ pub(super) async fn send_message_handler(
         body.source_note.as_deref(),
     )
     .await;
-    dispatch_control_prompt(&state, target.feature_id, target.session_id, message).await?;
+    // The user message was already persisted/broadcast above.
+    dispatch_control_prompt(&state, target.feature_id, target.session_id, message, true).await?;
     let response = SendMessageResponse {
         message_id: Some(message_id),
         queue_id: None,

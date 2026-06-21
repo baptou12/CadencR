@@ -176,6 +176,10 @@ async fn main() -> anyhow::Result<()> {
             // Resume periodic custom-action schedules from a previous launch.
             state.custom_action_scheduler.bootstrap(&state).await;
 
+            // Background dispatcher for user-scheduled messages (one poll loop
+            // for the process lifetime; survives client disconnects).
+            domain::scheduled_messages::scheduler::spawn(state.clone());
+
             // Auto-start remote access if the user left it enabled (persisted
             // setting). Failures are non-fatal — the loopback server must come
             // up regardless, and the UI surfaces the error on next toggle.

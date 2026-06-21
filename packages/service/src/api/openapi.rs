@@ -28,6 +28,8 @@ use crate::domain::push::models as push_models;
 use crate::domain::push::routes as push_routes;
 use crate::domain::remote::models as remote_models;
 use crate::domain::remote::routes as remote_routes;
+use crate::domain::scheduled_messages::models as scheduled_messages_models;
+use crate::domain::scheduled_messages::routes as scheduled_messages_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
 use crate::domain::terminal::routes as terminal_routes;
@@ -143,6 +145,9 @@ use crate::domain::workspace::routes as workspace_routes;
         custom_actions_routes::cancel_run_handler,
         custom_actions_routes::get_schedule_handler,
         custom_actions_routes::set_schedule_handler,
+        scheduled_messages_routes::get_scheduled_message_handler,
+        scheduled_messages_routes::set_scheduled_message_handler,
+        scheduled_messages_routes::delete_scheduled_message_handler,
         feature_layouts_routes::list_layouts_handler,
         feature_layouts_routes::create_layout_handler,
         feature_layouts_routes::update_layout_handler,
@@ -321,6 +326,9 @@ use crate::domain::workspace::routes as workspace_routes;
         custom_actions_models::Scope,
         custom_actions_models::TriggeredBy,
         custom_actions_models::SuccessResponse,
+        scheduled_messages_models::ScheduledMessage,
+        scheduled_messages_models::SetScheduledMessageRequest,
+        scheduled_messages_models::ScheduledMessageDeleted,
         feature_layouts_models::FeatureLayout,
         feature_layouts_models::CreateFeatureLayoutRequest,
         feature_layouts_models::UpdateFeatureLayoutRequest,

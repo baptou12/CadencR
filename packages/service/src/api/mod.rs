@@ -19,6 +19,7 @@ use crate::domain::git::routes::git_router;
 use crate::domain::imports::routes::imports_router;
 use crate::domain::lsp::lsp_router;
 use crate::domain::projects::routes::projects_router;
+use crate::domain::scheduled_messages::routes::scheduled_messages_router;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
 use crate::domain::workspace::routes::workspace_router;
@@ -101,6 +102,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(feature_layouts_router())
         .merge(diff_comments_router())
         .merge(sessions_router())
+        .merge(scheduled_messages_router())
         .merge(terminal_router())
         .merge(editor_router())
         .merge(format_router())
