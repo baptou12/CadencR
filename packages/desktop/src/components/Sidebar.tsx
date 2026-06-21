@@ -351,7 +351,7 @@ function SidebarFooter(): ReactElement {
           to="/settings"
           data-nav-item
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-full border border-transparent px-3 py-1.5 text-xs text-foreground/80 transition-colors",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-pill)] border border-transparent px-3 py-1.5 text-xs text-foreground/80 transition-colors",
             "hover:border-border hover:bg-accent hover:text-foreground",
             "focus-visible:border-border focus-visible:bg-accent focus-visible:outline-none focus-visible:text-foreground",
           )}
