@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { ProjectTree } from "@/components/ProjectTree";
+import { SidebarPinnedConversations } from "@/components/SidebarPinnedConversations";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink";
@@ -57,6 +58,10 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
             <UnifiedAgentsSidebarLink />
           </div>
         )}
+        <SidebarPinnedConversations
+          activeFeatureId={effectiveFeatureId}
+          onSelectFeature={setSelectedFeatureId}
+        />
         <div className="min-h-0 flex-1">
           <ProjectTree
             activeProjectId={activeProjectId}
