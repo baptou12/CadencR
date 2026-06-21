@@ -76,8 +76,6 @@ function renderRootOverlays(confirmAction: ConfirmFeatureAction, onArchiveFeatur
       setCommandPaletteOpen={vi.fn()}
       activeProjectId={1}
       activeFeatureId={2}
-      shortcutsHelpOpen={false}
-      setShortcutsHelpOpen={vi.fn()}
       confirmAction={confirmAction}
       setConfirmAction={vi.fn()}
       onArchiveFeature={onArchiveFeature}

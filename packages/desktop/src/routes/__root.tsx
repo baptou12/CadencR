@@ -20,6 +20,7 @@ import { customInstance } from "@/api/client";
 import { resolveFeatureArchiveAction } from "@/lib/feature-archive-decision";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useShortcutsHelpStore } from "@/stores/shortcuts-help-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 import { useConnectionWatchdog } from "@/hooks/useConnectionWatchdog";
@@ -83,7 +84,6 @@ function RootLayout() {
   useVisualViewportHeight(isMobile);
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const sidebarCollapsed = useDebouncedSetting("sidebar_collapsed", 0);
   // On mobile the sidebar is an off-canvas drawer (closed by default). Its
   // open/closed state is ephemeral and must not clobber the persisted desktop
@@ -270,7 +270,7 @@ function RootLayout() {
 
   useGlobalShortcutById("shortcuts-help", (e) => {
     e.preventDefault();
-    setShortcutsHelpOpen((prev) => !prev);
+    useShortcutsHelpStore.getState().toggle();
   });
 
   // Stop all running agents across the app.
@@ -376,8 +376,6 @@ function RootLayout() {
             setCommandPaletteOpen={setCommandPaletteOpen}
             activeProjectId={activeProjectId}
             activeFeatureId={activeFeatureId}
-            shortcutsHelpOpen={shortcutsHelpOpen}
-            setShortcutsHelpOpen={setShortcutsHelpOpen}
             confirmAction={confirmAction}
             setConfirmAction={setConfirmAction}
             onArchiveFeature={handleArchiveFeature}
