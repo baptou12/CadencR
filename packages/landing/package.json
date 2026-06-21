@@ -2,7 +2,7 @@
   "name": "@cadencr/landing",
   "private": true,
   "version": "0.5.1",
-  "description": "Cadencr marketing site, docs, news and roadmap.",
+  "description": "Cadencr marketing site, docs and news.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
