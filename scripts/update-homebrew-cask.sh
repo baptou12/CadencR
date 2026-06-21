@@ -35,7 +35,7 @@ main() {
   local arm_dmg="Cadencr-${version}-arm64.dmg"
   local intel_dmg="Cadencr-${version}.dmg"
 
-  echo "Downloading release assets for $tag from $SOURCE_REPO…"
+  echo "Downloading release assets for $tag from ${SOURCE_REPO}…"
   gh release download "$tag" \
     --repo "$SOURCE_REPO" \
     --pattern "$arm_dmg" \
