@@ -308,6 +308,7 @@ export const AgentSession = memo(
         isLoadingOlder={isLoadingOlder}
         historyPrependDisplayOffset={historyPrependDisplayOffset}
         verbosityMode={verbosityMode}
+        searchEnabled={agentTabActive && !disableShortcuts}
       />
     );
 
