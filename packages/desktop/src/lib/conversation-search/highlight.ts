@@ -5,14 +5,42 @@
  * (most matches aren't even mounted) and we don't want to mutate React-owned
  * DOM. The Custom Highlight API lets us paint arbitrary `Range`s without
  * touching the tree: we register a `Highlight` of every visible occurrence and
- * a second, higher-priority one for the active match. Styling lives in
- * `theme.css` under `::highlight(...)`.
+ * a second, higher-priority one for the active match.
+ *
+ * The `::highlight(...)` paint styles are injected at runtime (see
+ * `ensureHighlightStyles`) rather than living in `theme.css`: Lightning CSS (the
+ * Tailwind build's CSS optimizer) doesn't recognize the `::highlight()`
+ * pseudo-element and warns on it, whereas Chromium parses it natively. The match
+ * fill uses `--acc-yellow`/`--code-bg` (which invert together per theme so the
+ * fill always reads cleanly) and the active match uses the brand `--primary` so
+ * the current occurrence stands apart from the rest.
  *
  * Ranges go stale when Virtuoso recycles rows, so callers repaint on scroll.
  */
 
 const MATCH_HIGHLIGHT = "cadencr-conversation-match";
 const ACTIVE_HIGHLIGHT = "cadencr-conversation-match-active";
+
+const HIGHLIGHT_STYLES = `
+::highlight(${MATCH_HIGHLIGHT}) {
+  background-color: var(--acc-yellow);
+  color: var(--code-bg);
+}
+::highlight(${ACTIVE_HIGHLIGHT}) {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+`;
+
+let highlightStyleSheet: CSSStyleSheet | null = null;
+
+/** Adopt the `::highlight(...)` paint rules into the document once, lazily. */
+function ensureHighlightStyles(): void {
+  if (highlightStyleSheet || typeof CSSStyleSheet === "undefined") return;
+  highlightStyleSheet = new CSSStyleSheet();
+  highlightStyleSheet.replaceSync(HIGHLIGHT_STYLES);
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, highlightStyleSheet];
+}
 
 /** Search-bar UI carries this attribute so the walker never highlights itself. */
 export const SEARCH_UI_ATTR = "data-conversation-search-ui";
@@ -96,6 +124,7 @@ export function paintConversationHighlights(
     clearConversationHighlights();
     return;
   }
+  ensureHighlightStyles();
   CSS.highlights.set(MATCH_HIGHLIGHT, new Highlight(...allRanges));
 
   const activeRange = resolveActiveRange(scroller, needle, active);
