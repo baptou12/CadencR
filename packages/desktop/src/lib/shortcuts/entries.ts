@@ -270,6 +270,16 @@ const APP_SHORTCUTS = [
     description: "Cycle thinking effort",
     scope: "agent",
   },
+  {
+    // ⌘F / Ctrl+F — find-in-conversation. Bound capture-phase in the `agent`
+    // scope so it intercepts before the prompt editor; the editor tab keeps
+    // its own ⌘F ("Find in current file") because that's a different scope.
+    id: "conversation-search",
+    keys: ["mod", "f"],
+    description: "Find in conversation",
+    scope: "agent",
+    aliases: ["search", "find"],
+  },
   { id: "agent-send", keys: ["mod", "enter"], description: "Send message", scope: "agent" },
   { id: "agent-maximize", keys: ["mod", "enter"], description: "Maximize agent", scope: "agent" },
   {
