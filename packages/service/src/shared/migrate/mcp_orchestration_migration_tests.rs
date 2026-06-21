@@ -20,13 +20,18 @@ async fn mcp_orchestration_migration_adds_provenance_links_and_fts() {
             project_id INTEGER NOT NULL REFERENCES projects(id),
             title TEXT NOT NULL
         );
+        -- is_pinned is dropped by migration 20260621130000 but existed at this
+        -- baseline (added by 20260504001317), so the fixture must provide it.
+        -- (Keep it comment-free *inside* the parens: SQLite's DROP COLUMN
+        -- re-parses the stored CREATE TABLE and chokes on inline comments.)
         CREATE TABLE agent_sessions (
             id INTEGER PRIMARY KEY,
             feature_id INTEGER NOT NULL REFERENCES features(id),
             agent_type TEXT,
             status TEXT,
             model TEXT,
-            codex_permission_mode TEXT NOT NULL DEFAULT 'default'
+            codex_permission_mode TEXT NOT NULL DEFAULT 'default',
+            is_pinned INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE agent_messages (
             id INTEGER PRIMARY KEY,

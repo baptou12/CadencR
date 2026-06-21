@@ -189,12 +189,6 @@ pub struct UnifiedAgentsResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AgentPinResponse {
-    pub success: bool,
-    pub is_pinned: bool,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
 pub struct DraftResponse {
     #[serde(rename = "draftPrompt")]
     pub draft_prompt: Option<String>,

@@ -99,11 +99,6 @@ export interface AgentMessageOrigin {
   sourceSessionId?: AgentMessageOriginSourceSessionId;
 }
 
-export interface AgentPinResponse {
-  is_pinned: boolean;
-  success: boolean;
-}
-
 export type AgentSessionRowCodexPermissionMode = string | null;
 
 export type AgentSessionRowContextWindow = number | null;
@@ -623,6 +618,8 @@ export type FeatureModelSession = string | null;
 export interface Feature {
   created_at: string;
   id: number;
+  /** Whether the conversation is pinned to the top of the sidebar. */
+  is_pinned: boolean;
   label?: FeatureLabel;
   model_session?: FeatureModelSession;
   project_id: number;
@@ -1859,6 +1856,10 @@ export interface UpdateLabelRequest {
   label?: UpdateLabelRequestLabel;
 }
 
+export interface UpdatePinnedRequest {
+  pinned: boolean;
+}
+
 export interface UpdateStatusRequest {
   status: FeatureStatus;
 }
@@ -2408,131 +2409,6 @@ export function useGetUnifiedAgents<
 
   return query;
 }
-
-export const pinAgent = (sessionId: number) => {
-  return customInstance<AgentPinResponse>({ url: `/api/agents/${sessionId}/pin`, method: "PUT" });
-};
-
-export const getPinAgentMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof pinAgent>>,
-    TError,
-    { sessionId: number },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof pinAgent>>,
-  TError,
-  { sessionId: number },
-  TContext
-> => {
-  const mutationKey = ["pinAgent"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof pinAgent>>,
-    { sessionId: number }
-  > = (props) => {
-    const { sessionId } = props ?? {};
-
-    return pinAgent(sessionId);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type PinAgentMutationResult = NonNullable<Awaited<ReturnType<typeof pinAgent>>>;
-
-export type PinAgentMutationError = ErrorType<unknown>;
-
-export const usePinAgent = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof pinAgent>>,
-    TError,
-    { sessionId: number },
-    TContext
-  >;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof pinAgent>>,
-  TError,
-  { sessionId: number },
-  TContext
-> => {
-  const mutationOptions = getPinAgentMutationOptions(options);
-
-  return useMutation(mutationOptions);
-};
-
-export const unpinAgent = (sessionId: number) => {
-  return customInstance<AgentPinResponse>({
-    url: `/api/agents/${sessionId}/pin`,
-    method: "DELETE",
-  });
-};
-
-export const getUnpinAgentMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof unpinAgent>>,
-    TError,
-    { sessionId: number },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof unpinAgent>>,
-  TError,
-  { sessionId: number },
-  TContext
-> => {
-  const mutationKey = ["unpinAgent"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof unpinAgent>>,
-    { sessionId: number }
-  > = (props) => {
-    const { sessionId } = props ?? {};
-
-    return unpinAgent(sessionId);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type UnpinAgentMutationResult = NonNullable<Awaited<ReturnType<typeof unpinAgent>>>;
-
-export type UnpinAgentMutationError = ErrorType<unknown>;
-
-export const useUnpinAgent = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof unpinAgent>>,
-    TError,
-    { sessionId: number },
-    TContext
-  >;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof unpinAgent>>,
-  TError,
-  { sessionId: number },
-  TContext
-> => {
-  const mutationOptions = getUnpinAgentMutationOptions(options);
-
-  return useMutation(mutationOptions);
-};
 
 export const listCustomModels = (signal?: AbortSignal) => {
   return customInstance<CustomModelsResponse>({
@@ -5258,6 +5134,54 @@ export function useListFeatureActivity<
   return query;
 }
 
+export const listPinnedFeatures = (signal?: AbortSignal) => {
+  return customInstance<Feature[]>({ url: `/api/features/pinned`, method: "GET", signal });
+};
+
+export const getListPinnedFeaturesQueryKey = () => {
+  return [`/api/features/pinned`] as const;
+};
+
+export const getListPinnedFeaturesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPinnedFeatures>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listPinnedFeatures>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPinnedFeaturesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listPinnedFeatures>>> = ({ signal }) =>
+    listPinnedFeatures(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPinnedFeatures>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPinnedFeaturesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPinnedFeatures>>
+>;
+export type ListPinnedFeaturesQueryError = ErrorType<unknown>;
+
+export function useListPinnedFeatures<
+  TData = Awaited<ReturnType<typeof listPinnedFeatures>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listPinnedFeatures>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPinnedFeaturesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
 export const getFeatureAgentState = (
   featureId: number,
   params?: GetFeatureAgentStateParams,
@@ -6393,6 +6317,74 @@ export const useSetFeatureModelSetting = <
   TContext
 > => {
   const mutationOptions = getSetFeatureModelSettingMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const updateFeaturePinned = (id: number, updatePinnedRequest: UpdatePinnedRequest) => {
+  return customInstance<FeaturesSuccessResponse>({
+    url: `/api/features/${id}/pin`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: updatePinnedRequest,
+  });
+};
+
+export const getUpdateFeaturePinnedMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFeaturePinned>>,
+    TError,
+    { id: number; data: UpdatePinnedRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateFeaturePinned>>,
+  TError,
+  { id: number; data: UpdatePinnedRequest },
+  TContext
+> => {
+  const mutationKey = ["updateFeaturePinned"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateFeaturePinned>>,
+    { id: number; data: UpdatePinnedRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateFeaturePinned(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateFeaturePinnedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateFeaturePinned>>
+>;
+export type UpdateFeaturePinnedMutationBody = UpdatePinnedRequest;
+export type UpdateFeaturePinnedMutationError = ErrorType<unknown>;
+
+export const useUpdateFeaturePinned = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFeaturePinned>>,
+    TError,
+    { id: number; data: UpdatePinnedRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateFeaturePinned>>,
+  TError,
+  { id: number; data: UpdatePinnedRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateFeaturePinnedMutationOptions(options);
 
   return useMutation(mutationOptions);
 };
