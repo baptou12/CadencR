@@ -349,12 +349,21 @@ function ToolCallBlock({
   const summary = parseToolCall(canonicalName, args);
   const detail =
     summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
-  const toolColorClass = isFileChangeTool(canonicalName)
-    ? "text-primary"
+  // File-patch tools (Edit / Write / ApplyPatch) get a distinct green "file
+  // change" identity so they stand apart from generic tool calls, which keep the
+  // neutral tool accent. The green is derived from each theme's --numstat-add-fg
+  // (the diff "lines added" color), so it stays distinct in every theme without
+  // per-theme tuning.
+  const isEdit = isFileChangeTool(canonicalName);
+  const toolColorClass = isEdit
+    ? "text-[var(--numstat-add-fg)]"
     : "text-[var(--block-tool-accent)]";
+  const wrapperClass = isEdit
+    ? "border-[color-mix(in_srgb,var(--numstat-add-fg)_35%,transparent)] bg-[color-mix(in_srgb,var(--numstat-add-fg)_12%,var(--card))]"
+    : "border-border bg-[var(--block-tool-bg)]";
 
   return (
-    <div className="my-1 rounded-md border border-border bg-[var(--block-tool-bg)]">
+    <div className={cn("my-1 rounded-md border", wrapperClass)}>
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
