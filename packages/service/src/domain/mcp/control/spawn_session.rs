@@ -9,8 +9,6 @@ use crate::domain::features::service::create_feature_with_worktree;
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
 use crate::error::AppError;
 
-const MAX_SPAWNED_SESSIONS_PER_ROOT: i64 = 5;
-
 #[derive(Debug, Deserialize)]
 pub(super) struct SpawnSessionRequest {
     source_feature_id: i64,
@@ -53,11 +51,6 @@ pub(super) async fn spawn_session_handler(
         let message = "source_session_id does not belong to source_feature_id".to_string();
         audit_spawn_error(&state, &source, &message, started_at).await?;
         return Err(AppError::BadRequest(message));
-    }
-    if let Err(error) = ensure_spawn_budget(&state.write_pool, source.session_id).await {
-        let message = error.to_string();
-        audit_spawn_error(&state, &source, &message, started_at).await?;
-        return Err(error);
     }
 
     let (worktree_mode, reuse_branch, base_branch) =
@@ -264,62 +257,6 @@ async fn insert_spawn_link(
     .execute(&state.write_pool)
     .await?;
     Ok(())
-}
-
-async fn ensure_spawn_budget(
-    pool: &sqlx::SqlitePool,
-    source_session_id: i64,
-) -> Result<(), AppError> {
-    let root_session_id = find_spawn_root_session(pool, source_session_id).await?;
-    let spawned_count = count_spawned_descendants(pool, root_session_id).await?;
-    if spawned_count >= MAX_SPAWNED_SESSIONS_PER_ROOT {
-        return Err(AppError::BadRequest(format!(
-            "project_spawn_session spawn limit exceeded for root session {root_session_id}"
-        )));
-    }
-    Ok(())
-}
-
-async fn find_spawn_root_session(
-    pool: &sqlx::SqlitePool,
-    source_session_id: i64,
-) -> Result<i64, AppError> {
-    Ok(sqlx::query_scalar(
-        "WITH RECURSIVE ancestors(session_id, depth) AS (
-             SELECT ?, 0
-             UNION ALL
-             SELECT agent_session_links.source_session_id, ancestors.depth + 1
-             FROM agent_session_links
-             JOIN ancestors ON agent_session_links.target_session_id = ancestors.session_id
-             WHERE agent_session_links.link_type = 'spawned'
-               AND ancestors.depth < 32
-         )
-         SELECT session_id FROM ancestors ORDER BY depth DESC LIMIT 1",
-    )
-    .bind(source_session_id)
-    .fetch_one(pool)
-    .await?)
-}
-
-async fn count_spawned_descendants(
-    pool: &sqlx::SqlitePool,
-    root_session_id: i64,
-) -> Result<i64, AppError> {
-    Ok(sqlx::query_scalar(
-        "WITH RECURSIVE descendants(session_id, depth) AS (
-             SELECT ?, 0
-             UNION ALL
-             SELECT agent_session_links.target_session_id, descendants.depth + 1
-             FROM agent_session_links
-             JOIN descendants ON agent_session_links.source_session_id = descendants.session_id
-             WHERE agent_session_links.link_type = 'spawned'
-               AND descendants.depth < 32
-         )
-         SELECT COUNT(*) - 1 FROM descendants",
-    )
-    .bind(root_session_id)
-    .fetch_one(pool)
-    .await?)
 }
 
 fn trimmed_optional(value: Option<&str>) -> Option<String> {
