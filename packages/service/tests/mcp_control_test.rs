@@ -7,8 +7,9 @@ use cadencr_service::domain::settings_store::global_write_content;
 use tower::ServiceExt;
 
 use support::mcp_control::{
-    seed_recent_send_audits, seed_send_target_session, seed_spawn_chain, seeded_control_pool,
-    send_message_request, send_message_request_with_link, spawn_request, spawn_request_with_link,
+    latest_codex_permission_mode, seed_recent_send_audits, seed_send_target_session,
+    seed_spawn_chain, seeded_control_pool, send_message_request, send_message_request_with_link,
+    spawn_request, spawn_request_from_body, spawn_request_with_link,
 };
 
 static SETTINGS_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -50,7 +51,7 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
             "paused".into(),
             "claude_code".into(),
             "opus".into(),
-            "auto_review".into()
+            "default".into()
         )
     );
     let worktree_base: String = sqlx::query_scalar(
@@ -121,6 +122,62 @@ async fn project_spawn_session_can_skip_session_link() {
         .await
         .unwrap();
     assert_eq!(link_count, 0);
+}
+
+#[tokio::test]
+async fn project_spawn_session_inherits_configured_codex_permission_without_override() {
+    let _settings_guard = SETTINGS_TEST_LOCK.lock().await;
+    let pool = seeded_control_pool().await;
+    global_write_content(r#"{"codex_permission_mode":"autoReview"}"#)
+        .await
+        .unwrap();
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(spawn_request_from_body(serde_json::json!({
+            "source_feature_id": 42,
+            "source_session_id": 777,
+            "title": "Codex child",
+            "initial_message": "Please investigate.",
+            "branch": { "mode": "none" },
+            "provider": "codex_cli",
+            "model": "gpt-5.4",
+            "permission_mode": "default",
+            "source_note": "delegated by project MCP"
+        })))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(latest_codex_permission_mode(&pool).await, "autoReview");
+}
+
+#[tokio::test]
+async fn project_spawn_session_explicit_codex_permission_override_wins() {
+    let _settings_guard = SETTINGS_TEST_LOCK.lock().await;
+    let pool = seeded_control_pool().await;
+    global_write_content(r#"{"codex_permission_mode":"autoReview"}"#)
+        .await
+        .unwrap();
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(spawn_request_from_body(serde_json::json!({
+            "source_feature_id": 42,
+            "source_session_id": 777,
+            "title": "Codex child",
+            "branch": { "mode": "none" },
+            "provider": "codex_cli",
+            "model": "gpt-5.4",
+            "permission_mode": "default",
+            "codex_permission_mode": "fullAccess",
+            "source_note": "delegated by project MCP"
+        })))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(latest_codex_permission_mode(&pool).await, "fullAccess");
 }
 
 #[tokio::test]

@@ -180,14 +180,29 @@ pub fn spawn_request_with_optional_provider_model(
         "provider": provider,
         "model": model,
         "permission_mode": "default",
-        "codex_permission_mode": "auto_review",
+        "codex_permission_mode": "autoReview",
         "source_note": "delegated by project MCP",
         "link_to_current_session": link_to_current_session
     });
+    spawn_request_from_body(body)
+}
+
+pub fn spawn_request_from_body(body: Value) -> Request<Body> {
     Request::builder()
         .method("POST")
         .uri("/internal/mcp/project/spawn-session")
         .header("content-type", "application/json")
         .body(Body::from(body.to_string()))
         .unwrap()
+}
+
+pub async fn latest_codex_permission_mode(pool: &sqlx::SqlitePool) -> String {
+    sqlx::query_scalar(
+        "SELECT codex_permission_mode FROM agent_sessions
+         WHERE runtime_provider = 'codex_cli'
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
 }

@@ -4,7 +4,11 @@ use serde::{Deserialize, Serialize};
 use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
 use super::scope::resolve_session_scope;
 use crate::app_state::AppState;
-use crate::domain::agents::providers::validate_provider_model;
+use crate::domain::agents::codex::{
+    canonical_access_mode_wire, configured_access_mode as configured_codex_access_mode,
+    PROVIDER_ID as CODEX_PROVIDER_ID,
+};
+use crate::domain::agents::providers::{resolve_effective_provider, validate_provider_model};
 use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::features::service::create_feature_with_worktree;
@@ -70,6 +74,15 @@ pub(super) async fn spawn_session_handler(
         audit_spawn_error(&state, &source, &message, started_at).await?;
         return Err(error);
     }
+    let codex_permission_mode = match codex_permission_mode_for_spawn(&state, &source, &body).await
+    {
+        Ok(mode) => mode,
+        Err(error) => {
+            let message = error.to_string();
+            audit_spawn_error(&state, &source, &message, started_at).await?;
+            return Err(error);
+        }
+    };
     let created = create_feature_with_worktree(
         &state.write_pool,
         source.project_id,
@@ -81,7 +94,8 @@ pub(super) async fn spawn_session_handler(
     )
     .await?;
 
-    let session_id = insert_spawned_session(&state, created.id, &body).await?;
+    let session_id =
+        insert_spawned_session(&state, created.id, &body, codex_permission_mode.as_deref()).await?;
     let message_id = insert_initial_message(&state, &source, session_id, &body).await?;
     if body.link_to_current_session.unwrap_or(true) {
         insert_spawn_link(
@@ -200,31 +214,17 @@ async fn validate_spawn_model(
     let Some(model) = trimmed_optional(body.model.as_deref()) else {
         return Ok(());
     };
-    let provider = match trimmed_optional(body.provider.as_deref()) {
-        Some(provider) => provider,
-        None => inherited_session_provider(state, source.project_id).await,
-    };
+    let provider = effective_spawn_provider(state, source, body).await;
     validate_provider_model(&state.read_pool, &provider, &model)
         .await
         .map_err(|error| AppError::BadRequest(error.to_string()))
-}
-
-async fn inherited_session_provider(state: &AppState, project_id: i64) -> String {
-    settings::resolve_setting(
-        &state.read_pool,
-        &runtime_setting_key("session"),
-        None,
-        Some(project_id),
-        Some(DEFAULT_PROVIDER),
-    )
-    .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string())
 }
 
 async fn insert_spawned_session(
     state: &AppState,
     feature_id: i64,
     body: &SpawnSessionRequest,
+    codex_permission_mode: Option<&str>,
 ) -> Result<i64, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
     Ok(sqlx::query_scalar(
@@ -237,10 +237,52 @@ async fn insert_spawned_session(
     .bind(trimmed_optional(body.provider.as_deref()))
     .bind(trimmed_optional(body.model.as_deref()))
     .bind(trimmed_optional(body.permission_mode.as_deref()))
-    .bind(trimmed_optional(body.codex_permission_mode.as_deref()))
+    .bind(codex_permission_mode)
     .bind(now)
     .fetch_one(&state.write_pool)
     .await?)
+}
+
+async fn codex_permission_mode_for_spawn(
+    state: &AppState,
+    source: &super::scope::SessionScope,
+    body: &SpawnSessionRequest,
+) -> Result<Option<String>, AppError> {
+    let provider = effective_spawn_provider(state, source, body).await;
+    if provider != CODEX_PROVIDER_ID {
+        return Ok(None);
+    }
+    if let Some(raw_mode) = trimmed_optional(body.codex_permission_mode.as_deref()) {
+        return canonical_codex_permission_mode(&raw_mode).map(Some);
+    }
+
+    let configured = configured_codex_access_mode(&state.read_pool).await;
+    canonical_codex_permission_mode(&configured).map(Some)
+}
+
+async fn effective_spawn_provider(
+    state: &AppState,
+    source: &super::scope::SessionScope,
+    body: &SpawnSessionRequest,
+) -> String {
+    if let Some(provider) = trimmed_optional(body.provider.as_deref()) {
+        return resolve_effective_provider(provider, body.model.as_deref());
+    }
+    let configured = settings::resolve_setting(
+        &state.read_pool,
+        &runtime_setting_key("session"),
+        Some(source.feature_id),
+        Some(source.project_id),
+        Some(DEFAULT_PROVIDER),
+    )
+    .await
+    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    resolve_effective_provider(configured, body.model.as_deref())
+}
+
+fn canonical_codex_permission_mode(raw_mode: &str) -> Result<String, AppError> {
+    canonical_access_mode_wire(raw_mode)
+        .ok_or_else(|| AppError::BadRequest(format!("unsupported Codex access mode '{raw_mode}'")))
 }
 
 async fn insert_initial_message(
