@@ -254,6 +254,15 @@ mod tests {
         tokio::fs::create_dir_all(source.path().join(".claude"))
             .await
             .unwrap();
+        tokio::fs::create_dir_all(source.path().join(".claude/skills/qa"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(source.path().join(".claude/commands"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(source.path().join(".claude/rules"))
+            .await
+            .unwrap();
         tokio::fs::create_dir_all(source.path().join(".codex/agents"))
             .await
             .unwrap();
@@ -261,6 +270,18 @@ mod tests {
             .await
             .unwrap();
         tokio::fs::write(source.path().join(".claude/settings.local.json"), "claude")
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join(".claude/settings.json"), "shared")
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join(".claude/skills/qa/SKILL.md"), "skill")
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join(".claude/commands/review.md"), "command")
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join(".claude/rules/provider.md"), "rule")
             .await
             .unwrap();
         tokio::fs::write(source.path().join(".codex/agents/reviewer.md"), "codex")
@@ -282,6 +303,30 @@ mod tests {
                 .await
                 .unwrap(),
             "claude"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join(".claude/settings.json"))
+                .await
+                .unwrap(),
+            "shared"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join(".claude/skills/qa/SKILL.md"))
+                .await
+                .unwrap(),
+            "skill"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join(".claude/commands/review.md"))
+                .await
+                .unwrap(),
+            "command"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join(".claude/rules/provider.md"))
+                .await
+                .unwrap(),
+            "rule"
         );
         assert_eq!(
             tokio::fs::read_to_string(worktree.path().join(".codex/agents/reviewer.md"))
