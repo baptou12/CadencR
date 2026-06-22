@@ -57,6 +57,9 @@ jobs:
       - name: Build Rust service sidecar
         run: pnpm --filter @cadencr/service build
 
+      - name: Verify service sidecar runtime dependencies
+        run: pnpm --filter @cadencr/service check:macos-runtime-deps
+
       - name: Build renderer + main bundles
         run: pnpm --filter @cadencr/desktop exec electron-vite build
 

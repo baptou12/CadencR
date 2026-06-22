@@ -44,6 +44,11 @@ tempfile = "3"
 trash = "5"
 flate2 = "1"
 sha2 = "0.10"
+# `web-push` depends on `ece -> openssl`. In release builds that previously
+# linked the sidecar against Homebrew's `/opt/homebrew/opt/openssl@3` dylibs,
+# which are not present on user machines. Enable OpenSSL's vendored build so
+# the packaged service is self-contained.
+openssl = { version = "0.10", features = ["vendored"] }
 # Remote access: self-signed TLS listener + device-token auth.
 rcgen = "0.13"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
