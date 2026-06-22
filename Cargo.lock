@@ -536,7 +536,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cadencr-service"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -572,7 +572,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "sqlx",
  "subtle",
  "tempfile",
@@ -706,7 +706,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "claude-agent-sdk-rs"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "cli-discovery",
@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "cli-discovery"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "futures",
  "once_cell",
@@ -765,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app-server-sdk-rs"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "cli-discovery",
  "serde",
@@ -1157,6 +1157,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer 0.12.1",
+ "const-oid 0.10.2",
  "crypto-common 0.2.2",
  "ctutils",
 ]
@@ -2717,7 +2718,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "opencode-sdk-rs"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "axum",
  "cli-discovery",
