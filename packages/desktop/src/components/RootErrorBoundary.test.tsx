@@ -53,6 +53,21 @@ describe("RootErrorBoundary", () => {
     errSpy.mockRestore();
   });
 
+  it("surfaces the component stack so the looping component can be identified", () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(
+      <RootErrorBoundary>
+        <Boom />
+      </RootErrorBoundary>,
+    );
+    // The stack names the throwing component ("Boom") and is labelled so the
+    // user knows what to screenshot/copy when reporting a crash.
+    expect(screen.getByText(/Component stack:/)).toBeInTheDocument();
+    expect(screen.getByText(/Boom/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy error details/i })).toBeInTheDocument();
+    errSpy.mockRestore();
+  });
+
   it("disables the recent-conversation button when nothing is saved", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     render(
