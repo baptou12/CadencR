@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render, screen } from "@/test-utils";
 import { useState, type ReactNode } from "react";
+import {
+  clearDesktopBridgeOverrideForTests,
+  setDesktopBridgeOverrideForTests,
+} from "@/lib/desktop-bridge";
 import { RootErrorBoundary } from "./RootErrorBoundary";
 
 const SAVED_FEATURE_KEY = "cadencr:last-opened-feature";
@@ -23,6 +27,7 @@ function Boom(): never {
 describe("RootErrorBoundary", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    clearDesktopBridgeOverrideForTests();
     mocks.navigate.mockReset();
     mocks.pathname = "/agents";
   });
@@ -65,6 +70,29 @@ describe("RootErrorBoundary", () => {
     expect(screen.getByText(/Component stack:/)).toBeInTheDocument();
     expect(screen.getByText(/Boom/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy error details/i })).toBeInTheDocument();
+    errSpy.mockRestore();
+  });
+
+  it("reports route crashes to the renderer diagnostics bridge", () => {
+    const reportRendererError = vi.fn<(_payload: unknown) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    setDesktopBridgeOverrideForTests({ reportRendererError });
+
+    render(
+      <RootErrorBoundary>
+        <Boom />
+      </RootErrorBoundary>,
+    );
+
+    expect(reportRendererError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "react-boundary",
+        message: "kaboom",
+        componentStack: expect.stringContaining("Boom"),
+      }),
+    );
     errSpy.mockRestore();
   });
 

@@ -6,12 +6,13 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { AlertTriangleIcon, CopyIcon, LayoutGridIcon, MessageSquareIcon } from "lucide-react";
+import { AlertTriangleIcon, LayoutGridIcon, MessageSquareIcon } from "lucide-react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
-import { copyToClipboard } from "@/lib/clipboard";
 import { readSavedFeature, type SavedFeature } from "@/lib/saved-feature";
+import { reportReactBoundaryError } from "@/lib/renderer-error-reporting";
+import { ErrorDetailsPanel } from "./ErrorDetailsPanel";
 
 interface RootErrorBoundaryState {
   error: Error | null;
@@ -54,7 +55,9 @@ export class RootErrorBoundary extends Component<RootErrorBoundaryProps, RootErr
     // `ErrorInfo` here — `getDerivedStateFromError` never receives it — so a
     // second setState is the only way to capture it.
     console.error("Unhandled UI error:", error, info);
-    this.setState({ componentStack: info.componentStack ?? null });
+    const componentStack = info.componentStack ?? null;
+    reportReactBoundaryError(error, componentStack);
+    this.setState({ componentStack });
   }
 
   private reset = (): void => {
@@ -127,19 +130,7 @@ function RootErrorFallback({
         Your agents are still running in the background. Pick a destination below to recover without
         restarting Cadencr.
       </p>
-      <pre className="max-h-64 w-full max-w-lg overflow-auto rounded border bg-muted/40 p-2 text-xs text-foreground/80 whitespace-pre-wrap">
-        {details}
-      </pre>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void copyToClipboard(details, "Error details copied")}
-        >
-          <CopyIcon className="size-4" />
-          Copy error details
-        </Button>
-      </div>
+      <ErrorDetailsPanel details={details} />
       <div className="flex flex-wrap items-center justify-center gap-2">
         <Button onClick={goToAgents}>
           <LayoutGridIcon className="size-4" />
