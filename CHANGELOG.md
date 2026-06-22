@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.6.1 - 2026-06-22
+
+Previous release: v0.6.0 - 2026-06-22
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed the macOS packaged app failing to start the bundled service on machines without Homebrew OpenSSL installed by building the service sidecar with vendored OpenSSL and adding a release guard that rejects Homebrew-linked sidecars before assets are published.
+- [**Backend**] Fixed MCP-spawned sessions so an explicitly requested provider is preserved during model validation instead of being overridden by model-based auto-routing.
+- [**Backend**] Fixed formatter execution when a formatter exits before reading stdin, returning a user-visible formatting error instead of surfacing an internal broken-pipe failure.
+
 ## v0.6.0 - 2026-06-22
 
 Previous release: v0.5.1 - 2026-06-16
