@@ -60,6 +60,9 @@ jobs:
       - name: Verify service sidecar runtime dependencies
         run: pnpm --filter @cadencr/service check:macos-runtime-deps
 
+      - name: Smoke test packaged service sidecar startup
+        run: pnpm --filter @cadencr/service smoke:packaged-sidecar
+
       - name: Build renderer + main bundles
         run: pnpm --filter @cadencr/desktop exec electron-vite build
 
