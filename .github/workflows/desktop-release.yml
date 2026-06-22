@@ -34,6 +34,9 @@ jobs:
       # actions/checkout@v6.0.2
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
+      - name: Test Homebrew cask update script
+        run: env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh
+
       - name: Enable pnpm from packageManager
         run: corepack enable
 
