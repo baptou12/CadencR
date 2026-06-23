@@ -35,6 +35,7 @@ mod session_permissions;
 mod thread_params;
 mod trusted_mcp;
 mod turn_start;
+mod turn_steer_recovery;
 mod worktree_config;
 
 use std::collections::HashMap;
