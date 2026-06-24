@@ -16,6 +16,7 @@ mod stream_reader_forward;
 mod stream_reader_resume;
 mod stream_reader_task;
 mod stream_reader_task_completion;
+mod stream_reader_task_error;
 mod stream_reader_task_event;
 
 pub(crate) use bridge::PermissionResponse;
