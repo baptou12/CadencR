@@ -1970,6 +1970,10 @@ export type GetAgentCatalogParams = {
    * Workspace path used to discover project-local provider modes
    */
   cwd?: string;
+  /**
+   * Claude Code profile to scope the model probe to; defaults to the active profile
+   */
+  profile?: string;
 };
 
 export type GetUnifiedAgentsParams = {
