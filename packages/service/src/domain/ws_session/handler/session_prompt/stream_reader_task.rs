@@ -47,6 +47,13 @@ pub(super) struct StreamReaderState {
     pub(super) saw_result: bool,
     /// True while the runtime is inside a provider-reported compaction turn.
     pub(super) compacting: bool,
+    /// Set once an error has already been surfaced to the conversation during
+    /// the current turn (a provider error or an unrecognized message). Gates
+    /// the turn-ending error-result path so a failure that was already shown
+    /// (e.g. an API 5xx, which the CLI reports *and* then ends the turn with
+    /// `is_error: true`) doesn't produce a second, redundant error bubble. Reset
+    /// at the start of each turn. Issue #78.
+    pub(super) surfaced_error_this_turn: bool,
     /// Opaque handles of background (run-in-background) agents that have
     /// started but not yet finished. Non-empty means the session is still
     /// working even though the launching turn's `Result` has arrived, so the
@@ -85,6 +92,7 @@ impl StreamReaderState {
             between_turns: true,
             saw_result: false,
             compacting: false,
+            surfaced_error_this_turn: false,
             live_background_agents: HashSet::new(),
         }
     }
@@ -136,7 +144,11 @@ impl StreamReaderTask {
                 ReaderAction::Continue => continue,
                 ReaderAction::Break => break,
                 ReaderAction::Closed => {
-                    self.send_stream_closed().await;
+                    if self.stream_close_was_unexpected(&state).await {
+                        self.handle_unexpected_stop().await;
+                    } else {
+                        self.send_stream_closed().await;
+                    }
                     break;
                 }
                 ReaderAction::Error(error) => {
@@ -214,6 +226,22 @@ impl StreamReaderTask {
             return ReaderAction::Break;
         }
         ReaderAction::Continue
+    }
+
+    /// A clean stream close (no SDK error) is *unexpected* — the agent died
+    /// before finishing — only when a turn was actually in flight. We require
+    /// both: `!between_turns` rules out a normal post-`Result` close, and a DB
+    /// status still `running` rules out an intentional teardown
+    /// (destroy/clear/suspend all move the status off `running` first), so the
+    /// host stopping a conversation on purpose never raises a spurious error.
+    /// Mirrors the `turn_running` guard in [`should_close_orphaned`].
+    async fn stream_close_was_unexpected(&self, state: &StreamReaderState) -> bool {
+        if state.between_turns {
+            return false;
+        }
+        WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
+            .await
+            .is_some_and(|row| row.status == "running")
     }
 
     async fn reconcile_provider_completion(&self, runtime_sid: &str) {

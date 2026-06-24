@@ -17,6 +17,7 @@ impl WsSessionPersistence {
             pending_tool_inputs: HashMap::new(),
             pending_tool_row_ids: HashMap::new(),
             pending_mergeable_blocks: HashMap::new(),
+            streamed_assistant_content: HashSet::new(),
             file_change_marked: false,
         }
     }

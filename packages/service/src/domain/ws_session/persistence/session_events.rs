@@ -31,6 +31,9 @@ impl WsSessionPersistence {
                     .await;
             } else {
                 self.reconcile_tool_call_content(session_id, message).await;
+                let runtime_key = runtime_stream_key(runtime_event.session_id());
+                self.persist_unstreamed_assistant_text(session_id, &runtime_key, message)
+                    .await;
             }
             return None;
         }
@@ -96,6 +99,9 @@ impl WsSessionPersistence {
 
         match event {
             RuntimeStreamEvent::MessageStart { model, .. } => {
+                // A new message cycle begins: clear the streamed-text marker so
+                // each message is judged on its own deltas.
+                self.streamed_assistant_content.remove(&runtime_key);
                 if let Some(model) = model.clone() {
                     self.current_models.insert(runtime_key, model);
                 }

@@ -15,8 +15,8 @@ pub use error::RuntimeError;
 pub use event_types::{
     BackgroundAgentSignal, RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeContentBlock,
     RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent,
-    RuntimeStreamEvent, RuntimeStreamStatus, RuntimeTurnStartedSource, RuntimeUserContentBlock,
-    RuntimeUserMessage,
+    RuntimeResultError, RuntimeStreamEvent, RuntimeStreamStatus, RuntimeTurnStartedSource,
+    RuntimeUserContentBlock, RuntimeUserMessage,
 };
 pub use permission::{
     RuntimeCompactionStrategy, RuntimePermissionDecision, RuntimePermissionOption,
