@@ -53,10 +53,16 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// discovery depends on app settings (for example Claude Code profiles
     /// that inject Bedrock/Vertex env vars) can override this request-aware
     /// hook while other providers keep the cwd-only default.
+    ///
+    /// `profile` names a Claude Code profile to probe instead of the globally
+    /// active one (so the prompt-area profile selector can preview a profile's
+    /// models without mutating global state). Providers without env profiles
+    /// ignore it.
     async fn catalog_entry_live_for_settings(
         &self,
         _read_pool: &sqlx::SqlitePool,
         cwd: Option<&Path>,
+        _profile: Option<&str>,
     ) -> super::super::runtime::ProviderCatalogEntry {
         self.catalog_entry_live_for_cwd(cwd).await
     }

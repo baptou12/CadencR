@@ -144,8 +144,27 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         &self,
         read_pool: &SqlitePool,
         _cwd: Option<&Path>,
+        profile: Option<&str>,
     ) -> ProviderCatalogEntry {
-        let (_, profile_env) = super::profiles::resolve_active_profile_env(read_pool).await;
+        // `profile` lets the prompt-area selector preview a non-active profile's
+        // models (Bedrock/Vertex model ids differ from Anthropic). When it is
+        // None we fall back to the active profile — and if a named profile fails
+        // to resolve we still degrade to the active env rather than break the
+        // catalog probe.
+        let profile_env = match super::profiles::resolve_profile_env_by_name(read_pool, profile)
+            .await
+        {
+            Ok((_, env)) => env,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "failed to resolve claude_code profile env for catalog; using active profile"
+                );
+                super::profiles::resolve_active_profile_env(read_pool)
+                    .await
+                    .1
+            }
+        };
         let models = self.load_models_with_env(profile_env).await;
         provider_catalog_entry_from_models(models)
     }

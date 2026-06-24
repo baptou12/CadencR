@@ -71,16 +71,13 @@ fn merge_extra_models(
     base
 }
 
-pub async fn provider_catalog_live(read_pool: &SqlitePool) -> AgentCatalogResponse {
-    provider_catalog_live_for_cwd(read_pool, None).await
-}
-
 pub async fn provider_catalog_live_for_cwd(
     read_pool: &SqlitePool,
     cwd: Option<&Path>,
+    profile: Option<&str>,
 ) -> AgentCatalogResponse {
     let providers = futures::future::join_all(ADAPTERS.iter().map(|(_, adapter)| async move {
-        provider_catalog_entry_live_for_settings(read_pool, cwd, *adapter).await
+        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, *adapter).await
     }))
     .await;
 
@@ -93,10 +90,11 @@ pub async fn provider_catalog_live_for_cwd(
 pub(super) async fn provider_catalog_entry_live_for_settings(
     read_pool: &SqlitePool,
     cwd: Option<&Path>,
+    profile: Option<&str>,
     adapter: &dyn AgentRuntimeAdapter,
 ) -> super::runtime::ProviderCatalogEntry {
     let (mut entry, extra) = tokio::join!(
-        adapter.catalog_entry_live_for_settings(read_pool, cwd),
+        adapter.catalog_entry_live_for_settings(read_pool, cwd, profile),
         adapter.extra_models(read_pool),
     );
     if !extra.is_empty() {
