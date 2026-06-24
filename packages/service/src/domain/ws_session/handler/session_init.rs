@@ -19,8 +19,6 @@ mod session_init_effort;
 mod session_init_feature;
 #[path = "session_init_restore.rs"]
 mod session_init_restore;
-#[path = "session_init_resume.rs"]
-mod session_init_resume;
 
 /// Handle session.init: DB-driven session creation.
 pub(super) async fn handle_init(
@@ -162,7 +160,7 @@ pub(super) async fn handle_init(
     )
     .await;
     let resume_session_id = row.as_ref().and_then(|r| {
-        session_init_resume::resume_session_id_for_provider(
+        super::session_init_resume::resume_session_id_for_provider(
             &effective_provider,
             r.runtime_provider.as_deref(),
             r.runtime_session_id.as_deref(),

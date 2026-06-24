@@ -15,6 +15,7 @@ use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::{persist_and_close_query, QueryState, SdkSessions, WsSender};
 use super::stream_reader_resume::transition_active_to_pending_on_stream_end;
+use super::stream_reader_stop;
 
 pub(super) struct StreamReaderTask {
     pub db_session_id: i64,
@@ -228,20 +229,34 @@ impl StreamReaderTask {
         ReaderAction::Continue
     }
 
-    /// A clean stream close (no SDK error) is *unexpected* — the agent died
-    /// before finishing — only when a turn was actually in flight. We require
-    /// both: `!between_turns` rules out a normal post-`Result` close, and a DB
-    /// status still `running` rules out an intentional teardown
-    /// (destroy/clear/suspend all move the status off `running` first), so the
-    /// host stopping a conversation on purpose never raises a spurious error.
+    /// A clean stream close (no SDK error) is *unexpected* when the DB still
+    /// says a turn is running and no live background agent is still expected
+    /// to emit follow-up events. That covers both mid-turn EOF and the #78
+    /// shape where the CLI exits before emitting even its first runtime event.
+    ///
+    /// Intentional teardowns (destroy/clear/suspend) move DB status off
+    /// `running` first, so stopping a conversation on purpose never raises a
+    /// spurious error.
     /// Mirrors the `turn_running` guard in [`should_close_orphaned`].
     async fn stream_close_was_unexpected(&self, state: &StreamReaderState) -> bool {
-        if state.between_turns {
+        if !stream_reader_stop::stream_close_needs_running_status(
+            state.between_turns,
+            !state.live_background_agents.is_empty(),
+            state.surfaced_error_this_turn,
+        ) {
             return false;
         }
-        WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
-            .await
-            .is_some_and(|row| row.status == "running")
+
+        let session_running =
+            WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
+                .await
+                .is_some_and(|row| row.status == "running");
+        stream_reader_stop::stream_close_was_unexpected(
+            state.between_turns,
+            !state.live_background_agents.is_empty(),
+            state.surfaced_error_this_turn,
+            session_running,
+        )
     }
 
     async fn reconcile_provider_completion(&self, runtime_sid: &str) {

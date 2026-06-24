@@ -6,6 +6,7 @@ use super::content::{
 };
 use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
+use super::prompt_resume_resolution::refresh_resume_session_id_from_db;
 use super::prompt_status::{mark_agent_running, mirror_user_message};
 use super::prompt_worktree::{prepare_branch_provisioning, spawn_auto_name_if_needed};
 use super::runtime_mcp::{
@@ -144,23 +145,15 @@ async fn reresolve_worktree_and_resume(context: &mut PendingPromptContext) {
             context.options.cwd = cwd;
         }
     }
-    if context.options.resume_session_id.is_some() {
-        return;
-    }
-    let Some(row) =
-        WsSessionPersistence::get_session_row(&context.app_state.read_pool, context.db_session_id)
-            .await
-    else {
-        return;
-    };
-    // Only adopt the persisted id when it belongs to the provider we're about
-    // to spawn; `validate_resume_id` still format-checks it afterwards.
-    if row.runtime_provider.as_deref() != Some(context.provider_id.as_str()) {
-        return;
-    }
-    if let Some(sid) = row.runtime_session_id.filter(|s| !s.is_empty()) {
+    if let Some(sid) = refresh_resume_session_id_from_db(
+        &mut context.options,
+        &context.app_state.read_pool,
+        context.db_session_id,
+        &context.provider_id,
+    )
+    .await
+    {
         info!(context.db_session_id, runtime_session_id = %sid, "re-resolved resume id from DB before spawn");
-        context.options.resume_session_id = Some(sid);
     }
 }
 async fn persist_initial_user_message(context: &PendingPromptContext) {
