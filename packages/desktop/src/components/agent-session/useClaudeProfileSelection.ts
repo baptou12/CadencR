@@ -23,7 +23,9 @@ export function useClaudeProfileSelection({
   wsSessionId?: string;
 }): ClaudeProfileSelection {
   const profileTouchedRef = useRef(false);
+  const conversationRef = useRef(wsSessionId);
   const profilesQuery = useClaudeCodeProfiles({ enabled: isClaudeProvider });
+  const activeClaudeProfile = profilesQuery.data?.active ?? DEFAULT_CLAUDE_PROFILE_NAME;
   const [selectedClaudeProfile, setSelectedClaudeProfile] = useState(DEFAULT_CLAUDE_PROFILE_NAME);
 
   const handleClaudeProfileChange = useCallback((profile: string): void => {
@@ -31,15 +33,20 @@ export function useClaudeProfileSelection({
     setSelectedClaudeProfile(profile);
   }, []);
 
+  // Mirror the configured active profile until the user explicitly picks one for
+  // the current conversation. Switching conversations forgets that manual pick so
+  // the new conversation re-adopts the configured default — even when
+  // `activeClaudeProfile` is already settled and unchanged, which is the bug
+  // behind new conversations not honoring the configured default profile (#77).
   useEffect(() => {
-    profileTouchedRef.current = false;
-    setSelectedClaudeProfile(DEFAULT_CLAUDE_PROFILE_NAME);
-  }, [wsSessionId]);
-
-  useEffect(() => {
-    if (!isClaudeProvider || profileTouchedRef.current) return;
-    setSelectedClaudeProfile(profilesQuery.data?.active ?? DEFAULT_CLAUDE_PROFILE_NAME);
-  }, [isClaudeProvider, profilesQuery.data?.active]);
+    if (conversationRef.current !== wsSessionId) {
+      conversationRef.current = wsSessionId;
+      profileTouchedRef.current = false;
+    }
+    if (isClaudeProvider && !profileTouchedRef.current) {
+      setSelectedClaudeProfile(activeClaudeProfile);
+    }
+  }, [isClaudeProvider, activeClaudeProfile, wsSessionId]);
 
   const profiles = profilesQuery.data?.profiles ?? EMPTY_CLAUDE_PROFILES;
   return useMemo(
