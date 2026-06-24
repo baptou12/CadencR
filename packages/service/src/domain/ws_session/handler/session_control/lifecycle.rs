@@ -187,11 +187,13 @@ pub(crate) async fn handle_delete(
         }
     };
 
-    // Remove from in-memory map if present (shouldn't be active, but clean up)
-    sdk_sessions.lock().await.remove(&db_session_id);
-
     match WsSessionPersistence::delete_session_static(&app_state.write_pool, db_session_id).await {
         Ok((feature_id, agent_type)) => {
+            // The DB delete is the source of truth. Only drop the in-memory
+            // handle after it succeeds; failed deletes (for example a running
+            // session) must leave the live handle intact.
+            sdk_sessions.lock().await.remove(&db_session_id);
+
             WsSessionPersistence::broadcast_session_status(
                 &app_state.session_status_tx,
                 db_session_id,
