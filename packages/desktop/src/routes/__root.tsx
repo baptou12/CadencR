@@ -46,6 +46,12 @@ import { RootOverlays, type ConfirmFeatureAction } from "@/components/RootOverla
 import { RootErrorBoundary } from "@/components/RootErrorBoundary";
 import { isMeaningfulScreenPath, useLastScreenStore } from "@/stores/last-screen-store";
 import { THEME_SELECTOR_SEARCH_KEY } from "@/components/theme/ThemeDrawer";
+import {
+  archiveFeatureInCachedLists,
+  closeFeatureSession,
+  navigateToFeatureIdOrHome,
+  removeFeatureFromCachedLists,
+} from "@/components/project-feature-navigation";
 
 /**
  * Root-level search validator. The global theme drawer's open state lives in
@@ -185,6 +191,7 @@ function RootLayout() {
     },
   });
 
+  const [confirmAction, setConfirmAction] = useState<ConfirmFeatureAction | null>(null);
   // Track which feature to navigate to after deletion
   const deleteNavTargetRef = useRef<number | null>(null);
   const deleteFeatureMutation = useDeleteFeature({
@@ -192,48 +199,31 @@ function RootLayout() {
       onError: () => {
         toast.error("Failed to delete feature");
       },
-      onSuccess: () => {
+      onSuccess: (_data, variables) => {
+        removeFeatureFromCachedLists(queryClient, variables.id);
+        closeFeatureSession(variables.id);
         invalidateFeatures();
         if (activeProjectId == null) return;
         const targetId = deleteNavTargetRef.current;
         deleteNavTargetRef.current = null;
-        if (targetId != null) {
-          void navigate({
-            to: "/projects/$projectId/features/$featureId",
-            params: {
-              projectId: String(activeProjectId),
-              featureId: String(targetId),
-            },
-          });
-        } else {
-          void navigate({ to: "/" });
-        }
+        navigateToFeatureIdOrHome(navigate, activeProjectId, targetId);
       },
     },
   });
 
-  const [confirmAction, setConfirmAction] = useState<ConfirmFeatureAction | null>(null);
   const archiveFeatureMutation = useUpdateFeatureStatus({
     mutation: {
       onError: () => {
         toast.error("Failed to archive session");
       },
-      onSuccess: () => {
+      onSuccess: (_data, variables) => {
+        archiveFeatureInCachedLists(queryClient, variables.id);
+        closeFeatureSession(variables.id);
         invalidateFeatures();
         if (activeProjectId == null) return;
         const targetId = deleteNavTargetRef.current;
         deleteNavTargetRef.current = null;
-        if (targetId != null) {
-          void navigate({
-            to: "/projects/$projectId/features/$featureId",
-            params: {
-              projectId: String(activeProjectId),
-              featureId: String(targetId),
-            },
-          });
-        } else {
-          void navigate({ to: "/" });
-        }
+        navigateToFeatureIdOrHome(navigate, activeProjectId, targetId);
       },
     },
   });

@@ -34,6 +34,13 @@ import {
   deleteFeatureDialogTitle,
   getPendingFeatureArchiveAction,
 } from "@/lib/feature-archive-decision";
+import {
+  adjacentFeature,
+  archiveFeatureInCachedLists,
+  closeFeatureSession,
+  navigateToFeatureOrHome,
+  removeFeatureFromCachedLists,
+} from "@/components/project-feature-navigation";
 
 const ACTIVE_FEATURE_STATUS: FeatureStatus = "active";
 const ARCHIVED_FEATURE_STATUS: FeatureStatus = "archived";
@@ -129,7 +136,18 @@ export function ProjectFeatures({
 
   const updateStatusMutation = useUpdateFeatureStatus({
     mutation: {
-      onSuccess: invalidateFeatures,
+      onSuccess: (_data, variables) => {
+        if (variables.id === activeFeatureId && variables.data.status === ARCHIVED_FEATURE_STATUS) {
+          archiveFeatureInCachedLists(queryClient, variables.id);
+          closeFeatureSession(variables.id);
+          navigateToFeatureOrHome(
+            navigate,
+            projectId,
+            adjacentFeature(activeFeatures, variables.id),
+          );
+        }
+        invalidateFeatures();
+      },
       onError: (error) => {
         toast.error(apiErrorMessage(error, "Failed to update feature status"));
       },
@@ -141,20 +159,10 @@ export function ProjectFeatures({
     mutation: {
       onSuccess: (_data, variables) => {
         const deletedId = variables.id;
+        removeFeatureFromCachedLists(queryClient, deletedId);
+        closeFeatureSession(deletedId);
         if (deletedId === activeFeatureId) {
-          const idx = activeFeatures.findIndex((f) => f.id === deletedId);
-          const next = activeFeatures[idx + 1] ?? activeFeatures[idx - 1];
-          if (next) {
-            void navigate({
-              to: "/projects/$projectId/features/$featureId",
-              params: {
-                projectId: String(projectId),
-                featureId: String(next.id),
-              },
-            });
-          } else {
-            void navigate({ to: "/" });
-          }
+          navigateToFeatureOrHome(navigate, projectId, adjacentFeature(activeFeatures, deletedId));
         }
         invalidateFeatures();
       },
