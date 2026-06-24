@@ -156,7 +156,7 @@ enum SdkMessageInner {
         #[serde(flatten)]
         data: Value,
     },
-    #[serde(rename = "rate_limit")]
+    #[serde(rename = "rate_limit", alias = "rate_limit_event")]
     RateLimit {
         uuid: String,
         session_id: String,
