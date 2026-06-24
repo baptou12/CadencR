@@ -6,7 +6,12 @@ import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useVisualViewportHeight } from "@/hooks/useVisualViewportHeight";
-import { AppShell } from "@/components/AppShell";
+import {
+  AppShell,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+} from "@/components/AppShell";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -343,7 +348,14 @@ function RootLayout() {
     leftWidth.setValue(String(Math.round(size.inPixels)));
   }, [leftWidth]);
 
-  const defaultLeftSize = leftWidth.value ? `${leftWidth.value}px` : "256px";
+  // Clamp the persisted width into the current resize bounds so a value saved
+  // under an older, smaller minimum doesn't reopen the sidebar too narrow.
+  const savedWidth = leftWidth.value ? Number(leftWidth.value) : null;
+  const clampedWidth =
+    savedWidth != null && Number.isFinite(savedWidth)
+      ? Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, savedWidth))
+      : SIDEBAR_DEFAULT_WIDTH;
+  const defaultLeftSize = `${clampedWidth}px`;
 
   return (
     <SidebarContext.Provider
