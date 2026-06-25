@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.6.3 - 2026-06-25
+
+Previous release: v0.6.2 - 2026-06-23
+
+### 🐛 Fixed
+
+- [**provider:claude**] Fixed Claude Code sessions that could stop silently after resuming a completed background session, after CLI schema drift, or after a mid-turn stream close by preserving known text/tool blocks, surfacing CLI stderr, provider errors, and unknown messages inline, refreshing stale resume IDs before spawn, and recognizing Claude rate-limit telemetry without showing it as an unknown message.
+- [**provider:claude**] Fixed prompt-area Claude profile selection so new conversations keep the selected/default profile, model lists refresh when switching between Anthropic and Bedrock profiles, and the selector stays synchronized across conversations.
+- [**provider:codex**] Fixed Codex compaction recovery when the app server reports a different active turn ID, retrying steering with the active turn instead of leaving the conversation idle while the original stream continues.
+- [**Backend**] Fixed worktree Git setup for GUI-launched sessions by preserving the login-shell `PATH`, tolerating shell startup noise, and waiting longer for shell initialization so Git LFS and other user-installed helpers remain available.
+- [**Desktop**] Fixed deleting or archiving a fresh conversation so stale chat routes close immediately, archived conversations are not reopened from the home route, and failed deletion of a running session does not drop live backend handles.
+- [**Desktop**] Fixed Settings navigation highlighting after clicks and scrolls, including short sections and off-the-fold targets that previously selected the wrong section.
+- [**Desktop**] Fixed global sidebar resizing by enforcing a usable minimum width and clamping saved sidebar widths that were already too narrow.
+
 ## v0.6.2 - 2026-06-23
 
 Previous release: v0.6.1 - 2026-06-22
