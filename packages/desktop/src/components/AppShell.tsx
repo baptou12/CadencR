@@ -75,11 +75,18 @@ export function AppShell({
         >
           {children}
         </main>
+        {/*
+         * Safe-area insets live INSIDE the sidebar (on its `<aside>`), not as
+         * padding here: padding the drawer panel would inset the sidebar's
+         * `bg-sidebar` surface from the screen edges, leaving dead gaps at the
+         * top/bottom in standalone/fullscreen mode (where the insets are
+         * non-zero). Letting the surface reach the edges and padding the content
+         * keeps the rail edge-to-edge while clearing the notch/home indicator.
+         */}
         <MobileDrawer
           collapsed={collapsed}
           onClose={() => setCollapsed(true)}
           closeLabel="Close menu"
-          panelClassName="pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
         >
           <Sidebar onSearch={onSearch} />
         </MobileDrawer>
