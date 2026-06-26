@@ -25,9 +25,13 @@ export interface ClaudeProfileSelection {
 export function useClaudeProfileSelection({
   isClaudeProvider,
   wsSessionId,
+  sessionProfile,
+  onSessionProfileChange,
 }: {
   isClaudeProvider: boolean;
   wsSessionId?: string;
+  sessionProfile?: string;
+  onSessionProfileChange?: (profile: string) => void;
 }): ClaudeProfileSelection {
   const profileTouchedRef = useRef(false);
   const conversationRef = useRef(wsSessionId);
@@ -35,10 +39,14 @@ export function useClaudeProfileSelection({
   const activeClaudeProfile = profilesQuery.data?.active ?? DEFAULT_CLAUDE_PROFILE_NAME;
   const [selectedClaudeProfile, setSelectedClaudeProfile] = useState(DEFAULT_CLAUDE_PROFILE_NAME);
 
-  const handleClaudeProfileChange = useCallback((profile: string): void => {
-    profileTouchedRef.current = true;
-    setSelectedClaudeProfile(profile);
-  }, []);
+  const handleClaudeProfileChange = useCallback(
+    (profile: string): void => {
+      profileTouchedRef.current = true;
+      setSelectedClaudeProfile(profile);
+      onSessionProfileChange?.(profile);
+    },
+    [onSessionProfileChange],
+  );
 
   // Mirror the configured active profile until the user explicitly picks one for
   // the current conversation. Switching conversations forgets that manual pick so
@@ -50,10 +58,19 @@ export function useClaudeProfileSelection({
       conversationRef.current = wsSessionId;
       profileTouchedRef.current = false;
     }
-    if (isClaudeProvider && !profileTouchedRef.current) {
-      setSelectedClaudeProfile(activeClaudeProfile);
+    if (isClaudeProvider && sessionProfile) {
+      profileTouchedRef.current = true;
+      setSelectedClaudeProfile((current) =>
+        current === sessionProfile ? current : sessionProfile,
+      );
+      return;
     }
-  }, [isClaudeProvider, activeClaudeProfile, wsSessionId]);
+    if (isClaudeProvider && !profileTouchedRef.current) {
+      setSelectedClaudeProfile((current) =>
+        current === activeClaudeProfile ? current : activeClaudeProfile,
+      );
+    }
+  }, [isClaudeProvider, activeClaudeProfile, sessionProfile, wsSessionId]);
 
   const profiles = profilesQuery.data?.profiles ?? EMPTY_CLAUDE_PROFILES;
   // Scope the catalog probe only once profiles have loaded and the user's pick

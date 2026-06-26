@@ -124,7 +124,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL, agent_type TEXT NOT NULL, runtime_provider TEXT, runtime_session_id TEXT, status TEXT NOT NULL DEFAULT 'pending', started_at TEXT, ended_at TEXT, model TEXT)")
+        sqlx::query("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL, agent_type TEXT NOT NULL, runtime_provider TEXT, runtime_session_id TEXT, status TEXT NOT NULL DEFAULT 'pending', started_at TEXT, ended_at TEXT, model TEXT, profile TEXT)")
             .execute(&pool)
             .await
             .unwrap();

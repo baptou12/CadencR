@@ -66,6 +66,42 @@ describe("useClaudeProfileSelection", () => {
     expect(result.current.selectedClaudeProfile).toBe("default");
   });
 
+  it("uses the session profile instead of the globally active profile", () => {
+    mockProfilesQuery.mockReturnValue(query({ profiles: PROFILES, active: "default" }));
+    const { result, rerender } = renderHook(
+      ({ sessionProfile }) =>
+        useClaudeProfileSelection({
+          isClaudeProvider: true,
+          wsSessionId: "session-a",
+          sessionProfile,
+        }),
+      { initialProps: { sessionProfile: "bedrock" as string | undefined } },
+    );
+    expect(result.current.selectedClaudeProfile).toBe("bedrock");
+
+    mockProfilesQuery.mockReturnValue(query({ profiles: PROFILES, active: "default" }));
+    rerender({ sessionProfile: "bedrock" });
+    expect(result.current.selectedClaudeProfile).toBe("bedrock");
+  });
+
+  it("notifies the session profile setter when the profile changes", () => {
+    const onSessionProfileChange = vi.fn();
+    mockProfilesQuery.mockReturnValue(query({ profiles: PROFILES, active: "default" }));
+    const { result } = renderHook(() =>
+      useClaudeProfileSelection({
+        isClaudeProvider: true,
+        wsSessionId: "session-a",
+        sessionProfile: "default",
+        onSessionProfileChange,
+      }),
+    );
+
+    act(() => result.current.handleClaudeProfileChange("bedrock"));
+
+    expect(onSessionProfileChange).toHaveBeenCalledWith("bedrock");
+    expect(result.current.selectedClaudeProfile).toBe("bedrock");
+  });
+
   it("falls back to the default profile name when the query has no data yet", () => {
     mockProfilesQuery.mockReturnValue(query(undefined));
     const { result } = renderHook(() =>

@@ -116,6 +116,7 @@ export function parseInitializedPayload(payload: unknown): {
   provider?: string;
   model?: string;
   thinking_effort?: string;
+  profile?: string;
   codex_permission_mode?: string;
   input_tokens?: number;
   output_tokens?: number;
@@ -132,6 +133,7 @@ export function parseInitializedPayload(payload: unknown): {
     provider: optionalString(record, "provider"),
     model: optionalString(record, "model"),
     thinking_effort: optionalString(record, "thinking_effort"),
+    profile: optionalString(record, "profile"),
     codex_permission_mode: optionalString(record, "codex_permission_mode"),
     input_tokens: optionalNumber(record, "input_tokens"),
     output_tokens: optionalNumber(record, "output_tokens"),
@@ -177,6 +179,12 @@ export function parseModePayload(payload: unknown): { mode?: string } | null {
   const record = asRecord(payload);
   if (!record) return null;
   return { mode: optionalString(record, "mode") };
+}
+
+export function parseProfilePayload(payload: unknown): { profile?: string } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  return { profile: optionalString(record, "profile") };
 }
 
 export function parseEffortPayload(payload: unknown): { thinking_effort?: string } | null {

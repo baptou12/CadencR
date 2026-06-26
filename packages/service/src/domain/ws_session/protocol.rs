@@ -226,6 +226,7 @@ mod tests {
         let p = PromptSendPayload {
             session_id: "s1".into(),
             text: "hello".into(),
+            profile: None,
             claude_profile: None,
             images: vec![],
             attachments: vec![],
@@ -263,6 +264,7 @@ mod tests {
             provider: None,
             model: None,
             thinking_effort: None,
+            profile: None,
             codex_permission_mode: None,
             input_tokens: None,
             output_tokens: None,

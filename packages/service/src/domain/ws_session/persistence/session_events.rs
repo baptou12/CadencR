@@ -237,6 +237,7 @@ mod session_events_tests {
                 runtime_session_id TEXT,
                 has_file_changes INTEGER DEFAULT 0,
                 model TEXT DEFAULT NULL,
+                profile TEXT,
                 permission_mode TEXT DEFAULT 'bypassPermissions',
                 codex_permission_mode TEXT DEFAULT 'default',
                 input_tokens INTEGER DEFAULT 0,

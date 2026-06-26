@@ -28,6 +28,7 @@ import {
   createProviderSet,
   createModelSet,
   createEffortSet,
+  createProfileSet,
   createModeSet,
   createCodexPermissionModeSet,
   createSessionClear,
@@ -571,6 +572,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           currentThinkingEffort: thinkingEffort,
         }),
       );
+    },
+
+    setProfile(sessionId: string, profile: string) {
+      const session = getSession(sessionId);
+      if (!session.serverSessionId) return;
+      sendRaw(sessionId, createProfileSet(session.serverSessionId, profile));
     },
 
     setPermissionMode(sessionId: string, mode: PermissionMode) {

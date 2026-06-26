@@ -27,6 +27,8 @@ pub struct SessionInitializedPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_permission_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,

@@ -148,6 +148,7 @@ mod session_bootstrap_tests {
                 runtime_session_id TEXT,
 
                 model TEXT,
+                profile TEXT,
                 permission_mode TEXT,
                 codex_permission_mode TEXT DEFAULT 'default',
                 has_file_changes INTEGER NOT NULL DEFAULT 0,

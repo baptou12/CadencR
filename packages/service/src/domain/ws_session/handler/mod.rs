@@ -32,6 +32,7 @@ mod session_gate;
 mod session_init;
 mod session_init_resume;
 mod session_init_worktree;
+mod session_profile;
 pub(crate) mod session_prompt;
 mod thinking_effort;
 mod types;

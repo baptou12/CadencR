@@ -76,6 +76,7 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
     updates.runtimeProvider = ctx.getSession(sessionId).currentProviderId;
   }
   if (p.model) updates.currentModelId = p.model;
+  if (p.profile) updates.currentProfile = p.profile;
   if (p.codex_permission_mode) {
     updates.codexPermissionMode = parseCodexPermissionMode(p.codex_permission_mode);
   }

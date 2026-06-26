@@ -315,6 +315,7 @@ fn replay_payload(
     PromptSendPayload {
         session_id: session_id.to_string(),
         text: text.to_string(),
+        profile: None,
         claude_profile: None,
         images: Vec::new(),
         attachments: Vec::new(),

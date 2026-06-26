@@ -14,6 +14,7 @@ pub struct AgentSessionRow {
     pub ended_at: Option<String>,
     pub subprocess_id: Option<String>,
     pub model: Option<String>,
+    pub profile: Option<String>,
     pub pending_questions: Option<String>,
     pub has_file_changes: i64,
     pub permission_mode: Option<String>,
@@ -99,6 +100,7 @@ pub struct SessionState {
     #[serde(rename = "subprocessId")]
     pub subprocess_id: Option<String>,
     pub model: Option<String>,
+    pub profile: Option<String>,
     pub blocks: Vec<AgentBlock>,
     #[serde(rename = "maxMessageId")]
     pub max_message_id: i64,

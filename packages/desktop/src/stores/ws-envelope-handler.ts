@@ -13,6 +13,7 @@ import {
   parseModePayload,
   parseModelPayload,
   parseProviderPayload,
+  parseProfilePayload,
 } from "./ws-envelope-payload";
 import { handleWorktreeEvent } from "./ws-worktree-handler";
 import { useGitStatusStore } from "./useGitStatusStore";
@@ -190,6 +191,9 @@ function handleConfigSessionAction(
     case "effort.set.ok":
       handleEffortSetOk(ctx, sessionId, envelope.payload);
       return true;
+    case "profile.changed":
+      handleProfileChanged(ctx, sessionId, envelope.payload);
+      return true;
     default:
       return false;
   }
@@ -312,6 +316,14 @@ function handleEffortSetOk(ctx: StoreAccessors, sessionId: string, payload: unkn
   ctx.set(updateSession(ctx.get(), sessionId, { currentThinkingEffort: p?.thinking_effort }));
   if (p?.thinking_effort !== previous) {
     void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
+  }
+}
+
+function handleProfileChanged(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseProfilePayload(payload);
+  if (p?.profile) {
+    if (ctx.get().sessions[sessionId]?.currentProfile === p.profile) return;
+    ctx.set(updateSession(ctx.get(), sessionId, { currentProfile: p.profile }));
   }
 }
 

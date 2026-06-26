@@ -3,6 +3,8 @@ use sqlx::AssertSqlSafe;
 use sqlx::SqlitePool;
 use std::path::Path;
 use tracing::{info, warn};
+#[cfg(test)]
+mod agent_session_profiles_migration_tests;
 mod checksum_repair;
 mod checksum_repair_data;
 #[cfg(test)]

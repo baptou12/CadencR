@@ -56,6 +56,7 @@ export interface PersistedStatePayload {
   currentProviderId?: string;
   currentModelId?: string;
   currentThinkingEffort?: string;
+  currentProfile?: string;
   permissionMode?: PermissionMode;
   codexPermissionMode?: CodexPermissionMode;
   runtimeProvider?: string | null;
@@ -135,6 +136,7 @@ export interface SessionEntry {
   permissionMode: PermissionMode;
   codexPermissionMode: CodexPermissionMode;
   currentThinkingEffort?: string;
+  currentProfile?: string;
   pendingPlanApproval: PendingPlanApproval | null;
   compactRequestPending: boolean;
   pendingManualCompact: boolean;
@@ -212,6 +214,7 @@ export function createSessionEntry(): SessionEntry {
     currentModelId: FALLBACK_MODEL_ID,
     runtimeProvider: DEFAULT_PROVIDER,
     runtimeSessionId: "",
+    currentProfile: undefined,
     mcpServers: null,
     supportsPromptReceipts: false,
     persistedLoaded: false,
@@ -270,6 +273,7 @@ export interface WsSessionStore {
   setProvider: (sessionId: string, providerId: string) => void;
   setModel: (sessionId: string, modelId: string) => void;
   setThinkingEffort: (sessionId: string, thinkingEffort?: string) => void;
+  setProfile: (sessionId: string, profile: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   setCodexPermissionMode: (sessionId: string, mode: CodexPermissionMode) => void;
   approvePlan: (sessionId: string) => void;

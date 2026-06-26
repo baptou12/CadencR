@@ -226,6 +226,8 @@ export function useSessionControls(
   const claudeProfile = useClaudeProfileSelection({
     isClaudeProvider,
     wsSessionId: sessionId,
+    sessionProfile: ws.currentProfile,
+    onSessionProfileChange: ws.setProfile,
   });
   const runtime = useRuntimeSelection(
     ws,

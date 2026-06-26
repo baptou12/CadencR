@@ -119,6 +119,8 @@ export type AgentSessionRowPendingQuestions = string | null;
 
 export type AgentSessionRowPermissionMode = string | null;
 
+export type AgentSessionRowProfile = string | null;
+
 export type AgentSessionRowRuntimeProvider = string | null;
 
 export type AgentSessionRowRuntimeSessionId = string | null;
@@ -142,6 +144,7 @@ export interface AgentSessionRow {
   pending_permission?: AgentSessionRowPendingPermission;
   pending_questions?: AgentSessionRowPendingQuestions;
   permission_mode?: AgentSessionRowPermissionMode;
+  profile?: AgentSessionRowProfile;
   runtime_provider?: AgentSessionRowRuntimeProvider;
   runtime_session_id?: AgentSessionRowRuntimeSessionId;
   started_at?: AgentSessionRowStartedAt;
@@ -1550,6 +1553,8 @@ export type SessionStateModel = string | null;
 
 export type SessionStateOldestMessageId = number | null;
 
+export type SessionStateProfile = string | null;
+
 export type SessionStateRuntimeProvider = string | null;
 
 export type SessionStateRuntimeSessionId = string | null;
@@ -1579,6 +1584,7 @@ export interface SessionState {
   pendingPermission?: unknown;
   pendingQuestions?: unknown;
   permissionMode: string;
+  profile?: SessionStateProfile;
   resumable: boolean;
   runtimeProvider?: SessionStateRuntimeProvider;
   runtimeSessionId?: SessionStateRuntimeSessionId;

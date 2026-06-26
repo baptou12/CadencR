@@ -96,7 +96,7 @@ export function createPromptSend(
       : {}),
     ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {}),
     ...(options.replay ? { replay: true } : {}),
-    ...(options.claudeProfile ? { claude_profile: options.claudeProfile } : {}),
+    ...(options.claudeProfile ? { profile: options.claudeProfile } : {}),
   });
 }
 
@@ -181,6 +181,13 @@ export function createEffortSet(sessionId: string, thinkingEffort?: string): WsE
   return createEnvelope("session", "effort.set", {
     session_id: sessionId,
     thinking_effort: thinkingEffort ?? null,
+  });
+}
+
+export function createProfileSet(sessionId: string, profile: string): WsEnvelope {
+  return createEnvelope("session", "profile.set", {
+    session_id: sessionId,
+    profile,
   });
 }
 
