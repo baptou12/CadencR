@@ -1,4 +1,4 @@
-import { memo, useMemo, type ReactElement } from "react";
+import { memo, lazy, Suspense, useMemo, type ReactElement } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -7,9 +7,12 @@ import { createLowlight, common } from "lowlight";
 import ini from "highlight.js/lib/languages/ini";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cn } from "@/lib/utils";
-import { CodeBlockHeader } from "@/components/CodeBlockHeader";
+import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import "./dracula-highlight.css";
+
+// Mermaid is heavy (~500KB) and pulled in only when a diagram is rendered.
+const MermaidDiagram = lazy(() => import("@/components/MermaidDiagram"));
 
 // `common` ships ~35 grammars vs. `all`'s ~155; unregistered languages fall
 // back to plain text via `cachedHighlight`'s catch.
@@ -51,7 +54,7 @@ export const __markdownCacheTestHelpers = {
     markdownTreeCache.has(`${sendToTerminal ? "1" : "0"}\0${content}`),
 };
 
-function cachedHighlight(lang: string, code: string): React.ReactNode {
+export function cachedHighlight(lang: string, code: string): React.ReactNode {
   const key = `${lang}\0${code}`;
   const cached = highlightCache.get(key);
   if (cached !== undefined) return cached;
@@ -84,7 +87,19 @@ function extractText(children: React.ReactNode): string {
 
 const SHELL_LANGUAGES = new Set(["bash", "sh", "zsh", "shell", "console", "terminal"]);
 
-function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
+/** Shown while the lazy mermaid chunk loads. */
+function MermaidFallback({ code }: { code: string }): ReactElement {
+  return (
+    <CodeBlockShell language="mermaid" code={code}>
+      <div className="p-3 text-xs text-muted-foreground">Loading diagram…</div>
+    </CodeBlockShell>
+  );
+}
+
+function buildComponents(
+  sendToTerminal?: (cmd: string) => void,
+  renderDiagrams = false,
+): Components {
   return {
     h1: ({ children }) => (
       <h1 className="text-2xl font-bold mt-5 mb-2 text-[var(--acc-purple)]">{children}</h1>
@@ -110,20 +125,28 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
       if (match || isBlock) {
         const lang = match?.[1] ?? "text";
         const code = extractText(children).replace(/\n$/, "");
+        // Render mermaid as a diagram once the block is stable (not streaming);
+        // while streaming it falls through to the normal highlighted code block.
+        if (lang === "mermaid" && renderDiagrams) {
+          return (
+            <Suspense fallback={<MermaidFallback code={code} />}>
+              <MermaidDiagram code={code} />
+            </Suspense>
+          );
+        }
         const isShell = SHELL_LANGUAGES.has(lang);
         const highlighted = cachedHighlight(lang, code) ?? children;
         return (
-          <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock">
-            <CodeBlockHeader
-              language={lang}
-              code={code}
-              showTerminalButton={isShell && !!sendToTerminal}
-              onSendToTerminal={sendToTerminal}
-            />
+          <CodeBlockShell
+            language={lang}
+            code={code}
+            showTerminalButton={isShell && !!sendToTerminal}
+            onSendToTerminal={sendToTerminal}
+          >
             <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
               <code className="hljs">{highlighted}</code>
             </pre>
-          </div>
+          </CodeBlockShell>
         );
       }
       return (
@@ -187,7 +210,13 @@ function preprocessContent(raw: string): string {
 
 export const Markdown = memo(function Markdown({ content, className, cacheKey }: MarkdownProps) {
   const { sendToTerminal } = useCodeBlockActions();
-  const components = useMemo(() => buildComponents(sendToTerminal), [sendToTerminal]);
+  // A set `cacheKey` marks a stable (non-streaming) block; only then do we
+  // render mermaid as a diagram, so partial source never thrashes the parser.
+  const renderDiagrams = cacheKey !== undefined;
+  const components = useMemo(
+    () => buildComponents(sendToTerminal, renderDiagrams),
+    [sendToTerminal, renderDiagrams],
+  );
 
   const tree = useMemo<ReactElement>(() => {
     const build = (): ReactElement => (
