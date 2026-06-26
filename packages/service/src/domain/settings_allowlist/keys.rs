@@ -96,6 +96,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "editor_sidebar_collapsed",
     "git_sidebar_collapsed",
     "git_merge_mode",
+    // Global preferred git diff layout: "unified" (single column) or "split"
+    // (side-by-side). Drives DiffViewer everywhere diffs render; the in-context
+    // Split/Unified toggle writes back to this same key. Defaults "unified".
+    "git_diff_view_mode",
     // Where agent-finished notifications appear: "native" (system banner),
     // "in_app" (Sonner toast inside Cadencr), or "off". Mirrors
     // NOTIFICATION_MODE_KEY in packages/desktop/src/lib/notification-mode.ts.
