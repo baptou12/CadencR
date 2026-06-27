@@ -322,6 +322,9 @@ fn replay_payload(
         use_worktree,
         new_project_branch: None,
         client_message_id: None,
+        // Replay re-sends an already-persisted message (replay → no new row),
+        // so there is nothing to ack a persisted id for.
+        user_message_ref: None,
         replay,
     }
 }

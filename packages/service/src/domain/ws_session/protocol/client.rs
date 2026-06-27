@@ -62,6 +62,12 @@ pub struct PromptSendPayload {
     pub new_project_branch: Option<NewProjectBranchPayload>,
     #[serde(default)]
     pub client_message_id: Option<String>,
+    /// Client-generated reference echoed back in `prompt_persisted` with the
+    /// persisted DB id, so the sender can stamp its live block and enable
+    /// rewind/fork without a reload. Sent for every prompt (unlike
+    /// `client_message_id`, which is receipt/steering-only).
+    #[serde(default)]
+    pub user_message_ref: Option<String>,
     #[serde(default)]
     pub replay: bool,
 }

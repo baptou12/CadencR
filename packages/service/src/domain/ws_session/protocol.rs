@@ -233,6 +233,7 @@ mod tests {
             use_worktree: None,
             new_project_branch: None,
             client_message_id: None,
+            user_message_ref: None,
             replay: false,
         };
         let v = serde_json::to_value(&p).unwrap();

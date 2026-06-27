@@ -25,6 +25,12 @@ async fn agent_session_profiles_migration_adds_provider_neutral_profile_column()
             permission_mode TEXT,
             codex_permission_mode TEXT NOT NULL DEFAULT 'default'
         );
+        -- The rewind/fork migration (20260627120000) alters agent_messages and
+        -- adds turn_checkpoints FK'd to it, so the fixture must provide it.
+        CREATE TABLE agent_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL
+        );
         INSERT INTO features (id) VALUES (1);
         INSERT INTO agent_sessions
             (id, feature_id, agent_type, status, runtime_provider, model)

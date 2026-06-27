@@ -24,6 +24,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         uuid::Uuid::parse_str(session_id).is_ok()
     }
 
+    fn session_branching(&self) -> Option<&dyn crate::domain::agents::adapter::SessionBranching> {
+        Some(&super::CLAUDE_SESSION_BRANCHING)
+    }
+
     fn resolve_resume_session_id(&self, runtime_session_id: Option<&str>) -> Option<String> {
         runtime_session_id
             .filter(|sid| uuid::Uuid::parse_str(sid).is_ok())
