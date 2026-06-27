@@ -76,11 +76,6 @@ export function useUnifiedAgentsFilters(): readonly [
   return useMemo(() => [filters, setFilters] as const, [filters, setFilters]);
 }
 
-export function usePersistedUnifiedAgentsFilters(): PersistedUnifiedAgentsFilters {
-  const [filters] = useUnifiedAgentsFilters();
-  return filters;
-}
-
 export function toUnifiedAgentsQueryParams(
   filters: Pick<PersistedUnifiedAgentsFilters, "mode" | "freshMinutes">,
   messageLimit: number,
