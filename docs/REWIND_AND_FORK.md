@@ -1,10 +1,47 @@
 # Rewind & Fork — Implementation Plan
 
-> Status: **Design approved, not yet implemented.**
+> Status: **Implemented for Claude Code** (Phases 1–6). Codex/OpenCode pending
+> (the seam is ready — see §12).
 > Audience: an engineer/agent implementing the feature end-to-end.
 > Scope of this document: **Claude Code provider first**, but every abstraction is
 > designed so Codex and OpenCode can implement the same feature later without
 > touching provider-neutral code.
+
+## Implementation notes (what shipped vs. the plan)
+
+- **Context cut = ordinal, not uuid, for Claude.** Claude assigns a JSONL `uuid`
+  to a user prompt only when it writes the transcript line; the headless stream
+  does not reliably echo the prompt back, and resume-replays would mis-stamp. So
+  the `provider_message_uuid` column ships (nullable, future-proof) but the
+  Claude cut is resolved by **ordinal** — the Nth real user-prompt line (tool
+  results / meta / compact-summary lines excluded). The `SessionBranching`
+  contract still *prefers* `cut_provider_uuid` when a provider populates it, so
+  uuid-match is live for future adapters. Matches §10's documented fallback,
+  here promoted to the Claude primary.
+- **Per-turn checkpoint capture** is wired into BOTH the pending (first prompt)
+  and followup (steering / subsequent turns) paths, because Claude keeps the CLI
+  alive between turns and most prompts after the first take the followup path.
+  Capture runs synchronously before the prompt reaches the agent (so the snapshot
+  is genuinely pre-edit) but holds no session lock.
+- **Fork creates a new *feature* that shares the source worktree** (open question
+  #1 resolved this way instead of deferring). The feature view binds exactly one
+  session and there is no multi-session switcher, so rather than spawn a second
+  session inside the source feature, fork mints a **new feature** (first-class
+  sidebar entry + view) under the same project. It copies the source feature's
+  `worktree_*` settings verbatim, so the new feature resolves to the **identical
+  worktree directory** with **zero git ops** — the provisioning replay
+  short-circuits on the already-present path (a `git worktree add` on the
+  already-checked-out branch would otherwise fail). The chosen message's text is
+  written to the new feature's `feature_settings.draft_prompt` (the source the
+  composer actually restores from — the session-scoped `agent_sessions.draft_prompt`
+  is **not** what the composer reads). The backend emits `FeatureEventAction::Created`
+  so the fork appears in every client's sidebar, and the originating client
+  **auto-navigates** to it (a session-scoped `forkNavigation` store signal consumed
+  by the source `AgentSession`). Both features then edit the same files — the
+  accepted trade-off of sharing one worktree. Rewind (in place) is fully wired too.
+- **Checkpoint GC** (open question #3) is not implemented in v1 — `refs/cadencr/
+  checkpoints/*` and `turn_checkpoints` rows accumulate until the feature is
+  deleted (CASCADE clears the rows). Pick a retention policy in a follow-up.
 
 ---
 
@@ -16,18 +53,21 @@ Two per-user-message actions, surfaced from the agent stream:
   *before* a chosen user message, **in place** (same session). The chosen
   message's text is restored into the composer as a **draft and is NOT sent** —
   the user can edit and re-send.
-- **Fork from here** — create a **new Claude Code session** that keeps only the
-  context *before* the chosen user message, **in the same worktree** (no new
-  feature, no new worktree, no code rollback). The chosen message's text is
-  restored into the new session's composer as a **draft and is NOT sent**.
+- **Fork from here** — create a **new feature** (with its own session) that keeps
+  only the context *before* the chosen user message, **sharing the source
+  feature's worktree** (no new worktree, no code rollback). The originating client
+  navigates to the new feature; the chosen message's text is restored into its
+  composer as a **draft and is NOT sent**.
 
 Both actions require **point-in-time truncation of the model's real context**
 (not just our UI). See §3 for why and how.
 
 ### Non-goals (v1)
 
-- Forking into a separate worktree/feature (we chose same-worktree on purpose —
-  see §3).
+- Forking into a separate *worktree* (the fork is a new feature but **shares**
+  the source worktree on purpose — see §3). A future "fork into an isolated
+  worktree" mode is possible (branch from the fork-point checkpoint) but out of
+  v1 scope.
 - Rolling back files changed by bash commands or files outside the worktree
   (same limitation as Claude's native `/rewind`).
 - Codex / OpenCode implementations (architecture is ready for them — see §12).
@@ -65,8 +105,8 @@ References: `code.claude.com/docs/en/checkpointing`, `/en/sessions`,
 | Decision | Choice | Rationale |
 |---|---|---|
 | Context-truncation fidelity | **Faithful transcript surgery** | The model must genuinely forget everything after the cut; matches native `/rewind` and the "keep context before N" spec. Non-truncating resume (t3code-style) and DB-replay were rejected as not meeting the spec. |
-| Fork target | **Same worktree, new Claude session id** | Lighter weight; matches "a new session" mental model. Consequence below. |
-| Fork + code | **Fork does NOT roll back code** | Two sessions share one worktree; restoring code under a fork would clobber the originating session. Fork branches **conversation only**; code stays at the worktree's current state. Coherent code+conversation rollback is the **rewind** flow's job. |
+| Fork target | **New feature, sharing the source worktree, new Claude session id** | A new feature is a first-class view + sidebar entry, so the fork has somewhere to render and the client can navigate to it (no multi-session switcher needed). It copies the source's `worktree_*` settings, resolving to the *same* directory with no git ops. |
+| Fork + code | **Fork does NOT roll back code** | The forked feature shares the source worktree; restoring code under it would clobber the originating feature. Fork branches **conversation only**; code stays at the worktree's current state. Coherent code+conversation rollback is the **rewind** flow's job. |
 | Provider isolation | **Adapter/capability trait** | Claude-specific surgery lives behind a trait; generic code never branches on provider identity (project rule). |
 | Surgery failure | **Auto-fallback to non-truncating resume + user-visible warning** | Never hard-fail the user action if the internal JSONL format drifts. |
 
@@ -369,16 +409,21 @@ Shared preamble for **both** flows:
 5. Respond `{ session, draft_text }`. Streaming resumes through the normal send
    path when the user re-sends.
 
-**Fork (same worktree, new session):**
+**Fork (new feature, shared worktree, new session):**
 
 1. **No code restore** (decision §3).
 2. (context) `branching.truncate_before(...)` → `new_id`.
-3. (db) Create a new `agent_sessions` row under the **same** `feature_id`; copy
-   `agent_messages[0, message_id)` into it; set its `runtime_session_id =
+3. (db, one tx) Create a **new feature** under the source's `project_id`; copy the
+   source feature's `worktree_*`/`skip_worktree` settings so it resolves to the
+   same directory; write the chosen message's text to the new feature's
+   `feature_settings.draft_prompt`; create an `agent_sessions` row under the **new**
+   feature, copy `agent_messages[0, message_id)` into it, set `runtime_session_id =
    new_id`. Record lineage: `agent_message_origins(origin_kind='session_generated',
-   source_session_id, source_message_id=message_id)`.
-4. (draft) Save the chosen message's text as the **new** session's draft.
-5. Respond `{ new_session, draft_text }`. Frontend switches to the new session.
+   source_session_id, source_feature_id, source_message_id=message_id)`.
+4. (broadcast) `feature_events.emit(new_feature_id, Some(project_id), Created)` so
+   every client's sidebar shows the fork.
+5. Respond `{ newFeatureId, projectId, newSessionId, draftText }`. The originating
+   client navigates to the new feature; its composer restores the draft.
 
 ### 7.5 Transport — routes
 
@@ -519,14 +564,16 @@ sequenceDiagram
     ORCH->>SURG: truncate_before(provider_uuid)
     SURG-->>ORCH: new-id (forked transcript file)
 
-    ORCH->>DB: INSERT agent_sessions (same feature_id, runtime_session_id = new-id)
+    ORCH->>DB: INSERT features (same project) + copy worktree_* settings (shared dir)
+    ORCH->>DB: feature_settings.draft_prompt = text of N (new feature)
+    ORCH->>DB: INSERT agent_sessions (new feature_id, runtime_session_id = new-id)
     ORCH->>DB: copy agent_messages [0, N) into new session
-    ORCH->>DB: agent_message_origins(session_generated, source_session_id, source_message_id = N)
-    ORCH->>DB: draft.save(new session, text of N)
-    ORCH-->>FE: ok { newSession, draftText }
+    ORCH->>DB: agent_message_origins(session_generated, source_session_id, source_feature_id, source_message_id = N)
+    ORCH->>SVC: feature_events.emit(new_feature, project, Created) → all sidebars
+    ORCH-->>FE: ok { newFeatureId, projectId, newSessionId, draftText }
 
-    FE->>FE: switch to new session
-    FE->>FE: composer.draft = draftText then focus
+    FE->>FE: navigate to new feature
+    FE->>FE: composer restores draft_prompt of new feature
     FE-->>User: new forked session, original intact, msg N waiting in composer
 ```
 
@@ -550,13 +597,14 @@ sequenceDiagram
   `.env`, `node_modules`). Restrict to the worktree path.
 - **Files outside the worktree / bash `rm`/`mv`:** not covered (documented
   limitation, same as native).
-- **Concurrent sessions in the same feature (fork):** verify the feature UI can
-  display/select more than one live session before shipping fork (Unified Agents
-  grid suggests yes — confirm). If not, fork must also create the UI affordance
-  to switch sessions.
+- **No multi-session switcher needed (fork):** rather than display two sessions in
+  one feature, fork mints a **new feature** — a first-class view the client
+  navigates to. This sidesteps the "can the feature UI show >1 session?" question
+  entirely.
 - **Resume scoping:** `claude --resume <id>` is scoped to the cwd it was created
   in; the forked `.jsonl` must live in the **same** `~/.claude/projects/<encoded
-  cwd>/` dir as the source (it does, because fork keeps the same worktree).
+  cwd>/` dir as the source (it does, because the forked feature shares the source
+  worktree, so the cwd is identical).
 - **Error surfacing:** every failure path returns a typed error and a toast (no
   silent catches) per `.claude/rules/error-handling`.
 
@@ -564,24 +612,58 @@ sequenceDiagram
 
 ## 11. Phased delivery (each phase independently shippable)
 
-- [ ] **Phase 1 — Checkpoints subsystem (provider-neutral).** New
-      `domain/checkpoints/`, `turn_checkpoints` migration, capture hook on turn
-      start, restore fn. Ship "restore code to a message" alone (even before
-      conversation rewind) to de-risk the git work. Tests in §13.
-- [ ] **Phase 2 — Capability seam + Claude surgery + uuid capture.** Add
-      `SessionBranching` trait + `session_branching()` default, Claude
-      `branching.rs`, `provider_message_uuid` column + capture in
-      `claude_code/session.rs`. Unit-test surgery against fixture JSONL.
-- [ ] **Phase 3 — Rewind orchestrator + WS route + stop-turn interplay.** Wire
+- [x] **Phase 1 — Checkpoints subsystem (provider-neutral).** `domain/checkpoints/`
+      (`git_ops` + `repo` + `mod`), `turn_checkpoints` migration, capture hook on
+      turn start (pending + followup), restore fn, `run_git_with_env` for the
+      isolated-index snapshot. Tests: §13 git round-trip + migration cascade.
+- [x] **Phase 2 — Capability seam + Claude surgery.** `SessionBranching` trait +
+      `session_branching()` default, Claude `branching.rs` + `jsonl_surgery.rs`,
+      `provider_message_uuid` column (ordinal cut is the Claude primary — see
+      Implementation notes). Unit-tested against fixture JSONL.
+- [x] **Phase 3 — Rewind orchestrator + WS route + stop-turn interplay.**
       `branch.rewind`, interrupt/close live turn, restore + truncate + db +
-      draft. Integration test the full flow.
-- [ ] **Phase 4 — Fork orchestrator + lineage + WS route.** `branch.fork`,
-      new-session creation, message copy, `agent_message_origins`.
-- [ ] **Phase 5 — Frontend.** `AgentStreamContextMenu` items gated on
-      `user_message`, confirm dialog for dirty worktree, local block truncation,
-      session switch on fork, draft pre-fill + focus, provenance badge copy.
-- [ ] **Phase 6 — Hardening.** Surgery fallback path, JSONL version guard,
-      ordinal-match fallback, telemetry, docs, QA via the `qa` skill.
+      draft, dirty-worktree confirm gate. DB-level tests for the delete path.
+- [x] **Phase 4 — Fork orchestrator + lineage + WS route.** `branch.fork` creates
+      a **new feature** sharing the source worktree (copied `worktree_*` settings),
+      a session under it, message copy `[0,N)`, `feature_settings.draft_prompt`,
+      `agent_message_origins` badge, and a `Created` feature event. One transaction.
+      DB-level tests for the feature/worktree/copy + lineage.
+- [x] **Phase 5 — Frontend.** `AgentStreamContextMenu` items gated on
+      `user_message`, confirm dialog, local block truncation, draft pre-fill +
+      focus, provenance badge. Fork **auto-navigates** to the new feature
+      (session-scoped `forkNavigation` signal → `AgentSession` effect).
+- [x] **Phase 5.1 — Live-message branchability.** Rewind/Fork target a persisted
+      message id. A message sent in the *current* session is a local `ws-user-*`
+      block with no DB id, so the menu items were hidden on it until reload (only
+      blocks re-seeded from the DB as `msg-<id>` were branchable). Fix: every
+      `prompt.send` now carries a **`user_message_ref`** — a client-generated id
+      stored on the local block as `clientMessageId`, generated for *every* send
+      (first/queued, idle follow-up, and steering) and threaded through the queue
+      for the first message. The backend echoes it in a `session/prompt_persisted`
+      ack to the sender right after persisting the user message (both the initial
+      and follow-up persist sites). The frontend stamps `messageDbId` on the
+      matching live block (id/key left untouched → no Virtuoso remount) and the
+      gate reads `block.messageDbId ?? messageIdFromBlockId(block.id)`. The ack is
+      emitted at persist time (before the agent acks), so it precedes any
+      `prompt_received`. Note `user_message_ref` is deliberately distinct from
+      `client_message_id` (receipt/steering-only) so idle/first sends don't engage
+      the receipt machinery. **Known gap:** plan approve/reject synthetic messages
+      (`ws-session-actions.ts`) bypass `sendPrompt` and remain reload-only.
+- [x] **Phase 6.1 — Transcript-path encoding fix.** `encode_project_path`
+      (`imports/claude_code_jsonl.rs`) replaced only `/` with `-`, but Claude
+      Code replaces *every* non-alphanumeric char (so `/.cadencr` → `--cadencr`,
+      not `-.cadencr`). Since all Cadencr worktrees live under `~/.cadencr/`, the
+      derived `~/.claude/projects/<dir>` was wrong for every session: the
+      transcript was never found, `truncate_before` returned
+      `BranchError::Unsupported("transcript not readable …")`, and rewind/fork
+      fell back to resuming the **full, un-trimmed** history while showing a
+      "Context could not be trimmed" warning. The DB/code rewind still worked, so
+      it *looked* fine, but the agent kept its full memory. Fix: replace all
+      non-alphanumeric chars with `-`. Also repairs Claude **import** for any
+      dotted project path. Regression-tested (`encode_project_path_collapses_dot_dirs`).
+- [x] **Phase 6 — Hardening.** Surgery fallback path, JSONL format guard,
+      ordinal-match fallback, telemetry (tracing), docs. `pnpm test` / `lint` /
+      `ts-check` / `knip` green.
 
 ---
 
@@ -630,12 +712,13 @@ The seam is already provider-neutral. To add a provider later:
 
 ## 14. Open questions to confirm before/during build
 
-1. **Multiple sessions per feature in the UI** — does the current feature view
-   let the user see/switch between >1 session? Required for Fork (Phase 4). If
-   not, add it there.
-2. **Fork code semantics** — confirmed v1 = no code rollback (conversation-only).
-   Revisit only if product wants fork to also restore code (would require a
-   separate worktree, reversing the same-worktree decision).
+1. **Multiple sessions per feature in the UI** — RESOLVED by not needing it: fork
+   creates a **new feature** (its own view), so the feature view never has to host
+   >1 session. The client auto-navigates to the new feature after fork.
+2. **Fork code semantics** — confirmed v1 = no code rollback (conversation-only),
+   and the forked feature **shares** the source worktree. Revisit only if product
+   wants an "isolated fork" mode (own worktree branched from the fork-point
+   checkpoint), which reverses the shared-worktree decision.
 3. **Checkpoint retention** — when to GC `refs/cadencr/checkpoints/*` and
    `turn_checkpoints` rows (e.g. on feature delete, or a depth cap). Native
    Claude GCs at 30 days; pick a policy in Phase 1.
