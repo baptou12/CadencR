@@ -132,6 +132,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // "true"/"false" (default enabled) and gates whether the `cadencr-browser`
     // MCP is attached to agent turns — read in the session-prompt spawn path.
     "browser_default_mode",
+    // JSON array of domains whose links open in Cadencr's own browser tab
+    // (instead of the system browser). Default seeded by the frontend with
+    // localhost/127.0.0.1. See packages/desktop/src/lib/link-routing.ts.
+    "browser_internal_domains",
     "browser_mcp_enabled",
     "project_mcp_enabled",
     "workspace_mcp_enabled",

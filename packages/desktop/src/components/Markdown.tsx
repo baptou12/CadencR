@@ -9,7 +9,50 @@ import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cn } from "@/lib/utils";
 import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
+import { useLinkRouting } from "@/components/links/LinkRoutingContext";
 import "./dracula-highlight.css";
+
+const LINK_CLASS =
+  "text-[var(--acc-cyan)] underline underline-offset-2 hover:text-[var(--acc-purple)]";
+
+/**
+ * Anchor renderer for agent-chat markdown. Inside a feature, links route
+ * through the shared link layer: Cmd/Ctrl+Click opens via the domain policy,
+ * plain click is inert (preserves text selection), and hovering feeds the
+ * native right-click menu its open choices. Rendered outside a feature (e.g.
+ * the changelog dialog) it falls back to the previous open-in-new-tab anchor.
+ */
+function MarkdownLink({
+  href,
+  children,
+}: {
+  href?: string;
+  children: React.ReactNode;
+}): ReactElement {
+  const routing = useLinkRouting();
+  if (!routing || !href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <a
+      href={href}
+      rel="noopener noreferrer"
+      className={LINK_CLASS}
+      onClick={(event) => {
+        event.preventDefault();
+        if (event.metaKey || event.ctrlKey) routing.activate(href);
+      }}
+      onMouseEnter={() => routing.setHoverLink(href)}
+      onMouseLeave={() => routing.setHoverLink(null)}
+    >
+      {children}
+    </a>
+  );
+}
 
 // Mermaid is heavy (~500KB) and pulled in only when a diagram is rendered.
 const MermaidDiagram = lazy(() => import("@/components/MermaidDiagram"));
@@ -159,16 +202,7 @@ function buildComponents(
       );
     },
     pre: ({ children }) => <>{children}</>,
-    a: ({ href, children }) => (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-[var(--acc-cyan)] underline underline-offset-2 hover:text-[var(--acc-purple)]"
-      >
-        {children}
-      </a>
-    ),
+    a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
     table: ({ children }) => (
       <div className="my-2 overflow-x-auto">
         <table className="min-w-full border-collapse text-xs">{children}</table>

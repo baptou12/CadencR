@@ -1,4 +1,5 @@
-import { isSafeExternalUrl } from "@/lib/safe-url";
+import { isSafeExternalUrl, isUserOpenableUrl } from "@/lib/safe-url";
+import type { LinkHoverContext, LinkMenuOpenPayload } from "@/lib/link-routing";
 import type {
   BrowserBounds,
   BrowserCommentBadgeClick,
@@ -102,6 +103,21 @@ export interface CadencrDesktopBridge {
   onFileDrop: (cb: (payload: FileDropPayload) => void) => () => void;
   revealInFinder: (path: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
+  /**
+   * User-initiated "open in default browser" for a clicked link. Looser than
+   * {@link openExternal}: permits `http:` and loopback hosts so a dev-server
+   * URL can be opened in the system browser on demand. Still rejects
+   * credentials and non-http(s) schemes.
+   */
+  openExternalLink: (url: string) => Promise<void>;
+  /**
+   * Inform the main process which link the pointer is over (or `null` on
+   * leave) so its native right-click menu can offer feature-scoped open
+   * choices. Used by the terminal and agent chat.
+   */
+  setLinkHoverContext: (context: LinkHoverContext | null) => Promise<void>;
+  /** Fired when the user picks an open action from the native link menu. */
+  onOpenLinkFromMenu: (cb: (payload: LinkMenuOpenPayload) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   /**
    * Prompt the user with the native "Save As" dialog. Resolves to the chosen
@@ -239,6 +255,20 @@ const browserBridge: CadencrBrowserBridge = {
     window.open(url, "_blank", "noopener,noreferrer");
     return Promise.resolve();
   },
+  openExternalLink: (url: string) => {
+    if (typeof window === "undefined") return Promise.resolve();
+    if (!isUserOpenableUrl(url)) {
+      return Promise.reject(
+        new Error("Only http:// and https:// links without credentials can be opened."),
+      );
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    return Promise.resolve();
+  },
+  // No native context menu outside the desktop shell, so hover context is a
+  // no-op and the menu never fires.
+  setLinkHoverContext: () => Promise.resolve(),
+  onOpenLinkFromMenu: () => () => undefined,
   pickDirectory: () => unavailable("pickDirectory"),
   showSaveDialog: () => unavailable("showSaveDialog"),
   notifyPermission: () => Promise.resolve(false),

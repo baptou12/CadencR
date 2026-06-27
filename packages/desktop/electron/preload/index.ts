@@ -178,6 +178,12 @@ contextBridge.exposeInMainWorld("cadencr", {
   onFileDrop,
   revealInFinder: (path: string): Promise<void> => ipcRenderer.invoke("shell:reveal", path),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke("shell:open-external", url),
+  openExternalLink: (url: string): Promise<void> =>
+    ipcRenderer.invoke("shell:open-external-link", url),
+  setLinkHoverContext: (context: unknown): Promise<void> =>
+    ipcRenderer.invoke("links:set-hover-context", context),
+  onOpenLinkFromMenu: (cb: (payload: unknown) => void): (() => void) =>
+    onIpc("links:open-from-menu", cb),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke("dialog:pick-directory"),
   showSaveDialog: (opts: { defaultPath: string; title?: string }): Promise<string | null> =>
     ipcRenderer.invoke("dialog:save-file", opts),
