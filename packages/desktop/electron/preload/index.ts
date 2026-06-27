@@ -227,6 +227,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:activate-tab", tabId),
   closeBrowserTab: (tabId: string): Promise<BrowserStateSnapshot> =>
     ipcRenderer.invoke("browser:close-tab", tabId),
+  closeBrowserTabsForScope: (scopeId: number): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:close-tabs-for-scope", scopeId),
   setBrowserBounds: (
     bounds: BrowserBounds,
     scopeId?: number | null,
