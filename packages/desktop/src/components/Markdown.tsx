@@ -1,4 +1,4 @@
-import { memo, lazy, Suspense, useMemo, type ReactElement } from "react";
+import { memo, lazy, Suspense, useMemo, useRef, type ReactElement } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -130,6 +130,23 @@ function extractText(children: React.ReactNode): string {
 
 const SHELL_LANGUAGES = new Set(["bash", "sh", "zsh", "shell", "console", "terminal"]);
 
+/**
+ * Whether a fenced code block has received its closing ``` fence. While an
+ * agent streams, remark parses the still-open fence as a code block that runs
+ * to the end of the content, so its last line is diagram source rather than a
+ * fence marker. We use this to hold off rendering a mermaid diagram until the
+ * block is fully emitted — partial source would otherwise thrash the parser.
+ */
+function isFenceClosed(
+  content: string,
+  node?: { position?: { end?: { line?: number } } },
+): boolean {
+  const endLine = node?.position?.end?.line;
+  if (endLine == null) return true; // no position info → treat as complete
+  const lastLine = content.split("\n")[endLine - 1];
+  return lastLine !== undefined && /^\s{0,3}(```|~~~)/.test(lastLine);
+}
+
 /** Shown while the lazy mermaid chunk loads. */
 function MermaidFallback({ code }: { code: string }): ReactElement {
   return (
@@ -140,6 +157,9 @@ function MermaidFallback({ code }: { code: string }): ReactElement {
 }
 
 function buildComponents(
+  // A ref (not the raw string) so the components object stays stable across
+  // streaming ticks; the code renderer reads the latest content at build time.
+  contentRef: { readonly current: string },
   sendToTerminal?: (cmd: string) => void,
   renderDiagrams = false,
 ): Components {
@@ -168,9 +188,10 @@ function buildComponents(
       if (match || isBlock) {
         const lang = match?.[1] ?? "text";
         const code = extractText(children).replace(/\n$/, "");
-        // Render mermaid as a diagram once the block is stable (not streaming);
-        // while streaming it falls through to the normal highlighted code block.
-        if (lang === "mermaid" && renderDiagrams) {
+        // Render mermaid as a diagram only once the closing fence has arrived;
+        // until then (mid-stream) it falls through to the normal highlighted
+        // code block so the user sees the source instead of a parse error.
+        if (lang === "mermaid" && renderDiagrams && isFenceClosed(contentRef.current, node)) {
           return (
             <Suspense fallback={<MermaidFallback code={code} />}>
               <MermaidDiagram code={code} />
@@ -247,8 +268,12 @@ export const Markdown = memo(function Markdown({ content, className, cacheKey }:
   // A set `cacheKey` marks a stable (non-streaming) block; only then do we
   // render mermaid as a diagram, so partial source never thrashes the parser.
   const renderDiagrams = cacheKey !== undefined;
+  // Keep the current content reachable from the (stable) components object
+  // without forcing it to rebuild on every streaming tick.
+  const contentRef = useRef(content);
+  contentRef.current = content;
   const components = useMemo(
-    () => buildComponents(sendToTerminal, renderDiagrams),
+    () => buildComponents(contentRef, sendToTerminal, renderDiagrams),
     [sendToTerminal, renderDiagrams],
   );
 
