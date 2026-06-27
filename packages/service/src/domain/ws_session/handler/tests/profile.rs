@@ -56,20 +56,13 @@ async fn profile_set_updates_only_the_session_profile_column() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
     let app_state = make_test_app_state().await;
-    sqlx::query(
-        "CREATE TABLE claude_code_profiles (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            env_json TEXT NOT NULL DEFAULT '{}'
-        )",
+    // Profiles now live in the JSON settings, not SQLite — seed one there.
+    crate::domain::agents::claude_code::profiles::upsert_profile(
+        "bedrock",
+        &std::collections::HashMap::new(),
     )
-    .execute(&app_state.write_pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO claude_code_profiles (name, env_json) VALUES ('bedrock', '{}')")
-        .execute(&app_state.write_pool)
-        .await
-        .unwrap();
     let session_id = init_session_with_payload(
         &tx,
         &mut rx,
