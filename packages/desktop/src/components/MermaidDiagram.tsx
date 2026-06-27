@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { CodeIcon, EyeIcon, Loader2Icon, AlertTriangleIcon } from "lucide-react";
 import { CodeBlockShell } from "@/components/CodeBlockShell";
+import { MermaidDiagramView } from "@/components/MermaidDiagramView";
 import { cachedHighlight } from "@/components/Markdown";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -121,12 +122,7 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: MermaidDiagramProp
           <span>Rendering diagram…</span>
         </div>
       ) : (
-        <div
-          className="flex justify-center overflow-x-auto p-3 [&_svg]:max-w-full [&_svg]:h-auto"
-          // mermaid runs in securityLevel "strict" (no scripts/HTML in labels),
-          // so the produced SVG is safe to inject.
-          dangerouslySetInnerHTML={{ __html: state.svg }}
-        />
+        <MermaidDiagramView svg={state.svg} />
       )}
     </CodeBlockShell>
   );
