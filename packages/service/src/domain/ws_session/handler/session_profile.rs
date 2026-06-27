@@ -20,7 +20,7 @@ pub(super) fn prompt_profile(payload: &PromptSendPayload) -> Option<&str> {
 }
 
 pub(super) async fn resolve_provider_profile(
-    app_state: &AppState,
+    _app_state: &AppState,
     provider: &str,
     profile: &str,
 ) -> Result<SessionProfileUpdate, String> {
@@ -30,10 +30,8 @@ pub(super) async fn resolve_provider_profile(
             env: None,
         });
     }
-    let (name, env) =
-        claude_code::profiles::resolve_profile_env_by_name(&app_state.read_pool, Some(profile))
-            .await
-            .map_err(|error| error.to_string())?;
+    let (name, env) = claude_code::profiles::resolve_profile_env_by_name(Some(profile))
+        .map_err(|error| error.to_string())?;
     Ok(SessionProfileUpdate { name, env })
 }
 
@@ -69,12 +67,8 @@ pub(super) async fn resolve_initial_claude_profile(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return claude_code::profiles::resolve_profile_env_by_name(
-            &app_state.read_pool,
-            Some(profile),
-        )
-        .await
-        .unwrap_or_else(|error| {
+        return claude_code::profiles::resolve_profile_env_by_name(Some(profile))
+            .unwrap_or_else(|error| {
             tracing::warn!(
                 db_session_id,
                 profile,
@@ -85,8 +79,7 @@ pub(super) async fn resolve_initial_claude_profile(
         });
     }
 
-    let (profile, env) =
-        claude_code::profiles::resolve_active_profile_env(&app_state.read_pool).await;
+    let (profile, env) = claude_code::profiles::resolve_active_profile_env();
     WsSessionPersistence::update_profile_static(&app_state.write_pool, db_session_id, &profile)
         .await;
     (profile, env)

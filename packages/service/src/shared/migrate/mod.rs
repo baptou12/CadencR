@@ -16,7 +16,8 @@ mod support;
 #[cfg(test)]
 mod test_fixtures;
 mod version_guard;
-use support::{backup_database, emit_phase, has_pending_migrations, table_exists};
+pub(crate) use support::table_exists;
+use support::{backup_database, emit_phase, has_pending_migrations};
 /// Inputs for a single startup migration pass.
 pub struct MigrationContext<'a> {
     pub pool: &'a SqlitePool,
