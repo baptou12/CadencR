@@ -169,7 +169,7 @@ export const GitGraphView = memo(function GitGraphView({
           itemContent={itemContent}
           endReached={handleEndReached}
           increaseViewportBy={ROW_HEIGHT * 6}
-          components={hasMore ? { Footer: GraphFooter } : undefined}
+          components={hasMore ? { Footer: GraphFooter } : {}}
         />
       </div>
     </div>
