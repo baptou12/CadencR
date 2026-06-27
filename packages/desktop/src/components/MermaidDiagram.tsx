@@ -51,8 +51,15 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: MermaidDiagramProp
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",
+          // Never let mermaid inject its error "bomb" diagram into document.body;
+          // on a failed render it leaks a stray, un-React-managed node there.
+          suppressErrorRendering: true,
           theme: appearance === "dark" ? "dark" : "default",
         });
+        // Validate first: parse() throws on invalid syntax without touching the
+        // DOM, so we never reach render() (and its DOM-leaking error path) for
+        // invalid output. Invalid diagrams fall back to the source view below.
+        await mermaid.parse(code);
         const { svg } = await mermaid.render(`mermaid-${idCounter++}`, code);
         if (cancelled) return;
         cacheSvg(key, svg);
