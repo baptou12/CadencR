@@ -53,6 +53,7 @@ function bridge(): CadencrBrowserBridge {
     navigateBrowserTab: vi.fn(),
     activateBrowserTab: vi.fn(),
     closeBrowserTab: vi.fn(),
+    closeBrowserTabsForScope: vi.fn(),
     setBrowserBounds: vi.fn(() =>
       Promise.resolve({
         tabs: [],

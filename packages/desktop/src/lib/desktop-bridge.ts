@@ -182,6 +182,8 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   navigateBrowserTab: (tabId: string, url: string) => Promise<BrowserTabMetadata>;
   activateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
   closeBrowserTab: (tabId: string) => Promise<BrowserStateSnapshot>;
+  /** Close every browser tab belonging to a feature scope in one pass. */
+  closeBrowserTabsForScope: (scopeId: number) => Promise<BrowserStateSnapshot>;
   setBrowserBounds: (
     bounds: BrowserBounds,
     scopeId?: number | null,
@@ -295,6 +297,7 @@ const browserBridge: CadencrBrowserBridge = {
   navigateBrowserTab: () => unavailable("navigateBrowserTab"),
   activateBrowserTab: () => unavailable("activateBrowserTab"),
   closeBrowserTab: () => unavailable("closeBrowserTab"),
+  closeBrowserTabsForScope: () => unavailable("closeBrowserTabsForScope"),
   setBrowserBounds: () => unavailable("setBrowserBounds"),
   // No native browser view exists in a remote/browser tab, so suppression is a
   // no-op (resolve) rather than an error — dialogs never call it expecting work.

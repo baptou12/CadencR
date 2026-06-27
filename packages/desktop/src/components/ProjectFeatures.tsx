@@ -30,6 +30,8 @@ import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { partitionActiveFeatures } from "@/lib/feature-grouping";
 import { useFeatureActivityCounts } from "@/hooks/useFeatureActivityCounts";
+import { useCloseFeatureActivity } from "@/hooks/useCloseFeatureActivity";
+import { normalizeLabel, uniqueLabels } from "@/lib/feature-labels";
 import {
   deleteFeatureDialogTitle,
   getPendingFeatureArchiveAction,
@@ -264,6 +266,16 @@ export function ProjectFeatures({
     [handleUpdateFeatureStatus],
   );
 
+  // Counts come in from the row (which already has them) so this callback stays
+  // referentially stable across the sidebar's 2s activity polling.
+  const closeFeatureActivity = useCloseFeatureActivity();
+  const handleCloseActivity = useCallback(
+    (featureId: number, shellCount: number, browserCount: number): void => {
+      closeFeatureActivity({ featureId, shellCount, browserCount });
+    },
+    [closeFeatureActivity],
+  );
+
   const renderFeature = (feature: Feature) => (
     <ProjectFeatureRow
       key={feature.id}
@@ -288,6 +300,7 @@ export function ProjectFeatures({
       onArchiveOrDelete={setConfirmFeatureId}
       onUnarchive={handleUnarchiveFeature}
       onTogglePin={handleTogglePin}
+      onCloseActivity={handleCloseActivity}
     />
   );
 
@@ -376,18 +389,4 @@ export function ProjectFeatures({
       )}
     </div>
   );
-}
-
-function uniqueLabels(features: readonly Feature[]): string[] {
-  const labels = new Set<string>();
-  for (const feature of features) {
-    const label = normalizeLabel(feature.label ?? "");
-    if (label) labels.add(label);
-  }
-  return [...labels].sort((a, b) => a.localeCompare(b));
-}
-
-function normalizeLabel(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
