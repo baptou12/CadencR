@@ -91,6 +91,17 @@ export interface StreamHealth {
   since?: number;
 }
 
+/**
+ * Explicit anchor for a message resync, supplied by the "Sync from CLI" action.
+ * Bypasses the store's own (possibly stale) `sessionDbId`/cursor so only the
+ * rows the backend just appended (`id > cursor`) are fetched and merged.
+ */
+export interface ResyncTarget {
+  featureId: number;
+  sessionDbId: number;
+  cursor: number;
+}
+
 export function createStreamHealth(): StreamHealth {
   return { state: "ok" };
 }
@@ -293,6 +304,12 @@ export interface WsSessionStore {
    * `historyPrependDisplayOffset` by the rendered row count for Virtuoso.
    */
   loadOlderMessages: (sessionId: string) => Promise<number>;
+  /**
+   * Pull any messages persisted after the newest block we hold and merge them
+   * in — the same catch-up path used on WS reconnect. Used after a manual
+   * "Sync from CLI" appends events to the session on the backend.
+   */
+  refreshSessionMessages: (sessionId: string, target?: ResyncTarget) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

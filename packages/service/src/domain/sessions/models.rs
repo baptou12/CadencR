@@ -211,6 +211,19 @@ pub struct MessageFullContentResponse {
     pub content: String,
 }
 
+/// Result of syncing a session from the provider's on-disk CLI conversation.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct RefreshSessionResponse {
+    /// How many newer events were appended (`0` when already up to date).
+    pub added: u32,
+    /// The `agent_sessions.id` the events were appended to — lets the client
+    /// fetch exactly the new rows even when its own session id is stale.
+    pub session_db_id: i64,
+    /// Highest `agent_messages.id` present *before* the append. The new rows are
+    /// exactly those with `id > cursor`, so the client fetches `after` this.
+    pub cursor: i64,
+}
+
 /// Notification preview: the start of the agent's latest text reply for a
 /// feature, cleaned to a single line. `null` when the feature has no agent
 /// reply yet (callers fall back to the feature title).

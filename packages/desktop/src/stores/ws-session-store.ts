@@ -59,6 +59,7 @@ import {
 import {
   type SessionEntry,
   type WsSessionStore,
+  type ResyncTarget,
   createSessionEntry,
   type PermissionMode,
   updateSession,
@@ -684,6 +685,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     async loadOlderMessages(sessionId: string): Promise<number> {
       return loadOlderSessionMessages(ctx, sessionId);
+    },
+
+    refreshSessionMessages(sessionId: string, target?: ResyncTarget): Promise<void> {
+      return resyncMessagesOnReconnect(ctx, sessionId, target);
     },
   };
 });
