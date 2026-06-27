@@ -232,6 +232,27 @@ describe("ws-session-store", () => {
     });
   });
 
+  it("sendPrompt always carries a user_message_ref and stamps the live block on prompt_persisted", async () => {
+    const { store, ws } = await connectInitializedSession();
+
+    store.sendPrompt("s1", "hello");
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    const ref = sent.at(-1).payload.user_message_ref;
+    expect(ref).toEqual(expect.any(String));
+    const block = useWsSessionStore.getState().sessions["s1"].blocks.at(-1);
+    expect(block?.clientMessageId).toBe(ref);
+    expect(block?.messageDbId).toBeUndefined();
+
+    // The persisted ack arrives and stamps the DB id (enables rewind/fork).
+    ws.simulateMessage({
+      domain: "session",
+      action: "prompt_persisted",
+      payload: { user_message_ref: ref, message_id: 4242 },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].blocks.at(-1)?.messageDbId).toBe(4242);
+  });
+
   it("setProfile sends a session-scoped profile.set envelope", async () => {
     const { store, ws } = await connectInitializedSession();
 

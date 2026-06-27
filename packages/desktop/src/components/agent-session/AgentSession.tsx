@@ -1,12 +1,16 @@
 import {
   useState,
   useEffect,
+  useMemo,
   useRef,
   useImperativeHandle,
   useCallback,
   forwardRef,
   memo,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useWsSessionStore } from "@/stores/ws-session-store";
+import { navigateToFeatureIdOrHome } from "../project-feature-navigation";
 import { capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
 import type { AgentPromptBarHandle } from "../AgentPromptBar";
@@ -29,6 +33,8 @@ import { AgentSessionComposer } from "./AgentSessionComposer";
 import { AgentSessionFrame } from "./AgentSessionFrame";
 import { AgentSessionStreamContent } from "./AgentSessionStreamContent";
 import { useClaudeProfileSelection } from "./useClaudeProfileSelection";
+import { AgentSessionProvider } from "./agent-session-context";
+import { BranchConfirmDialog } from "./BranchConfirmDialog";
 
 const META_BAR_COMPACT_THRESHOLD_PX = 640;
 
@@ -181,6 +187,39 @@ export const AgentSession = memo(
       }),
       [isOpen],
     );
+
+    // Identity for the stream subtree (the per-block context menu dispatches
+    // rewind/fork against this). Stable per session → no streaming re-renders.
+    const agentSessionContextValue = useMemo(
+      () => ({ wsSessionId: wsSessionId ?? null }),
+      [wsSessionId],
+    );
+
+    // Apply a rewound/forked draft into the composer when the store signals one
+    // for this session, then consume it so it fires once.
+    const composerPrefill = useWsSessionStore((s) =>
+      s.composerPrefill?.sessionId === wsSessionId ? s.composerPrefill : null,
+    );
+    const consumeComposerPrefill = useWsSessionStore((s) => s.consumeComposerPrefill);
+    useEffect(() => {
+      if (!wsSessionId || !composerPrefill) return;
+      promptBarRef.current?.setDraft(composerPrefill.text);
+      consumeComposerPrefill(wsSessionId);
+    }, [composerPrefill, wsSessionId, consumeComposerPrefill]);
+
+    // Navigate this client to a just-forked feature once the store signals one
+    // for this (source) session, then consume it so it fires once. Other devices
+    // see the fork appear in their sidebar via the `feature.created` broadcast.
+    const navigate = useNavigate();
+    const forkNavigation = useWsSessionStore((s) =>
+      s.forkNavigation?.sessionId === wsSessionId ? s.forkNavigation : null,
+    );
+    const consumeForkNavigation = useWsSessionStore((s) => s.consumeForkNavigation);
+    useEffect(() => {
+      if (!wsSessionId || !forkNavigation) return;
+      navigateToFeatureIdOrHome(navigate, forkNavigation.projectId, forkNavigation.featureId);
+      consumeForkNavigation(wsSessionId);
+    }, [forkNavigation, wsSessionId, consumeForkNavigation, navigate]);
 
     const handleToggle = () => {
       if (onToggle) onToggle();
@@ -348,30 +387,33 @@ export const AgentSession = memo(
     );
 
     return (
-      <AgentSessionFrame
-        containerRef={containerRef}
-        headerRef={headerRef}
-        collapsible={collapsible}
-        className={className}
-        navAgentIndex={navAgentIndex}
-        maximized={maximized}
-        isOpen={isOpen}
-        isIdle={isIdle}
-        status={status}
-        blocks={blocks}
-        streamContent={streamContent}
-        bottomContent={bottomSection}
-        onToggle={handleToggle}
-        IconComponent={IconComponent}
-        badge={badge}
-        displayLabel={displayLabel}
-        onMarkDone={onMarkDone}
-        resumable={resumable}
-        onResume={onResume}
-        canDelete={canDelete}
-        onDelete={onDelete}
-        onToggleMaximize={onToggleMaximize}
-      />
+      <AgentSessionProvider value={agentSessionContextValue}>
+        {wsSessionId && <BranchConfirmDialog wsSessionId={wsSessionId} />}
+        <AgentSessionFrame
+          containerRef={containerRef}
+          headerRef={headerRef}
+          collapsible={collapsible}
+          className={className}
+          navAgentIndex={navAgentIndex}
+          maximized={maximized}
+          isOpen={isOpen}
+          isIdle={isIdle}
+          status={status}
+          blocks={blocks}
+          streamContent={streamContent}
+          bottomContent={bottomSection}
+          onToggle={handleToggle}
+          IconComponent={IconComponent}
+          badge={badge}
+          displayLabel={displayLabel}
+          onMarkDone={onMarkDone}
+          resumable={resumable}
+          onResume={onResume}
+          canDelete={canDelete}
+          onDelete={onDelete}
+          onToggleMaximize={onToggleMaximize}
+        />
+      </AgentSessionProvider>
     );
   }),
   shallowEqualSkipFunctions,

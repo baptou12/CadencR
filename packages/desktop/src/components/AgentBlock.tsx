@@ -18,6 +18,7 @@ import { CadencrMcpBlock } from "@/components/CadencrMcpBlock";
 import { Markdown } from "@/components/Markdown";
 import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
+import { UserMessageActions } from "@/components/agent-session/UserMessageActions";
 import { TaskAgentBlock } from "@/components/TaskAgentBlock";
 import { PlanBlock } from "@/components/PlanBlock";
 import { BashBlock } from "@/components/BashBlock";
@@ -74,7 +75,12 @@ export interface AgentBlockData {
   childBlocks?: AgentBlockData[];
   /** Whether this Task's subagent has completed */
   taskComplete?: boolean;
-  /** DB message ID — used for deduplication against server data */
+  /**
+   * Persisted DB message id. For history-loaded blocks the id is encoded in
+   * `id` (`msg-<n>`); for a message sent live this session (a `ws-user-*`
+   * block) it is stamped here by the `prompt_persisted` ack so rewind/fork can
+   * target it without a reload.
+   */
   messageDbId?: number;
   /** The tool name that produced this tool_result (resolved from parent tool_call) */
   sourceToolName?: string;
@@ -218,6 +224,7 @@ export const AgentBlock = memo(function AgentBlock({
           deliveryState={
             block.promptDeliveryState === "pending_agent" ? block.promptDeliveryState : undefined
           }
+          actions={<UserMessageActions block={block} />}
         />
       );
     case "turn_summary":
@@ -237,7 +244,7 @@ function isPlanPresentationTool(toolName: string | undefined): boolean {
   return toolName === "ExitPlanMode" || isCadencrPlanPresentationTool(toolName);
 }
 
-function messageIdFromBlockId(id: string): number | undefined {
+export function messageIdFromBlockId(id: string): number | undefined {
   if (!id.startsWith("msg-")) return undefined;
   const parsed = Number(id.slice(4));
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;

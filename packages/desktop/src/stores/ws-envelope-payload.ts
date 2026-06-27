@@ -309,6 +309,22 @@ export function parsePromptReceivedPayload(
 }
 
 /**
+ * Parse the `session.prompt_persisted` envelope — the persisted DB id for a
+ * user message this device sent optimistically. Stamping it onto the live block
+ * (matched by `user_message_ref`) lets rewind/fork target it without a reload.
+ */
+export function parsePromptPersistedPayload(
+  payload: unknown,
+): { user_message_ref: string; message_id: number } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const user_message_ref = optionalString(record, "user_message_ref");
+  const message_id = optionalNumber(record, "message_id");
+  if (!user_message_ref || message_id === undefined) return null;
+  return { user_message_ref, message_id };
+}
+
+/**
  * Parse the `session.user_message` envelope — a prompt another device just sent,
  * mirrored here so this (passive) viewer's conversation stays live.
  */
