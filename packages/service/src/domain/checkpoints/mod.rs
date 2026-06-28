@@ -9,6 +9,7 @@ mod git_ops;
 mod repo;
 
 use std::path::Path;
+use std::time::Duration;
 
 use sqlx::SqlitePool;
 use tracing::warn;
@@ -17,23 +18,43 @@ use crate::error::AppError;
 
 pub use repo::get_commit_sha;
 
+/// Upper bound on a single pre-turn snapshot. A normal worktree stages well
+/// under this; the cap only guards against a hung git so a turn never stalls
+/// indefinitely behind the checkpoint barrier.
+const CAPTURE_TIMEOUT: Duration = Duration::from_secs(15);
+
 fn checkpoint_ref(feature_id: i64, message_id: i64) -> String {
     format!("refs/cadencr/checkpoints/{feature_id}/{message_id}")
 }
 
 /// Capture a pre-turn snapshot of `cwd` and link it to `message_id`.
 ///
-/// **Best-effort and non-blocking to the turn**: any git/db failure is logged
-/// and swallowed. A missing checkpoint only disables *code* rewind for that one
-/// message — it never blocks the turn or the conversation rewind.
+/// This is a deliberate **pre-turn barrier**: the snapshot must finish before
+/// the prompt reaches the agent, or the agent could edit files before the
+/// snapshot stages them and the checkpoint would capture a mid-edit tree. It is
+/// best-effort — any git/db failure or a [`CAPTURE_TIMEOUT`] overrun is logged
+/// and swallowed; a missing checkpoint only disables *code* rewind for that one
+/// message, never the turn or the conversation rewind.
 pub async fn capture_pre_turn(pool: &SqlitePool, cwd: &Path, feature_id: i64, message_id: i64) {
-    if let Err(error) = try_capture_pre_turn(pool, cwd, feature_id, message_id).await {
-        warn!(
+    match tokio::time::timeout(
+        CAPTURE_TIMEOUT,
+        try_capture_pre_turn(pool, cwd, feature_id, message_id),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => warn!(
             feature_id,
             message_id,
             error = %error,
             "pre-turn checkpoint capture failed (code rewind unavailable for this message)"
-        );
+        ),
+        Err(_) => warn!(
+            feature_id,
+            message_id,
+            timeout_secs = CAPTURE_TIMEOUT.as_secs(),
+            "pre-turn checkpoint capture timed out (code rewind unavailable for this message)"
+        ),
     }
 }
 

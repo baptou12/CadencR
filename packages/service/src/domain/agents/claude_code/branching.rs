@@ -37,7 +37,7 @@ impl SessionBranching for ClaudeSessionBranching {
             ))
         })?;
 
-        let lines = parse_lines(&raw);
+        let lines = parse_lines(&raw)?;
         if lines.is_empty() || !jsonl_surgery::looks_like_transcript(&lines) {
             return Err(BranchError::Surgery(
                 "transcript is empty or not a recognized Claude session file".to_string(),
@@ -69,14 +69,33 @@ impl SessionBranching for ClaudeSessionBranching {
     }
 }
 
-/// Parse the JSONL leniently: each non-empty line as a `Value`, skipping
-/// malformed lines (a truncated tail must not sink the whole branch).
-fn parse_lines(raw: &str) -> Vec<Value> {
-    raw.lines()
+/// Parse the JSONL, tolerating only a malformed *final* line (a transcript whose
+/// last line was half-written when we read it). A malformed line anywhere before
+/// the end means mid-file corruption: failing is safer than silently dropping
+/// it, which would shift `cut_user_ordinal` and branch the wrong context.
+fn parse_lines(raw: &str) -> Result<Vec<Value>, BranchError> {
+    let raw_lines: Vec<&str> = raw
+        .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .collect()
+        .collect();
+    let mut parsed = Vec::with_capacity(raw_lines.len());
+    for (idx, line) in raw_lines.iter().enumerate() {
+        match serde_json::from_str::<Value>(line) {
+            Ok(value) => parsed.push(value),
+            Err(error) => {
+                if idx == raw_lines.len() - 1 {
+                    break; // a truncated tail line is expected; drop it
+                }
+                return Err(BranchError::Surgery(format!(
+                    "malformed transcript at line {} of {}: {error}",
+                    idx + 1,
+                    raw_lines.len()
+                )));
+            }
+        }
+    }
+    Ok(parsed)
 }
 
 /// Write `body` to `dest` atomically (temp file in the same dir + rename) so a
@@ -209,5 +228,34 @@ mod tests {
         let new_path = dir.join(format!("{}.jsonl", result.new_runtime_session_id));
         let kept = std::fs::read_to_string(new_path).unwrap();
         assert_eq!(kept.lines().count(), 2);
+    }
+
+    #[tokio::test]
+    async fn truncate_before_rejects_a_malformed_middle_line() {
+        let _env = async_env_lock().lock().await;
+        let (_home, _home_guard) = set_home(tempfile::tempdir().unwrap());
+        let cwd = Path::new("/Users/test/proj3");
+        let dir = claude_projects_dir_for(cwd).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        // A malformed line BEFORE the cut would shift the ordinal — surgery must
+        // refuse it rather than silently drop it.
+        let body = format!(
+            "{}\nthis is not json\n{}\n",
+            serde_json::json!({"type": "user", "uuid": "p1", "sessionId": "src", "message": {"role": "user", "content": "first"}}),
+            serde_json::json!({"type": "user", "uuid": "p2", "sessionId": "src", "message": {"role": "user", "content": "second"}}),
+        );
+        std::fs::write(dir.join("src.jsonl"), body).unwrap();
+
+        let ctx = BranchContext {
+            cwd: cwd.to_path_buf(),
+            source_runtime_session_id: "src".to_string(),
+            cut_provider_uuid: None,
+            cut_user_ordinal: 2,
+        };
+        let err = ClaudeSessionBranching
+            .truncate_before(&ctx)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BranchError::Surgery(_)), "{err}");
     }
 }

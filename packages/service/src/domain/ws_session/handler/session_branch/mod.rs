@@ -8,6 +8,7 @@
 //! on provider identity.
 
 mod fork;
+mod fork_db;
 mod rewind;
 
 pub(crate) use fork::handle_fork;
@@ -59,6 +60,14 @@ pub(super) enum BranchAbort {
     SessionNotFound,
     NotAUserMessage,
     NoWorktree,
+    /// The provider can't branch its context (not registered, or no
+    /// `SessionBranching` capability). We refuse rather than silently completing
+    /// the action against the full, untrimmed history.
+    Unsupported(String),
+    /// Transcript surgery failed (corrupt/missing/unreadable session file). We
+    /// abort *before* mutating code or the conversation so nothing is left half
+    /// rewound.
+    Surgery(String),
     Db(String),
 }
 
@@ -68,6 +77,8 @@ impl BranchAbort {
             BranchAbort::SessionNotFound => "SESSION_NOT_FOUND",
             BranchAbort::NotAUserMessage => "INVALID_MESSAGE",
             BranchAbort::NoWorktree => "NO_WORKTREE",
+            BranchAbort::Unsupported(_) => "UNSUPPORTED_BRANCHING",
+            BranchAbort::Surgery(_) => "BRANCH_SURGERY_FAILED",
             BranchAbort::Db(_) => "DB_ERROR",
         }
     }
@@ -78,6 +89,7 @@ impl BranchAbort {
                 "Rewind/Fork can only target a user message".to_string()
             }
             BranchAbort::NoWorktree => "This session has no worktree yet".to_string(),
+            BranchAbort::Unsupported(msg) | BranchAbort::Surgery(msg) => msg.clone(),
             BranchAbort::Db(msg) => msg.clone(),
         }
     }
@@ -182,83 +194,71 @@ pub(super) fn report_abort(sender: &WsSender, envelope_id: &str, abort: BranchAb
     send_error(sender, envelope_id, abort.code(), &abort.message());
 }
 
-/// Outcome of trying to truncate the provider's context.
+/// Outcome of truncating the provider's context at the cut point.
 pub(super) enum TruncateOutcome {
     /// Surgery produced a new provider session whose context ends at the cut.
     Truncated(String),
     /// No prior context to keep — start fresh (no resume).
     Fresh,
-    /// Surgery unavailable/failed — keep resuming the source session (full
-    /// context) and warn. `reason` is surfaced to the user.
-    Fallback {
-        source_runtime_session_id: String,
-        reason: String,
-    },
 }
 
 impl TruncateOutcome {
-    /// Collapse the outcome into `(runtime_session_id, user_warning)` — the shape
-    /// both rewind and fork persist + report. `Fresh` clears the session id;
-    /// `Fallback` keeps the source id and carries its reason as the warning.
-    pub(super) fn into_session_and_warning(self) -> (Option<String>, Option<String>) {
+    /// The runtime session id the branch should resume from: the freshly cut one,
+    /// or `None` for a fresh start.
+    pub(super) fn into_session_id(self) -> Option<String> {
         match self {
-            TruncateOutcome::Truncated(new_id) => (Some(new_id), None),
-            TruncateOutcome::Fresh => (None, None),
-            TruncateOutcome::Fallback {
-                source_runtime_session_id,
-                reason,
-            } => (Some(source_runtime_session_id), Some(reason)),
+            TruncateOutcome::Truncated(new_id) => Some(new_id),
+            TruncateOutcome::Fresh => None,
         }
     }
 }
 
-/// Run the provider's transcript surgery. Never hard-fails: any error degrades
-/// to [`TruncateOutcome::Fallback`] so the user action always completes.
+/// Run the provider's transcript surgery. Returns a hard [`BranchAbort`] when the
+/// provider can't branch or surgery fails, so the caller aborts the whole action
+/// *before* touching code or the conversation — never completing a rewind/fork
+/// that silently resumes the full, untrimmed history.
 pub(super) async fn truncate_context(
     inputs: &BranchInputs,
     source: Option<String>,
-) -> TruncateOutcome {
+) -> Result<TruncateOutcome, BranchAbort> {
     // Rewinding to (or before) the first prompt keeps no prior context.
     if inputs.cut_user_ordinal <= 1 {
-        return TruncateOutcome::Fresh;
+        return Ok(TruncateOutcome::Fresh);
     }
     let Some(source) = source else {
-        // The session never produced a provider session id — nothing to branch.
-        return TruncateOutcome::Fresh;
+        // The session never produced a provider session id — nothing to branch,
+        // so there is no full history to accidentally carry over: start fresh.
+        return Ok(TruncateOutcome::Fresh);
     };
     let Some(adapter) = runtime_adapter(&inputs.provider_id) else {
-        return TruncateOutcome::Fallback {
-            source_runtime_session_id: source,
-            reason: format!("provider '{}' is not registered", inputs.provider_id),
-        };
+        return Err(BranchAbort::Unsupported(format!(
+            "Provider '{}' is not available, so this conversation can't be branched.",
+            inputs.provider_id
+        )));
     };
     let Some(branching) = adapter.session_branching() else {
-        return TruncateOutcome::Fallback {
-            source_runtime_session_id: source,
-            reason: format!(
-                "provider '{}' cannot truncate context; resuming full history",
-                inputs.provider_id
-            ),
-        };
+        return Err(BranchAbort::Unsupported(format!(
+            "Rewind & Fork isn't supported for the '{}' provider yet.",
+            inputs.provider_id
+        )));
     };
     let ctx = BranchContext {
         cwd: inputs.cwd.clone(),
-        source_runtime_session_id: source.clone(),
+        source_runtime_session_id: source,
         cut_provider_uuid: inputs.cut_provider_uuid.clone(),
         cut_user_ordinal: inputs.cut_user_ordinal,
     };
     match branching.truncate_before(&ctx).await {
-        Ok(result) => TruncateOutcome::Truncated(result.new_runtime_session_id),
+        Ok(result) => Ok(TruncateOutcome::Truncated(result.new_runtime_session_id)),
         Err(error) => {
             warn!(
                 inputs.db_session_id,
                 error = %error,
-                "transcript surgery failed; falling back to non-truncating resume"
+                "transcript surgery failed; aborting branch before any mutation"
             );
-            TruncateOutcome::Fallback {
-                source_runtime_session_id: source,
-                reason: format!("Context could not be trimmed: {error}"),
-            }
+            Err(BranchAbort::Surgery(format!(
+                "The conversation couldn't be branched: {error}"
+            )))
         }
     }
 }
@@ -353,23 +353,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn into_session_and_warning_maps_each_outcome() {
+    fn into_session_id_maps_each_outcome() {
         assert_eq!(
-            TruncateOutcome::Truncated("new".into()).into_session_and_warning(),
-            (Some("new".to_string()), None),
+            TruncateOutcome::Truncated("new".into()).into_session_id(),
+            Some("new".to_string()),
+        );
+        assert_eq!(TruncateOutcome::Fresh.into_session_id(), None);
+    }
+
+    #[test]
+    fn branch_abort_exposes_typed_codes() {
+        assert_eq!(
+            BranchAbort::Unsupported("x".into()).code(),
+            "UNSUPPORTED_BRANCHING"
         );
         assert_eq!(
-            TruncateOutcome::Fresh.into_session_and_warning(),
-            (None, None)
+            BranchAbort::Surgery("x".into()).code(),
+            "BRANCH_SURGERY_FAILED"
         );
-        // Fallback keeps the source id and surfaces its reason to the user.
-        assert_eq!(
-            TruncateOutcome::Fallback {
-                source_runtime_session_id: "src".into(),
-                reason: "nope".into(),
-            }
-            .into_session_and_warning(),
-            (Some("src".to_string()), Some("nope".to_string())),
-        );
+        // The carried message is surfaced verbatim to the user.
+        assert_eq!(BranchAbort::Surgery("boom".into()).message(), "boom");
     }
 }

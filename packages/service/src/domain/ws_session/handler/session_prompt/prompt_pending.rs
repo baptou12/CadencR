@@ -63,18 +63,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
         }
     };
     reresolve_worktree_and_resume(&mut context).await;
-    // Worktree cwd is now final (provisioned + re-resolved). Snapshot it before
-    // the agent runs so a later rewind to this message restores the pre-turn
-    // code state. Best-effort; never blocks the turn.
-    if let Some(message_id) = user_message_id {
-        crate::domain::checkpoints::capture_pre_turn(
-            &context.app_state.write_pool,
-            &context.config.cwd,
-            context.feature_id,
-            message_id,
-        )
-        .await;
-    }
+    super::prompt_checkpoint::capture_pre_turn_pending(&context, user_message_id).await;
     attach_permission_bridge(&mut context);
     if let Err(error) = attach_cadencr_mcp(&mut context).await {
         report_spawn_error(context, error).await;

@@ -37,9 +37,9 @@ pub struct BranchResult {
     pub new_runtime_session_id: String,
 }
 
-/// Failure modes for a branch. Both are non-fatal to the user action: the
-/// orchestrator falls back to a non-truncating resume of the source session and
-/// surfaces a warning (never a silent swallow).
+/// Failure modes for a branch. The orchestrator treats both as hard aborts: it
+/// stops the rewind/fork *before* any code or conversation mutation and surfaces
+/// the message, rather than silently completing against the full history.
 #[derive(Debug)]
 pub enum BranchError {
     /// The provider can't branch this session (e.g. missing transcript).

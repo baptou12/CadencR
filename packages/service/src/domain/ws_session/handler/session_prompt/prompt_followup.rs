@@ -53,42 +53,11 @@ pub(super) async fn handle_followup_prompt(
 
     // Snapshot the worktree *before* this turn's prompt is delivered to the live
     // agent (the `stream_input` below), so a later rewind to this message can
-    // restore the pre-turn code state. Best-effort; never blocks the turn.
-    capture_followup_checkpoint(&context, user_message_id).await;
+    // restore the pre-turn code state. A deliberate pre-turn barrier.
+    super::prompt_checkpoint::capture_pre_turn_followup(&context, user_message_id).await;
 
     info!(context.db_session_id, "follow-up prompt");
     tokio::spawn(stream_followup_prompt(context, payload));
-}
-
-/// Capture a pre-turn checkpoint for a follow-up message. Resolves the cwd from
-/// the DB (the follow-up context has no cwd of its own): the worktree when one
-/// exists, else the project folder — mirroring the first-turn capture so a
-/// non-worktree feature still gets a per-turn checkpoint for rewind.
-async fn capture_followup_checkpoint(
-    context: &FollowupPromptContext,
-    user_message_id: Option<i64>,
-) {
-    let Some(message_id) = user_message_id else {
-        return;
-    };
-    let Ok(path) = crate::domain::workflow::worktree::resolve_feature_cwd(
-        &context.write_pool,
-        context.feature_id,
-    )
-    .await
-    else {
-        return;
-    };
-    if path.trim().is_empty() {
-        return;
-    }
-    crate::domain::checkpoints::capture_pre_turn(
-        &context.write_pool,
-        std::path::Path::new(&path),
-        context.feature_id,
-        message_id,
-    )
-    .await;
 }
 
 async fn persist_followup_user_message(

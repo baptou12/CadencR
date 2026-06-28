@@ -3,6 +3,7 @@ mod content;
 mod control_dispatch;
 mod errors;
 mod mcp_servers;
+mod prompt_checkpoint;
 mod prompt_followup;
 mod prompt_pending;
 mod prompt_resume_resolution;

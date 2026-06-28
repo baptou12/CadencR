@@ -31,11 +31,14 @@ pub(crate) async fn handle_rewind(
         Err(abort) => return report_abort(sender, &envelope.id, abort),
     };
 
-    // Code rewind is available only when a pre-turn checkpoint exists.
-    let checkpoint = checkpoints::get_commit_sha(&app_state.read_pool, inputs.message_id)
-        .await
-        .ok()
-        .flatten();
+    // Code rewind is available only when a pre-turn checkpoint exists. A DB
+    // failure must NOT be read as "no checkpoint" — that would quietly skip the
+    // code restore. Surface it instead.
+    let checkpoint =
+        match checkpoints::get_commit_sha(&app_state.read_pool, inputs.message_id).await {
+            Ok(sha) => sha,
+            Err(error) => return send_error(sender, &envelope.id, "DB_ERROR", &error.to_string()),
+        };
 
     // Confirm gate: a checkpoint restore discards everything in the worktree
     // since the snapshot. If the worktree is dirty and the user hasn't confirmed,
@@ -61,17 +64,18 @@ pub(crate) async fn handle_rewind(
     let source_runtime_session_id =
         current_runtime_session_id(&app_state.read_pool, db_session_id).await;
 
-    // (code) Restore the worktree to the checkpoint, if any.
-    let code_restored = restore_code(&inputs, checkpoint.as_deref()).await;
-
-    // (context) Truncate the provider's transcript (or fall back).
-    let (new_runtime_session_id, context_warning) =
-        truncate_context(&inputs, source_runtime_session_id)
-            .await
-            .into_session_and_warning();
+    // (context) Branch the provider transcript FIRST. If the provider can't
+    // branch or surgery fails, abort here — none of the destructive steps (code
+    // restore, message deletion, runtime-id swap) have run, so nothing is left
+    // half-rewound. The live turn was already interrupted above, which is an
+    // expected consequence of initiating a rewind.
+    let new_runtime_session_id = match truncate_context(&inputs, source_runtime_session_id).await {
+        Ok(outcome) => outcome.into_session_id(),
+        Err(abort) => return report_abort(sender, &envelope.id, abort),
+    };
 
     // (db) Drop the cut message and everything after it, then point the session
-    // at the new (or unchanged) provider session.
+    // at the new (or unchanged) provider session — all in one transaction.
     if let Err(error) = apply_db_rewind(
         &app_state.write_pool,
         db_session_id,
@@ -83,6 +87,12 @@ pub(crate) async fn handle_rewind(
         send_error(sender, &envelope.id, "DB_ERROR", &error.to_string());
         return;
     }
+
+    // (code) Restore the worktree to the checkpoint. Best-effort, *after* the
+    // conversation rewind (the primary effect): a restore failure is surfaced to
+    // the user but never undoes the conversation rewind.
+    let (code_restored, code_restore_error) =
+        restore_code(&inputs, checkpoint.as_deref()).await.to_wire();
 
     // (draft) Restore the cut message's text into the composer (unsent). The
     // composer restores from `feature_settings.draft_prompt` (the same store
@@ -135,10 +145,33 @@ pub(crate) async fn handle_rewind(
             "messageId": inputs.message_id,
             "draftText": inputs.message_text,
             "codeRestored": code_restored,
-            "contextWarning": context_warning,
+            "codeRestoreError": code_restore_error,
         }),
     )
     .await;
+}
+
+/// Result of attempting the worktree code restore during a rewind.
+enum CodeRestoreOutcome {
+    /// No pre-turn checkpoint existed for this message — nothing to restore.
+    NoCheckpoint,
+    /// The worktree was rolled back to the checkpoint.
+    Restored,
+    /// A checkpoint existed but `git restore` failed; the message is surfaced.
+    Failed(String),
+}
+
+impl CodeRestoreOutcome {
+    /// `(code_restored, code_restore_error)` for the WS reply: a missing
+    /// checkpoint and a failed restore are distinct (the UI labels them
+    /// differently) rather than both collapsing to a bare `false`.
+    fn to_wire(&self) -> (bool, Option<String>) {
+        match self {
+            CodeRestoreOutcome::Restored => (true, None),
+            CodeRestoreOutcome::NoCheckpoint => (false, None),
+            CodeRestoreOutcome::Failed(reason) => (false, Some(reason.clone())),
+        }
+    }
 }
 
 async fn worktree_dirty(inputs: &BranchInputs) -> bool {
@@ -157,22 +190,22 @@ async fn worktree_dirty(inputs: &BranchInputs) -> bool {
     }
 }
 
-/// Restore the worktree to the checkpoint. Returns whether code was rolled back.
-/// A restore failure is surfaced (logged) but does not abort the conversation
-/// rewind — the user still gets their context rolled back.
-async fn restore_code(inputs: &BranchInputs, checkpoint: Option<&str>) -> bool {
+/// Restore the worktree to the checkpoint. A restore failure is surfaced
+/// (logged + reported) but does not abort the conversation rewind — the user
+/// still gets their context rolled back.
+async fn restore_code(inputs: &BranchInputs, checkpoint: Option<&str>) -> CodeRestoreOutcome {
     let Some(sha) = checkpoint else {
-        return false;
+        return CodeRestoreOutcome::NoCheckpoint;
     };
     match checkpoints::restore(&inputs.cwd, sha).await {
-        Ok(()) => true,
+        Ok(()) => CodeRestoreOutcome::Restored,
         Err(error) => {
             warn!(
                 inputs.db_session_id,
                 error = %error,
                 "checkpoint restore failed; conversation rewound without code rollback"
             );
-            false
+            CodeRestoreOutcome::Failed(error.to_string())
         }
     }
 }
@@ -185,24 +218,28 @@ async fn apply_db_rewind(
     message_id: i64,
     new_runtime_session_id: Option<&str>,
 ) -> Result<(), sqlx::Error> {
+    // One transaction so a failure partway through can never leave the
+    // conversation half-deleted or pointing at a stale runtime session id.
+    let mut tx = pool.begin().await?;
     sqlx::query(
         "DELETE FROM turn_checkpoints WHERE message_id IN \
          (SELECT id FROM agent_messages WHERE session_id = ? AND id >= ?)",
     )
     .bind(db_session_id)
     .bind(message_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
     sqlx::query("DELETE FROM agent_messages WHERE session_id = ? AND id >= ?")
         .bind(db_session_id)
         .bind(message_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     sqlx::query("UPDATE agent_sessions SET runtime_session_id = ? WHERE id = ?")
         .bind(new_runtime_session_id)
         .bind(db_session_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -238,6 +275,18 @@ mod tests {
         .await
         .unwrap();
         pool
+    }
+
+    #[test]
+    fn code_restore_outcome_distinguishes_missing_from_failed() {
+        assert_eq!(CodeRestoreOutcome::Restored.to_wire(), (true, None));
+        // A missing checkpoint and a failed restore both report `false` but only
+        // the failure carries an error the UI can show.
+        assert_eq!(CodeRestoreOutcome::NoCheckpoint.to_wire(), (false, None));
+        assert_eq!(
+            CodeRestoreOutcome::Failed("git boom".into()).to_wire(),
+            (false, Some("git boom".to_string())),
+        );
     }
 
     #[tokio::test]
