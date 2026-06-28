@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.6.4 - 2026-06-29
+
+Previous release: v0.6.3 - 2026-06-25
+
+### ✨ Added
+
+- [**Desktop**] Added Rewind and Fork actions for persisted user messages, letting users roll a conversation and tracked code back to an earlier turn or branch it into a new feature with provider-backed transcript truncation, pre-turn tracked-code checkpoints, dirty-worktree confirmation, untracked local-file preservation, and a hard abort if code restore cannot be completed before conversation history is changed.
+- [**Desktop**] Added Mermaid diagram rendering for markdown across agent surfaces, with strict parsing, streaming-safe source fallback, source/diagram toggles, and a zoom/pan viewer so generated diagrams are readable without destabilizing the conversation.
+- [**Desktop**] Added a Session Info action to sync events that were added by continuing the same provider conversation in the CLI, appending only the missing messages to the existing Cadencr conversation.
+
+### 🔧 Changed
+
+- [**provider:claude**] Moved Claude Code profile storage into the JSON settings file so profiles can be inspected and edited programmatically while preserving existing profile APIs, redaction, denied-key validation, and one-time migration from the legacy SQLite table.
+- [**Desktop**] Improved the Unified Agents view with an auto-pruned `/exclude` filter, a new `/pin:true` filter, a collapsible filter input, and tighter toolbar sizing.
+- [**Desktop**] Changed terminal and agent-chat link handling so `Cmd`/`Ctrl` click routes internal domains such as localhost into the scoped Cadencr browser tab, external links open in the system browser, and right-click menus offer both open targets plus copy.
+- [**Desktop**] Changed feature sidebar menus with a control to close a feature's live terminals and browser tabs without opening it, including bulk browser-tab cleanup and terminal teardown that avoids re-adopting killed shells.
+- [**Desktop**] Changed Git diff layout selection into a persistent preference so Unified/Split mode stays in sync between the Git tab and Settings across sessions and projects.
+
+### 🐛 Fixed
+
+- [**provider:claude**] Fixed session profile persistence so changing the global Claude profile only affects new sessions instead of mutating the profile used by existing conversations.
+- [**Desktop**] Fixed remote/mobile reconnect storms by backing off WebSocket retries after rate limits, honoring `Retry-After`, and batching editor settings reads that previously amplified reconnect traffic.
+- [**Desktop**] Fixed the Git graph crash reported in #88 by always passing Virtuoso a valid components object after the last commit page loads.
+- [**Desktop**] Fixed stale sidebar agent counts by sourcing the working-agent indicator from live WebSocket session state and showing an active dot while agents are running.
+- [**Desktop**] Fixed Frost theme popovers that could be clipped or displaced by backdrop-filter containers, including context-menu submenus and Git graph commit hover cards.
+- [**Desktop**] Fixed fullscreen mobile sidebar gaps by moving safe-area padding onto the sidebar surface so it reaches the screen edges while keeping controls clear of the notch and home indicator.
+
 ## v0.6.3 - 2026-06-25
 
 Previous release: v0.6.2 - 2026-06-23
