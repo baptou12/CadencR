@@ -14,6 +14,11 @@ export function intArraysEqual(a: readonly number[], b: readonly number[]): bool
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
+/** Shallow element-wise equality for two string arrays. */
+export function stringArraysEqual(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 export function slugify(name: string): string {
   return name
     .toLowerCase()
