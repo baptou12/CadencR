@@ -37,6 +37,8 @@ import {
   createCommandsGet,
   createGateClose,
 } from "@/lib/ws-envelope";
+import * as branch from "./ws-session-branch";
+import type { BranchDeps } from "./ws-session-branch";
 import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload } from "./ws-envelope-payload";
@@ -162,8 +164,33 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   }
   const ctx: StoreAccessors = { get, set, getSession };
 
+  const branchDeps: BranchDeps = {
+    get,
+    set,
+    sendRequest: (sessionId, envelope) => get().sendRequest(sessionId, envelope),
+  };
+
   return {
     sessions: {},
+    branchConfirm: null,
+    composerPrefill: null,
+    forkNavigation: null,
+
+    rewindToMessage(sessionId: string, messageId: number, confirmDiscard?: boolean) {
+      void branch.rewindToMessage(branchDeps, sessionId, messageId, confirmDiscard);
+    },
+    forkFromMessage(sessionId: string, messageId: number) {
+      void branch.forkFromMessage(branchDeps, sessionId, messageId);
+    },
+    resolveBranchConfirm(confirmed: boolean) {
+      branch.resolveBranchConfirm(branchDeps, confirmed);
+    },
+    consumeComposerPrefill(sessionId: string) {
+      if (get().composerPrefill?.sessionId === sessionId) set({ composerPrefill: null });
+    },
+    consumeForkNavigation(sessionId: string) {
+      if (get().forkNavigation?.sessionId === sessionId) set({ forkNavigation: null });
+    },
 
     connect(sessionId: string) {
       const existing = get().sessions[sessionId];
@@ -367,17 +394,22 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sendPrompt(sessionId: string, text: string, options: PromptDispatchOptions = {}) {
       const session = getSession(sessionId);
       const trackProviderReceipt = shouldTrackPromptReceipt(session);
-      const clientMessageId = trackProviderReceipt ? crypto.randomUUID() : undefined;
+      // Always correlate the local block with its eventual DB id so rewind/fork
+      // light up on it without a reload (the `prompt_persisted` ack echoes this
+      // ref). `client_message_id` stays receipt/steering-only — unchanged.
+      const userMessageRef = crypto.randomUUID();
+      const clientMessageId = trackProviderReceipt ? userMessageRef : undefined;
       if (session.serverSessionId) {
         sendRaw(
           sessionId,
           createPromptSend(session.serverSessionId, text, {
             ...options,
+            userMessageRef,
             clientMessageId,
           }),
         );
       } else {
-        queuePrompt(sessionId, text, options);
+        queuePrompt(sessionId, text, { ...options, userMessageRef });
       }
 
       const content = buildUserMessageContent(text, options.attachments);
@@ -386,7 +418,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           get(),
           sessionId,
           appendLocalUserMessage(session, content, {
-            clientMessageId,
+            clientMessageId: userMessageRef,
             promptDeliveryState: trackProviderReceipt ? "pending_agent" : undefined,
           }),
         ),
