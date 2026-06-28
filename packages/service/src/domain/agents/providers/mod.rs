@@ -186,7 +186,8 @@ mod tests {
     fn runtime_adapter_registry_has_claude_opencode_and_codex() {
         assert!(runtime_adapter("claude_code").is_some());
         assert!(runtime_adapter("opencode").is_some());
-        assert!(runtime_adapter("codex_cli").is_some());
+        let codex = runtime_adapter("codex_cli").expect("codex adapter");
+        assert!(codex.session_branching().is_some());
         assert!(runtime_adapter("unknown").is_none());
     }
 
