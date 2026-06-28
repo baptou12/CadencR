@@ -8,9 +8,6 @@ import {
   forwardRef,
   memo,
 } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { useWsSessionStore } from "@/stores/ws-session-store";
-import { navigateToFeatureIdOrHome } from "../project-feature-navigation";
 import { capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
 import type { AgentPromptBarHandle } from "../AgentPromptBar";
@@ -35,6 +32,7 @@ import { AgentSessionStreamContent } from "./AgentSessionStreamContent";
 import { useClaudeProfileSelection } from "./useClaudeProfileSelection";
 import { AgentSessionProvider } from "./agent-session-context";
 import { BranchConfirmDialog } from "./BranchConfirmDialog";
+import { useAgentSessionBranchEffects } from "./useAgentSessionBranchEffects";
 
 const META_BAR_COMPACT_THRESHOLD_PX = 640;
 
@@ -195,31 +193,9 @@ export const AgentSession = memo(
       [wsSessionId],
     );
 
-    // Apply a rewound/forked draft into the composer when the store signals one
-    // for this session, then consume it so it fires once.
-    const composerPrefill = useWsSessionStore((s) =>
-      s.composerPrefill?.sessionId === wsSessionId ? s.composerPrefill : null,
-    );
-    const consumeComposerPrefill = useWsSessionStore((s) => s.consumeComposerPrefill);
-    useEffect(() => {
-      if (!wsSessionId || !composerPrefill) return;
-      promptBarRef.current?.setDraft(composerPrefill.text);
-      consumeComposerPrefill(wsSessionId);
-    }, [composerPrefill, wsSessionId, consumeComposerPrefill]);
-
-    // Navigate this client to a just-forked feature once the store signals one
-    // for this (source) session, then consume it so it fires once. Other devices
-    // see the fork appear in their sidebar via the `feature.created` broadcast.
-    const navigate = useNavigate();
-    const forkNavigation = useWsSessionStore((s) =>
-      s.forkNavigation?.sessionId === wsSessionId ? s.forkNavigation : null,
-    );
-    const consumeForkNavigation = useWsSessionStore((s) => s.consumeForkNavigation);
-    useEffect(() => {
-      if (!wsSessionId || !forkNavigation) return;
-      navigateToFeatureIdOrHome(navigate, forkNavigation.projectId, forkNavigation.featureId);
-      consumeForkNavigation(wsSessionId);
-    }, [forkNavigation, wsSessionId, consumeForkNavigation, navigate]);
+    // Rewind/Fork store reactions (draft prefill + navigate to a new fork),
+    // scoped to this session and consumed once each.
+    useAgentSessionBranchEffects(wsSessionId, promptBarRef);
 
     const handleToggle = () => {
       if (onToggle) onToggle();

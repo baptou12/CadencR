@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { messageIdFromBlockId, type AgentBlockData } from "../AgentBlock";
 import { useAgentSessionContext } from "./agent-session-context";
@@ -41,5 +41,7 @@ export function useMessageBranchActions(block: AgentBlockData): MessageBranchAct
     if (wsSessionId != null && messageId != null) forkFromMessage(wsSessionId, messageId);
   }, [wsSessionId, messageId, forkFromMessage]);
 
-  return { canBranch, rewind, fork };
+  // Stable object so downstream memoized consumers (the hover toolbar, the
+  // per-block context menu) don't re-render on every parent commit.
+  return useMemo(() => ({ canBranch, rewind, fork }), [canBranch, rewind, fork]);
 }

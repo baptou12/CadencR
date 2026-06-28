@@ -133,12 +133,31 @@ describe("rewindToMessage", () => {
       messageId: 3,
       draftText: "second",
       codeRestored: true,
-      contextWarning: null,
+      codeRestoreError: null,
     });
     await rewindToMessage(deps, "ws-1", 3);
     expect(sendRequest).toHaveBeenCalledOnce();
     expect(getState().sessions["ws-1"].blocks.map((b) => b.id)).toEqual(["msg-1", "msg-2"]);
     expect(getState().composerPrefill).toMatchObject({ sessionId: "ws-1", text: "second" });
+  });
+
+  it("warns but still rewinds when code restore failed", async () => {
+    const { toast } = await import("sonner");
+    const { deps, getState } = makeHarness({
+      sessionId: "55",
+      messageId: 3,
+      draftText: "second",
+      codeRestored: false,
+      codeRestoreError: "git restore failed",
+    });
+    await rewindToMessage(deps, "ws-1", 3);
+    // Conversation is still rewound (the primary effect) ...
+    expect(getState().sessions["ws-1"].blocks.map((b) => b.id)).toEqual(["msg-1", "msg-2"]);
+    // ... but the code-restore failure is surfaced, not the benign success.
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Rewound, but restoring the code failed.",
+      expect.objectContaining({ description: "git restore failed" }),
+    );
   });
 
   it("opens the confirm dialog (no mutation) when the worktree is dirty", async () => {

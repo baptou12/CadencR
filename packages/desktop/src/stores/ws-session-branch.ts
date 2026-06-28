@@ -32,10 +32,6 @@ function isNeedsConfirm(reply: Record<string, unknown>): boolean {
   return reply.kind === "rewind" && typeof reply.reason === "string";
 }
 
-function optionalString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
 export async function rewindToMessage(
   deps: BranchDeps,
   sessionId: string,
@@ -75,15 +71,25 @@ export async function rewindToMessage(
       nonce: ++prefillNonce,
     },
   });
-  const warning = optionalString(reply.contextWarning);
-  const codeNote =
-    reply.codeRestored === true
-      ? "Code and conversation rewound."
-      : "Conversation rewound (no code checkpoint for this message).";
-  if (warning) {
-    toast.warning(warning, { id: toastId, description: codeNote });
+  // A checkpoint that existed but failed to restore is distinct from one that
+  // never existed — surface the failure rather than the benign "no checkpoint".
+  const codeRestoreError =
+    typeof reply.codeRestoreError === "string" && reply.codeRestoreError.length > 0
+      ? reply.codeRestoreError
+      : null;
+  if (codeRestoreError) {
+    toast.warning("Rewound, but restoring the code failed.", {
+      id: toastId,
+      description: codeRestoreError,
+    });
   } else {
-    toast.success("Rewound — edit and re-send.", { id: toastId, description: codeNote });
+    toast.success("Rewound — edit and re-send.", {
+      id: toastId,
+      description:
+        reply.codeRestored === true
+          ? "Code and conversation rewound."
+          : "Conversation rewound (no code checkpoint for this message).",
+    });
   }
 }
 
@@ -123,10 +129,9 @@ export async function forkFromMessage(
     forkNavigation: { sessionId, projectId, featureId: newFeatureId, nonce: ++forkNonce },
   });
 
-  const warning = optionalString(reply.contextWarning);
   toast.success("Forked into a new session.", {
     id: toastId,
-    description: warning ?? "Opening the fork — your message is waiting as a draft.",
+    description: "Opening the fork — your message is waiting as a draft.",
   });
 }
 

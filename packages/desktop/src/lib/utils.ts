@@ -39,3 +39,12 @@ export function toRelativePath(text: string, basePath?: string): string {
   if (text === basePath || text + "/" === prefix) return ".";
   return text.replaceAll(prefix, "");
 }
+
+/** Pretty-print a JSON string; return the input unchanged if it isn't JSON. */
+export function formatJson(str: string): string {
+  try {
+    return JSON.stringify(JSON.parse(str), null, 2);
+  } catch {
+    return str;
+  }
+}

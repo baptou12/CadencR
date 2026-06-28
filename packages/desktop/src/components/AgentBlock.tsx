@@ -1,20 +1,15 @@
 import { useState, useCallback, memo, useMemo } from "react";
-import { cn, toRelativePath } from "@/lib/utils";
-import { ChevronRightIcon, WrenchIcon, CopyIcon, CheckIcon } from "lucide-react";
-import {
-  isCadencrPlanPresentationTool,
-  parseCadencrMcpTool,
-  parseToolCall,
-} from "@/lib/tool-call-parser";
+import { toRelativePath } from "@/lib/utils";
+import { CopyIcon, CheckIcon } from "lucide-react";
+import { isCadencrPlanPresentationTool } from "@/lib/tool-call-parser";
 import {
   extractBashCommand,
   extractBashOutput,
   extractBashResultOutput,
   isFileChangeTool,
   isToolCallRunning,
-  normalizeToolName,
 } from "@/lib/tool-adapter";
-import { CadencrMcpBlock } from "@/components/CadencrMcpBlock";
+import { ToolCallBlock } from "@/components/AgentToolCallBlock";
 import { Markdown } from "@/components/Markdown";
 import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
@@ -337,68 +332,4 @@ function CodeBlock({ content, language }: { content: string; language?: string }
       </pre>
     </div>
   );
-}
-
-function ToolCallBlock({
-  name,
-  args,
-  basePath,
-}: {
-  name: string;
-  args?: string;
-  basePath?: string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const canonicalName = normalizeToolName(name);
-  const cadencrMcp = parseCadencrMcpTool(canonicalName, args);
-  if (cadencrMcp) return <CadencrMcpBlock mcp={cadencrMcp} args={args} />;
-
-  const summary = parseToolCall(canonicalName, args);
-  const detail =
-    summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
-  // File-patch tools (Edit / Write / ApplyPatch) get a distinct green "file
-  // change" identity so they stand apart from generic tool calls, which keep the
-  // neutral tool accent. The green is derived from each theme's --numstat-add-fg
-  // (the diff "lines added" color), so it stays distinct in every theme without
-  // per-theme tuning.
-  const isEdit = isFileChangeTool(canonicalName);
-  const toolColorClass = isEdit
-    ? "text-[var(--numstat-add-fg)]"
-    : "text-[var(--block-tool-accent)]";
-  const wrapperClass = isEdit
-    ? "border-[color-mix(in_srgb,var(--numstat-add-fg)_35%,transparent)] bg-[color-mix(in_srgb,var(--numstat-add-fg)_12%,var(--card))]"
-    : "border-border bg-[var(--block-tool-bg)]";
-
-  return (
-    <div className={cn("my-1 rounded-md border", wrapperClass)}>
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <WrenchIcon className={cn("size-3", toolColorClass)} />
-        <span className={cn("font-medium", toolColorClass)}>{canonicalName}</span>
-        {detail && <span className="truncate text-muted-foreground">{detail}</span>}
-        <ChevronRightIcon
-          className={cn(
-            "ml-auto size-3 shrink-0 text-muted-foreground transition-transform",
-            expanded && "rotate-90",
-          )}
-        />
-      </button>
-      {expanded && args && (
-        <pre className="border-t border-border bg-muted/30 p-3 text-xs overflow-x-auto">
-          {formatJson(args)}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-function formatJson(str: string): string {
-  try {
-    return JSON.stringify(JSON.parse(str), null, 2);
-  } catch {
-    return str;
-  }
 }
