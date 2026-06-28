@@ -30,11 +30,13 @@ fn temp_index_path() -> PathBuf {
     std::env::temp_dir().join(format!("cadencr-checkpoint-index-{pid}-{n}"))
 }
 
-/// Snapshot the entire worktree into a fresh orphan commit and return its sha,
+/// Snapshot tracked worktree paths into a fresh orphan commit and return its sha,
 /// parking it under `ref_name` so it stays reachable.
 ///
-/// `git add -A` honours `.gitignore`, so build artifacts / secrets are never
-/// captured. The user's real index is untouched (we stage into a temp index).
+/// We deliberately use `git add -u`, not `git add -A`: untracked local files may
+/// contain secrets the user forgot to ignore, and checkpoint refs keep their
+/// objects reachable. The user's real index is untouched (we stage into a temp
+/// index).
 pub(super) async fn snapshot_commit(
     cwd: &Path,
     ref_name: &str,
@@ -46,7 +48,7 @@ pub(super) async fn snapshot_commit(
     let mut env: Vec<(&str, &str)> = IDENTITY_ENV.to_vec();
     env.push(("GIT_INDEX_FILE", index_str.as_str()));
 
-    // Seed the isolated index from HEAD, then stage every worktree change.
+    // Seed the isolated index from HEAD, then stage tracked worktree changes.
     let result = snapshot_inner(cwd, ref_name, label, &env).await;
 
     // Best-effort cleanup of the scratch index; a leftover is harmless.
@@ -63,7 +65,7 @@ async fn snapshot_inner(
     env: &[(&str, &str)],
 ) -> Result<String, AppError> {
     run_git_with_env(&["read-tree", "HEAD"], cwd, env).await?;
-    run_git_with_env(&["add", "-A", "--", "."], cwd, env).await?;
+    run_git_with_env(&["add", "-u", "--", "."], cwd, env).await?;
     let tree = run_git_with_env(&["write-tree"], cwd, env).await?;
     let tree = tree.trim();
 
@@ -79,11 +81,11 @@ async fn snapshot_inner(
     Ok(commit)
 }
 
-/// Roll the worktree back to the snapshot at `commit_sha`: restore tracked
-/// paths (index + working tree) and remove files created after the snapshot.
+/// Roll tracked paths in the worktree back to the snapshot at `commit_sha`
+/// (index + working tree).
 ///
-/// `git clean -fd` (NOT `-x`) preserves ignored files — `.env`, `node_modules`,
-/// build output — exactly like native `/rewind`.
+/// Untracked files are intentionally preserved: they may contain local secrets
+/// or scratch work that checkpoint commits do not retain.
 pub(super) async fn restore_worktree(cwd: &Path, commit_sha: &str) -> Result<(), AppError> {
     run_git(
         &[
@@ -98,7 +100,6 @@ pub(super) async fn restore_worktree(cwd: &Path, commit_sha: &str) -> Result<(),
         cwd,
     )
     .await?;
-    run_git(&["clean", "-fd", "--", "."], cwd).await?;
     Ok(())
 }
 
@@ -137,7 +138,8 @@ mod tests {
             .unwrap();
         assert_eq!(sha.len(), 40, "sha should be a full commit hash");
 
-        // Mutate: edit a tracked file, add a new one, delete another tracked one.
+        // Mutate: edit a tracked file, add a new untracked file, delete another
+        // tracked one.
         fs::write(p.join("tracked.txt"), "v2-edited").unwrap();
         fs::write(p.join("new.txt"), "added").unwrap();
         fs::remove_file(p.join("doomed.txt")).unwrap();
@@ -145,7 +147,7 @@ mod tests {
         super::restore_worktree(p, &sha).await.unwrap();
 
         assert_eq!(fs::read_to_string(p.join("tracked.txt")).unwrap(), "v1");
-        assert!(!p.join("new.txt").exists(), "clean -fd removes new file");
+        assert!(p.join("new.txt").exists(), "untracked files are preserved");
         assert_eq!(
             fs::read_to_string(p.join("doomed.txt")).unwrap(),
             "keep-me",
@@ -154,7 +156,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clean_preserves_gitignored_files() {
+    async fn restore_preserves_ignored_and_untracked_files() {
         let dir = init_repo().await;
         let p = dir.path();
         fs::write(p.join(".gitignore"), "secret.env\n").unwrap();
@@ -171,7 +173,48 @@ mod tests {
         super::restore_worktree(p, &sha).await.unwrap();
 
         assert!(p.join("secret.env").exists(), "ignored file must survive");
-        assert!(!p.join("junk.txt").exists(), "untracked file is cleaned");
+        assert!(p.join("junk.txt").exists(), "untracked file must survive");
+    }
+
+    #[tokio::test]
+    async fn snapshot_does_not_retain_untracked_files() {
+        let dir = init_repo().await;
+        let p = dir.path();
+        fs::write(p.join("local-secret.txt"), "TOKEN=abc").unwrap();
+
+        let sha = snapshot_commit(p, "refs/cadencr/checkpoints/1/secret", "1/secret")
+            .await
+            .unwrap();
+
+        let tree = run_git_background(&["ls-tree", "-r", "--name-only", &sha], p)
+            .await
+            .unwrap();
+        assert!(
+            !tree.lines().any(|line| line == "local-secret.txt"),
+            "checkpoint commits must not retain local untracked files"
+        );
+    }
+
+    #[tokio::test]
+    async fn restore_preserves_untracked_files() {
+        let dir = init_repo().await;
+        let p = dir.path();
+        fs::write(p.join("local-secret.txt"), "TOKEN=before").unwrap();
+        let sha = snapshot_commit(p, "refs/cadencr/checkpoints/1/preserve", "1/preserve")
+            .await
+            .unwrap();
+
+        fs::write(p.join("tracked.txt"), "v2-edited").unwrap();
+        fs::write(p.join("local-secret.txt"), "TOKEN=after").unwrap();
+
+        super::restore_worktree(p, &sha).await.unwrap();
+
+        assert_eq!(fs::read_to_string(p.join("tracked.txt")).unwrap(), "v1");
+        assert_eq!(
+            fs::read_to_string(p.join("local-secret.txt")).unwrap(),
+            "TOKEN=after",
+            "rewind must not overwrite or delete untracked local files"
+        );
     }
 
     #[tokio::test]

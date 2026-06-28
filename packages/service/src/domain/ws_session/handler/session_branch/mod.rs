@@ -10,6 +10,7 @@
 mod fork;
 mod fork_db;
 mod rewind;
+mod rewind_state;
 
 pub(crate) use fork::handle_fork;
 pub(crate) use rewind::handle_rewind;

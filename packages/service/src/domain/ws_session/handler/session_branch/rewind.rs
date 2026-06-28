@@ -8,6 +8,7 @@ use super::super::super::persistence::WsSessionPersistence;
 use super::super::super::protocol::WsEnvelope;
 use super::super::helpers::send_error;
 use super::super::types::{SdkSessions, WsSender};
+use super::rewind_state::{apply_rewind_state, RewindStateError};
 use super::{
     current_runtime_session_id, load_inputs, parse_payload, reply_and_broadcast, report_abort,
     stop_live_turn, truncate_context, BranchInputs,
@@ -74,30 +75,92 @@ pub(crate) async fn handle_rewind(
         Err(abort) => return report_abort(sender, &envelope.id, abort),
     };
 
-    // (db) Drop the cut message and everything after it, then point the session
-    // at the new (or unchanged) provider session — all in one transaction.
-    if let Err(error) = apply_db_rewind(
+    // (code + db) Restore code before deleting conversation rows. If a
+    // checkpoint exists but cannot be restored, abort before DB mutation so the
+    // conversation is never rewound without the corresponding code state.
+    let code_outcome = match apply_rewind_state(
         &app_state.write_pool,
-        db_session_id,
-        inputs.message_id,
+        &inputs,
+        checkpoint.as_deref(),
         new_runtime_session_id.as_deref(),
     )
     .await
     {
-        send_error(sender, &envelope.id, "DB_ERROR", &error.to_string());
-        return;
-    }
+        Ok(outcome) => outcome,
+        Err(RewindStateError::CodeRestore(reason)) => {
+            send_error(sender, &envelope.id, "CODE_RESTORE_FAILED", &reason);
+            return;
+        }
+        Err(RewindStateError::Db(error)) => {
+            send_error(sender, &envelope.id, "DB_ERROR", &error.to_string());
+            return;
+        }
+    };
+    let (code_restored, code_restore_error) = code_outcome.to_wire();
 
-    // (code) Restore the worktree to the checkpoint. Best-effort, *after* the
-    // conversation rewind (the primary effect): a restore failure is surfaced to
-    // the user but never undoes the conversation rewind.
-    let (code_restored, code_restore_error) =
-        restore_code(&inputs, checkpoint.as_deref()).await.to_wire();
+    finish_rewind(
+        app_state,
+        sender,
+        &envelope.id,
+        db_session_id,
+        &inputs,
+        new_runtime_session_id.is_some(),
+        code_restored,
+        code_restore_error,
+    )
+    .await;
+}
 
-    // (draft) Restore the cut message's text into the composer (unsent). The
-    // composer restores from `feature_settings.draft_prompt` (the same store
-    // fork writes), so persist there for it to survive a reload; also mirror it
-    // to `agent_sessions.draft_prompt` for the session-scoped readers.
+async fn finish_rewind(
+    app_state: &AppState,
+    sender: &WsSender,
+    envelope_id: &str,
+    db_session_id: i64,
+    inputs: &BranchInputs,
+    truncated: bool,
+    code_restored: bool,
+    code_restore_error: Option<String>,
+) {
+    persist_rewind_draft(app_state, db_session_id, inputs).await;
+
+    WsSessionPersistence::broadcast_session_status(
+        &app_state.session_status_tx,
+        db_session_id,
+        inputs.feature_id,
+        AgentStatus::Idle,
+        None,
+    );
+
+    info!(
+        db_session_id,
+        message_id = inputs.message_id,
+        code_restored,
+        truncated,
+        "rewind complete"
+    );
+
+    reply_and_broadcast(
+        app_state,
+        sender,
+        envelope_id,
+        inputs.feature_id,
+        "branch.rewound",
+        serde_json::json!({
+            "sessionId": db_session_id.to_string(),
+            "messageId": inputs.message_id,
+            "draftText": inputs.message_text,
+            "codeRestored": code_restored,
+            "codeRestoreError": code_restore_error,
+        }),
+    )
+    .await;
+}
+
+async fn persist_rewind_draft(app_state: &AppState, db_session_id: i64, inputs: &BranchInputs) {
+    // Restore the cut message's text into the composer (unsent). The composer
+    // restores from `feature_settings.draft_prompt` (the same store fork
+    // writes), so persist there for it to survive a reload; also mirror it to
+    // `agent_sessions.draft_prompt` for the session-scoped readers.
     if let Err(error) = crate::domain::workflow::worktree::set_setting(
         &app_state.write_pool,
         inputs.feature_id,
@@ -117,61 +180,6 @@ pub(crate) async fn handle_rewind(
     {
         warn!(db_session_id, error = %error, "failed to persist rewind draft");
     }
-
-    WsSessionPersistence::broadcast_session_status(
-        &app_state.session_status_tx,
-        db_session_id,
-        inputs.feature_id,
-        AgentStatus::Idle,
-        None,
-    );
-
-    info!(
-        db_session_id,
-        message_id = inputs.message_id,
-        code_restored,
-        truncated = new_runtime_session_id.is_some(),
-        "rewind complete"
-    );
-
-    reply_and_broadcast(
-        app_state,
-        sender,
-        &envelope.id,
-        inputs.feature_id,
-        "branch.rewound",
-        serde_json::json!({
-            "sessionId": db_session_id.to_string(),
-            "messageId": inputs.message_id,
-            "draftText": inputs.message_text,
-            "codeRestored": code_restored,
-            "codeRestoreError": code_restore_error,
-        }),
-    )
-    .await;
-}
-
-/// Result of attempting the worktree code restore during a rewind.
-enum CodeRestoreOutcome {
-    /// No pre-turn checkpoint existed for this message — nothing to restore.
-    NoCheckpoint,
-    /// The worktree was rolled back to the checkpoint.
-    Restored,
-    /// A checkpoint existed but `git restore` failed; the message is surfaced.
-    Failed(String),
-}
-
-impl CodeRestoreOutcome {
-    /// `(code_restored, code_restore_error)` for the WS reply: a missing
-    /// checkpoint and a failed restore are distinct (the UI labels them
-    /// differently) rather than both collapsing to a bare `false`.
-    fn to_wire(&self) -> (bool, Option<String>) {
-        match self {
-            CodeRestoreOutcome::Restored => (true, None),
-            CodeRestoreOutcome::NoCheckpoint => (false, None),
-            CodeRestoreOutcome::Failed(reason) => (false, Some(reason.clone())),
-        }
-    }
 }
 
 async fn worktree_dirty(inputs: &BranchInputs) -> bool {
@@ -187,156 +195,5 @@ async fn worktree_dirty(inputs: &BranchInputs) -> bool {
             );
             true
         }
-    }
-}
-
-/// Restore the worktree to the checkpoint. A restore failure is surfaced
-/// (logged + reported) but does not abort the conversation rewind — the user
-/// still gets their context rolled back.
-async fn restore_code(inputs: &BranchInputs, checkpoint: Option<&str>) -> CodeRestoreOutcome {
-    let Some(sha) = checkpoint else {
-        return CodeRestoreOutcome::NoCheckpoint;
-    };
-    match checkpoints::restore(&inputs.cwd, sha).await {
-        Ok(()) => CodeRestoreOutcome::Restored,
-        Err(error) => {
-            warn!(
-                inputs.db_session_id,
-                error = %error,
-                "checkpoint restore failed; conversation rewound without code rollback"
-            );
-            CodeRestoreOutcome::Failed(error.to_string())
-        }
-    }
-}
-
-/// Delete the cut message and everything after it, then swap the provider
-/// session id. Checkpoints are removed explicitly (the FK also cascades).
-async fn apply_db_rewind(
-    pool: &sqlx::SqlitePool,
-    db_session_id: i64,
-    message_id: i64,
-    new_runtime_session_id: Option<&str>,
-) -> Result<(), sqlx::Error> {
-    // One transaction so a failure partway through can never leave the
-    // conversation half-deleted or pointing at a stale runtime session id.
-    let mut tx = pool.begin().await?;
-    sqlx::query(
-        "DELETE FROM turn_checkpoints WHERE message_id IN \
-         (SELECT id FROM agent_messages WHERE session_id = ? AND id >= ?)",
-    )
-    .bind(db_session_id)
-    .bind(message_id)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query("DELETE FROM agent_messages WHERE session_id = ? AND id >= ?")
-        .bind(db_session_id)
-        .bind(message_id)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("UPDATE agent_sessions SET runtime_session_id = ? WHERE id = ?")
-        .bind(new_runtime_session_id)
-        .bind(db_session_id)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
-    use sqlx::SqlitePool;
-
-    async fn pool_with_messages() -> SqlitePool {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .unwrap();
-        sqlx::raw_sql(
-            "CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, runtime_session_id TEXT);
-             CREATE TABLE agent_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL,
-                role TEXT, content TEXT, message_type TEXT);
-             CREATE TABLE turn_checkpoints (message_id INTEGER PRIMARY KEY, commit_sha TEXT);
-             INSERT INTO agent_sessions (id, runtime_session_id) VALUES (1, 'old-sid');
-             INSERT INTO agent_messages (id, session_id, role, content, message_type) VALUES
-                (1, 1, 'user', 'q1', 'user_message'),
-                (2, 1, 'assistant', 'a1', 'text'),
-                (3, 1, 'user', 'q2', 'user_message'),
-                (4, 1, 'assistant', 'a2', 'text'),
-                (5, 1, 'user', 'q3', 'user_message');
-             INSERT INTO turn_checkpoints (message_id, commit_sha) VALUES
-                (1, 'c1'), (3, 'c3'), (5, 'c5');",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        pool
-    }
-
-    #[test]
-    fn code_restore_outcome_distinguishes_missing_from_failed() {
-        assert_eq!(CodeRestoreOutcome::Restored.to_wire(), (true, None));
-        // A missing checkpoint and a failed restore both report `false` but only
-        // the failure carries an error the UI can show.
-        assert_eq!(CodeRestoreOutcome::NoCheckpoint.to_wire(), (false, None));
-        assert_eq!(
-            CodeRestoreOutcome::Failed("git boom".into()).to_wire(),
-            (false, Some("git boom".to_string())),
-        );
-    }
-
-    #[tokio::test]
-    async fn apply_db_rewind_deletes_from_cut_and_swaps_runtime_id() {
-        let pool = pool_with_messages().await;
-
-        apply_db_rewind(&pool, 1, 3, Some("new-sid")).await.unwrap();
-
-        let remaining: Vec<i64> = sqlx::query_scalar("SELECT id FROM agent_messages ORDER BY id")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-        assert_eq!(remaining, vec![1, 2], "messages >= cut are deleted");
-
-        let checkpoints: Vec<i64> =
-            sqlx::query_scalar("SELECT message_id FROM turn_checkpoints ORDER BY message_id")
-                .fetch_all(&pool)
-                .await
-                .unwrap();
-        assert_eq!(
-            checkpoints,
-            vec![1],
-            "checkpoints for deleted messages are gone"
-        );
-
-        let sid: Option<String> =
-            sqlx::query_scalar("SELECT runtime_session_id FROM agent_sessions WHERE id = 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(sid.as_deref(), Some("new-sid"));
-    }
-
-    #[tokio::test]
-    async fn apply_db_rewind_can_clear_runtime_id_for_fresh_start() {
-        let pool = pool_with_messages().await;
-        apply_db_rewind(&pool, 1, 1, None).await.unwrap();
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_messages")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            count, 0,
-            "rewinding to the first message clears the session"
-        );
-        let sid: Option<String> =
-            sqlx::query_scalar("SELECT runtime_session_id FROM agent_sessions WHERE id = 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert!(sid.is_none(), "fresh start nulls the runtime session id");
     }
 }
