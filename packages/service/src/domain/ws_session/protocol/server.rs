@@ -43,6 +43,12 @@ pub struct SessionInitializedPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMessagePayload {
     pub blocks: Vec<serde_json::Value>,
+    /// Per-stream monotonic sequence number stamped by the stream reader so a
+    /// client can detect a dropped envelope (a gap) and resync from the DB
+    /// instead of silently rendering a truncated message. `None` on
+    /// non-streamed `session.message` emitters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

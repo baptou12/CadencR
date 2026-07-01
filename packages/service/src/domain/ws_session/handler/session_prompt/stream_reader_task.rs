@@ -71,6 +71,15 @@ pub(super) struct StreamReaderState {
     /// premature eviction (e.g. on a nested-agent `MessageStart`) would wrongly
     /// drop it mid-run.
     pub(super) live_background_agents: HashSet<String>,
+    /// Monotonic counter stamped onto every `session.message` envelope this
+    /// reader emits, so clients can detect a dropped envelope (gap) and
+    /// resync. Restarts at 1 with each reader; clients treat a lower-than-
+    /// expected value as a stream restart, not a gap.
+    pub(super) message_seq: u64,
+    /// Bounded wire tap of the raw provider events this reader saw, dumped to
+    /// a file when the turn ends abnormally so the surfaced error can point at
+    /// evidence (issue #78).
+    pub(super) diagnostics: super::stream_diagnostics::StreamDiagnostics,
 }
 
 enum ReaderAction {
@@ -95,6 +104,8 @@ impl StreamReaderState {
             compacting: false,
             surfaced_error_this_turn: false,
             live_background_agents: HashSet::new(),
+            message_seq: 0,
+            diagnostics: super::stream_diagnostics::StreamDiagnostics::new(),
         }
     }
 }
@@ -146,14 +157,14 @@ impl StreamReaderTask {
                 ReaderAction::Break => break,
                 ReaderAction::Closed => {
                     if self.stream_close_was_unexpected(&state).await {
-                        self.handle_unexpected_stop().await;
+                        self.handle_unexpected_stop(&state).await;
                     } else {
                         self.send_stream_closed().await;
                     }
                     break;
                 }
                 ReaderAction::Error(error) => {
-                    self.handle_stream_error(error).await;
+                    self.handle_stream_error(&state, error).await;
                     break;
                 }
                 ReaderAction::Event(runtime_event) => {

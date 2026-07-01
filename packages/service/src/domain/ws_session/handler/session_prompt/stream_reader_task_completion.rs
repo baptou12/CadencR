@@ -58,11 +58,13 @@ impl StreamReaderTask {
                 serde_json::Value::String(model.to_string()),
             );
         }
+        state.message_seq += 1;
         Some(WsEnvelope::new(
             "session",
             "message",
             serde_json::to_value(SessionMessagePayload {
                 blocks: vec![block],
+                seq: Some(state.message_seq),
             })
             .unwrap(),
         ))
@@ -116,13 +118,19 @@ impl StreamReaderTask {
         ))
     }
 
-    pub(super) async fn handle_stream_error(&self, error: RuntimeError) {
+    pub(super) async fn handle_stream_error(&self, state: &StreamReaderState, error: RuntimeError) {
         let code = match &error {
             RuntimeError::CompactFailed(_) => "COMPACT_ERROR",
             _ => "SDK_ERROR",
         };
-        let message = error.to_string();
+        let mut message = error.to_string();
         error!(self.db_session_id, error = %message, "SDK stream error");
+        if let Some(path) = state
+            .diagnostics
+            .dump(self.db_session_id, code, Some(&message))
+        {
+            message.push_str(&format!("\n\nDiagnostics saved to: {}", path.display()));
+        }
         self.surface_session_error(code, message).await;
     }
 
@@ -182,16 +190,19 @@ impl StreamReaderTask {
     /// (handled via [`Self::handle_stream_error`]); this covers the genuinely
     /// silent case (clean code-0 exit, empty stderr) so the user sees an error
     /// instead of an agent that simply froze.
-    pub(super) async fn handle_unexpected_stop(&self) {
+    pub(super) async fn handle_unexpected_stop(&self, state: &StreamReaderState) {
         error!(
             self.db_session_id,
             "SDK stream closed mid-turn without a result"
         );
-        self.surface_session_error(
-            "AGENT_STOPPED",
-            "The agent stopped unexpectedly before finishing its turn.".to_string(),
-        )
-        .await;
+        let mut message = "The agent stopped unexpectedly before finishing its turn.".to_string();
+        if let Some(path) = state
+            .diagnostics
+            .dump(self.db_session_id, "AGENT_STOPPED", None)
+        {
+            message.push_str(&format!("\n\nDiagnostics saved to: {}", path.display()));
+        }
+        self.surface_session_error("AGENT_STOPPED", message).await;
     }
 
     pub(super) async fn send_stream_closed(&self) {
