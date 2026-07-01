@@ -16,6 +16,7 @@ import { appendLocalUserMessage } from "./ws-session-store-helpers";
 import { buildClearedGatePatch } from "./ws-gate-state";
 import {
   type BlockMutation,
+  type StreamingState,
   blocksPatchWithDerived,
   createStreamingState,
   isRecord,
@@ -23,6 +24,7 @@ import {
   applyMutations,
   buildMessagePatch,
 } from "./ws-message-processing";
+import { trackStreamSeq } from "./ws-session-resync";
 import { normalizeContextWindow } from "@/types/agent";
 import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
 import type { SessionEntry } from "./ws-session-types";
@@ -124,14 +126,28 @@ function mcpServersEqual(
 
 export function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseMessageBlocksPayload(payload);
-  if (!p) return;
+  if (!p) {
+    // Never drop silently: a malformed `session.message` is a lost stream
+    // chunk — the exact "text stopped mid-message" a user can't diagnose.
+    console.warn("[ws-session] dropping malformed session.message payload", payload);
+    return;
+  }
   const state = ctx.getSession(sessionId).streamingState;
+  trackStreamSeq(ctx, sessionId, state, p.seq);
+  processMessageBlocks(ctx, sessionId, state, p.blocks);
+}
 
+function processMessageBlocks(
+  ctx: StoreAccessors,
+  sessionId: string,
+  state: StreamingState,
+  blocks: unknown[],
+): void {
   const allMutations: BlockMutation[] = [];
   let enterPlanModeRequested = false;
   let compactBoundaryObserved = false;
   let manualCompactBoundaryObserved = false;
-  for (const rawBlock of p.blocks) {
+  for (const rawBlock of blocks) {
     if (!isRecord(rawBlock)) continue;
     const result = processSdkMessage(rawBlock, state);
     allMutations.push(...result.mutations);

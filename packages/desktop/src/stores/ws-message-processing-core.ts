@@ -1,13 +1,14 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { normalizeToolName } from "@/lib/tool-adapter";
 import { createToolUseBlock } from "./ws-message-processing-tool-blocks";
+import { processStreamEvent } from "./ws-message-processing-stream";
 import { processSystemMessage } from "./ws-message-processing-system";
 import { processUserMessage } from "./ws-message-processing-user";
 import { nextSyntheticBlockId } from "./ws-message-processing-utils";
 
 export { isRecord } from "./ws-message-processing-utils";
 
-interface StreamContext {
+export interface StreamContext {
   model: string | null;
   contentBlockIds: Map<number, string>;
   parentToolUseId: string | null;
@@ -32,6 +33,18 @@ export interface StreamingState {
   rootBlockPosById: Map<string, number>;
   /** Map from a tool_call's `toolUseId` to its matching `tool_result` block. */
   toolResultMap: Map<string, AgentBlockData>;
+  /**
+   * Last `seq` observed on a `session.message` envelope. Used to detect a
+   * dropped envelope (gap) so the client can resync instead of silently
+   * rendering a truncated message. `null` until the first stamped envelope.
+   */
+  lastMessageSeq: number | null;
+  /**
+   * Set when a seq gap was detected mid-turn. The truncated tail can't be
+   * repaired while deltas are still flowing (an in-place rewrite would race
+   * in-flight appends), so the repair runs once the turn ends.
+   */
+  tailRepairNeeded: boolean;
 }
 
 export interface ParserSignals {
@@ -59,6 +72,8 @@ export function createStreamingState(): StreamingState {
     rootBlocks: [],
     rootBlockPosById: new Map(),
     toolResultMap: new Map(),
+    lastMessageSeq: null,
+    tailRepairNeeded: false,
   };
 }
 
@@ -90,161 +105,17 @@ export function processSdkMessage(
     case "system":
       return { mutations: processSystemMessage(msg, state, signals), signals };
     case "result":
+      return { mutations: [], signals };
     default:
+      // A message type this parser doesn't know. The backend independently
+      // surfaces unknown provider messages as visible errors; here we only
+      // leave a trace so a "text stopped mid-message" report is diagnosable.
+      console.warn("[agent-stream] dropping unknown message type", msg.type);
       return { mutations: [], signals };
   }
 }
 
-function processStreamEvent(msg: Record<string, unknown>, state: StreamingState): BlockMutation[] {
-  const event = msg.event as Record<string, unknown> | undefined;
-  if (!event) return [];
-
-  const stream = getOrCreateStreamContext(state, getStreamSessionId(msg));
-  // The server stamps the active model onto every forwarded stream event. Seed
-  // `stream.model` from it so a client that missed `message_start` (e.g. a
-  // remote device that joined the turn late) still labels streamed text with
-  // the right model instead of "unknown".
-  if (typeof msg.model === "string") {
-    stream.model = msg.model;
-  }
-  const parentToolUseId = (msg.parent_tool_use_id as string) ?? null;
-  if (stream.parentToolUseId && stream.parentToolUseId !== parentToolUseId) {
-    const prevParent = state.toolUseIdToBlock.get(stream.parentToolUseId);
-    if (prevParent?.childBlocks) {
-      prevParent.taskComplete = true;
-    }
-  }
-  stream.parentToolUseId = parentToolUseId;
-
-  switch (event.type as string) {
-    case "message_start": {
-      const message = event.message as Record<string, unknown> | undefined;
-      if (message?.model) {
-        stream.model = message.model as string;
-      }
-      stream.contentBlockIds.clear();
-      return [];
-    }
-    case "content_block_start":
-      return processContentBlockStart(
-        event,
-        state,
-        stream,
-        parentToolUseId,
-        blockIdFromAgentMessage(msg),
-      );
-    case "content_block_delta":
-      return processContentBlockDelta(event, stream, blockIdFromAgentMessage(msg));
-    default:
-      return [];
-  }
-}
-
-function processContentBlockStart(
-  event: Record<string, unknown>,
-  state: StreamingState,
-  stream: StreamContext,
-  parentToolUseId: string | null,
-  persistedBlockId: string | null,
-): BlockMutation[] {
-  const index = event.index as number;
-  const contentBlock = event.content_block as Record<string, unknown> | undefined;
-  if (!contentBlock) return [];
-
-  const blockId = persistedBlockId ?? nextSyntheticBlockId(state);
-  stream.contentBlockIds.set(index, blockId);
-
-  switch (contentBlock.type as string) {
-    case "tool_use":
-      return [
-        {
-          action: "append",
-          block: createToolUseBlock(
-            state,
-            blockId,
-            contentBlock,
-            parentToolUseId,
-            new Date().toISOString(),
-            false,
-          ),
-        },
-      ];
-    case "thinking":
-      return [
-        {
-          action: "append",
-          block: {
-            id: blockId,
-            type: "thinking",
-            content: typeof contentBlock.thinking === "string" ? contentBlock.thinking : "",
-            parentToolUseId,
-            createdAt: new Date().toISOString(),
-          },
-        },
-      ];
-    case "text":
-      return [
-        {
-          action: "append",
-          block: {
-            id: blockId,
-            type: "text",
-            content: typeof contentBlock.text === "string" ? contentBlock.text : "",
-            parentToolUseId,
-            model: stream.model ?? undefined,
-            createdAt: new Date().toISOString(),
-          },
-        },
-      ];
-    default:
-      return [];
-  }
-}
-
-function processContentBlockDelta(
-  event: Record<string, unknown>,
-  stream: StreamContext,
-  persistedBlockId: string | null,
-): BlockMutation[] {
-  const index = event.index as number;
-  const delta = event.delta as Record<string, unknown> | undefined;
-  if (!delta) return [];
-
-  const blockId = persistedBlockId ?? stream.contentBlockIds.get(index);
-  if (!blockId) return [];
-  if (persistedBlockId) {
-    stream.contentBlockIds.set(index, persistedBlockId);
-  }
-
-  switch (delta.type as string) {
-    case "text_delta":
-      return [
-        { action: "update", block: { id: blockId, type: "text", content: delta.text as string } },
-      ];
-    case "thinking_delta":
-      return [
-        {
-          action: "update",
-          block: { id: blockId, type: "thinking", content: delta.thinking as string },
-        },
-      ];
-    case "input_json_delta":
-      return [
-        {
-          action: "update",
-          block: {
-            id: blockId,
-            type: "tool_call",
-            content: delta.partial_json as string,
-          },
-        },
-      ];
-    default:
-      return [];
-  }
-}
-
-function blockIdFromAgentMessage(msg: Record<string, unknown>): string | null {
+export function blockIdFromAgentMessage(msg: Record<string, unknown>): string | null {
   const rawId = msg.agent_message_id;
   if (typeof rawId === "number" && Number.isSafeInteger(rawId)) {
     return `msg-${rawId}`;
@@ -376,11 +247,11 @@ function createAssistantMutation(
   }
 }
 
-function getStreamSessionId(msg: Record<string, unknown>): StreamSessionId {
+export function getStreamSessionId(msg: Record<string, unknown>): StreamSessionId {
   return typeof msg.session_id === "string" ? msg.session_id : DEFAULT_STREAM_SESSION_ID;
 }
 
-function getOrCreateStreamContext(
+export function getOrCreateStreamContext(
   state: StreamingState,
   streamSessionId: StreamSessionId,
 ): StreamContext {

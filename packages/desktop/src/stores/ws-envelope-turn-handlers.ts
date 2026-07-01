@@ -8,6 +8,7 @@ import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
 import { removePendingPromptBlocks, trimTailPromptTurnBoundary } from "./ws-pending-prompts";
+import { repairPersistedBlocksAfterTurn } from "./ws-session-resync";
 import type { StoreAccessors } from "./ws-envelope-types";
 
 /**
@@ -63,6 +64,14 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
     return;
   }
   const state = session.streamingState;
+  // A seq gap was detected mid-turn: now that no more deltas can arrive, the
+  // persisted transcript is authoritative — overwrite any truncated blocks.
+  if (state.tailRepairNeeded) {
+    state.tailRepairNeeded = false;
+    repairPersistedBlocksAfterTurn(ctx, sessionId).catch((err: unknown) => {
+      console.warn("[ws-session] post-turn transcript repair failed", err);
+    });
+  }
   for (const stream of state.streams.values()) {
     if (!stream.parentToolUseId) {
       continue;
