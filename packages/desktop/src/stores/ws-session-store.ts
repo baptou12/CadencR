@@ -293,8 +293,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           let envelope: WsEnvelope;
           try {
             envelope = parseEnvelope(data);
-          } catch {
-            return; // genuinely unparseable — skip
+          } catch (err) {
+            // Never drop silently: a discarded envelope can be a lost stream
+            // chunk, which shows up as text stopping mid-message with no clue.
+            console.warn("[ws-session] dropping unparseable envelope:", err);
+            return;
           }
           try {
             handleEnvelope(ctx, sessionId, envelope);
