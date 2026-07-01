@@ -1,4 +1,5 @@
 use serde_json::Value;
+use tracing::warn;
 
 use crate::domain::agents::adapter::{
     RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeContentBlock, RuntimeContentDelta,
@@ -66,6 +67,13 @@ fn api_error_text(
     }
 }
 
+/// The `type` tag of a raw wire payload, for drop-trace logging.
+fn raw_type(raw: &Value) -> &str {
+    raw.get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("<missing>")
+}
+
 fn map_content_block(block: &claude_agent_sdk_rs::types::ContentBlock) -> RuntimeContentBlock {
     match block {
         claude_agent_sdk_rs::types::ContentBlock::Text { text } => {
@@ -83,7 +91,18 @@ fn map_content_block(block: &claude_agent_sdk_rs::types::ContentBlock) -> Runtim
                 input: input.clone(),
             }
         }
-        _ => RuntimeContentBlock::Other,
+        // Modeled but intentionally not rendered as assistant content.
+        claude_agent_sdk_rs::types::ContentBlock::ToolResult { .. } => RuntimeContentBlock::Other,
+        // A block type the SDK doesn't model. Its content can't render, but it
+        // must never vanish without a trace (the "stopped mid-message with no
+        // reason" class) — log exactly what the CLI sent.
+        claude_agent_sdk_rs::types::ContentBlock::Other(raw) => {
+            warn!(
+                block_type = raw_type(raw),
+                "claude adapter: unmodeled content block dropped from rendering"
+            );
+            RuntimeContentBlock::Other
+        }
     }
 }
 
@@ -130,8 +149,17 @@ fn map_stream_event(event: &claude_agent_sdk_rs::StreamEventData) -> RuntimeStre
                     }
                 }
                 // An unknown delta type carries nothing we can render; treat the
-                // whole event as `Other` rather than fabricating a delta.
-                claude_agent_sdk_rs::types::ContentDelta::Other => RuntimeStreamEvent::Other,
+                // whole event as `Other` rather than fabricating a delta — but
+                // log it: a CLI that starts streaming a new delta type would
+                // otherwise look like text that just stops mid-message.
+                claude_agent_sdk_rs::types::ContentDelta::Other(raw) => {
+                    warn!(
+                        delta_type = raw_type(raw),
+                        index,
+                        "claude adapter: unmodeled content delta dropped from the live stream"
+                    );
+                    RuntimeStreamEvent::Other
+                }
             }
         }
         claude_agent_sdk_rs::StreamEventData::ContentBlockStop { index } => {
@@ -139,7 +167,18 @@ fn map_stream_event(event: &claude_agent_sdk_rs::StreamEventData) -> RuntimeStre
                 index: u64::from(*index),
             }
         }
-        _ => RuntimeStreamEvent::Other,
+        // Modeled and intentionally unmapped: turn accounting comes from the
+        // `Result` message, not these envelope markers.
+        claude_agent_sdk_rs::StreamEventData::MessageDelta { .. }
+        | claude_agent_sdk_rs::StreamEventData::MessageStop => RuntimeStreamEvent::Other,
+        // A stream event type the SDK doesn't model — log what was dropped.
+        claude_agent_sdk_rs::StreamEventData::Other(raw) => {
+            warn!(
+                event_type = raw_type(raw),
+                "claude adapter: unmodeled stream event dropped"
+            );
+            RuntimeStreamEvent::Other
+        }
     }
 }
 
@@ -188,46 +227,26 @@ pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEv
         raw: serde_json::to_value(&msg).unwrap_or(Value::Null),
     };
 
+    let (kind, result_error) = classify_message(msg);
+
+    RuntimeEvent::new(metadata, kind)
+        .with_background_agent(background_agent)
+        .with_result_error(result_error)
+}
+
+/// Map an `SdkMessage` to its runtime event kind plus, for a failing `Result`,
+/// the extracted [`RuntimeResultError`]. Split out of [`normalize_event`]
+/// (which keeps metadata assembly) so each stays within the function-size
+/// budget. The match is intentionally exhaustive — no `_` catch-all — so a new
+/// SDK variant is a compile error here instead of a silent drop.
+fn classify_message(
+    msg: claude_agent_sdk_rs::SdkMessage,
+) -> (RuntimeEventKind, Option<RuntimeResultError>) {
     // Populated by a failing (`is_error`) `Result`; see `RuntimeResultError`.
     let mut result_error: Option<RuntimeResultError> = None;
 
     let kind = match msg {
-        claude_agent_sdk_rs::SdkMessage::System(system) => match system {
-            claude_agent_sdk_rs::messages::SystemMessage::Init {
-                model, mcp_servers, ..
-            } => {
-                let context_window = init_model_context_window(&model);
-                RuntimeEventKind::Init(RuntimeInitEvent {
-                    model: Some(model),
-                    mcp_servers: mcp_servers
-                        .into_iter()
-                        .map(|server| RuntimeMcpServerStatus {
-                            name: server.name,
-                            status: server.status,
-                        })
-                        .collect(),
-                    context_window,
-                })
-            }
-            claude_agent_sdk_rs::messages::SystemMessage::CompactBoundary {
-                compact_metadata,
-                ..
-            } => RuntimeEventKind::CompactBoundary {
-                metadata: Some(RuntimeCompactMetadata {
-                    trigger: Some(compact_metadata.trigger),
-                    pre_tokens: Some(compact_metadata.pre_tokens),
-                }),
-            },
-            status @ claude_agent_sdk_rs::messages::SystemMessage::Status { .. } => {
-                if status.is_compaction_started() {
-                    RuntimeEventKind::TurnStarted {
-                        source: RuntimeTurnStartedSource::ManualCompact,
-                    }
-                } else {
-                    RuntimeEventKind::Other
-                }
-            }
-        },
+        claude_agent_sdk_rs::SdkMessage::System(system) => classify_system_message(system),
         claude_agent_sdk_rs::SdkMessage::Assistant {
             message,
             parent_tool_use_id,
@@ -292,29 +311,107 @@ pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEv
             }
             RuntimeEventKind::Result
         }
-        // A message type the SDK has never seen. Keep the raw payload so the
-        // stream reader can surface it to the conversation instead of dropping
-        // it silently — the silent-stop users couldn't diagnose. EXCEPT
-        // `system` messages: those are operational metadata, not conversation
-        // content, and the run-in-background agent protocol (issue #58) emits
-        // `system/task_started` / `system/task_notification` that arrive here
-        // as Unknown by design. Surfacing those as visible errors would spam
-        // the conversation on every background-agent run, so an unknown
-        // `system` subtype stays silent (`Other`) like every other operational
-        // message; only genuinely-unknown NON-system messages reach the user.
-        claude_agent_sdk_rs::SdkMessage::Unknown(raw) => {
-            if raw.get("type").and_then(Value::as_str) == Some("system") {
-                RuntimeEventKind::Other
-            } else {
-                RuntimeEventKind::Unknown { raw }
-            }
-        }
-        _ => RuntimeEventKind::Other,
+        claude_agent_sdk_rs::SdkMessage::Unknown(raw) => classify_unknown_message(raw),
+        // Modeled operational messages, intentionally not part of the
+        // conversation. Listed explicitly (no `_` catch-all) so a future SDK
+        // variant is a compile error here instead of a silent drop.
+        claude_agent_sdk_rs::SdkMessage::Status { .. }
+        | claude_agent_sdk_rs::SdkMessage::HookStarted { .. }
+        | claude_agent_sdk_rs::SdkMessage::HookProgress { .. }
+        | claude_agent_sdk_rs::SdkMessage::HookResponse { .. }
+        | claude_agent_sdk_rs::SdkMessage::ToolProgress { .. }
+        | claude_agent_sdk_rs::SdkMessage::AuthStatus { .. }
+        | claude_agent_sdk_rs::SdkMessage::TaskNotification { .. }
+        | claude_agent_sdk_rs::SdkMessage::TaskStarted { .. }
+        | claude_agent_sdk_rs::SdkMessage::TaskProgress { .. }
+        | claude_agent_sdk_rs::SdkMessage::FilesPersisted { .. }
+        | claude_agent_sdk_rs::SdkMessage::RateLimit { .. }
+        | claude_agent_sdk_rs::SdkMessage::PromptSuggestion { .. } => RuntimeEventKind::Other,
     };
 
-    RuntimeEvent::new(metadata, kind)
-        .with_background_agent(background_agent)
-        .with_result_error(result_error)
+    (kind, result_error)
+}
+
+/// Map a `system` message to its runtime event kind. Compaction start is a
+/// synthetic turn boundary; its end/failure is carried by the typed
+/// `CompactBoundary` and the compact command's own response, so other status
+/// values are operational and unmapped — but a status we've never seen must
+/// leave a trace.
+fn classify_system_message(
+    system: claude_agent_sdk_rs::messages::SystemMessage,
+) -> RuntimeEventKind {
+    match system {
+        claude_agent_sdk_rs::messages::SystemMessage::Init {
+            model, mcp_servers, ..
+        } => {
+            let context_window = init_model_context_window(&model);
+            RuntimeEventKind::Init(RuntimeInitEvent {
+                model: Some(model),
+                mcp_servers: mcp_servers
+                    .into_iter()
+                    .map(|server| RuntimeMcpServerStatus {
+                        name: server.name,
+                        status: server.status,
+                    })
+                    .collect(),
+                context_window,
+            })
+        }
+        claude_agent_sdk_rs::messages::SystemMessage::CompactBoundary {
+            compact_metadata, ..
+        } => RuntimeEventKind::CompactBoundary {
+            metadata: Some(RuntimeCompactMetadata {
+                trigger: Some(compact_metadata.trigger),
+                pre_tokens: Some(compact_metadata.pre_tokens),
+            }),
+        },
+        status @ claude_agent_sdk_rs::messages::SystemMessage::Status { .. } => {
+            if status.is_compaction_started() {
+                RuntimeEventKind::TurnStarted {
+                    source: RuntimeTurnStartedSource::ManualCompact,
+                }
+            } else {
+                if let claude_agent_sdk_rs::messages::SystemMessage::Status {
+                    status: Some(value),
+                    compact_result: None,
+                    compact_error: None,
+                    ..
+                } = &status
+                {
+                    warn!(status = %value, "claude adapter: unrecognized system status dropped");
+                }
+                RuntimeEventKind::Other
+            }
+        }
+    }
+}
+
+/// Map an unmodeled (`Unknown`) message to its runtime event kind. Keep the raw
+/// payload so the stream reader can surface it to the conversation instead of
+/// dropping it silently — the silent-stop class users couldn't diagnose. EXCEPT
+/// `system` messages: those are operational metadata, not conversation content,
+/// and the run-in-background agent protocol (issue #58) emits
+/// `system/task_started` / `system/task_notification` that arrive here as
+/// Unknown by design. Surfacing those as visible errors would spam the
+/// conversation on every background-agent run, so an unknown `system` subtype
+/// stays out of the conversation (`Other`) — but only the allowlisted
+/// background-task subtypes stay *quiet*; anything else logs loudly so a CLI
+/// drift is diagnosable from the service log.
+fn classify_unknown_message(raw: Value) -> RuntimeEventKind {
+    if raw_type(&raw) == "system" {
+        let subtype = raw.get("subtype").and_then(Value::as_str);
+        const IGNORED_SYSTEM_SUBTYPES: [&str; 3] =
+            ["task_started", "task_notification", "task_progress"];
+        if !subtype.is_some_and(|s| IGNORED_SYSTEM_SUBTYPES.contains(&s)) {
+            warn!(
+                subtype = subtype.unwrap_or("<missing>"),
+                "claude adapter: unrecognized system message dropped"
+            );
+        }
+        RuntimeEventKind::Other
+    } else {
+        RuntimeEventKind::Unknown { raw }
+    }
 }
 
 /// Assemble a [`RuntimeResultError`] from a failing Claude Code `Result`.
@@ -433,6 +530,27 @@ mod tests {
             event.background_agent_signal().is_some(),
             "the background-agent signal must still be derived from the raw message"
         );
+    }
+
+    #[test]
+    fn normalize_event_surfaces_unknown_non_system_messages() {
+        // The counterpart to the `system` carve-out above: a message whose
+        // `type` the SDK models no schema for — and which is NOT operational
+        // `system` metadata — must reach the conversation verbatim rather than
+        // vanish. This is the whole point of the raw-preserving `Unknown`
+        // fallback: the "stopped mid-message with no reason" class.
+        let msg: claude_agent_sdk_rs::SdkMessage = serde_json::from_value(json!({
+            "type": "some_future_message_type", "session_id": "s", "payload": { "text": "hi" }
+        }))
+        .expect("unknown message deserializes infallibly");
+        assert!(matches!(msg, claude_agent_sdk_rs::SdkMessage::Unknown(_)));
+
+        let event = normalize_event(msg);
+        let raw = event
+            .unknown_message()
+            .expect("an unknown non-system message must surface verbatim");
+        assert_eq!(raw["type"], "some_future_message_type");
+        assert_eq!(raw["payload"]["text"], "hi");
     }
 
     #[test]

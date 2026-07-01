@@ -29,6 +29,7 @@ impl StreamReaderTask {
         runtime_event: RuntimeEvent,
     ) {
         state.last_runtime_activity = tokio::time::Instant::now();
+        state.diagnostics.record(runtime_event.raw_json());
         self.forward_compaction_state(state, &runtime_event).await;
         track_background_agents(&mut state.live_background_agents, &runtime_event);
 
