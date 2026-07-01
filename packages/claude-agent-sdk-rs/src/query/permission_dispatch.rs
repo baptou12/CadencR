@@ -50,9 +50,16 @@ pub(super) async fn handle_can_use_tool_request(
             match serde_json::to_value(&result) {
                 Ok(v) => v,
                 Err(e) => {
+                    // Surface the failure, but still answer the CLI with a
+                    // deny: leaving the request unanswered blocks the CLI
+                    // forever and strands the turn in `WaitingForPermission` —
+                    // the session then looks frozen with no error anywhere.
                     error!("failed to serialize permission response: {e}");
                     let _ = tx.send(Err(SdkError::SerializationError(e))).await;
-                    return;
+                    serde_json::json!({
+                        "behavior": "deny",
+                        "message": "Cadencr failed to build the permission response; the tool use was denied so the session can continue."
+                    })
                 }
             }
         }
@@ -75,7 +82,14 @@ pub(super) async fn handle_can_use_tool_request(
     });
 
     if let Err(e) = write_to_stdin(&process_stdin, &response_json).await {
+        error!(tool = %tool_name, "failed to write permission response to CLI stdin: {e}");
         let _ = tx.send(Err(e)).await;
+        // The write failed, so the CLI never got an answer — the pipe is
+        // almost certainly dead and the process-exit path will surface the
+        // real failure. Flip the state anyway: `WaitingForPermission` would
+        // tell consumers the turn is waiting on the *user*, which is false,
+        // and would strand the session in a frozen, errorless state.
+        *turn_state.lock().await = TurnState::AgentWorking;
         return;
     }
 
@@ -92,6 +106,55 @@ mod tests {
     use futures::StreamExt;
     use tempfile::TempDir;
     use tokio::sync::{oneshot, Notify};
+
+    /// Regression test for the stranded-permission freeze.
+    ///
+    /// If writing the permission response to the CLI fails (dead pipe,
+    /// closed stdin), the turn state used to stay `WaitingForPermission`
+    /// forever: consumers reported the turn as waiting on the user while the
+    /// CLI was actually gone — a session frozen with no error anywhere. The
+    /// dispatch must surface the error on the stream AND flip the turn state
+    /// back so the process-exit path can end the turn visibly.
+    #[tokio::test]
+    async fn write_failure_surfaces_error_and_does_not_strand_turn_state() {
+        use crate::error::SdkError;
+        use crate::query::turn_state::TurnState;
+
+        // `None` stdin makes `write_to_stdin` fail deterministically
+        // (`SdkError::InputClosed`) — the same shape as a dead pipe.
+        let process_stdin = Arc::new(tokio::sync::Mutex::new(None));
+        let turn_state = Arc::new(tokio::sync::Mutex::new(TurnState::WaitingForPermission {
+            tool_name: "Write".to_string(),
+            tool_use_id: "toolu_dead".to_string(),
+        }));
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+
+        super::handle_can_use_tool_request(
+            Arc::clone(&process_stdin),
+            Arc::clone(&turn_state),
+            tx,
+            None, // no handler -> auto-allow path; the write is what fails
+            PermissionRequest {
+                tool_name: "Write".to_string(),
+                input: serde_json::json!({}),
+                tool_use_id: "toolu_dead".to_string(),
+                agent_id: None,
+                suggestions: None,
+                blocked_path: None,
+                decision_reason: None,
+            },
+        )
+        .await;
+
+        assert!(
+            matches!(rx.recv().await, Some(Err(SdkError::InputClosed))),
+            "the write failure must surface on the message stream"
+        );
+        assert!(
+            matches!(&*turn_state.lock().await, TurnState::AgentWorking),
+            "turn state must not stay WaitingForPermission after a failed write"
+        );
+    }
 
     use crate::messages::SdkMessage;
     use crate::options::Options;

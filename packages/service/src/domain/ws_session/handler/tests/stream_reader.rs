@@ -837,3 +837,95 @@ async fn test_error_result_after_provider_error_does_not_double_surface() {
     .unwrap();
     assert_eq!(count, 1, "only one error message persisted");
 }
+
+#[tokio::test]
+async fn test_session_message_envelopes_carry_monotonic_seq() {
+    // Clients detect a dropped stream envelope (silently truncated message)
+    // via the per-stream `seq` stamp — it must be present and strictly
+    // increasing on every `session.message` this reader emits.
+    let app_state = make_test_app_state().await;
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+
+    let db_session_id = 95i64;
+    let feature_id = 1i64;
+
+    sqlx::query("INSERT INTO agent_sessions (id, feature_id, status) VALUES (?, ?, 'running')")
+        .bind(db_session_id)
+        .bind(feature_id)
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+    {
+        let mut sessions = sdk_sessions.lock().await;
+        sessions.insert(
+            db_session_id,
+            make_active_handle(feature_id, Some("cli".into())),
+        );
+    }
+
+    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(4);
+    for text in ["hello ", "world"] {
+        msg_tx
+            .send(Ok(RuntimeEvent::new(
+                crate::domain::agents::adapter::RuntimeEventMetadata {
+                    session_id: Some("cli".to_string()),
+                    usage: None,
+                    context_window: None,
+                    raw: serde_json::json!({
+                        "type": "stream_event",
+                        "event": {
+                            "type": "content_block_delta",
+                            "index": 0,
+                            "delta": { "type": "text_delta", "text": text }
+                        }
+                    }),
+                },
+                RuntimeEventKind::StreamEvent {
+                    event: crate::domain::agents::adapter::RuntimeStreamEvent::ContentBlockDelta {
+                        index: 0,
+                        delta: crate::domain::agents::adapter::RuntimeContentDelta::Text {
+                            text: text.to_string(),
+                        },
+                    },
+                    parent_tool_use_id: None,
+                },
+            )))
+            .await
+            .unwrap();
+    }
+    drop(msg_tx);
+
+    spawn_test_stream_reader(
+        &app_state,
+        db_session_id,
+        feature_id,
+        msg_rx,
+        ws_tx,
+        sdk_sessions.clone(),
+        crate::domain::agents::runtime::DEFAULT_PROVIDER,
+    );
+
+    let mut seqs: Vec<u64> = Vec::new();
+    while let Ok(Some(msg)) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), ws_rx.recv()).await
+    {
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            if env.action == "message" {
+                let payload: SessionMessagePayload = serde_json::from_value(env.payload).unwrap();
+                seqs.push(
+                    payload
+                        .seq
+                        .expect("streamed session.message must carry seq"),
+                );
+            }
+        }
+    }
+    assert_eq!(
+        seqs,
+        (1..=seqs.len() as u64).collect::<Vec<_>>(),
+        "seq must start at 1 and increase without gaps"
+    );
+    assert!(seqs.len() >= 2, "both deltas must be forwarded");
+}

@@ -203,10 +203,9 @@ impl ReaderTask {
     }
 
     async fn forward_sdk_message(&self, raw: Value) -> RawOutcome {
-        // `SdkMessage`'s custom `Deserialize` is infallible (it falls back to
-        // `Unknown` and logs internally), so the `unwrap_or` branch is unreachable.
-        let message: SdkMessage =
-            serde_json::from_value(raw).unwrap_or(SdkMessage::Unknown(Value::Null));
+        // Infallible: falls back to `Unknown(raw)` (raw payload preserved)
+        // and logs internally when the message matches no known schema.
+        let message = SdkMessage::from_raw(raw);
         self.capture_session_id(&message).await;
         self.cache_mcp_servers(&message).await;
         self.update_turn_state(&message).await;

@@ -214,10 +214,15 @@ export function parseCompactingPayload(payload: unknown): { active: boolean } | 
   return active == null ? null : { active };
 }
 
-export function parseMessageBlocksPayload(payload: unknown): { blocks: unknown[] } | null {
+export function parseMessageBlocksPayload(
+  payload: unknown,
+): { blocks: unknown[]; seq: number | null } | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { blocks: optionalArray(record, "blocks") ?? [] };
+  return {
+    blocks: optionalArray(record, "blocks") ?? [],
+    seq: optionalNumber(record, "seq") ?? null,
+  };
 }
 
 export function parsePermissionPayload(payload: unknown): {

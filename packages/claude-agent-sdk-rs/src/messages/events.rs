@@ -65,9 +65,10 @@ pub enum StreamEventData {
 
     /// Any stream event the CLI emits that we don't model yet. Catching it here
     /// keeps a novel event from sinking the whole `stream_event` message into
-    /// `SdkMessage::Unknown`, which would silently drop the live turn.
-    #[serde(other)]
-    Other,
+    /// `SdkMessage::Unknown`, which would silently drop the live turn. Carries
+    /// the raw JSON so the consumer can log/inspect what was dropped.
+    #[serde(untagged)]
+    Other(Value),
 }
 
 // ── SystemMessage ────────────────────────────────────────────────────────────

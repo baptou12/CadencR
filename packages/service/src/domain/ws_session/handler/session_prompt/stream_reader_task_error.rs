@@ -1,4 +1,4 @@
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 use crate::domain::agents::adapter::RuntimeEvent;
 
@@ -83,6 +83,11 @@ impl StreamReaderTask {
             return false;
         };
         if already_surfaced {
+            debug!(
+                self.db_session_id,
+                code = error.code,
+                "suppressing duplicate error result (an error was already surfaced this turn)"
+            );
             return false;
         }
         error!(

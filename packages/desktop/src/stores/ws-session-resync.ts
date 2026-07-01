@@ -16,7 +16,7 @@
 import { getFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import { blocksPatchWithDerived } from "./ws-message-processing";
+import { blocksPatchWithDerived, type StreamingState } from "./ws-message-processing";
 import { updateSession, type ResyncTarget } from "./ws-session-types";
 import type { StoreAccessors } from "./ws-envelope-handler";
 
@@ -95,4 +95,128 @@ export async function resyncMessagesOnReconnect(
       lastAppliedMessageId: nextCursor,
     }),
   );
+}
+
+/**
+ * Detect a dropped `session.message` envelope via the backend's per-stream
+ * `seq` stamp. A gap means content was lost in transit — resync missed rows
+ * from the DB now, and mark the stream for a tail repair at turn end (a
+ * truncated in-flight block can't be rewritten while deltas still race in).
+ * A seq lower than expected is a stream-reader restart, not a gap.
+ */
+export function trackStreamSeq(
+  ctx: StoreAccessors,
+  sessionId: string,
+  state: StreamingState,
+  seq: number | null,
+): void {
+  if (seq == null) return;
+  const last = state.lastMessageSeq;
+  state.lastMessageSeq = seq;
+  if (last == null || seq <= last + 1) return;
+  console.warn("[ws-session] stream envelope gap detected; resyncing", {
+    expected: last + 1,
+    received: seq,
+  });
+  state.tailRepairNeeded = true;
+  resyncMessagesOnReconnect(ctx, sessionId).catch((err: unknown) => {
+    console.warn("[ws-session] gap resync failed; tail repair will retry at turn end", err);
+  });
+}
+
+/**
+ * Post-turn repair for a stream that dropped envelopes mid-turn (detected via
+ * the `seq` gap). The reconnect resync above only *appends* missed rows — a
+ * block we already hold whose deltas were lost stays truncated because its id
+ * is deduped. Once the turn has ended (no more in-flight deltas to race), the
+ * DB is the authoritative transcript: refetch it and overwrite any held block
+ * whose persisted content is longer than what we rendered.
+ */
+export async function repairPersistedBlocksAfterTurn(
+  ctx: StoreAccessors,
+  sessionId: string,
+): Promise<void> {
+  const session = ctx.get().sessions[sessionId];
+  if (!session?.featureId || !session.sessionDbId) return;
+
+  const data = await getFeatureAgentState(session.featureId);
+  const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);
+  if (!serverSession) return;
+
+  const fetched = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
+  const current = ctx.get().sessions[sessionId];
+  if (!current) return;
+
+  const serverById = new Map<string, AgentBlockData>();
+  collectBlockTree(fetched, serverById);
+
+  let changed = false;
+  const markChanged = () => {
+    changed = true;
+  };
+  const repaired = current.blocks.map((block) => repairBlockTree(block, serverById, markChanged));
+
+  const heldIds = new Set<string>();
+  collectBlockTree(current.blocks, heldIds);
+  const appended = fetched.filter((b) => !heldIds.has(b.id));
+
+  if (!changed && appended.length === 0) return;
+  console.warn("[ws-session] repaired stream-truncated blocks from persisted transcript", {
+    replaced: changed,
+    appended: appended.length,
+  });
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      ...blocksPatchWithDerived(current.streamingState, [...repaired, ...appended]),
+      lastAppliedMessageId: Math.max(
+        current.lastAppliedMessageId ?? 0,
+        serverSession.maxMessageId ?? 0,
+      ),
+    }),
+  );
+}
+
+function collectBlockTree(
+  blocks: AgentBlockData[],
+  into: Map<string, AgentBlockData> | Set<string>,
+): void {
+  for (const block of blocks) {
+    if (into instanceof Set) {
+      into.add(block.id);
+    } else {
+      into.set(block.id, block);
+    }
+    if (block.childBlocks?.length) collectBlockTree(block.childBlocks, into);
+  }
+}
+
+/**
+ * Overwrite a held block's content with the persisted version when the DB has
+ * strictly more of it (a lost delta always leaves the client behind, never
+ * ahead — the backend persists before it forwards). Recurses into children;
+ * returns the original reference when nothing changed so React sees no-ops.
+ */
+function repairBlockTree(
+  block: AgentBlockData,
+  serverById: Map<string, AgentBlockData>,
+  markChanged: () => void,
+): AgentBlockData {
+  let next = block;
+
+  const server = serverById.get(block.id);
+  if (server && server.content !== block.content && server.content.length > block.content.length) {
+    next = { ...block, content: server.content, toolArgs: server.toolArgs ?? block.toolArgs };
+    markChanged();
+  }
+
+  if (block.childBlocks?.length) {
+    const children = block.childBlocks.map((child) =>
+      repairBlockTree(child, serverById, markChanged),
+    );
+    if (children.some((child, i) => child !== block.childBlocks?.[i])) {
+      next = { ...next, childBlocks: children };
+    }
+  }
+
+  return next;
 }

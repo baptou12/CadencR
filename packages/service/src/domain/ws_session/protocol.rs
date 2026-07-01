@@ -278,6 +278,7 @@ mod tests {
         // SessionMessagePayload
         let p = SessionMessagePayload {
             blocks: vec![serde_json::json!({"type": "text"})],
+            seq: Some(1),
         };
         let v = serde_json::to_value(&p).unwrap();
         let _: SessionMessagePayload = serde_json::from_value(v).unwrap();
