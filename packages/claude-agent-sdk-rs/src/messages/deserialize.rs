@@ -392,17 +392,17 @@ impl From<SdkMessageInner> for SdkMessage {
     }
 }
 
-impl<'de> Deserialize<'de> for SdkMessage {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
-        // Buffer the raw value so we can try again on failure.
-        let raw = Value::deserialize(deserializer)?;
+impl SdkMessage {
+    /// Convert a raw CLI wire message into an `SdkMessage`, infallibly.
+    ///
+    /// Never silently drops: a message that fails to match any known schema
+    /// becomes `Unknown(raw)` (so the stream survives) with a log of exactly
+    /// what and why, so a CLI wire-format drift is diagnosable instead of
+    /// presenting as an agent that "just stopped".
+    pub fn from_raw(raw: Value) -> Self {
         match SdkMessageInner::deserialize(&raw) {
-            Ok(inner) => Ok(SdkMessage::from(inner)),
+            Ok(inner) => SdkMessage::from(inner),
             Err(error) => {
-                // Never silently drop: a message that fails to match any known
-                // schema becomes `Unknown` (so the stream survives), but we log
-                // exactly what and why so a CLI wire-format drift is diagnosable
-                // instead of presenting as an agent that "just stopped".
                 let message_type = raw
                     .get("type")
                     .and_then(|v| v.as_str())
@@ -414,9 +414,17 @@ impl<'de> Deserialize<'de> for SdkMessage {
                     %error,
                     "claude SDK: message did not match any known schema; forwarding as Unknown (it will not render in the conversation)"
                 );
-                Ok(SdkMessage::Unknown(raw))
+                SdkMessage::Unknown(raw)
             }
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for SdkMessage {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        // Buffer the raw value so the fallback can keep it on failure.
+        let raw = Value::deserialize(deserializer)?;
+        Ok(SdkMessage::from_raw(raw))
     }
 }
 

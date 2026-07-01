@@ -656,7 +656,15 @@ fn assistant_with_unknown_content_block_keeps_known_text() {
         SdkMessage::Assistant { message, .. } => {
             assert_eq!(message.content.len(), 2);
             assert!(matches!(&message.content[0], ContentBlock::Text { text } if text == "hello"));
-            assert!(matches!(&message.content[1], ContentBlock::Other));
+            // The unknown sibling degrades to Other WITH its raw payload
+            // preserved, so consumers can log/inspect what was dropped.
+            match &message.content[1] {
+                ContentBlock::Other(raw) => {
+                    assert_eq!(raw["type"], "server_tool_use");
+                    assert_eq!(raw["name"], "web_search");
+                }
+                other => panic!("expected raw-preserving Other, got {other:?}"),
+            }
         }
         other => panic!("unknown block must not sink the assistant message: {other:?}"),
     }
@@ -680,7 +688,13 @@ fn stream_event_with_unknown_delta_stays_stream_event() {
         SdkMessage::StreamEvent {
             event: StreamEventData::ContentBlockDelta { delta, .. },
             ..
-        } => assert!(matches!(delta, ContentDelta::Other)),
+        } => match delta {
+            ContentDelta::Other(raw) => {
+                assert_eq!(raw["type"], "signature_delta");
+                assert_eq!(raw["signature"], "abc");
+            }
+            other => panic!("expected raw-preserving Other, got {other:?}"),
+        },
         other => panic!("unknown delta must not sink the stream event: {other:?}"),
     }
 }
@@ -695,7 +709,13 @@ fn unknown_stream_event_type_stays_stream_event() {
     });
     let msg: SdkMessage = serde_json::from_value(raw).unwrap();
     match msg {
-        SdkMessage::StreamEvent { event, .. } => assert!(matches!(event, StreamEventData::Other)),
+        SdkMessage::StreamEvent { event, .. } => match event {
+            StreamEventData::Other(raw) => {
+                assert_eq!(raw["type"], "some_future_event");
+                assert_eq!(raw["foo"], 1);
+            }
+            other => panic!("expected raw-preserving Other, got {other:?}"),
+        },
         other => panic!("unknown stream event must not become Unknown: {other:?}"),
     }
 }
