@@ -51,9 +51,10 @@ pub enum ContentBlock {
     /// `server_tool_use`, `web_search_tool_result`, or image block). Catching
     /// it here keeps an unknown *sibling* block from sinking the entire
     /// assistant message into `SdkMessage::Unknown` — the known text/tool
-    /// blocks beside it still parse and surface.
-    #[serde(other)]
-    Other,
+    /// blocks beside it still parse and surface. Carries the raw JSON so the
+    /// consumer can log/inspect what was dropped instead of losing it.
+    #[serde(untagged)]
+    Other(Value),
 }
 
 /// A streaming content delta. Tagged by the `type` field.
@@ -72,9 +73,10 @@ pub enum ContentDelta {
     /// Any delta type the CLI emits that we don't model yet (e.g.
     /// `signature_delta` or `citations_delta`). Catching it here keeps an
     /// unknown delta from sinking the whole `stream_event` into
-    /// `SdkMessage::Unknown` and dropping the live turn.
-    #[serde(other)]
-    Other,
+    /// `SdkMessage::Unknown` and dropping the live turn. Carries the raw JSON
+    /// so the consumer can log/inspect what was dropped instead of losing it.
+    #[serde(untagged)]
+    Other(Value),
 }
 
 /// A slash command available in the CLI.
