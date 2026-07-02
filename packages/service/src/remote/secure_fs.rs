@@ -36,6 +36,21 @@ pub fn write_secret(path: &Path, bytes: &[u8]) -> Result<()> {
     }
 }
 
+/// Create `dir` (and any missing parents) owner-only (`0700` on Unix),
+/// tightening an existing dir too. For directories that will hold secrets or
+/// otherwise-sensitive files (e.g. diagnostics dumps of raw provider events) so
+/// they aren't world-readable under the common `umask 022`.
+pub fn create_dir_owner_only(dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("create dir {}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("chmod 700 {}", dir.display()))?;
+    }
+    Ok(())
+}
+
 /// Re-assert `0600` on an existing secret file (no-op on non-Unix). Defensive:
 /// our own writes already create it `0600`, but a file restored from a backup,
 /// copied, or touched by the user could be looser — so we tighten it whenever we
@@ -69,6 +84,19 @@ mod tests {
         write_secret(&path, b"top secret").unwrap();
         assert_eq!(mode(&path), 0o600);
         assert_eq!(std::fs::read(&path).unwrap(), b"top secret");
+    }
+
+    #[test]
+    fn creates_and_tightens_owner_only_dir() {
+        let dir = tempdir().unwrap();
+        let secret_dir = dir.path().join("nested/diagnostics");
+        create_dir_owner_only(&secret_dir).unwrap();
+        assert_eq!(mode(&secret_dir), 0o700);
+
+        // Loosened afterwards, a second call re-tightens it.
+        std::fs::set_permissions(&secret_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_dir_owner_only(&secret_dir).unwrap();
+        assert_eq!(mode(&secret_dir), 0o700, "re-run must re-tighten dir perms");
     }
 
     #[test]

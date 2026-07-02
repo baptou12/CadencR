@@ -193,8 +193,10 @@ function collectBlockTree(
 /**
  * Overwrite a held block's content with the persisted version when the DB has
  * strictly more of it (a lost delta always leaves the client behind, never
- * ahead — the backend persists before it forwards). Recurses into children;
- * returns the original reference when nothing changed so React sees no-ops.
+ * ahead — the backend persists before it forwards). Recurses into children and
+ * grafts on any server children that never arrived (a lost `content_block_start`
+ * under a task/tool parent), so a whole subtree isn't left missing. Returns the
+ * original reference when nothing changed so React sees no-ops.
  */
 function repairBlockTree(
   block: AgentBlockData,
@@ -209,13 +211,33 @@ function repairBlockTree(
     markChanged();
   }
 
-  if (block.childBlocks?.length) {
-    const children = block.childBlocks.map((child) =>
-      repairBlockTree(child, serverById, markChanged),
-    );
-    if (children.some((child, i) => child !== block.childBlocks?.[i])) {
-      next = { ...next, childBlocks: children };
-    }
+  const heldChildren = block.childBlocks ?? [];
+  const serverChildren = server?.childBlocks ?? [];
+  // Leaf on both sides: nothing to repair or graft — skip all per-node work.
+  if (heldChildren.length === 0 && serverChildren.length === 0) return next;
+
+  // Rebuild children in the authoritative server order, preferring the repaired
+  // held version, and grafting any server children we never received (a lost
+  // `content_block_start` under a task/tool parent). Server order is display
+  // order, so appending missing children at the end would misplace one that was
+  // lost from the middle. Held-only children (not yet on the server) trail.
+  const repairedById = new Map(
+    heldChildren.map((child) => [child.id, repairBlockTree(child, serverById, markChanged)]),
+  );
+  const serverIds = new Set(serverChildren.map((child) => child.id));
+  const mergedChildren = [
+    ...serverChildren.map((child) => repairedById.get(child.id) ?? child),
+    ...heldChildren
+      .filter((child) => !serverIds.has(child.id))
+      .map((child) => repairedById.get(child.id) ?? child),
+  ];
+
+  const childrenChanged =
+    mergedChildren.length !== heldChildren.length ||
+    mergedChildren.some((child, i) => child !== heldChildren[i]);
+  if (childrenChanged) {
+    markChanged();
+    next = { ...next, childBlocks: mergedChildren };
   }
 
   return next;

@@ -12,7 +12,7 @@ import {
   parsePromptReceivedPayload,
   parseUserMessageMirrorPayload,
 } from "./ws-envelope-payload";
-import { appendLocalUserMessage } from "./ws-session-store-helpers";
+import { appendErrorBlockPatch, appendLocalUserMessage } from "./ws-session-store-helpers";
 import { buildClearedGatePatch } from "./ws-gate-state";
 import {
   type BlockMutation,
@@ -129,7 +129,20 @@ export function handleMessage(ctx: StoreAccessors, sessionId: string, payload: u
   if (!p) {
     // Never drop silently: a malformed `session.message` is a lost stream
     // chunk — the exact "text stopped mid-message" a user can't diagnose.
+    // Surface it inline so the truncation is visible (error-handling.md).
     console.warn("[ws-session] dropping malformed session.message payload", payload);
+    const session = ctx.getSession(sessionId);
+    ctx.set(
+      updateSession(
+        ctx.get(),
+        sessionId,
+        appendErrorBlockPatch(
+          session,
+          "A streamed update from the agent was malformed and could not be displayed. The transcript above may be incomplete.",
+          { code: "MALFORMED_MESSAGE" },
+        ),
+      ),
+    );
     return;
   }
   const state = ctx.getSession(sessionId).streamingState;
