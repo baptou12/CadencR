@@ -173,6 +173,14 @@ export interface SessionEntry {
   featureTitle: string | null;
   isAutoNaming: boolean;
   pendingWsRequests: Map<string, (payload: unknown) => void>;
+  /**
+   * Envelopes that could not be sent because the socket was not OPEN
+   * (reconnecting after a drop, or still CONNECTING). Flushed in order once
+   * the transport is back, right after the reconnect `session.init` replay.
+   * Mutated in place (like `pendingWsRequests`) — transport plumbing, not
+   * render state.
+   */
+  outboundQueue: unknown[];
   worktreeStatus: WorktreeStatus;
   worktreePath: string | null;
   worktreeBranch: string | null;
@@ -242,6 +250,7 @@ export function createSessionEntry(): SessionEntry {
     featureTitle: null,
     isAutoNaming: false,
     pendingWsRequests: new Map(),
+    outboundQueue: [],
     worktreeStatus: "idle",
     worktreePath: null,
     worktreeBranch: null,

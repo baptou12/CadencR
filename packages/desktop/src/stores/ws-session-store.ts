@@ -102,7 +102,23 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   }
 
   function sendRaw(sessionId: string, data: unknown): void {
-    getSession(sessionId).conn?.sendJson(data);
+    const session = get().sessions[sessionId];
+    if (session?.conn?.sendJson(data)) return;
+    // The socket is not OPEN (reconnecting, or still CONNECTING). Dropping the
+    // envelope here is silent data loss — a prompt sent during the gap shows
+    // up locally but never reaches the agent. Hold it and flush on `onOpen`,
+    // after the reconnect `session.init` replay.
+    session?.outboundQueue.push(data);
+  }
+
+  /** Send queued envelopes in order; stop (and keep the rest) if the socket drops again. */
+  function flushOutboundQueue(sessionId: string): void {
+    const session = get().sessions[sessionId];
+    if (!session?.conn) return;
+    while (session.outboundQueue.length > 0) {
+      if (!session.conn.sendJson(session.outboundQueue[0])) return;
+      session.outboundQueue.shift();
+    }
   }
 
   function forceReconnectSession(sessionId: string): void {
@@ -223,6 +239,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           // wiped, the more confusing `INVALID_SESSION_ID`).
           // Provider-neutral: applies to Claude Code, OpenCode, Codex.
           reinitOnReconnect(sessionId);
+          // Deliver whatever was sent while the socket was down (prompts,
+          // permission responses, session.resume after wake). After the init
+          // replay so the backend has rebuilt its handle for this session.
+          flushOutboundQueue(sessionId);
           // Catch up on anything the agent streamed while the socket was
           // down (e.g. the mobile client was asleep). WS streaming only
           // delivers live; without this pull the gap is lost forever. Guarded
@@ -317,6 +337,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
+      session?.outboundQueue.splice(0);
       if (!session?.conn) return;
 
       if (session.serverSessionId) {
@@ -333,10 +354,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sendRequest(sessionId: string, envelope: WsEnvelope): Promise<unknown> {
       return new Promise((resolve) => {
         const session = get().sessions[sessionId];
-        if (!session?.conn?.isOpen()) {
+        if (!session) {
           resolve(null);
           return;
         }
+        // A non-OPEN socket is not an instant failure: sendRaw queues the
+        // envelope and the reconnect flush usually lands well inside the
+        // timeout window. The timer (and the close handler's pending-request
+        // sweep) still bound the wait.
         const timer = setTimeout(() => {
           session.pendingWsRequests.delete(envelope.id);
           resolve(null);
@@ -528,6 +553,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
+      session?.outboundQueue.splice(0);
       if (!session?.conn) return;
 
       if (session.serverSessionId) {
