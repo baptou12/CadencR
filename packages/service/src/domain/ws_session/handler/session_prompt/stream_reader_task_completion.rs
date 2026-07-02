@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+use anyhow::Result;
 use axum::extract::ws::Message;
 use tracing::{error, info};
 
@@ -125,12 +128,10 @@ impl StreamReaderTask {
         };
         let mut message = error.to_string();
         error!(self.db_session_id, error = %message, "SDK stream error");
-        if let Some(path) = state
+        let dump = state
             .diagnostics
-            .dump(self.db_session_id, code, Some(&message))
-        {
-            message.push_str(&format!("\n\nDiagnostics saved to: {}", path.display()));
-        }
+            .dump(self.db_session_id, code, Some(&message));
+        append_diagnostics_note(&mut message, self.db_session_id, dump);
         self.surface_session_error(code, message).await;
     }
 
@@ -196,12 +197,10 @@ impl StreamReaderTask {
             "SDK stream closed mid-turn without a result"
         );
         let mut message = "The agent stopped unexpectedly before finishing its turn.".to_string();
-        if let Some(path) = state
+        let dump = state
             .diagnostics
-            .dump(self.db_session_id, "AGENT_STOPPED", None)
-        {
-            message.push_str(&format!("\n\nDiagnostics saved to: {}", path.display()));
-        }
+            .dump(self.db_session_id, "AGENT_STOPPED", None);
+        append_diagnostics_note(&mut message, self.db_session_id, dump);
         self.surface_session_error("AGENT_STOPPED", message).await;
     }
 
@@ -218,5 +217,18 @@ impl StreamReaderTask {
         let _ = self
             .send_and_mirror(Message::Text(String::from(end_env).into()))
             .await;
+    }
+}
+
+/// Append a pointer to the saved diagnostics dump — or a note that saving it
+/// failed — to a session error `message`. A failed dump must never hide the
+/// underlying agent error, but it is still surfaced (never swallowed).
+fn append_diagnostics_note(message: &mut String, db_session_id: i64, dump: Result<PathBuf>) {
+    match dump {
+        Ok(path) => message.push_str(&format!("\n\nDiagnostics saved to: {}", path.display())),
+        Err(err) => {
+            error!(db_session_id, error = %err, "failed to save diagnostics dump");
+            message.push_str("\n\n(Failed to save stream diagnostics to disk.)");
+        }
     }
 }

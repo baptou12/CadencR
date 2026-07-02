@@ -44,18 +44,19 @@ pub(super) async fn handle_can_use_tool_request(
     let tool_name = request.tool_name.clone();
     let request_id = request.tool_use_id.clone();
 
+    // Surface a serialize failure on `tx` only *after* the deny is written and
+    // the turn state is reset — `tx` is bounded, so awaiting it before the deny
+    // is written could let a backpressured receiver delay unblocking the turn.
+    let mut deferred_error: Option<SdkError> = None;
+
     let response_value: serde_json::Value = match can_use_tool {
         Some(handler) => {
             let result = handler.can_use_tool(request).await;
             match serde_json::to_value(&result) {
                 Ok(v) => v,
                 Err(e) => {
-                    // Surface the failure, but still answer the CLI with a
-                    // deny: leaving the request unanswered blocks the CLI
-                    // forever and strands the turn in `WaitingForPermission` —
-                    // the session then looks frozen with no error anywhere.
                     error!("failed to serialize permission response: {e}");
-                    let _ = tx.send(Err(SdkError::SerializationError(e))).await;
+                    deferred_error = Some(SdkError::SerializationError(e));
                     serde_json::json!({
                         "behavior": "deny",
                         "message": "Cadencr failed to build the permission response; the tool use was denied so the session can continue."
@@ -83,13 +84,16 @@ pub(super) async fn handle_can_use_tool_request(
 
     if let Err(e) = write_to_stdin(&process_stdin, &response_json).await {
         error!(tool = %tool_name, "failed to write permission response to CLI stdin: {e}");
-        let _ = tx.send(Err(e)).await;
-        // The write failed, so the CLI never got an answer — the pipe is
-        // almost certainly dead and the process-exit path will surface the
-        // real failure. Flip the state anyway: `WaitingForPermission` would
-        // tell consumers the turn is waiting on the *user*, which is false,
-        // and would strand the session in a frozen, errorless state.
+        // The write failed, so the CLI never got an answer — the pipe is almost
+        // certainly dead and the process-exit path will surface the real
+        // failure. Reset the state first (`WaitingForPermission` would falsely
+        // claim the turn is waiting on the user), then surface both the write
+        // error and any deferred serialize error — neither may be dropped.
         *turn_state.lock().await = TurnState::AgentWorking;
+        let _ = tx.send(Err(e)).await;
+        if let Some(e) = deferred_error {
+            let _ = tx.send(Err(e)).await;
+        }
         return;
     }
 
@@ -97,6 +101,12 @@ pub(super) async fn handle_can_use_tool_request(
     // written the response, otherwise consumers might race a "still
     // working" state on a turn that's actually waiting on us.
     *turn_state.lock().await = TurnState::AgentWorking;
+
+    // CLI answered and the state is reset; now it's safe to surface a deferred
+    // serialize failure without holding the permission flow open on `tx`.
+    if let Some(e) = deferred_error {
+        let _ = tx.send(Err(e)).await;
+    }
 }
 
 #[cfg(test)]

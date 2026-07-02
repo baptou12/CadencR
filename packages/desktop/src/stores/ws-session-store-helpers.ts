@@ -28,6 +28,20 @@ export function makeErrorBlock(
   };
 }
 
+/**
+ * Build the blocks patch that appends an inline error block to a session — the
+ * `makeErrorBlock` → `blocksPatchWithDerived([...blocks, block])` dance shared by
+ * every "surface this failure in the transcript" path.
+ */
+export function appendErrorBlockPatch(
+  session: SessionEntry,
+  content: string,
+  options: { code?: string; idPrefix?: string } = {},
+): Pick<SessionEntry, "blocks" | "rootBlocks" | "toolResultMap"> {
+  const errorBlock = makeErrorBlock(session, content, options);
+  return blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]);
+}
+
 export function appendLocalUserMessage(
   session: SessionEntry,
   content: string,

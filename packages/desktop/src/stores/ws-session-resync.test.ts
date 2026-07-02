@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { createSessionEntry, type SessionEntry, type WsSessionStore } from "./ws-session-types";
-import { resyncMessagesOnReconnect } from "./ws-session-resync";
+import { repairPersistedBlocksAfterTurn, resyncMessagesOnReconnect } from "./ws-session-resync";
 import type { StoreAccessors } from "./ws-envelope-handler";
 
 const apiMocks = vi.hoisted(() => ({
@@ -96,5 +96,40 @@ describe("resyncMessagesOnReconnect", () => {
     const ctx = createCtx(createSession([], null));
     await resyncMessagesOnReconnect(ctx, "s1");
     expect(apiMocks.getFeatureAgentState).not.toHaveBeenCalled();
+  });
+});
+
+describe("repairPersistedBlocksAfterTurn", () => {
+  beforeEach(() => {
+    apiMocks.getFeatureAgentState.mockReset();
+  });
+
+  function taskWithChildren(childIds: string[]): AgentBlockData {
+    return {
+      ...makeBlock("msg-1", ""),
+      type: "tool_call",
+      childBlocks: childIds.map((id) => ({ ...makeBlock(id, id), type: "tool_call" as const })),
+    };
+  }
+
+  it("grafts a nested server child that was lost from the middle, in server order", async () => {
+    // Client holds [child-a, child-c]; the middle child (child-b) streamed while
+    // its `content_block_start` was lost. It must be re-inserted at position 1,
+    // not appended at the end — child order is display order.
+    const ctx = createCtx(createSession([taskWithChildren(["child-a", "child-c"])], 1));
+    apiMocks.getFeatureAgentState.mockResolvedValue({
+      sessions: [
+        {
+          sessionDbId: 2586,
+          blocks: [taskWithChildren(["child-a", "child-b", "child-c"])],
+          maxMessageId: 1,
+        },
+      ],
+    });
+
+    await repairPersistedBlocksAfterTurn(ctx, "s1");
+
+    const repairedParent = ctx.get().sessions.s1.blocks[0];
+    expect(repairedParent.childBlocks?.map((c) => c.id)).toEqual(["child-a", "child-b", "child-c"]);
   });
 });

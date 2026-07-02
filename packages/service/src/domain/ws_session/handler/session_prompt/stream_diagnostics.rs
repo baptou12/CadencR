@@ -11,7 +11,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use tracing::warn;
+use anyhow::Result;
 
 /// Bounded tail of raw events kept per stream reader.
 const MAX_EVENTS: usize = 200;
@@ -50,20 +50,22 @@ impl StreamDiagnostics {
     }
 
     /// Write the recorded tail to a diagnostics file and return its path.
-    /// Returns `None` (with a log) when writing fails — the caller's error
-    /// message simply omits the pointer; surfacing the original agent error
-    /// must never depend on this file.
+    /// Returns an `Err` when writing fails so the caller can note that in the
+    /// surfaced session error instead of swallowing it — surfacing the original
+    /// agent error must never *depend* on this file, but a failed dump is still
+    /// a failure the user should hear about.
+    ///
+    /// The dump contains raw provider events (user prompts, tool inputs), so the
+    /// directory and file are created owner-only (`0700`/`0600` on Unix) — under
+    /// the common `umask 022` a plain write would be world-readable.
     pub(super) fn dump(
         &self,
         db_session_id: i64,
         reason: &str,
         error_detail: Option<&str>,
-    ) -> Option<PathBuf> {
+    ) -> Result<PathBuf> {
         let dir = diagnostics_dir();
-        if let Err(error) = std::fs::create_dir_all(&dir) {
-            warn!(db_session_id, %error, "failed to create diagnostics dir");
-            return None;
-        }
+        crate::remote::secure_fs::create_dir_owner_only(&dir)?;
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -85,13 +87,10 @@ impl StreamDiagnostics {
             content.push('\n');
         }
 
-        match std::fs::write(&path, content) {
-            Ok(()) => Some(path),
-            Err(error) => {
-                warn!(db_session_id, %error, "failed to write diagnostics dump");
-                None
-            }
-        }
+        // `write_secret` creates the file `0600` from the first byte (no
+        // world-readable window under the default umask).
+        crate::remote::secure_fs::write_secret(&path, content.as_bytes())?;
+        Ok(path)
     }
 }
 

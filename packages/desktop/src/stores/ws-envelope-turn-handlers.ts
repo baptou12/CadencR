@@ -67,9 +67,13 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
   // A seq gap was detected mid-turn: now that no more deltas can arrive, the
   // persisted transcript is authoritative — overwrite any truncated blocks.
   if (state.tailRepairNeeded) {
+    // Clear eagerly so a second turn_complete can't race a duplicate repair,
+    // but restore the flag if the refetch fails — otherwise this session would
+    // never retry the repair and the truncated blocks stay lost.
     state.tailRepairNeeded = false;
     repairPersistedBlocksAfterTurn(ctx, sessionId).catch((err: unknown) => {
-      console.warn("[ws-session] post-turn transcript repair failed", err);
+      state.tailRepairNeeded = true;
+      console.warn("[ws-session] post-turn transcript repair failed; will retry", err);
     });
   }
   for (const stream of state.streams.values()) {

@@ -283,6 +283,21 @@ mod tests {
         let v = serde_json::to_value(&p).unwrap();
         let _: SessionMessagePayload = serde_json::from_value(v).unwrap();
 
+        // `seq: None` (non-streamed/older emitters) must omit the field on the
+        // wire, and a payload without `seq` must deserialize back to `None`.
+        let p = SessionMessagePayload {
+            blocks: vec![serde_json::json!({"type": "text"})],
+            seq: None,
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        assert!(
+            v.get("seq").is_none(),
+            "seq: None must be omitted on the wire"
+        );
+        let back: SessionMessagePayload =
+            serde_json::from_value(serde_json::json!({"blocks": []})).unwrap();
+        assert_eq!(back.seq, None, "missing seq must deserialize to None");
+
         // PermissionRequestPayload
         let p = PermissionRequestPayload {
             request_id: "r1".into(),
