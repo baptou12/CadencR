@@ -4,7 +4,7 @@ import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
 import {
   scheduleReconnect,
-  resetReconnectState,
+  notifyConnected,
   clearReconnect,
   registerReconnector,
   unregisterReconnector,
@@ -207,7 +207,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         url: getWsUrl(),
         protocols: getWsProtocols(),
         onOpen: () => {
-          resetReconnectState(reconnectKey);
+          notifyConnected(reconnectKey);
           set(updateSession(get(), sessionId, { isConnected: true }));
           useConnectionStatusStore.getState().reportSource(reconnectKey, "connected");
           // If we already have a `serverSessionId`, this is a *reconnect*

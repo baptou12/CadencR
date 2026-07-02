@@ -47,7 +47,7 @@ import {
 } from "@/stores/connection-status-store";
 import {
   registerReconnector,
-  resetReconnectState,
+  notifyConnected,
   scheduleReconnect,
   unregisterReconnector,
 } from "@/lib/ws-reconnect";
@@ -167,7 +167,7 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
       let intentionalClose = false;
 
       ws.addEventListener("open", () => {
-        resetReconnectState(APP_WS_SOURCE);
+        notifyConnected(APP_WS_SOURCE);
         // Preserve `bySession` so sidebar icons don't blink during the
         // 100–300 ms window before the snapshot arrives. `applySnapshot`
         // reconciles per-session via the seq, so any stale entries

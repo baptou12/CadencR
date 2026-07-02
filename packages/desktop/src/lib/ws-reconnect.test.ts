@@ -3,8 +3,9 @@ import {
   RECONNECT_INTERVAL_MS,
   RECONNECT_MAX_MS,
   AUTO_RECONNECT_TIMEOUT_MS,
+  STABLE_RESET_MS,
   scheduleReconnect,
-  resetReconnectState,
+  notifyConnected,
   clearReconnect,
   registerReconnector,
   unregisterReconnector,
@@ -116,7 +117,7 @@ describe("ws-reconnect", () => {
     expect(connect).toHaveBeenCalledOnce();
   });
 
-  it("resetReconnectState clears the failure count so the next retry uses the base delay", () => {
+  it("notifyConnected resets the failure count once the connection stays open long enough", () => {
     const connect = vi.fn();
 
     scheduleReconnect("test", connect);
@@ -125,11 +126,51 @@ describe("ws-reconnect", () => {
     vi.advanceTimersByTime(2000);
     expect(connect).toHaveBeenCalledTimes(2);
 
-    resetReconnectState("test");
+    // Socket opened and stayed open for the full stability window.
+    notifyConnected("test");
+    vi.advanceTimersByTime(STABLE_RESET_MS);
 
     scheduleReconnect("test", connect);
     vi.advanceTimersByTime(RECONNECT_INTERVAL_MS);
     expect(connect).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps backing off when the connection drops before the stability window", () => {
+    const connect = vi.fn();
+
+    // 1st failure -> retry after 1s.
+    scheduleReconnect("test", connect);
+    vi.advanceTimersByTime(1000);
+    expect(connect).toHaveBeenCalledTimes(1);
+
+    // The retry opens… then dies 1s later, before STABLE_RESET_MS.
+    notifyConnected("test");
+    vi.advanceTimersByTime(1000);
+    scheduleReconnect("test", connect);
+
+    // Backoff must continue from the previous failure (2s), not restart at 1s.
+    vi.advanceTimersByTime(1999);
+    expect(connect).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(connect).toHaveBeenCalledTimes(2);
+  });
+
+  it("a rapid open/close loop still trips the manual pause", () => {
+    const connect = vi.fn();
+    const onManualRequired = vi.fn();
+    registerReconnector("test", connect, { onManualRequired });
+
+    // Backend accepts the handshake then drops 100ms later, forever.
+    let i = 0;
+    while (onManualRequired.mock.calls.length === 0 && i < 100) {
+      scheduleReconnect("test", connect);
+      vi.advanceTimersByTime(RECONNECT_MAX_MS);
+      notifyConnected("test");
+      vi.advanceTimersByTime(100);
+      i++;
+    }
+
+    expect(onManualRequired).toHaveBeenCalledOnce();
   });
 
   it("notifyRateLimited defers retries until the Retry-After window passes", () => {

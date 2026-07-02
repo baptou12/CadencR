@@ -6,7 +6,7 @@ import {
   scheduleReconnect,
   registerReconnector,
   unregisterReconnector,
-  resetReconnectState,
+  notifyConnected,
   forceReconnect,
 } from "@/lib/ws-reconnect";
 import {
@@ -192,7 +192,7 @@ export function useTerminalWebSocket(
         protocols: getWsProtocols(),
         onOpen: () => {
           setIsConnected(true);
-          resetReconnectState(reconnectKey);
+          notifyConnected(reconnectKey);
           // Clear the force-reconnect debounce so a *later* stall triggers
           // immediate recovery rather than waiting out the cooldown window
           // we started during the prior failure.

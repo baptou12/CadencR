@@ -7,12 +7,20 @@
  * `RECONNECT_MAX_MS`) plus `notifyRateLimited` (defer until a 429's
  * `Retry-After` elapses) break that loop. After `AUTO_RECONNECT_TIMEOUT_MS` of
  * continuous failure, automatic retries pause for a manual "Retry now".
+ *
+ * Failure bookkeeping is only cleared once a connection has stayed open for
+ * `STABLE_RESET_MS` (`notifyConnected`). Resetting on `open` alone would let a
+ * backend that accepts the handshake and immediately drops (crash loop, proxy
+ * up but service down) restart the backoff from 1 s on every cycle — a fast
+ * retry loop that never reaches the manual pause.
  */
 
 export const RECONNECT_INTERVAL_MS = 1000;
 export const RECONNECT_MAX_MS = 30_000;
 export const AUTO_RECONNECT_TIMEOUT_MS = 240_000;
 export const AUTO_RECONNECT_TIMEOUT_SECONDS = AUTO_RECONNECT_TIMEOUT_MS / 1000;
+/** How long a socket must stay open before its key's backoff is reset. */
+export const STABLE_RESET_MS = 5_000;
 
 /** Backoff for the Nth (1-based) consecutive failure, with half-range jitter. */
 function backoffDelayMs(failures: number): number {
@@ -51,6 +59,8 @@ interface ForceReconnectOptions {
 
 interface ReconnectEntry {
   timer: ReturnType<typeof setTimeout> | null;
+  /** Pending stability window armed by `notifyConnected`. */
+  stabilityTimer: ReturnType<typeof setTimeout> | null;
   firstFailureAt: number | null;
   /** Consecutive failures since the last successful connect; drives backoff. */
   failures: number;
@@ -67,6 +77,7 @@ function getOrCreate(key: string): ReconnectEntry {
   if (!entry) {
     entry = {
       timer: null,
+      stabilityTimer: null,
       firstFailureAt: null,
       failures: 0,
       manualOnly: false,
@@ -96,6 +107,9 @@ export function scheduleReconnect(
   const entry = getOrCreate(key);
   entry.connect = connect;
   applyOptions(entry, options);
+  // The connection failed again before it proved stable — keep the failure
+  // bookkeeping instead of resetting it.
+  cancelStabilityTimer(entry);
   if (entry.timer) return;
   if (entry.manualOnly) return;
 
@@ -117,12 +131,29 @@ export function scheduleReconnect(
   }, delay);
 }
 
-export function resetReconnectState(key: string): void {
+function cancelStabilityTimer(entry: ReconnectEntry): void {
+  if (entry.stabilityTimer) {
+    clearTimeout(entry.stabilityTimer);
+    entry.stabilityTimer = null;
+  }
+}
+
+/**
+ * Report that `key`'s socket just opened. The failure count and the manual-
+ * pause window are reset only after the connection stays open for
+ * `STABLE_RESET_MS`; a close/error before that cancels the reset so a rapid
+ * open→close loop keeps backing off and eventually trips the manual pause.
+ */
+export function notifyConnected(key: string): void {
   const entry = entries.get(key);
   if (!entry) return;
-  entry.firstFailureAt = null;
-  entry.failures = 0;
-  entry.manualOnly = false;
+  cancelStabilityTimer(entry);
+  entry.stabilityTimer = setTimeout(() => {
+    entry.stabilityTimer = null;
+    entry.firstFailureAt = null;
+    entry.failures = 0;
+    entry.manualOnly = false;
+  }, STABLE_RESET_MS);
 }
 
 export function clearReconnect(key: string): void {
@@ -131,6 +162,7 @@ export function clearReconnect(key: string): void {
     clearTimeout(entry.timer);
     entry.timer = null;
   }
+  if (entry) cancelStabilityTimer(entry);
   entries.delete(key);
 }
 
@@ -176,6 +208,9 @@ export function forceReconnect(key: string, options?: ForceReconnectOptions): vo
     clearTimeout(entry.timer);
     entry.timer = null;
   }
+  // The old socket is being torn down; its pending stability reset (if any)
+  // must not credit the replacement before it proves itself.
+  cancelStabilityTimer(entry);
   entry.connect();
 }
 
