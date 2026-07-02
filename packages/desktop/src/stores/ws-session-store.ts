@@ -52,6 +52,7 @@ import {
   type PersistedStatePayload,
 } from "./ws-session-actions";
 import {
+  appendErrorBlockPatch,
   appendLocalUserMessage,
   makeErrorBlock,
   buildQueuedInitEnvelopes,
@@ -296,7 +297,20 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           } catch (err) {
             // Never drop silently: a discarded envelope can be a lost stream
             // chunk, which shows up as text stopping mid-message with no clue.
+            // Surface it inline like the handleEnvelope failure path below.
             console.warn("[ws-session] dropping unparseable envelope:", err);
+            const session = getSession(sessionId);
+            set(
+              updateSession(
+                get(),
+                sessionId,
+                appendErrorBlockPatch(
+                  session,
+                  "A streamed update from the agent was unreadable and could not be displayed. The transcript above may be incomplete.",
+                  { code: "UNPARSEABLE_ENVELOPE" },
+                ),
+              ),
+            );
             return;
           }
           try {
