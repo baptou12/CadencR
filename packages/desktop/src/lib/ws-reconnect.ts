@@ -113,7 +113,10 @@ export function scheduleReconnect(
   entry.timer = setTimeout(() => {
     entry.timer = null;
     if (entry.manualOnly) return;
-    connect();
+    // Use the latest registered connector, not the one captured when the
+    // timer was armed — a later `scheduleReconnect`/`registerReconnector`
+    // may have replaced it while the timer was pending.
+    entry.connect?.();
   }, delay);
 }
 

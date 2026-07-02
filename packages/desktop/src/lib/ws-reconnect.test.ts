@@ -106,6 +106,19 @@ describe("ws-reconnect", () => {
     expect(connect.mock.calls.length).toBeGreaterThan(5);
   });
 
+  it("fires the latest registered connector, not the one captured when the timer was armed", () => {
+    const stale = vi.fn();
+    const fresh = vi.fn();
+
+    scheduleReconnect("test", stale);
+    // While the timer is pending, a newer connector is registered for the key.
+    registerReconnector("test", fresh);
+
+    vi.advanceTimersByTime(RECONNECT_INTERVAL_MS);
+    expect(stale).not.toHaveBeenCalled();
+    expect(fresh).toHaveBeenCalledOnce();
+  });
+
   it("deduplicates concurrent schedules", () => {
     const connect = vi.fn();
     scheduleReconnect("test", connect);
