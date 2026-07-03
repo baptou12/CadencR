@@ -7,8 +7,6 @@
 //! - The wire format is per-session: every event carries `session_id` so a
 //!   feature with session and sub-agent activity doesn't collapse into a
 //!   single ambiguous turn.
-//! - The frontend aggregates per-feature client-side via the same rule
-//!   encoded in [`aggregate_feature`] — `Question > Agent > Idle`.
 //! - [`derive_status_from_db`] is the canonical mapping from the persisted
 //!   DB columns (`status`, `pending_*`) to the 3-value [`AgentStatus`]. It
 //!   is what the snapshot path uses to hydrate clients on (re)connect.
@@ -29,7 +27,9 @@ use std::sync::Arc;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use crate::domain::agents::adapter::{RuntimeEvent, RuntimeStreamEvent};
+mod provider;
+
+pub use provider::{event_starts_fresh_turn, provider_signal_for_event, ProviderSignal};
 
 /// The canonical 3-value agent status, identical wire format on Rust and TS.
 ///
@@ -44,6 +44,40 @@ pub enum AgentStatus {
     Question,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct DerivedSessionStatus {
+    pub status: AgentStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<PendingKind>,
+}
+
+impl DerivedSessionStatus {
+    pub fn idle() -> Self {
+        Self {
+            status: AgentStatus::Idle,
+            kind: None,
+        }
+    }
+
+    pub fn agent() -> Self {
+        Self {
+            status: AgentStatus::Agent,
+            kind: None,
+        }
+    }
+
+    pub fn question(kind: PendingKind) -> Self {
+        Self {
+            status: AgentStatus::Question,
+            kind: Some(kind),
+        }
+    }
+
+    pub fn is_idle(self) -> bool {
+        self.status == AgentStatus::Idle
+    }
+}
+
 /// The two DB-backed user-input gate kinds. Mirrors
 /// [`crate::domain::ws_session::persistence::PendingUserInputKind`] — kept
 /// separate so this module has no dependency on `ws_session/persistence`.
@@ -52,30 +86,6 @@ pub enum AgentStatus {
 pub enum PendingKind {
     Permission,
     Question,
-}
-
-/// Provider-neutral signal derived from a runtime event.
-///
-/// Stream events emitted directly from the runtime carry only Agent/Idle
-/// information (turn started / turn ended). User-input gates are detected
-/// out-of-band via the adapter's `parse_permission_request` and routed
-/// through `mark_awaiting_user_static`, which sets the DB pending column
-/// AND broadcasts Question — they don't flow through this enum.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProviderSignal {
-    /// The agent has started (or is actively producing) a turn.
-    TurnStarted,
-    /// The turn is finished (provider sent `Result`, stream closed, etc.).
-    TurnEnded,
-}
-
-impl ProviderSignal {
-    pub fn status(self) -> AgentStatus {
-        match self {
-            Self::TurnStarted => AgentStatus::Agent,
-            Self::TurnEnded => AgentStatus::Idle,
-        }
-    }
 }
 
 /// Live status update broadcast to subscribed WS clients.
@@ -136,7 +146,8 @@ impl SessionStatusBroadcaster {
         status: AgentStatus,
         kind: Option<PendingKind>,
     ) -> u64 {
-        self.broadcast_inner(session_id, feature_id, status, kind, None)
+        let derived = derive_broadcast_status(status, kind);
+        self.broadcast_inner(session_id, feature_id, derived.status, derived.kind, None)
     }
 
     /// Broadcast that a turn has started, carrying the server-stamped start
@@ -204,109 +215,27 @@ pub struct DbStatusInputs<'a> {
 /// an Idle. `running` without any pending column is Agent. Everything else
 /// is Idle. This is the rule encoded in `get_feature_turn_states` today,
 /// just normalized to 3 values.
-pub fn derive_status_from_db(inputs: DbStatusInputs<'_>) -> (AgentStatus, Option<PendingKind>) {
+fn derive_broadcast_status(status: AgentStatus, kind: Option<PendingKind>) -> DerivedSessionStatus {
+    match status {
+        AgentStatus::Idle => DerivedSessionStatus::idle(),
+        AgentStatus::Agent => DerivedSessionStatus::agent(),
+        AgentStatus::Question => DerivedSessionStatus { status, kind },
+    }
+}
+
+pub fn derive_status_from_db(inputs: DbStatusInputs<'_>) -> DerivedSessionStatus {
     // Question wins. Order of precedence matches today's SQL `MAX(CASE …)`:
     // question > permission.
     if inputs.pending_question {
-        return (AgentStatus::Question, Some(PendingKind::Question));
+        return DerivedSessionStatus::question(PendingKind::Question);
     }
     if inputs.pending_permission {
-        return (AgentStatus::Question, Some(PendingKind::Permission));
+        return DerivedSessionStatus::question(PendingKind::Permission);
     }
     if inputs.status_col == "running" {
-        return (AgentStatus::Agent, None);
+        return DerivedSessionStatus::agent();
     }
-    (AgentStatus::Idle, None)
-}
-
-/// Aggregate per-session statuses into a single feature-level status.
-///
-/// `Question` wins over `Agent` wins over `Idle`. When multiple sessions
-/// report `Question`, the first kind encountered wins (callers iterate in
-/// session-id order today; this is an arbitrary but stable choice).
-///
-/// Today the frontend ports this rule to TypeScript so the sidebar can
-/// fold per-session entries into a per-feature icon. Kept here as a
-/// reference implementation that the TS port mirrors and our tests pin.
-#[allow(dead_code)]
-pub fn aggregate_feature<I>(entries: I) -> (AgentStatus, Option<PendingKind>)
-where
-    I: IntoIterator<Item = (AgentStatus, Option<PendingKind>)>,
-{
-    let mut best = (AgentStatus::Idle, None);
-    for (status, kind) in entries {
-        match (best.0, status) {
-            (_, AgentStatus::Question) => return (status, kind),
-            (AgentStatus::Idle, AgentStatus::Agent) => best = (status, kind),
-            _ => {}
-        }
-    }
-    best
-}
-
-/// Provider-neutral mapping from a [`RuntimeStreamEvent`] to a signal.
-///
-/// Exhaustive on every variant — adding a new `RuntimeStreamEvent` arm
-/// without updating this match is a build error. That is the regression
-/// guard for the Codex `MessageStart`-never-broadcast bug.
-pub fn provider_signal_for_stream_event(event: &RuntimeStreamEvent) -> Option<ProviderSignal> {
-    match event {
-        RuntimeStreamEvent::MessageStart { .. }
-        | RuntimeStreamEvent::ContentBlockStart { .. }
-        | RuntimeStreamEvent::ContentBlockDelta { .. }
-        | RuntimeStreamEvent::ContentBlockStop { .. } => Some(ProviderSignal::TurnStarted),
-        RuntimeStreamEvent::Other => None,
-    }
-}
-
-/// Provider-neutral mapping from a [`RuntimeEvent`] to a signal.
-///
-/// Permission / question gates are NOT derived here — they go through
-/// `parse_permission_request` on the adapter, then call
-/// `mark_awaiting_user_static` which calls `broadcaster.signal` directly
-/// with the right [`PendingKind`].
-pub fn provider_signal_for_event(event: &RuntimeEvent) -> Option<ProviderSignal> {
-    if event.is_result() {
-        return Some(ProviderSignal::TurnEnded);
-    }
-    match event.stream_event() {
-        Some(stream_event) => provider_signal_for_stream_event(stream_event),
-        None if event.is_turn_started_signal() => Some(ProviderSignal::TurnStarted),
-        None => match event_kind_implies_turn_started(event) {
-            true => Some(ProviderSignal::TurnStarted),
-            false => None,
-        },
-    }
-}
-
-/// `AssistantMessage` / `UserMessage` (tool result) imply the turn is in
-/// progress for every provider. `Init` / `ToolUseSummary` / `CompactBoundary`
-/// / `Other` do NOT — they're metadata the agent emits without owning the
-/// turn (e.g. a CompactBoundary fires when summarizing in the background).
-fn event_kind_implies_turn_started(event: &RuntimeEvent) -> bool {
-    match event {
-        e if e.assistant_message().is_some() => true,
-        e if e.user_message().is_some() => true,
-        _ => false,
-    }
-}
-
-/// Whether this event explicitly starts a fresh turn.
-///
-/// After a turn ends (Result event), tool_results, content deltas, etc.
-/// can still arrive on a stale stream — these must NOT re-enter the
-/// "Agent is working" state. Only an explicit `MessageStart` is a valid
-/// turn-start signal post-Result. Provider-neutral: every adapter is
-/// expected to synthesize `MessageStart` at the top of every turn (Codex
-/// emits one on `turn/started`, Claude on `message_start`, OpenCode on
-/// stream open). See `stream_reader.rs` for the call site that uses this
-/// to gate post-turn status broadcasts.
-pub fn event_starts_fresh_turn(event: &RuntimeEvent) -> bool {
-    event.is_turn_started_signal()
-        || matches!(
-            event.stream_event(),
-            Some(RuntimeStreamEvent::MessageStart { .. })
-        )
+    DerivedSessionStatus::idle()
 }
 
 #[cfg(test)]
@@ -350,16 +279,10 @@ mod tests {
     }
 
     #[test]
-    fn provider_signal_status_mapping() {
-        assert_eq!(ProviderSignal::TurnStarted.status(), AgentStatus::Agent);
-        assert_eq!(ProviderSignal::TurnEnded.status(), AgentStatus::Idle);
-    }
-
-    #[test]
     fn derive_running_with_no_pending_is_agent() {
         assert_eq!(
             derive_status_from_db(db_inputs("running")),
-            (AgentStatus::Agent, None)
+            DerivedSessionStatus::agent()
         );
     }
 
@@ -367,15 +290,15 @@ mod tests {
     fn derive_idle_default() {
         assert_eq!(
             derive_status_from_db(db_inputs("idle")),
-            (AgentStatus::Idle, None)
+            DerivedSessionStatus::idle()
         );
         assert_eq!(
             derive_status_from_db(db_inputs("paused")),
-            (AgentStatus::Idle, None)
+            DerivedSessionStatus::idle()
         );
         assert_eq!(
             derive_status_from_db(db_inputs("completed")),
-            (AgentStatus::Idle, None)
+            DerivedSessionStatus::idle()
         );
     }
 
@@ -385,7 +308,7 @@ mod tests {
         input.pending_question = true;
         assert_eq!(
             derive_status_from_db(input),
-            (AgentStatus::Question, Some(PendingKind::Question))
+            DerivedSessionStatus::question(PendingKind::Question)
         );
     }
 
@@ -395,122 +318,23 @@ mod tests {
         input.pending_permission = true;
         assert_eq!(
             derive_status_from_db(input),
-            (AgentStatus::Question, Some(PendingKind::Permission))
+            DerivedSessionStatus::question(PendingKind::Permission)
         );
     }
 
     #[test]
-    fn aggregate_feature_idle_when_empty() {
-        let agg = aggregate_feature::<Vec<(AgentStatus, Option<PendingKind>)>>(vec![]);
-        assert_eq!(agg, (AgentStatus::Idle, None));
-    }
-
-    #[test]
-    fn aggregate_feature_question_beats_agent() {
-        let entries = vec![
-            (AgentStatus::Agent, None),
-            (AgentStatus::Question, Some(PendingKind::Permission)),
-            (AgentStatus::Idle, None),
-        ];
+    fn derive_status_normalizes_broadcast_kind_to_one_shape() {
         assert_eq!(
-            aggregate_feature(entries),
-            (AgentStatus::Question, Some(PendingKind::Permission))
+            derive_broadcast_status(AgentStatus::Idle, Some(PendingKind::Permission)),
+            DerivedSessionStatus::idle()
         );
-    }
-
-    #[test]
-    fn aggregate_feature_agent_beats_idle() {
-        let entries = vec![(AgentStatus::Idle, None), (AgentStatus::Agent, None)];
-        assert_eq!(aggregate_feature(entries), (AgentStatus::Agent, None));
-    }
-
-    #[test]
-    fn event_starts_fresh_turn_only_on_message_start() {
-        use crate::domain::agents::adapter::{
-            RuntimeAssistantMessage, RuntimeContentBlock, RuntimeEvent, RuntimeEventKind,
-            RuntimeEventMetadata,
-        };
-
-        let message_start = RuntimeEvent::new(
-            RuntimeEventMetadata::default(),
-            RuntimeEventKind::StreamEvent {
-                event: RuntimeStreamEvent::MessageStart {
-                    model: None,
-                    input_tokens: None,
-                },
-                parent_tool_use_id: None,
-            },
+        assert_eq!(
+            derive_broadcast_status(AgentStatus::Agent, Some(PendingKind::Question)),
+            DerivedSessionStatus::agent()
         );
-        assert!(event_starts_fresh_turn(&message_start));
-
-        // Tool result (UserMessage), assistant text, content deltas, content
-        // stops, and Result events are NOT fresh-turn starts. After a Result
-        // sets `between_turns = true`, none of these may flip status back
-        // to Agent — only an explicit MessageStart can.
-        let assistant = RuntimeEvent::new(
-            RuntimeEventMetadata::default(),
-            RuntimeEventKind::AssistantMessage {
-                message: RuntimeAssistantMessage {
-                    model: None,
-                    content: vec![RuntimeContentBlock::Text { text: "x".into() }],
-                },
-                parent_tool_use_id: None,
-            },
+        assert_eq!(
+            derive_broadcast_status(AgentStatus::Question, Some(PendingKind::Permission)),
+            DerivedSessionStatus::question(PendingKind::Permission)
         );
-        assert!(!event_starts_fresh_turn(&assistant));
-
-        let content_block_stop = RuntimeEvent::new(
-            RuntimeEventMetadata::default(),
-            RuntimeEventKind::StreamEvent {
-                event: RuntimeStreamEvent::ContentBlockStop { index: 0 },
-                parent_tool_use_id: None,
-            },
-        );
-        assert!(!event_starts_fresh_turn(&content_block_stop));
-
-        let result = RuntimeEvent::new(RuntimeEventMetadata::default(), RuntimeEventKind::Result);
-        assert!(!event_starts_fresh_turn(&result));
-    }
-
-    // RuntimeStreamEvent / RuntimeEvent mapping tests live in
-    // domain/runtime_stream.rs alongside the helpers they exercise. We
-    // re-test the exhaustiveness here so a new variant breaks build at
-    // this site too.
-    #[test]
-    fn provider_signal_for_stream_event_covers_all_variants() {
-        use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeContentDelta};
-
-        let cases: Vec<(RuntimeStreamEvent, Option<ProviderSignal>)> = vec![
-            (
-                RuntimeStreamEvent::MessageStart {
-                    model: None,
-                    input_tokens: None,
-                },
-                Some(ProviderSignal::TurnStarted),
-            ),
-            (
-                RuntimeStreamEvent::ContentBlockStart {
-                    index: 0,
-                    block: RuntimeContentBlock::Other,
-                },
-                Some(ProviderSignal::TurnStarted),
-            ),
-            (
-                RuntimeStreamEvent::ContentBlockDelta {
-                    index: 0,
-                    delta: RuntimeContentDelta::Text { text: "x".into() },
-                },
-                Some(ProviderSignal::TurnStarted),
-            ),
-            (
-                RuntimeStreamEvent::ContentBlockStop { index: 0 },
-                Some(ProviderSignal::TurnStarted),
-            ),
-            (RuntimeStreamEvent::Other, None),
-        ];
-
-        for (event, expected) in cases {
-            assert_eq!(provider_signal_for_stream_event(&event), expected);
-        }
     }
 }

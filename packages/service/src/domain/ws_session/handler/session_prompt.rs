@@ -22,6 +22,7 @@ mod stream_reader_task;
 mod stream_reader_task_completion;
 mod stream_reader_task_error;
 mod stream_reader_task_event;
+mod stream_reader_turn_state;
 
 pub(crate) use bridge::PermissionResponse;
 pub(crate) use bridge::WsBridgeCanUseTool;

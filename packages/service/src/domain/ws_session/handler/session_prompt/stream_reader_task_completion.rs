@@ -74,8 +74,7 @@ impl StreamReaderTask {
     }
 
     async fn result_envelope(&self, state: &mut StreamReaderState) -> Option<WsEnvelope> {
-        state.between_turns = true;
-        state.saw_result = true;
+        state.turn_state.mark_result();
 
         // Issue #58: a `run_in_background` Agent/Task can still be alive after
         // this turn's `Result` (it launches, the turn ends, then the CLI
@@ -109,7 +108,7 @@ impl StreamReaderTask {
                 AgentStatus::Idle,
                 None,
             );
-            state.last_signal_status = Some(AgentStatus::Idle);
+            state.turn_state.record_signal_status(AgentStatus::Idle);
         }
         Some(WsEnvelope::new(
             "session",
