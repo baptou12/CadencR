@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 
 /**
@@ -35,9 +36,8 @@ interface UseFileTreeIconSetResult {
  */
 export function useFileTreeIconSet(): UseFileTreeIconSetResult {
   const { value, setValue, isLoading } = useDebouncedSetting(FILE_TREE_ICON_SET_KEY, 0);
-  return {
-    iconSet: parseIconSet(value),
-    setIconSet: (next: FileTreeIconSet) => setValue(next),
-    isLoading,
-  };
+  return useMemo<UseFileTreeIconSetResult>(
+    () => ({ iconSet: parseIconSet(value), setIconSet: setValue, isLoading }),
+    [value, setValue, isLoading],
+  );
 }

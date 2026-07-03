@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { create } from "zustand";
 import {
   getLeaves,
@@ -292,7 +292,6 @@ export function useTerminalState(featureId: number) {
   // so the consumer doesn't re-render on every store mutation.
   const state = useTerminalStore((s) => s.getFeature(featureId));
 
-  const panes = getPanes(state);
   const togglePanel = useCallback(
     () => useTerminalStore.getState().togglePanel(featureId),
     [featureId],
@@ -316,14 +315,17 @@ export function useTerminalState(featureId: number) {
     [featureId],
   );
 
-  return {
-    ...state,
-    panes,
-    togglePanel,
-    splitPane,
-    addPane,
-    removePane,
-    minimize,
-    closePanel,
-  };
+  return useMemo(
+    () => ({
+      ...state,
+      panes: getPanes(state),
+      togglePanel,
+      splitPane,
+      addPane,
+      removePane,
+      minimize,
+      closePanel,
+    }),
+    [state, togglePanel, splitPane, addPane, removePane, minimize, closePanel],
+  );
 }

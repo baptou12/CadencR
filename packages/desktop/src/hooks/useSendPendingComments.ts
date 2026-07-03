@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useDeletePendingDiffComments, getListDiffCommentsQueryKey } from "@/api/generated";
@@ -72,5 +72,8 @@ export function useSendPendingComments(
     }
   }, [disabled, onSend, onAfterSend, pendingComments, deletePending, featureId, queryClient]);
 
-  return { send, sending, buttonLabel, disabled, shouldRender };
+  return useMemo<UseSendPendingCommentsResult>(
+    () => ({ send, sending, buttonLabel, disabled, shouldRender }),
+    [send, sending, buttonLabel, disabled, shouldRender],
+  );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { notifyZoomApplied } from "@/lib/zoom-coordinator";
@@ -93,7 +93,10 @@ export function useZoom() {
     setZoom(ZOOM_DEFAULT);
   }, [setZoom]);
 
-  return { zoomLevel: persisted, zoomIn, zoomOut, resetZoom, setZoom };
+  return useMemo(
+    () => ({ zoomLevel: persisted, zoomIn, zoomOut, resetZoom, setZoom }),
+    [persisted, zoomIn, zoomOut, resetZoom, setZoom],
+  );
 }
 
 /** Registers Cmd+=/Cmd+-/Cmd+0 hotkeys. Call only once (root layout). */

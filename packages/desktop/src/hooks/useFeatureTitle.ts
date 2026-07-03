@@ -4,6 +4,8 @@
  *
  * Consumers should fall back to the HTTP-fetched title when this returns null.
  */
+import { useMemo } from "react";
+
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 
@@ -19,8 +21,11 @@ export function useFeatureTitle(featureId: number): FeatureTitleState {
   const sessionAutoNaming = useWsSessionStore(
     (s) => s.sessions[wsSessionIdFromFeature(featureId)]?.isAutoNaming ?? false,
   );
-  return {
-    title: sessionTitle,
-    isAutoNaming: sessionAutoNaming,
-  };
+  return useMemo(
+    () => ({
+      title: sessionTitle,
+      isAutoNaming: sessionAutoNaming,
+    }),
+    [sessionTitle, sessionAutoNaming],
+  );
 }

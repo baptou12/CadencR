@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useGetWorkspaceSetting } from "@/api/generated";
 import { toast } from "sonner";
 import { useSetWorkspaceSettingWithCache } from "@/hooks/useSetWorkspaceSettingWithCache";
@@ -29,9 +29,12 @@ export function useCodexPermissionModeSetting(): UseCodexPermissionModeSettingRe
     },
     [setCodexPermissionMode],
   );
-  return {
-    globalCodexPermissionMode,
-    isPending,
-    handleCodexPermissionModeChange,
-  };
+  return useMemo(
+    () => ({
+      globalCodexPermissionMode,
+      isPending,
+      handleCodexPermissionModeChange,
+    }),
+    [globalCodexPermissionMode, isPending, handleCodexPermissionModeChange],
+  );
 }

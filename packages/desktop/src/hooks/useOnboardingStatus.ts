@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useGetWorkspaceSetting } from "@/api/generated";
 import { useSetWorkspaceSettingWithCache } from "@/hooks/useSetWorkspaceSettingWithCache";
 import {
@@ -36,12 +36,16 @@ export function useOnboardingStatus(): UseOnboardingStatusResult {
 
   const complete = useCallback(() => setValue(COMPLETED_ONBOARDING_STEP), [setValue]);
 
-  return {
-    step,
-    isLoading: query.isLoading,
-    isPersisting: isPending,
-    isCompleted: step === COMPLETED_ONBOARDING_STEP,
-    setStep,
-    complete,
-  };
+  const isLoading = query.isLoading;
+  return useMemo(
+    () => ({
+      step,
+      isLoading,
+      isPersisting: isPending,
+      isCompleted: step === COMPLETED_ONBOARDING_STEP,
+      setStep,
+      complete,
+    }),
+    [step, isLoading, isPending, setStep, complete],
+  );
 }

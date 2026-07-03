@@ -3,7 +3,7 @@
  * History is shared across all agents in a project and persisted to SQLite via WebSocket.
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { createHistoryGet, createHistoryAdd } from "@/lib/ws-envelope";
 
@@ -104,11 +104,14 @@ export function usePromptHistory(projectId: number, wsSessionId?: string) {
     }
   }, []);
 
-  return {
-    navigateUp,
-    navigateDown,
-    addEntry,
-    resetNavigation,
-    historyIndex,
-  };
+  return useMemo(
+    () => ({
+      navigateUp,
+      navigateDown,
+      addEntry,
+      resetNavigation,
+      historyIndex,
+    }),
+    [navigateUp, navigateDown, addEntry, resetNavigation, historyIndex],
+  );
 }

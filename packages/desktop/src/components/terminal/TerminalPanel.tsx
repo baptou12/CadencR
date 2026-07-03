@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -49,8 +50,8 @@ function createSlotElement(id: string): HTMLDivElement {
   return el;
 }
 
-export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(
-  function TerminalPanel(
+export const TerminalPanel = memo(
+  forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel(
     { featureId, projectId, state, splitPane, removePane, expectedCwd, hotkeysEnabled = true },
     ref,
   ) {
@@ -429,5 +430,5 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         )}
       </div>
     );
-  },
+  }),
 );

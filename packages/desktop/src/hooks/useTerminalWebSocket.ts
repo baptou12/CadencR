@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { createWsConnection, type WsConnection } from "@/lib/ws-connection";
 import { getTerminalWsUrl, getWsProtocols } from "@/lib/ws-url";
@@ -348,5 +348,8 @@ export function useTerminalWebSocket(
     }
   }, []);
 
-  return { connect, write, resize, kill, isConnected };
+  return useMemo(
+    () => ({ connect, write, resize, kill, isConnected }),
+    [connect, write, resize, kill, isConnected],
+  );
 }
