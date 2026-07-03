@@ -8,9 +8,14 @@ mod event_items;
 mod event_json;
 mod event_loop;
 mod event_mcp_items;
+mod event_payloads;
+#[cfg(test)]
+mod event_payloads_tests;
 mod event_plan;
 mod event_plan_item;
 mod event_raw;
+#[cfg(test)]
+mod event_raw_tests;
 mod event_state;
 mod event_subagents;
 mod event_system;

@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use serde_json::Value;
 
 pub(super) fn command_input(item: &Value) -> Value {
@@ -118,24 +119,16 @@ pub(super) fn collab_tool_name(item: &Value) -> String {
 }
 
 pub(super) fn plan_todos(params: &Value) -> Value {
-    params
-        .get("plan")
-        .and_then(Value::as_array)
-        .map(|steps| {
-            steps
-                .iter()
-                .map(|step| {
-                    let content = step.get("step").and_then(Value::as_str).unwrap_or("");
-                    serde_json::json!({
-                        "content": content,
-                        "status": plan_status(step),
-                        "activeForm": content,
-                    })
-                })
-                .collect::<Vec<Value>>()
-        })
-        .map(Value::Array)
-        .unwrap_or_else(|| Value::Array(Vec::new()))
+    let Some(plan) = params.get("plan").cloned() else {
+        return Value::Array(Vec::new());
+    };
+    match serde_json::from_value::<Vec<PlanStep>>(plan) {
+        Ok(steps) => Value::Array(steps.into_iter().map(plan_todo_value).collect()),
+        Err(error) => {
+            tracing::warn!(%error, "malformed Codex plan update payload");
+            Value::Array(Vec::new())
+        }
+    }
 }
 
 pub(super) fn patch_from_changes(changes: Option<&Value>) -> Value {
@@ -144,45 +137,83 @@ pub(super) fn patch_from_changes(changes: Option<&Value>) -> Value {
     };
     let mut lines = vec!["*** Begin Patch".to_string()];
     for change in changes {
-        append_patch_change(&mut lines, change);
+        match serde_json::from_value::<FileChange>(change.clone()) {
+            Ok(change) => append_patch_change(&mut lines, &change),
+            Err(error) => tracing::warn!(%error, "malformed Codex file change entry"),
+        }
     }
     lines.push("*** End Patch".to_string());
     Value::String(lines.join("\n"))
 }
 
-fn plan_status(step: &Value) -> &'static str {
-    match step.get("status").and_then(Value::as_str) {
-        Some("inProgress") => "in_progress",
-        Some("completed") => "completed",
-        _ => "pending",
+#[derive(Debug, Deserialize)]
+struct PlanStep {
+    #[serde(default)]
+    step: String,
+    #[serde(default)]
+    status: PlanStepStatus,
+}
+
+#[derive(Debug, Default, Deserialize)]
+enum PlanStepStatus {
+    #[serde(rename = "inProgress")]
+    InProgress,
+    #[serde(rename = "completed")]
+    Completed,
+    #[default]
+    #[serde(other)]
+    Pending,
+}
+
+#[derive(Debug, Deserialize)]
+struct FileChange {
+    path: String,
+    #[serde(default)]
+    diff: String,
+    #[serde(default)]
+    kind: FileChangeKind,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct FileChangeKind {
+    #[serde(rename = "type", default = "default_change_kind")]
+    kind: String,
+    #[serde(default)]
+    move_path: Option<String>,
+}
+
+fn plan_todo_value(step: PlanStep) -> Value {
+    let content = step.step;
+    serde_json::json!({
+        "content": content,
+        "status": plan_status(&step.status),
+        "activeForm": content,
+    })
+}
+
+fn plan_status(status: &PlanStepStatus) -> &'static str {
+    match status {
+        PlanStepStatus::InProgress => "in_progress",
+        PlanStepStatus::Completed => "completed",
+        PlanStepStatus::Pending => "pending",
     }
 }
 
-fn append_patch_change(lines: &mut Vec<String>, change: &Value) {
-    let Some(path) = change.get("path").and_then(Value::as_str) else {
-        return;
-    };
-    let diff = change.get("diff").and_then(Value::as_str).unwrap_or("");
-    match change_kind(change) {
-        "add" => append_add_patch(lines, path, diff),
-        "delete" => append_delete_patch(lines, path, diff),
-        _ => append_update_patch(lines, path, move_path(change), diff),
+fn append_patch_change(lines: &mut Vec<String>, change: &FileChange) {
+    match change.kind.kind.as_str() {
+        "add" => append_add_patch(lines, &change.path, &change.diff),
+        "delete" => append_delete_patch(lines, &change.path, &change.diff),
+        _ => append_update_patch(
+            lines,
+            &change.path,
+            change.kind.move_path.as_deref(),
+            &change.diff,
+        ),
     }
 }
 
-fn change_kind(change: &Value) -> &str {
-    change
-        .get("kind")
-        .and_then(|kind| kind.get("type"))
-        .and_then(Value::as_str)
-        .unwrap_or("update")
-}
-
-fn move_path(change: &Value) -> Option<&str> {
-    change
-        .get("kind")
-        .and_then(|kind| kind.get("move_path"))
-        .and_then(Value::as_str)
+fn default_change_kind() -> String {
+    "update".to_string()
 }
 
 fn append_add_patch(lines: &mut Vec<String>, path: &str, diff: &str) {

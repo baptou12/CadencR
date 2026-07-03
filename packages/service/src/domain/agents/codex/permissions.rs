@@ -1,5 +1,8 @@
 use serde_json::Value;
 
+use super::event_payloads::{
+    parse_serialized_permission_request, SerializedPermissionOption, SerializedPermissionRequest,
+};
 use super::permission_details::permission_details;
 pub(super) use super::permission_options::{
     codex_decision_from_option_id, codex_elicitation_response_from_option_id,
@@ -61,67 +64,55 @@ fn item_id(params: &Value) -> Option<String> {
 }
 
 pub(super) fn parse_permission_request(raw: &Value) -> Option<RuntimePermissionRequest> {
-    if raw.get("type").and_then(Value::as_str) != Some("codex_permission_request") {
-        return None;
-    }
-    let request_id = raw
-        .get("request_id")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let tool_name = raw
-        .get("tool_name")
-        .and_then(Value::as_str)
-        .unwrap_or("CodexRequest")
-        .to_string();
+    let request = match parse_serialized_permission_request(raw.clone()) {
+        Ok(Some(request)) => request,
+        Ok(None) => return None,
+        Err(error) => {
+            tracing::warn!(%error, "malformed serialized Codex permission request");
+            return None;
+        }
+    };
+    let options = permission_options_from_raw_or_fallback(&request);
     Some(RuntimePermissionRequest {
-        request_id: request_id.clone(),
-        tool_use_id: raw
-            .get("tool_use_id")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        tool_name: tool_name.clone(),
-        tool_input: raw.get("tool_input").cloned().unwrap_or(Value::Null),
-        description: raw
-            .get("description")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
+        request_id: request.request_id,
+        tool_use_id: request.tool_use_id,
+        tool_name: request.tool_name.clone(),
+        tool_input: request.tool_input,
+        description: request.description,
         pattern: None,
-        preview: raw
-            .get("preview")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        options: permission_options_from_raw_or_fallback(raw, &tool_name),
+        preview: request.preview,
+        options,
     })
 }
 
 fn permission_options_from_raw_or_fallback(
-    raw: &Value,
-    tool_name: &str,
+    request: &SerializedPermissionRequest,
 ) -> Vec<RuntimePermissionOption> {
-    parsed_permission_options(raw)
+    parsed_permission_options(request)
         .filter(|options| !options.is_empty())
         .unwrap_or_else(|| {
-            let supports_allow_future = raw
-                .get("supports_allow_future")
-                .and_then(Value::as_bool)
-                .unwrap_or_else(|| supports_allow_future_for_tool(tool_name));
+            let supports_allow_future = request
+                .supports_allow_future
+                .unwrap_or_else(|| supports_allow_future_for_tool(&request.tool_name));
             fallback_permission_options(supports_allow_future)
         })
 }
 
-fn parsed_permission_options(raw: &Value) -> Option<Vec<RuntimePermissionOption>> {
+fn parsed_permission_options(
+    request: &SerializedPermissionRequest,
+) -> Option<Vec<RuntimePermissionOption>> {
     Some(
-        raw.get("options")?
-            .as_array()?
+        request
+            .options
+            .as_ref()?
             .iter()
             .filter_map(parsed_permission_option)
             .collect(),
     )
 }
 
-fn parsed_permission_option(value: &Value) -> Option<RuntimePermissionOption> {
-    let decision = match value.get("decision")?.as_str()? {
+fn parsed_permission_option(value: &SerializedPermissionOption) -> Option<RuntimePermissionOption> {
+    let decision = match value.decision.as_str() {
         "allow_once" => RuntimePermissionDecision::AllowOnce,
         "allow_future" => RuntimePermissionDecision::AllowFuture,
         "deny" => RuntimePermissionDecision::Deny,
@@ -129,16 +120,10 @@ fn parsed_permission_option(value: &Value) -> Option<RuntimePermissionOption> {
     };
     Some(RuntimePermissionOption {
         decision,
-        option_id: value
-            .get("option_id")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        label: value.get("label")?.as_str()?.to_string(),
-        description: value.get("description")?.as_str()?.to_string(),
-        collect_feedback: value
-            .get("collect_feedback")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
+        option_id: value.option_id.clone(),
+        label: value.label.clone()?,
+        description: value.description.clone()?,
+        collect_feedback: value.collect_feedback,
     })
 }
 
