@@ -14,7 +14,8 @@ use crate::domain::ws_session::persistence::{
     PendingUserInput, PendingUserInputKind, WsSessionPersistence,
 };
 use crate::domain::ws_session::protocol::{
-    PermissionDecision, PermissionRequestPayload, SessionErrorPayload, WsEnvelope,
+    permission_request_envelope, PermissionDecision, PermissionRequestPayload, SessionErrorPayload,
+    WsEnvelope,
 };
 
 use super::super::post_plan_mode::transition_session_to_post_plan_mode;
@@ -296,11 +297,8 @@ impl WsBridgeCanUseTool {
     }
 
     async fn send_permission_payload(&self, payload: PermissionRequestPayload) {
-        let envelope = WsEnvelope::new(
-            "session",
-            "permission.request",
-            serde_json::to_value(payload).unwrap(),
-        );
+        let envelope = permission_request_envelope(payload)
+            .expect("permission request payload should serialize");
         self.mirror_and_send(Message::Text(String::from(envelope).into()))
             .await;
     }

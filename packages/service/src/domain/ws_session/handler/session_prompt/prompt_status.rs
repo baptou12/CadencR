@@ -3,6 +3,7 @@ use axum::extract::ws::Message;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{
     PromptPersistedPayload, PromptReceivedPayload, UserMessageMirrorPayload, WsEnvelope,
+    WsSessionAction,
 };
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
@@ -37,11 +38,11 @@ pub(super) async fn mirror_user_message(
 /// (`stream_reader_forward`) and the send-failure ack (`clear_pending_prompt_receipt`)
 /// share one wire shape.
 pub(super) fn prompt_received_envelope(client_message_id: String) -> WsEnvelope {
-    WsEnvelope::new(
-        "session",
-        "prompt_received",
-        serde_json::to_value(PromptReceivedPayload { client_message_id }).unwrap(),
+    WsEnvelope::session_event(
+        WsSessionAction::PromptReceived,
+        PromptReceivedPayload { client_message_id },
     )
+    .expect("prompt received payload should serialize")
 }
 
 /// Tell the *sending* device the persisted DB id of the user message it just
@@ -61,15 +62,14 @@ pub(super) async fn ack_persisted_user_message(
 /// Wire shape for the `prompt_persisted` ack — split out so the sender helper
 /// and the unit test share one definition.
 pub(super) fn prompt_persisted_envelope(user_message_ref: String, message_id: i64) -> WsEnvelope {
-    WsEnvelope::new(
-        "session",
-        "prompt_persisted",
-        serde_json::to_value(PromptPersistedPayload {
+    WsEnvelope::session_event(
+        WsSessionAction::PromptPersisted,
+        PromptPersistedPayload {
             user_message_ref,
             message_id,
-        })
-        .unwrap(),
+        },
     )
+    .expect("prompt persisted payload should serialize")
 }
 
 /// Ack a tracked prompt the agent never received because the stream send

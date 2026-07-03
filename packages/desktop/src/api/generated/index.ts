@@ -186,6 +186,14 @@ export interface BranchDeleteCheckResponse {
   target_branch: string;
 }
 
+export interface BranchForkedPayload {
+  draftText: string;
+  newFeatureId: number;
+  newSessionId: string;
+  projectId: number;
+  sourceSessionId: string;
+}
+
 export type BranchInfoAttachedFeatureId = number | null;
 
 export type BranchInfoAttachedWorktreePath = string | null;
@@ -207,6 +215,16 @@ export type BranchResponseBranch = string | null;
 
 export interface BranchResponse {
   branch?: BranchResponseBranch;
+}
+
+export type BranchRewoundPayloadCodeRestoreError = string | null;
+
+export interface BranchRewoundPayload {
+  codeRestoreError?: BranchRewoundPayloadCodeRestoreError;
+  codeRestored: boolean;
+  draftText: string;
+  messageId: number;
+  sessionId: string;
 }
 
 export type ChangedFileOldFile = string | null;
@@ -235,6 +253,36 @@ export interface CheckoutValidateBody {
 
 export interface ClaudeCodeSuccessResponse {
   ok: boolean;
+}
+
+export interface CommandsGetPayload {
+  cwd: string;
+  /** Runtime provider for the active session (e.g. `"claude_code"`,
+`"opencode"`). Required so command discovery is scoped to the active
+provider instead of falling back to shared filesystem scans. */
+  provider: string;
+}
+
+export interface CommandsListPayload {
+  commands: SlashCommandPayload[];
+  /** `true` when the server is currently re-resolving the catalog in
+the background (the FE returned cached data instantly; a fresh
+`commands.updated` envelope will follow when the probe
+completes). The FE renders a small spinner / loader while this
+is set so the user knows the picker is being refreshed. */
+  refreshing?: boolean;
+}
+
+/**
+ * Server → Client: live slash-command catalog the agent advertised
+over the runtime stream (today: ACP `available_commands_update`).
+
+Emitted whenever a `RuntimeEventKind::SlashCommandsUpdated` arrives
+on a session's runtime channel. The full catalog is sent every time
+— frontends should replace, not merge.
+ */
+export interface CommandsUpdatedPayload {
+  commands: SlashCommandPayload[];
 }
 
 export interface CommitBody {
@@ -614,6 +662,19 @@ shell operations such as "Reveal in Finder". */
   root: string;
 }
 
+export type EffortSetOkPayloadThinkingEffort = string | null;
+
+export interface EffortSetOkPayload {
+  thinking_effort?: EffortSetOkPayloadThinkingEffort;
+}
+
+export type EffortSetPayloadThinkingEffort = string | null;
+
+export interface EffortSetPayload {
+  session_id: string;
+  thinking_effort?: EffortSetPayloadThinkingEffort;
+}
+
 export type FeatureLabel = string | null;
 
 export type FeatureModelSession = string | null;
@@ -784,6 +845,30 @@ export interface FormatResponse {
   content: string;
 }
 
+export type GateClosePayloadRequestId = string | null;
+
+export interface GateClosePayload {
+  reason: GateCloseReason;
+  request_id?: GateClosePayloadRequestId;
+  session_id: string;
+}
+
+export type GateCloseReason = (typeof GateCloseReason)[keyof typeof GateCloseReason];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GateCloseReason = {
+  sleep: "sleep",
+  escape: "escape",
+} as const;
+
+export type GateClosedPayloadRequestId = string | null;
+
+export interface GateClosedPayload {
+  reason: GateCloseReason;
+  request_id?: GateClosedPayloadRequestId;
+  session_id: string;
+}
+
 export type GetFileContentBatchBodyCommitSha = string | null;
 
 export type GetFileContentBatchBodyTargetBranch = string | null;
@@ -891,6 +976,11 @@ export interface HealthResponse {
 that grabbed our port before we could bind. */
   service: string;
   status: string;
+}
+
+export interface ImagePayload {
+  base64: string;
+  mimeType: string;
 }
 
 export type ImportConversationSummaryModifiedAt = string | null;
@@ -1049,6 +1139,15 @@ export interface MessagePreviewResponse {
   preview?: MessagePreviewResponsePreview;
 }
 
+export interface ModeChangedPayload {
+  mode: string;
+}
+
+export interface ModeSetPayload {
+  mode: string;
+  session_id: string;
+}
+
 export type ModelCatalogEntryDescription = string | null;
 
 export type ModelCatalogEntrySupportedEffortLevels = string[] | null;
@@ -1072,6 +1171,22 @@ export interface ModelCatalogEntry {
   supports_fast_mode?: ModelCatalogEntrySupportsFastMode;
 }
 
+/**
+ * @minimum 0
+ */
+export type ModelSetOkPayloadContextWindow = number | null;
+
+export interface ModelSetOkPayload {
+  /** @minimum 0 */
+  context_window?: ModelSetOkPayloadContextWindow;
+  model: string;
+}
+
+export interface ModelSetPayload {
+  model: string;
+  session_id: string;
+}
+
 export interface ModelSettings {
   auto_name: string;
   session: string;
@@ -1090,6 +1205,20 @@ move the entry to the project root. */
 
 export interface MovePathResponse {
   new_path: string;
+}
+
+export type NewProjectBranchPayloadBase = string | null;
+
+/**
+ * "From branch" (project-path) provisioning, requested on the first prompt.
+When present, the backend auto-names the feature first, then forks a new
+branch *with that name* in the project folder — no worktree, no setup. The
+name must be derived server-side (after auto-naming), which is why this can
+not be a pre-send git call from the client. `base` of `None` forks from the
+project's current HEAD; `Some(ref)` forks from that ref.
+ */
+export interface NewProjectBranchPayload {
+  base?: NewProjectBranchPayloadBase;
 }
 
 /**
@@ -1169,6 +1298,74 @@ export const PairingState = {
   expired: "expired",
 } as const;
 
+/**
+ * Permission decision from the client.
+ */
+export type PermissionDecision = (typeof PermissionDecision)[keyof typeof PermissionDecision];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PermissionDecision = {
+  allow_once: "allow_once",
+  allow_future: "allow_future",
+  deny: "deny",
+} as const;
+
+export type PermissionOptionPayloadOptionId = string | null;
+
+export interface PermissionOptionPayload {
+  collect_feedback?: boolean;
+  decision: PermissionDecision;
+  description: string;
+  label: string;
+  option_id?: PermissionOptionPayloadOptionId;
+}
+
+export type PermissionRequestPayloadDescription = string | null;
+
+/**
+ * Permission pattern for "allow future" persistence (e.g. "Read(/path)" or "Bash(git push:*)").
+ */
+export type PermissionRequestPayloadPattern = string | null;
+
+export type PermissionRequestPayloadPreview = string | null;
+
+export interface PermissionRequestPayload {
+  description?: PermissionRequestPayloadDescription;
+  options?: PermissionOptionPayload[];
+  /** Permission pattern for "allow future" persistence (e.g. "Read(/path)" or "Bash(git push:*)"). */
+  pattern?: PermissionRequestPayloadPattern;
+  preview?: PermissionRequestPayloadPreview;
+  request_id: string;
+  tool_input: unknown;
+  tool_name: string;
+}
+
+export type PermissionRespondPayloadFeedback = string | null;
+
+export type PermissionRespondPayloadOptionId = string | null;
+
+export interface PermissionRespondPayload {
+  decision: PermissionDecision;
+  feedback?: PermissionRespondPayloadFeedback;
+  option_id?: PermissionRespondPayloadOptionId;
+  request_id: string;
+  session_id: string;
+  updated_input?: unknown;
+}
+
+export type ProfileChangedPayloadModel = string | null;
+
+export interface ProfileChangedPayload {
+  model?: ProfileChangedPayloadModel;
+  profile: string;
+  provider: string;
+}
+
+export interface ProfileSetPayload {
+  profile: string;
+  session_id: string;
+}
+
 export type ProfileViewEnv = { [key: string]: string };
 
 export interface ProfileView {
@@ -1222,6 +1419,68 @@ export interface ProjectsSuccessResponse {
   success: boolean;
 }
 
+export type PromptAttachmentPayloadKind = string | null;
+
+export interface PromptAttachmentPayload {
+  base64: string;
+  fileName?: string;
+  kind?: PromptAttachmentPayloadKind;
+  mimeType: string;
+}
+
+/**
+ * Server → the *sending* client only: the persisted DB id of a user message
+the sender is showing optimistically (matched by its `user_message_ref`).
+The sender renders its own prompt from a local `ws-user-*` block that has no
+DB id, so rewind/fork — which cut at a persisted message id — stay hidden on
+it until the conversation is reloaded. Stamping the id back lets those
+actions light up on the live message immediately.
+ */
+export interface PromptPersistedPayload {
+  message_id: number;
+  user_message_ref: string;
+}
+
+export interface PromptReceivedPayload {
+  client_message_id: string;
+}
+
+export type PromptSendPayloadClaudeProfile = string | null;
+
+export type PromptSendPayloadClientMessageId = string | null;
+
+export type PromptSendPayloadNewProjectBranch = null | NewProjectBranchPayload;
+
+export type PromptSendPayloadProfile = string | null;
+
+export type PromptSendPayloadUseWorktree = boolean | null;
+
+/**
+ * Client-generated reference echoed back in `prompt_persisted` with the
+persisted DB id, so the sender can stamp its live block and enable
+rewind/fork without a reload. Sent for every prompt (unlike
+`client_message_id`, which is receipt/steering-only).
+ */
+export type PromptSendPayloadUserMessageRef = string | null;
+
+export interface PromptSendPayload {
+  attachments?: PromptAttachmentPayload[];
+  claude_profile?: PromptSendPayloadClaudeProfile;
+  client_message_id?: PromptSendPayloadClientMessageId;
+  images?: ImagePayload[];
+  new_project_branch?: PromptSendPayloadNewProjectBranch;
+  profile?: PromptSendPayloadProfile;
+  replay?: boolean;
+  session_id: string;
+  text: string;
+  use_worktree?: PromptSendPayloadUseWorktree;
+  /** Client-generated reference echoed back in `prompt_persisted` with the
+persisted DB id, so the sender can stamp its live block and enable
+rewind/fork without a reload. Sent for every prompt (unlike
+`client_message_id`, which is receipt/steering-only). */
+  user_message_ref?: PromptSendPayloadUserMessageRef;
+}
+
 export type ProviderCatalogEntryDefaultModel = string | null;
 
 export type ProviderCatalogEntryStatusMessage = string | null;
@@ -1257,6 +1516,19 @@ export interface ProviderModeCatalogEntry {
   description?: ProviderModeCatalogEntryDescription;
   id: string;
   label: string;
+}
+
+export type ProviderSetOkPayloadCodexPermissionMode = string | null;
+
+export interface ProviderSetOkPayload {
+  codex_permission_mode?: ProviderSetOkPayloadCodexPermissionMode;
+  provider: string;
+  supports_prompt_receipts: boolean;
+}
+
+export interface ProviderSetPayload {
+  provider: string;
+  session_id: string;
 }
 
 export interface ProviderSettings {
@@ -1456,6 +1728,10 @@ export interface RunResponse {
   run_id: number;
 }
 
+export interface RuntimeSessionIdPayload {
+  runtime_session_id: string;
+}
+
 export type SaveDraftRequestDraft = string | null;
 
 export interface SaveDraftRequest {
@@ -1563,6 +1839,34 @@ export const ServerRole = {
   general: "general",
 } as const;
 
+export interface SessionActionPayload {
+  session_id: string;
+}
+
+export type SessionInitPayloadCwd = string | null;
+
+export type SessionInitPayloadFeatureId = number | null;
+
+export type SessionInitPayloadModel = string | null;
+
+export type SessionInitPayloadPermissionMode = string | null;
+
+export type SessionInitPayloadProvider = string | null;
+
+export type SessionInitPayloadSystemPrompt = string | null;
+
+export type SessionInitPayloadThinkingEffort = string | null;
+
+export interface SessionInitPayload {
+  cwd?: SessionInitPayloadCwd;
+  feature_id?: SessionInitPayloadFeatureId;
+  model?: SessionInitPayloadModel;
+  permission_mode?: SessionInitPayloadPermissionMode;
+  provider?: SessionInitPayloadProvider;
+  system_prompt?: SessionInitPayloadSystemPrompt;
+  thinking_effort?: SessionInitPayloadThinkingEffort;
+}
+
 export type SessionStateContextWindow = number | null;
 
 export type SessionStateDraftPrompt = string | null;
@@ -1612,6 +1916,25 @@ export interface SessionState {
   todos?: SessionStateTodos;
   toolCallUpdates?: SessionStateToolCallUpdates;
   wasCompacted: boolean;
+}
+
+export type SessionStreamStatusPayloadReason = string | null;
+
+/**
+ * Provider-neutral transport-health envelope for the agent stream.
+
+Emitted by the WS bridge when the underlying runtime reports
+`RuntimeEventKind::StreamStatus`. Consumers can use it to distinguish
+transient degraded/recovered stream states from terminal `session.error`
+failures.
+
+`reason` is opaque human-readable text suited for a tooltip (e.g.
+`"reconnecting (attempt 3): connection refused"`, `"no heartbeat
+for 60s"`).
+ */
+export interface SessionStreamStatusPayload {
+  reason?: SessionStreamStatusPayloadReason;
+  state: StreamStatusState;
 }
 
 export interface SetActiveProfileRequest {
@@ -1754,6 +2077,23 @@ export interface SkippedRecord {
   source_session_id: string;
 }
 
+export type SlashCommandKindPayload =
+  (typeof SlashCommandKindPayload)[keyof typeof SlashCommandKindPayload];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SlashCommandKindPayload = {
+  command: "command",
+  skill: "skill",
+} as const;
+
+export type SlashCommandPayloadDescription = string | null;
+
+export interface SlashCommandPayload {
+  description?: SlashCommandPayloadDescription;
+  kind: SlashCommandKindPayload;
+  name: string;
+}
+
 export interface StartImportRequest {
   session_ids: string[];
 }
@@ -1761,6 +2101,20 @@ export interface StartImportRequest {
 export interface StartImportResponse {
   job_id: string;
 }
+
+/**
+ * Discriminant for `SessionStreamStatusPayload`.
+
+Hard failures stay on `session.error`; this enum only carries
+transient transport-health transitions.
+ */
+export type StreamStatusState = (typeof StreamStatusState)[keyof typeof StreamStatusState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const StreamStatusState = {
+  degraded: "degraded",
+  recovered: "recovered",
+} as const;
 
 export interface SuccessResponse {
   success: boolean;
@@ -1988,6 +2342,48 @@ export interface WriteSettingsFileRequest {
 export interface WriteSettingsFileResponse {
   warnings: SettingWarning[];
 }
+
+/**
+ * Authoritative list of session-domain server → client action names.
+
+Keep backend emitters and the generated frontend contract on this enum
+instead of retyping bare strings at each call site.
+ */
+export type WsSessionAction = (typeof WsSessionAction)[keyof typeof WsSessionAction];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WsSessionAction = {
+  initialized: "initialized",
+  message: "message",
+  usage_update: "usage_update",
+  ended: "ended",
+  error: "error",
+  deleted: "deleted",
+  cleared: "cleared",
+  lifecycle: "lifecycle",
+  retry_worktree_setupok: "retry_worktree_setup.ok",
+  gateclosed: "gate.closed",
+  mcp_servers: "mcp_servers",
+  user_message: "user_message",
+  historyresult: "history.result",
+  historyadded: "history.added",
+  draftresult: "draft.result",
+  draftsaved: "draft.saved",
+  codex_permission_modechanged: "codex_permission_mode.changed",
+  providersetok: "provider.set.ok",
+  prompt_persisted: "prompt_persisted",
+  compactstarted: "compact.started",
+  modelsetok: "model.set.ok",
+  effortsetok: "effort.set.ok",
+  modechanged: "mode.changed",
+  profilechanged: "profile.changed",
+  branchrewound: "branch.rewound",
+  branchforked: "branch.forked",
+  runtime_session_id: "runtime_session_id",
+  permissionrequest: "permission.request",
+  prompt_received: "prompt_received",
+  stream_status: "stream_status",
+} as const;
 
 export type GetAgentCatalogParams = {
   /**

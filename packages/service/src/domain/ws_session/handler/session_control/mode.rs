@@ -101,8 +101,8 @@ pub(crate) async fn handle_mode_set(
         sender,
         &envelope.id,
         feature_id,
-        "mode.changed",
-        serde_json::json!({ "mode": payload.mode }),
+        WsSessionAction::ModeChanged,
+        ModeChangedPayload { mode: payload.mode },
     )
     .await;
 }

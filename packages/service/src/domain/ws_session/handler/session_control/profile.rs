@@ -83,12 +83,12 @@ pub(crate) async fn handle_profile_set(
         sender,
         &envelope.id,
         feature_id,
-        "profile.changed",
-        serde_json::json!({
-            "provider": provider,
-            "model": model,
-            "profile": update.name,
-        }),
+        WsSessionAction::ProfileChanged,
+        ProfileChangedPayload {
+            provider,
+            model,
+            profile: update.name,
+        },
     )
     .await;
 }

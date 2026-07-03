@@ -1,13 +1,14 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 use crate::domain::sessions::models::AgentMessageOrigin;
 
-use super::PermissionDecision;
+use super::{GateCloseReason, PermissionDecision, WsEnvelope, WsSessionAction};
 
 // --- Server → Client payloads ---
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionUsageUpdatePayload {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -17,7 +18,7 @@ pub struct SessionUsageUpdatePayload {
     pub context_window: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionInitializedPayload {
     pub session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,7 +41,7 @@ pub struct SessionInitializedPayload {
     pub supports_prompt_receipts: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionMessagePayload {
     pub blocks: Vec<serde_json::Value>,
     /// Per-stream monotonic sequence number stamped by the stream reader so a
@@ -51,7 +52,7 @@ pub struct SessionMessagePayload {
     pub seq: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PermissionRequestPayload {
     pub request_id: String,
     pub tool_name: String,
@@ -64,7 +65,11 @@ pub struct PermissionRequestPayload {
     pub options: Vec<PermissionOptionPayload>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+pub fn permission_request_envelope(payload: impl Serialize) -> serde_json::Result<WsEnvelope> {
+    WsEnvelope::session_event(WsSessionAction::PermissionRequest, payload)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PermissionOptionPayload {
     pub decision: PermissionDecision,
     pub option_id: Option<String>,
@@ -97,7 +102,7 @@ impl From<RuntimePermissionOption> for PermissionOptionPayload {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct SessionErrorPayload {
     pub code: String,
     pub message: String,
@@ -109,16 +114,23 @@ pub struct SessionErrorPayload {
     pub mode: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionEndedPayload {
     pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct GateClosedPayload {
+    pub session_id: String,
+    pub request_id: Option<String>,
+    pub reason: GateCloseReason,
 }
 
 /// `session.user_message` — mirrors a just-sent user prompt to *other* devices
 /// viewing the same feature (the remote-access conversation mirror). The device
 /// that sent the prompt renders it locally and never receives this echo; only
 /// passive viewers do, so their conversation shows the prompt as it's sent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserMessageMirrorPayload {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,7 +147,7 @@ pub struct UserMessageMirrorPayload {
 /// machine consumes these via `ws-envelope-handler` — UI never flips on the
 /// raw OS event, only on this backend-confirmed envelope (see
 /// `no-optimistic-updates.md`).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionLifecycleKind {
     SuspendRequested,
@@ -146,7 +158,7 @@ pub enum SessionLifecycleKind {
 /// flow (today: OS suspend/resume). Provider-neutral — every adapter emits
 /// the same shape and the frontend renders the same banner regardless of
 /// which provider is active.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionLifecyclePayload {
     pub session_id: String,
     pub kind: SessionLifecycleKind,
@@ -156,7 +168,7 @@ pub struct SessionLifecyclePayload {
 ///
 /// Hard failures stay on `session.error`; this enum only carries
 /// transient transport-health transitions.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum StreamStatusState {
     Degraded,
@@ -166,21 +178,21 @@ pub enum StreamStatusState {
 /// Provider-neutral transport-health envelope for the agent stream.
 ///
 /// Emitted by the WS bridge when the underlying runtime reports
-/// `RuntimeEventKind::StreamStatus`. The frontend uses this to render a
-/// "Reconnecting…" / "Recovered" banner under the loader so users never
-/// see an infinite silent loader (plan findings 1, 2, 3, 8).
+/// `RuntimeEventKind::StreamStatus`. Consumers can use it to distinguish
+/// transient degraded/recovered stream states from terminal `session.error`
+/// failures.
 ///
 /// `reason` is opaque human-readable text suited for a tooltip (e.g.
 /// `"reconnecting (attempt 3): connection refused"`, `"no heartbeat
 /// for 60s"`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionStreamStatusPayload {
     pub state: StreamStatusState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PromptReceivedPayload {
     pub client_message_id: String,
 }
@@ -191,13 +203,13 @@ pub struct PromptReceivedPayload {
 /// DB id, so rewind/fork — which cut at a persisted message id — stay hidden on
 /// it until the conversation is reloaded. Stamping the id back lets those
 /// actions light up on the live message immediately.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PromptPersistedPayload {
     pub user_message_ref: String,
     pub message_id: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FeatureRenamedPayload {
     pub feature_id: i64,
     pub title: String,
@@ -205,7 +217,7 @@ pub struct FeatureRenamedPayload {
 
 /// Server → Client: auto-naming is starting or finished for a feature.
 /// Frontend replaces the title with a skeleton while `in_progress: true`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FeatureAutoNamingPayload {
     pub feature_id: i64,
     pub in_progress: bool,
@@ -213,8 +225,103 @@ pub struct FeatureAutoNamingPayload {
 
 /// Server → Client: one or more aspects of a feature changed.
 /// The frontend uses `changed` to selectively invalidate React Query caches.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FeatureUpdatedPayload {
     pub feature_id: i64,
     pub changed: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderSetOkPayload {
+    pub provider: String,
+    pub supports_prompt_receipts: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_permission_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ModeChangedPayload {
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ModelSetOkPayload {
+    pub model: String,
+    pub context_window: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct EffortSetOkPayload {
+    pub thinking_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProfileChangedPayload {
+    pub provider: String,
+    pub model: Option<String>,
+    pub profile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RuntimeSessionIdPayload {
+    pub runtime_session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct BranchRewoundPayload {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(rename = "messageId")]
+    pub message_id: i64,
+    #[serde(rename = "draftText")]
+    pub draft_text: String,
+    #[serde(rename = "codeRestored")]
+    pub code_restored: bool,
+    #[serde(rename = "codeRestoreError")]
+    pub code_restore_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct BranchForkedPayload {
+    #[serde(rename = "sourceSessionId")]
+    pub source_session_id: String,
+    #[serde(rename = "newSessionId")]
+    pub new_session_id: String,
+    #[serde(rename = "newFeatureId")]
+    pub new_feature_id: i64,
+    #[serde(rename = "projectId")]
+    pub project_id: i64,
+    #[serde(rename = "draftText")]
+    pub draft_text: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_message_seq_is_optional_on_the_wire() {
+        let payload = SessionMessagePayload {
+            blocks: vec![serde_json::json!({"type": "text"})],
+            seq: None,
+        };
+
+        let value = serde_json::to_value(&payload).unwrap();
+        assert!(value.get("seq").is_none());
+
+        let parsed: SessionMessagePayload =
+            serde_json::from_value(serde_json::json!({"blocks": []})).unwrap();
+        assert_eq!(parsed.seq, None);
+    }
+
+    #[test]
+    fn model_set_ok_keeps_null_context_window_for_existing_clients() {
+        let payload = ModelSetOkPayload {
+            model: "gpt-5".to_string(),
+            context_window: None,
+        };
+
+        let value = serde_json::to_value(&payload).unwrap();
+        assert_eq!(value["context_window"], serde_json::Value::Null);
+    }
 }

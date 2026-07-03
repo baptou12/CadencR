@@ -259,11 +259,11 @@ async fn send_model_set_ok(
         sender,
         envelope_id,
         feature_id,
-        "model.set.ok",
-        serde_json::json!({
-            "model": model,
-            "context_window": seeded_window,
-        }),
+        WsSessionAction::ModelSetOk,
+        ModelSetOkPayload {
+            model,
+            context_window: seeded_window,
+        },
     )
     .await;
 }

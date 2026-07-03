@@ -5,7 +5,7 @@
 use tracing::{info, warn};
 
 use super::super::super::persistence::WsSessionPersistence;
-use super::super::super::protocol::WsEnvelope;
+use super::super::super::protocol::{BranchRewoundPayload, WsEnvelope, WsSessionAction};
 use super::super::helpers::send_error;
 use super::super::types::{SdkSessions, WsSender};
 use super::rewind_state::{apply_rewind_state, RewindStateError};
@@ -144,14 +144,14 @@ async fn finish_rewind(
         sender,
         envelope_id,
         inputs.feature_id,
-        "branch.rewound",
-        serde_json::json!({
-            "sessionId": db_session_id.to_string(),
-            "messageId": inputs.message_id,
-            "draftText": inputs.message_text,
-            "codeRestored": code_restored,
-            "codeRestoreError": code_restore_error,
-        }),
+        WsSessionAction::BranchRewound,
+        BranchRewoundPayload {
+            session_id: db_session_id.to_string(),
+            message_id: inputs.message_id,
+            draft_text: inputs.message_text.clone(),
+            code_restored,
+            code_restore_error,
+        },
     )
     .await;
 }

@@ -11,7 +11,7 @@ use crate::domain::agents::adapter::{
 };
 use crate::domain::agents::permission_modes::permission_mode_wire;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
-use crate::domain::ws_session::protocol::WsEnvelope;
+use crate::domain::ws_session::protocol::{ModeChangedPayload, WsEnvelope, WsSessionAction};
 
 pub(crate) fn should_transition_after_plan_approval(
     kind: RuntimePermissionResponseKind,
@@ -100,11 +100,13 @@ pub(super) async fn transition_session_to_post_plan_mode(
 
     WsSessionPersistence::update_permission_mode_static(write_pool, db_session_id, &applied_wire)
         .await;
-    let envelope = WsEnvelope::new(
-        "session",
-        "mode.changed",
-        serde_json::json!({ "mode": applied_wire }),
-    );
+    let envelope = WsEnvelope::session_event(
+        WsSessionAction::ModeChanged,
+        ModeChangedPayload {
+            mode: applied_wire.clone(),
+        },
+    )
+    .expect("mode changed payload should serialize");
     let _ = sender.send(Message::Text(String::from(envelope).into()));
 
     Ok(Some(applied_wire))

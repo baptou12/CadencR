@@ -46,14 +46,16 @@ fn send_provider_set_ok(
     supports_prompt_receipts: bool,
     codex_permission_mode: Option<&str>,
 ) {
-    let mut payload = serde_json::json!({
-        "provider": provider,
-        "supports_prompt_receipts": supports_prompt_receipts,
-    });
-    if let Some(mode) = codex_permission_mode {
-        payload["codex_permission_mode"] = serde_json::Value::String(mode.to_string());
-    }
-    let reply = WsEnvelope::reply(envelope_id, "session", "provider.set.ok", payload);
+    let reply = WsEnvelope::session_reply(
+        envelope_id,
+        WsSessionAction::ProviderSetOk,
+        ProviderSetOkPayload {
+            provider: provider.to_string(),
+            supports_prompt_receipts,
+            codex_permission_mode: codex_permission_mode.map(ToOwned::to_owned),
+        },
+    )
+    .expect("provider set payload should serialize");
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
@@ -230,31 +232,19 @@ pub(crate) async fn handle_provider_set(
         handle.feature_id
     };
 
-    send_provider_set_ok(
-        sender,
-        &envelope.id,
-        &payload.provider,
-        supports_prompt_receipts,
-        configured_codex_access_mode.as_deref(),
-    );
-
     // Mirror to other devices viewing this feature so their provider/mode chips
-    // stay in sync (provider can only change before the first prompt). The mode
-    // reply+mirror share one payload; the provider chip already got its reply
-    // above, so only its mirror is sent here.
-    let mut provider_payload = serde_json::json!({
-        "provider": payload.provider,
-        "supports_prompt_receipts": supports_prompt_receipts,
-    });
-    if let Some(mode) = configured_codex_access_mode.as_deref() {
-        provider_payload["codex_permission_mode"] = serde_json::Value::String(mode.to_string());
-    }
-    super::broadcast_control_change(
+    // stay in sync (provider can only change before the first prompt).
+    super::reply_and_broadcast(
         app_state,
         sender,
+        &envelope.id,
         feature_id,
-        "provider.set.ok",
-        provider_payload,
+        WsSessionAction::ProviderSetOk,
+        ProviderSetOkPayload {
+            provider: payload.provider,
+            supports_prompt_receipts,
+            codex_permission_mode: configured_codex_access_mode,
+        },
     )
     .await;
     super::reply_and_broadcast(
@@ -262,8 +252,10 @@ pub(crate) async fn handle_provider_set(
         sender,
         &envelope.id,
         feature_id,
-        "mode.changed",
-        serde_json::json!({ "mode": new_mode_wire }),
+        WsSessionAction::ModeChanged,
+        ModeChangedPayload {
+            mode: new_mode_wire.to_string(),
+        },
     )
     .await;
 }

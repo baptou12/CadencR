@@ -120,12 +120,12 @@ async fn handle_active_runtime_compact(
         return;
     }
 
-    let reply = WsEnvelope::reply(
+    let reply = WsEnvelope::session_reply(
         envelope_id,
-        "session",
-        "compact.started",
+        WsSessionAction::CompactStarted,
         serde_json::Value::Null,
-    );
+    )
+    .expect("compact started payload should serialize");
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 

@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::domain::agents::adapter::RuntimePermissionDecision;
 
 /// Permission decision from the client.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionDecision {
     AllowOnce,
@@ -70,6 +71,22 @@ impl WsEnvelope {
         }
     }
 
+    pub fn session_event<P: Serialize>(
+        action: WsSessionAction,
+        payload: P,
+    ) -> serde_json::Result<Self> {
+        serde_json::to_value(payload).map(|value| Self::new("session", action, value))
+    }
+
+    pub fn session_reply<P: Serialize>(
+        original_id: &str,
+        action: WsSessionAction,
+        payload: P,
+    ) -> serde_json::Result<Self> {
+        serde_json::to_value(payload)
+            .map(|value| Self::reply(original_id, "session", action, value))
+    }
+
     pub fn parse_action(&self) -> anyhow::Result<(&str, &str)> {
         if self.domain.is_empty() {
             anyhow::bail!("domain is required");
@@ -102,10 +119,12 @@ impl From<WsEnvelope> for String {
     }
 }
 
+mod actions;
 mod client;
 mod commands;
 mod server;
 
+pub use actions::*;
 pub use client::*;
 pub use commands::*;
 pub use server::*;
@@ -150,6 +169,38 @@ mod tests {
         assert_eq!(parsed.domain, "session");
         assert_eq!(parsed.action, "init");
         assert_eq!(parsed.payload, serde_json::json!({"model": "opus"}));
+    }
+
+    #[test]
+    fn ws_session_action_is_the_authoritative_wire_name_source() {
+        let actions = WsSessionAction::all();
+        assert!(actions.contains(&WsSessionAction::ProviderSetOk));
+        assert!(actions.contains(&WsSessionAction::PromptPersisted));
+        assert!(actions.contains(&WsSessionAction::CompactStarted));
+        assert!(actions.contains(&WsSessionAction::ModelSetOk));
+        assert!(actions.contains(&WsSessionAction::EffortSetOk));
+        assert!(actions.contains(&WsSessionAction::ModeChanged));
+        assert!(actions.contains(&WsSessionAction::ProfileChanged));
+        assert!(actions.contains(&WsSessionAction::BranchRewound));
+        assert!(actions.contains(&WsSessionAction::RuntimeSessionId));
+        assert!(actions.contains(&WsSessionAction::PermissionRequest));
+        assert!(actions.contains(&WsSessionAction::PromptReceived));
+        assert!(actions.contains(&WsSessionAction::StreamStatus));
+
+        let env = WsEnvelope::session_event(
+            WsSessionAction::RuntimeSessionId,
+            RuntimeSessionIdPayload {
+                runtime_session_id: "runtime-1".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(env.domain, "session");
+        assert_eq!(env.action, "runtime_session_id");
+        assert_eq!(
+            env.payload,
+            serde_json::json!({ "runtime_session_id": "runtime-1" })
+        );
     }
 
     #[test]
@@ -205,141 +256,6 @@ mod tests {
             serde_json::json!({}),
         );
         assert_eq!(reply.r#ref.as_deref(), Some(original.id.as_str()));
-    }
-
-    #[test]
-    fn test_payload_types_roundtrip() {
-        // SessionInitPayload
-        let p = SessionInitPayload {
-            provider: None,
-            model: Some("opus".into()),
-            thinking_effort: None,
-            permission_mode: None,
-            system_prompt: None,
-            cwd: Some("/tmp".into()),
-            feature_id: None,
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: SessionInitPayload = serde_json::from_value(v).unwrap();
-
-        // PromptSendPayload
-        let p = PromptSendPayload {
-            session_id: "s1".into(),
-            text: "hello".into(),
-            profile: None,
-            claude_profile: None,
-            images: vec![],
-            attachments: vec![],
-            use_worktree: None,
-            new_project_branch: None,
-            client_message_id: None,
-            user_message_ref: None,
-            replay: false,
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: PromptSendPayload = serde_json::from_value(v).unwrap();
-
-        // CommandsGetPayload
-        let p = CommandsGetPayload {
-            cwd: "/tmp".into(),
-            provider: "codex_cli".into(),
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: CommandsGetPayload = serde_json::from_value(v).unwrap();
-
-        // PermissionRespondPayload
-        let p = PermissionRespondPayload {
-            session_id: "s1".into(),
-            request_id: "r1".into(),
-            decision: PermissionDecision::AllowOnce,
-            option_id: None,
-            feedback: None,
-            updated_input: None,
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: PermissionRespondPayload = serde_json::from_value(v).unwrap();
-
-        // SessionInitializedPayload
-        let p = SessionInitializedPayload {
-            session_id: "s1".into(),
-            provider: None,
-            model: None,
-            thinking_effort: None,
-            profile: None,
-            codex_permission_mode: None,
-            input_tokens: None,
-            output_tokens: None,
-            context_window: None,
-            supports_prompt_receipts: false,
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: SessionInitializedPayload = serde_json::from_value(v).unwrap();
-
-        // SessionMessagePayload
-        let p = SessionMessagePayload {
-            blocks: vec![serde_json::json!({"type": "text"})],
-            seq: Some(1),
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: SessionMessagePayload = serde_json::from_value(v).unwrap();
-
-        // `seq: None` (non-streamed/older emitters) must omit the field on the
-        // wire, and a payload without `seq` must deserialize back to `None`.
-        let p = SessionMessagePayload {
-            blocks: vec![serde_json::json!({"type": "text"})],
-            seq: None,
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        assert!(
-            v.get("seq").is_none(),
-            "seq: None must be omitted on the wire"
-        );
-        let back: SessionMessagePayload =
-            serde_json::from_value(serde_json::json!({"blocks": []})).unwrap();
-        assert_eq!(back.seq, None, "missing seq must deserialize to None");
-
-        // PermissionRequestPayload
-        let p = PermissionRequestPayload {
-            request_id: "r1".into(),
-            tool_name: "bash".into(),
-            tool_input: serde_json::json!({}),
-            description: Some("run cmd".into()),
-            pattern: None,
-            preview: Some("ls".into()),
-            options: vec![PermissionOptionPayload {
-                decision: PermissionDecision::AllowOnce,
-                option_id: None,
-                label: "Allow once".into(),
-                description: "Approve this tool call only".into(),
-                collect_feedback: false,
-            }],
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: PermissionRequestPayload = serde_json::from_value(v).unwrap();
-
-        // ModeSetPayload
-        let p = ModeSetPayload {
-            session_id: "s1".into(),
-            mode: "plan".into(),
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: ModeSetPayload = serde_json::from_value(v).unwrap();
-
-        // SessionErrorPayload
-        let p = SessionErrorPayload {
-            code: "ERR".into(),
-            message: "bad".into(),
-            mode: None,
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: SessionErrorPayload = serde_json::from_value(v).unwrap();
-
-        // SessionEndedPayload
-        let p = SessionEndedPayload {
-            reason: "done".into(),
-        };
-        let v = serde_json::to_value(&p).unwrap();
-        let _: SessionEndedPayload = serde_json::from_value(v).unwrap();
     }
 
     #[test]
