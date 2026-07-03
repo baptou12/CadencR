@@ -32,6 +32,7 @@ import { LSPClient } from "@codemirror/lsp-client";
 import { type WebSocketLspTransport } from "./transport";
 import { CadencrWorkspace, type DisplayFileHandler } from "./cadencr-workspace";
 import { buildSession, backoffDelayMs } from "./lsp-session";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 /** Coarse connection status for an entry, mirrored into the UI. */
 export type LspEntryStatus = "connecting" | "ready" | "reconnecting" | "error";
@@ -350,7 +351,7 @@ function scheduleRetry(
   const entry = clients.get(key);
   if (!entry || entry.refCount === 0) return;
   entry.failCount += 1;
-  const msg = err instanceof Error ? err.message : "Language server reconnect failed";
+  const msg = apiErrorMessage(err, "Language server reconnect failed");
   if (entry.failCount >= MAX_RECONNECT_ATTEMPTS) {
     setStatus(key, "error", msg);
     return;

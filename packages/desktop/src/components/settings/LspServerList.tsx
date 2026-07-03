@@ -24,6 +24,7 @@ import { useListLspServers, type ServerProbe, ServerProbeStatus } from "@/api/ge
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { IconTile, type IconTileTint } from "@/components/settings/IconTile";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 interface StatusVisual {
   icon: LucideIcon;
@@ -128,7 +129,7 @@ export function LspServerList(): React.JSX.Element {
         </div>
       ) : error ? (
         <p className="text-xs text-destructive">
-          {error instanceof Error ? error.message : "Failed to load language servers"}
+          {apiErrorMessage(error, "Failed to load language servers")}
         </p>
       ) : servers.length === 0 ? (
         <p className="text-xs text-muted-foreground">No language servers in the catalog.</p>

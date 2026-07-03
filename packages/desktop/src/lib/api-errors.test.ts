@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { apiErrorMessage } from "./api-errors";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { apiErrorMessage, toastError } from "./api-errors";
+
+const toastErrorMock = vi.hoisted(() => vi.fn());
+vi.mock("sonner", () => ({ toast: { error: toastErrorMock } }));
 
 describe("apiErrorMessage", () => {
   it("uses backend JSON error messages from Axios errors", () => {
@@ -21,5 +24,24 @@ describe("apiErrorMessage", () => {
     expect(apiErrorMessage({ isAxiosError: true, response: { data: {} } }, "Fallback")).toBe(
       "Fallback",
     );
+  });
+});
+
+describe("toastError", () => {
+  beforeEach(() => toastErrorMock.mockReset());
+
+  it("surfaces the resolved backend message as a toast", () => {
+    toastError(
+      { isAxiosError: true, response: { data: { error: "worktree has uncommitted changes" } } },
+      "Fallback",
+    );
+
+    expect(toastErrorMock).toHaveBeenCalledWith("worktree has uncommitted changes");
+  });
+
+  it("surfaces the fallback when the error carries no useful message", () => {
+    toastError({}, "Something went wrong");
+
+    expect(toastErrorMock).toHaveBeenCalledWith("Something went wrong");
   });
 });

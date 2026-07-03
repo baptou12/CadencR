@@ -6,6 +6,7 @@ import { useCreateProject, getListProjectsQueryKey, type Project } from "@/api/g
 import { Button } from "@/components/ui/button";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { OnboardingFooter } from "../OnboardingFooter";
+import { apiErrorMessage } from "@/lib/api-errors";
 import type { OnboardingStepProps } from "../OnboardingOverlay";
 
 /**
@@ -33,7 +34,7 @@ export function ChooseWorkspaceStep({
         void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
       },
       onError: (err: unknown) => {
-        const message = err instanceof Error ? err.message : "Unknown error";
+        const message = apiErrorMessage(err, "Unknown error");
         toast.error(`Could not create project: ${message}`);
       },
     },

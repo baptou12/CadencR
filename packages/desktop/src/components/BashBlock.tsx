@@ -2,6 +2,7 @@ import { memo, useMemo, type ReactElement, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRightIcon, Loader2Icon, TerminalIcon } from "lucide-react";
 import { getGetMessageFullContentQueryKey, getMessageFullContent } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 import { parseAnsi } from "@/lib/ansi-to-html";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -327,5 +328,5 @@ function ParsedBashBodyContent({
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "unknown error";
+  return apiErrorMessage(error, "unknown error");
 }

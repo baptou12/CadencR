@@ -10,6 +10,7 @@ import type { EditorView } from "@codemirror/view";
 import type { RefObject } from "react";
 import { toast } from "sonner";
 import { format } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { useProjectEditorTooling } from "@/lib/lsp/useProjectEditorTooling";
 
@@ -70,10 +71,7 @@ export function useEditorFormat({
       if (live) applyFormatted(live, content);
       return true;
     } catch (err) {
-      const detail =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-        (err instanceof Error ? err.message : "Failed to format document");
-      toast.error(detail);
+      toast.error(apiErrorMessage(err, "Failed to format document"));
       return false;
     }
   }, [projectId, featureId, filePath, tooling.formatter, viewRef]);

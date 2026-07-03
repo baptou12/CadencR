@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isBrowserRemote, readDeviceToken } from "@/lib/remote/device-token";
 import { pairRemoteDevice } from "@/api/remote-pairing";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 // The scanner pulls in the camera plumbing + jsQR decoder, so it only loads
 // when the user actually chooses to scan rather than paste.
@@ -73,7 +74,7 @@ function PairingScreen(): ReactNode {
       // Reload once durable storage succeeded so bootstrap reads the saved token.
       location.reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Pairing failed.");
+      setError(apiErrorMessage(err, "Pairing failed."));
       setPairing(false);
     }
   };

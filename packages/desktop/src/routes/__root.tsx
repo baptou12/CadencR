@@ -51,6 +51,7 @@ import { RootOverlays, type ConfirmFeatureAction } from "@/components/RootOverla
 import { RootErrorBoundary } from "@/components/RootErrorBoundary";
 import { isMeaningfulScreenPath, useLastScreenStore } from "@/stores/last-screen-store";
 import { THEME_SELECTOR_SEARCH_KEY } from "@/components/theme/ThemeDrawer";
+import { toastError } from "@/lib/api-errors";
 import {
   archiveFeatureInCachedLists,
   closeFeatureSession,
@@ -328,7 +329,7 @@ function RootLayout() {
         feature,
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load features");
+      toastError(err, "Failed to load features");
     }
   });
 

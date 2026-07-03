@@ -17,6 +17,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { customInstance } from "@/api/client";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { formatBytes } from "@/lib/diff-thresholds";
 import { getFileName } from "@/lib/file-language";
 import { CheckerboardBackdrop } from "./CheckerboardBackdrop";
@@ -113,7 +114,7 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        const message = err instanceof Error ? err.message : "Failed to load image";
+        const message = apiErrorMessage(err, "Failed to load image");
         setError(message);
         // Sonner dedupes by `id`, so unrelated re-renders / both error
         // paths (fetch + <img> decode) won't stack toasts.

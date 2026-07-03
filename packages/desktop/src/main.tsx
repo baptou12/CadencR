@@ -5,6 +5,7 @@ import { preloadRuntimeConfig } from "./api/client";
 import { ensurePaired } from "./api/remote-pairing";
 import { registerPushServiceWorker } from "./lib/remote/push-register";
 import { applyThemeToDocument, readPersistedTheme } from "./lib/themes";
+import { apiErrorMessage } from "./lib/api-errors";
 import { installGlobalRendererErrorHandlers } from "./lib/renderer-error-reporting";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { detectStandalone } from "./hooks/useFullscreen";
@@ -50,6 +51,6 @@ bootstrap().catch((err) => {
   console.error("Cadencr bootstrap failed:", err);
   const root = document.getElementById("root");
   if (root) {
-    root.textContent = `Failed to start Cadencr: ${err instanceof Error ? err.message : String(err)}`;
+    root.textContent = `Failed to start Cadencr: ${apiErrorMessage(err, String(err))}`;
   }
 });

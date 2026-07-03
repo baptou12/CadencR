@@ -9,11 +9,11 @@
  */
 import { useCallback, useState, type ReactElement } from "react";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 
 import { Input } from "@/components/ui/input";
 import { useListBranches, useUpdateTargetBranch, type BranchInfo } from "@/api/generated";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage, toastError } from "@/lib/api-errors";
 import { useBranchList, type BranchListRowContext } from "./BranchList";
 
 interface BranchPickerProps {
@@ -46,7 +46,7 @@ export function BranchPicker({
         await updateTarget.mutateAsync({ id: featureId, data: { target_branch: name } });
         onPicked();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to update target branch.");
+        toastError(err, "Failed to update target branch.");
       } finally {
         setPendingName(null);
       }
@@ -100,9 +100,7 @@ export function BranchPicker({
         </div>
       ) : branchesQuery.isError ? (
         <p className="text-sm text-destructive p-3">
-          {branchesQuery.error instanceof Error
-            ? branchesQuery.error.message
-            : "Failed to load branches."}
+          {apiErrorMessage(branchesQuery.error, "Failed to load branches.")}
         </p>
       ) : (
         list

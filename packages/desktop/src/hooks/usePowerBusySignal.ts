@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
@@ -37,7 +38,7 @@ export function usePowerBusySignal(): void {
       if (lastSentRef.current === busy) return;
       lastSentRef.current = busy;
       void desktopBridge.setBusy(busy).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = apiErrorMessage(error, String(error));
         console.warn(`power:set-busy failed: ${message}`);
       });
     }

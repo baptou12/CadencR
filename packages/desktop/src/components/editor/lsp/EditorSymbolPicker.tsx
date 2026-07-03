@@ -15,6 +15,7 @@ import {
   CommandItem,
   CommandEmpty,
 } from "@/components/ui/command";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { documentSymbols, canDocumentSymbols, type FlatSymbol } from "@/lib/lsp/document-symbols";
 import { symbolKindLabel } from "@/lib/lsp/lsp-position";
 
@@ -43,7 +44,7 @@ export function EditorSymbolPicker({ view, open, onOpenChange }: EditorSymbolPic
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        toast.error(`Symbols unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        toast.error(`Symbols unavailable: ${apiErrorMessage(err, String(err))}`);
         onOpenChange(false);
       })
       .finally(() => {

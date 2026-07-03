@@ -8,8 +8,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { EditorView } from "@codemirror/view";
-import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
+import { toastError } from "@/lib/api-errors";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
@@ -54,7 +54,7 @@ export default function UntitledCodeMirrorEditor({
     } catch (err) {
       // useSaveAsDialog already surfaces toasts for known errors, but a
       // bubbling unexpected error still deserves user-visible feedback.
-      toast.error(err instanceof Error ? err.message : "Failed to save buffer");
+      toastError(err, "Failed to save buffer");
     }
   }, [saveAs, filePath, suggestedName]);
 

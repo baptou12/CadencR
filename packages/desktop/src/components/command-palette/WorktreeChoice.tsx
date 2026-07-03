@@ -8,6 +8,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useListBranches, type BranchInfo } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useBranchList, type BranchListRowContext } from "@/components/branch-chip/BranchList";
 
 export type WorktreeChoiceValue =
@@ -186,7 +187,7 @@ function ReuseBranchSection({
   }
 
   if (isError) {
-    const msg = error instanceof Error ? error.message : "Failed to load branches";
+    const msg = apiErrorMessage(error, "Failed to load branches");
     return (
       <div className="text-destructive py-6 text-center text-sm" role="alert">
         {msg}

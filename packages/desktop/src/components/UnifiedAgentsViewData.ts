@@ -5,6 +5,7 @@ import {
   type UnifiedAgentsSortOrder,
 } from "@/components/UnifiedAgentsFilterState";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { parseUTCDateTime } from "@/lib/date-utils";
 import { useLiveActiveSessionIds } from "@/stores/session-status-selectors";
 
@@ -121,7 +122,7 @@ export function useUnifiedAgentsData({
       isLoading,
       isFetching: agentsFetching,
       isError,
-      errorMessage: error instanceof Error ? error.message : "Failed to load agents",
+      errorMessage: apiErrorMessage(error, "Failed to load agents"),
       refresh,
       pruneExcludedTitles,
     }),

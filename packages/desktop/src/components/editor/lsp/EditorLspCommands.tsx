@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import { toast } from "sonner";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { findReferences, canFindReferences } from "@/lib/lsp/references";
 import type { LspLocation } from "@/lib/lsp/lsp-position";
 import { registerApplyEdit } from "@/lib/lsp/apply-edit-bridge";
@@ -69,7 +70,7 @@ export function EditorLspCommands({
         setReferences(locs);
       })
       .catch((err: unknown) => {
-        toast.error(`Find references failed: ${err instanceof Error ? err.message : String(err)}`);
+        toast.error(`Find references failed: ${apiErrorMessage(err, String(err))}`);
       });
   }, [view]);
 

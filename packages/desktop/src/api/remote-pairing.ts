@@ -18,6 +18,7 @@
 
 import { isBrowserRemote, writeDeviceToken } from "@/lib/remote/device-token";
 import { isPairResponse } from "@/lib/remote/validate";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 const CODE_PARAM = "code";
 /** Legacy host-side trust flag; no longer honored, just stripped from the URL. */
@@ -99,7 +100,7 @@ export async function ensurePaired(): Promise<void> {
     // Pre-React: stash the message so the app can toast it after mount. We
     // still let the app load (an unauthenticated state the UI surfaces) rather
     // than blocking on a stale or bad code.
-    stashPairingError(err instanceof Error ? err.message : "Pairing failed.");
+    stashPairingError(apiErrorMessage(err, "Pairing failed."));
   } finally {
     stripPairingParams(params);
   }

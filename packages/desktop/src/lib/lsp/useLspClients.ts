@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { LSPClient } from "@codemirror/lsp-client";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 import {
   acquireLspClient,
   releaseLspClient,
@@ -109,7 +110,7 @@ export function useLspClients({
       for (const r of results) {
         if (r && "client" in r) live.push(r);
         else if (r && "err" in r) {
-          const msg = r.err instanceof Error ? r.err.message : "Failed to start language server";
+          const msg = apiErrorMessage(r.err, "Failed to start language server");
           toast.error(msg);
           if (r.id === typeCheckerId) setErrorMessage(msg);
         }

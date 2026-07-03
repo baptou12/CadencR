@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { disablePush, enablePush, getPushState, type PushState } from "@/lib/remote/push-subscribe";
 
 export interface PushNotificationsControls {
@@ -39,7 +40,7 @@ export function usePushNotifications(): PushNotificationsControls {
           toast.success("Push notifications disabled on this device.");
         }
       } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : String(e);
+        const message = apiErrorMessage(e, String(e));
         toast.error("Couldn't update push notifications", { description: message });
       } finally {
         setBusy(false);

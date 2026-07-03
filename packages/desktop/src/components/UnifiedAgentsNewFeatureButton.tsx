@@ -2,13 +2,13 @@ import { memo, useCallback, useRef, useState, type ReactElement } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { PlusIcon } from "lucide-react";
-import { toast } from "sonner";
 import {
   getListFeaturesQueryKey,
   useCreateFeature,
   type CreateFeatureResponse,
   type Project,
 } from "@/api/generated";
+import { toastError } from "@/lib/api-errors";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,7 @@ export const UnifiedAgentsNewFeatureButton = memo(function UnifiedAgentsNewFeatu
         });
       },
       onError: (error: unknown): void => {
-        toast.error(error instanceof Error ? error.message : "Failed to create feature");
+        toastError(error, "Failed to create feature");
       },
     },
   });

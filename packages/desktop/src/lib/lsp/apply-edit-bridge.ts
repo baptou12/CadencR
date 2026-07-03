@@ -18,6 +18,7 @@ import {
   type LspWorkspaceEdit,
   type WorkspaceEditHost,
 } from "./workspace-edit";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 interface ApplierEntry {
   view: EditorView;
@@ -53,6 +54,6 @@ export async function applyServerEdit(edit: LspWorkspaceEdit): Promise<ApplyEdit
     await applyWorkspaceEdit(active.view, edit, active.host);
     return { applied: true };
   } catch (err) {
-    return { applied: false, failureReason: err instanceof Error ? err.message : String(err) };
+    return { applied: false, failureReason: apiErrorMessage(err, String(err)) };
   }
 }

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
+import { apiErrorMessage } from "@/lib/api-errors";
 import {
   scheduleReconnect,
   resetReconnectState,
@@ -323,7 +324,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             const session = getSession(sessionId);
             const errorBlock = makeErrorBlock(
               session,
-              `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
+              `Internal error: ${apiErrorMessage(err, "unknown")}`,
             );
             set(
               updateSession(

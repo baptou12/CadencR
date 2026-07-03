@@ -18,6 +18,7 @@ import { SettingsSection } from "./SettingsSection";
 import { IconTile } from "./IconTile";
 import { RadioCardGroup, type RadioCardOption } from "./RadioCardGroup";
 import { PushNotificationsSubsection } from "./PushNotificationsSubsection";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 /**
  * Two-row Notifications section:
@@ -55,7 +56,7 @@ export function NotificationsSection(): React.JSX.Element {
         description: "If you don't see it, check System Settings → Notifications for Cadencr.",
       });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = apiErrorMessage(e, String(e));
       toast.error("Couldn't send test notification", { description: message });
     } finally {
       setSending(false);

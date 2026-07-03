@@ -37,6 +37,7 @@ import {
 } from "@/stores/usePushOutputStore";
 import { detectSshPrompt } from "./detectSshPrompt";
 import { PushOutputPane } from "./PushOutputPane";
+import { apiErrorMessage, toastError } from "@/lib/api-errors";
 import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 
 // Hoisted so the `keys` prop is reference-stable across re-renders (streaming
@@ -133,7 +134,7 @@ export default function PushDialog({
       toast.success("Pushed");
       onOpenChange(false);
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Push failed.");
+      showError(apiErrorMessage(err, "Push failed."));
     }
   }
 
@@ -180,7 +181,7 @@ export default function PushDialog({
       // explains the partial failure without polluting the terminal pane.
       // Leave `answeredOffset` and `inputValue` untouched so the prompt
       // stays visible with the typed value preserved for retry.
-      toast.error(err instanceof Error ? err.message : "Failed to send input.");
+      toastError(err, "Failed to send input.");
     }
   }
 

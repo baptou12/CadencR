@@ -11,6 +11,7 @@ import {
   useUpdateLayout,
   type FeatureLayout,
 } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import {
   parseLayoutState,
   serializeLayoutForSave,
@@ -51,7 +52,7 @@ export function useSavedLayouts(featureId: number) {
         if (success) toast.success(success(result));
         return result;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
+        const msg = apiErrorMessage(err, "Unknown error");
         toast.error(`${errorPrefix}: ${msg}`);
         return null;
       }

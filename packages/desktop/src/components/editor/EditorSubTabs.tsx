@@ -8,6 +8,7 @@ import { copyFilePath } from "./copyFilePath";
 import { FileSymbolIcon } from "./file-icons";
 import { useEditorStore } from "@/stores/editor-store";
 import { saveFile } from "./editorSaveRegistry";
+import { apiErrorMessage } from "@/lib/api-errors";
 import {
   Dialog,
   DialogContent,
@@ -85,7 +86,7 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
       closeTab(featureId, paneId, pendingClose.filePath);
       setPendingClose(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to save file";
+      const msg = apiErrorMessage(err, "Failed to save file");
       toast.error(msg);
     } finally {
       setIsSaving(false);

@@ -16,7 +16,16 @@ import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import type { WorktreeStatus } from "@/types/workflow";
 import type { SessionControls } from "@/components/WebSocketSessionControls";
+import { PROVIDER_IDS } from "@/lib/providers";
 export { useSessionControls } from "@/components/WebSocketSessionControls";
+
+/** The Claude profile to attach to an outgoing prompt, or undefined for non-Claude providers. */
+export function claudeProfileForPrompt(controls: SessionControls): string | undefined {
+  return controls.activeProviderId === PROVIDER_IDS.CLAUDE_CODE
+    ? controls.claudeProfile.selectedClaudeProfile
+    : undefined;
+}
+
 interface SessionRefs {
   agent: RefObject<AgentSessionHandle | null>;
   terminal: RefObject<FeatureTerminalTabHandle | null>;

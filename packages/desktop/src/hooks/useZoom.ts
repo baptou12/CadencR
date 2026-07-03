@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { notifyZoomApplied } from "@/lib/zoom-coordinator";
 import { useShortcut } from "./useShortcut";
@@ -33,7 +34,7 @@ function applyZoom(level: number): void {
       .setZoom(factor)
       .then(notifyZoomApplied)
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = apiErrorMessage(error, String(error));
         toast.error(`Could not apply zoom: ${message}`);
       });
     return;

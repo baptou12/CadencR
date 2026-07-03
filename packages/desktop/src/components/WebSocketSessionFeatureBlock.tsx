@@ -18,6 +18,7 @@ import {
 } from "@/stores/feature-layout-store";
 import { useRequestedFeatureFocus } from "@/hooks/useRequestedFeatureFocus";
 import {
+  claudeProfileForPrompt,
   useSessionControls,
   useSessionFeatureData,
   useSessionRefs,
@@ -33,7 +34,6 @@ import {
 import { useEditorStore } from "@/stores/editor-store";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { toRelativePath } from "@/lib/utils";
-import { PROVIDER_IDS } from "@/lib/providers";
 
 export interface WebSocketSessionFeatureBlockProps {
   sessionId: string;
@@ -418,14 +418,6 @@ function useSessionFeatureActions({
     [sendPromptAndFocus, setRootActive],
   );
   return { sendPromptAndFocus, sendFromGitTab };
-}
-
-function claudeProfileForPrompt(
-  controls: ReturnType<typeof useSessionControls>,
-): string | undefined {
-  return controls.activeProviderId === PROVIDER_IDS.CLAUDE_CODE
-    ? controls.claudeProfile.selectedClaudeProfile
-    : undefined;
 }
 
 interface SessionFeatureTopBarProps {

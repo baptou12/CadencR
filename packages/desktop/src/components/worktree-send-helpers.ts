@@ -77,7 +77,7 @@ export async function saveWorktreeChoice(params: {
       data: { key: "worktree_mode", value: choice.backendMode },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = apiErrorMessage(err, "Unknown error");
     toast.error(`Could not save worktree settings: ${message}`);
     throw err;
   }

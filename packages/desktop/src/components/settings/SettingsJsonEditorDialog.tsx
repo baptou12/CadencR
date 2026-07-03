@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import BaseCodeMirrorEditor from "@/components/editor/BaseCodeMirrorEditor";
 import { SettingsJsonDialogShell } from "./SettingsJsonDialogShell";
 import type { SettingWarning } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 interface SettingsJsonEditorDialogProps {
   open: boolean;
@@ -58,7 +59,7 @@ export default function SettingsJsonEditorDialog({
         toast.success("Settings saved");
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to save settings";
+      const message = apiErrorMessage(e, "Failed to save settings");
       setError(message);
       toast.error(message);
     }

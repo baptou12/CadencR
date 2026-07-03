@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { getReadFileQueryKey, useWriteFile } from "@/api/generated";
+import { toastError } from "@/lib/api-errors";
 import { useEditorStore } from "@/stores/editor-store";
 import { readFileResponseFromContent } from "./useEditorSave";
 
@@ -82,7 +82,7 @@ export function useExcalidrawSave({
     try {
       await write();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save drawing");
+      toastError(err, "Failed to save drawing");
     }
   }, [write]);
 
@@ -94,7 +94,7 @@ export function useExcalidrawSave({
       if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
       autoSavedTimerRef.current = setTimeout(() => setAutoSavedVisible(false), 1500);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to auto-save drawing");
+      toastError(err, "Failed to auto-save drawing");
     }
   }, [write]);
 

@@ -21,6 +21,7 @@
 import { type EditorView, type Command, type KeyBinding } from "@codemirror/view";
 import { LSPPlugin, type LSPClient } from "@codemirror/lsp-client";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 // Subset of LSP 3.17 we actually use. Inlined rather than pulling in
 // `vscode-languageserver-protocol` as a direct dep — the only
@@ -147,7 +148,7 @@ function executeJump(view: EditorView, plugin: LSPPlugin): void {
         userEvent: "select.definition",
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = apiErrorMessage(err, String(err));
       toast.error(`Go to definition failed: ${msg}`);
     }
   });
