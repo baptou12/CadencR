@@ -59,6 +59,14 @@ export function isImageFile(filePath: string): boolean {
   return IMAGE_EXTENSIONS.has(getFileExtension(filePath));
 }
 
+/**
+ * True for `.excalidraw` scene files. These open in the embedded Excalidraw
+ * canvas editor (see `ExcalidrawEditor`) instead of the raw JSON in CodeMirror.
+ */
+export function isExcalidrawFile(filePath: string): boolean {
+  return getFileExtension(filePath) === "excalidraw";
+}
+
 export type PreviewKind = "markdown" | "html" | "svg";
 
 /**

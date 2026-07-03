@@ -2,7 +2,7 @@ import type { EditorView } from "@codemirror/view";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useEditorStore, isUntitledPath } from "@/stores/editor-store";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
-import { isImageFile } from "@/lib/file-language";
+import { isExcalidrawFile, isImageFile } from "@/lib/file-language";
 import EditorSubTabs from "./EditorSubTabs";
 import { copyFilePath } from "./copyFilePath";
 import { clearPaneSearch } from "./editor-search/search-cache";
@@ -10,6 +10,7 @@ import { clearPaneSearch } from "./editor-search/search-cache";
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
 const UntitledCodeMirrorEditor = lazy(() => import("./UntitledCodeMirrorEditor"));
 const ImageFileViewer = lazy(() => import("./ImageFileViewer"));
+const ExcalidrawEditor = lazy(() => import("./ExcalidrawEditor"));
 
 interface EditorPaneProps {
   featureId: number;
@@ -161,7 +162,15 @@ export default function EditorPane({
       <div className="flex-1 overflow-hidden">
         {activeFilePath ? (
           <Suspense fallback={suspenseFallback}>
-            {isImageFile(activeFilePath) ? (
+            {isExcalidrawFile(activeFilePath) ? (
+              <ExcalidrawEditor
+                key={activeFilePath}
+                filePath={activeFilePath}
+                projectId={projectId}
+                featureId={featureId}
+                paneId={paneId}
+              />
+            ) : isImageFile(activeFilePath) ? (
               <ImageFileViewer
                 key={activeFilePath}
                 filePath={activeFilePath}

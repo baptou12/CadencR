@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getFileExtension,
   getPreviewKind,
+  isExcalidrawFile,
   isHtmlFile,
   isImageFile,
   isMarkdownFile,
@@ -71,6 +72,19 @@ describe("isImageFile", () => {
 
   it.each([["doc.pdf"], ["data.json"], ["script.ts"]])("rejects non-image %s", (path) => {
     expect(isImageFile(path)).toBe(false);
+  });
+});
+
+describe("isExcalidrawFile", () => {
+  it.each([["diagram.excalidraw"], ["Sketch.EXCALIDRAW"], ["a/b/flow.excalidraw"]])(
+    "treats %s as an excalidraw scene",
+    (path) => {
+      expect(isExcalidrawFile(path)).toBe(true);
+    },
+  );
+
+  it.each([["notes.md"], ["scene.excalidraw.bak"], ["data.json"]])("rejects %s", (path) => {
+    expect(isExcalidrawFile(path)).toBe(false);
   });
 });
 

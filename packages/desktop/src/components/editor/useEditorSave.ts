@@ -32,7 +32,11 @@ interface UseEditorSaveResult {
   autoSavedVisible: boolean;
 }
 
-function readFileResponseFromContent(content: string): ReadFileResponse {
+/**
+ * Build a `ReadFileResponse` from freshly-saved text so the read-file query
+ * cache can be reconciled without a refetch. Shared with `useExcalidrawSave`.
+ */
+export function readFileResponseFromContent(content: string): ReadFileResponse {
   const lines = content.split(/\r\n|\r|\n/);
   if (lines.at(-1) === "") lines.pop();
   return { content, line_count: lines.length, large: false };
