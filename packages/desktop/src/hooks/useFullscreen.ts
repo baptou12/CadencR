@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 /**
  * Drives a "go fullscreen" affordance via the standard Fullscreen API.
@@ -58,5 +58,9 @@ export function useFullscreen(): FullscreenControls {
     }
   }, [supported]);
 
-  return { supported, isFullscreen, isStandalone: detectStandalone(), toggle };
+  const isStandalone = detectStandalone();
+  return useMemo<FullscreenControls>(
+    () => ({ supported, isFullscreen, isStandalone, toggle }),
+    [supported, isFullscreen, isStandalone, toggle],
+  );
 }

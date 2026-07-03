@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import {
   type Direction,
@@ -66,19 +66,36 @@ export function useEditorState(featureId: number) {
     [featureId],
   );
 
-  return {
-    ...state,
-    initFeature,
-    openFile,
-    closeTab,
-    setActiveFile,
-    renameFilePath,
-    setDirty,
-    setCursorPosition,
-    toggleSidebar,
-    splitEditorPane,
-    removeEditorPane,
-    navigatePane,
-    setActivePane,
-  };
+  return useMemo(
+    () => ({
+      ...state,
+      initFeature,
+      openFile,
+      closeTab,
+      setActiveFile,
+      renameFilePath,
+      setDirty,
+      setCursorPosition,
+      toggleSidebar,
+      splitEditorPane,
+      removeEditorPane,
+      navigatePane,
+      setActivePane,
+    }),
+    [
+      state,
+      initFeature,
+      openFile,
+      closeTab,
+      setActiveFile,
+      renameFilePath,
+      setDirty,
+      setCursorPosition,
+      toggleSidebar,
+      splitEditorPane,
+      removeEditorPane,
+      navigatePane,
+      setActivePane,
+    ],
+  );
 }

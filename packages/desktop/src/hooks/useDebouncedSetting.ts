@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -80,7 +80,9 @@ export function useDebouncedSetting(
     [key, debounceMs, immediateCache, mutation, queryClient],
   );
 
-  return { value: query.data?.value ?? null, setValue, isLoading: query.isLoading };
+  const value = query.data?.value ?? null;
+  const isLoading = query.isLoading;
+  return useMemo(() => ({ value, setValue, isLoading }), [value, setValue, isLoading]);
 }
 
 /**
@@ -168,9 +170,9 @@ export function useDebouncedSettingFromMap(
   );
 
   const rawValue = map[key];
-  return {
-    value: rawValue === undefined ? null : rawValue,
-    setValue,
-    isLoading: isMapLoading,
-  };
+  const value = rawValue === undefined ? null : rawValue;
+  return useMemo(
+    () => ({ value, setValue, isLoading: isMapLoading }),
+    [value, setValue, isMapLoading],
+  );
 }

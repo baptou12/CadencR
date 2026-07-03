@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -76,5 +76,6 @@ export function useCustomActionRunner({
     runBackground({ id: action.id, params: { feature_id: featureId } });
   }, [action.id, action.name, action.run_in_terminal, featureId, runBackground]);
 
-  return { run, isStarting: runMutation.isPending || isResolving };
+  const isStarting = runMutation.isPending || isResolving;
+  return useMemo(() => ({ run, isStarting }), [run, isStarting]);
 }

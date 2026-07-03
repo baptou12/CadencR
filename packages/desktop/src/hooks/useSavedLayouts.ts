@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -36,8 +36,8 @@ export function useSavedLayouts(featureId: number) {
 
   const setStoreState = useFeatureLayoutStore((s) => s.setState);
   const setAppliedLayoutId = useFeatureLayoutStore((s) => s.setAppliedLayoutId);
-  const layouts = layoutsQuery.data ?? [];
-  const defaultLayout = layouts.find((l) => l.is_default) ?? null;
+  const layouts = useMemo(() => layoutsQuery.data ?? [], [layoutsQuery.data]);
+  const defaultLayout = useMemo(() => layouts.find((l) => l.is_default) ?? null, [layouts]);
 
   const runMutation = useCallback(
     async <T>(
@@ -133,14 +133,26 @@ export function useSavedLayouts(featureId: number) {
     [featureId, setStoreState],
   );
 
-  return {
-    layouts,
-    defaultLayout,
-    isLoading: layoutsQuery.isLoading,
-    saveAsNew,
-    updateExisting,
-    setDefault,
-    deleteLayout,
-    apply,
-  };
+  return useMemo(
+    () => ({
+      layouts,
+      defaultLayout,
+      isLoading: layoutsQuery.isLoading,
+      saveAsNew,
+      updateExisting,
+      setDefault,
+      deleteLayout,
+      apply,
+    }),
+    [
+      layouts,
+      defaultLayout,
+      layoutsQuery.isLoading,
+      saveAsNew,
+      updateExisting,
+      setDefault,
+      deleteLayout,
+      apply,
+    ],
+  );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
@@ -117,10 +117,13 @@ export function useAppClose(queryClient: QueryClient, activeFeatureId: number | 
     requestClose();
   });
 
-  return {
-    showConfirm,
-    setShowConfirm,
-    runningAgents,
-    confirmAndClose,
-  };
+  return useMemo(
+    () => ({
+      showConfirm,
+      setShowConfirm,
+      runningAgents,
+      confirmAndClose,
+    }),
+    [showConfirm, setShowConfirm, runningAgents, confirmAndClose],
+  );
 }

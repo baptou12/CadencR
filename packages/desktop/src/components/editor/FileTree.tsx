@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
   ContextMenuItem as FileTreeContextMenuItem,
@@ -55,7 +55,7 @@ function parentDirOf(fsPath: string): string {
  * the inline-create draft (`useFileTreeDraft`), and tree-level
  * shortcuts (Enter = rename, ⌘⌫ = trash).
  */
-export default function FileTree({ projectId, featureId }: FileTreeProps) {
+function FileTree({ projectId, featureId }: FileTreeProps) {
   const { activePaneId, panes, openFile, renameFilePath } = useEditorState(featureId);
   const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
   const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
@@ -365,3 +365,5 @@ const EMPTY_INPUTS: { paths: readonly string[]; ignoredPathPrefixes: readonly st
   paths: [],
   ignoredPathPrefixes: [],
 };
+
+export default memo(FileTree);

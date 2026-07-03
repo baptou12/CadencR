@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook } from "@testing-library/react";
 
 const mockWsSessionStore = vi.fn();
 
@@ -41,21 +42,24 @@ describe("useFeatureTitle", () => {
 
   it("returns null title and not auto-naming when stores are empty", () => {
     setupStores({});
-    expect(useFeatureTitle(42)).toEqual({ title: null, isAutoNaming: false });
+    expect(renderHook(() => useFeatureTitle(42)).result.current).toEqual({
+      title: null,
+      isAutoNaming: false,
+    });
   });
 
   it("returns session store title when set", () => {
     setupStores({ sessionTitle: "Session Title" });
-    expect(useFeatureTitle(42).title).toBe("Session Title");
+    expect(renderHook(() => useFeatureTitle(42)).result.current.title).toBe("Session Title");
   });
 
   it("returns null title when session entry is empty", () => {
     setupStores({ sessionTitle: null });
-    expect(useFeatureTitle(42).title).toBeNull();
+    expect(renderHook(() => useFeatureTitle(42)).result.current.title).toBeNull();
   });
 
   it("reflects session-store auto-naming flag", () => {
     setupStores({ sessionAutoNaming: true });
-    expect(useFeatureTitle(42).isAutoNaming).toBe(true);
+    expect(renderHook(() => useFeatureTitle(42)).result.current.isAutoNaming).toBe(true);
   });
 });

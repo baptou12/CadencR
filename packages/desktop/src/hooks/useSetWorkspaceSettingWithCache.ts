@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getGetWorkspaceSettingQueryKey, useSetWorkspaceSetting } from "@/api/generated";
@@ -40,5 +40,8 @@ export function useSetWorkspaceSettingWithCache(
     [key, mutation, queryClient],
   );
 
-  return { setValue, isPending: mutation.isPending };
+  return useMemo<UseSetWorkspaceSettingWithCacheResult>(
+    () => ({ setValue, isPending: mutation.isPending }),
+    [setValue, mutation.isPending],
+  );
 }

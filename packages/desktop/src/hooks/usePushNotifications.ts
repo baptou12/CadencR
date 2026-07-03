@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { disablePush, enablePush, getPushState, type PushState } from "@/lib/remote/push-subscribe";
 
@@ -49,5 +49,5 @@ export function usePushNotifications(): PushNotificationsControls {
     [refresh],
   );
 
-  return { state, busy, toggle };
+  return useMemo<PushNotificationsControls>(() => ({ state, busy, toggle }), [state, busy, toggle]);
 }
