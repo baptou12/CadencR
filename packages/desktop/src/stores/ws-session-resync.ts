@@ -1,17 +1,55 @@
 /**
- * Reconnect message resync for the WS session store.
+ * Stream-loss recovery for the WS session store.
  *
- * Messages only stream over the WebSocket while it is open. When the socket
- * drops — most painfully when a mobile client sleeps — anything the agent
- * emits in the gap is persisted to the DB but never reaches this client. On
- * reconnect we therefore pull everything that landed `after` the newest
- * message we already hold and merge it in.
+ * Agent output only streams over the WebSocket while it is open, but the
+ * backend always persists it first. That gap between "persisted" and
+ * "delivered" is the single failure class every recovery layer below guards:
+ * a dropped envelope or a slept socket must never leave the user staring at
+ * text that silently stopped mid-message. There are FOUR layers, each scoped
+ * to a different failure shape and firing at a different moment:
  *
- * Live and persisted blocks share the same `msg-<dbId>` identity, so we derive
- * the cursor from the blocks already on screen (covering messages received
- * live, which don't advance `lastAppliedMessageId`). The `after` batch then
- * contains only genuinely-missed messages, which we append in chronological
- * order — de-duped by id as a belt-and-braces guard.
+ *   1. Orphan-delta synthesis  — live, in-turn, zero-network.
+ *      `ws-message-processing-stream.ts` `processContentBlockDelta`. When a
+ *      `content_block_delta` arrives for an index whose `content_block_start`
+ *      was never applied (lost start envelope, or a start for a block type we
+ *      couldn't render), it synthesises the block from the first surviving
+ *      delta so this and every later chunk render. Repairs one in-flight block
+ *      instantly with no DB round-trip.
+ *
+ *   2. Seq-gap detection       — mid-turn trigger. `trackStreamSeq` (below).
+ *      Every `session.message` carries a per-stream monotonic `seq`; a skip
+ *      means a whole envelope was dropped in transit. It reacts two ways:
+ *      fires layer 3 *immediately* (surface any wholly-missed message now, not
+ *      hours later on a long/background turn) and arms layer 4 for the turn end.
+ *
+ *   3. Append resync           — reconnect / manual / gap. `resyncMessagesOnReconnect`.
+ *      Pulls every persisted row `after` the newest message we hold and appends
+ *      the ones we lack, de-duped by id. Triggered by socket reconnect (onOpen,
+ *      e.g. a mobile client waking), the manual "Sync from CLI" action, or a
+ *      layer-2 gap. Append-ONLY: it cannot fix a block we already hold whose
+ *      deltas were truncated, because that block's id is deduped away — that is
+ *      layer 4's job.
+ *
+ *   4. Post-turn tail repair    — turn-end. `repairPersistedBlocksAfterTurn` +
+ *      `repairBlockTree`. Runs at `turn_complete` when layer 2 saw a gap
+ *      (`tailRepairNeeded`). With no more deltas racing in, the DB transcript is
+ *      authoritative: overwrite any held block the DB has strictly more of, and
+ *      graft server children that never arrived. Overwrites AND appends.
+ *
+ * Why layers 2+4 are not merged into one path (they look like they should be):
+ * they cover complementary halves of a gap. Layer 3 (which layer 2 invokes)
+ * only *appends* wholly-missed messages, and must do so immediately — the
+ * guarantee that matters when a background agent streams for hours. Layer 4
+ * only *overwrites/grafts* already-held blocks, and can only run once deltas
+ * stop, because an in-place rewrite mid-turn would race live appends. They are
+ * the two halves of one repair, split by *when each half is safe to run*, not
+ * two redundant safety nets — so both stay.
+ *
+ * Cursor note (layers 3/4): live and persisted blocks share the same
+ * `msg-<dbId>` identity, so the cursor is derived from the blocks already on
+ * screen (covering live messages, which don't advance `lastAppliedMessageId`).
+ * The `after` batch then holds only genuinely-missed messages, appended in
+ * chronological order and de-duped by id as a belt-and-braces guard.
  */
 import { getFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";

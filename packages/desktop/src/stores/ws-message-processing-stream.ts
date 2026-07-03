@@ -6,6 +6,10 @@
  * self-heal (orphan deltas synthesize their block) or leave a console trace,
  * because a silently dropped chunk shows up to the user as text that just
  * stops mid-message.
+ *
+ * The orphan-delta self-heal here is layer 1 of the four stream-loss recovery
+ * layers documented at the top of `ws-session-resync.ts` (the live, in-turn,
+ * zero-network one).
  */
 
 import { createToolUseBlock } from "./ws-message-processing-tool-blocks";
