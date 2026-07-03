@@ -3,6 +3,7 @@
   "version": "0.14.1",
   "private": true,
   "description": "Cadencr desktop shell — Electron app with a React frontend for driving local AI coding agents.",
+  "desktopName": "cadencr.desktop",
   "homepage": "https://cadencr.com",
   "author": {
     "name": "Raphael Le Minor",

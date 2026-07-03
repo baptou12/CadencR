@@ -20,6 +20,8 @@ files:
   - "!out/renderer/**"
   - package.json
 extraResources:
+  - from: icons/512x512.png
+    to: icons/512x512.png
   # Per-arch sidecar from `@cadencr/service build:macos-sidecars`; arch-checked
   # in `build/after-pack.cjs`.
   - from: resources/bin/${arch}/cadencr-service

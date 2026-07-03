@@ -32,6 +32,7 @@ import type { NotchController } from "./notch-window";
 import { PLUGIN_TAB_PRIVILEGED_SCHEME } from "./plugin-tabs/plugin-tab-ids";
 import { registerPluginTabIpc } from "./plugin-tabs/plugin-tab-ipc";
 import type { PluginTabManager } from "./plugin-tabs/plugin-tab-manager";
+import { windowIconOption } from "./app-icon";
 let mainWindow: BrowserWindow | null = null;
 let splash: SplashHandle | null = null;
 let sidecar: SidecarHandle | null = null;
@@ -129,6 +130,11 @@ function createWindow(): BrowserWindow {
     width: 1200,
     height: 800,
     titleBarStyle: "hiddenInset",
+    ...windowIconOption({
+      appPath: app.getAppPath(),
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    }),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
