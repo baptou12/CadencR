@@ -337,6 +337,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
+      // Deliberate teardown: queued envelopes must not outlive it. Without
+      // this, a disconnect while the socket is already down early-returns
+      // below (conn is null), the entry survives, and a later connect() would
+      // flush stale envelopes (e.g. an old prompt) into a session the user
+      // had closed. In-place splice because the queue is mutated in place by
+      // design (see SessionEntry.outboundQueue).
       session?.outboundQueue.splice(0);
       if (!session?.conn) return;
 
@@ -553,6 +559,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
+      // Same rationale as disconnect(): a destroyed session must not replay
+      // its queued envelopes on a future connect.
       session?.outboundQueue.splice(0);
       if (!session?.conn) return;
 
