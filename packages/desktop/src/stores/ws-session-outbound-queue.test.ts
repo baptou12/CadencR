@@ -136,9 +136,9 @@ describe("ws-session outbound queue", () => {
     store.connect("s1");
     await tick();
 
-    // …and the prompt actually reaches the backend after the reconnect.
+    // …and the prompt actually reaches the backend after the reconnect
+    // (toContain also fails when no prompt.send envelope was sent at all).
     const promptRaw = getWs().sent.find((raw) => raw.includes("prompt.send"));
-    expect(promptRaw).toBeDefined();
     expect(promptRaw).toContain("hello from the gap");
   });
 
@@ -160,9 +160,12 @@ describe("ws-session outbound queue", () => {
     store.connect("s1");
     await tick();
 
+    // A single assertion covers both presence and relative order.
     const actions = sentActions(getWs());
-    expect(actions.indexOf("session.init")).toBeGreaterThanOrEqual(0);
-    expect(actions.indexOf("session.init")).toBeLessThan(actions.indexOf("session.interrupt"));
+    const replayThenFlush = actions.filter(
+      (action) => action === "session.init" || action === "session.interrupt",
+    );
+    expect(replayThenFlush).toEqual(["session.init", "session.interrupt"]);
   });
 
   it("sendRequest during the gap resolves with the reply that arrives after reconnect", async () => {
