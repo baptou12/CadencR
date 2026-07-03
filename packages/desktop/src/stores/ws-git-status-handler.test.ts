@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 import { toast } from "sonner";
-import { handleGitEnvelope, parseGitStatusSnapshot } from "./ws-git-status-handler";
+import {
+  handleGitEnvelope,
+  parseGitStatusSnapshot,
+  resetGitInvalidationSchedulingForTest,
+} from "./ws-git-status-handler";
 import { useGitStatusStore } from "./useGitStatusStore";
 import {
   selectCommitOutput,
@@ -34,6 +38,7 @@ const validSnapshot = {
 };
 
 beforeEach(() => {
+  resetGitInvalidationSchedulingForTest();
   useGitStatusStore.setState({ byFeature: {}, errorByFeature: {} });
   useCommitOutputStore.setState({ byFeature: {}, runningByFeature: {} });
   usePushOutputStore.setState({ byFeature: {}, runningByFeature: {} });
@@ -41,6 +46,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetGitInvalidationSchedulingForTest();
   vi.restoreAllMocks();
 });
 
@@ -99,6 +105,42 @@ describe("handleGitEnvelope", () => {
     const predicate = getInvalidatePredicate(spy.mock.calls[0]?.[0]);
     expect(predicate({ queryKey: ["/api/git/diff", { feature_id: 7 }] })).toBe(true);
     expect(predicate({ queryKey: ["/api/git/commit-log", { feature_id: 7 }] })).toBe(false);
+  });
+
+  it("coalesces a rapid burst of status pushes into one leading + one trailing refetch", () => {
+    vi.useFakeTimers();
+    try {
+      const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+      useGitStatusStore.getState().setStatus(validSnapshot);
+
+      // Simulate a rebase storm: many snapshots arriving faster than the
+      // settle window (backend caps them at ~1/sec; here we fire them tighter).
+      for (let i = 1; i <= 10; i++) {
+        vi.advanceTimersByTime(200);
+        handleGitEnvelope("status", {
+          ...validSnapshot,
+          uncommitted_count: validSnapshot.uncommitted_count + i,
+          computed_at: validSnapshot.computed_at + i,
+        } as Record<string, unknown>);
+      }
+
+      // Only the leading edge has fired so far — the rest are still coalescing.
+      expect(spy).toHaveBeenCalledTimes(1);
+      // Store stays live throughout the burst (branch chip / counts).
+      expect(useGitStatusStore.getState().byFeature[7]?.uncommitted_count).toBe(
+        validSnapshot.uncommitted_count + 10,
+      );
+
+      // Let the churn settle → exactly one trailing refetch captures final state.
+      vi.advanceTimersByTime(1_500);
+      expect(spy).toHaveBeenCalledTimes(2);
+
+      // No further churn → window closes, no extra invalidations.
+      vi.advanceTimersByTime(5_000);
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("invalidates cached blob SHAs for the changed feature so viewed files reset", () => {
