@@ -5,12 +5,14 @@ pub(super) use super::event_command_execution::{
 };
 use super::event_inputs::{
     collab_tool_input, collab_tool_name, dynamic_tool_input, dynamic_tool_name, file_input,
-    patch_from_changes,
 };
 use super::event_json::{
     compact_event, input_json_delta_event, metadata, stream_event_raw, thread_id, user_raw,
 };
 use super::event_mcp_items::mcp_tool_item;
+use super::event_payloads::{
+    parse_file_patch_updated_params, parse_item_params, parse_tool_json_delta_params,
+};
 use super::event_plan_item::plan_item;
 use super::event_state::IndexState;
 use super::event_subagents::{
@@ -43,28 +45,35 @@ pub(super) fn item_events(
     completed: bool,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
-    let Some(item) = item(&params) else {
-        return Vec::new();
+    let parsed = match parse_item_params(params) {
+        Ok(params) => params,
+        Err(error) => {
+            tracing::warn!(%error, "malformed Codex item event");
+            return Vec::new();
+        }
     };
-    match item_type(&params) {
-        Some("agentMessage") => text_item(params, completed, index_state),
+    let item_value = parsed.item.as_value();
+    let item_type = parsed.item.item_type.clone();
+    let params = parsed.into_raw();
+    match item_type.as_str() {
+        "agentMessage" => text_item(params, completed, index_state),
         // Codex has emitted both casings while the plan item API is settling.
-        Some("plan" | "Plan") => plan_item(params, completed, index_state),
-        Some("reasoning") => thinking_item(params, completed, index_state),
-        Some("commandExecution") => command_execution_events(params, completed, index_state),
-        Some("fileChange") => tool_item(params, "ApplyPatch", file_input, completed, index_state),
-        Some("mcpToolCall") => mcp_tool_item(params, completed, index_state),
-        Some("dynamicToolCall") => {
-            let name = dynamic_tool_name(item);
+        "plan" | "Plan" => plan_item(params, completed, index_state),
+        "reasoning" => thinking_item(params, completed, index_state),
+        "commandExecution" => command_execution_events(params, completed, index_state),
+        "fileChange" => tool_item(params, "ApplyPatch", file_input, completed, index_state),
+        "mcpToolCall" => mcp_tool_item(params, completed, index_state),
+        "dynamicToolCall" => {
+            let name = dynamic_tool_name(&item_value);
             tool_item(params, &name, dynamic_tool_input, completed, index_state)
         }
-        Some("collabAgentToolCall") => {
-            let name = collab_tool_name(item);
+        "collabAgentToolCall" => {
+            let name = collab_tool_name(&item_value);
             // Record the new sub-agent thread BEFORE delegating, so that any
             // events that arrive for the spawned thread between `item/started`
             // and `item/completed` get their `parent_tool_use_id` stamped via
             // `notification_events`' post-processing.
-            record_subagent_thread_for_collab_call(item, &name, index_state);
+            record_subagent_thread_for_collab_call(&item_value, &name, index_state);
             if name == "Agent" {
                 return spawn_agent_collab_events(params, completed, index_state);
             }
@@ -89,7 +98,7 @@ pub(super) fn item_events(
             }
             events
         }
-        Some("contextCompaction") => {
+        "contextCompaction" => {
             if completed {
                 vec![compact_event(params)]
             } else {
@@ -110,42 +119,37 @@ pub(super) fn tool_json_delta_event(
     field: &str,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
-    let Some(item_id) = params
-        .get("itemId")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-    else {
-        return Vec::new();
+    let params = match parse_tool_json_delta_params(params) {
+        Ok(params) => params,
+        Err(error) => {
+            tracing::warn!(%error, "malformed Codex tool JSON delta event");
+            return Vec::new();
+        }
     };
-    let value = params
-        .get("delta")
-        .or_else(|| params.get("message"))
-        .cloned()
-        .unwrap_or(Value::Null);
+    let value = params.delta_value();
     let partial_json = serde_json::to_string(&serde_json::json!({ field: value }))
         .unwrap_or_else(|_| "{}".to_string());
-    input_json_delta_event(params, &item_id, partial_json, index_state)
+    input_json_delta_event(params.raw(), &params.item_id, partial_json, index_state)
 }
 
 pub(super) fn file_patch_updated_event(
     params: Value,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
-    let Some(item_id) = params
-        .get("itemId")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-    else {
-        return Vec::new();
+    let params = match parse_file_patch_updated_params(params) {
+        Ok(params) => params,
+        Err(error) => {
+            tracing::warn!(%error, "malformed Codex file patch update event");
+            return Vec::new();
+        }
     };
-    let patch_text = patch_from_changes(params.get("changes"));
-    let input = serde_json::json!({
-        "patch_text": patch_text.clone(),
-        "patch": patch_text,
-        "changes": params.get("changes").cloned().unwrap_or(Value::Null),
-    });
+    let raw_params = params.raw();
+    let item_id = params.item_id.clone();
+    let input = file_input(&serde_json::json!({
+        "changes": params.changes_value().unwrap_or(Value::Null),
+    }));
     let partial_json = serde_json::to_string(&input).unwrap_or_else(|_| "{}".to_string());
-    input_json_delta_event(params, &item_id, partial_json, index_state)
+    input_json_delta_event(raw_params, &item_id, partial_json, index_state)
 }
 
 fn text_item(params: Value, completed: bool, index_state: &mut IndexState) -> Vec<RuntimeEvent> {

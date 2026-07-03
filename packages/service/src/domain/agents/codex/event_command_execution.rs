@@ -4,6 +4,10 @@ use super::event_command_actions::{command_action_events, has_exploring_command_
 use super::event_inputs::command_input;
 use super::event_items::{stream_start_event, tool_result_event_with_error};
 use super::event_json::{input_json_delta_event, thread_id};
+use super::event_payloads::{
+    parse_command_execution_params, parse_tool_json_delta_params, CommandExecutionParams,
+    ToolJsonDeltaParams,
+};
 use super::event_state::IndexState;
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEvent};
 
@@ -14,20 +18,25 @@ pub(super) fn command_execution_events(
     completed: bool,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
-    let Some(item) = params.get("item") else {
-        return Vec::new();
+    let params = match parse_command_execution_params(params) {
+        Ok(params) => params,
+        Err(error) => {
+            tracing::warn!(%error, "malformed Codex command execution event");
+            return Vec::new();
+        }
     };
-    let id = item_id(item);
-    if has_exploring_command_actions(&params) && !index_state.has_index(&id) {
+    let raw_params = params.raw();
+    let id = params.item.id_or_fallback();
+    if has_exploring_command_actions(&raw_params) && !index_state.has_index(&id) {
         index_state.clear_delayed_command_input(&id);
         index_state.record_command_action_item(&id);
-        return command_action_events(&params, completed, index_state);
+        return command_action_events(&raw_params, completed, index_state);
     }
     if index_state.has_command_action_item(&id) {
         return Vec::new();
     }
 
-    let input = command_input(item);
+    let input = command_input(&params.item.as_value());
     if !completed {
         index_state.record_delayed_command_item(&id, input);
         return Vec::new();
@@ -40,17 +49,19 @@ pub(super) fn command_output_delta_event(
     params: Value,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
-    let Some(item_id) = params
-        .get("itemId")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-    else {
-        return Vec::new();
+    let params = match parse_tool_json_delta_params(params) {
+        Ok(params) => params,
+        Err(error) => {
+            tracing::warn!(%error, "malformed Codex command output delta event");
+            return Vec::new();
+        }
     };
+    let item_id = params.item_id.clone();
     if index_state.has_command_action_item(&item_id) {
         return Vec::new();
     }
 
+    let raw_params = params.raw();
     let mut events = Vec::new();
     if !index_state.has_index(&item_id) {
         let Some(input) = index_state.take_delayed_command_input(&item_id) else {
@@ -62,16 +73,21 @@ pub(super) fn command_output_delta_event(
             input: running_command_input(&input),
         };
         events.push(stream_start_event(
-            thread_id(&params),
+            thread_id(&raw_params),
             index_state.index_for(&item_id),
             block,
         ));
     }
 
-    let partial_json = serde_json::to_string(&output_delta_input(&params, &item_id, index_state))
-        .unwrap_or_else(|_| "{}".to_string());
+    let partial_json = serde_json::to_string(&output_delta_input(
+        &params,
+        &raw_params,
+        &item_id,
+        index_state,
+    ))
+    .unwrap_or_else(|_| "{}".to_string());
     events.extend(input_json_delta_event(
-        params,
+        raw_params,
         &item_id,
         partial_json,
         index_state,
@@ -80,11 +96,12 @@ pub(super) fn command_output_delta_event(
 }
 
 fn completed_command_events(
-    params: Value,
+    params: CommandExecutionParams,
     item_id: String,
     input: Value,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
+    let raw_params = params.into_raw();
     let id = index_state.canonical_id(&item_id);
     let mut events = Vec::new();
     if !index_state.has_index(&item_id) {
@@ -94,13 +111,13 @@ fn completed_command_events(
             input: input.clone(),
         };
         events.push(stream_start_event(
-            thread_id(&params),
+            thread_id(&raw_params),
             index_state.index_for(&item_id),
             block,
         ));
     }
     if index_state.record_result(&id) {
-        events.push(command_result_event(&params, id, input));
+        events.push(command_result_event(&raw_params, id, input));
     }
     events
 }
@@ -116,12 +133,15 @@ fn running_command_input(input: &Value) -> Value {
     Value::Object(object)
 }
 
-fn output_delta_input(params: &Value, item_id: &str, index_state: &mut IndexState) -> Value {
+fn output_delta_input(
+    params: &ToolJsonDeltaParams,
+    raw_params: &Value,
+    item_id: &str,
+    index_state: &mut IndexState,
+) -> Value {
     let output = params
-        .get("delta")
-        .or_else(|| params.get("message"))
-        .cloned()
-        .or_else(|| aggregated_output_delta(params, item_id, index_state))
+        .delta_or_message()
+        .or_else(|| aggregated_output_delta(raw_params, item_id, index_state))
         .unwrap_or(Value::Null);
     let mut object = serde_json::Map::new();
     object.insert(BASH_OUTPUT_DELTA_KEY.to_string(), output);
@@ -139,16 +159,9 @@ fn aggregated_output_delta(
     ))
 }
 
-fn item_id(item: &Value) -> String {
-    item.get("id")
-        .and_then(Value::as_str)
-        .unwrap_or("codex_item")
-        .to_string()
-}
-
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     use super::super::event_state::IndexState;
     use super::super::events::notification_events;
@@ -274,6 +287,17 @@ mod tests {
             input_delta(&second[0])[BASH_OUTPUT_DELTA_KEY],
             json!(" world")
         );
+    }
+
+    #[test]
+    fn explicit_null_delta_does_not_fall_back_to_aggregated_output() {
+        let mut indexes = IndexState::default();
+        start_delayed_command(&mut indexes);
+        let delta = output_delta(
+            &mut indexes,
+            json!({ "delta": null, "aggregatedOutput": "hello" }),
+        );
+        assert_eq!(input_delta(&delta[1])[BASH_OUTPUT_DELTA_KEY], Value::Null);
     }
 
     #[test]
