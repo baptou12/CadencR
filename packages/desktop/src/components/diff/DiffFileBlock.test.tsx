@@ -105,7 +105,7 @@ describe("DiffFileBlock", () => {
     const binaryPatch = `diff --git a/image.png b/image.png
 Binary files a/image.png and b/image.png differ
 `;
-    const { getByText, getByTestId } = render(
+    const { getByText, queryByTestId } = render(
       <DiffFileBlock
         {...baseProps}
         section={{
@@ -117,7 +117,41 @@ Binary files a/image.png and b/image.png differ
       />,
     );
     expect(getByText("Binary file")).toBeInTheDocument();
-    expect(getByTestId("patch-diff-view")).toHaveAttribute("data-patch", binaryPatch);
+    // Binary files have no useful textual diff — Pierre must not hydrate.
+    expect(queryByTestId("patch-diff-view")).not.toBeInTheDocument();
+  });
+
+  it("gates a large text diff behind an opt-in instead of freezing on expand", async () => {
+    // A patch with more changed lines than LARGE_DIFF_LINES (1500): rendering
+    // it synchronously through Pierre would jank, so we show a placeholder.
+    const bigHunkBody = Array.from({ length: 2000 }, (_, i) => `+line ${i}`).join("\n");
+    const bigPatch = `diff --git a/big.ts b/big.ts
+--- a/big.ts
++++ b/big.ts
+@@ -0,0 +1,2000 @@
+${bigHunkBody}
+`;
+    const { getByText, queryByTestId, getByRole, user } = render(
+      <DiffFileBlock
+        {...baseProps}
+        section={{ oldFileName: "big.ts", newFileName: "big.ts", hunks: [bigPatch] }}
+        displayName="big.ts"
+        additions={2000}
+        deletions={0}
+        isCollapsed={false}
+      />,
+    );
+    // Placeholder shown, Pierre NOT hydrated (no synchronous parse/render).
+    expect(getByText("Large file")).toBeInTheDocument();
+    expect(queryByTestId("patch-diff-view")).not.toBeInTheDocument();
+
+    // Explicit opt-in renders the real diff — progressively, in bounded
+    // chunks (2000 lines → 400-line sub-patches), never as one giant instance.
+    await user.click(getByRole("button", { name: "Display diff" }));
+    const chunks = screen.getAllByTestId("patch-diff-view");
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks[0].getAttribute("data-patch")).toContain("diff --git a/big.ts b/big.ts");
+    expect(chunks[0].getAttribute("data-patch")?.length).toBeLessThan(bigPatch.length);
   });
 
   it("memoizes structurally-equal sections so unchanged files don't re-render", () => {

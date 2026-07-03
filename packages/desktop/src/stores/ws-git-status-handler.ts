@@ -48,8 +48,13 @@ export function handleGitEnvelope(action: string, payload: Record<string, unknow
     if (!snapshot) return;
     const existing = useGitStatusStore.getState().byFeature[snapshot.feature_id];
     const prefixes = getGitInvalidationPrefixes(existing, snapshot);
+    // Live status (branch chip, counts) updates immediately — it's cheap.
     useGitStatusStore.getState().setStatus(snapshot);
-    if (prefixes.length > 0) void invalidateGitQueriesForFeature(snapshot.feature_id, prefixes);
+    // The heavy git *content* queries (diff, changed-files, …) are coalesced:
+    // during a terminal rebase/merge the watcher pushes a snapshot per second
+    // for the whole operation, and refetching + re-rendering an unbounded diff
+    // on every push freezes the UI. See `scheduleGitInvalidation`.
+    if (prefixes.length > 0) scheduleGitInvalidation(snapshot.feature_id, prefixes);
     return;
   }
   if (action === "status_error") {
@@ -127,6 +132,82 @@ function getGitInvalidationPrefixes(
   if (!gitStatusSnapshotsEqual(existing, snapshot)) return GIT_STATUS_INVALIDATION_PREFIXES;
   if (snapshot.computed_at > existing.computed_at) return GIT_CONTENT_INVALIDATION_PREFIXES;
   return [];
+}
+
+/**
+ * Settle window for coalescing git content-query invalidations.
+ *
+ * Must exceed the backend watcher's `MIN_RECOMPUTE_GAP_MS` (1000 ms, see
+ * `packages/service/src/domain/git/watcher/debouncer.rs`) so that consecutive
+ * snapshots emitted during sustained churn (a rebase, a large agent write)
+ * land inside the same window and collapse into a single trailing refetch
+ * instead of one per snapshot.
+ */
+const GIT_INVALIDATION_SETTLE_MS = 1_200;
+
+interface PendingGitInvalidation {
+  /** Union of invalidation prefixes accumulated while the window is open. */
+  prefixes: Set<string>;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const pendingGitInvalidations = new Map<number, PendingGitInvalidation>();
+
+/**
+ * Coalesce git content-query invalidations per feature so a churn storm (a
+ * terminal rebase/merge, a bulk agent write) can't trigger a full diff
+ * refetch + synchronous re-render on every `git.status` push.
+ *
+ * Leading edge: the first change after a quiet period invalidates immediately,
+ * so a lone edit shows up in the diff without delay. Subsequent changes while
+ * the window is open only accumulate prefixes and push the settle out — so a
+ * sustained rebase produces one refetch at the start and one once it settles,
+ * never one per second for the whole operation.
+ */
+function scheduleGitInvalidation(featureId: number, prefixes: readonly string[]): void {
+  const existing = pendingGitInvalidations.get(featureId);
+  if (!existing) {
+    // Leading edge — refetch now and open the settle window.
+    void invalidateGitQueriesForFeature(featureId, prefixes);
+    pendingGitInvalidations.set(featureId, {
+      prefixes: new Set(),
+      timer: setTimeout(() => flushPendingGitInvalidation(featureId), GIT_INVALIDATION_SETTLE_MS),
+    });
+    return;
+  }
+  // Inside the window — accumulate and debounce the trailing refetch.
+  for (const p of prefixes) existing.prefixes.add(p);
+  clearTimeout(existing.timer);
+  existing.timer = setTimeout(
+    () => flushPendingGitInvalidation(featureId),
+    GIT_INVALIDATION_SETTLE_MS,
+  );
+}
+
+function flushPendingGitInvalidation(featureId: number): void {
+  const entry = pendingGitInvalidations.get(featureId);
+  if (!entry) return;
+  if (entry.prefixes.size === 0) {
+    // Quiet — close the window.
+    pendingGitInvalidations.delete(featureId);
+    return;
+  }
+  // Trailing refetch: captures the settled state after a burst.
+  const prefixes = [...entry.prefixes];
+  entry.prefixes = new Set();
+  void invalidateGitQueriesForFeature(featureId, prefixes);
+  // Re-arm so a still-ongoing storm keeps coalescing; the next fire with no
+  // accumulated prefixes closes the window.
+  entry.timer = setTimeout(
+    () => flushPendingGitInvalidation(featureId),
+    GIT_INVALIDATION_SETTLE_MS,
+  );
+}
+
+/** Test-only: cancel pending timers and drop coalescing state between cases. */
+export function resetGitInvalidationSchedulingForTest(): void {
+  for (const entry of pendingGitInvalidations.values()) clearTimeout(entry.timer);
+  pendingGitInvalidations.clear();
 }
 
 function invalidateGitQueriesForFeature(
