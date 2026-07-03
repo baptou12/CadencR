@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useWriteFile, useGetFeatureWorkingDir } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { toastError } from "@/lib/api-errors";
 
 interface SaveAsDialogOptions {
   projectId: number;
@@ -69,7 +70,7 @@ export function useSaveAsDialog({
           title: "Save File As",
         });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to open save dialog");
+        toastError(err, "Failed to open save dialog");
         return;
       }
       if (!chosenPath) return; // user canceled
@@ -90,7 +91,7 @@ export function useSaveAsDialog({
           },
         });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to save file");
+        toastError(err, "Failed to save file");
         return;
       }
 

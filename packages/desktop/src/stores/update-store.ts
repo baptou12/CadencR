@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { desktopBridge, type UpdateEvent } from "@/lib/desktop-bridge";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 export type UpdateStatus =
   | "idle"
@@ -37,14 +38,14 @@ export const useUpdateStore = create<UpdateState>((set) => ({
     try {
       await desktopBridge.checkForUpdates();
     } catch (err) {
-      set({ status: "error", error: err instanceof Error ? err.message : String(err) });
+      set({ status: "error", error: apiErrorMessage(err, String(err)) });
     }
   },
   installUpdate: async () => {
     try {
       await desktopBridge.installUpdate();
     } catch (err) {
-      set({ status: "error", error: err instanceof Error ? err.message : String(err) });
+      set({ status: "error", error: apiErrorMessage(err, String(err)) });
     }
   },
   applyEvent: (event) => {

@@ -8,6 +8,7 @@ import {
   type SettingValueResponse,
 } from "../api/generated";
 import { getWorkspaceSettingsQueryKey, type SettingEntry } from "@/api/settings";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 interface DebouncedSettingResult {
   value: string | null;
@@ -63,7 +64,7 @@ export function useDebouncedSetting(
                   queryClient.setQueryData(queryKey, previousValue);
                 }
               }
-              const message = err instanceof Error ? err.message : "Unknown error";
+              const message = apiErrorMessage(err, "Unknown error");
               toast.error(`Could not save setting "${key}": ${message}`);
             },
           },
@@ -152,7 +153,7 @@ export function useDebouncedSettingFromMap(
                   queryClient.setQueryData(bulkKey, previousBulk);
                 }
               }
-              const message = err instanceof Error ? err.message : "Unknown error";
+              const message = apiErrorMessage(err, "Unknown error");
               toast.error(`Could not save setting "${key}": ${message}`);
             },
           },

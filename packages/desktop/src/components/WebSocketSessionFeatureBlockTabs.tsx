@@ -14,6 +14,7 @@ import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 import { useCheckoutBranch, useSetFeatureSetting } from "@/api/generated";
 import { PROVIDER_IDS } from "@/lib/providers";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
+import { claudeProfileForPrompt } from "@/components/WebSocketSessionFeatureBlockHooks";
 import type {
   useSessionControls,
   useSessionFeatureData,
@@ -352,14 +353,6 @@ function useAgentSendHandler(args: {
       setFeatureSetting,
     ],
   );
-}
-
-function claudeProfileForPrompt(
-  controls: ReturnType<typeof useSessionControls>,
-): string | undefined {
-  return controls.activeProviderId === PROVIDER_IDS.CLAUDE_CODE
-    ? controls.claudeProfile.selectedClaudeProfile
-    : undefined;
 }
 
 function handleModelChange(

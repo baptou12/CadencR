@@ -39,6 +39,7 @@ import FileTree from "./FileTree";
 import FileSearchDialog from "./FileSearchDialog";
 import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
 
 interface FeatureEditorTabProps {
@@ -151,7 +152,7 @@ const FeatureEditorTab = memo(
         pendingProceed?.();
         setPendingProceed(null);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to save files";
+        const msg = apiErrorMessage(err, "Failed to save files");
         toast.error(msg);
       } finally {
         setIsSavingAll(false);

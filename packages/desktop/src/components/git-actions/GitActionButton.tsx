@@ -26,6 +26,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { BranchChip } from "@/components/branch-chip/BranchChip";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { apiErrorMessage, toastError } from "@/lib/api-errors";
 import { useGitAction, type GitAction } from "./useGitAction";
 import { GitActionPopover, ICONS } from "./GitActionPopover";
 
@@ -46,7 +47,7 @@ async function openExternal(url: string): Promise<void> {
     await desktopBridge.openExternal(url);
   } catch (error) {
     toast.error("Couldn't open compare URL.", {
-      description: error instanceof Error ? error.message : String(error),
+      description: apiErrorMessage(error, String(error)),
     });
   }
 }
@@ -78,7 +79,7 @@ export const GitActionButton = memo(function GitActionButton({
         const res = await getCompareUrl({ feature_id: featureId });
         if (res.available) url = res.url;
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to resolve compare URL.");
+        toastError(err, "Failed to resolve compare URL.");
         return;
       }
     }

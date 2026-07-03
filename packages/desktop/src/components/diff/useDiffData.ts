@@ -22,6 +22,7 @@ import {
 import type { ParsedFileMeta } from "@/lib/parse-unified-diff";
 import { useParsedDiff } from "./useParsedDiff";
 import { findStalePendingCommentIds } from "@/lib/diff-comment-validity";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 // Module-scoped dedupe state for the auto-invalidation effect below. Multiple
 // `DiffViewer`s can mount simultaneously; using
@@ -240,7 +241,7 @@ export function useDiffData(
         {
           onSettled: () => inFlightStaleDeleteIds.delete(id),
           onError: (err: unknown) => {
-            const message = err instanceof Error ? err.message : "Unknown error";
+            const message = apiErrorMessage(err, "Unknown error");
             toast.error(`Failed to remove stale comment: ${message}`);
           },
         },

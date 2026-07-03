@@ -8,6 +8,7 @@ import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useLsp } from "@/lib/lsp/useLsp";
 import { useScopedShortcut } from "@/hooks/useShortcut";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { getPreviewKind } from "@/lib/file-language";
 import { getLanguageExtension, getLanguageName } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
@@ -303,7 +304,7 @@ export default function CodeMirrorEditor({
   if (error) {
     return (
       <div className="h-full flex items-center justify-center bg-background text-destructive text-sm px-6 text-center">
-        {error instanceof Error ? error.message : "Failed to load file"}
+        {apiErrorMessage(error, "Failed to load file")}
       </div>
     );
   }

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Loader2Icon, GitBranchIcon, ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
 import { getCommitUrl, useGetCommitGraph } from "@/api/generated";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { computeGraphLayout, type GraphCommitInput } from "@/lib/git-graph-layout";
 import { DiffViewer } from "./DiffViewer";
 import { GitGraphRow, ROW_HEIGHT, type GitGraphRowData } from "./GitGraphRow";
@@ -74,7 +75,7 @@ export const GitGraphView = memo(function GitGraphView({
         }
         await desktopBridge.openExternal(res.url);
       } catch (e) {
-        const message = e instanceof Error ? e.message : "Unknown error";
+        const message = apiErrorMessage(e, "Unknown error");
         toast.error(`Could not open the commit online: ${message}`);
       }
     },
@@ -143,7 +144,7 @@ export const GitGraphView = memo(function GitGraphView({
   }
 
   if (isError) {
-    const message = error instanceof Error ? error.message : "Could not load the commit graph";
+    const message = apiErrorMessage(error, "Could not load the commit graph");
     return (
       <div className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive">
         {message}

@@ -13,6 +13,7 @@ import type { EditorView } from "@codemirror/view";
 import { Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 import { prepareRename, performRename } from "@/lib/lsp/rename";
 import type { WorkspaceEditHost } from "@/lib/lsp/workspace-edit";
@@ -55,7 +56,7 @@ export function EditorRenamePanel({ view, reopenSignal, host, onClose }: EditorR
         }
       } catch (err) {
         if (cancelled) return;
-        toast.error(`Rename unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        toast.error(`Rename unavailable: ${apiErrorMessage(err, String(err))}`);
         handleClose();
       }
     })();
@@ -73,7 +74,7 @@ export function EditorRenamePanel({ view, reopenSignal, host, onClose }: EditorR
       toast.success(`Renamed in ${fileCount} file${fileCount === 1 ? "" : "s"}.`);
       handleClose();
     } catch (err) {
-      toast.error(`Rename failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Rename failed: ${apiErrorMessage(err, String(err))}`);
     } finally {
       setBusy(false);
     }

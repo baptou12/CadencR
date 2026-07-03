@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getGetWorkspaceSettingQueryKey, useSetWorkspaceSetting } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 interface UseSetWorkspaceSettingWithCacheResult {
   /** Persist the value, await the backend, then patch the cache. Toasts + rethrows on error. */
@@ -32,7 +33,7 @@ export function useSetWorkspaceSettingWithCache(
         await mutation.mutateAsync({ key, data: { value } });
         queryClient.setQueryData(getGetWorkspaceSettingQueryKey(key), { value });
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Unknown error";
+        const message = apiErrorMessage(err, "Unknown error");
         toast.error(`Could not save setting "${key}": ${message}`);
         throw err;
       }

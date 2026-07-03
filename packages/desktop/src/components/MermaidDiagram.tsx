@@ -4,6 +4,7 @@ import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { MermaidDiagramView } from "@/components/MermaidDiagramView";
 import { cachedHighlight } from "@/components/Markdown";
 import { useTheme } from "@/hooks/useTheme";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 /** Load mermaid once across every diagram so it stays out of the main chunk. */
 let mermaidPromise: Promise<typeof import("mermaid")> | null = null;
@@ -69,7 +70,7 @@ const MermaidDiagram = memo(function MermaidDiagram({ code }: MermaidDiagramProp
         if (cancelled) return;
         setState({
           status: "error",
-          message: err instanceof Error ? err.message : String(err),
+          message: apiErrorMessage(err, String(err)),
         });
       }
     })();

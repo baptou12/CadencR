@@ -8,6 +8,7 @@ import {
   type SettingValueResponse,
 } from "@/api/generated";
 import { desktopBridge, type NotificationFallbackPayload } from "@/lib/desktop-bridge";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { NOTIFICATION_MODE_KEY, parseNotificationMode } from "@/lib/notification-mode";
 import { queryClient } from "@/lib/queryClient";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
@@ -137,7 +138,7 @@ export function notifyAgentDone(opts: NotifyOptions): void {
         mode,
       });
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = apiErrorMessage(e, String(e));
       toast.error("Couldn't send notification", { description: message });
     }
   })();

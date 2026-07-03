@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { resolveCommand, useRunCustomAction, type CustomAction } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { invalidateCustomActionRunQueries } from "@/lib/custom-action-queries";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 
@@ -67,7 +68,7 @@ export function useCustomActionRunner({
           useTerminalStore.getState().sendToTerminal(featureId, `${command}\n`);
         })
         .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = apiErrorMessage(err, String(err));
           toast.error(`${action.name} failed: ${message}`);
         })
         .finally(() => setIsResolving(false));

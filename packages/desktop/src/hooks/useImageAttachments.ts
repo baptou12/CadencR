@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { desktopBridge, type FileDropItem } from "@/lib/desktop-bridge";
 import {
   getAttachmentKindForProvider,
@@ -142,7 +143,7 @@ export function useImageAttachments(
             previewUrl,
           });
         } catch (e) {
-          const message = e instanceof Error ? e.message : String(e);
+          const message = apiErrorMessage(e, String(e));
           toast.error(`Couldn't attach ${file.name}`, { description: message });
         }
       }

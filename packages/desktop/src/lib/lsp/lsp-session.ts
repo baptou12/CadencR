@@ -8,6 +8,7 @@
 import { LSPClient } from "@codemirror/lsp-client";
 import { openSession } from "@/api/generated";
 import { connectLspWs, type WebSocketLspTransport } from "./transport";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { CadencrWorkspace } from "./cadencr-workspace";
 import { pathToFileUri } from "./file-uri";
 import { buildLspNotificationHandlers } from "./notifications";
@@ -76,12 +77,9 @@ export function backoffDelayMs(failCount: number, err: unknown): number {
 }
 
 function extractSessionError(err: unknown): string {
-  // Axios wraps the body inside `err.response.data.error`. Surface the
-  // backend's install hint verbatim rather than a bare HTTP status.
-  const axiosErr = err as { response?: { data?: { error?: string } } };
-  const detail = axiosErr?.response?.data?.error;
-  if (detail) return detail;
-  return err instanceof Error ? err.message : "Failed to open LSP session";
+  // Surfaces the backend's install hint (Axios `response.data.error`) verbatim
+  // rather than a bare HTTP status.
+  return apiErrorMessage(err, "Failed to open LSP session");
 }
 
 /**

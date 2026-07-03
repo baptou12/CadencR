@@ -25,6 +25,7 @@ import { useCommit, useGetUncommittedFiles } from "@/api/generated";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { CommitOutputPane } from "./CommitOutputPane";
 import { UncommittedFileList } from "./UncommittedFileList";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 
 // Hoisted so the `keys` prop is reference-stable across the dialog's many
@@ -158,7 +159,7 @@ export default function CommitDialog({
       toast.success("Committed");
       onOpenChange(false);
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Commit failed.");
+      showError(apiErrorMessage(err, "Commit failed."));
     }
   }
 
@@ -230,9 +231,7 @@ export default function CommitDialog({
             </div>
           ) : filesQuery.isError ? (
             <p className="text-sm text-destructive">
-              {filesQuery.error instanceof Error
-                ? filesQuery.error.message
-                : "Failed to load uncommitted files."}
+              {apiErrorMessage(filesQuery.error, "Failed to load uncommitted files.")}
             </p>
           ) : (
             <UncommittedFileList files={files} selected={selected} onToggle={toggle} />

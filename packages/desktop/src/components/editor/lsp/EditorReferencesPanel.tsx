@@ -11,6 +11,7 @@ import { Virtuoso } from "react-virtuoso";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileSymbolIcon } from "../file-icons";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { openLspLocation, type LspLocation } from "@/lib/lsp/lsp-position";
 import { fileUriToPath } from "@/lib/lsp/file-uri";
 
@@ -74,7 +75,7 @@ function EditorReferencesPanel({
       }
       onOpenChange(false);
     } catch (err) {
-      toast.error(`Failed to open reference: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to open reference: ${apiErrorMessage(err, String(err))}`);
     }
   };
 

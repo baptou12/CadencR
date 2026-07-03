@@ -20,6 +20,7 @@ import {
 } from "@/api/generated";
 import { useSendPendingComments } from "@/hooks/useSendPendingComments";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 const GIT_VIEW_MODE_SETTING = "git_view_mode";
 const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
@@ -71,7 +72,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       onError: (err: unknown) => {
         // Roll back the local pick so the UI matches the persisted state.
         setViewMode(persistedViewMode);
-        const message = err instanceof Error ? err.message : "Unknown error";
+        const message = apiErrorMessage(err, "Unknown error");
         toast.error(`Could not save Git view setting: ${message}`);
       },
     },

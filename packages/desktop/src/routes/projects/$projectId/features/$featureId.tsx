@@ -3,6 +3,7 @@ import { isAxiosError } from "axios";
 import { useGetFeature, useListProjects } from "@/api/generated";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { isTabKind, type TabKind } from "@/stores/feature-layout-schema";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 interface FeatureSearch {
   initialDescription?: string;
@@ -70,7 +71,7 @@ function FeatureNotFound({ featureId }: { featureId: number }) {
 }
 
 function FeatureLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message = error instanceof Error ? error.message : "Failed to load feature";
+  const message = apiErrorMessage(error, "Failed to load feature");
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
       <p className="text-sm font-medium text-destructive">{message}</p>

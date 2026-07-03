@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Loader2Icon } from "lucide-react";
 import { useListProjects, type Project } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { UnifiedAgentsFilters } from "@/components/UnifiedAgentsFilters";
@@ -324,7 +325,7 @@ function UnifiedAgentsHeader({
       </div>
       {projectsError ? (
         <p className="mt-2 px-1 text-xs text-destructive">
-          {projectsError instanceof Error ? projectsError.message : "Failed to load projects."}
+          {apiErrorMessage(projectsError, "Failed to load projects.")}
         </p>
       ) : null}
     </header>

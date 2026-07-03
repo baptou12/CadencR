@@ -13,6 +13,7 @@
  * `shutdownPower`.
  */
 import { useEffect } from "react";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { isBrowserRemote } from "@/lib/remote/device-token";
 import { useRemotePreventSleep } from "@/lib/remote/sleep-prevention";
@@ -28,7 +29,7 @@ export function useRemoteSleepGuard(): void {
 
     const shouldPrevent = preventSleep && remoteEnabled;
     void desktopBridge.setRemoteHostAwake(shouldPrevent).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = apiErrorMessage(error, String(error));
       console.warn(`power:set-remote-host failed: ${message}`);
     });
 

@@ -1,4 +1,5 @@
 import { isAxiosError } from "axios";
+import { toast } from "sonner";
 
 interface ApiErrorBody {
   error?: unknown;
@@ -9,6 +10,11 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
   if (backendMessage) return backendMessage;
   if (err instanceof Error && err.message.trim().length > 0) return err.message;
   return fallback;
+}
+
+/** Surface an error to the user as a toast, using the shared message extraction. */
+export function toastError(err: unknown, fallback: string): void {
+  toast.error(apiErrorMessage(err, fallback));
 }
 
 function backendErrorMessage(err: unknown): string | null {

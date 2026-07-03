@@ -7,6 +7,7 @@ import {
   type UnifiedAgentEntry,
   type UnifiedAgentsResponse,
 } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { urlPrefixPredicate } from "@/lib/queryClient";
 
 interface UnifiedAgentPinControlOptions {
@@ -54,7 +55,7 @@ export function useUnifiedAgentPinControls(
     [queryClient],
   );
   const onError = useCallback((error: unknown): void => {
-    const message = error instanceof Error ? error.message : "Failed to update pinned agent.";
+    const message = apiErrorMessage(error, "Failed to update pinned agent.");
     toast.error(message);
   }, []);
   const pinMutation = useUpdateFeaturePinned({

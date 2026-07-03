@@ -6,6 +6,7 @@ import { isPairingCodeResponse } from "@/lib/remote/validate";
 import { cn } from "@/lib/utils";
 import { useRemoteStore } from "@/stores/remote-store";
 import { CopyIconButton, SectionHeading } from "./remote-ui";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 // While a live code is on screen, re-poll status so we notice the moment a
 // device pairs with it (the code is single-use, so the QR is then dead).
@@ -51,7 +52,7 @@ export function RemotePairSection(): ReactElement {
       // promptly (the 3s poll alone could otherwise miss it before a fast scan).
       void refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create a pairing code.");
+      setError(apiErrorMessage(err, "Could not create a pairing code."));
       setCode(null);
     } finally {
       setMinting(false);

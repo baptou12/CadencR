@@ -19,6 +19,7 @@
 import { memo, useCallback, useState, type ReactElement } from "react";
 import { CheckIcon, ChevronDownIcon, GitBranchIcon, Loader2 } from "lucide-react";
 
+import { apiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -225,7 +226,7 @@ function BranchList({ isLoading, isError, error, list }: BranchListProps): React
   if (isError) {
     return (
       <p className="text-sm text-destructive p-3">
-        {error instanceof Error ? error.message : "Failed to load branches."}
+        {apiErrorMessage(error, "Failed to load branches.")}
       </p>
     );
   }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { useGetWorkspaceSetting } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useSetWorkspaceSettingWithCache } from "@/hooks/useSetWorkspaceSettingWithCache";
 
 export const UNIFIED_AGENTS_PER_ROW_SETTING_KEY = "unified_agents_per_row";
@@ -25,7 +26,7 @@ export function useUnifiedAgentsPerRowSetting(): UnifiedAgentsPerRowSetting {
 
   useEffect((): void => {
     if (!query.isError) return;
-    const message = query.error instanceof Error ? query.error.message : "Unknown error";
+    const message = apiErrorMessage(query.error, "Unknown error");
     toast.error(`Could not load agents-per-row setting: ${message}`);
   }, [query.error, query.isError]);
 

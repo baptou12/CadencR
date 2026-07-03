@@ -7,6 +7,7 @@ import {
 } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import { SearchCursor, RegExpCursor } from "@codemirror/search";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 export interface BufferSearchQuery {
   query: string;
@@ -112,7 +113,7 @@ function scanRegexMatches(state: EditorState, q: BufferSearchQuery): ScanResult 
     return {
       matches: [],
       truncated: false,
-      error: err instanceof Error ? err.message : "Invalid regex",
+      error: apiErrorMessage(err, "Invalid regex"),
     };
   }
 }

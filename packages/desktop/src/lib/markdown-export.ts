@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 /** Supported clipboard export formats for markdown sources. */
 export type ExportFormat = "markdown" | "plain" | "slack";
@@ -118,7 +119,7 @@ export async function copyAs(format: ExportFormat, source: string): Promise<void
     await navigator.clipboard.writeText(payload);
     toast.success(formatLabel(format));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = apiErrorMessage(error, String(error));
     console.error("[markdown-export] copy failed", error);
     toast.error(`Failed to copy to clipboard: ${message}`);
   }

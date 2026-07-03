@@ -14,6 +14,7 @@ import {
   CommandItem,
   CommandEmpty,
 } from "@/components/ui/command";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
   workspaceSymbols,
@@ -62,7 +63,7 @@ export function EditorWorkspaceSymbolPicker({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        toast.error(`Symbol search failed: ${err instanceof Error ? err.message : String(err)}`);
+        toast.error(`Symbol search failed: ${apiErrorMessage(err, String(err))}`);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -81,7 +82,7 @@ export function EditorWorkspaceSymbolPicker({
       }
       onOpenChange(false);
     } catch (err) {
-      toast.error(`Failed to open symbol: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to open symbol: ${apiErrorMessage(err, String(err))}`);
     }
   };
 

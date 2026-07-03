@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { EditorView } from "@codemirror/view";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { getReadFileQueryKey, useWriteFile, type ReadFileResponse } from "@/api/generated";
+import { toastError } from "@/lib/api-errors";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFreshFileContentSync } from "./useFreshFileContentSync";
 
@@ -103,7 +103,7 @@ export function useEditorSave({
     try {
       await write();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save file");
+      toastError(err, "Failed to save file");
     }
   }, [write]);
 
@@ -115,7 +115,7 @@ export function useEditorSave({
       if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
       autoSavedTimerRef.current = setTimeout(() => setAutoSavedVisible(false), 1500);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to auto-save file");
+      toastError(err, "Failed to auto-save file");
     }
   }, [write]);
 

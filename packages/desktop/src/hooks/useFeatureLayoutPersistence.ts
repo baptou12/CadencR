@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { getGetFeatureSettingsQueryKey, useSetFeatureSetting } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { LAYOUT_STATE_KEY, serializeCurrentLayoutState } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
@@ -68,7 +69,7 @@ export function useFeatureLayoutPersistence(
           },
           onError: (err: unknown): void => {
             if (requestSeqRef.current !== requestSeq) return;
-            const message = err instanceof Error ? err.message : "Unknown error";
+            const message = apiErrorMessage(err, "Unknown error");
             toast.error(`Could not save layout: ${message}`);
           },
         },
