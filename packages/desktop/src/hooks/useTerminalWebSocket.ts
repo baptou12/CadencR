@@ -295,58 +295,78 @@ export function useTerminalWebSocket(
     };
   }, [reconnectKey]);
 
+  // Shared recovery for any dropped terminal message (write/resize/kill).
+  // Surface the drop to the user (deduped by toast id), then self-heal:
+  // force the reconnector to run *now* instead of waiting for `onClose` to
+  // fire (which can take forever when the socket is wedged in `CLOSING` or
+  // `OPEN` over dead TCP — exactly the bug behind "only the X button works",
+  // and exactly what `window.__cadencrTerminal.freeze()` reproduces). The
+  // reconnect re-uses the latest known `pty_id` so the user reattaches to
+  // their live shell rather than spawning a fresh one (the backend keeps
+  // PTYs for 300 s after disconnect). Debounced so a flurry of drops
+  // triggers one reconnect, not a parade.
+  const recoverFromDrop = useCallback(
+    (kind: "write" | "resize" | "kill") => {
+      toast.error("Terminal disconnected — your input was dropped. Reconnecting…", {
+        id: TERMINAL_DROPPED_TOAST_ID,
+      });
+      const now = Date.now();
+      if (now - lastForcedAtRef.current >= FORCE_RECONNECT_COOLDOWN_MS) {
+        lastForcedAtRef.current = now;
+        useConnectionStatusStore
+          .getState()
+          .reportSource(reconnectKey, "reconnecting", `Terminal ${kind} stalled`);
+        forceReconnect(reconnectKey);
+      }
+    },
+    [reconnectKey],
+  );
+
   const write = useCallback(
     (data: string) => {
       const conn = connRef.current;
       if (devFrozen.current || !conn || !conn.sendJson({ type: "write", data })) {
-        // Silent drop — surface to the user (deduped by toast id) and log
-        // with the connection state for diagnostics. Without this, the terminal
-        // looks frozen for no visible reason.
+        // Log with the connection state for diagnostics. Without the recovery
+        // below, the terminal looks frozen for no visible reason.
         console.warn("[terminal] dropped write", {
           bytes: data.length,
           isOpen: conn?.isOpen() ?? false,
           isConnecting: conn?.isConnecting() ?? false,
           devFrozen: devFrozen.current,
         });
-        toast.error("Terminal disconnected — your input was dropped. Reconnecting…", {
-          id: TERMINAL_DROPPED_TOAST_ID,
-        });
-        // Self-heal: force the reconnector to run *now* instead of waiting
-        // for `onClose` to fire (which can take forever when the socket is
-        // wedged in `CLOSING` or `OPEN` over dead TCP — exactly the bug the
-        // user hit, and exactly what `window.__cadencrTerminal.freeze()`
-        // reproduces). The reconnect re-uses the latest known `pty_id` so
-        // the user reattaches to their live shell rather than spawning a
-        // fresh one (the backend keeps PTYs for 300 s after disconnect).
-        // Debounced so a flurry of keystrokes triggers one reconnect, not
-        // a parade.
-        const now = Date.now();
-        if (now - lastForcedAtRef.current >= FORCE_RECONNECT_COOLDOWN_MS) {
-          lastForcedAtRef.current = now;
-          useConnectionStatusStore
-            .getState()
-            .reportSource(reconnectKey, "reconnecting", "Terminal write stalled");
-          forceReconnect(reconnectKey);
-        }
+        recoverFromDrop("write");
       }
     },
-    [reconnectKey],
+    [recoverFromDrop],
   );
 
-  const resize = useCallback((cols: number, rows: number) => {
-    dimsRef.current = { cols, rows };
-    const conn = connRef.current;
-    if (devFrozen.current || !conn || !conn.sendJson({ type: "resize", cols, rows })) {
-      console.warn("[terminal] dropped resize", { cols, rows });
-    }
-  }, []);
+  const resize = useCallback(
+    (cols: number, rows: number) => {
+      dimsRef.current = { cols, rows };
+      const conn = connRef.current;
+      // Before the first connect there is nothing to recover — the fresh
+      // dims are picked up by `connect(cols, rows)` itself.
+      if (!conn) return;
+      if (devFrozen.current || !conn.sendJson({ type: "resize", cols, rows })) {
+        console.warn("[terminal] dropped resize", { cols, rows });
+        recoverFromDrop("resize");
+      }
+    },
+    [recoverFromDrop],
+  );
 
   const kill = useCallback(() => {
     const conn = connRef.current;
-    if (devFrozen.current || !conn || !conn.sendJson({ type: "kill" })) {
+    if (!conn) return;
+    if (devFrozen.current || !conn.sendJson({ type: "kill" })) {
+      // A dropped kill is worse than a dropped keystroke: the pane waits for
+      // the `exit` message, so the user keeps staring at a shell that never
+      // dies while the PTY lives on server-side. Reconnect, then they can
+      // retry the kill against the reattached PTY.
       console.warn("[terminal] dropped kill");
+      recoverFromDrop("kill");
     }
-  }, []);
+  }, [recoverFromDrop]);
 
   return { connect, write, resize, kill, isConnected };
 }

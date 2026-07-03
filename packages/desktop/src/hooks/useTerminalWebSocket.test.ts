@@ -245,6 +245,44 @@ describe("useTerminalWebSocket", () => {
     warnSpy.mockRestore();
   });
 
+  describe("dropped-send recovery", () => {
+    it("recovers when a resize is dropped on a wedged socket", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { result } = renderAndConnect();
+      act(() => lastWs().simulateOpen());
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      // Wedge the socket: not OPEN, but no close event ever fires.
+      lastWs().readyState = MockWebSocket.CLOSING;
+      act(() => result.current.resize(100, 30));
+
+      expect(toast.error).toHaveBeenCalled();
+      // The forced reconnect opened a replacement socket immediately.
+      expect(MockWebSocket.instances).toHaveLength(2);
+      warnSpy.mockRestore();
+    });
+
+    it("recovers when a kill is dropped on a wedged socket", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { result } = renderAndConnect();
+      act(() => lastWs().simulateOpen());
+
+      lastWs().readyState = MockWebSocket.CLOSING;
+      act(() => result.current.kill());
+
+      expect(toast.error).toHaveBeenCalled();
+      expect(MockWebSocket.instances).toHaveLength(2);
+      warnSpy.mockRestore();
+    });
+
+    it("does not toast for a resize before the first connect", () => {
+      const hook = renderHook(() => useTerminalWebSocket(defaultOptions()));
+      act(() => hook.result.current.resize(80, 24));
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(MockWebSocket.instances).toHaveLength(0);
+    });
+  });
+
   describe("intentional close suppression", () => {
     it("does not fire onError when WS closes due to unmount", () => {
       const onError = vi.fn();
