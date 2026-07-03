@@ -180,7 +180,7 @@ export interface SessionEntry {
    * Mutated in place (like `pendingWsRequests`) — transport plumbing, not
    * render state.
    */
-  outboundQueue: unknown[];
+  outboundQueue: WsEnvelope[];
   worktreeStatus: WorktreeStatus;
   worktreePath: string | null;
   worktreeBranch: string | null;
@@ -316,7 +316,7 @@ export interface WsSessionStore {
   connect: (sessionId: string) => void;
   disconnect: (sessionId: string) => void;
 
-  send: (sessionId: string, data: unknown) => void;
+  send: (sessionId: string, envelope: WsEnvelope) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
   sendPrompt: (sessionId: string, text: string, options?: PromptDispatchOptions) => void;
   respondToPermission: (

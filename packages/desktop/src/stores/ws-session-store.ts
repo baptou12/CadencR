@@ -101,24 +101,26 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     return get().sessions[sessionId] ?? createSessionEntry();
   }
 
-  function sendRaw(sessionId: string, data: unknown): void {
+  function sendRaw(sessionId: string, envelope: WsEnvelope): void {
     const session = get().sessions[sessionId];
-    if (session?.conn?.sendJson(data)) return;
+    if (session?.conn?.sendJson(envelope)) return;
     // The socket is not OPEN (reconnecting, or still CONNECTING). Dropping the
     // envelope here is silent data loss — a prompt sent during the gap shows
     // up locally but never reaches the agent. Hold it and flush on `onOpen`,
     // after the reconnect `session.init` replay.
-    session?.outboundQueue.push(data);
+    session?.outboundQueue.push(envelope);
   }
 
   /** Send queued envelopes in order; stop (and keep the rest) if the socket drops again. */
   function flushOutboundQueue(sessionId: string): void {
     const session = get().sessions[sessionId];
     if (!session?.conn) return;
-    while (session.outboundQueue.length > 0) {
-      if (!session.conn.sendJson(session.outboundQueue[0])) return;
-      session.outboundQueue.shift();
-    }
+    const queue = session.outboundQueue;
+    // Drain by index and splice once at the end: shift() per envelope would
+    // reindex the array each time (O(n²) on a long-outage backlog).
+    let sent = 0;
+    while (sent < queue.length && session.conn.sendJson(queue[sent])) sent += 1;
+    if (sent > 0) queue.splice(0, sent);
   }
 
   function forceReconnectSession(sessionId: string): void {
