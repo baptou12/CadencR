@@ -43,6 +43,7 @@ import {
   handleTurnComplete,
   handleUsageUpdate,
 } from "./ws-envelope-turn-handlers";
+import { SESSION_ACTION, type SessionActionName } from "./ws-session-action-names";
 
 export type { StoreAccessors } from "./ws-envelope-types";
 
@@ -127,135 +128,74 @@ function handleCommandsDomain(
   }
 }
 
+type SessionActionHandler = (ctx: StoreAccessors, sessionId: string, payload: unknown) => void;
+
+/** Intentional no-op for actions we receive but deliberately don't act on. */
+const ignoreSessionAction: SessionActionHandler = () => {};
+
+/**
+ * Single dispatch table keyed by the typed {@link SESSION_ACTION} contract.
+ * Replaces the three hand-mirrored string switches this file used to chain.
+ * Exhaustive over `SessionActionName`, so adding a backend action to the
+ * contract fails the type-check until it is handled (or explicitly ignored).
+ */
+const SESSION_ACTION_HANDLERS: Record<SessionActionName, SessionActionHandler> = {
+  [SESSION_ACTION.initialized]: handleInitialized,
+  [SESSION_ACTION.runtimeSessionId]: handleRuntimeSessionId,
+  [SESSION_ACTION.mcpServers]: handleMcpServers,
+  [SESSION_ACTION.message]: handleMessage,
+  [SESSION_ACTION.userMessage]: handleUserMessageMirror,
+  [SESSION_ACTION.permissionRequest]: handlePermissionRequest,
+  [SESSION_ACTION.error]: handleError,
+  [SESSION_ACTION.compacting]: handleCompacting,
+  [SESSION_ACTION.codexPermissionModeChanged]: handleCodexPermissionModeChanged,
+  [SESSION_ACTION.modeChanged]: handleModeChanged,
+  [SESSION_ACTION.providerSetOk]: handleProviderSetOk,
+  [SESSION_ACTION.modelSetOk]: handleModelSetOk,
+  [SESSION_ACTION.effortSetOk]: handleEffortSetOk,
+  [SESSION_ACTION.profileChanged]: handleProfileChanged,
+  [SESSION_ACTION.compactStarted]: handleCompactStarted,
+  [SESSION_ACTION.compactOk]: handleCompactOk,
+  [SESSION_ACTION.cleared]: handleCleared,
+  [SESSION_ACTION.deleted]: handleDeleted,
+  [SESSION_ACTION.usageUpdate]: handleUsageUpdate,
+  [SESSION_ACTION.streamStatus]: handleStreamStatus,
+  [SESSION_ACTION.promptReceived]: handlePromptReceived,
+  [SESSION_ACTION.promptPersisted]: handlePromptPersisted,
+  [SESSION_ACTION.lifecycle]: handleLifecyclePayload,
+  [SESSION_ACTION.gateClosed]: handleGateClosed,
+  [SESSION_ACTION.featureRenamed]: handleFeatureRenamed,
+  [SESSION_ACTION.featureAutonaming]: handleFeatureAutoNaming,
+  // Broadcast from another device's rewind (the originator handled its own
+  // reply via sendRequest). Mirror the conversation truncation locally.
+  [SESSION_ACTION.branchRewound]: handleBranchRewoundBroadcast,
+  // A fork on another device creates a new feature; that device's sidebar
+  // refreshes via the `feature.created` broadcast, so this ref-less
+  // `branch.forked` broadcast needs no per-session handling here.
+  [SESSION_ACTION.branchForked]: ignoreSessionAction,
+  [SESSION_ACTION.ended]: handleTurnComplete,
+  [SESSION_ACTION.turnComplete]: handleTurnComplete,
+};
+
 function handleSessionAction(
   ctx: StoreAccessors,
   sessionId: string,
   envelope: { action: string; payload: unknown },
 ): void {
-  if (handleBaseSessionAction(ctx, sessionId, envelope)) return;
-  if (handleConfigSessionAction(ctx, sessionId, envelope)) return;
-  handleLifecycleSessionAction(ctx, sessionId, envelope);
-}
-
-function handleBaseSessionAction(
-  ctx: StoreAccessors,
-  sessionId: string,
-  envelope: { action: string; payload: unknown },
-): boolean {
-  switch (envelope.action) {
-    case "initialized":
-      handleInitialized(ctx, sessionId, envelope.payload);
-      return true;
-    case "runtime_session_id":
-      handleRuntimeSessionId(ctx, sessionId, envelope.payload);
-      return true;
-    case "mcp_servers":
-      handleMcpServers(ctx, sessionId, envelope.payload);
-      return true;
-    case "message":
-      handleMessage(ctx, sessionId, envelope.payload);
-      return true;
-    case "user_message":
-      handleUserMessageMirror(ctx, sessionId, envelope.payload);
-      return true;
-    case "permission.request":
-      handlePermissionRequest(ctx, sessionId, envelope.payload);
-      return true;
-    case "error":
-      handleError(ctx, sessionId, envelope.payload);
-      return true;
-    case "compacting":
-      handleCompacting(ctx, sessionId, envelope.payload);
-      return true;
-    default:
-      return false;
+  // Typed `| undefined` (rather than leaning on the cast) so the guard below
+  // reads as the load-bearing runtime check it is: `envelope.action` is an
+  // arbitrary wire string, not necessarily a known `SessionActionName`.
+  const handler: SessionActionHandler | undefined =
+    SESSION_ACTION_HANDLERS[envelope.action as SessionActionName];
+  if (!handler) {
+    // Never drop a session envelope silently: an unknown action means the FE
+    // contract has drifted from the backend emit sites (or a typo shipped).
+    // Surface it so the mismatch is diagnosable instead of a feature quietly
+    // going dead (error-handling.md).
+    console.warn("[ws-session] unknown session action; dropping envelope", envelope.action);
+    return;
   }
-}
-
-function handleConfigSessionAction(
-  ctx: StoreAccessors,
-  sessionId: string,
-  envelope: { action: string; payload: unknown },
-): boolean {
-  switch (envelope.action) {
-    case "codex_permission_mode.changed":
-      handleCodexPermissionModeChanged(ctx, sessionId, envelope.payload);
-      return true;
-    case "mode.changed":
-      handleModeChanged(ctx, sessionId, envelope.payload);
-      return true;
-    case "provider.set.ok":
-      handleProviderSetOk(ctx, sessionId, envelope.payload);
-      return true;
-    case "model.set.ok":
-      handleModelSetOk(ctx, sessionId, envelope.payload);
-      return true;
-    case "effort.set.ok":
-      handleEffortSetOk(ctx, sessionId, envelope.payload);
-      return true;
-    case "profile.changed":
-      handleProfileChanged(ctx, sessionId, envelope.payload);
-      return true;
-    default:
-      return false;
-  }
-}
-
-function handleLifecycleSessionAction(
-  ctx: StoreAccessors,
-  sessionId: string,
-  envelope: { action: string; payload: unknown },
-): void {
-  switch (envelope.action) {
-    case "compact.started":
-      handleCompactStarted(ctx, sessionId);
-      break;
-    case "compact.ok":
-      handleCompactOk(ctx, sessionId);
-      break;
-    case "cleared":
-      handleCleared(ctx, sessionId, envelope.payload);
-      break;
-    case "deleted":
-      handleDeleted(ctx, sessionId);
-      break;
-    case "usage_update":
-      handleUsageUpdate(ctx, sessionId, envelope.payload);
-      break;
-    case "stream_status":
-      handleStreamStatus(ctx, sessionId, envelope.payload);
-      break;
-    case "prompt_received":
-      handlePromptReceived(ctx, sessionId, envelope.payload);
-      break;
-    case "prompt_persisted":
-      handlePromptPersisted(ctx, sessionId, envelope.payload);
-      break;
-    case "lifecycle":
-      handleLifecyclePayload(ctx, sessionId, envelope.payload);
-      break;
-    case "gate.closed":
-      handleGateClosed(ctx, sessionId, envelope.payload);
-      break;
-    case "feature.renamed":
-      handleFeatureRenamed(ctx, sessionId, envelope.payload);
-      break;
-    case "feature.autonaming":
-      handleFeatureAutoNaming(ctx, sessionId, envelope.payload);
-      break;
-    case "branch.rewound":
-      // Broadcast from another device's rewind (the originator handled its own
-      // reply via sendRequest). Mirror the conversation truncation locally.
-      handleBranchRewoundBroadcast(ctx, sessionId, envelope.payload);
-      break;
-    // A fork on another device creates a new feature; that device's sidebar
-    // refreshes via the `feature.created` broadcast, so the ref-less
-    // `branch.forked` broadcast needs no per-session handling here.
-    case "ended":
-    case "turn_complete":
-      handleTurnComplete(ctx, sessionId, envelope.payload);
-      break;
-  }
+  handler(ctx, sessionId, envelope.payload);
 }
 
 function handleBranchRewoundBroadcast(
