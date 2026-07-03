@@ -58,6 +58,17 @@ export function AppShell({
   // vanishes when the user keeps dragging inward. Disable it for the duration
   // of a handle drag so resizing hard-clamps to `[minSize, maxSize]`; the
   // toggle button never fires mid-drag, so it keeps working as before.
+  //
+  // `isDragging` reflects a *global* resize flag (`resize-coordinator`) shared
+  // by every resize handle in the app — including the editor's own sidebar,
+  // which pushes it to freeze its heavy children while dragging. When this
+  // sidebar is already collapsed, react-resizable-panels re-expands any
+  // non-collapsible panel sitting at `collapsedSize={0}`, so letting a foreign
+  // drag flip `collapsible` off would pop the collapsed sidebar back open (and
+  // double the logo, since the collapsed top-bar chrome stays mounted). Keep it
+  // collapsible while collapsed so only an actual drag of *this* handle — which
+  // is unreachable while collapsed (the handle is `pointer-events-none`) — can
+  // ever disable it.
   const isDragging = useIsResizing();
   if (isMobile) {
     return (
@@ -99,7 +110,7 @@ export function AppShell({
       <ResizablePanel
         id="sidebar"
         panelRef={sidebarPanelRef}
-        collapsible={!isDragging}
+        collapsible={collapsed || !isDragging}
         collapsedSize={0}
         defaultSize={defaultLeftSize}
         minSize={`${SIDEBAR_MIN_WIDTH}px`}
