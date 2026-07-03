@@ -10,32 +10,16 @@ impl WsSessionPersistence {
             };
 
             let content = serde_json::to_string(input).unwrap_or_default();
-            let result = sqlx::query(
-                "UPDATE agent_messages
-                 SET content = ?, tool_name = COALESCE(tool_name, ?)
-                 WHERE session_id = ? AND message_type = 'tool_call' AND tool_use_id = ?",
-            )
-            .bind(&content)
-            .bind(name)
-            .bind(session_id)
-            .bind(id)
-            .execute(&self.write_pool)
-            .await;
-
-            if matches!(result, Ok(ref updated) if updated.rows_affected() > 0) {
-                continue;
-            }
-
-            let _ = Self::insert_message(
+            let _ = crate::domain::features::repository::persist_tool_call_message(
                 &self.write_pool,
-                session_id,
-                "assistant",
-                &content,
-                "tool_call",
-                Some(name),
-                Some(id),
-                None,
-                message.model.as_deref(),
+                crate::domain::features::repository::ToolCallMessage {
+                    session_id,
+                    tool_use_id: id,
+                    tool_name: name,
+                    content: &content,
+                    parent_tool_use_id: None,
+                    model: message.model.as_deref(),
+                },
             )
             .await;
         }

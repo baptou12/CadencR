@@ -9,6 +9,145 @@ mod session_events_compact_tests {
     use sqlx::Row;
 
     #[tokio::test]
+    async fn content_block_start_reuses_existing_tool_call_row() {
+        let pool = setup_test_db().await;
+        sqlx::query(
+            "INSERT INTO agent_messages
+             (session_id, role, content, message_type, tool_name, tool_use_id)
+             VALUES (1, 'assistant', '{}', 'tool_call', 'ExitPlanMode', 'tool_existing')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert existing row");
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::ToolUse {
+                        id: "tool_existing".to_string(),
+                        name: "ExitPlanMode".to_string(),
+                        input: serde_json::json!({ "plan": "ready" }),
+                    },
+                },
+            ))
+            .await;
+
+        let row: (i64, String) = sqlx::query_as(
+            "SELECT COUNT(*), MAX(content) FROM agent_messages
+             WHERE session_id = 1 AND tool_use_id = 'tool_existing'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch row summary");
+        assert_eq!(row, (1, r#"{"plan":"ready"}"#.to_string()));
+    }
+
+    #[tokio::test]
+    async fn content_block_start_preserves_existing_enriched_tool_call_row() {
+        let pool = setup_test_db().await;
+        sqlx::query(
+            "INSERT INTO agent_messages
+             (session_id, role, content, message_type, tool_name, tool_use_id)
+             VALUES (1, 'assistant', '{\"command\":\"x\",\"plan\":\"ready\"}', 'tool_call', 'ExitPlanMode', 'tool_existing')",
+        )
+        .execute(&pool)
+        .await
+        .expect("insert enriched row");
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::ToolUse {
+                        id: "tool_existing".to_string(),
+                        name: "ExitPlanMode".to_string(),
+                        input: serde_json::json!({ "command": "x" }),
+                    },
+                },
+            ))
+            .await;
+
+        let row: (i64, String) = sqlx::query_as(
+            "SELECT COUNT(*), MAX(content) FROM agent_messages
+             WHERE session_id = 1 AND tool_use_id = 'tool_existing'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch row summary");
+        assert_eq!(
+            row,
+            (1, r#"{"command":"x","plan":"ready"}"#.to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_json_deltas_support_chunked_replacement_snapshots() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::ToolUse {
+                        id: "tool_a".to_string(),
+                        name: "Task".to_string(),
+                        input: serde_json::json!({ "status": "pending" }),
+                    },
+                },
+            ))
+            .await;
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::InputJson {
+                        partial_json: r#"{"nested": "#.to_string(),
+                    },
+                },
+            ))
+            .await;
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "child_a",
+                Some("task_a"),
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::InputJson {
+                        partial_json: r#"{"key":"value"}}"#.to_string(),
+                    },
+                },
+            ))
+            .await;
+
+        let row = sqlx::query(
+            "SELECT content FROM agent_messages WHERE session_id = 1 AND tool_use_id = 'tool_a'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch tool row");
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("content"))
+                .expect("valid json"),
+            serde_json::json!({ "nested": { "key": "value" } })
+        );
+    }
+
+    #[tokio::test]
     async fn tool_json_deltas_do_not_collide_between_child_sessions() {
         let pool = setup_test_db().await;
         let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));

@@ -7,9 +7,10 @@
 //! every token belonging to the device.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 #[derive(Default)]
 struct Inner {
@@ -34,12 +35,20 @@ pub struct SessionGuard {
 impl Drop for SessionGuard {
     fn drop(&mut self) {
         if let Some(registry) = self.registry.upgrade() {
-            registry.inner.lock().unwrap().sessions.remove(&self.id);
+            registry.lock_inner().sessions.remove(&self.id);
         }
     }
 }
 
 impl LiveSessions {
+    fn lock_inner(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|poisoned| {
+            warn!("remote live-session registry lock was poisoned; recovering state");
+            self.inner.clear_poison();
+            poisoned.into_inner()
+        })
+    }
+
     /// Register a session for `device_id`, returning a guard whose `token` the
     /// connection should select on, plus whether this is the device's *first*
     /// live socket (it had none open before this one). The flag lets the caller
@@ -50,7 +59,7 @@ impl LiveSessions {
     pub fn register(self: &std::sync::Arc<Self>, device_id: i64) -> (SessionGuard, bool) {
         let token = CancellationToken::new();
         let (id, first_for_device) = {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.lock_inner();
             let first_for_device = !inner
                 .sessions
                 .values()
@@ -70,7 +79,7 @@ impl LiveSessions {
 
     /// Cancel every live session belonging to `device_id` (called on revoke).
     pub fn cancel_device(&self, device_id: i64) {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.lock_inner();
         for (other, token) in inner.sessions.values() {
             if *other == device_id {
                 token.cancel();
@@ -90,7 +99,7 @@ impl LiveSessions {
     /// foregrounded tab gets the live/in-app path, so pushing to it too would
     /// double-notify.
     pub fn connected_device_ids(&self) -> std::collections::HashSet<i64> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.lock_inner();
         inner
             .sessions
             .values()
@@ -155,5 +164,25 @@ mod tests {
         assert_eq!(registry.inner.lock().unwrap().sessions.len(), 0);
         // Cancelling a now-empty device is a no-op (must not panic).
         registry.cancel_device(7);
+    }
+
+    #[test]
+    fn live_session_methods_do_not_panic_after_lock_poison() {
+        let registry = Arc::new(LiveSessions::default());
+        let poison_target = Arc::clone(&registry);
+        let _ = std::thread::spawn(move || {
+            let _guard = poison_target.inner.lock().unwrap();
+            panic!("poison live sessions lock");
+        })
+        .join();
+
+        let register_result = std::panic::catch_unwind(|| registry.register(9));
+        assert!(register_result.is_ok());
+        let cancel_result = std::panic::catch_unwind(|| registry.cancel_device(9));
+        assert!(cancel_result.is_ok());
+        let count_result = std::panic::catch_unwind(|| registry.connected_device_count());
+        assert!(count_result.is_ok());
+        let ids_result = std::panic::catch_unwind(|| registry.connected_device_ids());
+        assert!(ids_result.is_ok());
     }
 }

@@ -265,16 +265,39 @@ impl WsBridgeCanUseTool {
         if let Some(plan_md) = plan_content {
             enriched["plan"] = serde_json::Value::String(plan_md);
             let updated_content = serde_json::to_string(&enriched).unwrap_or_default();
-            crate::domain::features::repository::retry_update_agent_message_content(
+            if let Err(error) = crate::domain::features::repository::persist_tool_call_message(
                 &self.write_pool,
-                self.db_session_id,
-                &request.tool_use_id,
-                &updated_content,
-                &crate::domain::features::repository::ToolCallFilter::ToolName(
-                    "ExitPlanMode".to_string(),
-                ),
+                crate::domain::features::repository::ToolCallMessage {
+                    session_id: self.db_session_id,
+                    tool_use_id: &request.tool_use_id,
+                    tool_name: &request.tool_name,
+                    content: &updated_content,
+                    parent_tool_use_id: None,
+                    model: None,
+                },
             )
-            .await;
+            .await
+            {
+                error!(
+                    db_session_id = self.db_session_id,
+                    tool_use_id = %request.tool_use_id,
+                    error = %error,
+                    "failed to persist enriched ExitPlanMode tool input"
+                );
+                let envelope = WsEnvelope::new(
+                    "session",
+                    "error",
+                    serde_json::to_value(SessionErrorPayload {
+                        code: "DB_ERROR".into(),
+                        message: "Failed to persist the enriched plan approval request.".into(),
+                        ..Default::default()
+                    })
+                    .unwrap(),
+                );
+                let _ = self
+                    .sender
+                    .send(Message::Text(String::from(envelope).into()));
+            }
         }
         enriched
     }

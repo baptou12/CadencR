@@ -189,21 +189,20 @@ impl WsSessionPersistence {
         model: Option<&str>,
     ) -> Option<PersistedMessageRef> {
         let content = serde_json::to_string(input).unwrap_or_default();
-        let result = Self::insert_message(
+        let row_id = match crate::domain::features::repository::persist_tool_call_message(
             &self.write_pool,
-            session_id,
-            "assistant",
-            &content,
-            "tool_call",
-            Some(name),
-            Some(id),
-            ptuid,
-            model,
+            crate::domain::features::repository::ToolCallMessage {
+                session_id,
+                tool_use_id: id,
+                tool_name: name,
+                content: &content,
+                parent_tool_use_id: ptuid,
+                model,
+            },
         )
-        .await;
-
-        let row_id = match result {
-            Ok(row) => row.last_insert_rowid(),
+        .await
+        {
+            Ok(id) => id,
             Err(e) => {
                 error!(error = %e, session_id, tool_use_id = %id, "failed to persist tool_call");
                 return None;

@@ -8,6 +8,8 @@ use crate::domain::agents::adapter::{BranchContext, BranchError, BranchResult, S
 
 const BRANCH_TIMEOUT: Duration = Duration::from_secs(20);
 const SERVER_READY_TIMEOUT: Duration = Duration::from_secs(5);
+/// Upstream workaround: the headless OpenCode ACP process can return before its
+/// embedded HTTP API accepts requests, so branch surgery polls readiness.
 const SERVER_READY_POLL: Duration = Duration::from_millis(100);
 
 pub(super) static OPENCODE_SESSION_BRANCHING: OpenCodeSessionBranching = OpenCodeSessionBranching;
