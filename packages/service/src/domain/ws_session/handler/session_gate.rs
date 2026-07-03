@@ -10,7 +10,8 @@ use crate::domain::agents::adapter::{
 use crate::domain::session_status::AgentStatus;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{
-    GateClosePayload, GateCloseReason, PermissionDecision, WsEnvelope,
+    GateClosePayload, GateCloseReason, GateClosedPayload, PermissionDecision, WsEnvelope,
+    WsSessionAction,
 };
 
 struct ActiveGateRuntime {
@@ -116,23 +117,17 @@ fn send_gate_closed(
     reason: GateCloseReason,
     ref_id: Option<&str>,
 ) {
-    let payload = serde_json::json!({
-        "session_id": db_session_id.to_string(),
-        "request_id": request_id,
-        "reason": gate_close_reason_wire(reason),
-    });
-    let envelope = match ref_id {
-        Some(id) => WsEnvelope::reply(id, "session", "gate.closed", payload),
-        None => WsEnvelope::new("session", "gate.closed", payload),
+    let payload = GateClosedPayload {
+        session_id: db_session_id.to_string(),
+        request_id: request_id.map(str::to_string),
+        reason,
     };
+    let envelope = match ref_id {
+        Some(id) => WsEnvelope::session_reply(id, WsSessionAction::GateClosed, payload),
+        None => WsEnvelope::session_event(WsSessionAction::GateClosed, payload),
+    };
+    let envelope = envelope.expect("gate.closed payload should serialize");
     let _ = sender.send(Message::Text(String::from(envelope).into()));
-}
-
-fn gate_close_reason_wire(reason: GateCloseReason) -> &'static str {
-    match reason {
-        GateCloseReason::Sleep => "sleep",
-        GateCloseReason::Escape => "escape",
-    }
 }
 
 async fn deny_runtime_gate(

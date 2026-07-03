@@ -10,7 +10,9 @@ pub(crate) use crate::domain::agents::permission_modes::{
     post_plan_approval_fallback_mode_wire, post_plan_approval_mode_wire, provider_supports_mode,
 };
 use crate::domain::ws_session::persistence::WsSessionPersistence;
-use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};
+use crate::domain::ws_session::protocol::{
+    RuntimeSessionIdPayload, SessionErrorPayload, WsEnvelope, WsSessionAction,
+};
 
 use super::types::WsSender;
 
@@ -65,10 +67,12 @@ pub(super) fn send_error(sender: &WsSender, ref_id: &str, code: &str, message: &
 
 /// Notify the frontend of the runtime session ID (used for --resume).
 pub(super) fn send_runtime_session_id(sender: &WsSender, cli_sid: &str) {
-    let envelope = WsEnvelope::new(
-        "session",
-        "runtime_session_id",
-        serde_json::json!({ "runtime_session_id": cli_sid }),
-    );
+    let envelope = WsEnvelope::session_event(
+        WsSessionAction::RuntimeSessionId,
+        RuntimeSessionIdPayload {
+            runtime_session_id: cli_sid.to_string(),
+        },
+    )
+    .expect("runtime session id payload should serialize");
     let _ = sender.send(Message::Text(String::from(envelope).into()));
 }

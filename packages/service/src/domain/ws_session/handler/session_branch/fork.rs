@@ -10,7 +10,7 @@
 
 use tracing::info;
 
-use super::super::super::protocol::WsEnvelope;
+use super::super::super::protocol::{BranchForkedPayload, WsEnvelope, WsSessionAction};
 use super::super::helpers::send_error;
 use super::super::types::{SdkSessions, WsSender};
 use super::fork_db::create_forked_feature;
@@ -89,14 +89,14 @@ pub(crate) async fn handle_fork(
         sender,
         &envelope.id,
         inputs.feature_id,
-        "branch.forked",
-        serde_json::json!({
-            "sourceSessionId": db_session_id.to_string(),
-            "newSessionId": fork.new_session_id.to_string(),
-            "newFeatureId": fork.new_feature_id,
-            "projectId": fork.project_id,
-            "draftText": inputs.message_text,
-        }),
+        WsSessionAction::BranchForked,
+        BranchForkedPayload {
+            source_session_id: db_session_id.to_string(),
+            new_session_id: fork.new_session_id.to_string(),
+            new_feature_id: fork.new_feature_id,
+            project_id: fork.project_id,
+            draft_text: inputs.message_text.clone(),
+        },
     )
     .await;
 }

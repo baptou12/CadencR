@@ -4,7 +4,7 @@ use axum::extract::ws::Message;
 use serde_json::Value;
 
 use super::super::super::persistence::WsSessionPersistence;
-use super::super::super::protocol::{PermissionRequestPayload, WsEnvelope};
+use super::super::super::protocol::{permission_request_envelope, PermissionRequestPayload};
 use super::super::WsSender;
 use crate::app_state::AppState;
 use crate::domain::session_status::{AgentStatus, PendingKind};
@@ -75,11 +75,8 @@ fn send_pending(
     payload: PermissionRequestPayload,
     kind: PendingKind,
 ) {
-    let envelope = WsEnvelope::new(
-        "session",
-        "permission.request",
-        serde_json::to_value(payload).unwrap(),
-    );
+    let envelope =
+        permission_request_envelope(payload).expect("permission request payload should serialize");
     let _ = sender.send(Message::Text(String::from(envelope).into()));
     WsSessionPersistence::broadcast_session_status(
         &app_state.session_status_tx,

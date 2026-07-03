@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 // --- Commands payloads ---
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CommandsGetPayload {
     pub cwd: String,
     /// Runtime provider for the active session (e.g. `"claude_code"`,
@@ -11,7 +12,7 @@ pub struct CommandsGetPayload {
     pub provider: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SlashCommandPayload {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -19,14 +20,14 @@ pub struct SlashCommandPayload {
     pub kind: SlashCommandKindPayload,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SlashCommandKindPayload {
     Command,
     Skill,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CommandsListPayload {
     pub commands: Vec<SlashCommandPayload>,
     /// `true` when the server is currently re-resolving the catalog in
@@ -44,7 +45,7 @@ pub struct CommandsListPayload {
 /// Emitted whenever a `RuntimeEventKind::SlashCommandsUpdated` arrives
 /// on a session's runtime channel. The full catalog is sent every time
 /// — frontends should replace, not merge.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CommandsUpdatedPayload {
     pub commands: Vec<SlashCommandPayload>,
 }

@@ -7,7 +7,9 @@ use crate::domain::runtime_stream::{
 };
 use crate::domain::session_status::AgentStatus;
 use crate::domain::ws_session::persistence::{PendingUserInput, WsSessionPersistence};
-use crate::domain::ws_session::protocol::{PermissionRequestPayload, WsEnvelope};
+use crate::domain::ws_session::protocol::{
+    permission_request_envelope, PermissionRequestPayload, WsEnvelope,
+};
 
 use super::super::send_runtime_session_id;
 use super::mcp_servers::{refresh_mcp_servers_for_active_session, send_mcp_servers_if_init};
@@ -105,11 +107,8 @@ impl StreamReaderTask {
         });
         self.persist_pending_user_input(&payload, question_payload.as_ref())
             .await;
-        let envelope = WsEnvelope::new(
-            "session",
-            "permission.request",
-            serde_json::to_value(&payload).unwrap(),
-        );
+        let envelope = permission_request_envelope(&payload)
+            .expect("permission request payload should serialize");
         // Mirror the gate to every device viewing this feature so it appears on
         // the host and any remote clients alike, not only the turn owner.
         let _ = self

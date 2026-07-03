@@ -17,10 +17,11 @@ pub(crate) use rewind::handle_rewind;
 
 use axum::extract::ws::Message;
 use serde::Deserialize;
+use serde::Serialize;
 use tracing::warn;
 
 use super::super::persistence::WsSessionPersistence;
-use super::super::protocol::WsEnvelope;
+use super::super::protocol::{WsEnvelope, WsSessionAction};
 use super::helpers::{parse_session_id, persist_and_close_query, send_error};
 use super::session_control::resolve_owner_sessions;
 use super::types::{QueryState, SdkSessions, WsSender};
@@ -328,17 +329,19 @@ pub(super) async fn current_runtime_session_id(
 
 /// Send the originating client a typed reply, then broadcast the same change to
 /// the other devices viewing this feature so they reload.
-pub(super) async fn reply_and_broadcast(
+pub(super) async fn reply_and_broadcast<P: Serialize>(
     app_state: &AppState,
     sender: &WsSender,
     envelope_id: &str,
     feature_id: i64,
-    action: &str,
-    payload: serde_json::Value,
+    action: WsSessionAction,
+    payload: P,
 ) {
-    let reply = WsEnvelope::reply(envelope_id, "session", action, payload.clone());
+    let reply = WsEnvelope::session_reply(envelope_id, action, &payload)
+        .expect("session branch reply payload should serialize");
     let _ = sender.send(Message::Text(String::from(reply).into()));
-    let broadcast = WsEnvelope::new("session", action, payload);
+    let broadcast = WsEnvelope::session_event(action, payload)
+        .expect("session branch broadcast payload should serialize");
     app_state
         .ws_feature_senders
         .broadcast_others(

@@ -1,7 +1,7 @@
 use tracing::error;
 
 use super::super::super::persistence::WsSessionPersistence;
-use super::super::super::protocol::{CodexPermissionModeSetPayload, WsEnvelope};
+use super::super::super::protocol::{CodexPermissionModeSetPayload, WsEnvelope, WsSessionAction};
 use super::super::helpers::{parse_session_id, send_error};
 use super::super::types::{QueryState, SdkSessions, WsSender};
 use crate::app_state::AppState;
@@ -77,7 +77,7 @@ pub(crate) async fn handle_codex_permission_mode_set(
         sender,
         &envelope.id,
         feature_id,
-        "codex_permission_mode.changed",
+        WsSessionAction::CodexPermissionModeChanged,
         serde_json::json!({ "mode": mode_wire }),
     )
     .await;

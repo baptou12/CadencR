@@ -5,7 +5,7 @@ use crate::domain::agents::adapter::RuntimeStreamStatus;
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeSlashCommandKind};
 use crate::domain::ws_session::protocol::{
     CommandsUpdatedPayload, SessionStreamStatusPayload, SlashCommandKindPayload,
-    SlashCommandPayload, StreamStatusState, WsEnvelope,
+    SlashCommandPayload, StreamStatusState, WsEnvelope, WsSessionAction,
 };
 
 use super::prompt_status::prompt_received_envelope;
@@ -30,7 +30,7 @@ pub(super) async fn forward_immediate_event(
         // `client_message_id`, so mirroring is safe.
         return send_envelope(
             task,
-            "prompt_received",
+            WsSessionAction::PromptReceived.as_str(),
             prompt_received_envelope(client_message_id.to_string()),
             true,
         )
@@ -64,12 +64,9 @@ pub(super) async fn forward_immediate_event(
     if let Some(status) = runtime_event.stream_status() {
         return send_envelope(
             task,
-            "stream_status",
-            WsEnvelope::new(
-                "session",
-                "stream_status",
-                serde_json::to_value(stream_status_payload(status)).unwrap(),
-            ),
+            WsSessionAction::StreamStatus.as_str(),
+            WsEnvelope::session_event(WsSessionAction::StreamStatus, stream_status_payload(status))
+                .expect("stream status payload should serialize"),
             true,
         )
         .await;

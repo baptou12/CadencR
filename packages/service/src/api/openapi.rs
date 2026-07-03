@@ -35,6 +35,7 @@ use crate::domain::sessions::routes as sessions_routes;
 use crate::domain::terminal::routes as terminal_routes;
 use crate::domain::workspace::models as workspace_models;
 use crate::domain::workspace::routes as workspace_routes;
+use crate::domain::ws_session::protocol as ws_protocol;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -396,6 +397,35 @@ use crate::domain::workspace::routes as workspace_routes;
         push_models::PushUnsubscribeRequest,
         push_models::PushSubscriptionKeys,
         push_models::PushSubscriptionResponse,
+        ws_protocol::WsSessionAction,
+        ws_protocol::PermissionDecision,
+        ws_protocol::SessionInitPayload,
+        ws_protocol::PromptSendPayload,
+        ws_protocol::PermissionRespondPayload,
+        ws_protocol::GateClosePayload,
+        ws_protocol::SessionActionPayload,
+        ws_protocol::ProviderSetPayload,
+        ws_protocol::ModelSetPayload,
+        ws_protocol::ModeSetPayload,
+        ws_protocol::EffortSetPayload,
+        ws_protocol::ProfileSetPayload,
+        ws_protocol::GateClosedPayload,
+        ws_protocol::PromptReceivedPayload,
+        ws_protocol::PromptPersistedPayload,
+        ws_protocol::PermissionRequestPayload,
+        ws_protocol::ProviderSetOkPayload,
+        ws_protocol::ModeChangedPayload,
+        ws_protocol::ModelSetOkPayload,
+        ws_protocol::EffortSetOkPayload,
+        ws_protocol::ProfileChangedPayload,
+        ws_protocol::RuntimeSessionIdPayload,
+        ws_protocol::BranchRewoundPayload,
+        ws_protocol::BranchForkedPayload,
+        ws_protocol::SessionStreamStatusPayload,
+        ws_protocol::StreamStatusState,
+        ws_protocol::CommandsGetPayload,
+        ws_protocol::CommandsListPayload,
+        ws_protocol::CommandsUpdatedPayload,
     ))
 )]
 struct ApiDoc;
