@@ -56,12 +56,12 @@ impl StreamReaderTask {
         let _ = self.send_mcp_servers_if_init(&runtime_event).await;
 
         if self.handle_provider_error(&runtime_event).await {
-            state.surfaced_error_this_turn = true;
+            state.turn_state.mark_error_surfaced();
             return;
         }
 
         if self.handle_unknown_message(&runtime_event).await {
-            state.surfaced_error_this_turn = true;
+            state.turn_state.mark_error_surfaced();
             return;
         }
 
@@ -69,10 +69,13 @@ impl StreamReaderTask {
         // the result still has to flow through the turn-complete path below.
         // Suppressed when an error already surfaced this turn (issue #78).
         if self
-            .surface_result_error(state.surfaced_error_this_turn, &runtime_event)
+            .surface_result_error(
+                state.turn_state.has_error_surfaced_this_turn(),
+                &runtime_event,
+            )
             .await
         {
-            state.surfaced_error_this_turn = true;
+            state.turn_state.mark_error_surfaced();
         }
 
         if self.handle_non_result_signal(state, &runtime_event).await {
@@ -142,21 +145,21 @@ impl StreamReaderTask {
         runtime_event: &RuntimeEvent,
     ) {
         let Some(runtime_sid) =
-            capture_runtime_session_id(runtime_event, &mut state.needs_session_id_capture)
+            capture_runtime_session_id(runtime_event, state.runtime_session_id.as_deref())
         else {
             return;
         };
         state.runtime_session_id = Some(runtime_sid.clone());
-        state.usage_state.set_root_session_id(&runtime_sid);
+        state.usage_state.set_root_session_id(runtime_sid.as_str());
         info!(self.db_session_id, runtime_session_id = %runtime_sid, "stream_reader: persisting runtime session_id to DB");
         WsSessionPersistence::persist_runtime_session_id_static(
             &self.write_pool,
             self.db_session_id,
             &self.runtime_provider,
-            &runtime_sid,
+            runtime_sid.as_str(),
         )
         .await;
-        send_runtime_session_id(&self.sender, &runtime_sid);
+        send_runtime_session_id(&self.sender, runtime_sid.as_str());
     }
 
     async fn send_mcp_servers_if_init(&self, runtime_event: &RuntimeEvent) -> Result<(), ()> {
@@ -194,10 +197,9 @@ impl StreamReaderTask {
             return;
         };
 
-        if state.compacting == next {
+        if !state.turn_state.set_compacting(next) {
             return;
         }
-        state.compacting = next;
         let envelope = WsEnvelope::new(
             "session",
             "compacting",
@@ -217,12 +219,11 @@ impl StreamReaderTask {
             return false;
         }
         if crate::domain::session_status::event_starts_fresh_turn(runtime_event) {
-            state.between_turns = false;
             // New turn: clear any error surfaced in the previous turn so this
             // turn's terminal error-result (if any) can surface (issue #78).
-            state.surfaced_error_this_turn = false;
+            state.turn_state.mark_fresh_turn_started();
         }
-        if !state.between_turns {
+        if !state.turn_state.is_between_turns() {
             self.broadcast_runtime_signal(state, runtime_event).await;
         }
         runtime_event.is_turn_started_signal()
@@ -238,7 +239,7 @@ impl StreamReaderTask {
             return;
         };
         let next = signal.status();
-        if state.last_signal_status == Some(next) {
+        if !state.turn_state.record_signal_status(next) {
             return;
         }
         if runtime_event.is_turn_started_signal() && next == AgentStatus::Agent {
@@ -250,7 +251,6 @@ impl StreamReaderTask {
             self.feature_id,
             signal,
         );
-        state.last_signal_status = Some(next);
     }
 
     async fn persist_and_forward_event(

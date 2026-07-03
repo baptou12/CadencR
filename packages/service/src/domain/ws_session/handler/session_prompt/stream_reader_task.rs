@@ -16,6 +16,7 @@ use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 use super::super::{persist_and_close_query, QueryState, SdkSessions, WsSender};
 use super::stream_reader_resume::transition_active_to_pending_on_stream_end;
 use super::stream_reader_stop;
+use super::stream_reader_turn_state::StreamTurnState;
 
 pub(super) struct StreamReaderTask {
     pub db_session_id: i64,
@@ -35,26 +36,11 @@ pub(super) struct StreamReaderTask {
 }
 
 pub(super) struct StreamReaderState {
-    pub(super) needs_session_id_capture: bool,
     pub(super) runtime_session_id: Option<String>,
     pub(super) usage_state: RuntimeUsageState,
     pub(super) last_runtime_activity: Instant,
     pub(super) last_provider_reconcile: Instant,
-    pub(super) last_signal_status: Option<AgentStatus>,
-    pub(super) between_turns: bool,
-    /// Set once the first turn emits a `result`. Gates deferred teardown so a
-    /// just-started turn (whose first event hasn't arrived yet, so
-    /// `between_turns` is still its initial `true`) is never torn down.
-    pub(super) saw_result: bool,
-    /// True while the runtime is inside a provider-reported compaction turn.
-    pub(super) compacting: bool,
-    /// Set once an error has already been surfaced to the conversation during
-    /// the current turn (a provider error or an unrecognized message). Gates
-    /// the turn-ending error-result path so a failure that was already shown
-    /// (e.g. an API 5xx, which the CLI reports *and* then ends the turn with
-    /// `is_error: true`) doesn't produce a second, redundant error bubble. Reset
-    /// at the start of each turn. Issue #78.
-    pub(super) surfaced_error_this_turn: bool,
+    pub(super) turn_state: StreamTurnState,
     /// Opaque handles of background (run-in-background) agents that have
     /// started but not yet finished. Non-empty means the session is still
     /// working even though the launching turn's `Result` has arrived, so the
@@ -93,16 +79,11 @@ enum ReaderAction {
 impl StreamReaderState {
     fn new(initial_context_window: Option<u64>) -> Self {
         Self {
-            needs_session_id_capture: true,
             runtime_session_id: None,
             usage_state: RuntimeUsageState::new(initial_context_window),
             last_runtime_activity: Instant::now(),
             last_provider_reconcile: Instant::now(),
-            last_signal_status: None,
-            between_turns: true,
-            saw_result: false,
-            compacting: false,
-            surfaced_error_this_turn: false,
+            turn_state: StreamTurnState::new(),
             live_background_agents: HashSet::new(),
             message_seq: 0,
             diagnostics: super::stream_diagnostics::StreamDiagnostics::new(),
@@ -251,9 +232,9 @@ impl StreamReaderTask {
     /// Mirrors the `turn_running` guard in [`should_close_orphaned`].
     async fn stream_close_was_unexpected(&self, state: &StreamReaderState) -> bool {
         if !stream_reader_stop::stream_close_needs_running_status(
-            state.between_turns,
+            state.turn_state.is_between_turns(),
             !state.live_background_agents.is_empty(),
-            state.surfaced_error_this_turn,
+            state.turn_state.has_error_surfaced_this_turn(),
         ) {
             return false;
         }
@@ -263,9 +244,9 @@ impl StreamReaderTask {
                 .await
                 .is_some_and(|row| row.status == "running");
         stream_reader_stop::stream_close_was_unexpected(
-            state.between_turns,
+            state.turn_state.is_between_turns(),
             !state.live_background_agents.is_empty(),
-            state.surfaced_error_this_turn,
+            state.turn_state.has_error_surfaced_this_turn(),
             session_running,
         )
     }
@@ -303,7 +284,7 @@ impl StreamReaderTask {
     async fn maybe_teardown_orphaned(&self, state: &StreamReaderState) -> bool {
         // Cheap pre-check before the DB read: never tear down mid-turn or before
         // the first turn has completed.
-        if !(state.between_turns && state.saw_result) {
+        if !(state.turn_state.is_between_turns() && state.turn_state.has_completed_turn()) {
             return false;
         }
         let row = WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id).await;
@@ -312,8 +293,8 @@ impl StreamReaderTask {
         // into this same turn; don't close it out from under that new turn.
         let turn_running = row.is_some_and(|row| row.status == "running");
         if !should_close_orphaned(
-            state.between_turns,
-            state.saw_result,
+            state.turn_state.is_between_turns(),
+            state.turn_state.has_completed_turn(),
             has_pending_user_input,
             turn_running,
         ) {

@@ -22,22 +22,15 @@ pub(crate) fn permission_request_payload(
 
 pub(crate) fn capture_runtime_session_id(
     runtime_event: &RuntimeEvent,
-    needs_capture: &mut bool,
+    current_runtime_session_id: Option<&str>,
 ) -> Option<String> {
-    if !*needs_capture {
+    if current_runtime_session_id.is_some() {
         return None;
     }
-
-    let Some(runtime_session_id) = runtime_event.session_id() else {
-        return None;
-    };
-
-    if runtime_session_id.is_empty() {
-        return None;
-    }
-
-    *needs_capture = false;
-    Some(runtime_session_id.to_string())
+    runtime_event
+        .session_id()
+        .filter(|runtime_session_id| !runtime_session_id.is_empty())
+        .map(ToString::to_string)
 }
 
 pub(crate) fn update_context_window(
@@ -115,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn capture_runtime_session_id_only_returns_once() {
+    fn capture_runtime_session_id_uses_existing_session_as_capture_state() {
         let event = RuntimeEvent::new(
             RuntimeEventMetadata {
                 session_id: Some("sess-123".into()),
@@ -131,13 +124,12 @@ mod tests {
                 parent_tool_use_id: None,
             },
         );
-        let mut needs_capture = true;
 
         assert_eq!(
-            capture_runtime_session_id(&event, &mut needs_capture),
+            capture_runtime_session_id(&event, None),
             Some("sess-123".into())
         );
-        assert_eq!(capture_runtime_session_id(&event, &mut needs_capture), None);
+        assert_eq!(capture_runtime_session_id(&event, Some("sess-123")), None);
     }
 
     #[test]

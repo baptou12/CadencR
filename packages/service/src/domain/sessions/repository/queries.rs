@@ -57,7 +57,7 @@ pub async fn get_session_status_snapshot(
 
     let mut result = HashMap::new();
     for row in rows {
-        let (status, kind) = crate::domain::session_status::derive_status_from_db(
+        let derived = crate::domain::session_status::derive_status_from_db(
             crate::domain::session_status::DbStatusInputs {
                 status_col: &row.status,
                 pending_permission: row.pending_permission,
@@ -68,7 +68,7 @@ pub async fn get_session_status_snapshot(
         // actively driving the UI. A session with `status='running'` and no
         // pending column is Agent; one with a pending column is Question;
         // an Idle slip-through here would just bloat the payload.
-        if status == crate::domain::session_status::AgentStatus::Idle {
+        if derived.is_idle() {
             continue;
         }
         result.insert(
@@ -76,8 +76,8 @@ pub async fn get_session_status_snapshot(
             SessionStatusSnapshotEntry {
                 session_id: row.session_id,
                 feature_id: row.feature_id,
-                status,
-                kind,
+                status: derived.status,
+                kind: derived.kind,
                 // Filled by the WS handler from the active-turn registry; the
                 // DB has no per-turn start column.
                 turn_started_at_ms: None,
