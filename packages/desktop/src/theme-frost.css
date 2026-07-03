@@ -447,6 +447,19 @@
   box-shadow: var(--glass-shadow-overlay);
 }
 
+/* CodeMirror floating tooltips — LSP hover/symbol-info + signature popovers,
+ * autocomplete, and lint diagnostics. These are not shadcn overlays (no
+ * `data-slot` hook) and not `.glass-surface`, so the rules above never reach
+ * them. They already paint a translucent `--editor-bg`, and `BaseCodeMirrorEditor`
+ * portals them to `document.body` (out of the blurred editor pane, which is a
+ * backdrop root), so the same backdrop blur + azure overlay cast as the Radix
+ * overlays now reads as frosted glass instead of the code ghosting through. */
+:root[data-theme="frost-dark"] .cm-tooltip,
+:root[data-theme="frost-light"] .cm-tooltip {
+  backdrop-filter: var(--glass-backdrop);
+  box-shadow: var(--glass-shadow-overlay);
+}
+
 /* The hand-rolled floating popovers (slash-command, @-file mention, filter
  * suggestions) frost via the shared `.glass-surface` utility, which carries the
  * full azure `--glass-shadow`. As floating menus they want the same softened

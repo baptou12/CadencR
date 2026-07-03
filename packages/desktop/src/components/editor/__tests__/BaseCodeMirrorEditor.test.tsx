@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "@/test-utils";
 import { createRef } from "react";
+import { tooltips } from "@codemirror/view";
 import BaseCodeMirrorEditor from "../BaseCodeMirrorEditor";
 
 const mockDispatch = vi.fn();
@@ -25,6 +26,7 @@ vi.mock("@codemirror/view", () => {
     highlightActiveLine: vi.fn(() => []),
     drawSelection: vi.fn(() => []),
     keymap: { of: vi.fn(() => []) },
+    tooltips: vi.fn(() => []),
   };
 });
 
@@ -74,6 +76,7 @@ beforeEach(() => {
   mockDispatch.mockClear();
   mockDestroy.mockClear();
   mockFocus.mockClear();
+  vi.mocked(tooltips).mockClear();
 });
 
 describe("BaseCodeMirrorEditor", () => {
@@ -118,6 +121,16 @@ describe("BaseCodeMirrorEditor", () => {
     expect(onEditorViewChange).toHaveBeenCalledWith(expect.objectContaining({ focus: mockFocus }));
     unmount();
     expect(onEditorViewChange).toHaveBeenLastCalledWith(null);
+  });
+
+  // Regression: in the Frost themes the editor split pane carries its own
+  // `backdrop-filter` and becomes a backdrop root, so a tooltip nested inside
+  // `.cm-editor` cannot paint its own blur (the LSP symbol-info popover rendered
+  // unblurred). Portaling the tooltips to `document.body` lifts them out of the
+  // blurred pane so they can frost like every other overlay.
+  it("portals CodeMirror tooltips to document.body so Frost blur can paint", () => {
+    render(<BaseCodeMirrorEditor />);
+    expect(tooltips).toHaveBeenCalledWith({ parent: document.body });
   });
 
   it("dispatches reconfigure when vimMode changes", () => {

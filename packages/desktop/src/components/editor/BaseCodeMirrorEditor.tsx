@@ -5,6 +5,7 @@ import {
   highlightActiveLine,
   drawSelection,
   keymap,
+  tooltips,
 } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -124,6 +125,16 @@ export default function BaseCodeMirrorEditor({
       // sufficient, the facet has to be flipped to `true`.
       //   https://codemirror.net/docs/ref/#state.EditorState^allowMultipleSelections
       EditorState.allowMultipleSelections.of(true),
+      // Render all floating tooltips (LSP hover/signature popovers,
+      // autocomplete, lint diagnostics) under `document.body` instead of nested
+      // inside `.cm-editor`. In the Frost themes the editor split pane carries
+      // its own `backdrop-filter` (theme-frost.css) and so becomes a backdrop
+      // root — a nested tooltip's own `backdrop-filter` then paints nothing in
+      // Chromium, leaving the glass unblurred. Portaling the tooltips out of the
+      // pane lets them frost the app behind them like every other overlay; CM
+      // copies the editor's theme classes onto the portaled container, so their
+      // background/border styling is preserved.
+      tooltips({ parent: document.body }),
       drawSelection(),
       lineNumbers(),
       highlightActiveLine(),
