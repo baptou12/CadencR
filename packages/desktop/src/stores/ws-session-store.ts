@@ -76,7 +76,7 @@ import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import { resyncMessagesOnReconnect } from "./ws-session-resync";
 
-import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
+import { blocksPatchWithDerived } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
 export {
   type StreamingState,
