@@ -3,6 +3,13 @@ import { toast } from "sonner";
 import type { VirtuosoHandle, FollowOutputCallback } from "react-virtuoso";
 import type { AgentBlockData } from "../AgentBlock";
 import { subscribeResize } from "@/lib/resize-coordinator";
+import {
+  canScroll,
+  MAX_VIEWPORT_FILL_PAGES,
+  type HistoryAnchor,
+  type UseAgentSessionScrollResult,
+} from "./agent-session-scroll-utils";
+import { useAgentSessionScrollInput } from "./useAgentSessionScrollInput";
 
 /**
  * Auto-scroll for the chat, in three rules:
@@ -48,43 +55,6 @@ interface UseAgentSessionScrollOptions {
   onLoadOlder?: () => Promise<number | void>;
 }
 
-type ScrollRef = (el: HTMLElement | null) => void;
-const HISTORY_SCROLL_TOP_PX = 160;
-const SCROLLBAR_HIT_TARGET_PX = 20;
-// The initial agent-state window is intentionally small (see
-// `AGENT_STATE_INITIAL_MESSAGE_LIMIT`) so latest-message + status paint
-// instantly. If that window doesn't fill the viewport there's no scrollbar, so
-// the user can't scroll up to reach older history. This caps how many pages we
-// auto-prepend to produce a scrollbar before giving up (a pathological run of
-// tiny collapsed rows).
-const MAX_VIEWPORT_FILL_PAGES = 6;
-
-function canScroll(el: HTMLElement): boolean {
-  return el.scrollHeight > el.clientHeight;
-}
-
-function isVerticalScrollbarPointer(el: HTMLElement, e: PointerEvent): boolean {
-  const rect = el.getBoundingClientRect();
-  return e.clientX >= rect.right - SCROLLBAR_HIT_TARGET_PX && e.clientX <= rect.right + 1;
-}
-
-interface UseAgentSessionScrollResult {
-  virtuosoRef: React.RefObject<VirtuosoHandle | null>;
-  scrollContainerRef: ScrollRef;
-  onStartReached: () => void;
-  followOutput: FollowOutputCallback;
-  onAtBottomStateChange: (atBottom: boolean) => void;
-  onTotalListHeightChanged: (height: number) => void;
-  autoScrollEnabled: boolean;
-  isLoadingOlder: boolean;
-  scrollToBottom: () => void;
-}
-
-interface HistoryAnchor {
-  scrollTop: number;
-  scrollHeight: number;
-}
-
 export function useAgentSessionScroll({
   blocks,
   conversationKey,
@@ -103,7 +73,6 @@ export function useAgentSessionScroll({
   const lastScrollTopRef = useRef(0);
   const suppressScrollIntentRef = useRef(false);
   const userScrollIntentRef = useRef(false);
-  const touchStartYRef = useRef(0);
   const prevConversationKeyRef = useRef<string | null>(conversationKey);
   // One-shot first-paint bottom pin; subsequent appends use `followOutput`.
   const didFirstPaintScrollRef = useRef(false);
@@ -333,95 +302,20 @@ export function useAgentSessionScroll({
     [pinToEnd],
   );
 
-  // Synchronous user-input disengage: `wheel` up / `touchmove` up fire
-  // before the browser repaints, so a streaming-token re-anchor in the same
-  // commit can't undo the user's scroll. We only disengage when the
-  // viewport can actually scroll — wheel-up on a short session is idle
-  // intent, not a request to leave the bottom.
-  const onWheel = useCallback(
-    (e: WheelEvent): void => {
-      if (e.deltaY >= 0) return;
-      const el = scrollerElRef.current;
-      if (!el || !canScroll(el)) return;
-      armUserScrollIntent();
-      historyLoadArmedRef.current = true;
-      setAutoScrollEnabled(false);
-    },
-    [armUserScrollIntent, setAutoScrollEnabled],
-  );
-  const onPointerDown = useCallback(
-    (e: PointerEvent): void => {
-      const el = scrollerElRef.current;
-      if (!el || !canScroll(el) || !isVerticalScrollbarPointer(el, e)) return;
-      historyLoadArmedRef.current = true;
-      armUserScrollIntent();
-    },
-    [armUserScrollIntent],
-  );
-  const onKeyDown = useCallback(
-    (e: KeyboardEvent): void => {
-      if (!["ArrowUp", "PageUp", "Home"].includes(e.key)) return;
-      armUserScrollIntent();
-    },
-    [armUserScrollIntent],
-  );
-  const onTouchStart = useCallback((e: TouchEvent): void => {
-    touchStartYRef.current = e.touches[0]?.clientY ?? 0;
-  }, []);
-  const onTouchMove = useCallback(
-    (e: TouchEvent): void => {
-      const y = e.touches[0]?.clientY ?? 0;
-      if (y <= touchStartYRef.current + 5) return;
-      const el = scrollerElRef.current;
-      if (!el || !canScroll(el)) return;
-      armUserScrollIntent();
-      historyLoadArmedRef.current = true;
-      setAutoScrollEnabled(false);
-    },
-    [armUserScrollIntent, setAutoScrollEnabled],
-  );
-  const onScroll = useCallback((): void => {
-    const el = scrollerElRef.current;
-    if (!el) return;
-    const currentScrollTop = el.scrollTop;
-    const previousScrollTop = lastScrollTopRef.current;
-    lastScrollTopRef.current = currentScrollTop;
-
-    if (suppressScrollIntentRef.current || !canScroll(el)) return;
-    if (!userScrollIntentRef.current) return;
-    const isScrollingUp = currentScrollTop < previousScrollTop - 1;
-    if (!isScrollingUp) return;
-
-    historyLoadArmedRef.current = true;
-    setAutoScrollEnabled(false);
-    if (currentScrollTop <= HISTORY_SCROLL_TOP_PX) requestOlderHistory();
-  }, [requestOlderHistory, setAutoScrollEnabled]);
-
-  const scrollContainerRef = useCallback<ScrollRef>(
-    (el) => {
-      const prev = scrollerElRef.current;
-      if (prev === el) return;
-      if (prev) {
-        prev.removeEventListener("keydown", onKeyDown);
-        prev.removeEventListener("pointerdown", onPointerDown);
-        prev.removeEventListener("wheel", onWheel);
-        prev.removeEventListener("scroll", onScroll);
-        prev.removeEventListener("touchstart", onTouchStart);
-        prev.removeEventListener("touchmove", onTouchMove);
-      }
-      scrollerElRef.current = el;
-      if (el) {
-        lastScrollTopRef.current = el.scrollTop;
-        el.addEventListener("keydown", onKeyDown);
-        el.addEventListener("pointerdown", onPointerDown, { passive: true });
-        el.addEventListener("wheel", onWheel, { passive: true });
-        el.addEventListener("scroll", onScroll, { passive: true });
-        el.addEventListener("touchstart", onTouchStart, { passive: true });
-        el.addEventListener("touchmove", onTouchMove, { passive: true });
-      }
-    },
-    [onKeyDown, onPointerDown, onWheel, onScroll, onTouchStart, onTouchMove],
-  );
+  // Raw DOM input listeners (wheel / pointer / key / touch / scroll) that
+  // disengage bottom-stick and arm history loading live in a sibling hook to
+  // keep this file under the 400-line cap. It owns the scroller-element wiring
+  // and returns the container ref callback.
+  const scrollContainerRef = useAgentSessionScrollInput({
+    scrollerElRef,
+    historyLoadArmedRef,
+    lastScrollTopRef,
+    userScrollIntentRef,
+    suppressScrollIntentRef,
+    armUserScrollIntent,
+    setAutoScrollEnabled,
+    requestOlderHistory,
+  });
 
   const onStartReached = useCallback((): void => {
     if (!historyLoadArmedRef.current) return;

@@ -1,15 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import {
-  SettingsIcon,
-  FolderPlusIcon,
-  FilePlusIcon,
-  MessageSquarePlusIcon,
-  DiffIcon,
-  ArrowLeftIcon,
-  TerminalIcon,
-} from "lucide-react";
+import { ArrowLeftIcon } from "lucide-react";
 import {
   CommandDialog,
   CommandInput,
@@ -17,9 +9,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-  CommandSeparator,
 } from "@/components/ui/command";
-import { KbdShortcut } from "@/components/KbdShortcut";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListProjects,
@@ -37,7 +27,7 @@ import {
   type WorktreeChoiceValue,
 } from "@/components/command-palette/WorktreeChoice";
 import { CommandPaletteWorktreeStep } from "@/components/command-palette/CommandPaletteWorktreeStep";
-import { ProjectFeatureGroup } from "@/components/command-palette/ProjectFeatureGroup";
+import { CommandPaletteCommands } from "@/components/command-palette/CommandPaletteCommands";
 import { apiErrorMessage } from "@/lib/api-errors";
 import {
   DEFAULT_WORKTREE_MODE_KEY,
@@ -235,6 +225,44 @@ export function CommandPalette({
     close();
   }, [close]);
 
+  const handleOpenSettings = useCallback(() => {
+    void navigate({ to: "/settings" });
+    close();
+  }, [navigate, close]);
+
+  const handleNewFeature = useCallback(() => {
+    if (activeProjectId != null) {
+      startWorktreePick(activeProjectId);
+    } else {
+      setMode("pick-project-feature");
+      setSearch("");
+    }
+  }, [activeProjectId, startWorktreePick]);
+
+  const handleNewSession = useCallback(() => {
+    if (activeProjectId != null) {
+      createSessionMutation.mutate({
+        data: { project_id: activeProjectId, type: "ws-session" },
+      });
+      close();
+    } else {
+      setMode("pick-project-session");
+      setSearch("");
+    }
+  }, [activeProjectId, createSessionMutation, close]);
+
+  const handleToggleTerminal = useCallback(() => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    );
+    close();
+  }, [close]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (mode === "pick-worktree-mode") {
@@ -311,104 +339,20 @@ export function CommandPalette({
   }
 
   return (
-    <CommandDialog open={open} onOpenChange={handleOpenChange}>
-      <CommandInput
-        placeholder="Type a command or search..."
-        value={search}
-        onValueChange={setSearch}
-      />
-      <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
-        <CommandGroup heading="Commands">
-          <CommandItem
-            onSelect={() => {
-              void navigate({ to: "/settings" });
-              close();
-            }}
-          >
-            <SettingsIcon className="mr-2" />
-            Global Settings
-            <span className="ml-auto">
-              <KbdShortcut keys={["cmd", ","]} />
-            </span>
-          </CommandItem>
-          <CommandItem onSelect={handleNewProject}>
-            <FolderPlusIcon className="mr-2" />
-            New Project
-          </CommandItem>
-          <CommandItem
-            onSelect={() => {
-              if (activeProjectId != null) {
-                startWorktreePick(activeProjectId);
-              } else {
-                setMode("pick-project-feature");
-                setSearch("");
-              }
-            }}
-          >
-            <FilePlusIcon className="mr-2" />
-            New Feature
-          </CommandItem>
-          <CommandItem
-            onSelect={() => {
-              if (activeProjectId != null) {
-                createSessionMutation.mutate({
-                  data: { project_id: activeProjectId, type: "ws-session" },
-                });
-                close();
-              } else {
-                setMode("pick-project-session");
-                setSearch("");
-              }
-            }}
-          >
-            <MessageSquarePlusIcon className="mr-2" />
-            New Session
-            <span className="ml-auto">
-              <KbdShortcut keys={["cmd", "shift", "N"]} />
-            </span>
-          </CommandItem>
-          {activeFeatureId != null && (
-            <CommandItem onSelect={handleOpenDiff}>
-              <DiffIcon className="mr-2" />
-              Open Diff
-              <span className="ml-auto">
-                <KbdShortcut keys={["cmd", "shift", "D"]} />
-              </span>
-            </CommandItem>
-          )}
-          {activeFeatureId != null && (
-            <CommandItem
-              onSelect={() => {
-                window.dispatchEvent(
-                  new KeyboardEvent("keydown", {
-                    key: "`",
-                    code: "Backquote",
-                    ctrlKey: true,
-                    bubbles: true,
-                  }),
-                );
-                close();
-              }}
-            >
-              <TerminalIcon className="mr-2" />
-              Toggle Terminal
-              <span className="ml-auto">
-                <KbdShortcut keys={["ctrl", "`"]} />
-              </span>
-            </CommandItem>
-          )}
-        </CommandGroup>
-        {sortedProjects.length > 0 && <CommandSeparator />}
-        {sortedProjects.map((p: { id: number; name: string }) => (
-          <ProjectFeatureGroup
-            key={p.id}
-            projectId={p.id}
-            projectName={p.name}
-            onSelect={handleFeatureSelect}
-          />
-        ))}
-      </CommandList>
-    </CommandDialog>
+    <CommandPaletteCommands
+      open={open}
+      onOpenChange={handleOpenChange}
+      search={search}
+      onSearchChange={setSearch}
+      sortedProjects={sortedProjects}
+      activeFeatureId={activeFeatureId}
+      onOpenSettings={handleOpenSettings}
+      onNewProject={handleNewProject}
+      onNewFeature={handleNewFeature}
+      onNewSession={handleNewSession}
+      onOpenDiff={handleOpenDiff}
+      onToggleTerminal={handleToggleTerminal}
+      onFeatureSelect={handleFeatureSelect}
+    />
   );
 }

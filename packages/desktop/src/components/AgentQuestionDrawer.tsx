@@ -1,35 +1,15 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
-import { useScopedShortcut } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { KbdShortcut } from "@/components/KbdShortcut";
-import {
-  AGENT_OPTION_CARD_BASE,
-  AGENT_OPTION_CARD_RESTING,
-  AGENT_OPTION_CARD_SELECTED,
-  AGENT_OPTION_CARD_HIGHLIGHTED,
-} from "@/components/agent-prompt-option-card";
-import {
-  SendIcon,
-  MessageCircleQuestionIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  X,
-} from "lucide-react";
+import { SendIcon } from "lucide-react";
+import { AgentQuestionHeader } from "./agent-question/AgentQuestionHeader";
+import { AgentQuestionOptionList } from "./agent-question/AgentQuestionOptionList";
+import { useAgentQuestionForm } from "./agent-question/useAgentQuestionForm";
+import { useAgentQuestionShortcuts } from "./agent-question/useAgentQuestionShortcuts";
+import type { AgentQuestion, AgentQuestionAnswers } from "./agent-question/types";
 
-/** A single question from an AskUserQuestion tool call */
-export interface AgentQuestion {
-  /** The question text */
-  question: string;
-  /** Pre-defined options the user can choose from */
-  options?: { label: string; description?: string; preview?: string }[];
-  /** Whether multiple options can be selected */
-  multiSelect?: boolean;
-}
-
-export type AgentQuestionAnswers = string[][];
+export { parseAskUserQuestions } from "./agent-question/parse-questions";
+export type { AgentQuestion, AgentQuestionAnswers } from "./agent-question/types";
 
 interface AgentQuestionDrawerProps {
   /** The questions to display */
@@ -58,364 +38,31 @@ export function AgentQuestionDrawer({
   inline,
   disableShortcuts,
 }: AgentQuestionDrawerProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<
-    { text: string; selectedOptions: Set<string>; freeText: string; showOther: boolean }[]
-  >([]);
-  const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
-  const [freeText, setFreeText] = useState("");
-  const [showOther, setShowOther] = useState(false);
-  // Drives re-render so the digit badges dim while the free-text input is
-  // focused — mirroring that the 1-9 selectors don't fire inside inputs.
-  const [freeTextFocused, setFreeTextFocused] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
-  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const form = useAgentQuestionForm({ questions, onSubmit });
 
-  // Clean up highlight timer on unmount
-  useEffect(() => {
-    return () => {
-      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-    };
-  }, []);
+  useAgentQuestionShortcuts({
+    open,
+    disableShortcuts,
+    onCancel,
+    currentQuestion: form.currentQuestion,
+    showOther: form.showOther,
+    freeTextFocused: form.freeTextFocused,
+    canGoBack: form.canGoBack,
+    canGoForward: form.canGoForward,
+    otherShortcutIndex: form.otherShortcutIndex,
+    handleOptionToggle: form.handleOptionToggle,
+    handleOtherToggle: form.handleOtherToggle,
+    handleNext: form.handleNext,
+    handleBack: form.handleBack,
+    handleForward: form.handleForward,
+    flashHighlight: form.flashHighlight,
+  });
 
-  const currentQuestion = questions[currentIndex];
-
-  const resetState = useCallback(() => {
-    setSelectedOptions(new Set());
-    setFreeText("");
-    setShowOther(false);
-    // Submitting via Enter (or any path that unmounts the input) never fires
-    // its onBlur, so clear the focus flag here — otherwise the 1-9 badges stay
-    // dimmed on the next question even though "Other" isn't selected.
-    setFreeTextFocused(false);
-  }, []);
-
-  const getCurrentAnswerText = useCallback((): string => {
-    const parts: string[] = [];
-    if (selectedOptions.size > 0) {
-      parts.push(Array.from(selectedOptions).join(", "));
-    }
-    if (showOther && freeText.trim()) {
-      parts.push(freeText.trim());
-    }
-    // If no options at all (free-text only question), use freeText directly
-    if (!currentQuestion?.options?.length && freeText.trim()) {
-      return freeText.trim();
-    }
-    return parts.join("; ");
-  }, [selectedOptions, showOther, freeText, currentQuestion]);
-
-  const getAnswerValues = useCallback(
-    (
-      question: AgentQuestion | undefined,
-      answerState: { selectedOptions: Set<string>; freeText: string; showOther: boolean },
-    ): string[] => {
-      if (!question) return [];
-      const values: string[] = [];
-      if (question.options?.length) {
-        values.push(...Array.from(answerState.selectedOptions));
-        if (answerState.showOther && answerState.freeText.trim()) {
-          values.push(answerState.freeText.trim());
-        }
-        return values;
-      }
-      if (answerState.freeText.trim()) {
-        return [answerState.freeText.trim()];
-      }
-      return values;
-    },
-    [],
-  );
-
-  /** Save current UI state into answers array at a given index */
-  const saveCurrentState = useCallback(
-    (index: number) => {
-      const text = getCurrentAnswerText();
-      setAnswers((prev) => {
-        const next = [...prev];
-        next[index] = { text, selectedOptions: new Set(selectedOptions), freeText, showOther };
-        return next;
-      });
-    },
-    [getCurrentAnswerText, selectedOptions, freeText, showOther],
-  );
-
-  /** Restore UI state from a saved answer */
-  const restoreState = useCallback(
-    (saved: { selectedOptions: Set<string>; freeText: string; showOther: boolean }) => {
-      setSelectedOptions(new Set(saved.selectedOptions));
-      setFreeText(saved.freeText);
-      setShowOther(saved.showOther);
-    },
-    [],
-  );
-
-  const canGoBack = currentIndex > 0;
-  const canGoForward = currentIndex < answers.length - 1 && answers[currentIndex + 1] != null;
-
-  const handleBack = useCallback(() => {
-    if (!canGoBack) return;
-    // Save current state before navigating
-    saveCurrentState(currentIndex);
-    const prevIndex = currentIndex - 1;
-    setCurrentIndex(prevIndex);
-    const saved = answers[prevIndex];
-    if (saved) {
-      restoreState(saved);
-    } else {
-      resetState();
-    }
-  }, [canGoBack, currentIndex, answers, saveCurrentState, restoreState, resetState]);
-
-  const handleForward = useCallback(() => {
-    if (!canGoForward) return;
-    saveCurrentState(currentIndex);
-    const nextIndex = currentIndex + 1;
-    setCurrentIndex(nextIndex);
-    const saved = answers[nextIndex];
-    if (saved) {
-      restoreState(saved);
-    } else {
-      resetState();
-    }
-  }, [canGoForward, currentIndex, answers, saveCurrentState, restoreState, resetState]);
-
-  const handleOptionToggle = useCallback(
-    (option: string) => {
-      if (!currentQuestion) return;
-
-      if (currentQuestion.multiSelect) {
-        setSelectedOptions((prev) => {
-          const next = new Set(prev);
-          if (next.has(option)) {
-            next.delete(option);
-          } else {
-            next.add(option);
-          }
-          return next;
-        });
-      } else {
-        // Single select — set only this option
-        setSelectedOptions(new Set([option]));
-        setShowOther(false);
-        setFreeText("");
-      }
-    },
-    [currentQuestion],
-  );
-
-  const handleOtherToggle = useCallback(() => {
-    setShowOther((prev) => !prev);
-    if (!showOther) {
-      // If enabling "Other", deselect options in single-select mode
-      if (!currentQuestion?.multiSelect) {
-        setSelectedOptions(new Set());
-      }
-    }
-  }, [showOther, currentQuestion]);
-
-  const handleNext = useCallback(() => {
-    const answer = getCurrentAnswerText();
-    if (!answer) return;
-
-    // Save structured state at current index
-    const newAnswers = [...answers];
-    newAnswers[currentIndex] = {
-      text: answer,
-      selectedOptions: new Set(selectedOptions),
-      freeText,
-      showOther,
-    };
-
-    if (currentIndex < questions.length - 1) {
-      setAnswers(newAnswers);
-      setCurrentIndex((prev) => prev + 1);
-      // Restore next answer if it exists (user went back then forward via Next)
-      const nextSaved = newAnswers[currentIndex + 1];
-      if (nextSaved) {
-        setSelectedOptions(new Set(nextSaved.selectedOptions));
-        setFreeText(nextSaved.freeText);
-        setShowOther(nextSaved.showOther);
-        // The restored input isn't focused; clear the flag so 1-9 stay active.
-        setFreeTextFocused(false);
-      } else {
-        resetState();
-      }
-    } else {
-      const response = questions.map((question, index) =>
-        getAnswerValues(
-          question,
-          newAnswers[index] ?? {
-            text: "",
-            selectedOptions: new Set<string>(),
-            freeText: "",
-            showOther: false,
-          },
-        ),
-      );
-      onSubmit(response);
-
-      // Reset everything
-      setCurrentIndex(0);
-      setAnswers([]);
-      resetState();
-    }
-  }, [
-    getCurrentAnswerText,
-    answers,
-    currentIndex,
-    questions,
-    onSubmit,
-    resetState,
-    selectedOptions,
-    freeText,
-    showOther,
-    getAnswerValues,
-  ]);
-
-  const handleFreeTextSubmit = useCallback(() => {
-    if (freeText.trim()) {
-      handleNext();
-    }
-  }, [freeText, handleNext]);
-
-  const flashHighlight = useCallback((index: number) => {
-    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-    setHighlightedIndex(index);
-    highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
-  }, []);
-
-  // 1 through 9 selects/toggles an option by index. Mod+O toggles "Other..."
-  const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other" highlight
-  // `useScopedShortcut` enables form tags by default, so pressing "1" while
-  // typing in the "Other" free-text input would otherwise select an option
-  // instead of inserting the digit. Opt out explicitly so numbers are typed
-  // into the input — same as q-submit/q-prev/q-next below.
-  useScopedShortcut(
-    "q-select-1-9",
-    (e) => {
-      if (!open || !currentQuestion?.options) return;
-      if (!/^[1-9]$/.test(e.key)) return;
-      const digit = Number(e.key);
-      if (digit > currentQuestion.options.length) return;
-      e.preventDefault();
-      const option = currentQuestion.options[digit - 1];
-      handleOptionToggle(option.label);
-      flashHighlight(digit - 1);
-    },
-    "agent",
-    {
-      enabled: open && !disableShortcuts,
-      enableOnFormTags: false,
-      enableOnContentEditable: false,
-    },
-    [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
-  );
-
-  useScopedShortcut(
-    "q-other",
-    (e) => {
-      if (!open || !currentQuestion?.options) return;
-      e.preventDefault();
-      handleOtherToggle();
-      flashHighlight(otherShortcutIndex);
-    },
-    "agent",
-    { enabled: open && !disableShortcuts },
-    [
-      open,
-      disableShortcuts,
-      currentQuestion,
-      handleOtherToggle,
-      flashHighlight,
-      otherShortcutIndex,
-    ],
-  );
-
-  // Enter to validate/submit current question. Default enableOnFormTags=true
-  // would steal Enter inside the free-text input; opt out explicitly.
-  useScopedShortcut(
-    "q-submit",
-    (e) => {
-      if (!open || !currentQuestion) return;
-      if (showOther || !currentQuestion.options?.length) return;
-      e.preventDefault();
-      handleNext();
-    },
-    "agent",
-    {
-      enabled: open && !disableShortcuts,
-      enableOnFormTags: false,
-      enableOnContentEditable: false,
-    },
-    [open, disableShortcuts, currentQuestion, showOther, handleNext],
-  );
-
-  // Left/Right arrow keys to navigate between questions
-  useScopedShortcut(
-    "q-prev",
-    (e) => {
-      if (!open || freeTextFocused) return;
-      e.preventDefault();
-      handleBack();
-    },
-    "agent",
-    {
-      enabled: open && !disableShortcuts && canGoBack,
-      enableOnFormTags: false,
-      enableOnContentEditable: false,
-    },
-    [open, disableShortcuts, canGoBack, handleBack, freeTextFocused],
-  );
-
-  useScopedShortcut(
-    "q-next",
-    (e) => {
-      if (!open || freeTextFocused) return;
-      e.preventDefault();
-      handleForward();
-    },
-    "agent",
-    {
-      enabled: open && !disableShortcuts && canGoForward,
-      enableOnFormTags: false,
-      enableOnContentEditable: false,
-    },
-    [open, disableShortcuts, canGoForward, handleForward, freeTextFocused],
-  );
-
-  useScopedHotkeys(
-    "escape",
-    (event) => {
-      if (!open) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCancel?.();
-    },
-    "agent",
-    {
-      enabled: open && !!onCancel && !disableShortcuts,
-      enableOnFormTags: true,
-      enableOnContentEditable: true,
-    },
-    [open, onCancel, disableShortcuts],
-  );
-
-  if (!open || !currentQuestion) {
+  if (!open || !form.currentQuestion) {
     return null;
   }
-
-  const hasAnswer =
-    selectedOptions.size > 0 ||
-    (showOther && freeText.trim().length > 0) ||
-    (!currentQuestion.options?.length && freeText.trim().length > 0);
-
-  const isLastQuestion = currentIndex >= questions.length - 1;
-  const hasOptions = currentQuestion.options && currentQuestion.options.length > 0;
-  const selectedPreview = hasOptions
-    ? currentQuestion.options!.filter((o) => selectedOptions.has(o.label) && o.preview).at(-1)
-        ?.preview
-    : undefined;
+  const currentQuestion = form.currentQuestion;
+  const { hasAnswer, isLastQuestion, hasOptions, selectedPreview } = form;
 
   return (
     <div
@@ -426,53 +73,15 @@ export function AgentQuestionDrawer({
     >
       {/* Header row: progress indicator (multi-question) + dismiss X */}
       {(questions.length > 1 || onCancel) && (
-        <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
-          {questions.length > 1 && (
-            <>
-              <button
-                type="button"
-                disabled={!canGoBack}
-                onClick={handleBack}
-                className={cn(
-                  "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
-                  canGoBack ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
-                )}
-                aria-label="Previous question"
-              >
-                <ChevronLeftIcon className="size-3.5" />
-              </button>
-              <MessageCircleQuestionIcon className="size-3" />
-              <span>
-                Question {currentIndex + 1} of {questions.length}
-              </span>
-              <button
-                type="button"
-                disabled={!canGoForward}
-                onClick={handleForward}
-                className={cn(
-                  "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
-                  canGoForward ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
-                )}
-                aria-label="Next question"
-              >
-                <ChevronRightIcon className="size-3.5" />
-              </button>
-            </>
-          )}
-          {onCancel && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={onCancel}
-              aria-label="Dismiss question (Esc)"
-              title="Dismiss (Esc) - stops the agent"
-              className="ml-auto size-5 text-muted-foreground"
-            >
-              <X className="size-3.5" />
-            </Button>
-          )}
-        </div>
+        <AgentQuestionHeader
+          questionsLength={questions.length}
+          currentIndex={form.currentIndex}
+          canGoBack={form.canGoBack}
+          canGoForward={form.canGoForward}
+          onBack={form.handleBack}
+          onForward={form.handleForward}
+          onCancel={onCancel}
+        />
       )}
 
       {/* Question text */}
@@ -489,72 +98,27 @@ export function AgentQuestionDrawer({
 
       {/* Option list */}
       {hasOptions && (
-        <div className="mb-2 flex flex-col gap-1.5">
-          {currentQuestion.options!.map((option, optIdx) => (
-            <button
-              key={option.label}
-              type="button"
-              className={cn(
-                AGENT_OPTION_CARD_BASE,
-                selectedOptions.has(option.label)
-                  ? AGENT_OPTION_CARD_SELECTED
-                  : AGENT_OPTION_CARD_RESTING,
-                highlightedIndex === optIdx && AGENT_OPTION_CARD_HIGHLIGHTED,
-              )}
-              onClick={(e) => {
-                handleOptionToggle(option.label);
-                // Blur so subsequent Enter is handled by the global hotkey (validate)
-                // rather than re-triggering this button's click (which would re-toggle).
-                e.currentTarget.blur();
-              }}
-            >
-              <span className="text-sm font-medium text-foreground">
-                <KbdShortcut
-                  keys={[String(optIdx + 1)]}
-                  variant="square"
-                  scope="agent"
-                  disabled={freeTextFocused}
-                />
-                {option.label}
-              </span>
-              {option.description && (
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {option.description}
-                </span>
-              )}
-            </button>
-          ))}
-          {/* "Other" toggle */}
-          <button
-            type="button"
-            className={cn(
-              AGENT_OPTION_CARD_BASE,
-              showOther ? AGENT_OPTION_CARD_SELECTED : AGENT_OPTION_CARD_RESTING,
-              highlightedIndex === currentQuestion.options!.length && AGENT_OPTION_CARD_HIGHLIGHTED,
-            )}
-            onClick={(e) => {
-              handleOtherToggle();
-              e.currentTarget.blur();
-            }}
-          >
-            <span className="text-sm font-medium text-foreground">
-              <KbdShortcut keys={["cmd", "O"]} variant="square" scope="agent" />
-              Other...
-            </span>
-          </button>
-        </div>
+        <AgentQuestionOptionList
+          options={currentQuestion.options!}
+          selectedOptions={form.selectedOptions}
+          highlightedIndex={form.highlightedIndex}
+          showOther={form.showOther}
+          freeTextFocused={form.freeTextFocused}
+          onOptionToggle={form.handleOptionToggle}
+          onOtherToggle={form.handleOtherToggle}
+        />
       )}
 
       {/* Free text input (shown for "Other" or when no options) */}
-      {(showOther || !hasOptions) && (
+      {(form.showOther || !hasOptions) && (
         <div className="mb-2 flex items-center gap-2">
           <Input
-            value={freeText}
-            onChange={(e) => setFreeText(e.target.value)}
-            onFocus={() => setFreeTextFocused(true)}
-            onBlur={() => setFreeTextFocused(false)}
+            value={form.freeText}
+            onChange={(e) => form.setFreeText(e.target.value)}
+            onFocus={() => form.setFreeTextFocused(true)}
+            onBlur={() => form.setFreeTextFocused(false)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleFreeTextSubmit();
+              if (e.key === "Enter") form.handleFreeTextSubmit();
             }}
             placeholder="Type your answer..."
             className={cn(
@@ -569,59 +133,11 @@ export function AgentQuestionDrawer({
 
       {/* Submit button */}
       <div className="flex justify-end">
-        <Button size="sm" disabled={!hasAnswer} onClick={handleNext}>
+        <Button size="sm" disabled={!hasAnswer} onClick={form.handleNext}>
           <SendIcon className="mr-1.5 size-3" />
           {isLastQuestion ? "Submit" : "Next"}
         </Button>
       </div>
     </div>
   );
-}
-
-/**
- * Parse AskUserQuestion tool calls from stream-json events.
- * Extracts questions from content_block_start events with tool_use type
- * where the tool name is "AskUserQuestion".
- */
-/** Normalize options array: handle both string[] and {label, description}[] formats */
-function normalizeOptions(
-  raw: unknown,
-): { label: string; description?: string; preview?: string }[] | undefined {
-  if (!Array.isArray(raw)) return undefined;
-  return raw.map((item: unknown) => {
-    if (typeof item === "string") return { label: item };
-    if (typeof item === "object" && item !== null) {
-      const obj = item as Record<string, unknown>;
-      return {
-        label: (obj.label as string) ?? "",
-        description: typeof obj.description === "string" ? obj.description : undefined,
-        preview: typeof obj.preview === "string" ? obj.preview : undefined,
-      };
-    }
-    return { label: String(item) };
-  });
-}
-
-export function parseAskUserQuestions(toolInput: Record<string, unknown>): AgentQuestion[] {
-  // Handle multiple questions format
-  if (Array.isArray(toolInput.questions)) {
-    return (toolInput.questions as Record<string, unknown>[]).map((q) => ({
-      question: (q.question as string) ?? "",
-      options: normalizeOptions(q.options),
-      multiSelect: q.multiSelect === true || q.multiple === true,
-    }));
-  }
-
-  // Handle single question format
-  if (typeof toolInput.question === "string") {
-    return [
-      {
-        question: toolInput.question as string,
-        options: normalizeOptions(toolInput.options),
-        multiSelect: toolInput.multiSelect === true || toolInput.multiple === true,
-      },
-    ];
-  }
-
-  return [];
 }
