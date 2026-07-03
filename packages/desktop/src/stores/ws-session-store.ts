@@ -267,27 +267,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         },
         onError: (intentional) => {
           if (intentional) return;
-          const session = get().sessions[sessionId];
-          if (session?.pendingWsRequests.size) {
-            for (const cb of session.pendingWsRequests.values()) cb(null);
-            session.pendingWsRequests.clear();
-          }
-          set(
-            updateSession(get(), sessionId, {
-              conn: null,
-              isConnected: false,
-              // See onClose above: `serverSessionId` and `runtimeSessionId`
-              // are stable across transport hiccups; the reconnect path
-              // re-emits `session.init` instead of wiping them.
-              lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
-                type: "turn_errored",
-              }),
-            }),
-          );
+          // A transport error is not a turn failure: the backend keeps the
+          // turn running while the owner socket is gone (deferred teardown).
+          // Don't touch session state here — a WebSocket `error` is always
+          // followed by `close`, and `onClose` owns the cleanup: it sweeps
+          // pending requests, appends the "Connection lost while streaming"
+          // block, and transitions via `connection_lost`. Flipping to
+          // `turn_errored` here made the session render as failed and
+          // prevented onClose from doing either (the turn was no longer
+          // active by the time it ran).
           useConnectionStatusStore
             .getState()
             .reportSource(reconnectKey, "reconnecting", "Session WebSocket error");
-          if (!intentional) scheduleReconnect(reconnectKey, () => get().connect(sessionId));
         },
         onMessage: (data) => {
           let envelope: WsEnvelope;

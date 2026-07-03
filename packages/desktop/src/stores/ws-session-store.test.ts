@@ -760,6 +760,35 @@ describe("ws-session-store", () => {
     expect(session.conn).toBeNull();
   });
 
+  it("treats a transport error as connection loss, not a turn failure", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+    // Mid-turn: the agent is streaming.
+    useWsSessionStore.setState(
+      updateSession(useWsSessionStore.getState(), "s1", { lifecycle: { phase: "active" } }),
+    );
+
+    // A network failure fires `error` then `close` on the WebSocket.
+    ws.readyState = MockWebSocket.CLOSED;
+    ws.fireEvent("error");
+    ws.fireEvent("close");
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    // The backend keeps the turn running while the socket is gone (deferred
+    // teardown), so the session must not render as failed…
+    expect(session.lifecycle).toEqual({ phase: "terminal", reason: "streamClosed" });
+    // …and the user is told what actually happened.
+    const errorBlock = session.blocks.find((b) => b.type === "error");
+    expect(errorBlock?.content).toContain("Connection lost while streaming");
+  });
+
   it("re-emits session.init on reconnect to rebuild the backend handle", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
