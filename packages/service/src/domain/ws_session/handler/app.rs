@@ -324,7 +324,14 @@ async fn handle_subscribe_file_watcher(
 
     // Start or replace the file watcher
     {
-        let mut watcher = app_state.file_watcher.lock().unwrap();
+        let mut watcher = match app_state.file_watcher.lock() {
+            Ok(watcher) => watcher,
+            Err(poisoned) => {
+                warn!("file watcher lock was poisoned; recovering state");
+                app_state.file_watcher.clear_poison();
+                poisoned.into_inner()
+            }
+        };
         if let Err(e) = watcher.start(&project_path, app_state.file_change_tx.clone()) {
             warn!(error = %e, "failed to start file watcher");
             super::send_error(sender, &envelope.id, "WATCHER_ERROR", &e);

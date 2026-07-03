@@ -3,7 +3,7 @@
 //! device token. Codes live only in memory — a restart invalidates pending
 //! ones, which is acceptable (re-show the QR).
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -11,6 +11,7 @@ use rand::TryRng;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use tracing::warn;
 use utoipa::ToSchema;
 
 const CODE_TTL: Duration = Duration::from_secs(120);
@@ -57,13 +58,21 @@ pub struct MintedCode {
 }
 
 impl PairingCodes {
+    fn lock_slot(&self) -> MutexGuard<'_, Option<CodeSlot>> {
+        self.slot.lock().unwrap_or_else(|poisoned| {
+            warn!("remote pairing-code lock was poisoned; recovering state");
+            self.slot.clear_poison();
+            poisoned.into_inner()
+        })
+    }
+
     /// Mint a fresh single-use code valid for [`CODE_TTL`]. Only one code is ever
     /// active: minting a new one invalidates any prior code (the host UI shows a
     /// single QR, and "New code" should make the old link stop working — a
     /// smaller window and a less surprising model than several live at once).
     pub fn mint(&self) -> MintedCode {
         let code = random_code();
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = self.lock_slot();
         *slot = Some(CodeSlot {
             hash: Some(hash_code(&code)),
             expiry: Instant::now() + CODE_TTL,
@@ -81,7 +90,7 @@ impl PairingCodes {
     /// attempt fails.
     pub fn consume(&self, code: &str) -> bool {
         let presented = hash_code(code);
-        let mut slot = self.slot.lock().unwrap();
+        let mut slot = self.lock_slot();
         let Some(entry) = slot.as_mut() else {
             return false;
         };
@@ -101,7 +110,7 @@ impl PairingCodes {
 
     /// Lifecycle state of the current code, for the host status payload.
     pub fn state(&self) -> PairingState {
-        let slot = self.slot.lock().unwrap();
+        let slot = self.lock_slot();
         match slot.as_ref() {
             None => PairingState::None,
             Some(entry) if entry.consumed => PairingState::Consumed,
@@ -179,5 +188,23 @@ mod tests {
             slot.as_mut().unwrap().expiry = Instant::now() - Duration::from_secs(1);
         }
         assert_eq!(codes.state(), PairingState::Expired);
+    }
+
+    #[test]
+    fn pairing_methods_do_not_panic_after_lock_poison() {
+        let codes = std::sync::Arc::new(PairingCodes::default());
+        let poison_target = std::sync::Arc::clone(&codes);
+        let _ = std::thread::spawn(move || {
+            let _guard = poison_target.slot.lock().unwrap();
+            panic!("poison pairing lock");
+        })
+        .join();
+
+        let mint_result = std::panic::catch_unwind(|| codes.mint());
+        assert!(mint_result.is_ok());
+        let consume_result = std::panic::catch_unwind(|| codes.consume("anything"));
+        assert!(consume_result.is_ok());
+        let state_result = std::panic::catch_unwind(|| codes.state());
+        assert!(state_result.is_ok());
     }
 }

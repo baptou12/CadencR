@@ -18,6 +18,9 @@ use super::stream_reader_resume::transition_active_to_pending_on_stream_end;
 use super::stream_reader_stop;
 use super::stream_reader_turn_state::StreamTurnState;
 
+/// Debounce provider completion checks long enough for normal events to arrive.
+const PROVIDER_RECONCILE_IDLE: std::time::Duration = std::time::Duration::from_millis(750);
+
 pub(super) struct StreamReaderTask {
     pub db_session_id: i64,
     pub feature_id: i64,
@@ -340,8 +343,8 @@ impl StreamReaderTask {
 }
 
 fn should_reconcile_provider(state: &StreamReaderState) -> bool {
-    state.last_runtime_activity.elapsed() >= std::time::Duration::from_millis(750)
-        && state.last_provider_reconcile.elapsed() >= std::time::Duration::from_millis(750)
+    state.last_runtime_activity.elapsed() >= PROVIDER_RECONCILE_IDLE
+        && state.last_provider_reconcile.elapsed() >= PROVIDER_RECONCILE_IDLE
 }
 
 #[cfg(test)]
@@ -350,36 +353,26 @@ mod tests {
 
     #[test]
     fn closes_only_when_between_turns_after_a_result_with_no_pending_gate() {
-        // Owner gone, a turn has completed, nothing pending, no running turn →
-        // safe to close.
         assert!(should_close_orphaned(true, true, false, false));
     }
 
     #[test]
     fn never_closes_mid_turn() {
-        // A turn is actively running (not between turns).
         assert!(!should_close_orphaned(false, true, false, false));
     }
 
     #[test]
     fn never_closes_before_first_turn_completes() {
-        // `between_turns` is still its initial `true` but no result yet — a
-        // just-started turn must not be torn down out from under itself.
         assert!(!should_close_orphaned(true, false, false, false));
     }
 
     #[test]
     fn keeps_runtime_alive_while_a_gate_is_pending() {
-        // A reconnecting device could still answer the permission/question.
         assert!(!should_close_orphaned(true, true, true, false));
     }
 
     #[test]
     fn never_closes_while_a_cross_device_followup_is_starting() {
-        // Between turns after a result, but the DB shows `running`: another
-        // device dispatched a follow-up whose first event hasn't arrived yet.
-        // Closing here would kill that just-started turn (the race from the
-        // remote-disconnect → host-follow-up flow).
         assert!(!should_close_orphaned(true, true, false, true));
     }
 }
