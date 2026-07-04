@@ -39,13 +39,13 @@ mod responses;
 mod session;
 mod session_permissions;
 mod thread_params;
+mod timeouts;
 mod trusted_mcp;
 mod turn_start;
 mod turn_steer_recovery;
 mod worktree_config;
 
 use std::collections::HashMap;
-use std::future::Future;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -64,6 +64,7 @@ pub(crate) use self::model::{
 pub(crate) use self::raw_tool_names::function_tool_name;
 use self::session::CodexSession;
 use self::thread_params::{thread_resume_params, thread_start_params};
+use self::timeouts::{with_probe_timeout, PROBE_TIMEOUT};
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
     RuntimePermissionRequest, RuntimeSlashCommand, RuntimeSpawnConfig,
@@ -74,7 +75,6 @@ pub struct CodexAdapter;
 pub static CODEX_ADAPTER: CodexAdapter = CodexAdapter;
 pub const PROVIDER_ID: &str = "codex_cli";
 const PROVIDER_LABEL: &str = "Codex CLI";
-const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const CATALOG_TTL: Duration = Duration::from_secs(30);
 const DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE: &str = "default_mode_request_user_input";
 
@@ -93,24 +93,6 @@ fn catalog_cache() -> &'static RwLock<Option<CatalogCacheEntry>> {
 
 fn catalog_refresh_lock() -> &'static Mutex<()> {
     CATALOG_REFRESH_LOCK.get_or_init(|| Mutex::new(()))
-}
-
-pub(super) async fn with_timeout<T>(
-    operation: &'static str,
-    future: impl Future<Output = Result<T, codex_app_server_sdk_rs::SdkError>>,
-) -> Result<T, RuntimeError> {
-    with_timeout_sdk(operation, future)
-        .await
-        .map_err(RuntimeError::from)
-}
-
-pub(super) async fn with_timeout_sdk<T>(
-    operation: &'static str,
-    future: impl Future<Output = Result<T, codex_app_server_sdk_rs::SdkError>>,
-) -> Result<T, codex_app_server_sdk_rs::SdkError> {
-    tokio::time::timeout(PROBE_TIMEOUT, future)
-        .await
-        .map_err(|_| codex_app_server_sdk_rs::SdkError::Timeout(operation))?
 }
 
 fn catalog_from_models(models: Vec<CodexModel>) -> ProviderCatalogEntry {
@@ -190,7 +172,7 @@ async fn probe_models() -> Result<Vec<CodexModel>, RuntimeError> {
     let client = CodexAppServerClient::spawn_with_options(app_server_spawn_options(None)).await?;
     let result = async {
         client.initialize_with_timeout(PROBE_TIMEOUT).await?;
-        with_timeout("Codex model/list", client.model_list()).await
+        with_probe_timeout("Codex model/list", client.model_list()).await
     }
     .await;
     client.shutdown().await;
@@ -211,12 +193,10 @@ async fn start_or_resume_thread(
     mcp_config: &Value,
 ) -> Result<String, RuntimeError> {
     match config.resume_session_id.as_deref() {
-        Some(thread_id) => Ok(with_timeout(
-            "Codex thread/resume",
-            client.thread_resume(thread_resume_params(thread_id, config, mcp_config)),
-        )
-        .await?
-        .id),
+        Some(thread_id) => Ok(client
+            .thread_resume(thread_resume_params(thread_id, config, mcp_config))
+            .await?
+            .id),
         None => start_thread(client, config, mcp_config).await,
     }
 }
@@ -226,12 +206,10 @@ async fn start_thread(
     config: &RuntimeSpawnConfig,
     mcp_config: &Value,
 ) -> Result<String, RuntimeError> {
-    Ok(with_timeout(
-        "Codex thread/start",
-        client.thread_start(thread_start_params(config, mcp_config)),
-    )
-    .await?
-    .id)
+    Ok(client
+        .thread_start(thread_start_params(config, mcp_config))
+        .await?
+        .id)
 }
 
 #[async_trait]
@@ -316,7 +294,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
         let client =
             CodexAppServerClient::spawn_with_options(app_server_spawn_options(config.env.clone()))
                 .await?;
-        client.initialize_with_timeout(PROBE_TIMEOUT).await?;
+        client.initialize().await?;
         let event_rx = client.subscribe();
         let mut mcp_status_rx = client.subscribe();
         let developer_instructions = codex_developer_instructions();
@@ -369,6 +347,12 @@ mod tests {
         assert!(options
             .enable_features
             .contains(&"default_mode_request_user_input".to_string()));
+    }
+
+    #[test]
+    fn leaves_live_request_timeout_to_sdk_default() {
+        let options = app_server_spawn_options(None);
+        assert!(options.request_timeout.is_none());
     }
 
     #[test]

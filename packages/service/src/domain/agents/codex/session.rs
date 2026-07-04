@@ -21,9 +21,9 @@ use super::responses::response_value;
 use super::session_permissions::{
     is_plan_approval_request_id, permission_kind_for_request_id, plan_approval_prompt, take_pending,
 };
+use super::timeouts::with_probe_timeout;
 use super::turn_start::turn_start_params;
 use super::turn_steer_recovery::{steer_failure_recovery, SteerFailureRecovery};
-use super::{with_timeout, with_timeout_sdk};
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus,
     RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionResponse,
@@ -117,7 +117,7 @@ impl CodexSession {
             model,
             effort,
         );
-        let turn = with_timeout("Codex turn/start", self.client.turn_start(params)).await?;
+        let turn = self.client.turn_start(params).await?;
         *self.active_turn_id.write().await = Some(turn.id.clone());
         *self.last_root_turn_id.write().await = Some(turn.id);
         Ok(())
@@ -184,7 +184,7 @@ impl AgentRuntimeSession for CodexSession {
             .iter()
             .map(|server| server.name.clone())
             .collect::<Vec<_>>();
-        let response = with_timeout(
+        let response = with_probe_timeout(
             "Codex mcpServerStatus/list refresh",
             self.client.available_mcp_servers(),
         )
@@ -221,18 +221,18 @@ impl AgentRuntimeSession for CodexSession {
     async fn interrupt(&self) -> Result<(), RuntimeError> {
         // Live turn: surface RPC failures so the UI shows Stop failed.
         if let Some(turn_id) = self.active_turn_id.read().await.clone() {
-            return with_timeout(
-                "Codex turn/interrupt",
-                self.client.turn_interrupt(&self.thread_id, &turn_id),
-            )
-            .await;
+            return self
+                .client
+                .turn_interrupt(&self.thread_id, &turn_id)
+                .await
+                .map_err(RuntimeError::from);
         }
         // Fallback (race between Stop and the next turn/started). Errors
         // are treated as success — nothing to interrupt is the user's goal.
         let Some(turn_id) = self.last_root_turn_id.read().await.clone() else {
             return Ok(());
         };
-        let _ = with_timeout(
+        let _ = with_probe_timeout(
             "Codex turn/interrupt (fallback)",
             self.client.turn_interrupt(&self.thread_id, &turn_id),
         )
@@ -241,16 +241,15 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn compact(&self) -> Result<(), RuntimeError> {
-        with_timeout(
-            "Codex thread/compact/start",
-            self.client.thread_compact_start(&self.thread_id),
-        )
-        .await
+        self.client
+            .thread_compact_start(&self.thread_id)
+            .await
+            .map_err(RuntimeError::from)
     }
 
     async fn close(&mut self) {
         self.closing.store(true, Ordering::SeqCst);
-        let _ = with_timeout(
+        let _ = with_probe_timeout(
             "Codex thread/unsubscribe",
             self.client.thread_unsubscribe(&self.thread_id),
         )
@@ -321,11 +320,10 @@ impl CodexSession {
                 return self.start_turn(input).await;
             };
 
-            let result = with_timeout_sdk(
-                "Codex turn/steer",
-                self.client.turn_steer(&self.thread_id, &turn_id, &input),
-            )
-            .await;
+            let result = self
+                .client
+                .turn_steer(&self.thread_id, &turn_id, &input)
+                .await;
             let Err(error) = result else {
                 return Ok(());
             };

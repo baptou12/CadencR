@@ -1,6 +1,7 @@
 use codex_app_server_sdk_rs::{CodexAppServerClient, CodexCommandKind};
 
-use super::{app_server_spawn_options, with_timeout, PROBE_TIMEOUT};
+use super::app_server_spawn_options;
+use super::timeouts::{with_probe_timeout, PROBE_TIMEOUT};
 use crate::domain::agents::adapter::{RuntimeError, RuntimeSlashCommand, RuntimeSlashCommandKind};
 
 impl From<CodexCommandKind> for RuntimeSlashCommandKind {
@@ -20,7 +21,7 @@ pub(super) async fn runtime_slash_commands(
         .map_err(RuntimeError::from)?;
     let result = async {
         client.initialize_with_timeout(PROBE_TIMEOUT).await?;
-        with_timeout("Codex skills/list", client.list_commands_in_directory(cwd)).await
+        with_probe_timeout("Codex skills/list", client.list_commands_in_directory(cwd)).await
     }
     .await;
     client.shutdown().await;
