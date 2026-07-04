@@ -3,9 +3,12 @@ import { Maximize2Icon, RotateCcwIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "lu
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { usePanZoom, type PanZoom } from "@/hooks/usePanZoom";
+import { formatKey } from "@/lib/shortcuts/format";
 import { cn } from "@/lib/utils";
 
 type ControlSize = "icon-xs" | "icon-sm";
+
+const PAN_MODIFIER = formatKey("mod");
 
 /** Full-screen keys, modal-local like the image lightbox's: not app-wide shortcuts. */
 const KEY_ACTIONS: Partial<Record<string, "zoomIn" | "zoomOut" | "reset">> = {
@@ -118,7 +121,7 @@ export const MermaidDiagramView = memo(function MermaidDiagramView(props: Mermai
           fullscreen ? "min-h-0 flex-1" : "max-h-[32rem]",
           panZoom.isPanning ? "cursor-grabbing select-none" : "cursor-default",
         )}
-        title="Scroll to pan · pinch to zoom · ⌘-drag to pan"
+        title={`Scroll to pan · pinch to zoom · ${PAN_MODIFIER}-drag to pan`}
       >
         <div
           ref={panZoom.contentRef}
