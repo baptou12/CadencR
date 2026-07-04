@@ -9,12 +9,14 @@ mod blame;
 mod branch;
 mod diff;
 mod graph;
+mod stash;
 mod worktree;
 
 pub use blame::*;
 pub use branch::*;
 pub use diff::*;
 pub use graph::*;
+pub use stash::*;
 pub use worktree::*;
 
 // ---------------------------------------------------------------------------

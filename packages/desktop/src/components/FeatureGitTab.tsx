@@ -8,6 +8,7 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DiffViewer } from "./diff/DiffViewer";
 import { GitGraphView } from "./diff/GitGraphView";
+import { StashesView } from "./diff/StashesView";
 import { GitTabToggle, type GitViewMode } from "./diff/GitTabToggle";
 import { NumStat } from "@/components/NumStat";
 import type { DiffMode } from "./diff/useDiffData";
@@ -34,7 +35,7 @@ interface FeatureGitTabProps {
 }
 
 function isGitViewMode(v: string | undefined): v is GitViewMode {
-  return v === "uncommitted" || v === "vs-target" || v === "graph";
+  return v === "uncommitted" || v === "vs-target" || v === "graph" || v === "stashes";
 }
 
 export const FeatureGitTab = memo(function FeatureGitTab({
@@ -120,17 +121,22 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   // "uncommitted" hits the working-tree path on the server (alias of the legacy
   // "worktree" mode); "vs-target" pins the diff to the resolved target branch.
   const isGraph = viewMode === "graph";
+  const isStashes = viewMode === "stashes";
+  // The graph and stashes views carry their own per-row stats and drive their
+  // own list body — they don't use the shared diff toolbar, file-list collapse,
+  // or diff-wide stats query.
+  const isListView = isGraph || isStashes;
   const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
   const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
-  // The graph view has its own per-commit stats — skip the diff-wide stats
-  // query entirely while it's active so we don't fire a wasted request.
+  // The list views have their own per-row stats — skip the diff-wide stats
+  // query entirely while one is active so we don't fire a wasted request.
   const statsQuery = useGetStats(
     {
       feature_id: featureId,
       mode: effectiveDiffMode,
       target_branch: diffTargetBranch,
     },
-    { query: { enabled: !isGraph } },
+    { query: { enabled: !isListView } },
   );
 
   const { send, sending, buttonLabel, disabled, shouldRender } = useSendPendingComments({
@@ -165,7 +171,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        {!isGraph && (
+        {!isListView && (
           <button
             type="button"
             onClick={handleToggleFileListCollapsed}
@@ -187,7 +193,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           onChange={handleViewModeChange}
           targetBranch={targetBranch}
         />
-        {!isGraph && (
+        {!isListView && (
           <GitToolbarNumStat
             isLoading={statsQuery.isLoading}
             isError={statsQuery.isError}
@@ -199,6 +205,8 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       <div className="min-h-0 flex-1 overflow-hidden">
         {isGraph ? (
           <GitGraphView featureId={featureId} />
+        ) : isStashes ? (
+          <StashesView featureId={featureId} />
         ) : (
           <DiffViewer
             featureId={featureId}

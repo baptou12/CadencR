@@ -24,6 +24,7 @@ mod merge;
 mod merge_ops;
 mod pty;
 mod pty_spawn;
+mod stash;
 mod util;
 mod worktree_ops;
 
@@ -37,6 +38,7 @@ pub use log::{get_commit_log, get_recent_commits};
 pub use merge::{get_current_branch, get_original_branch};
 pub use merge_ops::{check_merge_conflicts, delete_branch, is_branch_merged, parse_conflict_files};
 pub use pty::{commit_streaming, push_streaming};
+pub use stash::list_stashes;
 pub use worktree_ops::{
     create_worktree, get_worktree_info, has_uncommitted_changes, list_worktree_branches,
     list_worktrees, remove_worktree,
