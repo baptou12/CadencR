@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { CaseSensitive, WholeWord, Regex, Loader2 } from "lucide-react";
 import SearchToggleButton from "./SearchToggleButton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -120,12 +121,18 @@ export default function ContentSearchDialog({
     ],
   );
 
-  const { data, isLoading } = useContentSearch(searchParams, {
+  const { data, isLoading, isFetching } = useContentSearch(searchParams, {
     query: {
       enabled: open && debouncedQuery.length > 0,
       keepPreviousData: true,
     },
   });
+
+  const hasQuery = debouncedQuery.length > 0;
+  // `isFetching` stays true across debounced refetches even when previous
+  // results are shown (keepPreviousData), so the header loader keeps the UI
+  // from looking frozen while a large search is in flight.
+  const searching = isFetching && hasQuery;
 
   useEffect(() => {
     if (!open) return;
@@ -140,13 +147,30 @@ export default function ContentSearchDialog({
     setExcludePattern(restored.excludePattern);
   }, [open, featureId]);
 
-  function handleSelect(filePath: string, lineNumber?: number): void {
-    openFile(activePaneId ?? "main", filePath, maxTabs, lineNumber);
-    onResultOpen?.();
-    onOpenChange(false);
-  }
+  // Stable identity keeps Virtuoso from re-rendering every visible row (each of
+  // which mounts a CodeMirror view) on every keystroke.
+  const handleSelect = useCallback(
+    (filePath: string, lineNumber?: number): void => {
+      openFile(activePaneId ?? "main", filePath, maxTabs, lineNumber);
+      onResultOpen?.();
+      onOpenChange(false);
+    },
+    [openFile, activePaneId, maxTabs, onResultOpen, onOpenChange],
+  );
 
   const grouped = useMemo(() => groupByFile(data?.matches ?? []), [data?.matches]);
+
+  const computeItemKey = useCallback((_: number, group: FileGroupData) => group.path, []);
+  const itemContent = useCallback(
+    (_: number, group: FileGroupData) => <FileGroup group={group} onSelect={handleSelect} />,
+    [handleSelect],
+  );
+  // Always hand Virtuoso a components object — passing `undefined` overwrites
+  // its internal default (`{}`) and crashes on `components.EmptyPlaceholder`.
+  const components = useMemo(
+    () => (data?.truncated ? { Footer: TruncatedFooter } : {}),
+    [data?.truncated],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -155,7 +179,11 @@ export default function ContentSearchDialog({
         className="sm:max-w-[900px] h-[80vh] !flex !flex-col gap-2 p-0 pt-3 overflow-hidden"
       >
         <div className="flex items-center border-b border-border px-3 pb-2 gap-2">
-          <SearchIcon className="size-4 shrink-0 opacity-50" />
+          {searching ? (
+            <Loader2 className="size-4 shrink-0 opacity-50 animate-spin" />
+          ) : (
+            <SearchIcon className="size-4 shrink-0 opacity-50" />
+          )}
           <Input
             autoFocus
             variant="ghost"
@@ -209,27 +237,39 @@ export default function ContentSearchDialog({
           />
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          {isLoading && debouncedQuery.length > 0 && grouped.length === 0 && (
+        <div className="flex-1 min-h-0">
+          {isLoading && hasQuery && grouped.length === 0 && (
             <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               Searching...
             </div>
           )}
-          {!isLoading && debouncedQuery.length > 0 && grouped.length === 0 && (
+          {!searching && hasQuery && grouped.length === 0 && (
             <div className="py-8 text-center text-sm text-muted-foreground">No results found.</div>
           )}
-          {grouped.map((group) => (
-            <FileGroup key={group.path} group={group} onSelect={handleSelect} />
-          ))}
-          {data?.truncated && (
-            <div className="py-2 text-center text-xs text-muted-foreground">
-              Results capped at 500. Refine your search for more specific results.
-            </div>
+          {grouped.length > 0 && (
+            // Windowed so only visible file groups mount a CodeMirror view.
+            // Rendering every group at once mounts one editor per file, which
+            // freezes the main thread on large-codebase searches.
+            <Virtuoso
+              data={grouped}
+              className="h-full"
+              computeItemKey={computeItemKey}
+              itemContent={itemContent}
+              components={components}
+            />
           )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function TruncatedFooter(): ReactElement {
+  return (
+    <div className="py-2 text-center text-xs text-muted-foreground">
+      Results capped at 500. Refine your search for more specific results.
+    </div>
   );
 }
 
@@ -251,7 +291,7 @@ function groupByFile(matches: ContentMatch[]): FileGroupData[] {
   return Array.from(map.entries()).map(([path, ms]) => ({ path, matches: ms }));
 }
 
-function FileGroup({
+const FileGroup = memo(function FileGroup({
   group,
   onSelect,
 }: {
@@ -262,7 +302,7 @@ function FileGroup({
   const firstMatchLine = group.matches[0]?.line_number ?? 1;
 
   return (
-    <div className="mb-3">
+    <div className="pb-3">
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
@@ -300,4 +340,4 @@ function FileGroup({
       </div>
     </div>
   );
-}
+});
