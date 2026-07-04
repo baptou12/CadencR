@@ -140,6 +140,13 @@ pub(super) fn parse_control_response(
     }
 }
 
+pub(super) fn control_cancel_request_id(value: &serde_json::Value) -> Option<&str> {
+    if value.get("type").and_then(|v| v.as_str()) == Some("control_cancel_request") {
+        return value.get("request_id").and_then(|v| v.as_str());
+    }
+    None
+}
+
 /// Parse a raw JSON permission request (control_request) into a typed
 /// `PermissionRequest`.
 ///

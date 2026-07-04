@@ -13,11 +13,12 @@ use crate::permissions::CanUseTool;
 use crate::transport::CliProcess;
 use crate::types::McpServerStatus;
 
+use super::cancelled_control::CancelledControlRequests;
 use super::permission_dispatch::handle_can_use_tool_request;
 use super::turn_state::TurnState;
 use super::wire::{
-    build_success_ack, control_request_subtype, parse_control_response, parse_permission_request,
-    write_to_stdin, InterruptAck, PendingControl,
+    build_success_ack, control_cancel_request_id, control_request_subtype, parse_control_response,
+    parse_permission_request, write_to_stdin, InterruptAck, PendingControl,
 };
 
 pub(super) struct ReaderTask {
@@ -29,6 +30,7 @@ pub(super) struct ReaderTask {
     pub mcp_servers: Arc<Mutex<Vec<McpServerStatus>>>,
     pub turn_state: Arc<Mutex<TurnState>>,
     pub pending_control: PendingControl,
+    pub cancelled_control_requests: CancelledControlRequests,
     pub cancel_token: Option<CancellationToken>,
     pub interrupt_rx: mpsc::Receiver<InterruptAck>,
     pub kill_rx: mpsc::Receiver<()>,
@@ -131,6 +133,9 @@ impl ReaderTask {
         if self.handle_control_response(&raw).await {
             return RawOutcome::Continue;
         }
+        if self.handle_control_cancel_request(&raw).await {
+            return RawOutcome::Continue;
+        }
         if let Some(outcome) = self.handle_initialize_request(&raw).await {
             return outcome;
         }
@@ -159,6 +164,34 @@ impl ReaderTask {
                     "received control_response with no pending sender, skipping"
                 );
             }
+        }
+        true
+    }
+
+    async fn handle_control_cancel_request(&self, raw: &Value) -> bool {
+        if raw.get("type").and_then(|t| t.as_str()) != Some("control_cancel_request") {
+            return false;
+        }
+        let Some(request_id) = control_cancel_request_id(raw) else {
+            debug!("received control_cancel_request without request_id, skipping");
+            return true;
+        };
+
+        let inserted = self.cancelled_control_requests.mark(request_id).await;
+        let mut turn_state = self.turn_state.lock().await;
+        if matches!(
+            &*turn_state,
+            TurnState::WaitingForPermission { tool_use_id, .. } if tool_use_id == request_id
+        ) {
+            *turn_state = TurnState::AgentWorking;
+        } else {
+            if inserted {
+                self.cancelled_control_requests.take(request_id).await;
+            }
+            debug!(
+                request_id,
+                "received control_cancel_request for non-active permission request"
+            );
         }
         true
     }
@@ -195,6 +228,7 @@ impl ReaderTask {
         tokio::spawn(handle_can_use_tool_request(
             Arc::clone(&self.process_stdin),
             Arc::clone(&self.turn_state),
+            self.cancelled_control_requests.clone(),
             self.tx.clone(),
             self.can_use_tool.as_ref().map(Arc::clone),
             request,
