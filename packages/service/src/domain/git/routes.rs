@@ -94,6 +94,14 @@ pub async fn get_file_blob_shas_handler(
     Ok(Json(service::get_file_blob_shas(&state, params).await?))
 }
 
+#[utoipa::path(get, path = "/api/git/stashes", params(("feature_id" = i64, Query,)), responses((status = 200, body = Vec<StashEntry>)))]
+pub async fn list_stashes_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ListStashesParams>,
+) -> Result<Json<Vec<StashEntry>>, AppError> {
+    Ok(Json(service::list_stashes(&state, params).await?))
+}
+
 #[utoipa::path(get, path = "/api/git/files", params(("feature_id" = i64, Query,)), responses((status = 200, body = Vec<String>)))]
 pub async fn list_files_handler(
     State(state): State<AppState>,
@@ -366,6 +374,7 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/commit-graph", get(get_commit_graph_handler))
         .route("/api/git/commit-url", get(get_commit_url_handler))
         .route("/api/git/file-blob-shas", get(get_file_blob_shas_handler))
+        .route("/api/git/stashes", get(list_stashes_handler))
         .route("/api/git/files", get(list_files_handler))
         .route("/api/git/worktree/info", get(get_worktree_info_handler))
         .route("/api/git/worktree", post(create_worktree_handler).delete(remove_worktree_handler))

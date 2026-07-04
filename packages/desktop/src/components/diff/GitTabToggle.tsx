@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-export type GitViewMode = "uncommitted" | "vs-target" | "graph";
+export type GitViewMode = "uncommitted" | "vs-target" | "graph" | "stashes";
 
 interface GitTabToggleProps {
   value: GitViewMode;
@@ -12,9 +12,9 @@ interface GitTabToggleProps {
 }
 
 /**
- * Two-value segmented control for the Git tab — "Uncommitted" vs "vs <target>".
- * Mounted next to the streaming agent area, so it must stay cheap to render
- * and stable across pushes from `useGitStatusStore`.
+ * Segmented control for the Git tab — "Uncommitted", "vs <target>", "Graph"
+ * and "Stashes". Mounted next to the streaming agent area, so it must stay
+ * cheap to render and stable across pushes from `useGitStatusStore`.
  */
 export const GitTabToggle = memo(function GitTabToggle({
   value,
@@ -50,6 +50,12 @@ export const GitTabToggle = memo(function GitTabToggle({
         disabled={disabled}
         label="Graph"
         onClick={() => onChange("graph")}
+      />
+      <ToggleButton
+        active={value === "stashes"}
+        disabled={disabled}
+        label="Stashes"
+        onClick={() => onChange("stashes")}
       />
     </div>
   );

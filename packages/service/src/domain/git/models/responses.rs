@@ -59,6 +59,24 @@ pub struct CommitGraphResponse {
     pub target_branch: Option<String>,
 }
 
+/// One row in the Git-tab Stashes view. `ref_name` is git's reflog selector
+/// (`stash@{0}`); `sha` is the full commit SHA of the stash snapshot, so the
+/// frontend opens the stash diff through the existing `commit_sha` path
+/// (`git diff <sha>^..<sha>`, the range summarized below). `message` is the
+/// stash description (git's reflog subject), `date` its ISO-8601 creation
+/// time, and the `files_changed` / `additions` / `deletions` numstat matches
+/// the diff a row expands to.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct StashEntry {
+    pub ref_name: String,
+    pub sha: String,
+    pub message: String,
+    pub date: String,
+    pub files_changed: i32,
+    pub additions: i32,
+    pub deletions: i32,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FileBlobSha {
     pub file_path: String,

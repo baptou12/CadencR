@@ -2103,6 +2103,25 @@ export interface StartImportResponse {
 }
 
 /**
+ * One row in the Git-tab Stashes view. `ref_name` is git's reflog selector
+(`stash@{0}`); `sha` is the full commit SHA of the stash snapshot, so the
+frontend opens the stash diff through the existing `commit_sha` path
+(`git diff <sha>^..<sha>`, the range summarized below). `message` is the
+stash description (git's reflog subject), `date` its ISO-8601 creation
+time, and the `files_changed` / `additions` / `deletions` numstat matches
+the diff a row expands to.
+ */
+export interface StashEntry {
+  additions: number;
+  date: string;
+  deletions: number;
+  files_changed: number;
+  message: string;
+  ref_name: string;
+  sha: string;
+}
+
+/**
  * Discriminant for `SessionStreamStatusPayload`.
 
 Hard failures stay on `session.error`; this enum only carries
@@ -2643,6 +2662,10 @@ export type CheckMergeConflictsParams = {
 
 export type GetOriginalBranchParams = {
   project_id: number;
+  feature_id: number;
+};
+
+export type ListStashesParams = {
   feature_id: number;
 };
 
@@ -9115,6 +9138,54 @@ export const usePushInput = <TError = ErrorType<unknown>, TContext = unknown>(op
 
   return useMutation(mutationOptions);
 };
+
+export const listStashes = (params: ListStashesParams, signal?: AbortSignal) => {
+  return customInstance<StashEntry[]>({ url: `/api/git/stashes`, method: "GET", params, signal });
+};
+
+export const getListStashesQueryKey = (params?: ListStashesParams) => {
+  return [`/api/git/stashes`, ...(params ? [params] : [])] as const;
+};
+
+export const getListStashesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStashes>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListStashesParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof listStashes>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListStashesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listStashes>>> = ({ signal }) =>
+    listStashes(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStashes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStashesQueryResult = NonNullable<Awaited<ReturnType<typeof listStashes>>>;
+export type ListStashesQueryError = ErrorType<unknown>;
+
+export function useListStashes<
+  TData = Awaited<ReturnType<typeof listStashes>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListStashesParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof listStashes>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStashesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getStats = (params: GetStatsParams, signal?: AbortSignal) => {
   return customInstance<GitStats>({ url: `/api/git/stats`, method: "GET", params, signal });
