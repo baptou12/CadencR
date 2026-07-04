@@ -1,7 +1,11 @@
 {
   "$schema": "https://v2-9-14.turborepo.dev/schema.json",
   "globalEnv": [
-    "CARGO_TARGET_DIR"
+    "CARGO_INCREMENTAL"
+  ],
+  "globalPassThroughEnv": [
+    "RUSTC_WRAPPER",
+    "SCCACHE_*"
   ],
   "tasks": {
     "build": {
