@@ -113,6 +113,8 @@ const browserBridge: CadencrBrowserBridge = {
   // no-op and the menu never fires.
   setLinkHoverContext: () => Promise.resolve(),
   onOpenLinkFromMenu: () => () => undefined,
+  readClipboardText: () => navigator.clipboard.readText(),
+  writeClipboardText: (text: string) => navigator.clipboard.writeText(text),
   pickDirectory: () => unavailable("pickDirectory"),
   pickImageFile: () => unavailable("pickImageFile"),
   showSaveDialog: () => unavailable("showSaveDialog"),
