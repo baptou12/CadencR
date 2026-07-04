@@ -119,6 +119,7 @@ export interface RendererErrorReportPayload {
 
 export interface CadencrDesktopBridge {
   isElectron: boolean;
+  usesCustomWindowControls?: boolean;
   runtimeConfig: () => Promise<RuntimeConfig>;
   readFileBase64: (handle: string) => Promise<string>;
   suppressNextNativeContextMenu?: () => void;
@@ -141,6 +142,9 @@ export interface CadencrDesktopBridge {
   onCloseRequested: (cb: () => void) => () => void;
   confirmClose: () => Promise<void>;
   requestQuit: () => Promise<void>;
+  windowMinimize?: () => Promise<void>;
+  windowToggleMaximize?: () => Promise<void>;
+  windowClose?: () => Promise<void>;
   reportRendererError?: (payload: RendererErrorReportPayload) => Promise<void>;
   setZoom: (factor: number) => Promise<void>;
   /** Centers the macOS traffic lights on a band `center` CSS px from the top; null restores them. */
