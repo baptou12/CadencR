@@ -20,6 +20,7 @@ use crate::permissions::CanUseTool;
 use crate::transport::CliProcess;
 use crate::types::McpServerStatus;
 
+use super::cancelled_control::CancelledControlRequests;
 use super::reader_task::ReaderTask;
 use super::turn_state::TurnState;
 use super::wire::{InterruptAck, PendingControl};
@@ -36,6 +37,7 @@ pub(super) async fn reader_loop(
     mcp_servers: Arc<Mutex<Vec<McpServerStatus>>>,
     turn_state: Arc<Mutex<TurnState>>,
     pending_control: PendingControl,
+    cancelled_control_requests: CancelledControlRequests,
     cancel_token: Option<CancellationToken>,
     interrupt_rx: mpsc::Receiver<InterruptAck>,
     kill_rx: mpsc::Receiver<()>,
@@ -49,6 +51,7 @@ pub(super) async fn reader_loop(
         mcp_servers,
         turn_state,
         pending_control,
+        cancelled_control_requests,
         cancel_token,
         interrupt_rx,
         kill_rx,
@@ -59,6 +62,7 @@ pub(super) async fn reader_loop(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     use futures::StreamExt;
@@ -69,8 +73,10 @@ mod tests {
     use crate::options::Options;
     use crate::query::query;
 
-    use super::super::test_support::{mock_mcp_servers, write_mock_cli};
-    use super::super::wire::control_request_subtype;
+    use super::super::test_support::{
+        control_cancel_permission_script, mock_mcp_servers, write_mock_cli,
+    };
+    use super::super::wire::{control_cancel_request_id, control_request_subtype};
 
     #[tokio::test]
     async fn close_kills_child_process() {
@@ -248,6 +254,70 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_456","
         assert!(messages
             .iter()
             .all(|m| !matches!(m, SdkMessage::Unknown(v) if control_request_subtype(v) == Some("can_use_tool"))));
+    }
+
+    #[tokio::test]
+    async fn control_cancel_request_cancels_permission_without_late_stdin_write() {
+        struct DelayedAllow {
+            done_path: PathBuf,
+            started_path: PathBuf,
+        }
+
+        #[async_trait::async_trait]
+        impl crate::permissions::CanUseTool for DelayedAllow {
+            async fn can_use_tool(
+                &self,
+                request: crate::permissions::PermissionRequest,
+            ) -> crate::permissions::PermissionResult {
+                tokio::fs::write(&self.started_path, b"started")
+                    .await
+                    .unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+                tokio::fs::write(&self.done_path, b"done").await.unwrap();
+                crate::permissions::PermissionResult::Allow {
+                    updated_input: request.input,
+                    updated_permissions: None,
+                    tool_use_id: Some(request.tool_use_id),
+                }
+            }
+        }
+
+        let dir = TempDir::new().unwrap();
+        let done_path = dir.path().join("permission_done");
+        let started_path = dir.path().join("permission_started");
+        let done_literal = serde_json::to_string(&done_path.to_string_lossy()).unwrap();
+        let started_literal = serde_json::to_string(&started_path.to_string_lossy()).unwrap();
+        let script = control_cancel_permission_script(&done_literal, &started_literal);
+        let script_path = write_mock_cli(dir.path(), &script);
+        let options = Options {
+            path_to_cli: Some(script_path),
+            cwd: dir.path().to_path_buf(),
+            can_use_tool: Some(Arc::new(DelayedAllow {
+                done_path,
+                started_path,
+            })),
+            ..Options::default()
+        };
+
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
+        let mut messages = Vec::new();
+        while let Some(msg) = q.next().await {
+            messages.push(msg.unwrap());
+        }
+
+        assert!(messages.iter().all(|m| {
+            !matches!(m, SdkMessage::Unknown(raw)
+                if control_cancel_request_id(raw).is_some())
+        }));
+        let result = messages.iter().find_map(|m| match m {
+            SdkMessage::Result {
+                is_error, result, ..
+            } => Some((*is_error, result.as_deref())),
+            _ => None,
+        });
+        assert_eq!(result, Some((false, Some("cancelled cleanly"))));
     }
 
     #[tokio::test]

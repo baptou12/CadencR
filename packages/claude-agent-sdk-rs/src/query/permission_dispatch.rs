@@ -25,6 +25,7 @@ use crate::error::SdkError;
 use crate::messages::SdkMessage;
 use crate::permissions::{CanUseTool, PermissionRequest};
 
+use super::cancelled_control::CancelledControlRequests;
 use super::turn_state::TurnState;
 use super::wire::write_to_stdin;
 
@@ -37,12 +38,18 @@ use super::wire::write_to_stdin;
 pub(super) async fn handle_can_use_tool_request(
     process_stdin: Arc<Mutex<Option<BufWriter<ChildStdin>>>>,
     turn_state: Arc<Mutex<TurnState>>,
+    cancelled_control_requests: CancelledControlRequests,
     tx: mpsc::Sender<Result<SdkMessage, SdkError>>,
     can_use_tool: Option<Arc<dyn CanUseTool>>,
     request: PermissionRequest,
 ) {
     let tool_name = request.tool_name.clone();
     let request_id = request.tool_use_id.clone();
+
+    if cancelled_control_requests.take(&request_id).await {
+        *turn_state.lock().await = TurnState::AgentWorking;
+        return;
+    }
 
     // Surface a serialize failure on `tx` only *after* the deny is written and
     // the turn state is reset — `tx` is bounded, so awaiting it before the deny
@@ -72,6 +79,11 @@ pub(super) async fn handle_can_use_tool_request(
             serde_json::json!({ "behavior": "allow" })
         }
     };
+
+    if cancelled_control_requests.take(&request_id).await {
+        *turn_state.lock().await = TurnState::AgentWorking;
+        return;
+    }
 
     let response_json = serde_json::json!({
         "type": "control_response",
@@ -113,6 +125,8 @@ pub(super) async fn handle_can_use_tool_request(
 mod tests {
     use std::sync::Arc;
 
+    use crate::query::cancelled_control::CancelledControlRequests;
+
     use futures::StreamExt;
     use tempfile::TempDir;
     use tokio::sync::{oneshot, Notify};
@@ -137,11 +151,13 @@ mod tests {
             tool_name: "Write".to_string(),
             tool_use_id: "toolu_dead".to_string(),
         }));
+        let cancelled_control_requests = CancelledControlRequests::default();
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
 
         super::handle_can_use_tool_request(
             Arc::clone(&process_stdin),
             Arc::clone(&turn_state),
+            cancelled_control_requests,
             tx,
             None, // no handler -> auto-allow path; the write is what fails
             PermissionRequest {

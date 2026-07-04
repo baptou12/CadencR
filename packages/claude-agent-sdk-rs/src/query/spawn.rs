@@ -13,6 +13,7 @@ use crate::error::SdkError;
 use crate::options::Options;
 use crate::transport::{find_cli, CliProcess};
 
+use super::cancelled_control::CancelledControlRequests;
 use super::query_struct::Query;
 use super::reader::reader_loop;
 use super::turn_state::TurnState;
@@ -88,6 +89,7 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
     let mcp_servers = Arc::new(Mutex::new(Vec::new()));
     let turn_state = Arc::new(Mutex::new(TurnState::AgentWorking));
     let pending_control: PendingControl = Arc::new(Mutex::new(HashMap::new()));
+    let cancelled_control_requests = CancelledControlRequests::default();
     let control_request_counter = Arc::new(AtomicU64::new(0));
 
     // Spawn background reader
@@ -100,6 +102,7 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
         Arc::clone(&mcp_servers),
         Arc::clone(&turn_state),
         Arc::clone(&pending_control),
+        cancelled_control_requests.clone(),
         cancel_token.clone(),
         interrupt_rx,
         kill_rx,

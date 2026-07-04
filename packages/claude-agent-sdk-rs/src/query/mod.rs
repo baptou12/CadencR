@@ -15,6 +15,7 @@
 //! - [`spawn`] — top-level [`query`] constructor
 //! - [`metadata`] — one-shot `supported_commands` / `supported_models`
 
+mod cancelled_control;
 mod control_commands;
 mod interrupt;
 mod mcp_status;
