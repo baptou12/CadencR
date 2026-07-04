@@ -141,6 +141,9 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
+        if let Some(message) = self.model_probe_failure_message(None).await {
+            return unavailable_catalog(message);
+        }
         provider_catalog_entry_from_models(models)
     }
 
@@ -165,7 +168,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
                 super::profiles::resolve_active_profile_env().1
             }
         };
-        let models = self.load_models_with_env(profile_env).await;
+        let models = self.load_models_with_env(profile_env.clone()).await;
+        if let Some(message) = self.model_probe_failure_message(profile_env.as_ref()).await {
+            return unavailable_catalog(message);
+        }
         provider_catalog_entry_from_models(models)
     }
 
@@ -294,6 +300,10 @@ fn provider_catalog_entry_from_models(models: Vec<ModelCatalogEntry>) -> Provide
         modes: Vec::new(),
         default_model,
     }
+}
+
+fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
+    ProviderCatalogEntry::unavailable("claude_code", "Claude", message)
 }
 
 #[cfg(test)]

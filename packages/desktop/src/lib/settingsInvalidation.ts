@@ -30,6 +30,40 @@ const matchesWorkspaceSettingsUrl = urlPrefixPredicate([
  * Settings changes are rare and user-driven, so a slightly broad refetch here
  * is the right trade — correctness over shaving a few cache walks.
  */
+/**
+ * Coalesce bursts of settings invalidations into a leading refetch plus one
+ * trailing refetch — the same leading+settle shape as `scheduleGitInvalidation`
+ * (this variant is keyless and doesn't re-arm, since settings events are rare).
+ *
+ * A single settings save fans out into several `settings_event`s in quick
+ * succession: our own atomic write, the file watcher's echo, and any sibling
+ * `*.settings.json` touched by the cascade. Each event invalidates the
+ * `agent-catalog` + provider/model caches, and those are mounted on hot paths
+ * (every open session's composer and resolved-model context). Invalidating
+ * once per raw event triggers a refetch + re-render wave per event; coalescing
+ * collapses the burst so the wave fires at most twice per settling window.
+ */
+const SETTINGS_INVALIDATION_SETTLE_MS = 400;
+
+let pendingSettingsInvalidation: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleSettingsInvalidation(client: QueryClient): void {
+  if (pendingSettingsInvalidation === null) {
+    // Leading edge — refetch now and open the settle window.
+    void invalidateSettingsDerivedQueries(client);
+    pendingSettingsInvalidation = setTimeout(() => {
+      pendingSettingsInvalidation = null;
+    }, SETTINGS_INVALIDATION_SETTLE_MS);
+    return;
+  }
+  // Inside the window — debounce a single trailing refetch.
+  clearTimeout(pendingSettingsInvalidation);
+  pendingSettingsInvalidation = setTimeout(() => {
+    pendingSettingsInvalidation = null;
+    void invalidateSettingsDerivedQueries(client);
+  }, SETTINGS_INVALIDATION_SETTLE_MS);
+}
+
 export function invalidateSettingsDerivedQueries(client: QueryClient): Promise<void> {
   return client.invalidateQueries({
     predicate: (query) => {

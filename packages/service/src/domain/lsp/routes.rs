@@ -56,7 +56,7 @@ pub struct ListServersResponse {
 )]
 pub async fn list_servers_handler() -> Json<ListServersResponse> {
     Json(ListServersResponse {
-        servers: probe_servers().await,
+        servers: probe_servers().await.as_ref().clone(),
     })
 }
 

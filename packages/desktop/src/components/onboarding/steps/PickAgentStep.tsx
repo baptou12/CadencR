@@ -1,28 +1,25 @@
 import { useCallback, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { useGetAgentCatalog, type ProviderCatalogEntry } from "@/api/generated";
 import {
-  useGetAgentCatalog,
-  useGetWorkspaceSetting,
-  ProviderStatus,
-  type ProviderCatalogEntry,
-} from "@/api/generated";
+  useGetWorkspaceProviderSettings,
+  useSetWorkspaceProviderSetting,
+} from "@/api/agentRuntime";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useSetWorkspaceSettingWithCache } from "@/hooks/useSetWorkspaceSettingWithCache";
-import { DEFAULT_AGENT_PROVIDER_SETTING_KEY } from "@/lib/onboarding-step";
+import { availableCatalogProviders, resolveRuntimeSelection } from "@/shared/models";
 import { OnboardingFooter } from "../OnboardingFooter";
 import type { OnboardingStepProps } from "../OnboardingOverlay";
 
 /**
  * Step 4 — pick a default agent provider for new sessions.
  *
- * Provider list comes from the agent catalog (provider-neutral); we never
- * branch on a hard-coded provider id. Unavailable providers stay visible but
- * disabled so the user understands what's in scope.
+ * Provider list comes from the agent catalog (provider-neutral); we only show
+ * available local providers so a missing CLI cannot become the default.
  *
- * Selection writes `default_agent_provider` to workspace settings. Advancing
- * persists the choice; "Skip" just moves on without writing anything (the
- * user keeps whatever default_provider the catalog already reports).
+ * Selection writes the workspace `session` runtime provider. Advancing
+ * persists the choice; "Skip" just moves on without writing anything.
  */
 export function PickAgentStep({
   isPersisting,
@@ -31,39 +28,54 @@ export function PickAgentStep({
   onSkipStep,
 }: OnboardingStepProps) {
   const catalogQuery = useGetAgentCatalog();
-  const persistedQuery = useGetWorkspaceSetting(DEFAULT_AGENT_PROVIDER_SETTING_KEY);
-  const { setValue: setDefaultAgent, isPending: isSaving } = useSetWorkspaceSettingWithCache(
-    DEFAULT_AGENT_PROVIDER_SETTING_KEY,
-  );
+  const providerSettingsQuery = useGetWorkspaceProviderSettings();
+  const setDefaultAgent = useSetWorkspaceProviderSetting();
 
   const catalog = catalogQuery.data;
-  const persisted = persistedQuery.data?.value ?? null;
+  const availableProviders = availableCatalogProviders(catalog?.providers);
+  const persisted = providerSettingsQuery.data?.session || null;
   const [selected, setSelected] = useState<string | null>(null);
 
   // Effective selection: explicit user pick wins; otherwise fall back to the
   // persisted value, the catalog's default, then the first available
   // provider. Derived on every render — no effect-driven seed.
+  const fallbackSelected = catalog
+    ? resolveRuntimeSelection({
+        agentType: "session",
+        providers: availableProviders,
+        defaultProviderId: catalog.default_provider,
+        globalProviders: persisted ? { session: persisted } : undefined,
+      }).providerId
+    : null;
   const effectiveSelected =
     selected ??
-    persisted ??
-    catalog?.default_provider ??
-    catalog?.providers.find((p) => p.status === ProviderStatus.available)?.id ??
-    null;
+    (availableProviders.some((provider) => provider.id === fallbackSelected)
+      ? fallbackSelected
+      : null);
 
   const persistAndAdvance = useCallback(async () => {
     if (!effectiveSelected) {
       onAdvance();
       return;
     }
+    if (effectiveSelected === persisted) {
+      onAdvance();
+      return;
+    }
     try {
-      await setDefaultAgent(effectiveSelected);
+      await setDefaultAgent.mutateAsync({ agentType: "session", providerId: effectiveSelected });
       onAdvance();
     } catch {
-      // Toast already raised by the helper.
+      toast.error("Failed to save the default agent provider");
     }
-  }, [effectiveSelected, setDefaultAgent, onAdvance]);
+  }, [effectiveSelected, setDefaultAgent, onAdvance, persisted]);
 
-  const primaryDisabled = isPersisting || isSaving || catalogQuery.isLoading;
+  const primaryDisabled =
+    isPersisting ||
+    setDefaultAgent.isPending ||
+    catalogQuery.isLoading ||
+    providerSettingsQuery.isLoading ||
+    providerSettingsQuery.isError;
 
   return (
     <form
@@ -81,22 +93,26 @@ export function PickAgentStep({
         </p>
       </header>
 
-      {catalogQuery.isLoading ? (
+      {catalogQuery.isLoading || providerSettingsQuery.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
           <Loader2 className="size-4 animate-spin" /> Loading agents…
         </div>
       ) : catalogQuery.isError ? (
         <div className="text-sm text-destructive py-4">Failed to load the agent catalog.</div>
+      ) : providerSettingsQuery.isError ? (
+        <div className="text-sm text-destructive py-4">
+          Failed to load the current default agent.
+        </div>
       ) : (
         <ProviderList
-          providers={catalog?.providers ?? []}
+          providers={availableProviders}
           selectedId={effectiveSelected}
           onSelect={setSelected}
         />
       )}
 
       <OnboardingFooter
-        primaryLabel={isSaving ? "Saving…" : "Continue"}
+        primaryLabel={setDefaultAgent.isPending ? "Saving…" : "Continue"}
         onPrimary={() => void persistAndAdvance()}
         primaryDisabled={primaryDisabled}
         onBack={onBack}
@@ -145,13 +161,11 @@ function ProviderRow({
   isSelected: boolean;
   onSelect: () => void;
 }) {
-  const isAvailable = provider.status === ProviderStatus.available;
   return (
     <Button
       type="button"
       variant="ghost"
       onClick={onSelect}
-      disabled={!isAvailable}
       className={cn(
         "h-auto w-full justify-start rounded-none px-4 py-3 text-left",
         isSelected && "bg-primary/5",
@@ -160,11 +174,6 @@ function ProviderRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium">{provider.label}</span>
-          {!isAvailable ? (
-            <span className="px-1.5 py-0.5 rounded text-[10px] uppercase bg-muted text-muted-foreground">
-              {provider.status}
-            </span>
-          ) : null}
         </div>
         {provider.status_message ? (
           <div className="text-xs text-muted-foreground mt-0.5">{provider.status_message}</div>

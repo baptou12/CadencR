@@ -7,7 +7,7 @@
  * notification trigger that the store imports.
  */
 import { queryClient, invalidateByUrlPrefix } from "@/lib/queryClient";
-import { invalidateSettingsDerivedQueries } from "@/lib/settingsInvalidation";
+import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
@@ -235,8 +235,10 @@ export function handleAppEnvelope(
     // Refetch every settings-derived query — not just the raw settings
     // endpoints but the model/provider/agent-catalog caches that resolve
     // through the settings cascade — so the UI and warnings banners reflect the
-    // new file.
-    void invalidateSettingsDerivedQueries(queryClient);
+    // new file. Coalesced: one save fans out into several events (our write,
+    // the watcher echo, sibling settings files), and each refetch triggers a
+    // re-render wave across every mounted ModelSelector/session composer.
+    scheduleSettingsInvalidation(queryClient);
     return true;
   }
   if (domain === "app" && action === "feature_event") {

@@ -72,4 +72,28 @@ describe("useAgentSessionModelState.canChangeProvider", () => {
     );
     expect(result.current.canChangeProvider).toBe(false);
   });
+
+  it("ignores stale providers that are no longer selectable", () => {
+    const { result } = renderHook(() =>
+      useAgentSessionModelState({
+        agentCatalog: catalog,
+        currentProviderId: "opencode",
+        runtimeProvider: "claude_code",
+        hasConversation: false,
+      }),
+    );
+    expect(result.current.activeProviderId).toBe("claude_code");
+    expect(result.current.visibleModels).toEqual([{ id: "opus", label: "Opus" }]);
+  });
+
+  it("falls back to the catalog default when runtime provider is stale", () => {
+    const { result } = renderHook(() =>
+      useAgentSessionModelState({
+        agentCatalog: catalog,
+        runtimeProvider: "opencode",
+        hasConversation: false,
+      }),
+    );
+    expect(result.current.activeProviderId).toBe("claude_code");
+  });
 });

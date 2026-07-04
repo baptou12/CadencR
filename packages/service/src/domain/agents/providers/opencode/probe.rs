@@ -18,7 +18,12 @@ const PROBE_LOG_PREFIX: &str = "opencode models probe";
 pub(super) async fn run() -> Result<ConfigProvidersResponse, RuntimeError> {
     opencode_sdk_rs::list_models_from_cli()
         .await
-        .map_err(|error| RuntimeError::new(format!("{PROBE_LOG_PREFIX}: {error}")))
+        .map_err(|error| match RuntimeError::from(error) {
+            RuntimeError::Generic(message) => {
+                RuntimeError::new(format!("{PROBE_LOG_PREFIX}: {message}"))
+            }
+            other => other,
+        })
 }
 
 #[cfg(test)]

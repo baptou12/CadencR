@@ -1,8 +1,8 @@
 import landingPackage from "../../package.json";
 
 type SupportedDownloadOs = "macos";
-type DetectedOs = SupportedDownloadOs | "windows" | "linux" | "unknown";
-type DetectedArch = "arm64" | "x64" | "unknown";
+export type DetectedOs = SupportedDownloadOs | "windows" | "linux" | "unknown";
+export type DetectedArch = "arm64" | "x64" | "unknown";
 type DownloadKind = "installer" | "archive";
 
 interface DownloadAsset {
@@ -76,12 +76,61 @@ export const DOWNLOAD_ASSETS: DownloadAsset[] = [
   },
 ];
 
+/**
+ * The build we hand a macOS visitor for a given detected arch. Only a definitive
+ * Intel signal picks x64; everything else — including "unknown" — defaults to
+ * Apple Silicon: every Mac since late 2020 is arm64, and the browsers that can't
+ * report arch (Safari, Firefox) skew even further that way. Handing an unknown
+ * visitor the Intel DMG silently runs the whole app under Rosetta; arm64-on-Intel
+ * instead fails loudly and is trivially corrected from the manual target list.
+ *
+ * Shared so the page's client-side `chooseDownload` can't drift from the SSR
+ * default.
+ */
+export function preferredMacArch(arch: DetectedArch): DetectedArch {
+  return arch === "x64" ? "x64" : "arm64";
+}
+
 export function selectRecommendedDownload(detection: DownloadDetection): DownloadAsset | undefined {
   if (detection.os !== "macos") return undefined;
 
-  if (detection.arch === "arm64") {
-    return DOWNLOAD_ASSETS.find((asset) => asset.assetName.endsWith("-arm64.dmg"));
-  }
+  const wanted = preferredMacArch(detection.arch);
+  return DOWNLOAD_ASSETS.find((asset) => asset.arch === wanted && asset.assetName.endsWith(".dmg"));
+}
 
-  return DOWNLOAD_ASSETS.find((asset) => asset.assetName.endsWith(".dmg") && asset.arch === "x64");
+/** Normalize a raw architecture token (e.g. from `userAgentData`) to our enum. */
+export function normalizeArch(value: string): DetectedArch {
+  const arch = value.toLowerCase();
+  if (arch.includes("arm") || arch.includes("aarch64")) return "arm64";
+  if (arch.includes("x86") || arch.includes("x64") || arch.includes("intel")) return "x64";
+  return "unknown";
+}
+
+/**
+ * Infer arch from a WebGL GPU renderer string. This is the only architecture
+ * signal Safari and Firefox expose: `navigator.userAgentData` is Chromium-only,
+ * and Apple masks the CPU as "Intel" in the UA string on every Mac. Apple
+ * Silicon reports an "Apple" GPU (e.g. "Apple M3", "ANGLE Metal Renderer:
+ * Apple M3"); Intel Macs report Intel/AMD/Radeon.
+ */
+export function archFromRenderer(renderer: string): DetectedArch {
+  const value = renderer.toLowerCase();
+  if (value.includes("apple")) return "arm64";
+  if (value.includes("intel") || value.includes("amd") || value.includes("radeon")) return "x64";
+  return "unknown";
+}
+
+/**
+ * Combine the available arch signals for a macOS visitor. The GPU renderer
+ * reflects the physical machine and survives Rosetta (a Chromium process
+ * translated to x86 still reports "Apple" via Metal), so it wins when
+ * definitive; `userAgentData.architecture` is the Chromium fallback. A leftover
+ * "unknown" is handed to `selectRecommendedDownload`, which defaults it to arm64.
+ */
+export function resolveMacArch(signals: {
+  renderer: DetectedArch;
+  userAgentData: DetectedArch;
+}): DetectedArch {
+  if (signals.renderer !== "unknown") return signals.renderer;
+  return signals.userAgentData;
 }

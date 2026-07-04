@@ -5,7 +5,7 @@ use sqlx::SqlitePool;
 use std::path::Path;
 
 use super::adapter::AgentRuntimeAdapter;
-use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, DEFAULT_PROVIDER};
+use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, ProviderStatus, DEFAULT_PROVIDER};
 
 pub use model_validation::validate_provider_model;
 
@@ -79,10 +79,20 @@ pub async fn provider_catalog_live_for_cwd(
     let providers = futures::future::join_all(ADAPTERS.iter().map(|(_, adapter)| async move {
         provider_catalog_entry_live_for_settings(read_pool, cwd, profile, *adapter).await
     }))
-    .await;
+    .await
+    .into_iter()
+    .filter(|provider| provider.status == ProviderStatus::Available)
+    .collect::<Vec<_>>();
+
+    let default_provider = providers
+        .iter()
+        .find(|provider| provider.id == DEFAULT_PROVIDER)
+        .or_else(|| providers.first())
+        .map(|provider| provider.id.clone())
+        .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
 
     AgentCatalogResponse {
-        default_provider: DEFAULT_PROVIDER.to_string(),
+        default_provider,
         providers,
     }
 }
@@ -93,10 +103,13 @@ pub(super) async fn provider_catalog_entry_live_for_settings(
     profile: Option<&str>,
     adapter: &dyn AgentRuntimeAdapter,
 ) -> super::runtime::ProviderCatalogEntry {
-    let (mut entry, extra) = tokio::join!(
-        adapter.catalog_entry_live_for_settings(read_pool, cwd, profile),
-        adapter.extra_models(read_pool),
-    );
+    let mut entry = adapter
+        .catalog_entry_live_for_settings(read_pool, cwd, profile)
+        .await;
+    if entry.status != ProviderStatus::Available {
+        return entry;
+    }
+    let extra = adapter.extra_models(read_pool).await;
     if !extra.is_empty() {
         entry.models = merge_extra_models(entry.models, extra);
     }

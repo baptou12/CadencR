@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { customInstance } from "./client";
-import { AGENT_TYPES, DEFAULT_PROVIDER, type AgentTypeSetting } from "../shared/models";
+import { AGENT_TYPES, type AgentTypeSetting } from "../shared/models";
 import type { PermissionMode } from "@/types/permission-mode";
 
 export interface RuntimeModelOption {
@@ -43,9 +43,7 @@ interface ProviderMutationCallbacks<TVariables> {
 }
 
 function defaultProviderSettings(): ProviderSettings {
-  return Object.fromEntries(
-    AGENT_TYPES.map((agentType) => [agentType, DEFAULT_PROVIDER]),
-  ) as ProviderSettings;
+  return Object.fromEntries(AGENT_TYPES.map((agentType) => [agentType, ""])) as ProviderSettings;
 }
 
 interface QueryExtras {
