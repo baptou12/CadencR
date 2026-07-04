@@ -1,14 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
 const generatedMocks = vi.hoisted(() => ({
+  getProjectSettings: vi.fn(),
   setProjectSetting: vi.fn(),
 }));
 
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
-  useGetProjectSettings: vi.fn(() => ({ data: [] })),
+  useGetProjectSettings: generatedMocks.getProjectSettings,
   useSetProjectSetting: vi.fn(() => ({ mutate: generatedMocks.setProjectSetting })),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
 }));
@@ -18,6 +19,11 @@ vi.mock("./ModelSelector", () => ({
 }));
 
 describe("ProjectSettingsDialog", () => {
+  beforeEach(() => {
+    generatedMocks.getProjectSettings.mockReturnValue({ data: [] });
+    generatedMocks.setProjectSetting.mockClear();
+  });
+
   it("renders nothing when closed", () => {
     const { container } = render(
       <ProjectSettingsDialog
@@ -86,5 +92,63 @@ describe("ProjectSettingsDialog", () => {
     );
     await user.keyboard("{Escape}");
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("does not replace in-progress setup command edits when settings load late", async () => {
+    generatedMocks.getProjectSettings.mockReturnValue({ data: undefined });
+    const props = {
+      projectId: 1,
+      projectName: "Test",
+      open: true,
+      onOpenChange: vi.fn(),
+    };
+    const { user, rerender } = render(<ProjectSettingsDialog {...props} />);
+    const setupInput = screen.getByPlaceholderText(/pnpm install/i);
+
+    await user.type(setupInput, "pnpm install");
+    expect(setupInput).toHaveValue("pnpm install");
+
+    generatedMocks.getProjectSettings.mockReturnValue({
+      data: [{ key: "setup_worktree", value: "echo stale" }],
+    });
+    rerender(<ProjectSettingsDialog {...props} />);
+
+    expect(screen.getByPlaceholderText(/pnpm install/i)).toHaveValue("pnpm install");
+  });
+
+  it("resets dirty setup command edits when switching projects", async () => {
+    generatedMocks.getProjectSettings.mockImplementation((projectId: number) => ({
+      data:
+        projectId === 2
+          ? [{ key: "setup_worktree", value: "pnpm install --frozen-lockfile" }]
+          : [{ key: "setup_worktree", value: "pnpm install" }],
+    }));
+    const onOpenChange = vi.fn();
+    const { user, rerender } = render(
+      <ProjectSettingsDialog
+        projectId={1}
+        projectName="First"
+        open={true}
+        onOpenChange={onOpenChange}
+      />,
+    );
+    const setupInput = screen.getByPlaceholderText(/pnpm install/i);
+
+    await user.clear(setupInput);
+    await user.type(setupInput, "local unsaved edit");
+    expect(setupInput).toHaveValue("local unsaved edit");
+
+    rerender(
+      <ProjectSettingsDialog
+        projectId={2}
+        projectName="Second"
+        open={true}
+        onOpenChange={onOpenChange}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText(/pnpm install/i)).toHaveValue(
+      "pnpm install --frozen-lockfile",
+    );
   });
 });
