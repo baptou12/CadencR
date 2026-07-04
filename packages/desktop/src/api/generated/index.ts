@@ -2126,6 +2126,10 @@ export interface SuccessResponse {
 export interface TerminalSessionInfo {
   alive: boolean;
   cwd: string;
+  /** Whether a foreground command is currently running in this shell. The
+client uses this to auto-switch an idle terminal to a fresh worktree
+while leaving a busy one alone. */
+  foreground_active: boolean;
   pty_id: string;
 }
 

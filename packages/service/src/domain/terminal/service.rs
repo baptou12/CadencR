@@ -64,6 +64,10 @@ pub struct PtySession {
     pub pty_id: String,
     pub cwd: String,
     pub alive: bool,
+    /// Whether a foreground command is currently running in this shell. Lets the
+    /// client auto-switch an *idle* terminal to a fresh worktree while leaving a
+    /// busy one alone (so it never kills a running command).
+    pub foreground_active: bool,
 }
 
 /// Manages all PTY sessions. Stored in AppState.
@@ -301,6 +305,7 @@ impl PtyManager {
                 pty_id: entry.key().clone(),
                 cwd: entry.value().cwd.clone(),
                 alive: entry.value().alive.borrow().is_none(),
+                foreground_active: super::activity::pty_foreground_active(entry.value()),
             })
             .collect()
     }

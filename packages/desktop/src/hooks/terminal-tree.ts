@@ -15,6 +15,12 @@ export interface TerminalLeaf {
   cwd?: string;
   /** True if the user dismissed the cwd-mismatch warning for this pane. */
   cwdWarningDismissed?: boolean;
+  /**
+   * Display-only line written to the terminal once the fresh PTY is ready
+   * (e.g. "→ cd <worktree>"), so a pane restarted into a new working directory
+   * tells the user where it landed. Never sent to the shell.
+   */
+  initialNotice?: string;
 }
 
 /** A split node contains two children arranged in a given orientation */
@@ -25,6 +31,18 @@ export interface TerminalSplit {
 }
 
 export type SplitNode = TerminalLeaf | TerminalSplit;
+
+/**
+ * A pane's live shell no longer matches the feature's expected working
+ * directory (e.g. a worktree was just created) and the user hasn't dismissed
+ * the mismatch. Shared by the auto-switch hook and the warning banner so the
+ * "should this pane warn/switch?" rule lives in one place.
+ */
+export function isCwdStale(leaf: TerminalLeaf, expectedCwd: string | null): boolean {
+  return Boolean(
+    leaf.ptyId && leaf.cwd && expectedCwd && leaf.cwd !== expectedCwd && !leaf.cwdWarningDismissed,
+  );
+}
 
 export type Direction = "left" | "right" | "up" | "down";
 

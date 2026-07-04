@@ -91,9 +91,10 @@ interface TerminalStore {
   /**
    * Replace a leaf in-place with a fresh empty leaf (new id, no ptyId).
    * The tree structure is preserved so split layouts survive a restart.
-   * The caller is responsible for having killed the old PTY.
+   * The caller is responsible for having killed the old PTY. An optional
+   * `notice` is shown as a display-only line once the new PTY is ready.
    */
-  replaceLeafWithFresh: (featureId: number, paneId: string) => void;
+  replaceLeafWithFresh: (featureId: number, paneId: string, notice?: string) => void;
   minimize: (featureId: number) => void;
   closePanel: (featureId: number) => void;
   setPtyId: (featureId: number, paneId: string, ptyId: string) => void;
@@ -101,6 +102,7 @@ interface TerminalStore {
   dismissCwdWarning: (featureId: number, paneId: string) => void;
   sendToTerminal: (featureId: number, command: string) => void;
   clearInitialCommand: (featureId: number, paneId: string) => void;
+  clearInitialNotice: (featureId: number, paneId: string) => void;
 }
 
 function updateFeature(
@@ -203,11 +205,11 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       return updateFeature(state, featureId, { ...prev, root: newRoot });
     }),
 
-  replaceLeafWithFresh: (featureId, paneId) =>
+  replaceLeafWithFresh: (featureId, paneId, notice) =>
     set((state) => {
       const prev = state.features[featureId] ?? defaultState;
       if (!prev.root) return state;
-      const newRoot = replaceLeaf(prev.root, paneId, makeLeaf());
+      const newRoot = replaceLeaf(prev.root, paneId, makeLeaf({ initialNotice: notice }));
       if (newRoot === prev.root) return state;
       return updateFeature(state, featureId, { ...prev, root: newRoot });
     }),
@@ -279,6 +281,17 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         ...leaf,
         initialCommand: undefined,
       }));
+      return updateFeature(state, featureId, { ...prev, root: newRoot });
+    }),
+
+  clearInitialNotice: (featureId, paneId) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      if (!prev.root) return state;
+      const newRoot = updateLeaf(prev.root, paneId, (leaf) =>
+        leaf.initialNotice === undefined ? leaf : { ...leaf, initialNotice: undefined },
+      );
+      if (newRoot === prev.root) return state;
       return updateFeature(state, featureId, { ...prev, root: newRoot });
     }),
 }));

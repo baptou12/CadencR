@@ -265,6 +265,30 @@ describe("useTerminalState", () => {
     }
   });
 
+  it("replaceLeafWithFresh carries an optional notice onto the fresh leaf", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel());
+    const paneId = result.current.panes[0].id;
+    act(() => useTerminalStore.getState().replaceLeafWithFresh(1, paneId, "/repo/.worktrees/x"));
+    const root = result.current.root;
+    if (root?.type === "leaf") {
+      expect(root.initialNotice).toBe("/repo/.worktrees/x");
+    }
+  });
+
+  it("clearInitialNotice removes the consumed notice from the leaf", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel());
+    const paneId = result.current.panes[0].id;
+    act(() => useTerminalStore.getState().replaceLeafWithFresh(1, paneId, "/repo/wt"));
+    const freshId = result.current.panes[0].id;
+    act(() => useTerminalStore.getState().clearInitialNotice(1, freshId));
+    const root = result.current.root;
+    if (root?.type === "leaf") {
+      expect(root.initialNotice).toBeUndefined();
+    }
+  });
+
   // Helper to build leaf nodes for navigation tests
   const leaf = (id: string): TerminalLeaf => ({ type: "leaf", id });
 

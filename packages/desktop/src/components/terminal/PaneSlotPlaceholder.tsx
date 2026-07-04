@@ -1,10 +1,16 @@
 import { memo, useCallback } from "react";
 import { TerminalCwdWarning } from "./TerminalCwdWarning";
-import type { TerminalLeaf } from "@/hooks/useTerminalState";
+import { isCwdStale, type TerminalLeaf } from "@/hooks/terminal-tree";
 
 interface PaneSlotPlaceholderProps {
   leaf: TerminalLeaf;
   expectedCwd: string | null;
+  /**
+   * Whether the cwd-mismatch warning should be shown for this pane. Decided by
+   * the parent: only busy shells (a command is running) warn — idle ones are
+   * auto-switched to the new worktree instead, so they never reach here.
+   */
+  showWarning: boolean;
   registerPlaceholder: (id: string, el: HTMLDivElement | null) => void;
   onFocus: (paneId: string) => void;
   onRestart: (paneId: string) => void;
@@ -30,6 +36,7 @@ interface PaneSlotPlaceholderProps {
 export const PaneSlotPlaceholder = memo(function PaneSlotPlaceholder({
   leaf,
   expectedCwd,
+  showWarning,
   registerPlaceholder,
   onFocus,
   onRestart,
@@ -46,8 +53,12 @@ export const PaneSlotPlaceholder = memo(function PaneSlotPlaceholder({
   const handleRestart = useCallback(() => onRestart(leaf.id), [onRestart, leaf.id]);
   const handleDismiss = useCallback(() => onDismiss(leaf.id), [onDismiss, leaf.id]);
 
+  // The parent only flags a pane once it has confirmed the shell is busy, so the
+  // banner never flashes for idle terminals we're about to auto-switch. Re-check
+  // staleness (shared with the auto-switch hook) so a since-dismissed or
+  // reconnected pane stops warning; the trailing checks narrow the display props.
   const warning =
-    leaf.cwd && expectedCwd && leaf.cwd !== expectedCwd && !leaf.cwdWarningDismissed ? (
+    showWarning && isCwdStale(leaf, expectedCwd) && leaf.cwd && expectedCwd ? (
       <TerminalCwdWarning
         paneCwd={leaf.cwd}
         expectedCwd={expectedCwd}

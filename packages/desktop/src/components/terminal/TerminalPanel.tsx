@@ -10,7 +10,6 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
 import { TerminalPaneToolbar } from "./TerminalPaneToolbar";
@@ -24,6 +23,8 @@ import {
   useTerminalStore,
 } from "@/hooks/useTerminalState";
 import { useTheme } from "@/hooks/useTheme";
+import { useWorktreeTerminalAutoSwitch } from "@/hooks/useWorktreeTerminalAutoSwitch";
+import { useTerminalPaneShortcuts } from "./useTerminalPaneShortcuts";
 
 interface TerminalPanelProps {
   featureId: number;
@@ -73,6 +74,7 @@ export const TerminalPanel = memo(
     const dismissCwdWarning = useTerminalStore((s) => s.dismissCwdWarning);
     const replaceLeafWithFresh = useTerminalStore((s) => s.replaceLeafWithFresh);
     const clearInitialCommand = useTerminalStore((s) => s.clearInitialCommand);
+    const clearInitialNotice = useTerminalStore((s) => s.clearInitialNotice);
 
     const slotsRef = useRef<Map<string, HTMLDivElement>>(new Map());
     const placeholderRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -160,20 +162,11 @@ export const TerminalPanel = memo(
       [activeIndex, focusPaneByIndex, focusFirstPane],
     );
 
-    // -- Keyboard shortcuts --
-    // All terminal pane shortcuts are scoped to the terminal tab so they
-    // don't fire when the user has another tab focused.
-    //
-    // We use the *global* capture-phase variant rather than `useHotkeys` so
-    // the shortcuts still fire while xterm's textarea has focus.
-    // Bubble-phase hotkeys can be swallowed by xterm before they reach app
-    // handlers; capture phase keeps split shortcuts alive in the terminal.
-
-    // Helper: split + focus the newly-created pane. The store returns the new
-    // leaf id; we focus it on the next rAF so React has had a chance to mount
-    // the new XTermInstance and register its imperative handle. The
-    // `XTermInstance.focus()` method itself queues the request when xterm
-    // isn't fully opened yet, so even a single rAF is enough.
+    // Split + focus the newly-created pane. The store returns the new leaf id;
+    // we focus it on the next rAF so React has had a chance to mount the new
+    // XTermInstance and register its imperative handle. The `XTermInstance
+    // .focus()` method itself queues the request when xterm isn't fully opened
+    // yet, so even a single rAF is enough.
     const splitAndFocus = useCallback(
       (orientation: SplitOrientation) => {
         const newId = splitPane(resolvedActivePaneId ?? undefined, orientation);
@@ -183,28 +176,6 @@ export const TerminalPanel = memo(
       [splitPane, resolvedActivePaneId, focusPane],
     );
 
-    useScopedGlobalShortcutById(
-      "terminal-split-h",
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        splitAndFocus("horizontal");
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
-
-    useScopedGlobalShortcutById(
-      "terminal-split-v",
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        splitAndFocus("vertical");
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
-
     const navigatePane = useCallback(
       (direction: "left" | "right" | "up" | "down") => {
         if (!root || !resolvedActivePaneId) return;
@@ -212,69 +183,6 @@ export const TerminalPanel = memo(
         if (target) focusPane(target);
       },
       [root, resolvedActivePaneId, focusPane],
-    );
-
-    // One capture-phase listener per arrow direction so xterm doesn't swallow
-    // the keys while its textarea is focused.
-    useScopedGlobalShortcutById(
-      "terminal-nav-pane-left",
-      (e) => {
-        e.preventDefault();
-        navigatePane("left");
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
-    useScopedGlobalShortcutById(
-      "terminal-nav-pane-right",
-      (e) => {
-        e.preventDefault();
-        navigatePane("right");
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
-    useScopedGlobalShortcutById(
-      "terminal-nav-pane-up",
-      (e) => {
-        e.preventDefault();
-        navigatePane("up");
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
-    useScopedGlobalShortcutById(
-      "terminal-nav-pane-down",
-      (e) => {
-        e.preventDefault();
-        navigatePane("down");
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
-
-    useScopedGlobalShortcutById(
-      "terminal-clear",
-      (e) => {
-        if (!resolvedActivePaneId) return;
-        e.preventDefault();
-        e.stopPropagation();
-        paneRefs.current.get(resolvedActivePaneId)?.clearScreen();
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
-
-    useScopedGlobalShortcutById(
-      "terminal-delete-line",
-      (e) => {
-        if (!resolvedActivePaneId) return;
-        e.preventDefault();
-        e.stopPropagation();
-        paneRefs.current.get(resolvedActivePaneId)?.clearInput();
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
     );
 
     // Use ref for leaves so closePane stays stable
@@ -300,28 +208,15 @@ export const TerminalPanel = memo(
       if (resolvedActivePaneId) closePane(resolvedActivePaneId);
     }, [resolvedActivePaneId, closePane]);
 
-    // CMD+W: kill the active split's PTY (via `closePane`, which marks the
-    // pane for kill and removes the leaf). Scoped to the terminal tab.
-    //
-    // We only `preventDefault` + `stopPropagation` when there *is* a pane to
-    // close — otherwise we let the event fall through to `useAppClose`'s
-    // global meta+w (hooks/useAppClose.ts:108-115), which is the user-visible
-    // "no terminals left, close the app" behaviour they asked for.
-    //
-    // Stopping propagation matters: without it, `useAppClose` would *also*
-    // run after us and request a window close while the user only intended
-    // to kill one split.
-    useScopedGlobalShortcutById(
-      "terminal-close",
-      (e) => {
-        if (!resolvedActivePaneId) return;
-        e.preventDefault();
-        e.stopPropagation();
-        closePane(resolvedActivePaneId);
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-    );
+    // All terminal-pane keyboard shortcuts, scoped to the terminal tab.
+    useTerminalPaneShortcuts({
+      hotkeysEnabled,
+      resolvedActivePaneId,
+      paneRefs,
+      onSplit: splitAndFocus,
+      onNavigate: navigatePane,
+      onClose: closePane,
+    });
 
     const handlePaneExit = useCallback(
       (_ptyId: string, paneId: string) => {
@@ -336,15 +231,26 @@ export const TerminalPanel = memo(
     const restartPane = useCallback(
       (paneId: string) => {
         paneRefs.current.get(paneId)?.markForKill();
-        replaceLeafWithFresh(featureId, paneId);
+        // The fresh pane spawns in `expectedCwd`; pass it as a display-only
+        // notice so the new shell shows where it landed.
+        replaceLeafWithFresh(featureId, paneId, expectedCwd ?? undefined);
       },
-      [replaceLeafWithFresh, featureId],
+      [replaceLeafWithFresh, featureId, expectedCwd],
     );
 
     const dismissPaneWarning = useCallback(
       (paneId: string) => dismissCwdWarning(featureId, paneId),
       [dismissCwdWarning, featureId],
     );
+
+    // Auto-switch idle terminals to a freshly-created worktree; panes with a
+    // running command instead keep the "Restart here" warning banner.
+    const warnPaneIds = useWorktreeTerminalAutoSwitch({
+      featureId,
+      expectedCwd,
+      leaves,
+      onRestartPane: restartPane,
+    });
 
     const registerPlaceholder = useCallback((id: string, el: HTMLDivElement | null) => {
       if (el) placeholderRefs.current.set(id, el);
@@ -385,6 +291,7 @@ export const TerminalPanel = memo(
             <TerminalSplitTree
               node={root}
               expectedCwd={expectedCwd}
+              warnPaneIds={warnPaneIds}
               onFocusPane={focusPane}
               onRestartPane={restartPane}
               onDismissWarning={dismissPaneWarning}
@@ -415,6 +322,8 @@ export const TerminalPanel = memo(
               theme={xtermPalette}
               initialCommand={leaf.initialCommand}
               onInitialCommandConsumed={() => clearInitialCommand(featureId, leaf.id)}
+              initialNotice={leaf.initialNotice}
+              onInitialNoticeConsumed={() => clearInitialNotice(featureId, leaf.id)}
               onPtyReady={(ptyId, cwd) => {
                 setPtyId(featureId, leaf.id, ptyId);
                 if (cwd) setPaneCwd(featureId, leaf.id, cwd);
