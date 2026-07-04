@@ -49,6 +49,10 @@ pub struct TerminalSessionInfo {
     pub pty_id: String,
     pub cwd: String,
     pub alive: bool,
+    /// Whether a foreground command is currently running in this shell. The
+    /// client uses this to auto-switch an idle terminal to a fresh worktree
+    /// while leaving a busy one alone.
+    pub foreground_active: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +83,7 @@ pub async fn list_terminal_sessions_handler(
             pty_id: session.pty_id,
             cwd: session.cwd,
             alive: session.alive,
+            foreground_active: session.foreground_active,
         })
         .collect();
     Json(sessions)

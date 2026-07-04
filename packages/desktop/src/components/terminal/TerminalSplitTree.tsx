@@ -5,6 +5,8 @@ import { PaneSlotPlaceholder } from "./PaneSlotPlaceholder";
 
 interface TerminalSplitTreeProps {
   expectedCwd: string | null;
+  /** Pane ids whose stale shell is busy — show the "Restart here" warning. */
+  warnPaneIds: Set<string>;
   node: SplitNode;
   onDismissWarning: (paneId: string) => void;
   onFocusPane: (paneId: string) => void;
@@ -15,8 +17,15 @@ interface TerminalSplitTreeProps {
 export const TerminalSplitTree = memo(function TerminalSplitTree(
   props: TerminalSplitTreeProps,
 ): ReactNode {
-  const { expectedCwd, node, onDismissWarning, onFocusPane, onRegisterPlaceholder, onRestartPane } =
-    props;
+  const {
+    expectedCwd,
+    warnPaneIds,
+    node,
+    onDismissWarning,
+    onFocusPane,
+    onRegisterPlaceholder,
+    onRestartPane,
+  } = props;
   const splitOrientation = node.type === "leaf" ? null : node.orientation;
   const handleClassName = useMemo(
     () =>
@@ -30,6 +39,7 @@ export const TerminalSplitTree = memo(function TerminalSplitTree(
       <PaneSlotPlaceholder
         leaf={node}
         expectedCwd={expectedCwd}
+        showWarning={warnPaneIds.has(node.id)}
         registerPlaceholder={onRegisterPlaceholder}
         onFocus={onFocusPane}
         onRestart={onRestartPane}
@@ -59,6 +69,7 @@ function areTerminalSplitTreePropsEqual(
 ): boolean {
   return (
     prev.expectedCwd === next.expectedCwd &&
+    prev.warnPaneIds === next.warnPaneIds &&
     prev.node === next.node &&
     prev.onDismissWarning === next.onDismissWarning &&
     prev.onFocusPane === next.onFocusPane &&

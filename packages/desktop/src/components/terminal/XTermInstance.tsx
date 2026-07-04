@@ -9,6 +9,7 @@ import { toControlChar } from "@/lib/terminal-keys";
 import type { XTermPalette } from "@/lib/themes";
 import { createXtermInstance } from "./createXtermInstance";
 import { attachXtermNavigationKeys } from "./xtermNavigationKeys";
+import { attachTouchScroll } from "./xtermTouchScroll";
 import { useLinkRouting } from "@/components/links/LinkRoutingContext";
 
 interface XTermInstanceProps {
@@ -36,6 +37,14 @@ interface XTermInstanceProps {
   initialCommand?: string;
   /** Called after the initial command has been written so the parent can clear it from state */
   onInitialCommandConsumed?: () => void;
+  /**
+   * Display-only path shown as a "→ cd <path>" line once the PTY is ready, used
+   * when a pane was restarted into a new working directory (e.g. a worktree).
+   * Written to the terminal viewport only — never sent to the shell.
+   */
+  initialNotice?: string;
+  /** Called after the notice has been written so the parent can clear it from state */
+  onInitialNoticeConsumed?: () => void;
   /** Called when the terminal receives focus */
   onTerminalFocus?: () => void;
   /**
@@ -75,6 +84,8 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       killOnUnmount = false,
       initialCommand,
       onInitialCommandConsumed,
+      initialNotice,
+      onInitialNoticeConsumed,
       onTerminalFocus,
       ctrlArmed,
       onConsumeCtrl,
@@ -100,6 +111,10 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     initialCommandRef.current = initialCommand;
     const onInitialCommandConsumedRef = useRef(onInitialCommandConsumed);
     onInitialCommandConsumedRef.current = onInitialCommandConsumed;
+    const initialNoticeRef = useRef(initialNotice);
+    initialNoticeRef.current = initialNotice;
+    const onInitialNoticeConsumedRef = useRef(onInitialNoticeConsumed);
+    onInitialNoticeConsumedRef.current = onInitialNoticeConsumed;
     // Read inside the (once-bound) onData handler without re-running its effect.
     const ctrlArmedRef = useRef(false);
     ctrlArmedRef.current = ctrlArmed ?? false;
@@ -170,6 +185,13 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         }
         ptyIdRef.current = ptyId;
         onPtyReady?.(ptyId, cwd);
+        // Display-only note (written before the shell's first prompt) so a pane
+        // restarted into a new working directory tells the user where it landed.
+        const notice = initialNoticeRef.current;
+        if (notice) {
+          terminalRef.current?.write(`\x1b[90m→ cd ${notice}\x1b[0m\r\n`);
+          onInitialNoticeConsumedRef.current?.();
+        }
         // Write initial command if provided
         const cmd = initialCommandRef.current;
         if (cmd) {
@@ -461,52 +483,3 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     );
   },
 );
-
-/**
- * Make the terminal draggable by finger on touch devices. xterm 6 drives
- * scrolling through VS Code's `ScrollableElement` (not a native CSS overflow
- * scroller), and iOS never feeds that element a touch gesture — so a finger
- * drag did nothing. We translate the vertical touch delta into whole-row
- * scrolls via xterm's public `scrollLines()` API, which is the same path the
- * wheel uses, so the buffer and scrollbar stay in sync. `surface` is the outer
- * container (not `.xterm-viewport`, which is painted over and never sees the
- * touches). Returns a cleanup fn; inert on non-touch input since touch events
- * never fire there.
- */
-function attachTouchScroll(surface: HTMLElement, terminal: Terminal): () => void {
-  let lastY = 0;
-  // Sub-row pixels carried between moves so slow drags still scroll smoothly
-  // instead of rounding every delta down to zero.
-  let pixelRemainder = 0;
-  // Row height in px, sampled once per drag at `touchstart`. Reading
-  // `clientHeight` here (not on every `touchmove`) keeps a forced reflow off
-  // the rapid-fire move path; the terminal can't resize mid-drag anyway.
-  let rowHeight = 1;
-
-  const onTouchStart = (e: TouchEvent): void => {
-    if (e.touches.length !== 1) return;
-    lastY = e.touches[0].clientY;
-    pixelRemainder = 0;
-    rowHeight = Math.max(1, surface.clientHeight / Math.max(1, terminal.rows));
-  };
-
-  const onTouchMove = (e: TouchEvent): void => {
-    if (e.touches.length !== 1) return;
-    const y = e.touches[0].clientY;
-    pixelRemainder += y - lastY;
-    lastY = y;
-    const rows = Math.trunc(pixelRemainder / rowHeight);
-    if (rows === 0) return;
-    pixelRemainder -= rows * rowHeight;
-    // Finger down (rows > 0) reveals older output, i.e. scroll up → negative.
-    terminal.scrollLines(-rows);
-    e.preventDefault();
-  };
-
-  surface.addEventListener("touchstart", onTouchStart, { passive: true });
-  surface.addEventListener("touchmove", onTouchMove, { passive: false });
-  return () => {
-    surface.removeEventListener("touchstart", onTouchStart);
-    surface.removeEventListener("touchmove", onTouchMove);
-  };
-}
