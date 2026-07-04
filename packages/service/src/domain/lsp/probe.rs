@@ -8,7 +8,11 @@
 //! Provider-neutral: the route returns a list keyed by `lsp_id`, never a
 //! map branched on language name. Per `provider-boundaries.md`.
 
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
+
 use serde::Serialize;
+use tokio::sync::{Mutex, RwLock};
 use utoipa::ToSchema;
 
 use super::catalog::{self, CatalogEntry, ServerRole};
@@ -51,12 +55,48 @@ pub enum ServerProbeStatus {
     Missing,
 }
 
-/// Probe every catalog entry in parallel. Each probe does at most one
-/// directory walk + one `--version` invocation, so this is bounded by the
-/// slowest binary spawn (typically < 100 ms).
-pub async fn probe_servers() -> Vec<ServerProbe> {
+/// TTL for the cached probe snapshot. Installed LSP binaries change rarely,
+/// but the settings page — and every `settings_event`-driven refetch — hits
+/// `GET /api/lsp/servers`, and each uncached probe re-runs `cli-discovery`
+/// (a login-shell PATH resolve + a `--version` spawn per catalog entry). On a
+/// hot machine those subprocess spawns stack up and jank the UI, so we fold
+/// the whole snapshot into a short-lived cache. Mirrors the provider-catalog
+/// TTL pattern in `domain/agents/providers/opencode/cache.rs`.
+const PROBE_TTL: Duration = Duration::from_secs(30);
+
+static PROBE_CACHE: OnceLock<RwLock<Option<(Instant, Arc<Vec<ServerProbe>>)>>> = OnceLock::new();
+static PROBE_REFRESH_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn probe_cache() -> &'static RwLock<Option<(Instant, Arc<Vec<ServerProbe>>)>> {
+    PROBE_CACHE.get_or_init(|| RwLock::new(None))
+}
+
+fn probe_refresh_lock() -> &'static Mutex<()> {
+    PROBE_REFRESH_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Probe every catalog entry, served from a 30s TTL cache. On a cache miss the
+/// probes run in parallel — each does at most one directory walk + one
+/// `--version` invocation — behind a double-checked refresh lock so concurrent
+/// callers share a single probe pass instead of stampeding subprocess spawns.
+pub async fn probe_servers() -> Arc<Vec<ServerProbe>> {
+    if let Some((fetched_at, snapshot)) = probe_cache().read().await.clone() {
+        if fetched_at.elapsed() < PROBE_TTL {
+            return snapshot;
+        }
+    }
+
+    let _guard = probe_refresh_lock().lock().await;
+    if let Some((fetched_at, snapshot)) = probe_cache().read().await.clone() {
+        if fetched_at.elapsed() < PROBE_TTL {
+            return snapshot;
+        }
+    }
+
     let futures = catalog::CATALOG.iter().map(probe_entry);
-    futures::future::join_all(futures).await
+    let snapshot = Arc::new(futures::future::join_all(futures).await);
+    *probe_cache().write().await = Some((Instant::now(), Arc::clone(&snapshot)));
+    snapshot
 }
 
 async fn probe_entry(entry: &CatalogEntry) -> ServerProbe {
@@ -108,6 +148,19 @@ async fn probe_entry(entry: &CatalogEntry) -> ServerProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn probe_snapshot_is_ttl_cached() {
+        // Two probes within the TTL must return the same cached snapshot
+        // (pointer-equal Arc) — this is what keeps a settings-page refetch
+        // storm from re-spawning `--version` for every LSP binary.
+        let first = probe_servers().await;
+        let second = probe_servers().await;
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "second probe within TTL should reuse the cached snapshot",
+        );
+    }
 
     #[tokio::test]
     async fn probe_returns_one_entry_per_catalog_row() {
