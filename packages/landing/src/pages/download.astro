@@ -72,7 +72,7 @@ const structuredData = [softwareApplication, breadcrumbs];
         </h2>
         <p class="mt-2 min-h-[44px] text-[13.5px] leading-[1.6] text-muted-foreground" data-download-copy>
           {defaultDownload
-            ? "Best default for macOS when the browser cannot expose the CPU architecture."
+            ? "Defaults to Apple Silicon — the right build for every Mac since 2020. On an Intel Mac, pick the Intel target below."
             : "We could not determine a shipped build for this device yet."}
         </p>
         <div class="mt-5 flex flex-wrap gap-2">
@@ -152,8 +152,9 @@ const structuredData = [softwareApplication, breadcrumbs];
 
 <script id="download-assets-json" type="application/json" set:html={JSON.stringify(DOWNLOAD_ASSETS)}></script>
 <script>
-  type DetectedOs = "macos" | "windows" | "linux" | "unknown";
-  type DetectedArch = "arm64" | "x64" | "unknown";
+  import { archFromRenderer, normalizeArch, preferredMacArch, resolveMacArch } from "@/lib/downloads";
+  import type { DetectedArch, DetectedOs } from "@/lib/downloads";
+
   interface BrowserDownloadAsset {
     arch: DetectedArch;
     label: string;
@@ -180,19 +181,32 @@ const structuredData = [softwareApplication, breadcrumbs];
     return "unknown";
   }
 
-  function normalizeArch(value: string): DetectedArch {
-    const arch = value.toLowerCase();
-    if (arch.includes("arm") || arch.includes("aarch64")) return "arm64";
-    if (arch.includes("x86") || arch.includes("x64") || arch.includes("intel")) return "x64";
-    return "unknown";
-  }
-
   function browserPlatform(): string {
     const nav = navigator as NavigatorWithUserAgentData;
     return nav.userAgentData?.platform ?? "";
   }
 
-  async function detectArchitecture(): Promise<DetectedArch> {
+  // The GPU renderer string is the only arch signal Safari and Firefox expose.
+  // Reading it needs a throwaway WebGL context + the debug-renderer extension,
+  // both of which can be unavailable (WebGL disabled, Lockdown Mode) — any
+  // failure just yields "" and we fall back to the other signals.
+  function gpuRenderer(): string {
+    try {
+      const canvas = document.createElement("canvas");
+      const gl = canvas.getContext("webgl") ?? canvas.getContext("experimental-webgl");
+      if (!(gl instanceof WebGLRenderingContext)) return "";
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      if (!info) return "";
+      const renderer = gl.getParameter(info.UNMASKED_RENDERER_WEBGL);
+      // Free the GPU-driver-backed context immediately; we only needed one read.
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+      return typeof renderer === "string" ? renderer : "";
+    } catch {
+      return "";
+    }
+  }
+
+  async function archFromUserAgentData(): Promise<DetectedArch> {
     const nav = navigator as NavigatorWithUserAgentData;
     if (nav.userAgentData?.getHighEntropyValues) {
       const highEntropy = await nav.userAgentData.getHighEntropyValues(["architecture"]);
@@ -201,10 +215,18 @@ const structuredData = [softwareApplication, breadcrumbs];
     return "unknown";
   }
 
+  async function detectArchitecture(): Promise<DetectedArch> {
+    // The GPU renderer reflects the physical machine and survives Rosetta, so
+    // when it's definitive skip the userAgentData round-trip entirely.
+    const renderer = archFromRenderer(gpuRenderer());
+    if (renderer !== "unknown") return renderer;
+    return resolveMacArch({ renderer, userAgentData: await archFromUserAgentData() });
+  }
+
   function chooseDownload(os: DetectedOs, arch: DetectedArch): BrowserDownloadAsset | undefined {
     if (os !== "macos") return undefined;
-    if (arch === "arm64") return downloads.find((asset) => asset.arch === "arm64");
-    return downloads.find((asset) => asset.arch === "x64");
+    const wanted = preferredMacArch(arch);
+    return downloads.find((asset) => asset.arch === wanted);
   }
 
   function describeDetection(os: DetectedOs, arch: DetectedArch): string {
@@ -231,7 +253,7 @@ const structuredData = [softwareApplication, breadcrumbs];
         copy.textContent = "CadencR currently ships for macOS. Linux and Windows builds are planned next.";
       }
       if (label) label.textContent = "View available downloads";
-      if (primary) primary.href = "#macos-intel-dmg";
+      if (primary) primary.href = "#macos-arm64-dmg";
       return;
     }
 
