@@ -11,6 +11,7 @@ pub mod profiles;
 mod prompt_receipts;
 pub mod routes;
 mod session;
+mod slash_catalog;
 mod worktree_config;
 
 // Only referenced from this crate's test support; re-exported so the
@@ -37,12 +38,12 @@ pub struct ClaudeCodeAdapter {
     cached_models: std::sync::OnceLock<std::sync::RwLock<Vec<ModelCatalogEntry>>>,
     /// Serialises concurrent probes and tracks whether the cached list is
     /// already authoritative (live from the CLI). Unlike `OnceCell`, this
-    /// lets the probe run again after a failure or empty response — the UI
-    /// would otherwise be stuck on fallback aliases until service restart.
+    /// lets failures be TTL-throttled and retried later — the UI would
+    /// otherwise be stuck on fallback aliases until service restart.
     probe_state: tokio::sync::Mutex<ProbeState>,
     /// Cache of CLI built-in slash commands. Cwd-invariant, so one cache
     /// serves every session; per-cwd filesystem entries are scanned fresh.
-    /// Same retry-on-failure semantics as `cached_models` / `probe_state`.
+    /// Same process-lifetime semantics as `cached_models` / `probe_state`.
     cached_slash_commands: std::sync::OnceLock<std::sync::RwLock<Vec<RuntimeSlashCommand>>>,
     slash_commands_probe_state: tokio::sync::Mutex<ProbeState>,
 }
@@ -51,6 +52,9 @@ pub struct ClaudeCodeAdapter {
 struct ProbeState {
     live: bool,
     live_key: Option<catalog::ModelProbeCacheKey>,
+    failed_key: Option<catalog::ModelProbeCacheKey>,
+    failed_at: Option<std::time::Instant>,
+    failure_message: Option<String>,
 }
 
 pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
@@ -58,11 +62,17 @@ pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
     probe_state: tokio::sync::Mutex::const_new(ProbeState {
         live: false,
         live_key: None,
+        failed_key: None,
+        failed_at: None,
+        failure_message: None,
     }),
     cached_slash_commands: std::sync::OnceLock::new(),
     slash_commands_probe_state: tokio::sync::Mutex::const_new(ProbeState {
         live: false,
         live_key: None,
+        failed_key: None,
+        failed_at: None,
+        failure_message: None,
     }),
 };
 

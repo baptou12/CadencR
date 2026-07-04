@@ -4,6 +4,8 @@
 //! `domain/agents/codex/mod.rs:131`. Probe failures are folded into the
 //! cache for the TTL window so a flaky probe doesn't respawn
 //! `opencode serve` on every FE refresh (`.claude/rules/error-handling.md`).
+//! A missing CLI is treated as an unavailable provider, not a warning-worthy
+//! failure.
 //!
 //! The probe seam is intentional: the production path uses
 //! `super::probe::run`, but inline tests inject a counting closure via
@@ -19,6 +21,7 @@ use opencode_sdk_rs::ConfigProvidersResponse;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::domain::agents::adapter::RuntimeError;
+use crate::domain::agents::discovery::cli_not_found_message;
 use crate::domain::agents::runtime::ProviderCatalogEntry;
 
 const CATALOG_TTL: Duration = Duration::from_secs(30);
@@ -78,13 +81,16 @@ where
 
     let entry = match probe().await {
         Ok(response) => entry_from_response(response),
+        Err(error @ RuntimeError::CliNotFound { .. }) => {
+            unavailable_entry(cli_not_found_message(&error).unwrap_or_else(|| error.to_string()))
+        }
         Err(error) => {
             tracing::warn!(
                 provider = "opencode",
                 error = %error,
-                "live catalog probe failed; using static fallback",
+                "live catalog probe failed; marking provider unavailable",
             );
-            fallback_entry()
+            unavailable_entry(format!("OpenCode unavailable: {error}"))
         }
     };
 
@@ -101,10 +107,14 @@ fn entry_from_response(response: ConfigProvidersResponse) -> CatalogCacheEntry {
     }
 }
 
-fn fallback_entry() -> CatalogCacheEntry {
+fn unavailable_entry(message: impl Into<String>) -> CatalogCacheEntry {
     CatalogCacheEntry {
         fetched_at: Instant::now(),
-        catalog: Arc::new(super::catalog_entry()),
+        catalog: Arc::new(ProviderCatalogEntry::unavailable(
+            super::PROVIDER_ID,
+            super::PROVIDER_LABEL,
+            message,
+        )),
         context_windows: Arc::new(HashMap::new()),
     }
 }
@@ -187,7 +197,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_failure_falls_back_to_static_catalog() {
+    async fn probe_failure_marks_provider_unavailable() {
         let _guard = TEST_LOCK.lock().await;
         reset_for_test().await;
         let calls = AtomicUsize::new(0);
@@ -196,11 +206,14 @@ mod tests {
             async { Err(RuntimeError::new("probe boom")) }
         };
 
-        let fallback = super::super::catalog_entry();
         let first = live_catalog_entry_with(&probe).await.catalog;
-        assert_eq!(first.id, fallback.id);
-        assert_eq!(first.default_model, fallback.default_model);
-        assert_eq!(first.models.len(), fallback.models.len());
+        assert_eq!(first.id, "opencode");
+        assert_eq!(
+            first.status,
+            crate::domain::agents::runtime::ProviderStatus::Unavailable
+        );
+        assert_eq!(first.default_model, None);
+        assert!(first.models.is_empty());
 
         // Subsequent call within TTL must not re-spawn the probe.
         let _ = live_catalog_entry_with(&probe).await;

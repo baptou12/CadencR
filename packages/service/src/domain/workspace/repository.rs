@@ -98,9 +98,7 @@ pub async fn get_provider_settings(pool: &SqlitePool) -> Result<AgentProviderSet
     let mut settings = default_provider_settings();
 
     for (agent_type, db_key) in provider_keys() {
-        let provider = get_setting(pool, &db_key)
-            .await?
-            .unwrap_or_else(|| crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string());
+        let provider = get_setting(pool, &db_key).await?.unwrap_or_default();
         match agent_type {
             "session" => settings.session = provider,
             "auto_name" => settings.auto_name = provider,

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::time::{Duration, Instant};
 
-use crate::domain::agents::adapter::{RuntimeSlashCommand, RuntimeSlashCommandKind};
+use crate::domain::agents::adapter::RuntimeError;
+use crate::domain::agents::discovery::cli_not_found_message;
 use crate::domain::agents::runtime::ModelCatalogEntry;
 
 use super::{ClaudeCodeAdapter, ProbeState};
@@ -31,6 +33,31 @@ pub(super) fn sdk_model_to_catalog_entry(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ModelProbeCacheKey(u64);
+const FAILED_PROBE_TTL: Duration = Duration::from_secs(30);
+
+impl ProbeState {
+    fn recent_failure_message(&self, cache_key: ModelProbeCacheKey) -> Option<&str> {
+        if self.failed_key != Some(cache_key) {
+            return None;
+        }
+        let failed_at = self.failed_at?;
+        (failed_at.elapsed() < FAILED_PROBE_TTL)
+            .then(|| self.failure_message.as_deref())
+            .flatten()
+    }
+
+    fn record_failure(&mut self, cache_key: ModelProbeCacheKey, message: String) {
+        self.failed_key = Some(cache_key);
+        self.failed_at = Some(Instant::now());
+        self.failure_message = Some(message);
+    }
+
+    fn clear_failure(&mut self) {
+        self.failed_key = None;
+        self.failed_at = None;
+        self.failure_message = None;
+    }
+}
 
 pub(super) fn model_probe_cache_key(env: Option<&HashMap<String, String>>) -> ModelProbeCacheKey {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -55,7 +82,7 @@ pub(super) fn apply_model_probe_result(
     cache: &std::sync::RwLock<Vec<ModelCatalogEntry>>,
     probe_state: &mut ProbeState,
     cache_key: ModelProbeCacheKey,
-    result: Result<Vec<ModelCatalogEntry>, String>,
+    result: Result<Vec<ModelCatalogEntry>, RuntimeError>,
 ) {
     match result {
         Ok(models) if !models.is_empty() => {
@@ -64,16 +91,21 @@ pub(super) fn apply_model_probe_result(
             }
             probe_state.live = true;
             probe_state.live_key = Some(cache_key);
+            probe_state.clear_failure();
         }
         Ok(_) => {
-            tracing::warn!(
-                "Claude Code CLI returned empty model list; will retry on next catalog request"
-            );
+            probe_state.record_failure(cache_key, "Claude Code returned no models".to_string());
+            tracing::warn!("Claude Code CLI returned empty model list; retry is TTL-throttled");
+        }
+        Err(error @ RuntimeError::CliNotFound { .. }) => {
+            let message = cli_not_found_message(&error).unwrap_or_else(|| error.to_string());
+            probe_state.record_failure(cache_key, message);
         }
         Err(error) => {
+            probe_state.record_failure(cache_key, format!("Claude Code unavailable: {error}"));
             tracing::warn!(
                 error = %error,
-                "Claude Code CLI model probe failed; will retry on next catalog request"
+                "Claude Code CLI model probe failed; retry is TTL-throttled"
             );
         }
     }
@@ -113,7 +145,7 @@ impl ClaudeCodeAdapter {
     ) -> Vec<ModelCatalogEntry> {
         let cache_key = model_probe_cache_key(env.as_ref());
         let mut guard = self.probe_state.lock().await;
-        if guard.live_key != Some(cache_key) {
+        if guard.live_key != Some(cache_key) && guard.recent_failure_message(cache_key).is_none() {
             let cwd = std::env::temp_dir().to_string_lossy().into_owned();
             let probe_result = claude_agent_sdk_rs::supported_models_with_env(&cwd, None, env)
                 .await
@@ -123,7 +155,7 @@ impl ClaudeCodeAdapter {
                         .map(sdk_model_to_catalog_entry)
                         .collect::<Vec<_>>()
                 })
-                .map_err(|error| error.to_string());
+                .map_err(RuntimeError::from);
             apply_model_probe_result(self.models_cell(), &mut guard, cache_key, probe_result);
         }
         let cache_matches_request = guard.live_key == Some(cache_key);
@@ -138,36 +170,18 @@ impl ClaudeCodeAdapter {
         }
     }
 
-    pub(super) fn slash_commands_cell(&self) -> &std::sync::RwLock<Vec<RuntimeSlashCommand>> {
-        self.cached_slash_commands
-            .get_or_init(|| std::sync::RwLock::new(Vec::new()))
-    }
-
-    /// Probe the CLI for its built-in slash commands once per process
-    /// (retrying on empty results) and return the cached list. The SDK call
-    /// is infallible — empty is the only "failure" mode we observe here.
-    pub(super) async fn load_builtin_slash_commands(&self) -> Vec<RuntimeSlashCommand> {
-        let mut guard = self.slash_commands_probe_state.lock().await;
-        if !guard.live {
-            let live: Vec<RuntimeSlashCommand> = claude_agent_sdk_rs::list_builtin_commands(None)
-                .await
-                .into_iter()
-                .map(sdk_slash_to_runtime)
-                .collect();
-            if live.is_empty() {
-                tracing::warn!(
-                    "Claude Code CLI returned empty built-in slash-command list; will retry"
-                );
-            } else if let Ok(mut cached) = self.slash_commands_cell().write() {
-                *cached = live;
-                guard.live = true;
-            }
+    pub(super) async fn model_probe_failure_message(
+        &self,
+        env: Option<&HashMap<String, String>>,
+    ) -> Option<String> {
+        let cache_key = model_probe_cache_key(env);
+        let guard = self.probe_state.lock().await;
+        if guard.live_key == Some(cache_key) {
+            return None;
         }
-        drop(guard);
-        self.slash_commands_cell()
-            .read()
-            .map(|commands| commands.clone())
-            .unwrap_or_default()
+        guard
+            .recent_failure_message(cache_key)
+            .map(ToString::to_string)
     }
 
     pub(super) fn default_model_from(models: &[ModelCatalogEntry]) -> Option<String> {
@@ -179,20 +193,11 @@ impl ClaudeCodeAdapter {
     }
 }
 
-// Claude Code exposes skills and slash commands through the same init
-// `slash_commands` list, so the adapter keeps them all as `/` commands.
-fn sdk_slash_to_runtime(command: claude_agent_sdk_rs::SlashCommand) -> RuntimeSlashCommand {
-    RuntimeSlashCommand {
-        name: command.name,
-        description: command.description,
-        kind: RuntimeSlashCommandKind::Command,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
+    use crate::domain::agents::adapter::RuntimeError;
     use crate::domain::agents::runtime::ModelCatalogEntry;
 
     use super::{
@@ -338,11 +343,12 @@ mod tests {
             adapter.models_cell(),
             &mut probe_state,
             model_probe_cache_key(None),
-            Err("boom".to_string()),
+            Err(RuntimeError::new("boom")),
         );
 
         let cached = adapter.models_cell().read().expect("cache lock");
         assert!(probe_state.live_key.is_none());
+        assert!(probe_state.failure_message.is_some());
         assert_eq!(cached[0].id, "opus");
     }
 

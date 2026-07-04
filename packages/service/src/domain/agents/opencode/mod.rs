@@ -72,8 +72,10 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         cwd: Option<&std::path::Path>,
     ) -> crate::domain::agents::runtime::ProviderCatalogEntry {
         let mut entry = super::providers::opencode::catalog_entry_live().await;
-        if let Some(cwd) = cwd {
-            entry.modes = agents::primary_agent_modes(cwd).await;
+        if entry.status == crate::domain::agents::runtime::ProviderStatus::Available {
+            if let Some(cwd) = cwd {
+                entry.modes = agents::primary_agent_modes(cwd).await;
+            }
         }
         entry
     }

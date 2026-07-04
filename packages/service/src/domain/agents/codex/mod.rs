@@ -113,15 +113,7 @@ fn catalog_from_models(models: Vec<CodexModel>) -> ProviderCatalogEntry {
 }
 
 fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
-    ProviderCatalogEntry {
-        id: PROVIDER_ID.to_string(),
-        label: PROVIDER_LABEL.to_string(),
-        status: ProviderStatus::Unavailable,
-        status_message: Some(message.into()),
-        models: Vec::new(),
-        modes: Vec::new(),
-        default_model: None,
-    }
+    ProviderCatalogEntry::unavailable(PROVIDER_ID, PROVIDER_LABEL, message)
 }
 
 fn model_entry(model: CodexModel) -> ModelCatalogEntry {

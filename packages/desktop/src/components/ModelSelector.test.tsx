@@ -245,15 +245,13 @@ describe("ModelSelector", () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
-  it("renders coming soon providers as disabled", async () => {
+  it("hides unavailable and coming soon providers", async () => {
     const user = userEvent.setup();
     render(<ModelSelector level="global" />);
 
     await user.click(screen.getAllByRole("combobox")[0]);
 
-    const disabledProvider = screen.getByText("Codex CLI (Coming soon)");
-    expect(disabledProvider).toBeInTheDocument();
-    expect(disabledProvider.closest("[data-disabled]")).not.toBeNull();
+    expect(screen.queryByText("Codex CLI (Coming soon)")).not.toBeInTheDocument();
   });
 
   it("uses the selected provider default model instead of inheriting a Claude model id", () => {

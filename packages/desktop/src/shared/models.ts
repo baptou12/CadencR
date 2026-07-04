@@ -17,7 +17,8 @@ export type AgentTypeSetting = (typeof AGENT_TYPES)[number];
 
 export interface CatalogProviderLike {
   id: string;
-  default_model: string | null;
+  status?: string;
+  default_model?: string | null;
 }
 
 export interface RuntimeSelection {
@@ -44,14 +45,37 @@ export function defaultModelForProvider(
   );
 }
 
+export function availableCatalogProviders<T extends CatalogProviderLike>(
+  providers: readonly T[] | undefined,
+): T[] {
+  return (providers ?? []).filter(
+    (provider) => provider.status == null || provider.status === "available",
+  );
+}
+
+function catalogHasProvider(
+  providers: readonly CatalogProviderLike[] | undefined,
+  providerId: string,
+): boolean {
+  return providers == null || providers.some((provider) => provider.id === providerId);
+}
+
+function usableProviderId(
+  providers: readonly CatalogProviderLike[] | undefined,
+  providerId: string | undefined,
+): string | undefined {
+  if (!providerId) return undefined;
+  return catalogHasProvider(providers, providerId) ? providerId : undefined;
+}
+
 function applySelectionOverride(
   base: RuntimeSelection,
   providerOverride: string | undefined,
   modelOverride: string | undefined,
   providers: readonly CatalogProviderLike[] | undefined,
 ): RuntimeSelection {
-  const nextProviderId = providerOverride ?? base.providerId;
-  if (modelOverride) {
+  const nextProviderId = usableProviderId(providers, providerOverride) ?? base.providerId;
+  if (modelOverride && (!providerOverride || nextProviderId === providerOverride)) {
     return { providerId: nextProviderId, modelId: modelOverride };
   }
 
@@ -90,22 +114,35 @@ export function resolveRuntimeSelection(params: {
     featureModels,
     featureProviders,
   } = params;
+  const selectableProviders = availableCatalogProviders(providers);
+  const globalProviderOverride = explicitSetting(globalProviders, agentType);
+  const usableGlobalProviderOverride = usableProviderId(
+    selectableProviders,
+    globalProviderOverride,
+  );
   const rootProviderId =
-    explicitSetting(globalProviders, agentType) ?? defaultProviderId ?? DEFAULT_PROVIDER;
+    usableGlobalProviderOverride ??
+    usableProviderId(selectableProviders, defaultProviderId ?? undefined) ??
+    selectableProviders[0]?.id ??
+    DEFAULT_PROVIDER;
+  const globalModelOverride =
+    globalProviderOverride && !usableGlobalProviderOverride
+      ? undefined
+      : explicitSetting(globalModels, agentType);
   const rootModelId =
-    explicitSetting(globalModels, agentType) ?? defaultModelForProvider(providers, rootProviderId);
+    globalModelOverride ?? defaultModelForProvider(selectableProviders, rootProviderId);
   const projectSelection = applySelectionOverride(
     { providerId: rootProviderId, modelId: rootModelId },
     explicitSetting(projectProviders, agentType),
     explicitSetting(projectModels, agentType),
-    providers,
+    selectableProviders,
   );
 
   return applySelectionOverride(
     projectSelection,
     explicitSetting(featureProviders, agentType),
     explicitSetting(featureModels, agentType),
-    providers,
+    selectableProviders,
   );
 }
 

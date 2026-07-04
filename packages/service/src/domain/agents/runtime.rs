@@ -62,6 +62,24 @@ pub struct ProviderCatalogEntry {
     pub default_model: Option<String>,
 }
 
+impl ProviderCatalogEntry {
+    pub fn unavailable(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            status: ProviderStatus::Unavailable,
+            status_message: Some(message.into()),
+            models: Vec::new(),
+            modes: Vec::new(),
+            default_model: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ProviderModeCatalogEntry {
     pub id: String,

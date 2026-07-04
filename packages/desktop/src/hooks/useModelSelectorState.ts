@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AGENT_TYPES,
+  availableCatalogProviders,
   DEFAULT_PROVIDER,
   resolveRuntimeSelection,
   type AgentTypeSetting,
@@ -139,13 +140,10 @@ export function useModelSelectorState(
 
   const providers = useMemo<ModelSelectorRowProvider[]>(
     () =>
-      (agentCatalog.data?.providers ?? []).map((provider) => ({
+      availableCatalogProviders(agentCatalog.data?.providers).map((provider) => ({
         id: provider.id,
-        label:
-          provider.status === "available"
-            ? provider.label
-            : `${provider.label} (${provider.status === "unavailable" ? "Unavailable" : "Coming soon"})`,
-        disabled: provider.status !== "available",
+        label: provider.label,
+        disabled: false,
         status: provider.status,
         statusMessage: provider.status_message,
         models: provider.models,
@@ -225,7 +223,8 @@ export function useModelSelectorState(
 
   function handleProviderChange(agentType: AgentTypeSetting, value: string): void {
     const providerId = value === INHERIT_VALUE ? "" : value;
-    const resolvedProviderId = providerId || DEFAULT_PROVIDER;
+    const resolvedProviderId =
+      providerId || agentCatalog.data?.default_provider || DEFAULT_PROVIDER;
     const selectedProvider = agentCatalog.data?.providers.find(
       (provider) => provider.id === resolvedProviderId,
     );
