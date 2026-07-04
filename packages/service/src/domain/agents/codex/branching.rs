@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use codex_app_server_sdk_rs::{CodexAppServerClient, SdkError, ThreadSnapshot};
 
-use super::{app_server_spawn_options, with_timeout_sdk, PROBE_TIMEOUT};
+use super::app_server_spawn_options;
 use crate::domain::agents::adapter::{BranchContext, BranchError, BranchResult, SessionBranching};
 
 pub(super) static CODEX_SESSION_BRANCHING: CodexSessionBranching = CodexSessionBranching;
@@ -24,24 +24,17 @@ async fn truncate_with_client(
     client: &CodexAppServerClient,
     ctx: &BranchContext,
 ) -> Result<BranchResult, BranchError> {
-    client
-        .initialize_with_timeout(PROBE_TIMEOUT)
-        .await
-        .map_err(branch_surgery)?;
+    client.initialize().await.map_err(branch_surgery)?;
     let source = read_snapshot(client, &ctx.source_runtime_session_id).await?;
     let rollback_turns = rollback_turns_for_cut(&source, ctx.cut_user_ordinal)?;
-    let forked = with_timeout_sdk(
-        "Codex thread/fork",
-        client.thread_fork(&ctx.source_runtime_session_id, &ctx.cwd),
-    )
-    .await
-    .map_err(branch_surgery)?;
-    with_timeout_sdk(
-        "Codex thread/rollback",
-        client.thread_rollback(&forked.id, rollback_turns),
-    )
-    .await
-    .map_err(branch_surgery)?;
+    let forked = client
+        .thread_fork(&ctx.source_runtime_session_id, &ctx.cwd)
+        .await
+        .map_err(branch_surgery)?;
+    client
+        .thread_rollback(&forked.id, rollback_turns)
+        .await
+        .map_err(branch_surgery)?;
     Ok(BranchResult {
         new_runtime_session_id: forked.id,
     })
@@ -51,7 +44,8 @@ async fn read_snapshot(
     client: &CodexAppServerClient,
     thread_id: &str,
 ) -> Result<ThreadSnapshot, BranchError> {
-    with_timeout_sdk("Codex thread/read", client.thread_read(thread_id, true))
+    client
+        .thread_read(thread_id, true)
         .await
         .map_err(branch_surgery)
 }

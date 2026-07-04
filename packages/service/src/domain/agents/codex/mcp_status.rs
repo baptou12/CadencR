@@ -5,7 +5,7 @@ use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient, CodexMcpServ
 use serde_json::Value;
 use tokio::sync::broadcast;
 
-use super::with_timeout;
+use super::timeouts::with_probe_timeout;
 use crate::domain::agents::adapter::RuntimeMcpServerStatus;
 use crate::domain::mcp::servers::cadencr_mcp_required_tools;
 
@@ -16,20 +16,24 @@ pub(super) async fn mcp_server_statuses(
     startup_events: &mut broadcast::Receiver<AppServerEvent>,
     expected_names: &[String],
 ) -> Vec<RuntimeMcpServerStatus> {
-    let listed =
-        match with_timeout("Codex mcpServerStatus/list", client.available_mcp_servers()).await {
-            Ok(response) => parse_mcp_server_statuses(&response, expected_names),
-            Err(error) => {
-                tracing::warn!(%error, "failed to read Codex MCP server statuses");
-                expected_names
-                    .iter()
-                    .map(|name| RuntimeMcpServerStatus {
-                        name: name.clone(),
-                        status: "unknown".to_string(),
-                    })
-                    .collect()
-            }
-        };
+    let listed = match with_probe_timeout(
+        "Codex mcpServerStatus/list",
+        client.available_mcp_servers(),
+    )
+    .await
+    {
+        Ok(response) => parse_mcp_server_statuses(&response, expected_names),
+        Err(error) => {
+            tracing::warn!(%error, "failed to read Codex MCP server statuses");
+            expected_names
+                .iter()
+                .map(|name| RuntimeMcpServerStatus {
+                    name: name.clone(),
+                    status: "unknown".to_string(),
+                })
+                .collect()
+        }
+    };
     let unresolved = unresolved_expected_names(&listed, expected_names);
     if expected_names.is_empty() || unresolved.is_empty() {
         return listed;
