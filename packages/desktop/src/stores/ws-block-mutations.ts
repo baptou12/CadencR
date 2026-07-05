@@ -266,6 +266,10 @@ export function rebuildDerivedAgentStreamState(
   streamState.rootBlockPosById = new Map();
   streamState.toolResultMap = new Map();
   streamState.toolUseIdToBlock = new Map();
+  // Full rebuild replaces both derived structures; bump so any pending
+  // before/after version comparison on the hot path sees the change.
+  streamState.rootBlocksVersion += 1;
+  streamState.toolResultMapVersion += 1;
   for (const block of blocks) {
     if (!block.parentToolUseId) {
       streamState.rootBlockPosById.set(block.id, streamState.rootBlocks.length);
@@ -281,6 +285,8 @@ function recordDerivedBlock(streamState: StreamingState, block: AgentBlockData):
   }
   if (block.type === "tool_result" && block.toolUseId) {
     streamState.toolResultMap.set(block.toolUseId, block);
+    // Only write site for `toolResultMap`; bump so the caller knows to re-snapshot.
+    streamState.toolResultMapVersion += 1;
   }
   for (const child of block.childBlocks ?? []) {
     recordDerivedBlock(streamState, child);
@@ -316,6 +322,7 @@ export function blocksPatchWithDerived(
 function recordRootAppend(streamState: StreamingState, block: AgentBlockData): void {
   streamState.rootBlockPosById.set(block.id, streamState.rootBlocks.length);
   streamState.rootBlocks.push(block);
+  streamState.rootBlocksVersion += 1;
   recordDerivedBlock(streamState, block);
 }
 
@@ -325,7 +332,10 @@ function recordRootRefChange(
   newRef: AgentBlockData,
 ): void {
   const idx = streamState.rootBlockPosById.get(blockId);
-  if (idx !== undefined) streamState.rootBlocks[idx] = newRef;
+  if (idx !== undefined) {
+    streamState.rootBlocks[idx] = newRef;
+    streamState.rootBlocksVersion += 1;
+  }
 }
 
 function applyChildUpdate(streamState: StreamingState, mut: BlockMutation): void {
@@ -337,6 +347,9 @@ function applyChildUpdate(streamState: StreamingState, mut: BlockMutation): void
     child.content = mergeToolContent(child, mut.block.content, mut.action);
     syncToolUseMap(streamState, child);
     parentBlock.childBlocks[childIdx] = child;
+    // The child lives in a root block's subtree; its content changed in place
+    // without a root ref swap, so the rootBlocks snapshot must still refresh.
+    streamState.rootBlocksVersion += 1;
     break;
   }
 }

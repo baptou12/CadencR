@@ -395,3 +395,107 @@ describe("applyMutations", () => {
     expect(result[0].content).toBe('{"description": "Fi');
   });
 });
+
+// Version counters let the streaming caller skip re-snapshotting rootBlocks /
+// toolResultMap when a delta didn't touch them. Every mutation that changes a
+// root block's subtree MUST bump rootBlocksVersion, and every tool_result write
+// MUST bump toolResultMapVersion — a missed bump would silently stall the UI.
+describe("applyMutations derived-state version counters", () => {
+  it("bumps rootBlocksVersion but not toolResultMapVersion on a text append", () => {
+    const streamState = createStreamingState();
+    const root0 = streamState.rootBlocksVersion;
+    const trm0 = streamState.toolResultMapVersion;
+    applyMutations(
+      [],
+      [{ action: "append", block: { id: "t1", type: "text", content: "hi" } }],
+      streamState,
+    );
+    expect(streamState.rootBlocksVersion).toBeGreaterThan(root0);
+    expect(streamState.toolResultMapVersion).toBe(trm0);
+  });
+
+  it("does not bump either version on a no-op duplicate append", () => {
+    const streamState = createStreamingState();
+    const existing: AgentBlockData = { id: "msg-10", type: "text", content: "hello" };
+    applyMutations([], [{ action: "append", block: existing }], streamState);
+    const root0 = streamState.rootBlocksVersion;
+    const trm0 = streamState.toolResultMapVersion;
+    // A shorter duplicate merges to the existing block with no change.
+    applyMutations(
+      [existing],
+      [{ action: "append", block: { id: "msg-10", type: "text", content: "" } }],
+      streamState,
+    );
+    expect(streamState.rootBlocksVersion).toBe(root0);
+    expect(streamState.toolResultMapVersion).toBe(trm0);
+  });
+
+  it("bumps rootBlocksVersion on a root text update", () => {
+    const streamState = createStreamingState();
+    const root: AgentBlockData = { id: "t1", type: "text", content: "hi " };
+    applyMutations([], [{ action: "append", block: root }], streamState);
+    const v = streamState.rootBlocksVersion;
+    applyMutations(
+      [root],
+      [{ action: "update", block: { id: "t1", type: "text", content: "world" } }],
+      streamState,
+    );
+    expect(streamState.rootBlocksVersion).toBeGreaterThan(v);
+  });
+
+  it("bumps toolResultMapVersion when a tool_result is appended", () => {
+    const streamState = createStreamingState();
+    const trm0 = streamState.toolResultMapVersion;
+    applyMutations(
+      [],
+      [
+        {
+          action: "append",
+          block: { id: "r1", type: "tool_result", content: "ok", toolUseId: "tu-1" },
+        },
+      ],
+      streamState,
+    );
+    expect(streamState.toolResultMapVersion).toBeGreaterThan(trm0);
+  });
+
+  it("bumps rootBlocksVersion when a child block inside a root subtree is updated in place", () => {
+    const streamState = createStreamingState();
+    const parent: AgentBlockData = {
+      id: "p1",
+      type: "tool_call",
+      content: "{}",
+      toolName: "Agent",
+      toolUseId: "tu-parent",
+      childBlocks: [],
+    };
+    streamState.toolUseIdToBlock.set("tu-parent", parent);
+    applyMutations([], [{ action: "append", block: parent }], streamState);
+    applyMutations(
+      [parent],
+      [
+        {
+          action: "append",
+          block: {
+            id: "c1",
+            type: "tool_call",
+            content: "{",
+            parentToolUseId: "tu-parent",
+            toolUseId: "tu-child",
+          },
+        },
+      ],
+      streamState,
+    );
+    const v = streamState.rootBlocksVersion;
+    // Streaming input_json_delta for the child tool call — an in-place child
+    // content update with no root ref swap. Must still bump so rootBlocks is
+    // re-snapshotted and the subagent panel re-renders.
+    applyMutations(
+      [parent],
+      [{ action: "update", block: { id: "c1", type: "tool_call", content: '"foo"}' } }],
+      streamState,
+    );
+    expect(streamState.rootBlocksVersion).toBeGreaterThan(v);
+  });
+});
