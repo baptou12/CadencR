@@ -17,8 +17,6 @@ import type { StoreAccessors } from "./ws-envelope-types";
 import { handleMessageBatch } from "./ws-message-envelope-handler";
 import { scheduleDeltaFlush } from "./ws-delta-scheduler";
 
-export { setDeltaFlushScheduler, type FlushScheduler } from "./ws-delta-scheduler";
-
 interface SessionBuffer {
   payloads: unknown[];
   scheduled: boolean;
