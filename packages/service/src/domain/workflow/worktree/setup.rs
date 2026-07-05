@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::domain::workflow::ws_sender::WsSender;
 
@@ -128,34 +127,54 @@ pub async fn run_setup_commands(
         }),
     );
 
-    // 4. Parse and run each command, accumulating output log
-    let commands: Vec<&str> = commands_str
+    run_resolved_setup_commands(
+        &write_pool,
+        feature_id,
+        worktree_path,
+        &ws_sender,
+        &commands_str,
+    )
+    .await;
+}
+
+async fn run_resolved_setup_commands(
+    write_pool: &SqlitePool,
+    feature_id: i64,
+    worktree_path: PathBuf,
+    ws_sender: &WsSender,
+    commands_str: &str,
+) {
+    let commands = commands_str
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .collect();
+        .collect::<Vec<_>>();
     let log_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
-    for cmd in commands {
-        if !run_one_command(
-            &write_pool,
-            feature_id,
-            &worktree_path,
-            &ws_sender,
-            cmd,
-            &log_lines,
-        )
-        .await
-        {
-            return;
+
+    let script = build_setup_script(&commands);
+    let (output_tx, mut output_rx) = super::setup_process::setup_output_channel();
+    let output_log = Arc::clone(&log_lines);
+    let output_ws = ws_sender.clone();
+    let output_task = tokio::spawn(async move {
+        while let Some(line) = output_rx.recv().await {
+            emit_setup_line(feature_id, &output_ws, &output_log, line).await;
         }
+    });
+
+    let result =
+        super::setup_process::run_terminal_setup_script(&script, &worktree_path, output_tx).await;
+    let _ = output_task.await;
+    if let Err(error) = result {
+        report_setup_error(write_pool, feature_id, &log_lines, ws_sender, &error).await;
+        return;
     }
 
     // 6. Success — persist log and mark ready
     let log = log_lines.lock().await.join("\n");
-    let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
-    let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
-    let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", "").await;
+    let _ = set_setting(write_pool, feature_id, "worktree_setup_log", &log).await;
+    let _ = set_setting(write_pool, feature_id, "worktree_setup_step", "ready").await;
+    let _ = set_setting(write_pool, feature_id, "worktree_setup_error", "").await;
     send_envelope(
-        &ws_sender,
+        ws_sender,
         "workflow",
         "worktree.ready",
         serde_json::json!({
@@ -164,105 +183,36 @@ pub async fn run_setup_commands(
     );
 }
 
-/// Spawn `cmd` via the user's shell inside `worktree_path`, streaming each
-/// stdout/stderr line to the WS *and* into `log_lines` for the final log
-/// payload. Returns `true` on success and `false` after reporting the
-/// failure (caller should bail out so it doesn't keep running follow-ups).
-async fn run_one_command(
-    write_pool: &SqlitePool,
+fn build_setup_script(commands: &[&str]) -> String {
+    let mut script = String::from("set -e\n");
+    for command in commands {
+        script.push_str("printf '%s\\n' ");
+        script.push_str(&cli_discovery::shell_quote(std::ffi::OsStr::new(&format!(
+            "$ {command}"
+        ))));
+        script.push('\n');
+        script.push_str(command);
+        script.push('\n');
+    }
+    script
+}
+
+async fn emit_setup_line(
     feature_id: i64,
-    worktree_path: &std::path::Path,
     ws_sender: &WsSender,
-    cmd: &str,
     log_lines: &Arc<tokio::sync::Mutex<Vec<String>>>,
-) -> bool {
-    // Log the command being run
-    let cmd_line = format!("$ {cmd}");
-    log_lines.lock().await.push(cmd_line.clone());
+    line: String,
+) {
+    log_lines.lock().await.push(line.clone());
     send_envelope(
         ws_sender,
         "workflow",
         "worktree.setup_output",
         serde_json::json!({
             "feature_id": feature_id,
-            "line": cmd_line,
+            "line": line,
         }),
     );
-
-    let mut command = crate::shared::user_shell::command(cmd, worktree_path);
-    let mut child = match command
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            let error = format!("Failed to spawn command `{cmd}`: {e}");
-            report_setup_error(write_pool, feature_id, log_lines, ws_sender, &error).await;
-            return false;
-        }
-    };
-
-    let stdout_handle = spawn_stream_reader(child.stdout.take(), feature_id, ws_sender, log_lines);
-    let stderr_handle = spawn_stream_reader(child.stderr.take(), feature_id, ws_sender, log_lines);
-
-    if let Some(h) = stdout_handle {
-        let _ = h.await;
-    }
-    if let Some(h) = stderr_handle {
-        let _ = h.await;
-    }
-
-    match child.wait().await {
-        Ok(status) if status.success() => {
-            log_lines.lock().await.push(String::new());
-            true
-        }
-        Ok(status) => {
-            let error = format!("Command `{cmd}` exited with status {status}");
-            report_setup_error(write_pool, feature_id, log_lines, ws_sender, &error).await;
-            false
-        }
-        Err(e) => {
-            let error = format!("Failed to wait on command `{cmd}`: {e}");
-            report_setup_error(write_pool, feature_id, log_lines, ws_sender, &error).await;
-            false
-        }
-    }
-}
-
-/// Spawn a tokio task that drains a child's stdout/stderr line-by-line,
-/// pushes each line into `log_lines` and broadcasts a `worktree.setup_output`
-/// envelope. Returns `None` when the child didn't expose the requested
-/// stream (caller skips the `await` in that case).
-fn spawn_stream_reader<R>(
-    stream: Option<R>,
-    feature_id: i64,
-    ws_sender: &WsSender,
-    log_lines: &Arc<tokio::sync::Mutex<Vec<String>>>,
-) -> Option<tokio::task::JoinHandle<()>>
-where
-    R: tokio::io::AsyncRead + Send + Unpin + 'static,
-{
-    let stream = stream?;
-    let ws = ws_sender.clone();
-    let log = Arc::clone(log_lines);
-    Some(tokio::spawn(async move {
-        let reader = BufReader::new(stream);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            log.lock().await.push(line.clone());
-            send_envelope(
-                &ws,
-                "workflow",
-                "worktree.setup_output",
-                serde_json::json!({
-                    "feature_id": feature_id,
-                    "line": line,
-                }),
-            );
-        }
-    }))
 }
 
 #[cfg(test)]
@@ -271,6 +221,14 @@ mod tests {
     use crate::shared::test_env::EnvVarGuard;
     use sqlx::sqlite::SqlitePoolOptions;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn build_setup_script_prints_commands_with_shell_quoting() {
+        let script = build_setup_script(&["echo it's ok"]);
+
+        assert!(script.contains("printf '%s\\n' '$ echo it'\\''s ok'"));
+        assert!(script.contains("\necho it's ok\n"));
+    }
 
     async fn setup_pool(command: &str) -> SqlitePool {
         let pool = SqlitePoolOptions::new()
@@ -311,13 +269,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_setup_commands_does_not_start_interactive_shell_without_pty() {
+    async fn run_setup_commands_uses_terminal_like_shell_setup() {
         let _guard = crate::shared::test_env::async_env_lock().lock().await;
         let temp = tempfile::tempdir().expect("tempdir");
         let shell = temp.path().join("fake-shell.sh");
         std::fs::write(
             &shell,
-            "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"-i\" ]; then\n    echo 'interactive shell without pty' >&2\n    exit 42\n  fi\ndone\nif [ \"$1\" = \"-l\" ]; then shift; fi\nexec /bin/sh \"$@\"\n",
+            r#"#!/bin/sh
+interactive=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -l) shift ;;
+    -i) interactive=1; shift ;;
+    -c) shift; script="$1"; shift; break ;;
+    *) break ;;
+  esac
+done
+
+if [ "$interactive" = "1" ] && [ -t 0 ]; then
+  init='nvm() { echo "nvm initialized"; PATH="$(pwd)/bin:$PATH"; export PATH; };'
+  exec /bin/sh -c "$init $script"
+fi
+
+exec /bin/sh -c "$script"
+"#,
         )
         .expect("write fake shell");
         let mut perms = std::fs::metadata(&shell).expect("metadata").permissions();
@@ -327,7 +302,18 @@ mod tests {
         let _shell_guard = EnvVarGuard::set("SHELL", shell.to_string_lossy().as_ref());
         let worktree = temp.path().join("worktree");
         std::fs::create_dir(&worktree).expect("worktree dir");
-        let pool = setup_pool("printf ok > setup.out").await;
+        let bin = worktree.join("bin");
+        std::fs::create_dir(&bin).expect("bin dir");
+        let pnpm = bin.join("pnpm");
+        std::fs::write(&pnpm, "#!/bin/sh\nprintf 'pnpm ok' > setup.out\n")
+            .expect("write fake pnpm");
+        let mut pnpm_perms = std::fs::metadata(&pnpm)
+            .expect("pnpm metadata")
+            .permissions();
+        pnpm_perms.set_mode(0o755);
+        std::fs::set_permissions(&pnpm, pnpm_perms).expect("chmod pnpm");
+
+        let pool = setup_pool("nvm use\npnpm install").await;
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
         run_setup_commands(pool.clone(), pool.clone(), 1, worktree.clone(), tx).await;
@@ -336,7 +322,7 @@ mod tests {
         assert_eq!(step.as_deref(), Some("ready"));
         assert_eq!(
             std::fs::read_to_string(worktree.join("setup.out")).expect("setup output"),
-            "ok"
+            "pnpm ok"
         );
     }
 }

@@ -47,7 +47,7 @@ fn shell_program() -> (String, bool) {
     }
 }
 
-fn shell_quote(value: &OsStr) -> String {
+pub fn shell_quote(value: &OsStr) -> String {
     let value = value.to_string_lossy();
     format!("'{}'", value.replace('\'', "'\\''"))
 }

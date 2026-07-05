@@ -93,12 +93,9 @@ describe("WorktreeSetupSection", () => {
     expect(screen.queryByText("fnm: command not found")).not.toBeInTheDocument();
   });
 
-  it("auto-closes 5 seconds after setup transitions to done in this session", async () => {
+  it("keeps setup details collapsed while setup runs and completes", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      // Mount at "created" so the first observation is recorded; the
-      // subsequent created → setup transition flips userToggle=true (auto-open),
-      // and only the timer should re-close the section.
       const { rerender } = render(
         <WorktreeSetupSection
           featureId={1}
@@ -118,8 +115,8 @@ describe("WorktreeSetupSection", () => {
           wsWorktreeSetupOutput={["installing"]}
         />,
       );
-      // Auto-opens on the created → setup transition
-      expect(screen.getByText("Run setup commands")).toBeInTheDocument();
+      expect(screen.getByText("running")).toBeInTheDocument();
+      expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
 
       rerender(
         <WorktreeSetupSection
@@ -130,21 +127,20 @@ describe("WorktreeSetupSection", () => {
           wsWorktreeSetupOutput={["installing", "done"]}
         />,
       );
-      // Still open just after completion (userToggle was true from auto-open)
-      expect(screen.getByText("Run setup commands")).toBeInTheDocument();
+      expect(screen.getByText("ready")).toBeInTheDocument();
+      expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
 
-      // Collapsed after the 5s delay
       expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("does not auto-close on error completion", async () => {
+  it("auto-expands when setup transitions to error", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const { rerender } = render(
@@ -166,7 +162,8 @@ describe("WorktreeSetupSection", () => {
           wsWorktreeSetupOutput={["installing"]}
         />,
       );
-      expect(screen.getByText("Run setup commands")).toBeInTheDocument();
+      expect(screen.getByText("running")).toBeInTheDocument();
+      expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
 
       rerender(
         <WorktreeSetupSection
@@ -183,7 +180,6 @@ describe("WorktreeSetupSection", () => {
         await vi.advanceTimersByTimeAsync(10000);
       });
 
-      // Stays open on error so the user can read the failure
       expect(screen.getByText("Run setup commands")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
