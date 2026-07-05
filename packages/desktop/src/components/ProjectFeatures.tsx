@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
-import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useLiveFeatureMeta } from "@/hooks/useLiveFeatureMeta";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -106,17 +106,19 @@ export function ProjectFeatures({
     [activeFeatures, worktreeByFeatureId, projectPath],
   );
 
-  // Live WS-pushed titles from auto-naming. Read raw store slices; derive per-feature inline.
-  const wsSessions = useWsSessionStore((s) => s.sessions);
+  // Live WS-pushed titles from auto-naming. Narrowly subscribed so the sidebar
+  // does not re-reconcile on every stream delta of any session (see
+  // useLiveFeatureMeta).
+  const liveMeta = useLiveFeatureMeta();
 
   /** Resolve the live WS title for a feature, or undefined to fall back to HTTP data. */
   const getLiveTitle = (id: number): string | undefined => {
-    return wsSessions[wsSessionIdFromFeature(id)]?.featureTitle ?? undefined;
+    return liveMeta[wsSessionIdFromFeature(id)]?.featureTitle ?? undefined;
   };
 
   /** True while auto-naming is running for the given feature. */
   const isAutoNaming = (id: number): boolean => {
-    return wsSessions[wsSessionIdFromFeature(id)]?.isAutoNaming ?? false;
+    return liveMeta[wsSessionIdFromFeature(id)]?.isAutoNaming ?? false;
   };
 
   const labelSuggestions = useMemo(() => uniqueLabels(features), [features]);

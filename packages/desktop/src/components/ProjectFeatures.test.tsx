@@ -182,7 +182,10 @@ vi.mock("@/stores/ws-session-store", () => ({
     vi.fn((selector: (s: { sessions: Record<string, unknown> }) => unknown) =>
       selector({ sessions: {} }),
     ),
-    { getState: () => ({ disconnect: mockDisconnectSession }) },
+    {
+      getState: () => ({ disconnect: mockDisconnectSession, sessions: {} }),
+      subscribe: () => () => {},
+    },
   ),
 }));
 
