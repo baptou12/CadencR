@@ -20,6 +20,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import type { MutableRefObject, RefObject } from "react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { ImageAttachment } from "@/hooks/useImageAttachments";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
@@ -64,6 +65,9 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
     interactedRef,
   } = deps;
   const [sending, setSending] = useState(false);
+  // On phones, refocusing the editor after send re-pops the on-screen keyboard
+  // and covers the reply the user just sent. Only auto-focus on desktop.
+  const isMobile = useIsMobile();
 
   const runSend = useCallback(
     async (send: SendFn, trimmed: string): Promise<void> => {
@@ -91,7 +95,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
         attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
         addHistoryEntry(trimmed);
         saveDraft(null);
-        requestAnimationFrame(() => editorRef.current?.focus());
+        if (!isMobile) requestAnimationFrame(() => editorRef.current?.focus());
       } catch {
         // Restore the prompt so the user can retry without retyping.
         // The async call site is responsible for the toast (per the
@@ -99,7 +103,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
         setText(trimmed);
         editorRef.current?.setText(trimmed);
         restoreAttachments(attachments);
-        requestAnimationFrame(() => editorRef.current?.focus());
+        if (!isMobile) requestAnimationFrame(() => editorRef.current?.focus());
       } finally {
         setSending(false);
       }
@@ -113,6 +117,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
       addHistoryEntry,
       getAttachments,
       interactedRef,
+      isMobile,
     ],
   );
 

@@ -215,7 +215,7 @@ function buildComponents(
       }
       return (
         <code
-          className="rounded bg-muted px-1 py-0.5 text-xs font-mono text-[var(--acc-pink)]"
+          className="rounded bg-[color-mix(in_oklab,var(--acc-pink)_7%,transparent)] px-1 py-0.5 text-xs font-mono text-[color-mix(in_oklab,var(--acc-pink)_45%,var(--acc-purple))]"
           {...props}
         >
           {children}
