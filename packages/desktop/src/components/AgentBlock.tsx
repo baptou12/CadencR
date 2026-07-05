@@ -11,6 +11,7 @@ import {
 } from "@/lib/tool-adapter";
 import { ToolCallBlock } from "@/components/AgentToolCallBlock";
 import { Markdown } from "@/components/Markdown";
+import { useStreamingMarkdownThrottle } from "@/hooks/useStreamingMarkdownThrottle";
 import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
 import { UserMessageActions } from "@/components/agent-session/UserMessageActions";
@@ -119,13 +120,14 @@ export const AgentBlock = memo(function AgentBlock({
   isCollapsedByPolicy = false,
   onExpandedChange,
 }: AgentBlockProps) {
-  // Always thread a cache key — including the actively streaming block — so
-  // Virtuoso re-renders that don't change the markdown content (size measure
-  // passes, sibling re-renders, panel resizes) reuse the cached React tree
-  // instead of re-running `lowlight.highlight` synchronously on every commit.
-  // The cache itself is content-keyed and LRU-bounded in `Markdown.tsx`, so
-  // streaming snapshots evict older entries cleanly.
-  const markdownCacheKey = block.id;
+  // Cache the rendered markdown tree for STABLE blocks (keyed by block id) so
+  // Virtuoso recycling reuses it across mounts. The actively streaming block is
+  // deliberately NOT cached: its content changes every batch, so caching each
+  // partial snapshot would churn the LRU with entries never read again. Its
+  // re-parse is instead bounded by `useStreamingMarkdownThrottle` in the leaf
+  // block, and the component-level `useMemo` already skips re-parsing on
+  // content-preserving re-renders (size measure passes, resizes).
+  const markdownCacheKey = isStreaming ? undefined : block.id;
   // `controlledExpanded` is the value threaded into the auto-collapsible
   // child blocks (Bash, file-change tools, thinking). `undefined` lets each
   // block keep its own internal state (Maximal / Compact modes); a boolean
@@ -135,7 +137,9 @@ export const AgentBlock = memo(function AgentBlock({
     : undefined;
   switch (block.type) {
     case "text":
-      return <TextBlock content={block.content} cacheKey={markdownCacheKey} />;
+      return (
+        <TextBlock content={block.content} cacheKey={markdownCacheKey} isStreaming={isStreaming} />
+      );
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call": {
@@ -207,6 +211,7 @@ export const AgentBlock = memo(function AgentBlock({
         <ThinkingBlock
           content={block.content}
           cacheKey={markdownCacheKey}
+          isStreaming={isStreaming}
           expanded={controlledExpanded}
           onExpandedChange={onExpandedChange}
         />
@@ -272,11 +277,16 @@ function AgentResultBlock({ content }: { content: string }) {
 const TextBlock = memo(function TextBlock({
   content,
   cacheKey,
+  isStreaming,
 }: {
   content: string;
   cacheKey?: string;
+  isStreaming?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  // Throttle re-parse of the actively streaming block; copy always uses the
+  // full latest content.
+  const displayContent = useStreamingMarkdownThrottle(content, !!isStreaming);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content);
@@ -286,7 +296,7 @@ const TextBlock = memo(function TextBlock({
 
   return (
     <div className="group/textblock">
-      <Markdown content={content} cacheKey={cacheKey} />
+      <Markdown content={displayContent} cacheKey={cacheKey} />
       <div className="opacity-0 group-hover/textblock:opacity-100 transition-colors">
         <button
           type="button"
