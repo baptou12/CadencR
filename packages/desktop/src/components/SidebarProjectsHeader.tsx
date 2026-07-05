@@ -22,7 +22,7 @@ export function SidebarProjectsHeader({
   isRefreshing,
 }: SidebarProjectsHeaderProps) {
   return (
-    <div className="flex items-center justify-between px-2">
+    <div className="group flex items-center justify-between px-2">
       <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
       <div className="flex items-center gap-0.5">
         <Button
@@ -32,6 +32,7 @@ export function SidebarProjectsHeader({
           disabled={isRefreshing}
           title="Re-sort projects"
           aria-label="Re-sort projects"
+          className="can-hover:opacity-0 can-hover:transition-opacity can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100"
         >
           <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
         </Button>
@@ -43,6 +44,7 @@ export function SidebarProjectsHeader({
             disabled={isAddingProject}
             title="Add project"
             aria-label="Add project"
+            className="can-hover:opacity-0 can-hover:transition-opacity can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100"
           >
             <Plus />
           </Button>

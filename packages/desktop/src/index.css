@@ -7,6 +7,11 @@
 @import "./theme-square.css";
 @import "./pierre-tree.css";
 
+/* Reveal-on-hover only where hover actually exists. On touch devices (no hover)
+ * `can-hover:` rules never apply, so hover-gated affordances stay fully visible
+ * instead of being permanently invisible. */
+@custom-variant can-hover (@media (hover: hover));
+
 @theme inline {
   --font-sans:
     "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",

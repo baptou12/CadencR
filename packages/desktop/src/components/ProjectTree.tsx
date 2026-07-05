@@ -187,7 +187,7 @@ export function ProjectTree({
                         <ProjectColorDot projectId={project.id} />
                         <span className="min-w-0 truncate">{project.name}</span>
 
-                        <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
+                        <div className="ml-auto flex shrink-0 items-center gap-0.5">
                           {/* New session */}
                           <span
                             role="button"
@@ -211,7 +211,7 @@ export function ProjectTree({
                               <span
                                 role="button"
                                 tabIndex={0}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent can-hover:opacity-0 can-hover:focus-visible:opacity-100 can-hover:group-hover/project:opacity-100"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <Ellipsis className="h-3.5 w-3.5" />
