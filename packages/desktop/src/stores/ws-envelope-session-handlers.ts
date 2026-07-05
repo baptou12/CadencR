@@ -6,39 +6,27 @@ import {
   parseGateClosedPayload,
   parseInitializedPayload,
   parseMcpServersPayload,
-  parseMessageBlocksPayload,
   parsePermissionPayload,
   parsePromptPersistedPayload,
   parsePromptReceivedPayload,
   parseUserMessageMirrorPayload,
 } from "./ws-envelope-payload";
-import { appendErrorBlockPatch, appendLocalUserMessage } from "./ws-session-store-helpers";
+import { appendLocalUserMessage } from "./ws-session-store-helpers";
 import { buildClearedGatePatch } from "./ws-gate-state";
-import {
-  type BlockMutation,
-  type StreamingState,
-  blocksPatchWithDerived,
-  createStreamingState,
-  isRecord,
-  processSdkMessage,
-  applyMutations,
-  buildMessagePatch,
-} from "./ws-message-processing";
-import { trackStreamSeq } from "./ws-session-resync";
+import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
 import { normalizeContextWindow } from "@/types/agent";
 import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
 import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
-import {
-  markPromptReceived,
-  movePendingPromptBlocksToTail,
-  stampPersistedMessageId,
-} from "./ws-pending-prompts";
+import { markPromptReceived, stampPersistedMessageId } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
 import { queryClient } from "@/lib/queryClient";
 import { getGetScheduledMessageQueryKey } from "@/api/generated";
+// Re-exported so the envelope dispatch table keeps importing `handleMessage`
+// from here; the implementation moved to `ws-message-envelope-handler.ts`.
+export { handleMessage } from "./ws-message-envelope-handler";
 
 export function handleCompacting(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseCompactingPayload(payload);
@@ -122,98 +110,6 @@ function mcpServersEqual(
   return current.every(
     (server, index) => server.name === next[index]?.name && server.status === next[index]?.status,
   );
-}
-
-export function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
-  const p = parseMessageBlocksPayload(payload);
-  if (!p) {
-    // Never drop silently: a malformed `session.message` is a lost stream
-    // chunk — the exact "text stopped mid-message" a user can't diagnose.
-    // Surface it inline so the truncation is visible (error-handling.md).
-    console.warn("[ws-session] dropping malformed session.message payload", payload);
-    const session = ctx.getSession(sessionId);
-    ctx.set(
-      updateSession(
-        ctx.get(),
-        sessionId,
-        appendErrorBlockPatch(
-          session,
-          "A streamed update from the agent was malformed and could not be displayed. The transcript above may be incomplete.",
-          { code: "MALFORMED_MESSAGE" },
-        ),
-      ),
-    );
-    return;
-  }
-  const state = ctx.getSession(sessionId).streamingState;
-  trackStreamSeq(ctx, sessionId, state, p.seq);
-  processMessageBlocks(ctx, sessionId, state, p.blocks);
-}
-
-function processMessageBlocks(
-  ctx: StoreAccessors,
-  sessionId: string,
-  state: StreamingState,
-  blocks: unknown[],
-): void {
-  const allMutations: BlockMutation[] = [];
-  let enterPlanModeRequested = false;
-  let compactBoundaryObserved = false;
-  let manualCompactBoundaryObserved = false;
-  for (const rawBlock of blocks) {
-    if (!isRecord(rawBlock)) continue;
-    const result = processSdkMessage(rawBlock, state);
-    allMutations.push(...result.mutations);
-    enterPlanModeRequested ||= result.signals.enterPlanModeRequested;
-    compactBoundaryObserved ||= result.signals.compactBoundaryObserved;
-    // Older persisted/runtime boundaries may not include metadata. Treat that
-    // shape as manual so an in-flight explicit `/compact` can complete.
-    manualCompactBoundaryObserved ||=
-      result.signals.compactBoundaryObserved && result.signals.compactBoundaryTrigger !== "auto";
-  }
-
-  if (allMutations.length === 0 && !compactBoundaryObserved) return;
-
-  const currentSession = ctx.getSession(sessionId);
-  const patch: Partial<SessionEntry> = {};
-  if (allMutations.length > 0) {
-    const appliedBlocks = applyMutations(currentSession.blocks, allMutations, state);
-    const newBlocks = movePendingPromptBlocksToTail(appliedBlocks);
-    Object.assign(patch, buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested }));
-    // applyMutations maintains the derived state on `streamState` in O(1) per
-    // mutation; snapshot fresh refs so React detects the change.
-    if (newBlocks === appliedBlocks) {
-      patch.rootBlocks = state.rootBlocks.slice();
-      patch.toolResultMap = new Map(state.toolResultMap);
-    } else {
-      Object.assign(patch, blocksPatchWithDerived(state, newBlocks));
-    }
-  }
-
-  if (compactBoundaryObserved) {
-    const existing = currentSession.contextUsage;
-    patch.contextUsage = existing
-      ? { ...existing, wasCompacted: true }
-      : {
-          inputTokens: 0,
-          outputTokens: 0,
-          contextWindow: null,
-          wasCompacted: true,
-        };
-  }
-
-  patch.lifecycle =
-    manualCompactBoundaryObserved && currentSession.pendingManualCompact
-      ? transitionTurn(currentSession.lifecycle, {
-          type: "turn_ended",
-          reason: "completed",
-        })
-      : transitionTurn(currentSession.lifecycle, { type: "stream_activity" });
-  if (manualCompactBoundaryObserved && currentSession.pendingManualCompact) {
-    patch.pendingManualCompact = false;
-  }
-
-  ctx.set(updateSession(ctx.get(), sessionId, patch));
 }
 
 export function handlePermissionRequest(

@@ -75,6 +75,8 @@ import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import { resyncMessagesOnReconnect } from "./ws-session-resync";
+import { bufferStreamDelta, discardStreamDeltas, flushStreamDeltas } from "./ws-delta-coalescer";
+import { SESSION_ACTION } from "./ws-session-action-names";
 
 import { blocksPatchWithDerived } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
@@ -90,6 +92,11 @@ export {
 /** Prefix for synthetic request IDs created during plan-restore flows. */
 const PLAN_RESTORE_PREFIX = "plan_restore_";
 const wsSessionSourceKey = (sessionId: string): string => `ws-session:${sessionId}`;
+
+/** Only `session.message` deltas are coalesced; everything else applies eagerly. */
+function isStreamDeltaEnvelope(envelope: WsEnvelope): boolean {
+  return envelope.domain === "session" && envelope.action === SESSION_ACTION.message;
+}
 
 function shouldTrackPromptReceipt(session: SessionEntry): boolean {
   return (
@@ -230,6 +237,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         },
         onClose: (intentional) => {
           if (intentional) return;
+          // Apply any buffered tokens before the "connection lost" error block
+          // so the transcript keeps them in order.
+          flushStreamDeltas(ctx, sessionId);
           const session = get().sessions[sessionId];
           if (session?.pendingWsRequests.size) {
             for (const cb of session.pendingWsRequests.values()) cb(null);
@@ -269,6 +279,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         },
         onError: (intentional) => {
           if (intentional) return;
+          flushStreamDeltas(ctx, sessionId);
           const session = get().sessions[sessionId];
           if (session?.pendingWsRequests.size) {
             for (const cb of session.pendingWsRequests.values()) cb(null);
@@ -300,6 +311,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             // chunk, which shows up as text stopping mid-message with no clue.
             // Surface it inline like the handleEnvelope failure path below.
             console.warn("[ws-session] dropping unparseable envelope:", err);
+            // Flush pending deltas first so the error block lands after the
+            // text it follows, not before a frame's worth of buffered tokens.
+            flushStreamDeltas(ctx, sessionId);
             const session = getSession(sessionId);
             set(
               updateSession(
@@ -314,6 +328,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             );
             return;
           }
+          // Coalesce a burst of stream deltas into one commit per frame. Every
+          // other envelope flushes the pending buffer first so it can never
+          // overtake the deltas that preceded it (see ws-delta-coalescer.ts).
+          if (isStreamDeltaEnvelope(envelope)) {
+            bufferStreamDelta(ctx, sessionId, envelope.payload);
+            return;
+          }
+          flushStreamDeltas(ctx, sessionId);
           try {
             handleEnvelope(ctx, sessionId, envelope);
             if (envelope.domain === "session" && envelope.action === "initialized") {
@@ -353,6 +375,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       clearReconnect(wsSessionSourceKey(sessionId));
       unregisterReconnector(wsSessionSourceKey(sessionId));
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
+      discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 
@@ -563,6 +586,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       clearReconnect(wsSessionSourceKey(sessionId));
       unregisterReconnector(wsSessionSourceKey(sessionId));
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
+      discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 

@@ -1,10 +1,24 @@
 import "@testing-library/jest-dom/vitest";
-import { vi, afterEach, afterAll, beforeAll } from "vitest";
+import { vi, afterEach, afterAll, beforeAll, beforeEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { server } from "./test/msw-server";
+import { setDeltaFlushScheduler } from "./stores/ws-delta-scheduler";
 
 // Automatically cleanup DOM after each test
 afterEach(cleanup);
+
+// ---------------------------------------------------------------------------
+// Stream-delta coalescing — apply synchronously in tests
+// ---------------------------------------------------------------------------
+//
+// Production coalesces `session.message` deltas per animation frame (see
+// `ws-delta-coalescer.ts`). The store's existing tests fire a message envelope
+// and assert on the resulting blocks synchronously, so default the scheduler to
+// an immediate flush. Tests that specifically exercise batching install their
+// own manual scheduler inside the test body.
+beforeEach(() => {
+  setDeltaFlushScheduler((flush) => flush());
+});
 
 // ---------------------------------------------------------------------------
 // MSW — intercept HTTP so unmocked React Query hooks resolve cleanly
