@@ -5,8 +5,8 @@ import Compatibility from "@/components/Compatibility.astro";
 import FeatureStream from "@/components/FeatureStream.astro";
 import FeatureAgentCockpit from "@/components/FeatureAgentCockpit.astro";
 import FeatureGit from "@/components/FeatureGit.astro";
-import FeatureTerminal from "@/components/FeatureTerminal.astro";
-import FeatureEditor from "@/components/FeatureEditor.astro";
+import FeatureBrowser from "@/components/FeatureBrowser.astro";
+import FeatureBento from "@/components/FeatureBento.astro";
 import FAQ from "@/components/FAQ.astro";
 import CloserCTA from "@/components/CloserCTA.astro";
 import { DISPLAY_VERSION } from "@/lib/downloads";
@@ -43,6 +43,7 @@ const softwareApplication = {
     "Unified workspace for Claude Code, OpenCode, and Codex agents",
     "Readable agent stream with tool-call pills and inline diffs",
     "Per-task Git worktrees with visible, reviewable commits",
+    "Embedded browser with per-task tabs and agent-driven QA",
     "Built-in terminal and editor next to the agent",
   ],
 };
@@ -65,8 +66,8 @@ const structuredData = [softwareApplication, faqPage];
   <FeatureAgentCockpit />
   <FeatureStream />
   <FeatureGit />
-  <FeatureTerminal />
-  <FeatureEditor />
+  <FeatureBrowser />
+  <FeatureBento />
   <FAQ />
   <CloserCTA />
 </BaseLayout>

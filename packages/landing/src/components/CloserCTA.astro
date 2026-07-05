@@ -1,29 +1,98 @@
 ---
 import DownloadIcon from "@/components/icons/DownloadIcon.astro";
 import Wrap from "@/components/ui/Wrap.astro";
-import Eyebrow from "@/components/ui/Eyebrow.astro";
 import Button from "@/components/ui/Button.astro";
 const base = import.meta.env.BASE_URL;
 ---
-<section class="relative border-t border-border/55 py-24">
-  <Wrap maxWidth="narrow" class="grid grid-cols-1 items-center gap-8 sm:grid-cols-[1fr_auto]">
-    <div>
-      <Eyebrow>Ready</Eyebrow>
-      <h2
-        class="mt-2.5 mb-2 text-[26px] font-semibold leading-[1.2] tracking-[-0.015em] [text-wrap:balance]"
-      >
-        Ship at the cadence of your agents.
+<section class="relative py-24" style="--sec-accent: var(--color-drac-purple)">
+  <Wrap>
+    <div class="cta-panel reveal relative overflow-hidden rounded-2xl border border-border/70 px-6 py-16 text-center sm:px-10 sm:py-20">
+      <div class="cta-aura pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
+      <div class="cta-grid pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
+
+      <p class="eyebrow inline-flex items-center justify-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.13em]">
+        Ready
+      </p>
+      <h2 class="mx-auto mt-4 max-w-[640px] text-[clamp(28px,4.4vw,42px)] font-semibold leading-[1.12] tracking-[-0.025em] [text-wrap:balance]">
+        Ship at the <span class="cta-accent">cadence</span> of your agents.
       </h2>
-      <p class="max-w-[460px] text-[13.5px] text-muted-foreground">
+      <p class="mx-auto mt-4 max-w-[460px] text-[14px] leading-[1.65] text-muted-foreground">
         Free, open source, runs on your machine. Bring your own Claude or OpenCode keys — and go.
       </p>
-    </div>
-    <div class="inline-flex flex-wrap gap-2">
-      <Button href={`${base}download/`} size="lg">
-        <DownloadIcon />
-        Download
-      </Button>
-      <Button href={`${base}docs/`} variant="outline" size="lg">Read the docs</Button>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Button href={`${base}download/`} size="lg" class="h-11 gap-2.5 px-5 text-sm shadow-lg shadow-primary/25">
+          <DownloadIcon />
+          Download
+        </Button>
+        <Button href={`${base}docs/`} variant="outline" size="lg" class="h-11 px-5 text-sm">
+          Read the docs
+        </Button>
+      </div>
     </div>
   </Wrap>
 </section>
+
+<style>
+  .cta-panel {
+    background: color-mix(in oklch, var(--color-sidebar) 70%, transparent);
+  }
+  /* Top light along the panel edge, echoing the hero media frame. */
+  .cta-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--color-primary) 55%, transparent),
+      transparent
+    );
+  }
+  .cta-aura {
+    background:
+      radial-gradient(
+        56% 68% at 50% 0%,
+        color-mix(in oklch, var(--color-primary) 22%, transparent),
+        transparent 72%
+      ),
+      radial-gradient(
+        34% 40% at 12% 90%,
+        color-mix(in oklch, var(--color-drac-cyan) 9%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        34% 40% at 88% 90%,
+        color-mix(in oklch, var(--color-drac-green) 7%, transparent),
+        transparent 70%
+      );
+    filter: blur(14px);
+  }
+  .cta-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 52px 52px;
+    opacity: 0.22;
+    -webkit-mask-image: radial-gradient(ellipse 72% 80% at 50% 0%, black 8%, transparent 74%);
+    mask-image: radial-gradient(ellipse 72% 80% at 50% 0%, black 8%, transparent 74%);
+  }
+  .cta-accent {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--color-primary) 78%, white 22%),
+      color-mix(in oklch, var(--color-primary) 62%, var(--color-drac-cyan) 38%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+</style>

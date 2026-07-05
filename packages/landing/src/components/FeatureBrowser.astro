@@ -1,0 +1,41 @@
+---
+import FeatureSection from "@/components/FeatureSection.astro";
+import FeatureMedia from "@/components/ui/FeatureMedia.astro";
+import Lede from "@/components/ui/Lede.astro";
+import browserImage from "@/assets/browser.png";
+---
+<FeatureSection
+  id="browser"
+  eyebrow="Browser"
+  heading="See the app your agent is building."
+  index="04"
+  reverse
+  accent="yellow"
+>
+  <FeatureMedia
+    slot="media"
+    src={browserImage}
+    alt="CadencR browser pane showing the demo app's settings page with dark mode enabled, next to the agent's browser tool calls that opened, clicked, and verified it"
+    reverse
+    caption="Actual capture — the agent verifying its own change"
+  />
+  <Fragment slot="lede">
+    <Lede>
+      CadencR ships with a <span class="em">real embedded browser</span>. Point a pane at your dev
+      server and watch changes land — no window juggling, no lost context.
+    </Lede>
+    <Lede class="mt-2.5">
+      Better: the agent can drive it. It opens the page it just changed, clicks through the flow,
+      and reads the console — <span class="em">before</span> telling you it's done.
+    </Lede>
+  </Fragment>
+  <Fragment slot="bullets">
+    <li><strong>Live preview</strong> — your dev server in a pane beside the stream.</li>
+    <li><strong>Tabs scoped per task</strong> — switch sessions and the tabs follow.</li>
+    <li>
+      <strong>Agent-driven QA</strong> — agents open pages, click, screenshot, and read the
+      console over MCP.
+    </li>
+    <li><strong>Real Chromium</strong> — an actual browser pane, not an iframe preview.</li>
+  </Fragment>
+</FeatureSection>

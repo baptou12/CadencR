@@ -14,28 +14,55 @@ interface PlaceholderProps {
   caption?: string;
 }
 
+/** Dracula accent driving the section's eyebrow, divider, and media glow. */
+type Accent = "purple" | "cyan" | "green" | "orange" | "pink" | "yellow";
+
 interface Props {
   id: string;
   eyebrow: string;
   heading: string;
+  /** Section number ("01", "02", …) shown before the eyebrow label. */
+  index?: string;
   reverse?: boolean;
+  accent?: Accent;
   placeholder?: PlaceholderProps;
 }
-const { id, eyebrow, heading, reverse = false, placeholder } = Astro.props;
+const { id, eyebrow, heading, index, reverse = false, accent = "purple", placeholder } = Astro.props;
 ---
-<section id={id} class="relative border-t border-border/55 py-20">
+<section
+  id={id}
+  class="relative overflow-hidden py-24"
+  style={`--sec-accent: var(--color-drac-${accent})`}
+>
+  <div class="sec-divider" aria-hidden="true"></div>
+  <div
+    class:list={[
+      "sec-glow pointer-events-none absolute -z-10",
+      reverse ? "sec-glow-left" : "sec-glow-right",
+    ]}
+    aria-hidden="true"
+  >
+  </div>
   <Wrap>
     <TwoUp reverse={reverse}>
-      {reverse && <slot name="media">{placeholder && <Placeholder {...placeholder} />}</slot>}
-      <div>
-        <Eyebrow>{eyebrow}</Eyebrow>
+      {reverse && (
+        <div class="reveal reveal-late">
+          <slot name="media">{placeholder && <Placeholder {...placeholder} />}</slot>
+        </div>
+      )}
+      <div class="reveal">
+        <Eyebrow index={index}>{eyebrow}</Eyebrow>
         <SectionHeading>{heading}</SectionHeading>
         <slot name="lede" />
         <BulletList>
           <slot name="bullets" />
         </BulletList>
       </div>
-      {!reverse && <slot name="media">{placeholder && <Placeholder {...placeholder} />}</slot>}
+      {!reverse && (
+        <div class="reveal reveal-late">
+          <slot name="media">{placeholder && <Placeholder {...placeholder} />}</slot>
+        </div>
+      )}
     </TwoUp>
   </Wrap>
 </section>

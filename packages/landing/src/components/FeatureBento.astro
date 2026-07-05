@@ -1,0 +1,114 @@
+---
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import SectionHeading from "@/components/ui/SectionHeading.astro";
+import BulletList from "@/components/ui/BulletList.astro";
+import FeatureMedia from "@/components/ui/FeatureMedia.astro";
+import terminalImage from "@/assets/terminal.png";
+import editorImage from "@/assets/editor.png";
+---
+<section
+  id="workbench"
+  class="relative overflow-hidden py-24"
+  style="--sec-accent: var(--color-drac-orange)"
+>
+  <div class="sec-divider" aria-hidden="true"></div>
+  <Wrap>
+    <div class="reveal mx-auto mb-12 max-w-[560px] text-center">
+      <Eyebrow index="05">Workbench</Eyebrow>
+      <SectionHeading>The rest of the IDE is already there.</SectionHeading>
+    </div>
+    <div class="grid gap-5 lg:grid-cols-2">
+      <article
+        id="terminal"
+        class="bento-card reveal relative overflow-hidden rounded-2xl border border-border/70 bg-muted/10 p-5 sm:p-6"
+        style="--sec-accent: var(--color-drac-orange)"
+      >
+        {/* Negative margins let the window bleed into the card padding —
+            the capture's own transparent margins keep it off the border. */}
+        <div class="-mx-5 -mt-4 sm:-mx-6 sm:-mt-5">
+          <FeatureMedia
+            src={terminalImage}
+            alt="CadencR terminal pane: an xterm.js PTY rooted at the session's worktree, with a branch-aware prompt"
+            bleed={false}
+            height="h-[300px] md:h-[380px] lg:h-[330px] xl:h-[420px]"
+          />
+        </div>
+        <div class="mt-6">
+          <Eyebrow>Terminal</Eyebrow>
+          <h3 class="mt-2.5 text-[19px] font-semibold leading-[1.25] tracking-[-0.015em]">
+            A real terminal, next to the agent.
+          </h3>
+          <p class="mt-2 text-[13.5px] leading-[1.6] text-muted-foreground [&_.em]:text-foreground">
+            Every session gets a PTY rooted at its own worktree — <span class="em">for the things
+            the agent shouldn't do</span>: ssh, dev servers, ad-hoc scripts. Split the pane any
+            time; both see the same filesystem, in real time.
+          </p>
+          <BulletList>
+            <li><strong>One PTY per session</strong>, rooted at the worktree.</li>
+            <li><strong>Split view</strong> — agent left, terminal right, or stacked.</li>
+            <li><strong>xterm.js</strong> — true color, correct scrollback, correct cursor.</li>
+          </BulletList>
+        </div>
+      </article>
+
+      <article
+        id="editor"
+        class="bento-card reveal reveal-late relative overflow-hidden rounded-2xl border border-border/70 bg-muted/10 p-5 sm:p-6"
+        style="--sec-accent: var(--color-drac-pink)"
+      >
+        <div class="-mx-5 -mt-4 sm:-mx-6 sm:-mt-5">
+          <FeatureMedia
+            src={editorImage}
+            alt="CadencR editor showing the file tree, an open file, and the agent commit summary panel on the right"
+            bleed={false}
+            height="h-[300px] md:h-[380px] lg:h-[330px] xl:h-[420px]"
+          />
+        </div>
+        <div class="mt-6">
+          <Eyebrow>Editor</Eyebrow>
+          <h3 class="mt-2.5 text-[19px] font-semibold leading-[1.25] tracking-[-0.015em]">
+            A real editor — not a viewer.
+          </h3>
+          <p class="mt-2 text-[13.5px] leading-[1.6] text-muted-foreground [&_.em]:text-foreground">
+            Open any file the agent touched and <span class="em">edit it on the spot</span> — no
+            jumping to another app to fix a typo, tweak a prompt, or unwind a chunk.
+          </p>
+          <BulletList>
+            <li><strong>Quick open</strong> — jump to any file in the worktree instantly.</li>
+            <li><strong>Inline diffs</strong> — accept, revert, or rewrite chunks in place.</li>
+            <li><strong>File tree</strong> — browse the full worktree without leaving the session.</li>
+          </BulletList>
+        </div>
+      </article>
+    </div>
+  </Wrap>
+</section>
+
+<style>
+  /* Accent hairline along each card's top edge + ambient corner glow. */
+  .bento-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 10% auto 10%;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--sec-accent) 55%, transparent),
+      transparent
+    );
+  }
+  .bento-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(
+      60% 40% at 50% 0%,
+      color-mix(in oklch, var(--sec-accent) 7%, transparent),
+      transparent 70%
+    );
+  }
+</style>
