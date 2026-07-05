@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.6.5 - 2026-07-05
+
+Previous release: v0.6.4 - 2026-06-29
+
+### ✨ Added
+
+- [**Desktop**] Added an embedded Excalidraw editor for `.excalidraw` files, with lazy-loaded canvas assets, dirty-state tracking, auto-save, and `Cmd`/`Ctrl+S` support so diagrams can be edited directly from the Cadencr editor instead of as raw JSON.
+- [**Desktop**] Added a Stashes tab to the Git panel, showing stash descriptions, timestamps, and numstat summaries with one-click expansion into the exact stash diff.
+
+### 🔧 Changed
+
+- [**Desktop**] Improved agent selection by hiding unavailable local providers from selectable catalogs, throttling failed provider probes, and falling back from stale provider settings to an installed provider.
+- [**Desktop**] Changed terminal behavior for new worktrees so idle shells relocate automatically while busy terminals keep the existing warning and are never killed unexpectedly.
+- [**Backend**] Hardened live-session plumbing with typed WebSocket action contracts, centralized status lifecycle handling, smaller backend modules, and mutex-poison recovery so streaming/session state is easier to keep consistent.
+
+### 🐛 Fixed
+
+- [**provider:claude**] Fixed Claude Code sessions that could appear to stop mid-message by preserving unknown raw payloads, surfacing unmodeled events and stream diagnostics, adding sequence-gap detection and post-turn tail repair, and preventing permission dispatch from being stranded.
+- [**provider:claude**] Fixed cancelled Claude control requests so stale permission responses are not written to closed stdin after the provider has already cancelled the request.
+- [**provider:codex**] Fixed live Codex turns being cut short by availability-probe timeouts, while keeping catalog/status probes and cleanup paths bounded.
+- [**Backend**] Fixed stacked permission prompts so accepting an older runtime permission no longer clears a newer queued permission request.
+- [**Desktop**] Fixed prompt references so `$` skill mentions can be inserted anywhere in a prompt and `@` file mentions search the backend live, including files created after the feature first loaded.
+- [**Desktop**] Fixed multiple UI freezes by virtualizing content-search results, progressively rendering large Git diffs, coalescing settings invalidations, and caching LSP probe results.
+- [**Desktop**] Fixed project settings text fields, especially worktree setup commands, so late settings fetches do not roll back in-progress edits.
+- [**Desktop**] Fixed worktree setup execution so configured setup commands run in a PTY-backed interactive login shell with terminal-like environment initialization, bounded output, and collapsed-by-default progress that expands on errors.
+- [**Desktop**] Fixed sidebar and Frost-theme polish, including collapsed global sidebars re-expanding during unrelated resize drags, LSP symbol hover blur in Frost themes, inline-code contrast, and mobile-friendly project-row affordances.
+- [**Desktop**] Fixed Apple Silicon download recommendations in Safari and Firefox so macOS users are not pointed at the Intel DMG when Chromium-only architecture APIs are unavailable.
+
+### 🔒 Security
+
+- [**dependencies**] Updated desktop, landing, backend, and tooling dependencies, including Electron/electron-builder/electron-updater, Axios, React, Zustand, Rust TLS/certificate/randomness libraries, and a 40-package npm/yarn maintenance batch with focused compatibility fixes.
+
 ## v0.6.4 - 2026-06-29
 
 Previous release: v0.6.3 - 2026-06-25
