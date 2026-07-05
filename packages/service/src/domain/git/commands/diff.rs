@@ -63,25 +63,55 @@ pub async fn get_stats(
     stats_unstaged.insertions += stats_staged.insertions;
     stats_unstaged.deletions += stats_staged.deletions;
 
-    // Count untracked files
+    // Count untracked files. `--exclude-standard` already filters gitignored
+    // paths, so we only see files that count. Lines are counted with a buffered
+    // stream (bounded memory, not a full read-into-String of every file) and
+    // binaries are skipped.
     for file in untracked.trim().lines().filter(|l| !l.is_empty()) {
         let full_path = worktree_path.join(file);
-        if let Ok(content) = tokio::fs::read_to_string(&full_path).await {
-            let line_count = content.lines().count();
-            // Match TS: if file ends without newline, last line still counts
-            let line_count = if !content.is_empty() && !content.ends_with('\n') {
-                line_count
-            } else if content.is_empty() {
-                0
-            } else {
-                line_count
-            };
+        if let Some(line_count) = count_untracked_lines(&full_path).await {
             stats_unstaged.files_changed += 1;
             stats_unstaged.insertions += line_count as i32;
         }
     }
 
     Ok(stats_unstaged)
+}
+
+/// Count the added lines of an untracked file for the stat total without
+/// holding it all in memory: reads in bounded chunks, sniffs the first 8 KB for
+/// a NUL byte to skip binaries (git's heuristic), and counts newlines plus a
+/// trailing unterminated line. `None` skips the file (unreadable or binary),
+/// matching how the diff endpoint treats untracked files.
+async fn count_untracked_lines(path: &Path) -> Option<u32> {
+    use tokio::io::AsyncReadExt;
+
+    let mut file = tokio::fs::File::open(path).await.ok()?;
+    let mut buf = [0u8; 64 * 1024];
+    let mut lines: u32 = 0;
+    let mut last_byte: Option<u8> = None;
+    let mut sniffed = false;
+    loop {
+        let n = file.read(&mut buf).await.ok()?;
+        if n == 0 {
+            break;
+        }
+        let chunk = &buf[..n];
+        if !sniffed {
+            let head = &chunk[..chunk.len().min(8192)];
+            if head.contains(&0) {
+                return None; // binary — skip, like the diff endpoint
+            }
+            sniffed = true;
+        }
+        lines += chunk.iter().filter(|&&b| b == b'\n').count() as u32;
+        last_byte = Some(chunk[n - 1]);
+    }
+    // A final line with no trailing newline still counts (matches `lines()`).
+    if last_byte.is_some_and(|b| b != b'\n') {
+        lines += 1;
+    }
+    Some(lines)
 }
 
 /// Get unified diff string.
@@ -260,5 +290,46 @@ mod tests {
         assert_eq!(format_bytes(512), "512 B");
         assert_eq!(format_bytes(2048), "2.0 KB");
         assert_eq!(format_bytes(3 * 1024 * 1024), "3.0 MB");
+    }
+
+    #[tokio::test]
+    async fn count_untracked_lines_matches_lines_semantics() {
+        let dir = tempfile::tempdir().unwrap();
+        let cases = [
+            ("trailing.txt", "a\nb\n", 2),  // trailing newline: 2 lines
+            ("no_trailing.txt", "a\nb", 2), // final unterminated line counts
+            ("single.txt", "a", 1),         // one line, no newline
+            ("just_newline.txt", "\n", 1),  // one (empty) line
+            ("empty.txt", "", 0),           // empty file: 0
+        ];
+        for (name, content, expected) in cases {
+            std::fs::write(dir.path().join(name), content).unwrap();
+            let got = count_untracked_lines(&dir.path().join(name)).await;
+            assert_eq!(got, Some(expected), "line count for {name:?} ({content:?})");
+        }
+    }
+
+    #[tokio::test]
+    async fn count_untracked_lines_skips_binaries() {
+        let dir = tempfile::tempdir().unwrap();
+        // NUL byte in the first 8 KB → treated as binary and skipped.
+        std::fs::write(dir.path().join("blob.bin"), b"abc\0def\n").unwrap();
+        assert_eq!(
+            count_untracked_lines(&dir.path().join("blob.bin")).await,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn count_untracked_lines_streams_multichunk_files() {
+        let dir = tempfile::tempdir().unwrap();
+        // Larger than the 64 KB read buffer to exercise the streaming loop and
+        // cross-chunk newline counting. 100_000 lines of "x\n".
+        let content = "x\n".repeat(100_000);
+        std::fs::write(dir.path().join("many.txt"), &content).unwrap();
+        assert_eq!(
+            count_untracked_lines(&dir.path().join("many.txt")).await,
+            Some(100_000)
+        );
     }
 }
