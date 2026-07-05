@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { urlPrefixPredicate } from "./queryClient";
+import { createLeadingSettleCoalescer } from "./coalesceInvalidation";
 
 // Workspace settings endpoints whose URL head is a stable prefix (no dynamic
 // id). Matched via the shared orval-key prefix helper so the "how orval keys
@@ -45,23 +46,13 @@ const matchesWorkspaceSettingsUrl = urlPrefixPredicate([
  */
 const SETTINGS_INVALIDATION_SETTLE_MS = 400;
 
-let pendingSettingsInvalidation: ReturnType<typeof setTimeout> | null = null;
+const settingsCoalescer = createLeadingSettleCoalescer<QueryClient>(
+  invalidateSettingsDerivedQueries,
+  SETTINGS_INVALIDATION_SETTLE_MS,
+);
 
 export function scheduleSettingsInvalidation(client: QueryClient): void {
-  if (pendingSettingsInvalidation === null) {
-    // Leading edge — refetch now and open the settle window.
-    void invalidateSettingsDerivedQueries(client);
-    pendingSettingsInvalidation = setTimeout(() => {
-      pendingSettingsInvalidation = null;
-    }, SETTINGS_INVALIDATION_SETTLE_MS);
-    return;
-  }
-  // Inside the window — debounce a single trailing refetch.
-  clearTimeout(pendingSettingsInvalidation);
-  pendingSettingsInvalidation = setTimeout(() => {
-    pendingSettingsInvalidation = null;
-    void invalidateSettingsDerivedQueries(client);
-  }, SETTINGS_INVALIDATION_SETTLE_MS);
+  settingsCoalescer.trigger(client);
 }
 
 export function invalidateSettingsDerivedQueries(client: QueryClient): Promise<void> {
