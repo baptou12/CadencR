@@ -1,8 +1,8 @@
 # Changelog
 
-## v0.6.5 - 2026-07-05
+## v0.6.6 - 2026-07-05
 
-Previous release: v0.6.4 - 2026-06-29
+Previous release: v0.6.5 - 2026-07-05
 
 ### ✨ Added
 
@@ -27,10 +27,19 @@ Previous release: v0.6.4 - 2026-06-29
 - [**Desktop**] Fixed worktree setup execution so configured setup commands run in a PTY-backed interactive login shell with terminal-like environment initialization, bounded output, and collapsed-by-default progress that expands on errors.
 - [**Desktop**] Fixed sidebar and Frost-theme polish, including collapsed global sidebars re-expanding during unrelated resize drags, LSP symbol hover blur in Frost themes, inline-code contrast, and mobile-friendly project-row affordances.
 - [**Desktop**] Fixed Apple Silicon download recommendations in Safari and Firefox so macOS users are not pointed at the Intel DMG when Chromium-only architecture APIs are unavailable.
+- [**github_actions**] Fixed desktop release publication so GitHub Actions builds signed/notarized assets without letting electron-builder create duplicate same-tag releases, then creates one draft release, uploads the complete asset set, verifies updater/Homebrew assets, and only then publishes the release.
 
 ### 🔒 Security
 
 - [**dependencies**] Updated desktop, landing, backend, and tooling dependencies, including Electron/electron-builder/electron-updater, Axios, React, Zustand, Rust TLS/certificate/randomness libraries, and a 40-package npm/yarn maintenance batch with focused compatibility fixes.
+
+## v0.6.5 - 2026-07-05
+
+Previous release: v0.6.4 - 2026-06-29
+
+### 🐛 Fixed
+
+- [**github_actions**] Deploy failure — no application changes were published. The GitHub release workflow created duplicate same-tag releases and published an incomplete immutable `v0.6.5` release, so the real changes were moved to `v0.6.6`. See https://github.com/merkr-software/CadencR/releases/tag/v0.6.5
 
 ## v0.6.4 - 2026-06-29
 

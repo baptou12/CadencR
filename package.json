@@ -10,7 +10,7 @@
     "dev": "node scripts/cargo-env.mjs turbo run dev",
     "test": "node scripts/cargo-env.mjs turbo run test",
     "lint": "node scripts/cargo-env.mjs turbo run lint",
-    "test:release-scripts": "env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh",
+    "test:release-scripts": "env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh && env -u BASH_ENV bash scripts/desktop-release-workflow.test.sh",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
     "start": "node scripts/cargo-env.mjs turbo run dev --filter=@cadencr/desktop",
