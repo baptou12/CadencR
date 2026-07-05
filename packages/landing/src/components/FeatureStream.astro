@@ -1,35 +1,120 @@
 ---
-import FeatureSection from "@/components/FeatureSection.astro";
-import FeatureMedia from "@/components/ui/FeatureMedia.astro";
+import { Image } from "astro:assets";
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import SectionHeading from "@/components/ui/SectionHeading.astro";
 import Lede from "@/components/ui/Lede.astro";
-import sideBySide from "@/assets/side-by-side.png";
+import CompareSlider from "@/components/ui/CompareSlider.astro";
+import StreamTerminal from "@/components/StreamTerminal.astro";
+import streamShot from "@/assets/side-by-side.png";
+
+// The capture carries its own window chrome inside a transparent-margin
+// PNG. The slider needs a full-bleed layer, so scale/offset the image to
+// the exact window bounds (fully-opaque alpha bbox) — the whole UI stays
+// visible and the frame border sits right on the window edge.
+const box = { x: 112, y: 76, w: 2056, h: 2580 };
+const pct = (n: number, d: number) => `${((n / d) * 100).toFixed(3)}%`;
+const shotStyle = [
+  "position: absolute",
+  `top: ${pct(-box.y, box.h)}`,
+  `left: ${pct(-box.x, box.w)}`,
+  `width: ${pct(streamShot.width, box.w)}`,
+  "max-width: none",
+  "height: auto",
+].join("; ");
+
+const highlights = [
+  {
+    title: "Inline diffs",
+    body: "Themed syntax, +/- gutters, not walls of unified patch.",
+  },
+  {
+    title: "Tool-call pills",
+    body: "Bash, Grep, Read, Edit, Thinking. Click to expand.",
+  },
+  {
+    title: "Per-message model tag",
+    body: "Never guess which agent said what.",
+  },
+  {
+    title: "Context meter",
+    body: "In the status bar, so you see the window filling.",
+  },
+];
 ---
-<FeatureSection
+<section
   id="stream"
-  eyebrow="Stream"
-  heading="Your harness — finally readable."
+  class="relative overflow-hidden py-24"
+  style="--sec-accent: var(--color-drac-cyan)"
 >
-  <FeatureMedia
-    slot="media"
-    src={sideBySide}
-    alt="Side-by-side: raw harness terminal output on the left, CadencR's rendered stream on the right"
-    bordered
-    shadow
-  />
-  <Fragment slot="lede">
-    <Lede>
-      Raw terminal output buries every signal under
-      <span class="em">bash, grep, cat, head</span>.
-      CadencR reinterprets the stream as it arrives. Tool calls become pills. File writes become inline diffs. Long outputs collapse until you ask for them.
-    </Lede>
-    <Lede class="mt-2.5">
-      Same agent. Same commands. Orders of magnitude more legible.
-    </Lede>
-  </Fragment>
-  <Fragment slot="bullets">
-    <li><strong>Inline diffs</strong> — themed syntax, +/- gutters, not walls of unified patch.</li>
-    <li><strong>Tool-call pills</strong> — Bash, Grep, Read, Edit, Thinking. Click to expand.</li>
-    <li><strong>Per-message model tag</strong> — never guess which agent said what.</li>
-    <li><strong>Context meter</strong> in the status bar so you see the window filling.</li>
-  </Fragment>
-</FeatureSection>
+  <div class="sec-divider" aria-hidden="true"></div>
+  <div class="stream-glow pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
+  <Wrap>
+    <div class="reveal mx-auto max-w-[640px] text-center">
+      <Eyebrow index="02">Stream</Eyebrow>
+      <SectionHeading>Your harness — finally readable.</SectionHeading>
+      <Lede class="mx-auto mt-3">
+        Raw terminal output buries every signal under
+        <span class="em">bash, grep, cat, head</span>.
+        CadencR reinterprets the stream as it arrives — same agent, same commands, orders of
+        magnitude more legible.
+      </Lede>
+    </div>
+
+    <figure class="reveal reveal-late relative mx-auto mt-12 max-w-[680px]">
+      <div
+        class="feature-media-glow pointer-events-none absolute inset-x-10 top-12 -bottom-6 -z-10"
+        aria-hidden="true"
+      >
+      </div>
+      <CompareSlider aspect={`${box.w}/${box.h}`} leftLabel="CadencR" rightLabel="Raw terminal">
+        <Image
+          slot="left"
+          src={streamShot}
+          alt="CadencR's rendering of the agent turn: collapsible thinking, tool-call pills, an inline diff, and a formatted summary with a table"
+          widths={[800, 1200, 1600, 2280]}
+          sizes="(min-width: 768px) 780px, 110vw"
+          format="webp"
+          quality={95}
+          loading="lazy"
+          decoding="async"
+          style={shotStyle}
+        />
+        <StreamTerminal slot="right" />
+      </CompareSlider>
+      <figcaption class="media-caption justify-center">
+        Drag — the same agent turn, twice
+      </figcaption>
+    </figure>
+
+    <ul class="reveal reveal-late mx-auto mt-8 grid max-w-[1080px] list-none gap-2.5 p-0 sm:grid-cols-2 lg:grid-cols-4">
+      {highlights.map((item) => (
+        <li class="stream-chip rounded-xl border border-border bg-muted/15 p-4">
+          <p class="text-[13px] font-semibold tracking-[-0.005em] text-foreground">{item.title}</p>
+          <p class="mt-1 text-[12.5px] leading-[1.55] text-muted-foreground">{item.body}</p>
+        </li>
+      ))}
+    </ul>
+  </Wrap>
+</section>
+
+<style>
+  /* Centered cyan wash behind the showcase. */
+  .stream-glow {
+    background: radial-gradient(
+      48% 52% at 50% 34%,
+      color-mix(in oklch, var(--color-drac-cyan) 9%, transparent),
+      transparent 72%
+    );
+    filter: blur(44px);
+  }
+  .stream-chip {
+    transition:
+      border-color 0.2s ease,
+      transform 0.2s ease;
+  }
+  .stream-chip:hover {
+    border-color: color-mix(in oklch, var(--color-drac-cyan) 40%, var(--color-border));
+    transform: translateY(-2px);
+  }
+</style>

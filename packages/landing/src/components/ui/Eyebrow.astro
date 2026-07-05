@@ -1,5 +1,30 @@
+---
+interface Props {
+  /** Section number ("01", "02", …) rendered in the section accent color. */
+  index?: string;
+}
+const { index } = Astro.props;
+---
 <span
   class="eyebrow inline-flex items-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground"
 >
+  {index && (
+    <span class="eyebrow-index">
+      {index}
+      <span class="eyebrow-index-sep" aria-hidden="true">/</span>
+    </span>
+  )}
   <slot />
 </span>
+
+<style>
+  .eyebrow-index {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: color-mix(in oklch, var(--sec-accent, var(--color-muted-foreground)) 80%, var(--color-foreground));
+  }
+  .eyebrow-index-sep {
+    color: color-mix(in oklch, var(--color-muted-foreground) 45%, transparent);
+  }
+</style>

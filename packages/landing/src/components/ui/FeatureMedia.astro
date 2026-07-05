@@ -2,33 +2,63 @@
 import { Image } from "astro:assets";
 import type { ImageMetadata } from "astro";
 
+/**
+ * A feature section's screenshot: the full app-window capture presented
+ * frameless — the PNG carries its own window chrome and transparent
+ * margins, so it only gets a contour drop shadow and an accent glow.
+ */
 interface Props {
   src: ImageMetadata;
   alt: string;
   /** When true, image extends to the left (matches FeatureSection `reverse`). */
   reverse?: boolean;
-  /** Shows a 1px border around the image — useful when the screenshot has no chrome. */
-  bordered?: boolean;
-  /** Adds depth behind a screenshot when it needs separation from the page background. */
-  shadow?: boolean;
+  /** Extend beyond the column on md+ screens (disable inside cards). */
+  bleed?: boolean;
+  /** Small mono caption under the media. */
+  caption?: string;
+  /**
+   * Height classes (e.g. "h-[300px] xl:h-[380px]") for a fixed media area:
+   * the window centers inside via object-contain. Use in card grids so
+   * differently sized captures still align their text blocks.
+   */
+  height?: string;
 }
 
-const { src, alt, reverse = false, bordered = false, shadow = false } = Astro.props;
+const { src, alt, reverse = false, bleed = true, caption, height } = Astro.props;
 
-const bleed = reverse
-  ? "md:w-[calc(100%+4rem)] md:-ml-16 xl:w-[calc(100%+7rem)] xl:-ml-28"
-  : "md:w-[calc(100%+8rem)] xl:w-[calc(100%+14rem)]";
-const border = bordered ? "border border-border" : "";
-const depth = shadow ? "shadow-md" : "";
+const bleedClass = !bleed
+  ? ""
+  : reverse
+    ? "md:w-[calc(100%+4rem)] md:-ml-16 xl:w-[calc(100%+7rem)] xl:-ml-28"
+    : "md:w-[calc(100%+8rem)] xl:w-[calc(100%+14rem)]";
 ---
-<Image
-  src={src}
-  alt={alt}
-  widths={[900, 1200, 1800, 2400]}
-  sizes="(min-width: 768px) 850px, 100vw"
-  format="webp"
-  quality={95}
-  loading="lazy"
-  decoding="async"
-  class:list={["block h-auto w-full max-w-none rounded-xl", bleed, border, depth]}
-/>
+<figure class:list={["relative m-0", bleedClass]}>
+  <div
+    class="feature-media-glow pointer-events-none absolute inset-x-8 top-10 -bottom-4 -z-10"
+    aria-hidden="true"
+  >
+  </div>
+  <div class:list={[height]}>
+    <Image
+      src={src}
+      alt={alt}
+      widths={[900, 1200, 1800, 2400]}
+      sizes="(min-width: 768px) 850px, 100vw"
+      format="webp"
+      quality={95}
+      loading="lazy"
+      decoding="async"
+      class:list={[
+        "feature-media-img block max-w-none",
+        height ? "h-full w-full object-contain" : "h-auto w-full",
+      ]}
+    />
+  </div>
+  {/* Reverse bleed pulls the figure off the viewport edge — push the
+      caption back so its text stays inside the column. */}
+  {caption && (
+    <figcaption class:list={["media-caption", bleed && reverse && "md:ml-16 xl:ml-28"]}>
+      {caption}
+    </figcaption>
+  )}
+</figure>

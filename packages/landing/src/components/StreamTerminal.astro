@@ -1,0 +1,150 @@
+---
+/**
+ * The "raw harness" side of the stream comparison: the exact same agent
+ * turn as the CadencR capture next to it, rendered the way a CLI harness
+ * prints it in a terminal. Real text, no screenshot — it scales with its
+ * container (cqw units) so both slider layers always line up.
+ */
+type Seg = [cls: string | null, text: string];
+
+const lines: Seg[][] = [
+  [["d", "> "], ["t", "Add a dark mode toggle to the site header — persist the choice and follow the OS theme."]],
+  [],
+  [["i", "✻ Thinking…"]],
+  [],
+  [["i", "  There's a ThemeProvider I can extend and the header has an action bar. I'll add a toggle,"]],
+  [["i", "  persist to localStorage, and reflect the theme on <html>."]],
+  [],
+  [["g", "⏺ "], ["w", "Bash"], ["t", "(git diff --stat)"]],
+  [["d", "  ⎿  apps/web/src/components/Header.tsx      |  2 "], ["t", "+"]],
+  [["d", "     apps/web/src/components/ThemeToggle.tsx | 18 "], ["t", "++++++++++++++++++"]],
+  [["d", "     apps/web/src/theme/ThemeProvider.tsx    | 17 "], ["t", "++++++++++++++---"]],
+  [["d", "     apps/web/src/theme/theme-tokens.css     | 16 "], ["t", "++++++++++++++++"]],
+  [["d", "     4 files changed, 52 insertions(+), 1 deletion(-)"]],
+  [],
+  [["g", "⏺ "], ["w", "Update"], ["t", "(apps/web/src/theme/ThemeProvider.tsx)"]],
+  [["d", "  ⎿  Updated apps/web/src/theme/ThemeProvider.tsx with 2 additions and 1 removal"]],
+  [["d", "     12 "], ["r", '-    const [theme, setTheme] = useState<Theme>("light");']],
+  [["d", "     12 "], ["g", "+    const systemTheme = useSystemTheme();"]],
+  [["d", "     13 "], ["g", "+    const [theme, setTheme] = useState<Theme>(() => readStoredTheme() ?? systemTheme);"]],
+  [],
+  [["w", "⏺ "], ["t", "Wired the toggle into the header, just before the user menu."]],
+  [],
+  [["w", "⏺ Dark mode toggle — shipped"]],
+  [],
+  [["t", "  An OS-aware theme system wired into the header. The choice persists to "], ["c", "localStorage"], ["t", " and"]],
+  [["t", "  is reflected on "], ["c", "<html data-theme>"], ["t", "."]],
+  [],
+  [["w", "  Usage"]],
+  [],
+  [["d", "  ```tsx"]],
+  [["t", '  import { useTheme } from "@/theme/ThemeProvider";']],
+  [],
+  [["t", "  export function ThemeToggle() {"]],
+  [["t", "    const { theme, toggle } = useTheme();"]],
+  [["t", '    return <button onClick={toggle}>{theme === "dark" ? "🌙" : "☀️"}</button>;']],
+  [["t", "  }"]],
+  [["d", "  ```"]],
+  [],
+  [["w", "  What changed"]],
+  [],
+  [["t", "  | File                       | Change                         | +/−      |"]],
+  [["d", "  | -------------------------- | ------------------------------ | -------- |"]],
+  [["t", "  | theme/ThemeProvider.tsx    | OS-aware default + persistence | +14 / −3 |"]],
+  [["t", "  | components/ThemeToggle.tsx | New sun/moon header control    | +18      |"]],
+  [["t", "  | components/Header.tsx      | Mount the toggle               | +2       |"]],
+  [["t", "  | theme/theme-tokens.css     | Dark palette tokens            | +16      |"]],
+  [],
+  [["t", "  Theme tests pass ("], ["w", "5 / 5"], ["t", ")."]],
+];
+
+// One flat segment list with explicit newlines — keeps the template to a
+// single map() instead of nested JSX the compiler chokes on.
+const segments: Seg[] = lines.flatMap((segs) => [...segs, [null, "\n"]]);
+---
+<div class="term-wrap h-full w-full">
+  <div class="term flex h-full w-full flex-col">
+    <div class="term-bar relative flex shrink-0 items-center">
+      <span class="dot" style="--c: #ff5f57"></span>
+      <span class="dot" style="--c: #febc2e"></span>
+      <span class="dot" style="--c: #28c840"></span>
+    </div>
+    <div class="term-scroll flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
+      <pre class="term-pre">{segments.map(([cls, text]) => (cls ? <span class={cls}>{text}</span> : text))}</pre>
+    </div>
+    <div class="term-foot shrink-0">
+      <div class="term-input"><span class="d">&gt;</span><span class="caret" aria-hidden="true"></span></div>
+      <div class="term-status flex justify-between">
+        <span>? for shortcuts</span>
+        <span>context left until auto-compact: 41%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Everything is sized in cqw off the slider frame's width so the fake
+     terminal keeps its proportions at any breakpoint, mirroring how the
+     screenshot layer scales. Colors are a deliberate stock-terminal
+     palette (tokyonight-ish), NOT brand tokens — this is a terminal. */
+  .term-wrap {
+    container-type: inline-size;
+  }
+  .term {
+    background: #101116;
+    color: #b6bcc9;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 1.48cqw;
+    line-height: 1.5;
+  }
+  .term-bar {
+    gap: 0.55em;
+    height: 3em;
+    padding: 0 1.2em;
+    background: #1a1c24;
+    border-bottom: 1px solid #262833;
+  }
+  .dot {
+    width: 0.85em;
+    height: 0.85em;
+    border-radius: 9999px;
+    background: var(--c);
+  }
+  .term-pre {
+    margin: 0;
+    padding: 1.1em 1.5em 0.6em;
+    font: inherit;
+    white-space: pre;
+  }
+  .term-foot {
+    padding: 0.3em 1.5em 1em;
+  }
+  .term-input {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding: 0.5em 0.8em;
+    border: 1px solid #2c2f3c;
+    border-radius: 0.45em;
+  }
+  .caret {
+    width: 0.55em;
+    height: 1.05em;
+    background: #b6bcc9;
+    animation: blink 1.1s step-end infinite;
+  }
+  .term-status {
+    margin-top: 0.5em;
+    font-size: 0.92em;
+    color: #565c6e;
+  }
+
+  /* ANSI-ish text roles */
+  .t { color: #b6bcc9; }
+  .d { color: #697086; }
+  .w { color: #e8ebf2; font-weight: 600; }
+  .i { color: #697086; font-style: italic; }
+  .g { color: #9ece6a; }
+  .r { color: #f7768e; }
+  .c { color: #7dcfff; }
+</style>

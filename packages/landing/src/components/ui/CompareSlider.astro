@@ -1,0 +1,115 @@
+---
+/**
+ * Draggable comparison between two same-size layers (slots `left` and
+ * `right` — images or arbitrary markup). The left layer sits on top,
+ * clipped to the handle position (--pos); an invisible full-size range
+ * input drives it, so mouse, touch, and keyboard all work without any
+ * framework code.
+ */
+interface Props {
+  /** Frame aspect ratio, e.g. "2058/2595". */
+  aspect: string;
+  leftLabel: string;
+  rightLabel: string;
+}
+
+const { aspect, leftLabel, rightLabel } = Astro.props;
+---
+<div
+  class="compare media-frame relative overflow-hidden rounded-xl border border-border/70 bg-sidebar shadow-xl shadow-black/35"
+  style={`aspect-ratio: ${aspect}`}
+  data-compare
+>
+  <div class="absolute inset-0"><slot name="right" /></div>
+  <div class="compare-top absolute inset-0"><slot name="left" /></div>
+
+  <span class="compare-label absolute bottom-3 left-3 z-10">{leftLabel}</span>
+  <span class="compare-label absolute right-3 bottom-3 z-10">{rightLabel}</span>
+
+  <div class="compare-divider pointer-events-none absolute inset-y-0 z-10" aria-hidden="true"></div>
+  <div class="compare-handle pointer-events-none absolute z-10" aria-hidden="true">
+    <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 1 1 5l3 4" />
+      <path d="m10 1 3 4-3 4" />
+    </svg>
+  </div>
+
+  <input
+    type="range"
+    min="0"
+    max="100"
+    step="0.1"
+    value="50"
+    aria-label={`Drag to compare: ${leftLabel} versus ${rightLabel}`}
+  />
+</div>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-compare]")) {
+    const range = root.querySelector<HTMLInputElement>("input[type=range]");
+    if (!range) continue;
+    const update = () => root.style.setProperty("--pos", `${range.value}%`);
+    range.addEventListener("input", update);
+    update();
+  }
+</script>
+
+<style>
+  .compare {
+    --pos: 50%;
+    cursor: ew-resize;
+  }
+  .compare-top {
+    clip-path: inset(0 calc(100% - var(--pos)) 0 0);
+  }
+  .compare-label {
+    padding: 3px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--color-background) 72%, transparent);
+    backdrop-filter: blur(8px);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in oklch, var(--color-foreground) 85%, transparent);
+  }
+  .compare-divider {
+    left: var(--pos);
+    width: 1px;
+    transform: translateX(-50%);
+    background: color-mix(in oklch, var(--sec-accent, var(--color-foreground)) 70%, transparent);
+    box-shadow: 0 0 12px color-mix(in oklch, var(--sec-accent, var(--color-foreground)) 50%, transparent);
+  }
+  .compare-handle {
+    left: var(--pos);
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid color-mix(in oklch, var(--sec-accent, var(--color-border)) 55%, var(--color-border));
+    border-radius: 9999px;
+    background: color-mix(in oklch, var(--color-background) 80%, transparent);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.45);
+    color: color-mix(in oklch, var(--color-foreground) 90%, transparent);
+  }
+  .compare input[type="range"] {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: ew-resize;
+    /* Keep vertical page scroll working on touch; horizontal drags the slider. */
+    touch-action: pan-y;
+  }
+  .compare:has(input:focus-visible) .compare-handle {
+    outline: 2px solid var(--sec-accent, var(--color-primary));
+    outline-offset: 2px;
+  }
+</style>

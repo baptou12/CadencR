@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/figtree";
+@import "./docs.css";
 
 @theme {
   --font-sans:
@@ -88,13 +89,194 @@
   /* Reusable patterns that need ::before / ::after or complex backgrounds.
      Simple layout/color is done with Tailwind utilities directly in markup. */
 
+  /* Eyebrow dot + text pick up the section accent when a section sets
+     --sec-accent; they fall back to the neutral muted tone elsewhere. */
+  .eyebrow {
+    color: color-mix(
+      in oklch,
+      var(--sec-accent, var(--color-muted-foreground)) 55%,
+      var(--color-muted-foreground)
+    );
+  }
   .eyebrow::before {
     content: "";
     display: inline-block;
     width: 5px;
     height: 5px;
     border-radius: 9999px;
-    background: var(--color-muted-foreground);
+    background: var(--sec-accent, var(--color-muted-foreground));
+    box-shadow: 0 0 0 3px
+      color-mix(in oklch, var(--sec-accent, var(--color-muted-foreground)) 18%, transparent);
+  }
+
+  /* Section divider — the same construction everywhere: a neutral hairline
+     fading at the edges, a short accent-tinted core, and a small glowing
+     diamond node at dead center. Sections express their accent only through
+     the core + node, so every boundary reads as one system. Accent-less
+     sections fall back to purple so the node always glows. */
+  .sec-divider {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(1160px, 94%);
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--color-border) 90%, transparent) 22% 78%,
+      transparent
+    );
+  }
+  .sec-divider::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+    width: 220px;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--sec-accent, var(--color-drac-purple)) 65%, transparent),
+      transparent
+    );
+  }
+  .sec-divider::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: color-mix(
+      in oklch,
+      var(--sec-accent, var(--color-drac-purple)) 85%,
+      var(--color-background)
+    );
+    box-shadow: 0 0 10px
+      color-mix(in oklch, var(--sec-accent, var(--color-drac-purple)) 60%, transparent);
+  }
+
+  /* Ambient accent wash behind a feature section's media column. */
+  .sec-glow {
+    inset: 0;
+    background: radial-gradient(
+      42% 58% at var(--gx, 76%) 52%,
+      color-mix(in oklch, var(--sec-accent, var(--color-primary)) 12%, transparent),
+      transparent 72%
+    );
+    filter: blur(44px);
+  }
+  .sec-glow-left {
+    --gx: 24%;
+  }
+  .sec-glow-right {
+    --gx: 76%;
+  }
+
+  /* Screenshot staging: a contour-following shadow (drop-shadow respects the
+     window PNG's rounded corners / transparency) plus a soft accent halo.
+     Kept light — the captures already bake in the macOS window shadow. */
+  .feature-media-img {
+    filter: drop-shadow(0 14px 28px rgb(0 0 0 / 0.28));
+  }
+  .feature-media-glow {
+    background: radial-gradient(
+      52% 62% at 50% 45%,
+      color-mix(in oklch, var(--sec-accent, var(--color-primary)) 22%, transparent),
+      transparent 72%
+    );
+    filter: blur(52px);
+  }
+
+  /* Framed screenshot crop: shared top light + hover lift, tinted by the
+     section accent. Layout utilities stay in markup; only the pseudo-element
+     and interaction live here so every frame behaves identically. */
+  .media-frame {
+    transition:
+      transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+  .media-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    z-index: 1;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--sec-accent, var(--color-foreground)) 45%, transparent),
+      transparent
+    );
+  }
+  .media-frame:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(
+      in oklch,
+      var(--sec-accent, var(--color-border)) 35%,
+      var(--color-border)
+    );
+    box-shadow:
+      0 20px 45px rgb(0 0 0 / 0.4),
+      0 0 40px color-mix(in oklch, var(--sec-accent, transparent) 12%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .media-frame,
+    .media-frame:hover {
+      transform: none;
+    }
+  }
+
+  /* Small mono caption under a media frame — accent tick + muted label. */
+  .media-caption {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in oklch, var(--color-muted-foreground) 80%, transparent);
+  }
+  .media-caption::before {
+    content: "";
+    width: 12px;
+    height: 1px;
+    background: color-mix(
+      in oklch,
+      var(--sec-accent, var(--color-muted-foreground)) 75%,
+      transparent
+    );
+  }
+
+  /* Scroll-reveal. The inline script in BaseLayout tags <html> with .js, so
+     content stays visible when JavaScript is unavailable. */
+  .js .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition:
+      opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .js .reveal-late {
+    transition-delay: 0.12s;
+  }
+  .js .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .js .reveal {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
   }
 
   /* Bullet list with checkmark icon */
@@ -164,142 +346,6 @@
     border-radius: 9999px;
     display: inline-block;
     background: currentColor;
-  }
-
-  /* Prose styling for MDX/docs content */
-  .prose {
-    max-width: 720px;
-    font-size: 14.5px;
-    line-height: 1.7;
-    color: color-mix(in oklch, var(--color-foreground) 90%, transparent);
-  }
-  .prose h1,
-  .prose h2,
-  .prose h3 {
-    color: var(--color-foreground);
-    letter-spacing: -0.01em;
-    margin: 1.6em 0 0.6em;
-    font-weight: 600;
-  }
-  .prose h1 {
-    font-size: 26px;
-  }
-  .prose h2 {
-    font-size: 20px;
-  }
-  .prose h3 {
-    font-size: 16px;
-  }
-  .prose p {
-    margin: 0.8em 0;
-  }
-  .prose a {
-    color: var(--color-drac-purple);
-    text-decoration: underline;
-    text-decoration-color: color-mix(in oklch, var(--color-drac-purple) 45%, transparent);
-    text-underline-offset: 3px;
-  }
-  .prose code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.9em;
-    background: color-mix(in oklch, var(--color-muted) 35%, transparent);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    padding: 1px 5px;
-  }
-  .prose pre {
-    background: var(--color-drac-bg);
-    color: var(--color-drac-fg);
-    padding: 14px 16px;
-    border-radius: 10px;
-    overflow: auto;
-    font-size: 12.5px;
-  }
-  .prose ul,
-  .prose ol {
-    padding-left: 1.4em;
-  }
-  .prose li {
-    margin: 0.3em 0;
-  }
-  .prose table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13.5px;
-    margin: 1.2em 0;
-    overflow: hidden;
-    border-radius: 12px;
-    border: 1px solid var(--color-border);
-  }
-  .prose thead {
-    background: color-mix(in oklch, var(--color-muted) 35%, transparent);
-  }
-  .prose th,
-  .prose td {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--color-border);
-    text-align: left;
-    vertical-align: top;
-  }
-  .prose tbody tr:last-child td {
-    border-bottom: none;
-  }
-  .prose hr {
-    border: none;
-    border-top: 1px solid var(--color-border);
-    margin: 2em 0;
-  }
-  .prose blockquote {
-    margin: 1.2em 0;
-    padding: 0.9em 1em;
-    border-left: 3px solid var(--color-primary);
-    background: color-mix(in oklch, var(--color-muted) 22%, transparent);
-    color: color-mix(in oklch, var(--color-foreground) 88%, transparent);
-    border-radius: 0 12px 12px 0;
-  }
-  .doc-card {
-    box-shadow: var(--shadow-xs);
-  }
-
-  /* Keyboard shortcut chip.
-     Mirrors the desktop app's KbdShortcut "modal" variant so a docs
-     shortcut looks the same as the in-app shortcuts modal. Sized at
-     the desktop's full-size "inline"/"modal" scale (not the compact
-     "sm" one) so the chips read as proper keys in marketing-density
-     prose. Applied to both the <Kbd> Astro component (.doc-kbd) and
-     any raw <kbd> in MDX prose. */
-  .doc-kbd,
-  .prose kbd {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    height: 24px;
-    padding: 0 8px;
-    border: 1px solid var(--color-border);
-    border-bottom-width: 2px;
-    border-radius: var(--radius-sm);
-    background: color-mix(in oklch, var(--color-sidebar) 88%, var(--color-foreground) 4%);
-    color: var(--color-foreground);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 1;
-    letter-spacing: 0.01em;
-    box-shadow:
-      0 1px 0 0 rgb(0 0 0 / 0.35),
-      inset 0 1px 0 0 color-mix(in oklch, var(--color-foreground) 6%, transparent);
-    vertical-align: middle;
-    white-space: nowrap;
-  }
-  /* Inline SVG glyphs inside a kbd chip (e.g. the Shift arrow-up icon)
-     match the chip's text size and inherit its color. */
-  .doc-kbd svg,
-  .prose kbd svg {
-    width: 12px;
-    height: 12px;
-    display: inline-block;
-    vertical-align: middle;
   }
 }
 
