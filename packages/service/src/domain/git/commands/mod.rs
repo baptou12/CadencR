@@ -25,6 +25,7 @@ mod merge_ops;
 mod pty;
 mod pty_spawn;
 mod stash;
+mod untracked;
 mod util;
 mod worktree_ops;
 

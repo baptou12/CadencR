@@ -4,11 +4,11 @@
 
 use std::path::Path;
 
-use crate::domain::git::file_size::LARGE_FILE_BYTES;
 use crate::domain::git::models::GitStats;
 use crate::error::AppError;
 use crate::shared::git_cli::run_git_safe_refs;
 
+use super::untracked::{count_untracked_lines, synthesize_untracked_new_file_diff};
 use super::util::run_git_quiet;
 
 /// Parse git diff --stat summary line.
@@ -78,42 +78,6 @@ pub async fn get_stats(
     Ok(stats_unstaged)
 }
 
-/// Count the added lines of an untracked file for the stat total without
-/// holding it all in memory: reads in bounded chunks, sniffs the first 8 KB for
-/// a NUL byte to skip binaries (git's heuristic), and counts newlines plus a
-/// trailing unterminated line. `None` skips the file (unreadable or binary),
-/// matching how the diff endpoint treats untracked files.
-async fn count_untracked_lines(path: &Path) -> Option<u32> {
-    use tokio::io::AsyncReadExt;
-
-    let mut file = tokio::fs::File::open(path).await.ok()?;
-    let mut buf = [0u8; 64 * 1024];
-    let mut lines: u32 = 0;
-    let mut last_byte: Option<u8> = None;
-    let mut sniffed = false;
-    loop {
-        let n = file.read(&mut buf).await.ok()?;
-        if n == 0 {
-            break;
-        }
-        let chunk = &buf[..n];
-        if !sniffed {
-            let head = &chunk[..chunk.len().min(8192)];
-            if head.contains(&0) {
-                return None; // binary — skip, like the diff endpoint
-            }
-            sniffed = true;
-        }
-        lines += chunk.iter().filter(|&&b| b == b'\n').count() as u32;
-        last_byte = Some(chunk[n - 1]);
-    }
-    // A final line with no trailing newline still counts (matches `lines()`).
-    if last_byte.is_some_and(|b| b != b'\n') {
-        lines += 1;
-    }
-    Some(lines)
-}
-
 /// Get unified diff string.
 pub async fn get_diff(
     worktree_path: &Path,
@@ -141,8 +105,8 @@ pub async fn get_diff(
 
     // `git ls-files --others --exclude-standard` already filters gitignored
     // paths, so we never synthesize a diff for an ignored file. Each remaining
-    // untracked file is bounded per-file (see below) so a giant generated file
-    // can't blow up the aggregate response.
+    // untracked file is bounded per-file (see `untracked`) so a giant generated
+    // file can't blow up the aggregate response.
     for file in untracked_list.trim().lines().filter(|l| !l.is_empty()) {
         if let Some(block) = synthesize_untracked_new_file_diff(worktree_path, file).await {
             result.push_str(&block);
@@ -150,52 +114,6 @@ pub async fn get_diff(
     }
 
     Ok(result)
-}
-
-/// Build the synthetic "new file" unified diff for a single untracked file,
-/// bounding the cost: a file at or above [`LARGE_FILE_BYTES`] is represented by
-/// a short placeholder instead of being read fully into memory and inlined
-/// (the diff view gates such files behind a placeholder anyway, and shipping +
-/// JSON-parsing a multi-MB string on the main thread is the exact storm we're
-/// avoiding). Non-UTF-8 (binary) files under the threshold are skipped, which
-/// matches the previous behaviour. Returns `None` when nothing should be
-/// emitted for the file (unreadable or binary).
-async fn synthesize_untracked_new_file_diff(worktree_path: &Path, file: &str) -> Option<String> {
-    let full_path = worktree_path.join(file);
-    let metadata = tokio::fs::metadata(&full_path).await.ok()?;
-    if metadata.len() >= LARGE_FILE_BYTES {
-        let size = format_bytes(metadata.len());
-        return Some(format!(
-            "diff --git a/{file} b/{file}\nnew file mode 100644\n--- /dev/null\n+++ b/{file}\n@@ -0,0 +1,1 @@\n+(untracked file too large to display inline: {size} — open it from the editor)\n"
-        ));
-    }
-
-    let content = tokio::fs::read_to_string(&full_path).await.ok()?;
-    let mut lines: Vec<&str> = content.split('\n').collect();
-    if lines.last() == Some(&"") {
-        lines.pop();
-    }
-    let line_count = lines.len();
-    let added_lines: String = lines
-        .iter()
-        .map(|l| format!("+{l}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    Some(format!(
-        "diff --git a/{file} b/{file}\nnew file mode 100644\n--- /dev/null\n+++ b/{file}\n@@ -0,0 +1,{line_count} @@\n{added_lines}\n"
-    ))
-}
-
-/// Human-readable byte count for placeholder messages. Mirrors the frontend's
-/// `formatBytes` (`lib/diff-thresholds.ts`) so the two read the same.
-fn format_bytes(n: u64) -> String {
-    if n < 1024 {
-        format!("{n} B")
-    } else if n < 1024 * 1024 {
-        format!("{:.1} KB", n as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
-    }
 }
 
 /// Get the diff for a specific commit.
@@ -232,104 +150,5 @@ mod tests {
         assert_eq!(stats.files_changed, 1);
         assert_eq!(stats.insertions, 10);
         assert_eq!(stats.deletions, 0);
-    }
-
-    #[tokio::test]
-    async fn synthesize_small_untracked_file_inlines_full_content() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("hello.txt"), "line1\nline2\n").unwrap();
-
-        let block = synthesize_untracked_new_file_diff(dir.path(), "hello.txt")
-            .await
-            .expect("small file is synthesized");
-        assert!(block.contains("diff --git a/hello.txt b/hello.txt"));
-        assert!(block.contains("@@ -0,0 +1,2 @@"));
-        assert!(block.contains("+line1"));
-        assert!(block.contains("+line2"));
-    }
-
-    #[tokio::test]
-    async fn synthesize_large_untracked_file_is_capped_not_inlined() {
-        let dir = tempfile::tempdir().unwrap();
-        // A file comfortably past the large-file threshold.
-        let big = "x\n".repeat(LARGE_FILE_BYTES as usize); // ~2x threshold in bytes
-        std::fs::write(dir.path().join("big.log"), &big).unwrap();
-
-        let block = synthesize_untracked_new_file_diff(dir.path(), "big.log")
-            .await
-            .expect("large file still appears in the diff");
-        // The file is present in the list…
-        assert!(block.contains("diff --git a/big.log b/big.log"));
-        // …but its content is NOT inlined — the block is a bounded placeholder,
-        // not a multi-MB string of `+x` lines.
-        assert!(block.contains("too large to display inline"));
-        assert!(
-            block.len() < LARGE_FILE_BYTES as usize,
-            "capped block must be far smaller than the file ({} bytes)",
-            block.len()
-        );
-        assert!(
-            !block.contains("+x\n+x"),
-            "large content must not be inlined"
-        );
-    }
-
-    #[tokio::test]
-    async fn synthesize_binary_untracked_file_is_skipped() {
-        let dir = tempfile::tempdir().unwrap();
-        // Small but non-UTF-8: read_to_string fails, so it's skipped (parity
-        // with the previous behaviour — binary untracked files aren't inlined).
-        std::fs::write(dir.path().join("blob.bin"), [0u8, 159, 146, 150]).unwrap();
-
-        let block = synthesize_untracked_new_file_diff(dir.path(), "blob.bin").await;
-        assert!(block.is_none());
-    }
-
-    #[test]
-    fn format_bytes_reads_like_the_frontend() {
-        assert_eq!(format_bytes(512), "512 B");
-        assert_eq!(format_bytes(2048), "2.0 KB");
-        assert_eq!(format_bytes(3 * 1024 * 1024), "3.0 MB");
-    }
-
-    #[tokio::test]
-    async fn count_untracked_lines_matches_lines_semantics() {
-        let dir = tempfile::tempdir().unwrap();
-        let cases = [
-            ("trailing.txt", "a\nb\n", 2),  // trailing newline: 2 lines
-            ("no_trailing.txt", "a\nb", 2), // final unterminated line counts
-            ("single.txt", "a", 1),         // one line, no newline
-            ("just_newline.txt", "\n", 1),  // one (empty) line
-            ("empty.txt", "", 0),           // empty file: 0
-        ];
-        for (name, content, expected) in cases {
-            std::fs::write(dir.path().join(name), content).unwrap();
-            let got = count_untracked_lines(&dir.path().join(name)).await;
-            assert_eq!(got, Some(expected), "line count for {name:?} ({content:?})");
-        }
-    }
-
-    #[tokio::test]
-    async fn count_untracked_lines_skips_binaries() {
-        let dir = tempfile::tempdir().unwrap();
-        // NUL byte in the first 8 KB → treated as binary and skipped.
-        std::fs::write(dir.path().join("blob.bin"), b"abc\0def\n").unwrap();
-        assert_eq!(
-            count_untracked_lines(&dir.path().join("blob.bin")).await,
-            None
-        );
-    }
-
-    #[tokio::test]
-    async fn count_untracked_lines_streams_multichunk_files() {
-        let dir = tempfile::tempdir().unwrap();
-        // Larger than the 64 KB read buffer to exercise the streaming loop and
-        // cross-chunk newline counting. 100_000 lines of "x\n".
-        let content = "x\n".repeat(100_000);
-        std::fs::write(dir.path().join("many.txt"), &content).unwrap();
-        assert_eq!(
-            count_untracked_lines(&dir.path().join("many.txt")).await,
-            Some(100_000)
-        );
     }
 }
