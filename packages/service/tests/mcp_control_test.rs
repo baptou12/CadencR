@@ -44,16 +44,12 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(
-        session,
-        (
-            feature_id,
-            "paused".into(),
-            "claude_code".into(),
-            "opus".into(),
-            "default".into()
-        )
-    );
+    assert_eq!(session.0, feature_id);
+    assert_eq!(session.1, "paused");
+    assert_eq!(session.2, "claude_code");
+    assert_ne!(session.3, "Opus");
+    assert!(session.3.to_ascii_lowercase().contains("opus"));
+    assert_eq!(session.4, "default");
     let worktree_base: String = sqlx::query_scalar(
         "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_base_branch'",
     )

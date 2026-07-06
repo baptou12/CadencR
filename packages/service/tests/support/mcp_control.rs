@@ -171,6 +171,20 @@ pub fn spawn_request_with_optional_provider_model(
     provider: Option<&str>,
     model: &str,
 ) -> Request<Body> {
+    spawn_request_with_optional_provider_optional_model(
+        branch,
+        link_to_current_session,
+        provider,
+        Some(model),
+    )
+}
+
+pub fn spawn_request_with_optional_provider_optional_model(
+    branch: Value,
+    link_to_current_session: bool,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> Request<Body> {
     let body = json!({
         "source_feature_id": 42,
         "source_session_id": 777,

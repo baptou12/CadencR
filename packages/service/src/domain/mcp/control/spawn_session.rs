@@ -8,7 +8,9 @@ use crate::domain::agents::codex::{
     canonical_access_mode_wire, configured_access_mode as configured_codex_access_mode,
     PROVIDER_ID as CODEX_PROVIDER_ID,
 };
-use crate::domain::agents::providers::{resolve_effective_provider, validate_provider_model};
+use crate::domain::agents::providers::{
+    canonical_model_or_error, canonical_provider_or_error, resolve_effective_provider,
+};
 use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::features::service::create_feature_with_worktree;
@@ -36,6 +38,13 @@ struct SpawnBranch {
     mode: Option<String>,
     base: Option<String>,
     reuse_branch: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SpawnRuntimeSelection {
+    provider: Option<String>,
+    model: Option<String>,
+    effective_provider: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,12 +78,15 @@ pub(super) async fn spawn_session_handler(
                 return Err(error);
             }
         };
-    if let Err(error) = validate_spawn_model(&state, &source, &body).await {
-        let message = error.to_string();
-        audit_spawn_error(&state, &source, &message, started_at).await?;
-        return Err(error);
-    }
-    let codex_permission_mode = match codex_permission_mode_for_spawn(&state, &source, &body).await
+    let runtime = match resolve_spawn_runtime(&state, &source, &body).await {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let message = error.to_string();
+            audit_spawn_error(&state, &source, &message, started_at).await?;
+            return Err(error);
+        }
+    };
+    let codex_permission_mode = match codex_permission_mode_for_spawn(&state, &runtime, &body).await
     {
         Ok(mode) => mode,
         Err(error) => {
@@ -94,8 +106,14 @@ pub(super) async fn spawn_session_handler(
     )
     .await?;
 
-    let session_id =
-        insert_spawned_session(&state, created.id, &body, codex_permission_mode.as_deref()).await?;
+    let session_id = insert_spawned_session(
+        &state,
+        created.id,
+        &body,
+        &runtime,
+        codex_permission_mode.as_deref(),
+    )
+    .await?;
     let message_id = insert_initial_message(&state, &source, session_id, &body).await?;
     if body.link_to_current_session.unwrap_or(true) {
         insert_spawn_link(
@@ -182,14 +200,7 @@ fn branch_worktree_settings(
             )))
         }
     };
-    if worktree_mode == "reuse"
-        && branch
-            .reuse_branch
-            .as_deref()
-            .unwrap_or("")
-            .trim()
-            .is_empty()
-    {
+    if worktree_mode == "reuse" && trimmed_optional(branch.reuse_branch.as_deref()).is_none() {
         return Err(AppError::BadRequest(
             "branch.reuse_branch is required for reuse_worktree".to_string(),
         ));
@@ -206,24 +217,43 @@ fn branch_worktree_settings(
     ))
 }
 
-async fn validate_spawn_model(
+async fn resolve_spawn_runtime(
     state: &AppState,
     source: &super::scope::SessionScope,
     body: &SpawnSessionRequest,
-) -> Result<(), AppError> {
-    let Some(model) = trimmed_optional(body.model.as_deref()) else {
-        return Ok(());
+) -> Result<SpawnRuntimeSelection, AppError> {
+    let provider = trimmed_optional(body.provider.as_deref())
+        .map(|provider| canonical_provider_or_error(&provider))
+        .transpose()
+        .map_err(|error| AppError::BadRequest(error.to_string()))?;
+    let effective_provider = match &provider {
+        Some(provider) => provider.clone(),
+        None => {
+            let raw_provider = effective_spawn_provider(state, source, body).await;
+            canonical_provider_or_error(&raw_provider)
+                .map_err(|error| AppError::BadRequest(error.to_string()))?
+        }
     };
-    let provider = effective_spawn_provider(state, source, body).await;
-    validate_provider_model(&state.read_pool, &provider, &model)
-        .await
-        .map_err(|error| AppError::BadRequest(error.to_string()))
+    let model = match trimmed_optional(body.model.as_deref()) {
+        Some(model) => Some(
+            canonical_model_or_error(&state.read_pool, &effective_provider, &model)
+                .await
+                .map_err(|error| AppError::BadRequest(error.to_string()))?,
+        ),
+        None => None,
+    };
+    Ok(SpawnRuntimeSelection {
+        provider,
+        model,
+        effective_provider,
+    })
 }
 
 async fn insert_spawned_session(
     state: &AppState,
     feature_id: i64,
     body: &SpawnSessionRequest,
+    runtime: &SpawnRuntimeSelection,
     codex_permission_mode: Option<&str>,
 ) -> Result<i64, AppError> {
     let now = chrono::Utc::now().to_rfc3339();
@@ -234,8 +264,8 @@ async fn insert_spawned_session(
          RETURNING id",
     )
     .bind(feature_id)
-    .bind(trimmed_optional(body.provider.as_deref()))
-    .bind(trimmed_optional(body.model.as_deref()))
+    .bind(runtime.provider.as_deref())
+    .bind(runtime.model.as_deref())
     .bind(trimmed_optional(body.permission_mode.as_deref()))
     .bind(codex_permission_mode)
     .bind(now)
@@ -245,11 +275,10 @@ async fn insert_spawned_session(
 
 async fn codex_permission_mode_for_spawn(
     state: &AppState,
-    source: &super::scope::SessionScope,
+    runtime: &SpawnRuntimeSelection,
     body: &SpawnSessionRequest,
 ) -> Result<Option<String>, AppError> {
-    let provider = effective_spawn_provider(state, source, body).await;
-    if provider != CODEX_PROVIDER_ID {
+    if runtime.effective_provider != CODEX_PROVIDER_ID {
         return Ok(None);
     }
     if let Some(raw_mode) = trimmed_optional(body.codex_permission_mode.as_deref()) {

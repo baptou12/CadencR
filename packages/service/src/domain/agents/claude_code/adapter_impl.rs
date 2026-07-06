@@ -50,6 +50,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         }
     }
 
+    fn canonicalize_model_id(&self, model_id: &str, catalog: &[ModelCatalogEntry]) -> String {
+        super::model_alias::resolve_model_alias(model_id, catalog)
+    }
+
     fn spawn_startup_warmup(&self) {
         tokio::spawn(async {
             let _ = CLAUDE_CODE_ADAPTER.load_models().await;
