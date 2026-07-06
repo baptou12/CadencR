@@ -5,11 +5,16 @@ directories:
   output: dist-electron
 files:
   - out/**/*
+  # The built SPA ships once, as extraResources `renderer/` below. Excluding it
+  # from the asar avoids a ~44 MB duplicate; the packaged window loads it from
+  # `process.resourcesPath/renderer` (see `rendererLoadUrl`).
+  - "!out/renderer/**"
   - package.json
 extraResources:
   - from: resources/bin/cadencr-service
     to: cadencr-service
-  # The built SPA on the real filesystem, served over the remote listener.
+  # The built SPA on the real filesystem — loaded directly by the packaged
+  # window and served over the remote listener.
   - from: out/renderer
     to: renderer
 mac:

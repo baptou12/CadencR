@@ -84,13 +84,23 @@ function productionBinaryPath(): string {
 }
 
 /**
- * Built SPA directory on the real filesystem (copied via `extraResources`), so
- * the service can serve it over the remote listener. The window itself still
- * loads the asar copy — this is the readable mirror for the Rust process.
- * `null` if it's somehow missing, in which case remote serving stays disabled.
+ * Absolute path to the built SPA on the real filesystem, copied via
+ * `extraResources` (the renderer is excluded from the asar to avoid a
+ * duplicate, and the Rust sidecar can't read an asar anyway). Shared by both
+ * the packaged window (see `rendererLoadUrl`) and the sidecar's
+ * `--renderer-dir` remote listener. Must match the electron-builder `to:
+ * renderer` mapping.
+ */
+export function packagedRendererDir(): string {
+  return path.join(process.resourcesPath, "renderer");
+}
+
+/**
+ * `packagedRendererDir()` when it actually holds the SPA, else `null` — in
+ * which case remote serving over the listener stays disabled.
  */
 function productionRendererDir(): string | null {
-  const dir = path.join(process.resourcesPath, "renderer");
+  const dir = packagedRendererDir();
   return fs.existsSync(path.join(dir, "index.html")) ? dir : null;
 }
 
