@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
-import { apiErrorMessage } from "@/lib/api-errors";
 import {
   scheduleReconnect,
   resetReconnectState,
@@ -19,7 +18,6 @@ import {
   type GateCloseReason,
   type PromptDispatchOptions,
   type WsEnvelope,
-  parseEnvelope,
   createEnvelope,
   createSessionInit,
   createPromptSend,
@@ -40,7 +38,6 @@ import {
 } from "@/lib/ws-envelope";
 import * as branch from "./ws-session-branch";
 import type { BranchDeps } from "./ws-session-branch";
-import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload } from "./ws-envelope-payload";
 import { buildClearedGatePatch, isGateClosingErrorCode } from "./ws-gate-state";
@@ -53,7 +50,6 @@ import {
   type PersistedStatePayload,
 } from "./ws-session-actions";
 import {
-  appendErrorBlockPatch,
   appendLocalUserMessage,
   makeErrorBlock,
   buildQueuedInitEnvelopes,
@@ -75,6 +71,8 @@ import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import { resyncMessagesOnReconnect } from "./ws-session-resync";
+import { discardStreamDeltas, flushStreamDeltas } from "./ws-delta-coalescer";
+import { handleSocketMessage, type SocketHandlerDeps } from "./ws-session-socket-handler";
 
 import { blocksPatchWithDerived } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
@@ -172,6 +170,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sendRequest: (sessionId, envelope) => get().sendRequest(sessionId, envelope),
   };
 
+  const socketDeps: SocketHandlerDeps = { ctx, flushQueuedInitActions };
+
   return {
     sessions: {},
     branchConfirm: null,
@@ -230,6 +230,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         },
         onClose: (intentional) => {
           if (intentional) return;
+          // Apply any buffered tokens before the "connection lost" error block
+          // so the transcript keeps them in order.
+          flushStreamDeltas(ctx, sessionId);
           const session = get().sessions[sessionId];
           if (session?.pendingWsRequests.size) {
             for (const cb of session.pendingWsRequests.values()) cb(null);
@@ -269,6 +272,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         },
         onError: (intentional) => {
           if (intentional) return;
+          flushStreamDeltas(ctx, sessionId);
           const session = get().sessions[sessionId];
           if (session?.pendingWsRequests.size) {
             for (const cb of session.pendingWsRequests.values()) cb(null);
@@ -291,50 +295,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             .reportSource(reconnectKey, "reconnecting", "Session WebSocket error");
           if (!intentional) scheduleReconnect(reconnectKey, () => get().connect(sessionId));
         },
-        onMessage: (data) => {
-          let envelope: WsEnvelope;
-          try {
-            envelope = parseEnvelope(data);
-          } catch (err) {
-            // Never drop silently: a discarded envelope can be a lost stream
-            // chunk, which shows up as text stopping mid-message with no clue.
-            // Surface it inline like the handleEnvelope failure path below.
-            console.warn("[ws-session] dropping unparseable envelope:", err);
-            const session = getSession(sessionId);
-            set(
-              updateSession(
-                get(),
-                sessionId,
-                appendErrorBlockPatch(
-                  session,
-                  "A streamed update from the agent was unreadable and could not be displayed. The transcript above may be incomplete.",
-                  { code: "UNPARSEABLE_ENVELOPE" },
-                ),
-              ),
-            );
-            return;
-          }
-          try {
-            handleEnvelope(ctx, sessionId, envelope);
-            if (envelope.domain === "session" && envelope.action === "initialized") {
-              flushQueuedInitActions(sessionId);
-            }
-          } catch (err) {
-            console.error("[ws-session] handleEnvelope error:", err);
-            const session = getSession(sessionId);
-            const errorBlock = makeErrorBlock(
-              session,
-              `Internal error: ${apiErrorMessage(err, "unknown")}`,
-            );
-            set(
-              updateSession(
-                get(),
-                sessionId,
-                blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
-              ),
-            );
-          }
-        },
+        onMessage: (data) => handleSocketMessage(socketDeps, sessionId, data),
       });
 
       set({
@@ -353,6 +314,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       clearReconnect(wsSessionSourceKey(sessionId));
       unregisterReconnector(wsSessionSourceKey(sessionId));
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
+      discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 
@@ -563,6 +525,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       clearReconnect(wsSessionSourceKey(sessionId));
       unregisterReconnector(wsSessionSourceKey(sessionId));
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
+      discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 

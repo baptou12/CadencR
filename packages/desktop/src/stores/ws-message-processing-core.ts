@@ -45,6 +45,20 @@ export interface StreamingState {
    * in-flight appends), so the repair runs once the turn ends.
    */
   tailRepairNeeded: boolean;
+  /**
+   * Bumped by `applyMutations` whenever it changes anything reachable from a
+   * root block (append, root ref replace, or an in-place child update). Lets the
+   * caller skip the O(N) `rootBlocks.slice()` snapshot when a delta touched
+   * nothing rootward. See `ws-block-mutations.ts`.
+   */
+  rootBlocksVersion: number;
+  /**
+   * Bumped whenever a `tool_result` block is recorded into `toolResultMap`.
+   * tool_result blocks are only ever appended (never updated in place), so this
+   * fully captures every change to the map — letting the caller skip the O(M)
+   * `new Map(...)` clone on the common text/tool-call-only delta.
+   */
+  toolResultMapVersion: number;
 }
 
 export interface ParserSignals {
@@ -74,6 +88,8 @@ export function createStreamingState(): StreamingState {
     toolResultMap: new Map(),
     lastMessageSeq: null,
     tailRepairNeeded: false,
+    rootBlocksVersion: 0,
+    toolResultMapVersion: 0,
   };
 }
 

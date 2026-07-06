@@ -82,8 +82,14 @@ vi.mock("../api/generated", () => ({
 }));
 
 vi.mock("@/stores/ws-session-store", () => ({
-  useWsSessionStore: vi.fn((selector: (s: { sessions: Record<string, unknown> }) => unknown) =>
-    selector({ sessions: {} }),
+  useWsSessionStore: Object.assign(
+    vi.fn((selector: (s: { sessions: Record<string, unknown> }) => unknown) =>
+      selector({ sessions: {} }),
+    ),
+    {
+      getState: () => ({ sessions: {} }),
+      subscribe: () => () => {},
+    },
   ),
 }));
 

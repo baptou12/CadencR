@@ -44,6 +44,7 @@ import {
   handleUsageUpdate,
 } from "./ws-envelope-turn-handlers";
 import { SESSION_ACTION, type SessionActionName } from "./ws-session-action-names";
+import { discardStreamDeltas } from "./ws-delta-coalescer";
 
 export type { StoreAccessors } from "./ws-envelope-types";
 
@@ -314,6 +315,7 @@ function handleCompactOk(ctx: StoreAccessors, sessionId: string): void {
 }
 
 function handleDeleted(ctx: StoreAccessors, sessionId: string): void {
+  discardStreamDeltas(sessionId);
   const del = ctx.get().sessions[sessionId];
   if (del?.conn) del.conn.close();
   const { [sessionId]: _, ...rest } = ctx.get().sessions;

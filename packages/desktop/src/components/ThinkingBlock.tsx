@@ -4,10 +4,12 @@ import { BrainIcon, ChevronRightIcon } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { useStreamingMarkdownThrottle } from "@/hooks/useStreamingMarkdownThrottle";
 
 interface ThinkingBlockProps {
   content: string;
   cacheKey?: string;
+  isStreaming?: boolean;
   expanded?: boolean;
   onExpandedChange?: (next: boolean) => void;
 }
@@ -15,11 +17,14 @@ interface ThinkingBlockProps {
 export const ThinkingBlock = memo(function ThinkingBlock({
   content,
   cacheKey,
+  isStreaming,
   expanded,
   onExpandedChange,
 }: ThinkingBlockProps): ReactElement | null {
   const [internalExpanded, setInternalExpanded] = useState(true);
   const isExpanded = expanded ?? internalExpanded;
+  // Throttle re-parse of the actively streaming thinking block (see hook).
+  const displayContent = useStreamingMarkdownThrottle(content, !!isStreaming);
   if (!content.trim()) return null;
 
   const toggleExpanded = () => {
@@ -50,7 +55,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
       <CollapsibleSection open={isExpanded}>
         <div className="border-t border-border px-3 py-2">
           <Markdown
-            content={content}
+            content={displayContent}
             cacheKey={cacheKey}
             className="text-xs text-muted-foreground"
           />

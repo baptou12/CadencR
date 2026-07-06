@@ -1,0 +1,165 @@
+/**
+ * `session.message` envelope handling — the streaming hot path.
+ *
+ * Split out from `ws-envelope-session-handlers.ts` so the coalescer can import
+ * `handleMessageBatch` without pulling the whole session-handler surface, and to
+ * keep each file within the size budget.
+ */
+
+import { parseMessageBlocksPayload } from "./ws-envelope-payload";
+import { appendErrorBlockPatch } from "./ws-session-store-helpers";
+import {
+  type BlockMutation,
+  type StreamingState,
+  blocksPatchWithDerived,
+  isRecord,
+  processSdkMessage,
+  applyMutations,
+  buildMessagePatch,
+} from "./ws-message-processing";
+import { trackStreamSeq } from "./ws-session-resync";
+import type { SessionEntry } from "./ws-session-types";
+import { updateSession } from "./ws-session-types";
+import { transitionTurn } from "./ws-turn-lifecycle";
+import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
+import type { StoreAccessors } from "./ws-envelope-types";
+
+export function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  handleMessageBatch(ctx, sessionId, [payload]);
+}
+
+/**
+ * Apply a burst of coalesced `session.message` payloads in a single store
+ * commit. The delta coalescer (see `ws-delta-coalescer.ts`) buffers deltas per
+ * animation frame and hands the batch here so a fast token stream produces one
+ * React commit instead of one per envelope.
+ *
+ * Equivalent to processing a single envelope whose blocks are the concatenation
+ * of every payload's blocks: `processMessageBlocks` already runs every block's
+ * `processSdkMessage` before the single `applyMutations`, so cross-envelope
+ * ordering is preserved. Seq is tracked per payload (in arrival order) so gap
+ * detection is unchanged. A malformed payload in the middle flushes the valid
+ * blocks accumulated before it, then surfaces its error inline, so the error
+ * block lands at the malformed point rather than jumping ahead of earlier valid
+ * deltas. The all-valid common case still commits exactly once.
+ */
+export function handleMessageBatch(
+  ctx: StoreAccessors,
+  sessionId: string,
+  payloads: unknown[],
+): void {
+  const state = ctx.getSession(sessionId).streamingState;
+  let pendingBlocks: unknown[] = [];
+  for (const payload of payloads) {
+    const p = parseMessageBlocksPayload(payload);
+    if (!p) {
+      // Apply the valid prefix first so the malformed-error block is appended
+      // after the deltas that preceded it, not before them. Empty prefixes are
+      // a no-op (processMessageBlocks early-returns), so back-to-back malformed
+      // payloads don't emit spurious commits.
+      processMessageBlocks(ctx, sessionId, state, pendingBlocks);
+      pendingBlocks = [];
+      surfaceMalformedMessage(ctx, sessionId, payload);
+      continue;
+    }
+    trackStreamSeq(ctx, sessionId, state, p.seq);
+    for (const block of p.blocks) pendingBlocks.push(block);
+  }
+  processMessageBlocks(ctx, sessionId, state, pendingBlocks);
+}
+
+/**
+ * Never drop silently: a malformed `session.message` is a lost stream chunk —
+ * the exact "text stopped mid-message" a user can't diagnose. Surface it inline
+ * so the truncation is visible (error-handling.md).
+ */
+function surfaceMalformedMessage(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  console.warn("[ws-session] dropping malformed session.message payload", payload);
+  const session = ctx.getSession(sessionId);
+  ctx.set(
+    updateSession(
+      ctx.get(),
+      sessionId,
+      appendErrorBlockPatch(
+        session,
+        "A streamed update from the agent was malformed and could not be displayed. The transcript above may be incomplete.",
+        { code: "MALFORMED_MESSAGE" },
+      ),
+    ),
+  );
+}
+
+function processMessageBlocks(
+  ctx: StoreAccessors,
+  sessionId: string,
+  state: StreamingState,
+  blocks: unknown[],
+): void {
+  const allMutations: BlockMutation[] = [];
+  let enterPlanModeRequested = false;
+  let compactBoundaryObserved = false;
+  let manualCompactBoundaryObserved = false;
+  for (const rawBlock of blocks) {
+    if (!isRecord(rawBlock)) continue;
+    const result = processSdkMessage(rawBlock, state);
+    allMutations.push(...result.mutations);
+    enterPlanModeRequested ||= result.signals.enterPlanModeRequested;
+    compactBoundaryObserved ||= result.signals.compactBoundaryObserved;
+    // Older persisted/runtime boundaries may not include metadata. Treat that
+    // shape as manual so an in-flight explicit `/compact` can complete.
+    manualCompactBoundaryObserved ||=
+      result.signals.compactBoundaryObserved && result.signals.compactBoundaryTrigger !== "auto";
+  }
+
+  if (allMutations.length === 0 && !compactBoundaryObserved) return;
+
+  const currentSession = ctx.getSession(sessionId);
+  const patch: Partial<SessionEntry> = {};
+  if (allMutations.length > 0) {
+    const rootVersionBefore = state.rootBlocksVersion;
+    const toolResultVersionBefore = state.toolResultMapVersion;
+    const appliedBlocks = applyMutations(currentSession.blocks, allMutations, state);
+    const newBlocks = movePendingPromptBlocksToTail(appliedBlocks);
+    Object.assign(patch, buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested }));
+    // applyMutations maintains the derived state on `streamState` in O(1) per
+    // mutation; snapshot fresh refs only for the structures it actually touched.
+    // A pure text/tool-call delta never appends a tool_result, so the O(M)
+    // toolResultMap clone is skipped — its ref stays stable and tool blocks
+    // don't needlessly re-render.
+    if (newBlocks === appliedBlocks) {
+      if (state.rootBlocksVersion !== rootVersionBefore) {
+        patch.rootBlocks = state.rootBlocks.slice();
+      }
+      if (state.toolResultMapVersion !== toolResultVersionBefore) {
+        patch.toolResultMap = new Map(state.toolResultMap);
+      }
+    } else {
+      Object.assign(patch, blocksPatchWithDerived(state, newBlocks));
+    }
+  }
+
+  if (compactBoundaryObserved) {
+    const existing = currentSession.contextUsage;
+    patch.contextUsage = existing
+      ? { ...existing, wasCompacted: true }
+      : {
+          inputTokens: 0,
+          outputTokens: 0,
+          contextWindow: null,
+          wasCompacted: true,
+        };
+  }
+
+  patch.lifecycle =
+    manualCompactBoundaryObserved && currentSession.pendingManualCompact
+      ? transitionTurn(currentSession.lifecycle, {
+          type: "turn_ended",
+          reason: "completed",
+        })
+      : transitionTurn(currentSession.lifecycle, { type: "stream_activity" });
+  if (manualCompactBoundaryObserved && currentSession.pendingManualCompact) {
+    patch.pendingManualCompact = false;
+  }
+
+  ctx.set(updateSession(ctx.get(), sessionId, patch));
+}
