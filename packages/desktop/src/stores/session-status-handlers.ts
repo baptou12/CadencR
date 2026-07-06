@@ -7,6 +7,7 @@
  * notification trigger that the store imports.
  */
 import { queryClient, invalidateByUrlPrefix } from "@/lib/queryClient";
+import { createLeadingSettleCoalescer } from "@/lib/coalesceInvalidation";
 import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
@@ -204,6 +205,32 @@ export function applyUpdate(
 }
 
 /**
+ * Editor caches to refresh when the file tree changes on disk. Must exceed the
+ * backend watcher's 1s min-emit gap so consecutive emissions during sustained
+ * churn land in the same settle window and collapse into one trailing refetch.
+ */
+const EDITOR_INVALIDATION_PREFIXES = [
+  "/api/editor/read",
+  "/api/editor/tree",
+  "/api/editor/search",
+] as const;
+const EDITOR_INVALIDATION_SETTLE_MS = 1_200;
+
+const editorInvalidationCoalescer = createLeadingSettleCoalescer(
+  () => invalidateByUrlPrefix(queryClient, EDITOR_INVALIDATION_PREFIXES),
+  EDITOR_INVALIDATION_SETTLE_MS,
+);
+
+function scheduleEditorInvalidation(): void {
+  editorInvalidationCoalescer.trigger();
+}
+
+/** Test-only: cancel the pending trailing timer between cases. */
+export function resetEditorInvalidationSchedulingForTest(): void {
+  editorInvalidationCoalescer.reset();
+}
+
+/**
  * Route a non-status app envelope (file-tree invalidation, git events).
  * The session-status reducers are dispatched separately by the store.
  */
@@ -213,13 +240,17 @@ export function handleAppEnvelope(
   payload: Record<string, unknown>,
 ): boolean {
   if (domain === "editor" && action === "file_tree.changed") {
-    void invalidateByUrlPrefix(queryClient, [
-      "/api/editor/read",
-      "/api/editor/tree",
-      "/api/editor/search",
-      "/api/git/stats",
-      "/api/git/diff",
-    ]);
+    // Coalesced (leading + settle): a build or agent writing files fires a
+    // burst of these, and each one otherwise refetches editor read/tree/search
+    // and re-renders. The backend watcher already caps emissions to ~1/sec;
+    // this collapses the burst on the client to at most two refetch waves.
+    //
+    // Git diff/stats are deliberately NOT invalidated here: the git watcher
+    // drives those via its own coalesced `git.status` path
+    // (`ws-git-status-handler.ts`). Refetching the unbounded git diff on every
+    // file-tree change was a second, unprotected route to the exact storm that
+    // path already guards against.
+    scheduleEditorInvalidation();
     return true;
   }
   if (domain === "git") {

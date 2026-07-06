@@ -8,6 +8,7 @@ use crate::domain::git::models::GitStats;
 use crate::error::AppError;
 use crate::shared::git_cli::run_git_safe_refs;
 
+use super::untracked::{count_untracked_lines, synthesize_untracked_new_file_diff};
 use super::util::run_git_quiet;
 
 /// Parse git diff --stat summary line.
@@ -62,19 +63,13 @@ pub async fn get_stats(
     stats_unstaged.insertions += stats_staged.insertions;
     stats_unstaged.deletions += stats_staged.deletions;
 
-    // Count untracked files
+    // Count untracked files. `--exclude-standard` already filters gitignored
+    // paths, so we only see files that count. Lines are counted with a buffered
+    // stream (bounded memory, not a full read-into-String of every file) and
+    // binaries are skipped.
     for file in untracked.trim().lines().filter(|l| !l.is_empty()) {
         let full_path = worktree_path.join(file);
-        if let Ok(content) = tokio::fs::read_to_string(&full_path).await {
-            let line_count = content.lines().count();
-            // Match TS: if file ends without newline, last line still counts
-            let line_count = if !content.is_empty() && !content.ends_with('\n') {
-                line_count
-            } else if content.is_empty() {
-                0
-            } else {
-                line_count
-            };
+        if let Some(line_count) = count_untracked_lines(&full_path).await {
             stats_unstaged.files_changed += 1;
             stats_unstaged.insertions += line_count as i32;
         }
@@ -108,22 +103,13 @@ pub async fn get_diff(
     let mut result = unstaged;
     result.push_str(&staged);
 
+    // `git ls-files --others --exclude-standard` already filters gitignored
+    // paths, so we never synthesize a diff for an ignored file. Each remaining
+    // untracked file is bounded per-file (see `untracked`) so a giant generated
+    // file can't blow up the aggregate response.
     for file in untracked_list.trim().lines().filter(|l| !l.is_empty()) {
-        let full_path = worktree_path.join(file);
-        if let Ok(content) = tokio::fs::read_to_string(&full_path).await {
-            let mut lines: Vec<&str> = content.split('\n').collect();
-            if lines.last() == Some(&"") {
-                lines.pop();
-            }
-            let line_count = lines.len();
-            let added_lines: String = lines
-                .iter()
-                .map(|l| format!("+{l}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            result.push_str(&format!(
-                "diff --git a/{file} b/{file}\nnew file mode 100644\n--- /dev/null\n+++ b/{file}\n@@ -0,0 +1,{line_count} @@\n{added_lines}\n"
-            ));
+        if let Some(block) = synthesize_untracked_new_file_diff(worktree_path, file).await {
+            result.push_str(&block);
         }
     }
 

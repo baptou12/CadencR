@@ -238,3 +238,19 @@ pub fn is_gitignored(
         None => false,
     }
 }
+
+/// Like [`is_gitignored`], but also treats a path as ignored when any of its
+/// ancestor directories is ignored — e.g. a file deep inside `node_modules/`
+/// matches the `node_modules/` rule even though the leaf path itself doesn't.
+/// The file watcher uses this to drop churn from ignored trees (build output,
+/// dependencies) that would otherwise trigger an invalidation storm.
+pub fn is_gitignored_or_ancestor(
+    gitignore: Option<&ignore::gitignore::Gitignore>,
+    path: &Path,
+    is_dir: bool,
+) -> bool {
+    match gitignore {
+        Some(gi) => gi.matched_path_or_any_parents(path, is_dir).is_ignore(),
+        None => false,
+    }
+}
