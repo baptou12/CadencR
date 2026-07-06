@@ -38,8 +38,10 @@ export function handleMessage(ctx: StoreAccessors, sessionId: string, payload: u
  * of every payload's blocks: `processMessageBlocks` already runs every block's
  * `processSdkMessage` before the single `applyMutations`, so cross-envelope
  * ordering is preserved. Seq is tracked per payload (in arrival order) so gap
- * detection is unchanged; a malformed payload in the middle is surfaced inline
- * and the surrounding valid deltas still apply.
+ * detection is unchanged. A malformed payload in the middle flushes the valid
+ * blocks accumulated before it, then surfaces its error inline, so the error
+ * block lands at the malformed point rather than jumping ahead of earlier valid
+ * deltas. The all-valid common case still commits exactly once.
  */
 export function handleMessageBatch(
   ctx: StoreAccessors,
@@ -47,17 +49,23 @@ export function handleMessageBatch(
   payloads: unknown[],
 ): void {
   const state = ctx.getSession(sessionId).streamingState;
-  const allBlocks: unknown[] = [];
+  let pendingBlocks: unknown[] = [];
   for (const payload of payloads) {
     const p = parseMessageBlocksPayload(payload);
     if (!p) {
+      // Apply the valid prefix first so the malformed-error block is appended
+      // after the deltas that preceded it, not before them. Empty prefixes are
+      // a no-op (processMessageBlocks early-returns), so back-to-back malformed
+      // payloads don't emit spurious commits.
+      processMessageBlocks(ctx, sessionId, state, pendingBlocks);
+      pendingBlocks = [];
       surfaceMalformedMessage(ctx, sessionId, payload);
       continue;
     }
     trackStreamSeq(ctx, sessionId, state, p.seq);
-    for (const block of p.blocks) allBlocks.push(block);
+    for (const block of p.blocks) pendingBlocks.push(block);
   }
-  processMessageBlocks(ctx, sessionId, state, allBlocks);
+  processMessageBlocks(ctx, sessionId, state, pendingBlocks);
 }
 
 /**

@@ -151,6 +151,23 @@ describe("stream-delta coalescing", () => {
     expect(session.blocks.map((b) => b.content)).toContain("thinking...");
   });
 
+  it("keeps a malformed payload in transcript order within a coalesced batch", async () => {
+    const ws = await connected();
+
+    // Valid delta, then a malformed payload (non-object), then another valid
+    // delta — all buffered into one batch, then flushed together.
+    ws.simulateMessage(textDelta("before "));
+    ws.simulateMessage({ domain: "session", action: "message", payload: "not-an-object" });
+    ws.simulateMessage(textDelta("after "));
+    manualFlush?.();
+
+    // The error block must land between the two valid deltas, not ahead of them.
+    const blocks = useWsSessionStore.getState().sessions["s1"].blocks;
+    expect(blocks.map((b) => b.type)).toEqual(["text", "error", "text"]);
+    expect(blocks[0].content).toBe("before ");
+    expect(blocks[2].content).toBe("after ");
+  });
+
   it("detects a seq gap across a coalesced batch (per-envelope seq tracking)", async () => {
     const ws = await connected();
     const state = useWsSessionStore.getState().sessions["s1"].streamingState;
