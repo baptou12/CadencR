@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
-import { apiErrorMessage } from "@/lib/api-errors";
 import {
   scheduleReconnect,
   resetReconnectState,
@@ -19,7 +18,6 @@ import {
   type GateCloseReason,
   type PromptDispatchOptions,
   type WsEnvelope,
-  parseEnvelope,
   createEnvelope,
   createSessionInit,
   createPromptSend,
@@ -40,7 +38,6 @@ import {
 } from "@/lib/ws-envelope";
 import * as branch from "./ws-session-branch";
 import type { BranchDeps } from "./ws-session-branch";
-import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload } from "./ws-envelope-payload";
 import { buildClearedGatePatch, isGateClosingErrorCode } from "./ws-gate-state";
@@ -53,7 +50,6 @@ import {
   type PersistedStatePayload,
 } from "./ws-session-actions";
 import {
-  appendErrorBlockPatch,
   appendLocalUserMessage,
   makeErrorBlock,
   buildQueuedInitEnvelopes,
@@ -75,8 +71,8 @@ import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import { resyncMessagesOnReconnect } from "./ws-session-resync";
-import { bufferStreamDelta, discardStreamDeltas, flushStreamDeltas } from "./ws-delta-coalescer";
-import { SESSION_ACTION } from "./ws-session-action-names";
+import { discardStreamDeltas, flushStreamDeltas } from "./ws-delta-coalescer";
+import { handleSocketMessage, type SocketHandlerDeps } from "./ws-session-socket-handler";
 
 import { blocksPatchWithDerived } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
@@ -92,11 +88,6 @@ export {
 /** Prefix for synthetic request IDs created during plan-restore flows. */
 const PLAN_RESTORE_PREFIX = "plan_restore_";
 const wsSessionSourceKey = (sessionId: string): string => `ws-session:${sessionId}`;
-
-/** Only `session.message` deltas are coalesced; everything else applies eagerly. */
-function isStreamDeltaEnvelope(envelope: WsEnvelope): boolean {
-  return envelope.domain === "session" && envelope.action === SESSION_ACTION.message;
-}
 
 function shouldTrackPromptReceipt(session: SessionEntry): boolean {
   return (
@@ -178,6 +169,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     set,
     sendRequest: (sessionId, envelope) => get().sendRequest(sessionId, envelope),
   };
+
+  const socketDeps: SocketHandlerDeps = { ctx, flushQueuedInitActions };
 
   return {
     sessions: {},
@@ -302,61 +295,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             .reportSource(reconnectKey, "reconnecting", "Session WebSocket error");
           if (!intentional) scheduleReconnect(reconnectKey, () => get().connect(sessionId));
         },
-        onMessage: (data) => {
-          let envelope: WsEnvelope;
-          try {
-            envelope = parseEnvelope(data);
-          } catch (err) {
-            // Never drop silently: a discarded envelope can be a lost stream
-            // chunk, which shows up as text stopping mid-message with no clue.
-            // Surface it inline like the handleEnvelope failure path below.
-            console.warn("[ws-session] dropping unparseable envelope:", err);
-            // Flush pending deltas first so the error block lands after the
-            // text it follows, not before a frame's worth of buffered tokens.
-            flushStreamDeltas(ctx, sessionId);
-            const session = getSession(sessionId);
-            set(
-              updateSession(
-                get(),
-                sessionId,
-                appendErrorBlockPatch(
-                  session,
-                  "A streamed update from the agent was unreadable and could not be displayed. The transcript above may be incomplete.",
-                  { code: "UNPARSEABLE_ENVELOPE" },
-                ),
-              ),
-            );
-            return;
-          }
-          // Coalesce a burst of stream deltas into one commit per frame. Every
-          // other envelope flushes the pending buffer first so it can never
-          // overtake the deltas that preceded it (see ws-delta-coalescer.ts).
-          if (isStreamDeltaEnvelope(envelope)) {
-            bufferStreamDelta(ctx, sessionId, envelope.payload);
-            return;
-          }
-          flushStreamDeltas(ctx, sessionId);
-          try {
-            handleEnvelope(ctx, sessionId, envelope);
-            if (envelope.domain === "session" && envelope.action === "initialized") {
-              flushQueuedInitActions(sessionId);
-            }
-          } catch (err) {
-            console.error("[ws-session] handleEnvelope error:", err);
-            const session = getSession(sessionId);
-            const errorBlock = makeErrorBlock(
-              session,
-              `Internal error: ${apiErrorMessage(err, "unknown")}`,
-            );
-            set(
-              updateSession(
-                get(),
-                sessionId,
-                blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
-              ),
-            );
-          }
-        },
+        onMessage: (data) => handleSocketMessage(socketDeps, sessionId, data),
       });
 
       set({
