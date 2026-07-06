@@ -1,5 +1,6 @@
 pub mod browser;
 pub mod project;
+mod project_schema;
 pub mod workspace;
 
 use std::sync::Arc;

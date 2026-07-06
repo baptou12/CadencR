@@ -1,4 +1,16 @@
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+
 use cadencr_service::domain::mcp::servers::{mcp_server_name, AgentType};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+
+struct McpTestProcess {
+    child: Child,
+    stdin: ChildStdin,
+    reader: BufReader<ChildStdout>,
+}
 
 /// Verify mcp_server_name returns the canonical `cadencr-browser` prefix.
 #[test]
@@ -14,31 +26,66 @@ fn test_mcp_server_names_for_project_and_workspace() {
     assert!(AgentType::ALL.contains(&AgentType::Workspace));
 }
 
-/// Verify that the MCP stdio server responds to initialize + tools/list.
-///
-/// Spawns the cadencr-service binary in mcp-serve mode and verifies the
-/// handshake and tool listing works end-to-end for the surviving `browser`
-/// agent type.
+/// Verify the browser MCP stdio server initializes and lists tools end-to-end.
 #[tokio::test]
 async fn test_mcp_stdio_server_responds_to_tools_list() {
-    use std::process::Stdio;
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    use tokio::process::Command;
+    let (_tmp, db_path) = setup_browser_test_db().await;
+    let Some(mut process) = spawn_mcp_process(&db_path, "browser") else {
+        return;
+    };
 
+    initialize_mcp(&mut process, "cadencr-browser", Some("2024-11-05")).await;
+    let tools = list_mcp_tools(&mut process).await;
+
+    assert_browser_tools(&tools);
+    shutdown_mcp_process(process).await;
+}
+
+async fn setup_browser_test_db() -> (tempfile::TempDir, PathBuf) {
     let tmp = tempfile::TempDir::new().unwrap();
     let db_path = tmp.path().join("test.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await
-        .unwrap();
+    let pool = create_test_pool(&db_path).await;
 
     sqlx::query("PRAGMA journal_mode=WAL")
         .execute(&pool)
         .await
         .unwrap();
+    create_browser_test_schema(&pool).await;
+    sqlx::query("INSERT INTO features (id, title) VALUES (1, 'Test Feature')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    drop(pool);
+    (tmp, db_path)
+}
+
+async fn setup_project_test_db() -> (tempfile::TempDir, PathBuf) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db_path = tmp.path().join("test.db");
+    let pool = create_test_pool(&db_path).await;
+
+    sqlx::query("PRAGMA journal_mode=WAL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    create_project_test_schema(&pool).await;
+    insert_project_test_rows(&pool).await;
+
+    drop(pool);
+    (tmp, db_path)
+}
+
+async fn create_test_pool(db_path: &Path) -> sqlx::SqlitePool {
+    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+    sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await
+        .unwrap()
+}
+
+async fn create_browser_test_schema(pool: &sqlx::SqlitePool) {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS features (
             id INTEGER PRIMARY KEY,
@@ -48,9 +95,63 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .unwrap();
+    create_shared_session_tables(pool, false).await;
+}
+
+async fn create_project_test_schema(pool: &sqlx::SqlitePool) {
+    sqlx::query(
+        "CREATE TABLE projects (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "CREATE TABLE features (
+            id INTEGER PRIMARY KEY,
+            project_id INTEGER,
+            title TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'ws-session',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    create_shared_session_tables(pool, true).await;
+}
+
+async fn create_shared_session_tables(pool: &sqlx::SqlitePool, include_runtime: bool) {
+    if include_runtime {
+        create_runtime_session_table(pool).await;
+    } else {
+        create_basic_session_table(pool).await;
+    }
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS agent_messages (
+            id INTEGER PRIMARY KEY,
+            session_id INTEGER NOT NULL,
+            role TEXT,
+            message_type TEXT,
+            content TEXT,
+            tool_name TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn create_basic_session_table(pool: &sqlx::SqlitePool) {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS agent_sessions (
             id INTEGER PRIMARY KEY,
@@ -60,98 +161,125 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
             started_at TEXT
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .unwrap();
+}
+
+async fn create_runtime_session_table(pool: &sqlx::SqlitePool) {
     sqlx::query(
-        "CREATE TABLE IF NOT EXISTS agent_messages (
+        "CREATE TABLE IF NOT EXISTS agent_sessions (
             id INTEGER PRIMARY KEY,
-            session_id INTEGER NOT NULL,
-            role TEXT,
-            content TEXT,
-            tool_name TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
+            feature_id INTEGER,
+            agent_type TEXT,
+            status TEXT DEFAULT 'running',
+            model TEXT,
+            runtime_provider TEXT,
+            started_at TEXT
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .unwrap();
+}
 
-    sqlx::query("INSERT INTO features (id, title) VALUES (1, 'Test Feature')")
-        .execute(&pool)
+async fn insert_project_test_rows(pool: &sqlx::SqlitePool) {
+    sqlx::query("INSERT INTO projects (id, name, path) VALUES (7, 'Project', '/tmp/project')")
+        .execute(pool)
         .await
         .unwrap();
+    sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 7, 'Test Feature')")
+        .execute(pool)
+        .await
+        .unwrap();
+}
 
-    drop(pool);
-
-    let binary = std::env::current_exe()
+fn service_binary() -> PathBuf {
+    std::env::current_exe()
         .unwrap()
         .parent()
         .unwrap()
         .parent()
         .unwrap()
-        .join("cadencr-service");
+        .join("cadencr-service")
+}
 
-    if !binary.exists() {
-        eprintln!(
-            "Skipping test: cadencr-service binary not found at {:?}",
-            binary
-        );
-        return;
-    }
-
-    let mut child = Command::new(&binary)
+fn spawn_mcp_process(db_path: &Path, agent_type: &str) -> Option<McpTestProcess> {
+    let binary = service_binary();
+    let child = Command::new(&binary)
         .arg("--db-path")
         .arg(db_path.to_str().unwrap())
         .arg("mcp-serve")
         .arg("--agent-type")
-        .arg("browser")
+        .arg(agent_type)
         .arg("--feature-id")
         .arg("1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn()
-        .expect("failed to spawn cadencr-service");
+        .spawn();
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            eprintln!("Skipping test: cadencr-service binary not found at {binary:?}");
+            return None;
+        }
+        Err(error) => panic!("failed to spawn cadencr-service: {error}"),
+    };
 
-    let mut stdin = child.stdin.take().unwrap();
+    let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
-    let mut reader = BufReader::new(stdout);
+    let reader = BufReader::new(stdout);
+    Some(McpTestProcess {
+        child,
+        stdin,
+        reader,
+    })
+}
 
+async fn initialize_mcp(
+    process: &mut McpTestProcess,
+    expected_name: &str,
+    expected_protocol: Option<&str>,
+) {
     let init_req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"#;
-    stdin.write_all(init_req.as_bytes()).await.unwrap();
-    stdin.write_all(b"\n").await.unwrap();
-    stdin.flush().await.unwrap();
+    write_json_line(&mut process.stdin, init_req).await;
 
     let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
+    process.reader.read_line(&mut line).await.unwrap();
     let init_resp: serde_json::Value = serde_json::from_str(&line).unwrap();
-    assert_eq!(init_resp["result"]["serverInfo"]["name"], "cadencr-browser");
-    assert_eq!(init_resp["result"]["protocolVersion"], "2024-11-05");
+    assert_eq!(init_resp["result"]["serverInfo"]["name"], expected_name);
+    if let Some(protocol) = expected_protocol {
+        assert_eq!(init_resp["result"]["protocolVersion"], protocol);
+    }
 
     let initialized = r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#;
-    stdin.write_all(initialized.as_bytes()).await.unwrap();
-    stdin.write_all(b"\n").await.unwrap();
-    stdin.flush().await.unwrap();
+    write_json_line(&mut process.stdin, initialized).await;
+}
 
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
+async fn list_mcp_tools(process: &mut McpTestProcess) -> Vec<serde_json::Value> {
     let tools_req = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#;
-    stdin.write_all(tools_req.as_bytes()).await.unwrap();
-    stdin.write_all(b"\n").await.unwrap();
-    stdin.flush().await.unwrap();
+    write_json_line(&mut process.stdin, tools_req).await;
 
     let mut tools_line = String::new();
-    reader.read_line(&mut tools_line).await.unwrap();
+    process.reader.read_line(&mut tools_line).await.unwrap();
     assert!(
         !tools_line.is_empty(),
         "tools/list response should not be empty"
     );
 
     let tools_resp: serde_json::Value = serde_json::from_str(&tools_line).unwrap();
-    let tools = tools_resp["result"]["tools"].as_array().unwrap();
+    tools_resp["result"]["tools"].as_array().unwrap().clone()
+}
 
-    let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+async fn write_json_line(stdin: &mut ChildStdin, line: &str) {
+    stdin.write_all(line.as_bytes()).await.unwrap();
+    stdin.write_all(b"\n").await.unwrap();
+    stdin.flush().await.unwrap();
+}
+
+fn assert_browser_tools(tools: &[serde_json::Value]) {
+    let tool_names = tool_names(tools);
     assert!(
         tool_names.contains(&"browser_open_url"),
         "missing browser_open_url"
@@ -160,18 +288,23 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
         tool_names.contains(&"browser_screenshot"),
         "missing browser_screenshot"
     );
-    assert!(
-        !tool_names.contains(&"mark_agent_done"),
-        "mark_agent_done must not be exposed by cadencr-browser"
+    assert_absent_tools(
+        &tool_names,
+        &["mark_agent_done", "list_conversations", "read_conversation"],
     );
-    assert!(
-        !tool_names.contains(&"list_conversations"),
-        "list_conversations is reserved for future cadencr-workspace"
-    );
-    assert!(
-        !tool_names.contains(&"read_conversation"),
-        "read_conversation is reserved for future cadencr-workspace"
-    );
+    assert_browser_open_url_schema_is_pinned(tools);
+}
+
+fn assert_absent_tools(tool_names: &[&str], absent_tools: &[&str]) {
+    for absent_tool in absent_tools {
+        assert!(
+            !tool_names.contains(absent_tool),
+            "{absent_tool} must not be exposed by cadencr-browser"
+        );
+    }
+}
+
+fn assert_browser_open_url_schema_is_pinned(tools: &[serde_json::Value]) {
     let open_url_tool = tools
         .iter()
         .find(|tool| tool["name"].as_str() == Some("browser_open_url"))
@@ -189,9 +322,11 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
             .any(|value| value.as_str() == Some("feature_id")),
         "feature_id must not be a required browser tool argument"
     );
+}
 
-    drop(stdin);
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await;
+async fn shutdown_mcp_process(mut process: McpTestProcess) {
+    drop(process.stdin);
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), process.child.wait()).await;
 }
 
 async fn assert_stdio_tools_list_for_agent_type(
@@ -199,153 +334,14 @@ async fn assert_stdio_tools_list_for_agent_type(
     expected_name: &str,
     expected_tools: &[&str],
 ) {
-    use std::process::Stdio;
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    use tokio::process::Command;
-
-    let tmp = tempfile::TempDir::new().unwrap();
-    let db_path = tmp.path().join("test.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&db_url)
-        .await
-        .unwrap();
-
-    sqlx::query("PRAGMA journal_mode=WAL")
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        "CREATE TABLE projects (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            path TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "CREATE TABLE features (
-            id INTEGER PRIMARY KEY,
-            project_id INTEGER,
-            title TEXT NOT NULL,
-            type TEXT NOT NULL DEFAULT 'ws-session',
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "CREATE TABLE agent_sessions (
-            id INTEGER PRIMARY KEY,
-            feature_id INTEGER,
-            agent_type TEXT,
-            status TEXT DEFAULT 'running',
-            model TEXT,
-            runtime_provider TEXT,
-            started_at TEXT
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "CREATE TABLE agent_messages (
-            id INTEGER PRIMARY KEY,
-            session_id INTEGER NOT NULL,
-            role TEXT,
-            message_type TEXT,
-            content TEXT,
-            tool_name TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    sqlx::query("INSERT INTO projects (id, name, path) VALUES (7, 'Project', '/tmp/project')")
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 7, 'Test Feature')")
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    drop(pool);
-
-    let binary = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("cadencr-service");
-
-    if !binary.exists() {
-        eprintln!(
-            "Skipping test: cadencr-service binary not found at {:?}",
-            binary
-        );
+    let (_tmp, db_path) = setup_project_test_db().await;
+    let Some(mut process) = spawn_mcp_process(&db_path, agent_type) else {
         return;
-    }
+    };
 
-    let mut child = Command::new(&binary)
-        .arg("--db-path")
-        .arg(db_path.to_str().unwrap())
-        .arg("mcp-serve")
-        .arg("--agent-type")
-        .arg(agent_type)
-        .arg("--feature-id")
-        .arg("1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("failed to spawn cadencr-service");
-
-    let mut stdin = child.stdin.take().unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let mut reader = BufReader::new(stdout);
-
-    let init_req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}"#;
-    stdin.write_all(init_req.as_bytes()).await.unwrap();
-    stdin.write_all(b"\n").await.unwrap();
-    stdin.flush().await.unwrap();
-
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    let init_resp: serde_json::Value = serde_json::from_str(&line).unwrap();
-    assert_eq!(init_resp["result"]["serverInfo"]["name"], expected_name);
-
-    let initialized = r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#;
-    stdin.write_all(initialized.as_bytes()).await.unwrap();
-    stdin.write_all(b"\n").await.unwrap();
-    stdin.flush().await.unwrap();
-
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    let tools_req = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#;
-    stdin.write_all(tools_req.as_bytes()).await.unwrap();
-    stdin.write_all(b"\n").await.unwrap();
-    stdin.flush().await.unwrap();
-
-    let mut tools_line = String::new();
-    reader.read_line(&mut tools_line).await.unwrap();
-    assert!(
-        !tools_line.is_empty(),
-        "tools/list response should not be empty"
-    );
-
-    let tools_resp: serde_json::Value = serde_json::from_str(&tools_line).unwrap();
-    let tools = tools_resp["result"]["tools"].as_array().unwrap();
-    let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    initialize_mcp(&mut process, expected_name, None).await;
+    let tools = list_mcp_tools(&mut process).await;
+    let tool_names = tool_names(&tools);
 
     for expected_tool in expected_tools {
         assert!(
@@ -354,8 +350,14 @@ async fn assert_stdio_tools_list_for_agent_type(
         );
     }
 
-    drop(stdin);
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await;
+    shutdown_mcp_process(process).await;
+}
+
+fn tool_names(tools: &[serde_json::Value]) -> Vec<&str> {
+    tools
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect()
 }
 
 #[tokio::test]
@@ -372,6 +374,7 @@ async fn test_project_mcp_stdio_server_advertises_project_tools() {
             "project_find_related_sessions",
             "project_compare_sessions",
             "project_link_sessions",
+            "project_list_agent_providers",
             "project_spawn_session",
             "project_send_session_message",
         ],
