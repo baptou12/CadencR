@@ -7,7 +7,7 @@ use tower::ServiceExt;
 
 use support::mcp_control::{
     seeded_control_pool, spawn_request_with_optional_provider_model,
-    spawn_request_with_provider_model,
+    spawn_request_with_optional_provider_optional_model, spawn_request_with_provider_model,
 };
 
 async fn response_text(response: axum::response::Response) -> String {
@@ -27,14 +27,14 @@ async fn project_spawn_session_rejects_unknown_model_for_selected_provider() {
             serde_json::json!({ "mode": "skip" }),
             true,
             "claude_code",
-            "opus 4.8",
+            "not-a-claude-model",
         ))
         .await
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body_text = response_text(response).await;
-    assert!(body_text.contains("unknown model 'opus 4.8' for provider 'claude_code'"));
+    assert!(body_text.contains("unknown model 'not-a-claude-model' for provider 'claude_code'"));
     assert!(body_text.contains("Available models:"));
     assert!(body_text.contains("opus"));
     let spawned_count: i64 = sqlx::query_scalar(
@@ -50,7 +50,7 @@ async fn project_spawn_session_rejects_unknown_model_for_selected_provider() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(audit_error.contains("unknown model 'opus 4.8' for provider 'claude_code'"));
+    assert!(audit_error.contains("unknown model 'not-a-claude-model' for provider 'claude_code'"));
     assert!(audit_error.contains("Available models:"));
 }
 
@@ -64,15 +64,88 @@ async fn project_spawn_session_rejects_unknown_model_for_inherited_provider() {
             serde_json::json!({ "mode": "skip" }),
             true,
             None,
-            "opus 4.8",
+            "not-a-claude-model",
         ))
         .await
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body_text = response_text(response).await;
-    assert!(body_text.contains("unknown model 'opus 4.8' for provider 'claude_code'"));
+    assert!(body_text.contains("unknown model 'not-a-claude-model' for provider 'claude_code'"));
     assert!(body_text.contains("Available models:"));
+}
+
+#[tokio::test]
+async fn project_spawn_session_normalizes_common_provider_aliases() {
+    let pool = seeded_control_pool().await;
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(spawn_request_with_optional_provider_optional_model(
+            serde_json::json!({ "mode": "skip" }),
+            true,
+            Some("codex"),
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let provider: String = sqlx::query_scalar(
+        "SELECT runtime_provider FROM agent_sessions WHERE id != 777 ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(provider, "codex_cli");
+}
+
+#[tokio::test]
+async fn project_spawn_session_normalizes_common_claude_model_aliases() {
+    let pool = seeded_control_pool().await;
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(spawn_request_with_provider_model(
+            serde_json::json!({ "mode": "skip" }),
+            true,
+            "claude-code",
+            "Opus",
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let session: (String, String) = sqlx::query_as(
+        "SELECT runtime_provider, model FROM agent_sessions WHERE id != 777 ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(session.0, "claude_code");
+    assert_ne!(session.1, "Opus");
+    assert!(session.1.to_ascii_lowercase().contains("opus"));
+}
+
+#[tokio::test]
+async fn project_spawn_session_unknown_provider_error_lists_valid_ids() {
+    let pool = seeded_control_pool().await;
+    let app = control_router().with_state(AppState::with_pool(pool));
+
+    let response = app
+        .oneshot(spawn_request_with_provider_model(
+            serde_json::json!({ "mode": "skip" }),
+            true,
+            "claudeish",
+            "opus",
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body_text = response_text(response).await;
+    assert!(body_text.contains("unknown provider 'claudeish'"));
+    assert!(body_text.contains("Valid providers: claude_code, codex_cli, opencode"));
 }
 
 #[tokio::test]

@@ -63,7 +63,7 @@ fn tool_description(name: &str) -> &'static str {
 }
 
 fn tool_schema(name: &str) -> serde_json::Value {
-    match name {
+    let schema = match name {
         "workspace_read_session" => json!({
             "type": "object",
             "properties": {
@@ -116,6 +116,50 @@ fn tool_schema(name: &str) -> serde_json::Value {
             }
         }),
         _ => json!({ "type": "object", "properties": {} }),
+    };
+    document_schema(name, schema)
+}
+
+fn document_schema(tool_name: &str, mut schema: serde_json::Value) -> serde_json::Value {
+    let Some(properties) = schema["properties"].as_object_mut() else {
+        return schema;
+    };
+    for (property, value) in properties {
+        if value.get("description").is_none() {
+            value["description"] =
+                serde_json::Value::String(property_description(tool_name, property));
+        }
+    }
+    schema
+}
+
+fn property_description(tool_name: &str, property: &str) -> String {
+    match property {
+        "session_id" => "Session id to read or use as the graph anchor.".into(),
+        "query" => "Full-text search query for matching session messages.".into(),
+        "roles" => "Optional message role filters such as user, assistant, or tool.".into(),
+        "message_types" => {
+            "Optional message_type filters such as text, tool_call, or tool_result.".into()
+        }
+        "after_message_id" => "Return messages after this message id.".into(),
+        "before_message_id" => "Return messages before this message id.".into(),
+        "include_metadata" => "Include project/session/message provenance metadata.".into(),
+        "limit" => {
+            "Maximum number of rows/messages to return; tools clamp oversized values.".into()
+        }
+        "project_ids" => "Restrict search to these project ids.".into(),
+        "providers" => {
+            "Restrict sessions by canonical provider id, e.g. claude_code, codex_cli, opencode."
+                .into()
+        }
+        "models" => "Restrict sessions by persisted model id.".into(),
+        "statuses" => "Restrict sessions by status, e.g. running, paused, completed.".into(),
+        "tool_names" => "Restrict results to messages using these tool names.".into(),
+        "created_after" => "Only include messages created at or after this timestamp.".into(),
+        "created_before" => "Only include messages created before this timestamp.".into(),
+        "cursor" => "Cursor object returned by the previous page.".into(),
+        "snippet_chars" => "Maximum characters to include in each result snippet.".into(),
+        _ => format!("Input parameter `{property}` for {tool_name}."),
     }
 }
 
@@ -220,5 +264,22 @@ mod tests {
 
         assert_eq!(schema["properties"]["limit"]["type"], "number");
         assert_eq!(schema["properties"]["snippet_chars"]["type"], "number");
+    }
+
+    #[test]
+    fn workspace_tool_schemas_document_every_input() {
+        for tool in tools() {
+            let schema = serde_json::to_value(&tool.input_schema).expect("schema json");
+            let properties = schema["properties"].as_object().expect("properties");
+            for (name, property) in properties {
+                assert!(
+                    property["description"]
+                        .as_str()
+                        .is_some_and(|value| !value.is_empty()),
+                    "{}.{name} is missing a description",
+                    tool.name
+                );
+            }
+        }
     }
 }

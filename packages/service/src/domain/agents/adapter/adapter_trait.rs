@@ -42,6 +42,19 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Static catalog entry (available immediately at startup).
     fn catalog_entry(&self) -> super::super::runtime::ProviderCatalogEntry;
 
+    /// Canonicalize a requested model id against this provider's catalog.
+    ///
+    /// The default is provider-neutral and preserves the caller's value.
+    /// Providers that support stable aliases can override this without leaking
+    /// provider-specific model semantics into shared orchestration code.
+    fn canonicalize_model_id(
+        &self,
+        model_id: &str,
+        _catalog: &[super::super::runtime::ModelCatalogEntry],
+    ) -> String {
+        model_id.to_string()
+    }
+
     /// Live catalog entry (may fetch from external service). Defaults to static.
     async fn catalog_entry_live(&self) -> super::super::runtime::ProviderCatalogEntry {
         self.catalog_entry()

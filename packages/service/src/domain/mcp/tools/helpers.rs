@@ -5,9 +5,26 @@ use rmcp::model::{CallToolResult, Content};
 /// Extract a required i64 parameter from JSON args, returning a clear error if missing.
 #[allow(dead_code)]
 pub fn require_i64(args: &serde_json::Value, key: &str) -> Result<i64, String> {
-    args[key]
-        .as_i64()
-        .ok_or_else(|| format!("Missing required parameter: {key}"))
+    match args.get(key) {
+        Some(value) => value.as_i64().ok_or_else(|| {
+            format!(
+                "Invalid parameter '{key}': expected an integer, got {}",
+                value_type(value)
+            )
+        }),
+        None => Err(format!("Missing required parameter: {key}")),
+    }
+}
+
+fn value_type(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "non-integer number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
 }
 
 /// Returns the subprocess-pinned feature id after confirming it matches any
@@ -48,8 +65,23 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::pinned_feature_id;
+    use super::{pinned_feature_id, require_i64};
     use serde_json::json;
+
+    #[test]
+    fn require_i64_reports_missing_parameter() {
+        let err = require_i64(&json!({}), "session_id").unwrap_err();
+        assert_eq!(err, "Missing required parameter: session_id");
+    }
+
+    #[test]
+    fn require_i64_reports_wrong_parameter_type() {
+        let err = require_i64(&json!({ "session_id": "abc" }), "session_id").unwrap_err();
+        assert_eq!(
+            err,
+            "Invalid parameter 'session_id': expected an integer, got string"
+        );
+    }
 
     #[tokio::test]
     async fn pinned_feature_id_returns_pin_when_args_empty() {

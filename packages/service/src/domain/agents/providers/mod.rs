@@ -7,7 +7,10 @@ use std::path::Path;
 use super::adapter::AgentRuntimeAdapter;
 use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, ProviderStatus, DEFAULT_PROVIDER};
 
-pub use model_validation::validate_provider_model;
+pub use model_validation::{
+    canonical_model_or_error, canonical_provider_or_error, provider_alias_metadata,
+    provider_aliases, valid_provider_ids,
+};
 
 /// All registered runtime adapters. Add new providers here.
 static ADAPTERS: &[(&str, &dyn AgentRuntimeAdapter)] = &[

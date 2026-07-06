@@ -15,6 +15,7 @@ use crate::domain::mcp::tools::project_compare;
 use crate::domain::mcp::tools::project_control;
 use crate::domain::mcp::tools::project_links;
 use crate::domain::mcp::tools::project_list;
+use crate::domain::mcp::tools::project_providers;
 use crate::domain::mcp::tools::project_search;
 use crate::domain::mcp::tools::project_tail;
 use crate::domain::mcp::tools::project_worktree;
@@ -64,6 +65,7 @@ pub async fn run_project_tool(
         "project_link_sessions" => project_links::link_sessions(&ctx, &args).await,
         "project_get_worktree_status" => project_worktree::get_worktree_status(&ctx, &args).await,
         "project_compare_sessions" => project_compare::compare_sessions(&ctx, &args).await,
+        "project_list_agent_providers" => project_providers::list_agent_providers(&ctx).await,
         "project_send_session_message" => project_control::send_session_message(&args, &ctx).await,
         "project_spawn_session" => project_control::spawn_session(&args, &ctx).await,
         _ => Err(format!("Unknown tool: {name}")),
@@ -93,6 +95,7 @@ fn is_project_read_tool(name: &str) -> bool {
             | "project_link_sessions"
             | "project_get_worktree_status"
             | "project_compare_sessions"
+            | "project_list_agent_providers"
     )
 }
 
