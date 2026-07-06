@@ -10,6 +10,7 @@ import { setRuntimeConfig } from "./runtime-config";
 import { initAutoUpdater, registerAutoUpdaterIpc, shutdownAutoUpdater } from "./updater";
 import {
   createDevSidecarHandle,
+  packagedRendererDir,
   productionDbPath,
   spawnProductionSidecar,
   type SidecarHandle,
@@ -132,10 +133,14 @@ function rendererLoadUrl(): { kind: "url"; value: string } | { kind: "file"; val
     }
     return { kind: "url", value: rendererUrl };
   }
-  return {
-    kind: "file",
-    value: path.join(__dirname, "../renderer/index.html"),
-  };
+  // In packaged builds the renderer is NOT in the asar (excluded to avoid a
+  // duplicate); it ships as extraResources `renderer/` — the same directory the
+  // sidecar serves remotely. Dev builds without a renderer URL fall back to the
+  // on-disk `out/renderer` next to the compiled main.
+  const rendererIndex = app.isPackaged
+    ? path.join(packagedRendererDir(), "index.html")
+    : path.join(__dirname, "../renderer/index.html");
+  return { kind: "file", value: rendererIndex };
 }
 
 function secureWebContents(webContents: WebContents): void {

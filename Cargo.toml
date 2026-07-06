@@ -21,3 +21,12 @@ debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
+
+# Shrink the packaged `cadencr-service` sidecar (~41 MB → ~22-28 MB). Note we
+# deliberately keep `panic = "unwind"` (the default) — the service relies on
+# catching panics at task boundaries.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

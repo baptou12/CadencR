@@ -14,13 +14,17 @@ afterPack: build/after-pack.cjs
 afterSign: build/notarize-app.cjs
 files:
   - out/**/*
+  # The built SPA ships once, as extraResources `renderer/` below. Excluding it
+  # from the asar avoids a ~44 MB duplicate; the packaged window loads it from
+  # `process.resourcesPath/renderer` (see `rendererLoadUrl`).
+  - "!out/renderer/**"
   - package.json
 extraResources:
   - from: resources/bin/cadencr-service
     to: cadencr-service
-  # The built SPA on the real filesystem (the asar copy the window loads can't
-  # be read by the Rust sidecar). Served over the remote listener via
-  # `--renderer-dir`.
+  # The built SPA on the real filesystem — loaded directly by the packaged
+  # window (the asar can't hold it, see above) and served over the remote
+  # listener via `--renderer-dir` (the Rust sidecar can't read an asar).
   - from: out/renderer
     to: renderer
 mac:
