@@ -12,6 +12,7 @@ pub mod models;
 mod opencode_sqlite;
 mod persistence;
 pub mod refresh;
+mod refresh_diff;
 pub mod routes;
 pub mod service;
 pub mod types;
