@@ -7,13 +7,13 @@
     "node": ">=22.18.0 <23.0.0"
   },
   "scripts": {
-    "dev": "node scripts/cargo-env.mjs turbo run dev",
-    "test": "node scripts/cargo-env.mjs turbo run test",
+    "dev": "node scripts/dev.mjs",
+    "test": "node scripts/cargo-env.mjs turbo run test && node --test scripts/*.test.mjs",
     "lint": "node scripts/cargo-env.mjs turbo run lint",
     "test:release-scripts": "env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh && env -u BASH_ENV bash scripts/desktop-release-workflow.test.sh",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
-    "start": "node scripts/cargo-env.mjs turbo run dev --filter=@cadencr/desktop",
+    "start": "node scripts/dev.mjs --filter=@cadencr/desktop",
     "build:local": "node scripts/cargo-env.mjs turbo run build:local --filter=@cadencr/desktop",
     "build": "node scripts/cargo-env.mjs turbo run build --filter=@cadencr/desktop",
     "prepare": "husky",
