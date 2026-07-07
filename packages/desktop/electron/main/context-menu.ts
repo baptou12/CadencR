@@ -37,6 +37,17 @@ interface LinkHoverContext {
 }
 
 let currentLinkContext: LinkHoverContext | null = null;
+const nativeMenuSuppressionWebContentsIds = new Set<number>();
+
+export function suppressNextNativeContextMenu(webContentsId: number): void {
+  nativeMenuSuppressionWebContentsIds.add(webContentsId);
+}
+
+function consumeNativeContextMenuSuppression(webContentsId: number): boolean {
+  if (!nativeMenuSuppressionWebContentsIds.has(webContentsId)) return false;
+  nativeMenuSuppressionWebContentsIds.delete(webContentsId);
+  return true;
+}
 
 /** Validate and store the renderer-pushed hover context (or clear it). */
 export function setLinkHoverContext(raw: unknown): void {
@@ -103,6 +114,7 @@ function resolveLinkContext(paramsLinkUrl: string): LinkHoverContext | null {
 export function installContextMenu(window: BrowserWindow, webContents: WebContents): void {
   webContents.on("context-menu", (event, params) => {
     event.preventDefault();
+    if (consumeNativeContextMenuSuppression(webContents.id)) return;
 
     const items: MenuItemConstructorOptions[] = [];
 

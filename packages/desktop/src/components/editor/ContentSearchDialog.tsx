@@ -1,6 +1,14 @@
 import { memo, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { CaseSensitive, WholeWord, Regex, Loader2 } from "lucide-react";
+import {
+  CaseSensitive,
+  ClipboardCopyIcon,
+  FileTextIcon,
+  FolderOpenIcon,
+  WholeWord,
+  Regex,
+  Loader2,
+} from "lucide-react";
 import SearchToggleButton from "./SearchToggleButton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
@@ -11,13 +19,9 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FileSymbolIcon } from "./file-icons";
 import SearchResultEditor from "./SearchResultEditor";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { copyToClipboard } from "@/lib/clipboard";
+import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 
 interface ContentSearchDialogProps {
   projectId: number;
@@ -316,19 +320,26 @@ const FileGroup = memo(function FileGroup({
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onSelect={() => onSelect(group.path, firstMatchLine)}>
+          <ContextMenuActionItem
+            icon={FolderOpenIcon}
+            onSelect={() => onSelect(group.path, firstMatchLine)}
+          >
             Open
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => void copyToClipboard(group.path, "Path copied")}>
+          </ContextMenuActionItem>
+          <ContextMenuActionItem
+            icon={ClipboardCopyIcon}
+            onSelect={() => void copyToClipboard(group.path, "Path copied")}
+          >
             Copy Path
-          </ContextMenuItem>
-          <ContextMenuItem
+          </ContextMenuActionItem>
+          <ContextMenuActionItem
+            icon={FileTextIcon}
             onSelect={() =>
               void copyToClipboard(group.matches[0]?.line_content ?? "", "Match copied")
             }
           >
             Copy Match
-          </ContextMenuItem>
+          </ContextMenuActionItem>
         </ContextMenuContent>
       </ContextMenu>
       <div className="mt-1">

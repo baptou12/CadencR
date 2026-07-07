@@ -288,6 +288,7 @@ export function ProjectFeatures({
       isAutoNaming={isAutoNaming(feature.id)}
       hasWorktree={worktreeFeatureIds.has(feature.id)}
       hasLiveWorktree={liveWorktreeFeatureIds.has(feature.id)}
+      worktree={worktreeByFeatureId.get(feature.id)}
       shellCount={shellCountsByFeatureId.get(feature.id) ?? 0}
       browserCount={browserCountsByFeatureId[feature.id] ?? 0}
       isEditingLabel={editingLabelFeatureId === feature.id}

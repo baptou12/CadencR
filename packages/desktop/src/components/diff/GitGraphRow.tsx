@@ -1,12 +1,8 @@
 import { memo, useMemo, type ReactElement } from "react";
 import { FileDiffIcon, ExternalLinkIcon } from "lucide-react";
 import { NumStat } from "@/components/NumStat";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 import type { GraphRow } from "@/lib/git-graph-layout";
 import {
   AutoScrollText,
@@ -185,14 +181,12 @@ export const GitGraphRow = memo(function GitGraphRow({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={() => onOpenCommit(commit.sha)}>
-          <FileDiffIcon className="size-4" />
+        <ContextMenuActionItem icon={FileDiffIcon} onSelect={() => onOpenCommit(commit.sha)}>
           Show diff
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onOpenOnline(commit.sha)}>
-          <ExternalLinkIcon className="size-4" />
+        </ContextMenuActionItem>
+        <ContextMenuActionItem icon={ExternalLinkIcon} onSelect={() => onOpenOnline(commit.sha)}>
           Open commit online
-        </ContextMenuItem>
+        </ContextMenuActionItem>
       </ContextMenuContent>
     </ContextMenu>
   );

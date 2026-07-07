@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { ClipboardCopyIcon } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { ContextMenuActionButton } from "@/components/ContextMenuActionItem";
 
 interface UniversalContextMenuProps {
   children: ReactNode;
@@ -97,14 +99,13 @@ export default function UniversalContextMenu({ children }: UniversalContextMenuP
             style={{ top: menu.y, left: menu.x }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              role="menuitem"
-              className="hover:bg-accent hover:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm select-none"
-              onClick={() => void handleCopy()}
+            <ContextMenuActionButton
+              icon={ClipboardCopyIcon}
+              shortcutKeys={["mod", "c"]}
+              onSelect={() => void handleCopy()}
             >
               Copy
-            </button>
+            </ContextMenuActionButton>
           </div>,
           document.body,
         )}

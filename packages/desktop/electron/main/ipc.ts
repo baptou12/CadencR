@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   app,
+  clipboard,
   dialog,
   ipcMain,
   nativeTheme,
   shell,
   type BrowserWindow,
+  type IpcMainEvent,
   type IpcMainInvokeEvent,
 } from "electron";
 import { getRuntimeConfig } from "./runtime-config";
@@ -19,7 +21,7 @@ import {
 } from "./notifications";
 import { sendToWindow } from "./safe-send";
 import { appendRendererErrorLog } from "./renderer-error-log";
-import { setLinkHoverContext } from "./context-menu";
+import { setLinkHoverContext, suppressNextNativeContextMenu } from "./context-menu";
 
 const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_FILE_HANDLES = 128;
@@ -46,6 +48,10 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
     assertTrustedSender(event, getMainWindow);
     return readFileBase64(fileHandle);
   });
+  ipcMain.handle("clipboard:read-text", (event) => {
+    assertTrustedSender(event, getMainWindow);
+    return clipboard.readText();
+  });
   ipcMain.handle("shell:reveal", (event, filePath: unknown) => {
     assertTrustedSender(event, getMainWindow);
     return revealInFinder(filePath);
@@ -61,6 +67,11 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
   ipcMain.handle("links:set-hover-context", (event, context: unknown) => {
     assertTrustedSender(event, getMainWindow);
     setLinkHoverContext(context);
+  });
+  ipcMain.on("context-menu:suppress-next", (event) => {
+    assertTrustedSender(event, getMainWindow);
+    suppressNextNativeContextMenu(event.sender.id);
+    event.returnValue = true;
   });
   ipcMain.handle("dialog:pick-directory", (event) => {
     assertTrustedSender(event, getMainWindow);
@@ -132,7 +143,7 @@ export function clearRegisteredFilePaths(): void {
 }
 
 export function assertTrustedSender(
-  event: IpcMainInvokeEvent,
+  event: IpcMainEvent | IpcMainInvokeEvent,
   getMainWindow: () => BrowserWindow | null,
 ): void {
   const mainWindow = requireMainWindow(getMainWindow);

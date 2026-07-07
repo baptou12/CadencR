@@ -1,6 +1,8 @@
 import { memo, useCallback } from "react";
 import { TerminalCwdWarning } from "./TerminalCwdWarning";
+import { TerminalPaneContextMenu } from "./TerminalPaneContextMenu";
 import { isCwdStale, type TerminalLeaf } from "@/hooks/terminal-tree";
+import type { SplitOrientation } from "@/hooks/useTerminalState";
 
 interface PaneSlotPlaceholderProps {
   leaf: TerminalLeaf;
@@ -13,8 +15,12 @@ interface PaneSlotPlaceholderProps {
   showWarning: boolean;
   registerPlaceholder: (id: string, el: HTMLDivElement | null) => void;
   onFocus: (paneId: string) => void;
+  onSplit: (paneId: string, orientation: SplitOrientation) => void;
   onRestart: (paneId: string) => void;
   onDismiss: (paneId: string) => void;
+  onClose: (paneId: string) => void;
+  onCopy: (paneId: string) => void;
+  onPaste: (paneId: string) => void;
 }
 
 /**
@@ -39,8 +45,12 @@ export const PaneSlotPlaceholder = memo(function PaneSlotPlaceholder({
   showWarning,
   registerPlaceholder,
   onFocus,
+  onSplit,
   onRestart,
   onDismiss,
+  onClose,
+  onCopy,
+  onPaste,
 }: PaneSlotPlaceholderProps) {
   // The slot anchor is what receives the imperative appendChild from
   // TerminalPanel, not the outer div. This keeps the xterm slot above any
@@ -68,9 +78,19 @@ export const PaneSlotPlaceholder = memo(function PaneSlotPlaceholder({
     ) : null;
 
   return (
-    <div className="flex h-full w-full flex-col" onClick={handleFocus}>
-      <div ref={slotAnchorRef} className="flex min-h-0 flex-1 flex-col" />
-      {warning}
-    </div>
+    <TerminalPaneContextMenu
+      paneId={leaf.id}
+      canClose
+      onOpen={onFocus}
+      onSplit={onSplit}
+      onClose={onClose}
+      onCopy={onCopy}
+      onPaste={onPaste}
+    >
+      <div className="flex h-full w-full flex-col" onClick={handleFocus}>
+        <div ref={slotAnchorRef} className="flex min-h-0 flex-1 flex-col" />
+        {warning}
+      </div>
+    </TerminalPaneContextMenu>
   );
 });

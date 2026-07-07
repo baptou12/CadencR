@@ -1,5 +1,6 @@
 import { useRef, useState, type Dispatch, type ReactElement, type SetStateAction } from "react";
 import { toast } from "sonner";
+import { CopyIcon, PencilIcon, WandSparklesIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAutoNameFeature, useGetFeature } from "@/api/generated";
 import { CustomActionsBar } from "./CustomActionsBar";
@@ -19,12 +20,8 @@ import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useFeatureSettingsShortcuts } from "./useFeatureSettingsShortcuts";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { copyToClipboard } from "@/lib/clipboard";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { FeatureRenameForm } from "./FeatureRenamePopover";
 
@@ -349,18 +346,25 @@ function FeatureTitleMenu({
           </PopoverAnchor>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
-          <ContextMenuItem onSelect={handleCopy}>Copy</ContextMenuItem>
-          <ContextMenuItem
+          <ContextMenuActionItem icon={CopyIcon} onSelect={handleCopy}>
+            Copy
+          </ContextMenuActionItem>
+          <ContextMenuActionItem
+            icon={PencilIcon}
             onSelect={() => {
               openRenameOnMenuCloseRef.current = true;
             }}
           >
             Rename…
-          </ContextMenuItem>
+          </ContextMenuActionItem>
           {canAutoRename && (
-            <ContextMenuItem disabled={isAutoRenamePending} onSelect={onAutoRename}>
+            <ContextMenuActionItem
+              icon={WandSparklesIcon}
+              disabled={isAutoRenamePending}
+              onSelect={onAutoRename}
+            >
               Auto-rename
-            </ContextMenuItem>
+            </ContextMenuActionItem>
           )}
         </ContextMenuContent>
       </ContextMenu>

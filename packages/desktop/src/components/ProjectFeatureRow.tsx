@@ -2,34 +2,24 @@ import { memo, useRef, type ReactElement } from "react";
 import {
   TrashIcon,
   ArchiveIcon,
-  ArchiveRestoreIcon,
-  ArrowRightIcon,
   BotIcon,
   GlobeIcon,
   MessageCircleQuestionIcon,
   GitBranchIcon,
-  TagIcon,
   TerminalIcon,
   PinIcon,
   PinOffIcon,
-  XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { useGetStats, type Feature } from "@/api/generated";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { useGetStats, type Feature, type FeatureWorktreeInfo } from "@/api/generated";
 import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
-import { closeFeatureActivityNoun } from "@/lib/feature-activity-close";
+import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMenu";
 import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
@@ -56,6 +46,7 @@ interface ProjectFeatureRowProps {
   hasWorktree: boolean;
   /** True only when the worktree directory still exists on disk (stats query). */
   hasLiveWorktree: boolean;
+  worktree: FeatureWorktreeInfo | undefined;
   shellCount: number;
   browserCount: number;
   isEditingLabel: boolean;
@@ -87,6 +78,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   isAutoNaming,
   hasWorktree,
   hasLiveWorktree,
+  worktree,
   shellCount,
   browserCount,
   isEditingLabel,
@@ -290,37 +282,24 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
         // from onSelect races with Radix's context-menu focus/pointer teardown.
         onCloseAutoFocus={handleMenuCloseAutoFocus}
       >
-        <ContextMenuItem onSelect={() => onNavigate(feature)}>
-          <ArrowRightIcon />
-          Open
-        </ContextMenuItem>
-        {!isArchived && (
-          <ContextMenuItem onSelect={() => onTogglePin(feature.id, !isPinned)}>
-            {isPinned ? <PinOffIcon /> : <PinIcon />}
-            {pinActionLabel}
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem onSelect={markStartLabelEditAfterMenuClose}>
-          <TagIcon />
-          Set label
-        </ContextMenuItem>
-        {hasActivity && (
-          <ContextMenuItem onSelect={() => onCloseActivity(feature.id, shellCount, browserCount)}>
-            <XIcon />
-            {`Close ${closeFeatureActivityNoun(shellCount, browserCount)}`}
-          </ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        {isArchived && (
-          <ContextMenuItem onSelect={() => onUnarchive(feature.id)}>
-            <ArchiveRestoreIcon />
-            Unarchive
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem variant="destructive" onSelect={() => onArchiveOrDelete(feature.id)}>
-          {isArchived ? <TrashIcon /> : <ArchiveIcon />}
-          {archiveActionLabel}
-        </ContextMenuItem>
+        <ProjectFeatureContextMenu
+          feature={feature}
+          liveTitle={liveTitle}
+          worktree={worktree}
+          isArchived={isArchived}
+          isPinned={isPinned}
+          hasActivity={hasActivity}
+          shellCount={shellCount}
+          browserCount={browserCount}
+          archiveActionLabel={archiveActionLabel}
+          pinActionLabel={pinActionLabel}
+          onNavigate={onNavigate}
+          onTogglePin={onTogglePin}
+          onStartLabelEditAfterMenuClose={markStartLabelEditAfterMenuClose}
+          onCloseActivity={onCloseActivity}
+          onUnarchive={onUnarchive}
+          onArchiveOrDelete={onArchiveOrDelete}
+        />
       </ContextMenuContent>
     </ContextMenu>
   );
