@@ -6,7 +6,7 @@
  * the snapshot/update reducers, value validators, feature-lookup, and
  * notification trigger that the store imports.
  */
-import { queryClient, invalidateByUrlPrefix } from "@/lib/queryClient";
+import { invalidateByExactUrl, invalidateByUrlPrefix, queryClient } from "@/lib/queryClient";
 import { createLeadingSettleCoalescer } from "@/lib/coalesceInvalidation";
 import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
@@ -209,15 +209,20 @@ export function applyUpdate(
  * backend watcher's 1s min-emit gap so consecutive emissions during sustained
  * churn land in the same settle window and collapse into one trailing refetch.
  */
-const EDITOR_INVALIDATION_PREFIXES = [
+const EDITOR_INVALIDATION_SETTLE_MS = 1_200;
+// Keep `/api/editor/tree-count` out of the wave: the full/lazy-mode decision
+// is made on mount and is not re-evaluated mid-session. Content and tree data
+// still refresh so open tabs and the active tree stay current during agent work.
+const EDITOR_INVALIDATION_EXACT_URLS = [
   "/api/editor/read",
+  "/api/editor/read-image",
   "/api/editor/tree",
+  "/api/editor/tree-all",
   "/api/editor/search",
 ] as const;
-const EDITOR_INVALIDATION_SETTLE_MS = 1_200;
 
 const editorInvalidationCoalescer = createLeadingSettleCoalescer(
-  () => invalidateByUrlPrefix(queryClient, EDITOR_INVALIDATION_PREFIXES),
+  () => invalidateByExactUrl(queryClient, EDITOR_INVALIDATION_EXACT_URLS),
   EDITOR_INVALIDATION_SETTLE_MS,
 );
 

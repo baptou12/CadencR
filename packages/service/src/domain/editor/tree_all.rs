@@ -292,4 +292,25 @@ mod tests {
         let entries = build_entries(root, true).unwrap();
         assert!(find(&entries, "secret.txt").is_some());
     }
+
+    #[test]
+    fn nested_gitignored_directory_is_shown_as_leaf_not_descended() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        init_repo(root);
+        std::fs::create_dir_all(root.join("packages/app/node_modules/pkg")).unwrap();
+        std::fs::write(root.join("packages/app/node_modules/pkg/index.js"), "a").unwrap();
+        std::fs::write(root.join("packages/app/src.ts"), "b").unwrap();
+        std::fs::write(root.join("packages/app/.gitignore"), "node_modules/\n").unwrap();
+
+        let entries = build_entries(root, true).unwrap();
+
+        let dir = find(&entries, "packages/app/node_modules").expect("ignored dir listed");
+        assert!(dir.is_dir && dir.is_gitignored);
+        assert!(
+            find(&entries, "packages/app/node_modules/pkg").is_none(),
+            "nested ignored directory contents must not be eagerly listed",
+        );
+        assert!(!find(&entries, "packages/app/src.ts").unwrap().is_gitignored);
+    }
 }

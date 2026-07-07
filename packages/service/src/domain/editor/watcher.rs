@@ -9,7 +9,9 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
-use crate::domain::editor::service::{build_gitignore, is_gitignored_or_ancestor};
+use crate::domain::editor::service::{
+    build_gitignore, clear_gitignore_cache, is_gitignored_or_ancestor,
+};
 
 /// Minimum gap between successive change emissions under sustained churn.
 /// Mirrors the git watcher's `MIN_RECOMPUTE_GAP_MS` so an agent (or a build)
@@ -61,14 +63,10 @@ impl FileWatcher {
             .map_err(|e| format!("Invalid project path: {e}"))?;
         let project_str = canonical.to_string_lossy().to_string();
 
-        // Build the gitignore matcher once at startup so the hot callback only
-        // does a cheap match. `None` (no `.gitignore`) means "filter nothing",
-        // which preserves the previous behaviour for non-git projects.
-        let gitignore = Arc::new(build_gitignore(&canonical));
-
         let (ping_tx, ping_rx) = mpsc::unbounded_channel::<()>();
         let emit_task = spawn_emit_task(tx, project_str, ping_rx);
 
+        let gitignore = Arc::new(Mutex::new(build_gitignore(&canonical)));
         let debouncer = build_debouncer(canonical.clone(), gitignore, ping_tx.clone())?;
 
         debug!(path = %canonical.display(), "file watcher started");
@@ -83,6 +81,7 @@ impl FileWatcher {
     pub fn stop(&mut self) {
         if let Some(path) = self.watched_path.take() {
             debug!(path = %path.display(), "file watcher stopped");
+            clear_gitignore_cache(&path);
         }
         // Drop the debouncer (its callback holds one ping sender) and our own
         // ping sender, closing the channel so the emit task exits.
@@ -99,9 +98,10 @@ impl FileWatcher {
 /// emit task for any remaining relevant change.
 fn build_debouncer(
     canonical: PathBuf,
-    gitignore: Arc<Option<Gitignore>>,
+    gitignore: Arc<Mutex<Option<Gitignore>>>,
     ping_tx: mpsc::UnboundedSender<()>,
 ) -> Result<Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>, String> {
+    let project_root = Arc::new(canonical.clone());
     let mut debouncer = new_debouncer(
         Duration::from_millis(500),
         move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, _>| {
@@ -112,10 +112,25 @@ fn build_debouncer(
                     return;
                 }
             };
-            let matcher = (*gitignore).as_ref();
-            let has_relevant = events
-                .iter()
-                .any(|e| e.kind == DebouncedEventKind::Any && !is_noise(matcher, &e.path));
+            let mut relevant_gitignore_changed = false;
+            let has_relevant = match gitignore.lock() {
+                Ok(matcher) => events.iter().any(|e| {
+                    if e.kind != DebouncedEventKind::Any {
+                        return false;
+                    }
+                    let is_relevant = !is_noise(matcher.as_ref(), &e.path);
+                    if is_relevant && is_gitignore_file(&e.path) {
+                        relevant_gitignore_changed = true;
+                    }
+                    is_relevant
+                }),
+                Err(_) => events
+                    .iter()
+                    .any(|e| e.kind == DebouncedEventKind::Any && !is_git_path(&e.path)),
+            };
+            if relevant_gitignore_changed {
+                refresh_gitignore_cache(project_root.clone(), gitignore.clone());
+            }
             if has_relevant {
                 let _ = ping_tx.send(());
             }
@@ -129,6 +144,16 @@ fn build_debouncer(
         .map_err(|e| format!("Failed to watch directory: {e}"))?;
 
     Ok(debouncer)
+}
+
+fn refresh_gitignore_cache(project_root: Arc<PathBuf>, gitignore: Arc<Mutex<Option<Gitignore>>>) {
+    clear_gitignore_cache(&project_root);
+    std::thread::spawn(move || {
+        let matcher = build_gitignore(&project_root);
+        if let Ok(mut current) = gitignore.lock() {
+            *current = matcher;
+        }
+    });
 }
 
 /// The churn-cap emit task: mirrors the git watcher's `MIN_RECOMPUTE_GAP_MS`
@@ -177,6 +202,10 @@ fn is_noise(gitignore: Option<&Gitignore>, path: &Path) -> bool {
 /// Check if a path is inside a `.git` directory.
 fn is_git_path(path: &Path) -> bool {
     path.components().any(|c| c.as_os_str() == ".git")
+}
+
+fn is_gitignore_file(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == ".gitignore")
 }
 
 /// Shared watcher handle stored in AppState.
@@ -230,6 +259,25 @@ mod tests {
         // Real source changes are not noise.
         assert!(!is_noise(m, &root.join("src/main.rs")));
         assert!(!is_noise(m, &root.join("README.md")));
+    }
+
+    #[test]
+    fn is_noise_filters_paths_from_nested_gitignore_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(root.join("packages/app/node_modules/pkg")).unwrap();
+        std::fs::create_dir_all(root.join("packages/app/src")).unwrap();
+        std::fs::write(root.join("packages/app/.gitignore"), "node_modules/\n").unwrap();
+
+        let matcher = build_gitignore(root);
+        let m = matcher.as_ref();
+
+        assert!(is_noise(
+            m,
+            &root.join("packages/app/node_modules/pkg/index.js")
+        ));
+        assert!(!is_noise(m, &root.join("packages/app/src/main.ts")));
     }
 
     #[test]
