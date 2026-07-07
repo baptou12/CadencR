@@ -2,16 +2,24 @@ import { memo, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent }
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  ContextMenuActionItem,
+  ContextMenuSubActionTrigger,
+} from "@/components/ContextMenuActionItem";
 import { copyAs, type ExportFormat } from "@/lib/markdown-export";
 import { fragmentToMarkdown } from "@/lib/selection-to-markdown";
-import { RotateCcwIcon, GitBranchIcon } from "lucide-react";
+import {
+  ClipboardCopyIcon,
+  FileTextIcon,
+  GitBranchIcon,
+  MessageSquareIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 import { type AgentBlockData } from "../AgentBlock";
 import { useMessageBranchActions } from "./use-message-branch-actions";
 
@@ -123,38 +131,51 @@ function AgentStreamContextMenu({ block, children }: AgentStreamContextMenuProps
         <div onMouseDownCapture={captureOnRightMouseDown}>{children}</div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onSelect={() => void copy("plain", "selection-or-block")}>
+        <ContextMenuActionItem
+          icon={ClipboardCopyIcon}
+          shortcutKeys={["mod", "c"]}
+          onSelect={() => void copy("plain", "selection-or-block")}
+        >
           Copy
-        </ContextMenuItem>
+        </ContextMenuActionItem>
         <ContextMenuSub>
-          <ContextMenuSubTrigger>Copy as</ContextMenuSubTrigger>
+          <ContextMenuSubActionTrigger icon={ClipboardCopyIcon}>
+            Copy as
+          </ContextMenuSubActionTrigger>
           <ContextMenuSubContent>
-            <ContextMenuItem onSelect={() => void copy("markdown", "selection-or-block")}>
+            <ContextMenuActionItem
+              icon={FileTextIcon}
+              onSelect={() => void copy("markdown", "selection-or-block")}
+            >
               Markdown
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={() => void copy("slack", "selection-or-block")}>
+            </ContextMenuActionItem>
+            <ContextMenuActionItem
+              icon={MessageSquareIcon}
+              onSelect={() => void copy("slack", "selection-or-block")}
+            >
               Slack mrkdwn
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={() => void copy("plain", "selection-or-block")}>
+            </ContextMenuActionItem>
+            <ContextMenuActionItem
+              icon={ClipboardCopyIcon}
+              onSelect={() => void copy("plain", "selection-or-block")}
+            >
               Plain text
-            </ContextMenuItem>
+            </ContextMenuActionItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => void copy("markdown", "block")}>
+        <ContextMenuActionItem icon={FileTextIcon} onSelect={() => void copy("markdown", "block")}>
           Copy block as Markdown
-        </ContextMenuItem>
+        </ContextMenuActionItem>
         {canBranch && (
           <>
             <ContextMenuSeparator />
-            <ContextMenuItem onSelect={rewind}>
-              <RotateCcwIcon className="size-4" />
+            <ContextMenuActionItem icon={RotateCcwIcon} onSelect={rewind}>
               Rewind to here
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={fork}>
-              <GitBranchIcon className="size-4" />
+            </ContextMenuActionItem>
+            <ContextMenuActionItem icon={GitBranchIcon} onSelect={fork}>
               Fork from here
-            </ContextMenuItem>
+            </ContextMenuActionItem>
           </>
         )}
       </ContextMenuContent>

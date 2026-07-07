@@ -35,10 +35,10 @@ import {
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
@@ -258,7 +258,8 @@ export function ProjectTree({
                       </ProjectRowButton>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
-                      <ContextMenuItem
+                      <ContextMenuActionItem
+                        icon={PlusIcon}
                         onSelect={() => {
                           setExpanded((prev) => ({ ...prev, [project.id]: true }));
                           pendingProjectIdRef.current = project.id;
@@ -268,24 +269,27 @@ export function ProjectTree({
                         }}
                       >
                         New Session
-                      </ContextMenuItem>
+                      </ContextMenuActionItem>
                       <ContextMenuSeparator />
-                      <ContextMenuItem
+                      <ContextMenuActionItem
+                        icon={Settings}
                         onSelect={() => setSettingsProject({ id: project.id, name: project.name })}
                       >
                         Project Settings
-                      </ContextMenuItem>
-                      <ContextMenuItem
+                      </ContextMenuActionItem>
+                      <ContextMenuActionItem
+                        icon={Download}
                         onSelect={() => setImportProject({ id: project.id, name: project.name })}
                       >
                         Import existing sessions
-                      </ContextMenuItem>
-                      <ContextMenuItem
+                      </ContextMenuActionItem>
+                      <ContextMenuActionItem
+                        icon={Trash2}
                         variant="destructive"
                         onSelect={() => setDeleteProject({ id: project.id, name: project.name })}
                       >
                         Delete Project
-                      </ContextMenuItem>
+                      </ContextMenuActionItem>
                     </ContextMenuContent>
                   </ContextMenu>
 

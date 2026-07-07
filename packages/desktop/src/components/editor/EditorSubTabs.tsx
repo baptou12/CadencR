@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { ClipboardCopyIcon, EyeIcon, PanelRightCloseIcon, X } from "lucide-react";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { formatCombo } from "@/lib/shortcuts/format";
@@ -22,11 +22,10 @@ import { toast } from "sonner";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 import { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
 
 interface EditorSubTabsProps {
@@ -190,15 +189,20 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
                 </button>
               </ContextMenuTrigger>
               <ContextMenuContent>
-                <ContextMenuItem
+                <ContextMenuActionItem
+                  icon={X}
                   onSelect={() => requestClose(tab.filePath, tab.fileName, tab.isDirty)}
                 >
                   Close
-                </ContextMenuItem>
-                <ContextMenuItem onSelect={() => closeMany((p) => p !== tab.filePath)}>
+                </ContextMenuActionItem>
+                <ContextMenuActionItem
+                  icon={PanelRightCloseIcon}
+                  onSelect={() => closeMany((p) => p !== tab.filePath)}
+                >
                   Close Others
-                </ContextMenuItem>
-                <ContextMenuItem
+                </ContextMenuActionItem>
+                <ContextMenuActionItem
+                  icon={PanelRightCloseIcon}
                   onSelect={() => {
                     const idx = tabs.findIndex((t) => t.filePath === tab.filePath);
                     closeMany((p) => {
@@ -208,16 +212,21 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
                   }}
                 >
                   Close to the Right
-                </ContextMenuItem>
-                <ContextMenuItem onSelect={() => closeMany(() => true)}>Close All</ContextMenuItem>
+                </ContextMenuActionItem>
+                <ContextMenuActionItem icon={X} onSelect={() => closeMany(() => true)}>
+                  Close All
+                </ContextMenuActionItem>
                 <ContextMenuSeparator />
-                <ContextMenuItem onSelect={() => copyFilePath(tab.filePath)}>
+                <ContextMenuActionItem
+                  icon={ClipboardCopyIcon}
+                  shortcutLabel={copyPathHint}
+                  onSelect={() => copyFilePath(tab.filePath)}
+                >
                   Copy Path
-                  <ContextMenuShortcut>{copyPathHint}</ContextMenuShortcut>
-                </ContextMenuItem>
-                <ContextMenuItem onSelect={() => void reveal(tab.filePath)}>
+                </ContextMenuActionItem>
+                <ContextMenuActionItem icon={EyeIcon} onSelect={() => void reveal(tab.filePath)}>
                   Reveal in File Manager
-                </ContextMenuItem>
+                </ContextMenuActionItem>
               </ContextMenuContent>
             </ContextMenu>
           );

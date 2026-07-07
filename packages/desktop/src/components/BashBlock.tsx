@@ -1,6 +1,12 @@
 import { memo, useMemo, type ReactElement, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRightIcon, Loader2Icon, TerminalIcon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  ClipboardCopyIcon,
+  Code2Icon,
+  Loader2Icon,
+  TerminalIcon,
+} from "lucide-react";
 import { getGetMessageFullContentQueryKey, getMessageFullContent } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
@@ -9,12 +15,8 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { extractBashResultOutput } from "@/lib/tool-adapter";
 import { useControllableBoolean } from "@/hooks/useControllableBoolean";
 import { CollapsibleBlock } from "@/components/ui/collapsible-block";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 
 /** Lines of tool output rendered before the "Show all" toggle collapses the
  * rest. Exported so in-conversation search counts the same visible tail. */
@@ -167,19 +169,22 @@ export const BashBlock = memo(function BashBlock({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem
+        <ContextMenuActionItem
+          icon={ClipboardCopyIcon}
           disabled={!hasOutput}
           onSelect={() => void copyToClipboard(content ?? "", "Output copied")}
         >
           Copy Output
-        </ContextMenuItem>
-        <ContextMenuItem
+        </ContextMenuActionItem>
+        <ContextMenuActionItem
+          icon={TerminalIcon}
           disabled={!command}
           onSelect={() => void copyToClipboard(command ?? "", "Command copied")}
         >
           Copy Command
-        </ContextMenuItem>
-        <ContextMenuItem
+        </ContextMenuActionItem>
+        <ContextMenuActionItem
+          icon={Code2Icon}
           disabled={!hasOutput}
           onSelect={() =>
             void copyToClipboard(
@@ -189,7 +194,7 @@ export const BashBlock = memo(function BashBlock({
           }
         >
           Copy as Markdown Code Block
-        </ContextMenuItem>
+        </ContextMenuActionItem>
       </ContextMenuContent>
     </ContextMenu>
   );

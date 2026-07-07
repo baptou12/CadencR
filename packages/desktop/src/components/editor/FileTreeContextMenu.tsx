@@ -1,6 +1,15 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ContextMenuItem, ContextMenuOpenContext } from "@pierre/trees";
+import {
+  ClipboardCopyIcon,
+  FilePlusIcon,
+  FolderOpenIcon,
+  FolderPlusIcon,
+  PencilIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { ContextMenuActionButton, type ContextMenuIcon } from "@/components/ContextMenuActionItem";
 
 export type FileTreeContextMenuItem = ContextMenuItem;
 export type FileTreeContextMenuOpenContext = ContextMenuOpenContext;
@@ -8,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 interface MenuItemSpec {
   label: string;
+  icon: ContextMenuIcon;
   shortcut?: string;
   destructive?: boolean;
   onSelect: () => void;
@@ -42,18 +52,40 @@ function buildMenuItems(
 ): MenuItemSpec[] {
   const isDir = item.kind === "directory";
   const items: MenuItemSpec[] = [
-    { label: "New File…", onSelect: () => onAction("new-file", item, context) },
-    { label: "New Folder…", onSelect: () => onAction("new-folder", item, context) },
+    { label: "New File…", icon: FilePlusIcon, onSelect: () => onAction("new-file", item, context) },
+    {
+      label: "New Folder…",
+      icon: FolderPlusIcon,
+      onSelect: () => onAction("new-folder", item, context),
+    },
   ];
   if (!isDir) {
-    items.push({ label: "Open", onSelect: () => onAction("open", item, context) });
+    items.push({
+      label: "Open",
+      icon: FolderOpenIcon,
+      onSelect: () => onAction("open", item, context),
+    });
   }
   items.push(
-    { label: "Copy Path", onSelect: () => onAction("copy-path", item, context) },
-    { label: "Reveal in File Manager", onSelect: () => onAction("reveal", item, context) },
-    { label: "Rename", shortcut: "↵", onSelect: () => onAction("rename", item, context) },
+    {
+      label: "Copy Path",
+      icon: ClipboardCopyIcon,
+      onSelect: () => onAction("copy-path", item, context),
+    },
+    {
+      label: "Reveal in File Manager",
+      icon: FolderOpenIcon,
+      onSelect: () => onAction("reveal", item, context),
+    },
+    {
+      label: "Rename",
+      icon: PencilIcon,
+      shortcut: "↵",
+      onSelect: () => onAction("rename", item, context),
+    },
     {
       label: "Move to Trash",
+      icon: Trash2Icon,
       shortcut: "⌘⌫",
       destructive: true,
       onSelect: () => onAction("delete", item, context),
@@ -132,6 +164,7 @@ export function FileTreeContextMenu({
         <MenuRow
           key={`${index}-${entry.label}`}
           label={entry.label}
+          icon={entry.icon}
           shortcut={entry.shortcut}
           destructive={entry.destructive}
           onSelect={entry.onSelect}
@@ -144,47 +177,26 @@ export function FileTreeContextMenu({
 
 function MenuRow({
   label,
+  icon,
   shortcut,
   destructive,
   onSelect,
 }: {
   label: string;
+  icon: ContextMenuIcon;
   shortcut?: string;
   destructive?: boolean;
   onSelect: () => void;
 }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onSelect}
-      className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left text-sm outline-none transition-colors",
-        "hover:bg-accent focus-visible:bg-accent",
-        destructive && "text-destructive focus-visible:bg-destructive/10 hover:bg-destructive/10",
-      )}
+    <ContextMenuActionButton
+      icon={icon}
+      shortcutLabel={shortcut}
+      destructive={destructive}
+      className="py-1"
+      onSelect={onSelect}
     >
-      <span className="truncate">{label}</span>
-      {shortcut ? <ShortcutLabel destructive={destructive}>{shortcut}</ShortcutLabel> : null}
-    </button>
-  );
-}
-
-function ShortcutLabel({
-  destructive,
-  children,
-}: {
-  destructive?: boolean;
-  children: ReactNode;
-}): React.JSX.Element {
-  return (
-    <span
-      className={cn(
-        "ml-auto text-[10px] font-mono",
-        destructive ? "text-destructive/70" : "text-muted-foreground",
-      )}
-    >
-      {children}
-    </span>
+      {label}
+    </ContextMenuActionButton>
   );
 }
