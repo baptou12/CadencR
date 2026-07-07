@@ -9,10 +9,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { TerminalLeaf } from "@/hooks/terminal-tree";
 
-const listTerminalSessions = vi.fn();
+const fetchTerminalSessions = vi.fn();
 
-vi.mock("@/api/generated", () => ({
-  listTerminalSessions: (...args: unknown[]) => listTerminalSessions(...args),
+vi.mock("@/api/terminal-sessions", () => ({
+  fetchTerminalSessions: (...args: unknown[]) => fetchTerminalSessions(...args),
 }));
 
 import { useWorktreeTerminalAutoSwitch } from "./useWorktreeTerminalAutoSwitch";
@@ -23,11 +23,11 @@ function leaf(overrides: Partial<TerminalLeaf>): TerminalLeaf {
 
 describe("useWorktreeTerminalAutoSwitch", () => {
   beforeEach(() => {
-    listTerminalSessions.mockReset();
+    fetchTerminalSessions.mockReset();
   });
 
   it("auto-restarts an idle pane and never warns", async () => {
-    listTerminalSessions.mockResolvedValue([
+    fetchTerminalSessions.mockResolvedValue([
       { pty_id: "pty-1", cwd: "/repo", alive: true, foreground_active: false },
     ]);
     const onRestartPane = vi.fn();
@@ -45,7 +45,7 @@ describe("useWorktreeTerminalAutoSwitch", () => {
   });
 
   it("warns for a busy pane instead of restarting it", async () => {
-    listTerminalSessions.mockResolvedValue([
+    fetchTerminalSessions.mockResolvedValue([
       { pty_id: "pty-1", cwd: "/repo", alive: true, foreground_active: true },
     ]);
     const onRestartPane = vi.fn();
@@ -63,7 +63,7 @@ describe("useWorktreeTerminalAutoSwitch", () => {
   });
 
   it("falls back to warning when the activity lookup fails", async () => {
-    listTerminalSessions.mockRejectedValue(new Error("offline"));
+    fetchTerminalSessions.mockRejectedValue(new Error("offline"));
     const onRestartPane = vi.fn();
     const { result } = renderHook(() =>
       useWorktreeTerminalAutoSwitch({
@@ -90,7 +90,7 @@ describe("useWorktreeTerminalAutoSwitch", () => {
     );
 
     await Promise.resolve();
-    expect(listTerminalSessions).not.toHaveBeenCalled();
+    expect(fetchTerminalSessions).not.toHaveBeenCalled();
     expect(onRestartPane).not.toHaveBeenCalled();
   });
 
@@ -106,7 +106,7 @@ describe("useWorktreeTerminalAutoSwitch", () => {
     );
 
     await Promise.resolve();
-    expect(listTerminalSessions).not.toHaveBeenCalled();
+    expect(fetchTerminalSessions).not.toHaveBeenCalled();
     expect(onRestartPane).not.toHaveBeenCalled();
   });
 });

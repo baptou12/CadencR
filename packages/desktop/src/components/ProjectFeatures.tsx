@@ -269,13 +269,13 @@ export function ProjectFeatures({
   );
 
   // Counts come in from the row (which already has them) so this callback stays
-  // referentially stable across the sidebar's 2s activity polling.
+  // referentially stable across the sidebar's activity polling.
   const closeFeatureActivity = useCloseFeatureActivity();
   const handleCloseActivity = useCallback(
     (featureId: number, shellCount: number, browserCount: number): void => {
-      closeFeatureActivity({ featureId, shellCount, browserCount });
+      closeFeatureActivity({ projectId, featureId, shellCount, browserCount });
     },
-    [closeFeatureActivity],
+    [closeFeatureActivity, projectId],
   );
 
   const renderFeature = (feature: Feature) => (

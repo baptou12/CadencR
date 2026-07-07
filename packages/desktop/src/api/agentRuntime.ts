@@ -59,6 +59,15 @@ function readQueryExtras(arg: boolean | QueryExtras | undefined): QueryExtras {
   return arg;
 }
 
+// The catalog is built from a CLI-detection probe that can take several seconds
+// per cwd. Its result (which agents are installed, which models they expose)
+// only changes when the user installs/updates a CLI or edits a profile — never
+// between feature switches. So we cache each `cwd+profile` aggressively and let
+// profile mutations invalidate `["agent-catalog"]` explicitly; switching back to
+// an already-probed cwd then serves from cache instead of re-probing.
+const AGENT_CATALOG_STALE_MS = 10 * 60_000;
+const AGENT_CATALOG_CACHE_MS = 30 * 60_000;
+
 export function useAgentCatalog(extras?: QueryExtras) {
   const { cwd, profile, ...queryExtras } = extras ?? {};
   // The Claude model probe is profile-dependent (Bedrock/Vertex expose
@@ -74,6 +83,8 @@ export function useAgentCatalog(extras?: QueryExtras) {
         params:
           cwd || profile ? { ...(cwd ? { cwd } : {}), ...(profile ? { profile } : {}) } : undefined,
       }),
+    staleTime: AGENT_CATALOG_STALE_MS,
+    cacheTime: AGENT_CATALOG_CACHE_MS,
     ...queryExtras,
   });
 }
