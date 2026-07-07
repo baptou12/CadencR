@@ -10,7 +10,8 @@ import {
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
-import { listTerminalSessions, useListProjects } from "@/api/generated";
+import { useListProjects } from "@/api/generated";
+import { fetchTerminalSessions } from "@/api/terminal-sessions";
 import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 import {
   getFocusedTab,
@@ -79,14 +80,12 @@ export const FeatureTerminalTab = memo(
         if (hydratingRef.current) return;
         hydratingRef.current = true;
         try {
-          const sessions = await listTerminalSessions({ feature_id: featureId }).catch(
-            (err: unknown) => {
-              // Degrade to a fresh shell — the terminal still opens, we just
-              // don't auto-attach this time. (Not a user-facing failure.)
-              console.warn("[terminal] could not list existing sessions; spawning fresh", err);
-              return [];
-            },
-          );
+          const sessions = await fetchTerminalSessions(featureId).catch((err: unknown) => {
+            // Degrade to a fresh shell — the terminal still opens, we just
+            // don't auto-attach this time. (Not a user-facing failure.)
+            console.warn("[terminal] could not list existing sessions; spawning fresh", err);
+            return [];
+          });
           if (!store.getFeature(featureId).root) {
             if (sessions.length > 0) {
               store.adoptPtys(

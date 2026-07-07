@@ -54,12 +54,27 @@ async function runStatusCall(
   }
 }
 
+// Several components (the toolbar button, the dialog, the connected-count poll)
+// each call `refresh()` on mount, and StrictMode double-invokes those effects —
+// without a guard that fired a burst of identical `GET /api/remote/status`
+// requests at startup. Coalesce overlapping refreshes into one in-flight call;
+// mutations are intentionally excluded since they must always reach the backend.
+let inFlightRefresh: Promise<void> | null = null;
+
+function refreshStatus(set: SetState): Promise<void> {
+  if (inFlightRefresh) return inFlightRefresh;
+  inFlightRefresh = runStatusCall(set, "loading", () => remoteStatus()).finally(() => {
+    inFlightRefresh = null;
+  });
+  return inFlightRefresh;
+}
+
 export const useRemoteStore = create<RemoteState>((set) => ({
   status: null,
   loaded: false,
   phase: "idle",
   error: null,
-  refresh: () => runStatusCall(set, "loading", () => remoteStatus()),
+  refresh: () => refreshStatus(set),
   enable: () => runStatusCall(set, "mutating", () => remoteEnable()),
   disable: () => runStatusCall(set, "mutating", () => remoteDisable()),
   revokeDevice: (id) => runStatusCall(set, "mutating", () => remoteRevokeDevice(id)),

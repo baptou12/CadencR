@@ -12,9 +12,15 @@ interface FeatureActivityCounts {
 }
 
 export function useFeatureActivityCounts(projectId: number): FeatureActivityCounts {
+  // Archived rows still surface a shell badge and the "Close N shells"
+  // affordance — archiving a feature doesn't kill its shells by default — so we
+  // must keep `include_archived: true` to see those PTYs. The win here is the
+  // interval: shell-count badges are a secondary signal, so a slow 10s poll
+  // (down from 2s) is plenty, and React Query already pauses it while the window
+  // is unfocused, so an idle background window makes no requests at all.
   const activityQuery = useListFeatureActivity(
     { project_id: projectId, include_archived: true },
-    { query: { refetchInterval: 2000 } },
+    { query: { refetchInterval: 10_000 } },
   );
   const browserCountsByFeatureId = useBrowserStore((state) => state.countsByScope);
 

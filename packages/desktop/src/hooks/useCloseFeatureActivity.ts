@@ -1,12 +1,14 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { useKillTerminalSessions } from "@/api/generated";
+import { useQueryClient } from "@tanstack/react-query";
+import { getListFeatureActivityQueryKey, useKillTerminalSessions } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { closeFeatureActivityNoun } from "@/lib/feature-activity-close";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 
 export interface CloseFeatureActivityArgs {
+  projectId: number;
   featureId: number;
   shellCount: number;
   browserCount: number;
@@ -17,12 +19,13 @@ export interface CloseFeatureActivityArgs {
  * kill its running shells (POST /api/terminal/kill) and close its browser tabs
  * (Electron `closeBrowserTabsForScope`, where the browser scope id is the
  * feature id). Counts are passed in by the caller so the returned callback
- * stays referentially stable across the sidebar's 2s activity polling.
+ * stays referentially stable across the sidebar's activity polling.
  */
 export function useCloseFeatureActivity(): (args: CloseFeatureActivityArgs) => void {
   const { mutateAsync: killTerminals } = useKillTerminalSessions();
+  const queryClient = useQueryClient();
   return useCallback(
-    ({ featureId, shellCount, browserCount }: CloseFeatureActivityArgs): void => {
+    ({ projectId, featureId, shellCount, browserCount }: CloseFeatureActivityArgs): void => {
       if (shellCount <= 0 && browserCount <= 0) return;
       const noun = closeFeatureActivityNoun(shellCount, browserCount);
       const work = (async (): Promise<void> => {
@@ -32,6 +35,15 @@ export function useCloseFeatureActivity(): (args: CloseFeatureActivityArgs) => v
           // left attached to its hung-up shell (the "zsh: jobs SIGHUPed",
           // can't-type state); clearing it lets a fresh shell spawn cleanly.
           useTerminalStore.getState().closePanel(featureId);
+          // The sidebar badge derives from `list_feature_activity` (now polled
+          // only every 10s), so refresh this project's query immediately — but
+          // fire-and-forget, since the success toast shouldn't wait on the poll.
+          void queryClient.invalidateQueries({
+            queryKey: getListFeatureActivityQueryKey({
+              project_id: projectId,
+              include_archived: true,
+            }),
+          });
         }
         if (browserCount > 0) await desktopBridge.closeBrowserTabsForScope(featureId);
       })();
@@ -41,6 +53,6 @@ export function useCloseFeatureActivity(): (args: CloseFeatureActivityArgs) => v
         error: (err) => apiErrorMessage(err, `Failed to close ${noun}`),
       });
     },
-    [killTerminals],
+    [killTerminals, queryClient],
   );
 }

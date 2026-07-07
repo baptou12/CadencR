@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { listTerminalSessions } from "@/api/generated";
+import { fetchTerminalSessions } from "@/api/terminal-sessions";
 import { isCwdStale, type TerminalLeaf } from "@/hooks/terminal-tree";
 
 interface Params {
@@ -51,9 +51,11 @@ export function useWorktreeTerminalAutoSwitch({
 
     void (async () => {
       let ok = true;
-      let sessions: Awaited<ReturnType<typeof listTerminalSessions>> = [];
+      let sessions: Awaited<ReturnType<typeof fetchTerminalSessions>> = [];
       try {
-        sessions = await listTerminalSessions({ feature_id: featureId });
+        // `fresh` bypasses the dedupe window: an idle/busy decision must never
+        // run on a snapshot that predates a shell becoming busy.
+        sessions = await fetchTerminalSessions(featureId, { fresh: true });
       } catch (err) {
         ok = false;
         console.warn("[terminal] foreground check failed; keeping cwd warning", err);
