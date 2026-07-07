@@ -1,12 +1,45 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, within } from "@/test-utils";
+import type { FileDiffSection } from "@/lib/parse-unified-diff";
+
+const singleFileDiff = `diff --git a/src/foo.ts b/src/foo.ts
+index abc..def 100644
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1,1 +1,2 @@
+ line1
++line2
+`;
+
+const fooFile = {
+  file: "src/foo.ts",
+  status: "M",
+  additions: 1,
+  deletions: 1,
+  is_staged: false,
+};
+
+const fooSection: FileDiffSection = {
+  oldFileName: "src/foo.ts",
+  newFileName: "src/foo.ts",
+  hunks: [singleFileDiff],
+};
 
 const mocks = vi.hoisted(() => {
-  const useGetDiffMock = vi.fn(() => ({ data: undefined as unknown, isLoading: false }));
+  const useGetChangedFilesMock = vi.fn(
+    () => ({ data: [] as unknown[], isLoading: false }) as { data: unknown[]; isLoading: boolean },
+  );
   const useMutationMock = vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
   const useGetFileContentMock = vi.fn(() => ({ data: undefined }));
   const useGetFileBlobShasMock = vi.fn<() => { data: unknown[] }>(() => ({ data: [] }));
   const useListDiffViewedMock = vi.fn<() => { data: unknown[] }>(() => ({ data: [] }));
+  // Stands in for the lazy per-file diff fetch. Returns the section only when
+  // the row is enabled (expanded + on screen), mirroring the real hook.
+  const useFileDiffSectionMock = vi.fn(({ enabled }: { enabled: boolean }) => ({
+    section: enabled ? fooSection : null,
+    isLoading: false,
+    isError: false,
+  }));
   const patchDiffViewMock = vi.fn(({ patch }: { patch: string }) => (
     <div data-testid="patch-diff-view" data-patch={patch}>
       PatchDiffView
@@ -27,11 +60,12 @@ const mocks = vi.hoisted(() => {
     setValue: persistFileListCollapsedMock,
   }));
   return {
-    useGetDiffMock,
+    useGetChangedFilesMock,
     useMutationMock,
     useGetFileContentMock,
     useGetFileBlobShasMock,
     useListDiffViewedMock,
+    useFileDiffSectionMock,
     patchDiffViewMock,
     persistFileListCollapsedMock,
     useDebouncedSettingMock,
@@ -39,9 +73,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("@/api/generated", () => ({
-  useGetDiff: mocks.useGetDiffMock,
+  useGetChangedFiles: mocks.useGetChangedFilesMock,
   useGetFileBlobShas: mocks.useGetFileBlobShasMock,
-  useGetChangedFiles: vi.fn(() => ({ data: [] })),
   useGetFileContent: mocks.useGetFileContentMock,
   // Orval emits a mutation hook for batch endpoints — mirror the mutation
   // shape so call sites that read `.mutate` and `.data` don't blow up.
@@ -56,6 +89,15 @@ vi.mock("@/api/generated", () => ({
   useCreateDiffComment: mocks.useMutationMock,
   useUpdateDiffComment: mocks.useMutationMock,
   useDeleteDiffComment: mocks.useMutationMock,
+}));
+
+vi.mock("./useFileDiffSection", () => ({
+  useFileDiffSection: mocks.useFileDiffSectionMock,
+}));
+
+// Treat every row as on-screen so lazy per-file diffs load in tests.
+vi.mock("@/hooks/useInViewport", () => ({
+  useInViewport: () => ({ setRef: () => {}, inView: true }),
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -82,19 +124,17 @@ vi.mock("./PatchDiffView", () => ({
 
 import { DiffViewer } from "./DiffViewer";
 
-const singleFileDiff = `diff --git a/src/foo.ts b/src/foo.ts
-index abc..def 100644
---- a/src/foo.ts
-+++ b/src/foo.ts
-@@ -1,1 +1,2 @@
- line1
-+line2
-`;
+/** Default: the changed-files list contains one modified file. */
+function withFooFile(): void {
+  mocks.useGetChangedFilesMock.mockReturnValue({ data: [fooFile], isLoading: false });
+}
 
 beforeEach(() => {
   mocks.persistFileListCollapsedMock.mockReset();
   mocks.patchDiffViewMock.mockClear();
   mocks.useDebouncedSettingMock.mockReset();
+  mocks.useGetChangedFilesMock.mockReset();
+  mocks.useGetChangedFilesMock.mockReturnValue({ data: [], isLoading: false });
   mocks.useGetFileBlobShasMock.mockReset();
   mocks.useGetFileBlobShasMock.mockReturnValue({ data: [] });
   mocks.useListDiffViewedMock.mockReset();
@@ -111,21 +151,18 @@ afterEach(() => {
 
 describe("DiffViewer", () => {
   it("shows loading state", () => {
-    mocks.useGetDiffMock.mockReturnValue({ data: undefined as unknown, isLoading: true });
+    mocks.useGetChangedFilesMock.mockReturnValue({ data: [], isLoading: true });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("Loading diff...")).toBeInTheDocument();
   });
 
-  it("keeps hook order stable when loading diff resolves", () => {
+  it("keeps hook order stable when the file list resolves", () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.useGetDiffMock.mockReturnValue({ data: undefined as unknown, isLoading: true });
+    mocks.useGetChangedFilesMock.mockReturnValue({ data: [], isLoading: true });
 
     const { rerender } = render(<DiffViewer featureId={1} mode="worktree" />);
 
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
 
     expect(() => rerender(<DiffViewer featureId={1} mode="worktree" />)).not.toThrow();
     expect(consoleErrorSpy).not.toHaveBeenCalledWith(
@@ -135,16 +172,13 @@ describe("DiffViewer", () => {
     );
   });
 
-  it("keeps hook order stable when switching from loaded diff back to loading", () => {
+  it("keeps hook order stable when switching from loaded list back to loading", () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
 
     const { rerender } = render(<DiffViewer featureId={1} mode="worktree" />);
 
-    mocks.useGetDiffMock.mockReturnValue({ data: undefined as unknown, isLoading: true });
+    mocks.useGetChangedFilesMock.mockReturnValue({ data: [], isLoading: true });
 
     expect(() => rerender(<DiffViewer featureId={2} mode="worktree" />)).not.toThrow();
     expect(consoleErrorSpy).not.toHaveBeenCalledWith(
@@ -154,33 +188,20 @@ describe("DiffViewer", () => {
     );
   });
 
-  it("shows 'No changes detected' when diff is empty", () => {
-    mocks.useGetDiffMock.mockReturnValue({ data: { diff: "" } as unknown, isLoading: false });
+  it("shows 'No changes detected' when the file list is empty", () => {
+    mocks.useGetChangedFilesMock.mockReturnValue({ data: [], isLoading: false });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("No changes detected")).toBeInTheDocument();
   });
 
-  it("renders diff content when data is present", () => {
-    const mockDiff = `diff --git a/src/foo.ts b/src/foo.ts
-index abc..def 100644
---- a/src/foo.ts
-+++ b/src/foo.ts
-@@ -1,3 +1,4 @@
- line1
-+added line
- line2
- line3
-`;
-    mocks.useGetDiffMock.mockReturnValue({ data: { diff: mockDiff } as unknown, isLoading: false });
+  it("renders diff content when files are present", () => {
+    withFooFile();
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
   });
 
   it("renders the file copy and collapse controls in the file header", () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
     render(<DiffViewer featureId={1} mode="worktree" />);
 
     const fileHeader = document.querySelector<HTMLElement>("[data-diff-file-header]");
@@ -194,11 +215,7 @@ index abc..def 100644
   });
 
   it("does not render editor-open actions without an editor-open provider", () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
-
+    withFooFile();
     render(<DiffViewer featureId={1} mode="worktree" />);
 
     expect(
@@ -207,23 +224,15 @@ index abc..def 100644
   });
 
   it("renders split/unified toggle buttons", () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByRole("button", { name: "Split" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unified" })).toBeInTheDocument();
   });
 
   it("reads the workspace-level git diff view mode setting", () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
-
+    withFooFile();
     render(<DiffViewer featureId={1} mode="worktree" />);
-
     expect(mocks.useDebouncedSettingMock).toHaveBeenCalledWith("git_diff_view_mode", 0);
   });
 
@@ -233,10 +242,7 @@ index abc..def 100644
       value: null,
       setValue: key === "git_diff_view_mode" ? setDiffMode : mocks.persistFileListCollapsedMock,
     }));
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
 
     const { user } = render(<DiffViewer featureId={1} mode="worktree" />);
     await user.click(screen.getByRole("button", { name: "Split" }));
@@ -245,22 +251,13 @@ index abc..def 100644
   });
 
   it("uses a workspace-level git file list collapse setting", () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
-
+    withFooFile();
     render(<DiffViewer featureId={1} mode="worktree" />);
-
     expect(mocks.useDebouncedSettingMock).toHaveBeenCalledWith("git_sidebar_collapsed", 0);
   });
 
   it("collapses and persists the git file list", async () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
-
+    withFooFile();
     const { user } = render(<DiffViewer featureId={1} mode="worktree" />);
     await user.click(screen.getByRole("button", { name: "Collapse Git file list" }));
 
@@ -268,11 +265,7 @@ index abc..def 100644
   });
 
   it("keeps patch diff instances mounted when toggling the file list", async () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
-
+    withFooFile();
     const { user } = render(<DiffViewer featureId={1} mode="worktree" />);
     const initialRenderCount = mocks.patchDiffViewMock.mock.calls.length;
     await user.click(screen.getByRole("button", { name: "Collapse Git file list" }));
@@ -285,10 +278,7 @@ index abc..def 100644
       value: "true",
       setValue: mocks.persistFileListCollapsedMock,
     });
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
 
     render(<DiffViewer featureId={1} mode="worktree" />);
 
@@ -301,10 +291,7 @@ index abc..def 100644
   });
 
   it("expands a previously viewed file when its blob SHA changes", async () => {
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
     mocks.useGetFileBlobShasMock.mockReturnValue({
       data: [{ file_path: "src/foo.ts", sha: "old-sha" }],
     });
@@ -336,10 +323,7 @@ index abc..def 100644
 
   it("does not emit nested button warnings for file headers", () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
 
     render(<DiffViewer featureId={1} mode="worktree" />);
 
@@ -352,10 +336,7 @@ index abc..def 100644
 describe("DiffViewer patch rendering", () => {
   it("does not fetch full file contents for normal Git tab rendering", () => {
     mocks.useGetFileContentMock.mockClear();
-    mocks.useGetDiffMock.mockReturnValue({
-      data: { diff: singleFileDiff } as unknown,
-      isLoading: false,
-    });
+    withFooFile();
 
     render(<DiffViewer featureId={1} mode="worktree" />);
 

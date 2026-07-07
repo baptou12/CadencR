@@ -30,6 +30,23 @@ pub struct GetDiffParams {
 pub struct GetChangedFilesParams {
     pub feature_id: i64,
     pub mode: String,
+    pub commit_sha: Option<String>,
+    pub target_branch: Option<String>,
+}
+
+/// Per-file unified diff. Mirrors `GetDiffParams` but scoped to a single
+/// `file_path`, so the diff pane can fetch each file's patch lazily instead of
+/// downloading + parsing the whole working-tree diff as one blob.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GetFileDiffParams {
+    pub feature_id: i64,
+    pub file_path: String,
+    /// Pre-rename path for a rename/copy entry, so the diff can be scoped to
+    /// both paths and git's rename detection fires instead of reporting a
+    /// whole-file addition.
+    pub old_file_path: Option<String>,
+    pub mode: String,
+    pub commit_sha: Option<String>,
     pub target_branch: Option<String>,
 }
 

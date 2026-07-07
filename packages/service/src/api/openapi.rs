@@ -46,6 +46,7 @@ use crate::domain::ws_session::protocol as ws_protocol;
         routes::get_branch_handler,
         routes::get_stats_handler,
         routes::get_diff_handler,
+        routes::get_file_diff_handler,
         routes::get_changed_files_handler,
         routes::get_file_content_handler,
         routes::get_file_content_batch_handler,

@@ -75,8 +75,36 @@ pub async fn get_changed_files(
         Path::new(&git_path),
         &params.mode,
         params.target_branch.as_deref(),
+        params.commit_sha.as_deref(),
     )
     .await
+}
+
+/// Per-file unified diff. Backs the diff pane's lazy per-file fetch so opening
+/// the Git tab on a large working tree no longer ships one multi-MB blob.
+pub async fn get_file_diff(
+    state: &AppState,
+    params: GetFileDiffParams,
+) -> Result<DiffResponse, AppError> {
+    let git_path = resolve_feature_git_path(state, params.feature_id).await?;
+    let git_path = match git_path {
+        Some(p) => p,
+        None => {
+            return Ok(DiffResponse {
+                diff: String::new(),
+            })
+        }
+    };
+    let diff = commands::get_file_diff(
+        Path::new(&git_path),
+        &params.mode,
+        params.target_branch.as_deref(),
+        params.commit_sha.as_deref(),
+        &params.file_path,
+        params.old_file_path.as_deref(),
+    )
+    .await?;
+    Ok(DiffResponse { diff })
 }
 
 /// Resolve which (old_ref, new_ref) pair the diff endpoints should use for a

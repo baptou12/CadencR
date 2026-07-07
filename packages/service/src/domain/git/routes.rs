@@ -38,12 +38,20 @@ pub async fn get_diff_handler(
     Ok(Json(service::get_diff(&state, params).await?))
 }
 
-#[utoipa::path(get, path = "/api/git/changed-files", params(("feature_id" = i64, Query,), ("mode" = String, Query,), ("target_branch" = Option<String>, Query,)), responses((status = 200, body = Vec<ChangedFile>)))]
+#[utoipa::path(get, path = "/api/git/changed-files", params(("feature_id" = i64, Query,), ("mode" = String, Query,), ("commit_sha" = Option<String>, Query,), ("target_branch" = Option<String>, Query,)), responses((status = 200, body = Vec<ChangedFile>)))]
 pub async fn get_changed_files_handler(
     State(state): State<AppState>,
     Query(params): Query<GetChangedFilesParams>,
 ) -> Result<Json<Vec<ChangedFile>>, AppError> {
     Ok(Json(service::get_changed_files(&state, params).await?))
+}
+
+#[utoipa::path(get, path = "/api/git/file-diff", params(("feature_id" = i64, Query,), ("file_path" = String, Query,), ("old_file_path" = Option<String>, Query,), ("mode" = String, Query,), ("commit_sha" = Option<String>, Query,), ("target_branch" = Option<String>, Query,)), responses((status = 200, body = DiffResponse)))]
+pub async fn get_file_diff_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetFileDiffParams>,
+) -> Result<Json<DiffResponse>, AppError> {
+    Ok(Json(service::get_file_diff(&state, params).await?))
 }
 
 #[utoipa::path(get, path = "/api/git/file-content", params(("feature_id" = i64, Query,), ("file_path" = String, Query,), ("mode" = String, Query,), ("commit_sha" = Option<String>, Query,), ("target_branch" = Option<String>, Query,)), responses((status = 200, body = FileContent)))]
@@ -367,6 +375,7 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/branch/delete-check", get(check_branch_delete_handler))
         .route("/api/git/stats", get(get_stats_handler))
         .route("/api/git/diff", get(get_diff_handler))
+        .route("/api/git/file-diff", get(get_file_diff_handler))
         .route("/api/git/changed-files", get(get_changed_files_handler))
         .route("/api/git/file-content", get(get_file_content_handler))
         .route("/api/git/file-content-batch", post(get_file_content_batch_handler))

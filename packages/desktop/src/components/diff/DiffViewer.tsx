@@ -156,7 +156,7 @@ export function DiffViewer({
   }, [data.viewedFilesSet, data.hasInitializedCollapse]);
 
   useExpandFilesWhenViewedReset(data.viewedFilesSet, setCollapsedFiles);
-  useCollapseLargeFilesOnLoad(data.fileMeta, data.fileNames, setCollapsedFiles);
+  useCollapseLargeFilesOnLoad(data.changedFiles, setCollapsedFiles);
 
   const scrollToFileIndex = useCallback(
     (index: number) => {
@@ -215,18 +215,14 @@ export function DiffViewer({
   });
 
   const changedFileEntries: ChangedFileEntry[] = useMemo(() => {
-    return data.fileMeta.map(({ section, displayName, additions, deletions }) => {
-      const status =
-        section.oldFileName === "/dev/null" ? "A" : section.newFileName === "/dev/null" ? "D" : "M";
-      return {
-        file: displayName,
-        status,
-        additions,
-        deletions,
-        is_staged: data.stagedFiles.has(displayName),
-      };
-    });
-  }, [data.fileMeta, data.stagedFiles]);
+    return data.changedFiles.map((f) => ({
+      file: f.file,
+      status: f.status,
+      additions: f.additions,
+      deletions: f.deletions,
+      is_staged: data.stagedFiles.has(f.file),
+    }));
+  }, [data.changedFiles, data.stagedFiles]);
 
   const expandedFiles = useMemo(() => {
     const set = new Set<string>();
@@ -266,7 +262,10 @@ export function DiffViewer({
     () => (
       <DiffContent
         diffAreaRef={diffAreaRef}
-        fileMeta={data.fileMeta}
+        files={data.changedFiles}
+        featureId={featureId}
+        mode={mode}
+        targetBranch={targetBranch}
         selectedCommit={data.selectedCommit}
         diffMode={diffMode}
         collapsedFiles={collapsedFiles}
@@ -289,10 +288,13 @@ export function DiffViewer({
       activeCommentWidget,
       collapsedFiles,
       commentLinesByFile,
-      data.fileMeta,
+      data.changedFiles,
       data.selectedCommit,
       data.viewedFilesSet,
       diffMode,
+      featureId,
+      mode,
+      targetBranch,
       focusedFileIndex,
       handleAddComment,
       markFileViewed,
@@ -338,7 +340,7 @@ export function DiffViewer({
     );
   }
 
-  if (!data.rawDiff?.trim()) {
+  if (data.changedFiles.length === 0) {
     return (
       <div className="flex h-full items-center justify-center bg-background text-foreground">
         <p className="text-muted-foreground">No changes detected</p>
@@ -359,7 +361,7 @@ export function DiffViewer({
 
       <DiffViewerBottomBar
         viewedCount={data.viewedFilesSet.size}
-        fileCount={data.fileMeta.length}
+        fileCount={data.changedFiles.length}
         diffMode={diffMode}
         onDiffModeChange={setDiffMode}
       />
