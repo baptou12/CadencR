@@ -67,4 +67,19 @@ mod tests {
         let full = count_entries(root, false).unwrap();
         assert_eq!(full, 5);
     }
+
+    #[test]
+    fn excludes_nested_gitignored_subtrees_when_requested() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        init_repo(root);
+        std::fs::create_dir_all(root.join("packages/app/node_modules/pkg")).unwrap();
+        std::fs::write(root.join("packages/app/node_modules/pkg/index.js"), "a").unwrap();
+        std::fs::write(root.join("packages/app/src.ts"), "b").unwrap();
+        std::fs::write(root.join("packages/app/.gitignore"), "node_modules/\n").unwrap();
+
+        let tracked = count_entries(root, true).unwrap();
+
+        assert_eq!(tracked, 4, "nested .gitignore must prune descendants");
+    }
 }

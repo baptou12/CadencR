@@ -44,15 +44,17 @@ describe("handleAppEnvelope · editor/file_tree.changed", () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it("refetches editor read/tree/search but NOT git diff/stats (the git watcher drives those)", () => {
+  it("refetches editor content and tree data without re-counting the whole tree", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 
     fireFileTreeChanged();
 
     const predicate = getInvalidatePredicate(spy.mock.calls[0]?.[0]);
     expect(predicate({ queryKey: ["/api/editor/read", { path: "a.ts" }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/editor/read-image", { path: "a.png" }] })).toBe(true);
     expect(predicate({ queryKey: ["/api/editor/tree", {}] })).toBe(true);
     expect(predicate({ queryKey: ["/api/editor/tree-all", {}] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/editor/tree-count", {}] })).toBe(false);
     expect(predicate({ queryKey: ["/api/editor/search", { q: "x" }] })).toBe(true);
     // Git content queries must not be swept up here — that was the storm.
     expect(predicate({ queryKey: ["/api/git/diff", { feature_id: 7 }] })).toBe(false);

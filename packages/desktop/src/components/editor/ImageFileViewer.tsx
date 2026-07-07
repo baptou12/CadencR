@@ -13,6 +13,7 @@
  * with `transform-origin: 0 0`; `userView === null` means "fit"
  * (recomputed on resize).
  */
+import { useQuery } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
@@ -43,6 +44,21 @@ interface View {
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 16;
 const PINCH_SENSITIVITY = 0.01;
+
+function readImageBlob(
+  projectId: number,
+  featureId: number,
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  return customInstance<Blob>({
+    url: "/api/editor/read-image",
+    method: "GET",
+    params: { project_id: projectId, feature_id: featureId, file_path: filePath },
+    responseType: "blob",
+    signal,
+  });
+}
 
 /** Fit + center, never upscaling — the convention image viewers use. */
 function computeFitView(image: ImageDimensions, container: DOMRect): View {
@@ -77,7 +93,7 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [decodeError, setDecodeError] = useState<string | null>(null);
   // `null` means "use the auto-computed fit view"; any value means the
   // user has taken manual control via pinch or pan.
   const [userView, setUserView] = useState<View | null>(null);
@@ -88,44 +104,44 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
   // `getBoundingClientRect()` (forced layout) on the pinch hot path.
   const rectRef = useRef<DOMRect | null>(null);
 
+  const imageQuery = useQuery({
+    queryKey: [
+      "/api/editor/read-image",
+      { project_id: projectId, feature_id: featureId, file_path: filePath },
+    ],
+    queryFn: ({ signal }) => readImageBlob(projectId, featureId, filePath, signal),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
   useEffect(() => {
-    const controller = new AbortController();
+    const blob = imageQuery.data;
     let revokedUrl: string | null = null;
     setObjectUrl(null);
     setDimensions(null);
-    setFileSize(null);
-    setError(null);
+    setDecodeError(null);
     setUserView(null);
     setFitView(null);
-
-    customInstance<Blob>({
-      url: "/api/editor/read-image",
-      method: "GET",
-      params: { project_id: projectId, feature_id: featureId, file_path: filePath },
-      responseType: "blob",
-      signal: controller.signal,
-    })
-      .then((blob) => {
-        if (controller.signal.aborted) return;
-        const url = URL.createObjectURL(blob);
-        revokedUrl = url;
-        setFileSize(blob.size);
-        setObjectUrl(url);
-      })
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        const message = apiErrorMessage(err, "Failed to load image");
-        setError(message);
-        // Sonner dedupes by `id`, so unrelated re-renders / both error
-        // paths (fetch + <img> decode) won't stack toasts.
-        toast.error(message, { id: `image-viewer:${filePath}` });
-      });
+    if (!blob) {
+      setFileSize(null);
+      return;
+    }
+    setFileSize(blob.size);
+    const url = URL.createObjectURL(blob);
+    revokedUrl = url;
+    setObjectUrl(url);
 
     return () => {
-      controller.abort();
       if (revokedUrl) URL.revokeObjectURL(revokedUrl);
     };
-  }, [projectId, featureId, filePath]);
+  }, [imageQuery.data]);
+
+  useEffect(() => {
+    if (!imageQuery.error) return;
+    const message = apiErrorMessage(imageQuery.error, "Failed to load image");
+    // Sonner dedupes by `id`, so unrelated re-renders won't stack toasts.
+    toast.error(message, { id: `image-viewer:${filePath}` });
+  }, [filePath, imageQuery.error]);
 
   const handleImgLoad = useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
     const img = event.currentTarget;
@@ -134,7 +150,7 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
 
   const handleImgError = useCallback(() => {
     const message = "Failed to decode image";
-    setError(message);
+    setDecodeError(message);
     toast.error(message, { id: `image-viewer:${filePath}` });
   }, [filePath]);
 
@@ -210,6 +226,9 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
   if (dimensions) statusParts.push(`${dimensions.width} × ${dimensions.height}`);
   if (fileSize !== null) statusParts.push(formatBytes(fileSize));
   const zoomLabel = view ? `${Math.round(view.scale * 100)}%` : "—";
+  const error =
+    decodeError ??
+    (imageQuery.error ? apiErrorMessage(imageQuery.error, "Failed to load image") : null);
 
   return (
     <div className="h-full flex flex-col">

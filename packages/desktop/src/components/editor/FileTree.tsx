@@ -14,6 +14,7 @@ import {
 import { useEditorState } from "@/hooks/useEditorState";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
+import { getFileTreeLoadState, shouldFetchFullTree, shouldUseLazyTree } from "./fileTreeLoadMode";
 import { useFileTreeAgentShortcut } from "./useFileTreeAgentShortcut";
 import {
   buildPierreInputs,
@@ -63,14 +64,20 @@ function FileTree({ projectId, featureId }: FileTreeProps) {
 
   // Hybrid threshold: cheaply count tracked files first; only repos past
   // `TREE_LAZY_THRESHOLD` switch to expand-on-demand for the whole tree.
-  // While the count is in flight `lazyMode` stays false, so small repos paint
-  // their full tree without waiting on the count.
+  // `tree-all` must not start while the count is in flight: if the repo turns
+  // out to be huge, aborting the client request cannot cancel the backend
+  // `spawn_blocking` walk.
   const treeCount = useTreeCount({
     project_id: projectId,
     feature_id: featureId,
     exclude_gitignored: true,
   });
-  const lazyMode = (treeCount.data?.count ?? 0) > TREE_LAZY_THRESHOLD;
+  const lazyMode = shouldUseLazyTree(treeCount.data?.count, TREE_LAZY_THRESHOLD);
+  const fullTreeEnabled = shouldFetchFullTree({
+    count: treeCount.data?.count,
+    isCountResolved: treeCount.isSuccess,
+    threshold: TREE_LAZY_THRESHOLD,
+  });
 
   const mutations = useFileTreeMutations(projectId, featureId, lazyMode);
 
@@ -81,7 +88,7 @@ function FileTree({ projectId, featureId }: FileTreeProps) {
   // `node_modules`/`target` walk.
   const tracked = useTreeAll(
     { project_id: projectId, feature_id: featureId, exclude_gitignored: true },
-    { query: { enabled: !lazyMode } },
+    { query: { enabled: fullTreeEnabled } },
   );
   const [lazyIgnoredEntries, setLazyIgnoredEntries] = useState<readonly FileTreeEntry[]>([]);
   const fullEntries = useMemo(
@@ -294,6 +301,19 @@ function FileTree({ projectId, featureId }: FileTreeProps) {
     [handleMenuAction],
   );
 
+  const loadState = getFileTreeLoadState({
+    lazyMode,
+    countIsPending: treeCount.isLoading,
+    countIsError: treeCount.isError,
+    lazyTreeIsLoading: lazyTree.isLoading,
+    trackedIsLoading: tracked.isLoading,
+    trackedHasData: tracked.data != null,
+    countError: treeCount.error,
+    lazyTreeError: lazyTree.error,
+    trackedError: tracked.error,
+    trackedIsError: tracked.isError,
+  });
+
   // Tree-level shortcuts: Enter → rename focused row; ⌘⌫ → move to trash.
   // Pierre owns arrow keys, F2, etc.
   const handleTreeKeyDown = useCallback(
@@ -341,17 +361,10 @@ function FileTree({ projectId, featureId }: FileTreeProps) {
     >
       <CadencrFileTree
         model={model}
-        // Full mode: block only on the fast (`tracked`) query — gitignored
-        // dirs upgrade the tree in place. Lazy mode: block on the top-level
-        // load. The count query gates the choice but is too cheap to block on.
-        isLoading={lazyMode ? lazyTree.isLoading : tracked.isLoading && !tracked.data}
-        errorMessage={
-          lazyMode
-            ? lazyTree.error
-            : tracked.isError && !tracked.data
-              ? "Failed to load file tree"
-              : null
-        }
+        // Count gates the load mode. While it is pending we show progress;
+        // if it fails, surface the error instead of rendering an empty tree.
+        isLoading={loadState.isLoading}
+        errorMessage={loadState.errorMessage}
         renderContextMenu={renderContextMenu}
         aria-label="Project file tree"
       />

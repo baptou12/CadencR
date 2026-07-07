@@ -165,7 +165,7 @@ describe("session status lifecycle sync", () => {
     expect(updated.pendingRequestId).toBe("");
   });
 
-  it("invalidates editor read caches when file watcher events arrive", () => {
+  it("invalidates editor content and tree caches when file watcher events arrive", () => {
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 
     const handled = handleAppEnvelope("editor", "file_tree.changed", {
@@ -175,7 +175,11 @@ describe("session status lifecycle sync", () => {
     expect(handled).toBe(true);
     const predicate = getInvalidatePredicate(invalidateSpy.mock.calls[0]?.[0]);
     expect(predicate({ queryKey: ["/api/editor/read", { file_path: "a.ts" }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/editor/read-image", { file_path: "a.png" }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/editor/tree", { project_id: 1 }] })).toBe(true);
     expect(predicate({ queryKey: ["/api/editor/tree-all", { project_id: 1 }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/editor/tree-count", { project_id: 1 }] })).toBe(false);
+    expect(predicate({ queryKey: ["/api/editor/search", { query: "a" }] })).toBe(true);
     expect(predicate({ queryKey: ["/api/sessions"] })).toBe(false);
     invalidateSpy.mockRestore();
   });

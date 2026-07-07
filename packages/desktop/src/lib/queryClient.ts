@@ -47,13 +47,19 @@ export function invalidateByUrlPrefix(
 /**
  * Invalidate every cached query whose URL key is exactly `url` (any params).
  * Unlike {@link invalidateByUrlPrefix}, this does NOT match longer sibling
- * URLs — `/api/editor/tree` won't match `/api/editor/tree-all`. Used by the
- * file tree's lazy mode, which must refresh the per-directory `tree` queries
- * without re-triggering the (disabled) `tree-all` / `tree-count` queries.
+ * URLs — `/api/editor/tree` won't match `/api/editor/tree-all`. Pass an array
+ * to refresh several exact sibling endpoints in one cache walk.
  */
-export function invalidateByExactUrl(client: QueryClient, url: string): Promise<void> {
+export function invalidateByExactUrl(
+  client: QueryClient,
+  url: string | readonly string[],
+): Promise<void> {
+  const urls = typeof url === "string" ? new Set([url]) : new Set(url);
   return client.invalidateQueries({
-    predicate: (query) => query.queryKey[0] === url,
+    predicate: (query) => {
+      const head = query.queryKey[0];
+      return typeof head === "string" && urls.has(head);
+    },
   });
 }
 
