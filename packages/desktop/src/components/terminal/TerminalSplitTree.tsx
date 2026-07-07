@@ -1,6 +1,6 @@
 import { memo, useMemo, type ReactNode } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import type { SplitNode } from "@/hooks/useTerminalState";
+import type { SplitNode, SplitOrientation } from "@/hooks/useTerminalState";
 import { PaneSlotPlaceholder } from "./PaneSlotPlaceholder";
 
 interface TerminalSplitTreeProps {
@@ -9,9 +9,13 @@ interface TerminalSplitTreeProps {
   warnPaneIds: Set<string>;
   node: SplitNode;
   onDismissWarning: (paneId: string) => void;
+  onClosePane: (paneId: string) => void;
+  onCopyPane: (paneId: string) => void;
   onFocusPane: (paneId: string) => void;
+  onPastePane: (paneId: string) => void;
   onRegisterPlaceholder: (id: string, el: HTMLDivElement | null) => void;
   onRestartPane: (paneId: string) => void;
+  onSplitPane: (paneId: string, orientation: SplitOrientation) => void;
 }
 
 export const TerminalSplitTree = memo(function TerminalSplitTree(
@@ -22,9 +26,13 @@ export const TerminalSplitTree = memo(function TerminalSplitTree(
     warnPaneIds,
     node,
     onDismissWarning,
+    onClosePane,
+    onCopyPane,
     onFocusPane,
+    onPastePane,
     onRegisterPlaceholder,
     onRestartPane,
+    onSplitPane,
   } = props;
   const splitOrientation = node.type === "leaf" ? null : node.orientation;
   const handleClassName = useMemo(
@@ -42,8 +50,12 @@ export const TerminalSplitTree = memo(function TerminalSplitTree(
         showWarning={warnPaneIds.has(node.id)}
         registerPlaceholder={onRegisterPlaceholder}
         onFocus={onFocusPane}
+        onSplit={onSplitPane}
         onRestart={onRestartPane}
         onDismiss={onDismissWarning}
+        onClose={onClosePane}
+        onCopy={onCopyPane}
+        onPaste={onPastePane}
       />
     );
   }
@@ -71,9 +83,13 @@ function areTerminalSplitTreePropsEqual(
     prev.expectedCwd === next.expectedCwd &&
     prev.warnPaneIds === next.warnPaneIds &&
     prev.node === next.node &&
+    prev.onClosePane === next.onClosePane &&
+    prev.onCopyPane === next.onCopyPane &&
     prev.onDismissWarning === next.onDismissWarning &&
     prev.onFocusPane === next.onFocusPane &&
+    prev.onPastePane === next.onPastePane &&
     prev.onRegisterPlaceholder === next.onRegisterPlaceholder &&
-    prev.onRestartPane === next.onRestartPane
+    prev.onRestartPane === next.onRestartPane &&
+    prev.onSplitPane === next.onSplitPane
   );
 }

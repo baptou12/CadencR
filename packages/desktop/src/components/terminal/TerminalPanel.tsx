@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
 import { TerminalPaneToolbar } from "./TerminalPaneToolbar";
@@ -25,6 +26,7 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 import { useWorktreeTerminalAutoSwitch } from "@/hooks/useWorktreeTerminalAutoSwitch";
 import { useTerminalPaneShortcuts } from "./useTerminalPaneShortcuts";
+import { desktopBridge } from "@/lib/desktop-bridge";
 
 interface TerminalPanelProps {
   featureId: number;
@@ -167,13 +169,20 @@ export const TerminalPanel = memo(
     // XTermInstance and register its imperative handle. The `XTermInstance
     // .focus()` method itself queues the request when xterm isn't fully opened
     // yet, so even a single rAF is enough.
-    const splitAndFocus = useCallback(
-      (orientation: SplitOrientation) => {
-        const newId = splitPane(resolvedActivePaneId ?? undefined, orientation);
+    const splitPaneAndFocus = useCallback(
+      (paneId: string | undefined, orientation: SplitOrientation) => {
+        const newId = splitPane(paneId, orientation);
         if (!newId) return;
         requestAnimationFrame(() => focusPane(newId));
       },
-      [splitPane, resolvedActivePaneId, focusPane],
+      [splitPane, focusPane],
+    );
+
+    const splitAndFocus = useCallback(
+      (orientation: SplitOrientation) => {
+        splitPaneAndFocus(resolvedActivePaneId ?? undefined, orientation);
+      },
+      [resolvedActivePaneId, splitPaneAndFocus],
     );
 
     const navigatePane = useCallback(
@@ -207,6 +216,25 @@ export const TerminalPanel = memo(
     const closeActivePane = useCallback(() => {
       if (resolvedActivePaneId) closePane(resolvedActivePaneId);
     }, [resolvedActivePaneId, closePane]);
+
+    const copyPaneSelection = useCallback((paneId: string) => {
+      paneRefs.current.get(paneId)?.focus();
+      const copied = document.execCommand("copy");
+      if (copied) {
+        toast.success("Terminal selection copied");
+      } else {
+        toast.error("No terminal selection to copy");
+      }
+    }, []);
+
+    const pasteIntoPane = useCallback(async (paneId: string) => {
+      try {
+        const text = await (desktopBridge.readClipboardText?.() ?? navigator.clipboard.readText());
+        if (text) paneRefs.current.get(paneId)?.write(text);
+      } catch {
+        toast.error("Failed to paste from clipboard");
+      }
+    }, []);
 
     // All terminal-pane keyboard shortcuts, scoped to the terminal tab.
     useTerminalPaneShortcuts({
@@ -293,6 +321,10 @@ export const TerminalPanel = memo(
               expectedCwd={expectedCwd}
               warnPaneIds={warnPaneIds}
               onFocusPane={focusPane}
+              onSplitPane={splitPaneAndFocus}
+              onClosePane={closePane}
+              onCopyPane={copyPaneSelection}
+              onPastePane={pasteIntoPane}
               onRestartPane={restartPane}
               onDismissWarning={dismissPaneWarning}
               onRegisterPlaceholder={registerPlaceholder}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, within } from "@/test-utils";
+import { fireEvent, render, screen, waitFor, within } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { useListFeatures } from "@/api/generated";
 import { ProjectFeatures } from "./ProjectFeatures";
@@ -28,6 +28,12 @@ const mockDelete = vi.fn();
 const mockDeleteWorktree = vi.fn();
 const mockDeleteBranch = vi.fn();
 const mockDisconnectSession = vi.fn();
+
+const { mockCopyToClipboard } = vi.hoisted(() => ({
+  mockCopyToClipboard: vi.fn<(text: string, successLabel: string) => Promise<void>>(() =>
+    Promise.resolve(),
+  ),
+}));
 interface MockFeatureWorktreeInfo {
   feature_id: number;
   worktree_path: string;
@@ -62,6 +68,10 @@ const { mockListFeatureWorktrees, mockGetGitStatus, mockUseGetStats } = vi.hoist
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
+}));
+
+vi.mock("@/lib/clipboard", () => ({
+  copyToClipboard: mockCopyToClipboard,
 }));
 
 const mockFeatures = [
@@ -200,6 +210,7 @@ describe("ProjectFeatures", () => {
     mockDeleteWorktree.mockClear();
     mockDeleteBranch.mockClear();
     mockDisconnectSession.mockClear();
+    mockCopyToClipboard.mockClear();
     mockListFeatureWorktrees.mockReturnValue({ data: [] });
     mockGetGitStatus.mockReturnValue({ data: undefined, isLoading: false });
     mockUseGetStats.mockReturnValue({ data: undefined });
@@ -488,6 +499,85 @@ describe("ProjectFeatures", () => {
     await user.click(await screen.findByText("Set label"));
 
     expect(screen.getByText("Set feature label")).toBeInTheDocument();
+  });
+
+  it("copies feature branch, worktree path, and title from the feature context menu", async () => {
+    const user = userEvent.setup();
+    mockListFeatureWorktrees.mockReturnValue({
+      data: [
+        {
+          feature_id: 1,
+          worktree_path: "/test/wt/feature-one",
+          worktree_branch: "feature/one",
+          is_default_branch: false,
+          is_main_worktree: false,
+          live: true,
+        },
+      ],
+    });
+
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={1}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    const featureRow = screen.getByText("Feature One").closest("[role=button]");
+    expect(featureRow).not.toBeNull();
+
+    fireEvent.contextMenu(featureRow as HTMLElement);
+    const copyBranch = await screen.findByRole("menuitem", { name: /Copy branch/i });
+    expect(copyBranch).not.toHaveAttribute("aria-disabled", "true");
+    await user.click(copyBranch);
+    await waitFor(() =>
+      expect(mockCopyToClipboard).toHaveBeenLastCalledWith("feature/one", "Branch copied"),
+    );
+
+    fireEvent.contextMenu(featureRow as HTMLElement);
+    await user.click(await screen.findByRole("menuitem", { name: /Copy worktree path/i }));
+    await waitFor(() =>
+      expect(mockCopyToClipboard).toHaveBeenLastCalledWith(
+        "/test/wt/feature-one",
+        "Worktree path copied",
+      ),
+    );
+
+    fireEvent.contextMenu(featureRow as HTMLElement);
+    await user.click(await screen.findByRole("menuitem", { name: /Copy feature title/i }));
+    await waitFor(() =>
+      expect(mockCopyToClipboard).toHaveBeenLastCalledWith("Feature One", "Feature title copied"),
+    );
+  });
+
+  it("disables branch and worktree path copy actions when the feature has no worktree", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={1}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    const featureRow = screen.getByText("Feature Two").closest("[role=button]");
+    expect(featureRow).not.toBeNull();
+    fireEvent.contextMenu(featureRow as HTMLElement);
+
+    expect(screen.getByRole("menuitem", { name: /Copy branch/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: /Copy worktree path/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("menuitem", { name: /Copy feature title/i })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("does not navigate when typing spaces in the label editor", async () => {

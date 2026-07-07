@@ -2,11 +2,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import {
+  clipboard,
+  ipcMain,
+  type BrowserWindow,
+  type IpcMainEvent,
+  type IpcMainInvokeEvent,
+} from "electron";
 
 const electronState = vi.hoisted(() => ({
   isPackaged: false,
   logsPath: "",
+  readClipboardText: vi.fn(() => "terminal paste"),
   openExternal: vi.fn<(_url: string) => Promise<void>>(() => Promise.resolve()),
 }));
 
@@ -19,7 +26,8 @@ vi.mock("electron", () => ({
     getVersion: vi.fn(() => "0.6.1"),
   },
   dialog: { showOpenDialog: vi.fn() },
-  ipcMain: { handle: vi.fn() },
+  clipboard: { readText: electronState.readClipboardText },
+  ipcMain: { handle: vi.fn(), on: vi.fn() },
   nativeTheme: { shouldUseDarkColors: false, on: vi.fn() },
   shell: { openExternal: electronState.openExternal, showItemInFolder: vi.fn() },
 }));
@@ -60,8 +68,10 @@ describe("ipc validators", () => {
   beforeEach(() => {
     electronState.isPackaged = false;
     electronState.logsPath = "";
+    electronState.readClipboardText.mockClear();
     electronState.openExternal.mockClear();
     vi.mocked(ipcMain.handle).mockClear();
+    vi.mocked(ipcMain.on).mockClear();
     clearRegisteredFilePaths();
   });
 
@@ -169,5 +179,41 @@ describe("ipc validators", () => {
 
     const log = await fs.readFile(path.join(dir, "renderer-errors.log"), "utf8");
     expect(log).toContain("message: global crash");
+  });
+
+  it("exposes clipboard text to trusted renderers for terminal paste", () => {
+    registerIpc({
+      getMainWindow: () => mainWindow(),
+      confirmClose: vi.fn(),
+      requestQuit: vi.fn(),
+    });
+
+    const handlerCall = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => {
+      return channel === "clipboard:read-text";
+    });
+    expect(handlerCall).toBeDefined();
+    const handler = handlerCall?.[1] as (event: IpcMainInvokeEvent) => string;
+
+    expect(handler(trustedEvent())).toBe("terminal paste");
+    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers trusted native context-menu suppression for renderer-owned menus", () => {
+    registerIpc({
+      getMainWindow: () => mainWindow(),
+      confirmClose: vi.fn(),
+      requestQuit: vi.fn(),
+    });
+
+    const handlerCall = vi.mocked(ipcMain.on).mock.calls.find(([channel]) => {
+      return channel === "context-menu:suppress-next";
+    });
+    expect(handlerCall).toBeDefined();
+    const handler = handlerCall?.[1] as (event: IpcMainEvent) => void;
+    const event = { ...trustedEvent(), returnValue: false } as unknown as IpcMainEvent;
+
+    handler(event);
+
+    expect(event.returnValue).toBe(true);
   });
 });
