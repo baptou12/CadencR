@@ -9,6 +9,7 @@ use sqlx::{AssertSqlSafe, SqlitePool};
 use std::collections::HashMap;
 
 use super::super::models::*;
+use super::latest_todos_query::latest_todos_sql;
 use super::pagination::fetch_missing_parents;
 use super::task_todos::latest_todos_from_messages;
 use super::MESSAGE_SELECT;
@@ -269,33 +270,7 @@ pub(super) async fn fetch_latest_todos(
         return Ok(todos_by_session);
     }
 
-    let target_values = session_ids
-        .iter()
-        .map(|_| "(?)")
-        .collect::<Vec<_>>()
-        .join(",");
-    let message_select_m = "SELECT m.id AS id, m.session_id AS session_id, m.content AS content, m.message_type AS message_type, m.tool_name AS tool_name, m.tool_use_id AS tool_use_id, m.parent_tool_use_id AS parent_tool_use_id, m.created_at AS created_at, m.model AS model";
-    let sql = format!(
-        "WITH target_sessions(session_id) AS (VALUES {target_values}), \
-         task_create_ids AS ( \
-            SELECT DISTINCT m.session_id, m.tool_use_id FROM agent_messages m \
-            JOIN target_sessions t ON t.session_id = m.session_id \
-            WHERE m.message_type = 'tool_call' \
-              AND m.tool_name = 'TaskCreate' \
-              AND m.tool_use_id IS NOT NULL \
-         ) \
-         {message_select_m} FROM agent_messages m \
-         JOIN target_sessions t ON t.session_id = m.session_id \
-         WHERE m.message_type = 'tool_call' \
-           AND m.tool_name IN ('TodoWrite', 'TaskCreate', 'TaskUpdate') \
-         UNION ALL \
-         {message_select_m} FROM agent_messages m \
-         JOIN task_create_ids tci \
-           ON tci.session_id = m.session_id \
-          AND tci.tool_use_id = m.tool_use_id \
-         WHERE m.message_type IN ('tool_result', 'tool_error') \
-         ORDER BY session_id ASC, id ASC"
-    );
+    let sql = latest_todos_sql(session_ids.len());
     let mut query = sqlx::query_as::<_, AgentMessageRow>(AssertSqlSafe(sql));
     for sid in session_ids {
         query = query.bind(sid);

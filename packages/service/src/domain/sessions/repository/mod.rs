@@ -10,6 +10,7 @@ mod blocks;
 mod drafts;
 mod feature_state;
 mod feature_state_fetch;
+mod latest_todos_query;
 mod origins;
 mod pagination;
 mod queries;
