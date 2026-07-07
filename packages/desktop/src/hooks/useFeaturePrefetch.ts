@@ -31,9 +31,12 @@ export function useFeaturePrefetch(
       queryKey: getGetFeatureAgentStateQueryKey(featureId),
       queryFn: ({ signal }) => getFeatureAgentState(featureId, undefined, signal),
     });
+    // Match the mode ProjectFeatureRow / the Git tab use for working-tree stats
+    // ("worktree") so the prefetch warms the same cache entry instead of a
+    // separate mode-less key that never gets reused.
     void queryClient.prefetchQuery({
-      queryKey: getGetStatsQueryKey({ feature_id: featureId }),
-      queryFn: ({ signal }) => getStats({ feature_id: featureId }, signal),
+      queryKey: getGetStatsQueryKey({ feature_id: featureId, mode: "worktree" }),
+      queryFn: ({ signal }) => getStats({ feature_id: featureId, mode: "worktree" }, signal),
     });
     if (projectId != null) {
       void queryClient.prefetchQuery({

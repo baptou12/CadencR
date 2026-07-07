@@ -1,5 +1,11 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import type { ParsedFileMeta } from "@/lib/parse-unified-diff";
+
+/** Minimal per-file shape the auto-collapse rule reads from the changed-files list. */
+interface CollapsibleFile {
+  file: string;
+  additions: number;
+  deletions: number;
+}
 
 // Files whose changed-line count exceeds this are collapsed by default on a
 // fresh diff. Rendering a single very large file through Pierre is a
@@ -16,25 +22,24 @@ const LARGE_FILE_AUTO_COLLAPSE_LINES = 1000;
  * re-expanding a large file within the same diff.
  */
 export function useCollapseLargeFilesOnLoad(
-  fileMeta: ParsedFileMeta[],
-  fileNames: string[],
+  files: CollapsibleFile[],
   setCollapsedFiles: Dispatch<SetStateAction<Set<string>>>,
 ): void {
   const signatureRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (fileMeta.length === 0) return;
-    const signature = fileNames.join("\n");
+    if (files.length === 0) return;
+    const signature = files.map((f) => f.file).join("\n");
     if (signatureRef.current === signature) return;
     signatureRef.current = signature;
 
-    const largeFiles = fileMeta
-      .filter((meta) => meta.additions + meta.deletions > LARGE_FILE_AUTO_COLLAPSE_LINES)
-      .map((meta) => meta.displayName);
+    const largeFiles = files
+      .filter((f) => f.additions + f.deletions > LARGE_FILE_AUTO_COLLAPSE_LINES)
+      .map((f) => f.file);
     if (largeFiles.length === 0) return;
 
     setCollapsedFiles((prev) => new Set([...prev, ...largeFiles]));
-  }, [fileMeta, fileNames, setCollapsedFiles]);
+  }, [files, setCollapsedFiles]);
 }
 
 export function useExpandFilesWhenViewedReset(

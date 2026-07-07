@@ -27,6 +27,7 @@ const GIT_STATUS_INVALIDATION_PREFIXES = [
   "/api/git/changed-files",
   "/api/git/commit-log",
   "/api/git/diff",
+  "/api/git/file-diff",
   "/api/git/file-blob-shas",
   "/api/git/stats",
   "/api/git/uncommitted-files",
@@ -36,6 +37,7 @@ const GIT_STATUS_INVALIDATION_PREFIXES = [
 const GIT_CONTENT_INVALIDATION_PREFIXES = [
   "/api/git/changed-files",
   "/api/git/diff",
+  "/api/git/file-diff",
   "/api/git/file-blob-shas",
   "/api/git/stats",
   "/api/git/uncommitted-files",

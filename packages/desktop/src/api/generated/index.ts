@@ -2600,6 +2600,7 @@ export type ListBranchesParams = {
 export type GetChangedFilesParams = {
   feature_id: number;
   mode: string;
+  commit_sha?: string;
   target_branch?: string;
 };
 
@@ -2641,6 +2642,15 @@ export type GetFileBlobShasParams = {
 export type GetFileContentParams = {
   feature_id: number;
   file_path: string;
+  mode: string;
+  commit_sha?: string;
+  target_branch?: string;
+};
+
+export type GetFileDiffParams = {
+  feature_id: number;
+  file_path: string;
+  old_file_path?: string;
   mode: string;
   commit_sha?: string;
   target_branch?: string;
@@ -8718,6 +8728,54 @@ export const useGetFileContentBatch = <TError = ErrorType<unknown>, TContext = u
 
   return useMutation(mutationOptions);
 };
+
+export const getFileDiff = (params: GetFileDiffParams, signal?: AbortSignal) => {
+  return customInstance<DiffResponse>({ url: `/api/git/file-diff`, method: "GET", params, signal });
+};
+
+export const getGetFileDiffQueryKey = (params?: GetFileDiffParams) => {
+  return [`/api/git/file-diff`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetFileDiffQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFileDiff>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetFileDiffParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getFileDiff>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetFileDiffQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFileDiff>>> = ({ signal }) =>
+    getFileDiff(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFileDiff>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFileDiffQueryResult = NonNullable<Awaited<ReturnType<typeof getFileDiff>>>;
+export type GetFileDiffQueryError = ErrorType<unknown>;
+
+export function useGetFileDiff<
+  TData = Awaited<ReturnType<typeof getFileDiff>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetFileDiffParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getFileDiff>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFileDiffQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const listFiles = (params: ListFilesParams, signal?: AbortSignal) => {
   return customInstance<string[]>({ url: `/api/git/files`, method: "GET", params, signal });

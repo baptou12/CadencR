@@ -1,7 +1,9 @@
 import { memo, type RefObject } from "react";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
-import type { FileMeta } from "./useDiffData";
-import { DiffFileBlock } from "./DiffFileBlock";
+import type { ChangedFile } from "@/api/generated";
+import { useInViewport } from "@/hooks/useInViewport";
+import type { DiffMode } from "./useDiffData";
+import { DiffFileBlock, type DiffFileBlockProps } from "./DiffFileBlock";
 import { DiffVirtualizer } from "./DiffVirtualizer";
 import type { CommentSide } from "./PatchDiffView";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
@@ -12,9 +14,33 @@ interface ActiveCommentWidget {
   side: CommentSide;
 }
 
+/**
+ * One file row. Tracks its own viewport visibility so `DiffFileBlock` only
+ * fetches this file's diff when it's on (or near) screen — the outer list
+ * mounts every row, so without this a 400-file diff would fire 400 requests.
+ */
+const DiffRow = memo(function DiffRow({
+  scrollRef,
+  ...blockProps
+}: { scrollRef: RefObject<HTMLDivElement | null> } & Omit<DiffFileBlockProps, "isVisible">) {
+  const { setRef, inView } = useInViewport(scrollRef);
+  return (
+    <div
+      ref={setRef}
+      data-file={blockProps.displayName}
+      className="relative isolate border-b border-border"
+    >
+      <DiffFileBlock {...blockProps} isVisible={inView} />
+    </div>
+  );
+});
+
 interface DiffContentProps {
   diffAreaRef: RefObject<HTMLDivElement | null>;
-  fileMeta: FileMeta[];
+  files: ChangedFile[];
+  featureId: number;
+  mode: DiffMode;
+  targetBranch?: string;
   selectedCommit: string | null;
   diffMode: "unified" | "split";
   collapsedFiles: Set<string>;
@@ -35,7 +61,10 @@ interface DiffContentProps {
 
 function DiffContentImpl({
   diffAreaRef,
-  fileMeta,
+  files,
+  featureId,
+  mode,
+  targetBranch,
   selectedCommit,
   diffMode,
   collapsedFiles,
@@ -55,36 +84,35 @@ function DiffContentImpl({
 }: DiffContentProps) {
   return (
     <DiffVirtualizer scrollRef={diffAreaRef}>
-      {fileMeta.map(({ section, displayName, additions, deletions }, fileIndex) => (
-        <div
-          key={displayName}
-          data-file={displayName}
-          className="relative isolate border-b border-border"
-        >
-          <DiffFileBlock
-            section={section}
-            diffMode={diffMode}
-            displayName={displayName}
-            isCollapsed={collapsedFiles.has(displayName)}
-            isFocused={fileIndex === focusedFileIndex}
-            isFileViewed={viewedFilesSet.has(displayName)}
-            showViewedCheckbox={!selectedCommit}
-            additions={additions}
-            deletions={deletions}
-            commentLines={commentLinesByFile.get(displayName)}
-            activeWidget={
-              activeCommentWidget?.filePath === displayName ? memoizedActiveWidget : null
-            }
-            commentCallbacks={commentCallbacks}
-            onToggleFile={onToggleFile}
-            onMarkViewedFile={onMarkViewedFile}
-            onUnmarkViewedFile={onUnmarkViewedFile}
-            onOpenFileInEditor={onOpenFileInEditor}
-            onAddComment={onAddComment}
-            themeAppearance={themeAppearance}
-            themeId={themeId}
-          />
-        </div>
+      {files.map((file, fileIndex) => (
+        <DiffRow
+          key={file.file}
+          scrollRef={diffAreaRef}
+          featureId={featureId}
+          mode={mode}
+          targetBranch={targetBranch}
+          commitSha={selectedCommit}
+          status={file.status}
+          oldFile={file.old_file ?? undefined}
+          diffMode={diffMode}
+          displayName={file.file}
+          isCollapsed={collapsedFiles.has(file.file)}
+          isFocused={fileIndex === focusedFileIndex}
+          isFileViewed={viewedFilesSet.has(file.file)}
+          showViewedCheckbox={!selectedCommit}
+          additions={file.additions}
+          deletions={file.deletions}
+          commentLines={commentLinesByFile.get(file.file)}
+          activeWidget={activeCommentWidget?.filePath === file.file ? memoizedActiveWidget : null}
+          commentCallbacks={commentCallbacks}
+          onToggleFile={onToggleFile}
+          onMarkViewedFile={onMarkViewedFile}
+          onUnmarkViewedFile={onUnmarkViewedFile}
+          onOpenFileInEditor={onOpenFileInEditor}
+          onAddComment={onAddComment}
+          themeAppearance={themeAppearance}
+          themeId={themeId}
+        />
       ))}
     </DiffVirtualizer>
   );

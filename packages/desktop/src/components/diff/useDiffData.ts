@@ -3,7 +3,6 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useGetFileBlobShas,
-  useGetDiff,
   useGetChangedFiles,
   getGetFileContentQueryKey,
   useListDiffViewed,
@@ -19,8 +18,6 @@ import {
   getListDiffViewedQueryKey,
   getListDiffCommentsQueryKey,
 } from "@/api/generated";
-import type { ParsedFileMeta } from "@/lib/parse-unified-diff";
-import { useParsedDiff } from "./useParsedDiff";
 import { findStalePendingCommentIds } from "@/lib/diff-comment-validity";
 import { apiErrorMessage } from "@/lib/api-errors";
 
@@ -87,8 +84,6 @@ export function seedBatchFileContentCache(
   }
 }
 
-export type FileMeta = ParsedFileMeta;
-
 /**
  * Diff endpoint mode values. `"uncommitted"` is the new Git-tab segmented
  * control's working-tree alias (backed by the same `worktree` codepath on the
@@ -113,15 +108,19 @@ export function useDiffData(
   const queryClient = useQueryClient();
   const selectedCommit = commitSha ?? null;
 
-  // ---- Diff & file content ----
-  // In branch mode the target branch resolves asynchronously (the Git tab
-  // reads it from a snapshot query). Firing before it's known triggers a
-  // throwaway fetch of the default-branch diff — potentially huge — that is
-  // immediately refetched once the real target arrives, doubling the network +
-  // parse + render cost on open. Gate the query until the target (or a pinned
-  // commit) is known.
+  // ---- Changed-file list ----
+  // The pane is driven by the cheap changed-files list; each file's unified
+  // diff is fetched lazily per row (see `useFileDiffSection`) as it's expanded
+  // and scrolled into view, so opening the Git tab no longer downloads +
+  // JSON-parses the entire working-tree diff (multi-MB) as one blob.
+  //
+  // In branch mode the target branch resolves asynchronously (the Git tab reads
+  // it from a snapshot query). Firing before it's known triggers a throwaway
+  // fetch against the default branch that's immediately refetched once the real
+  // target arrives; gate the query until the target (or a pinned commit) is
+  // known.
   const diffParamsReady = mode !== "branch" || !!targetBranch || !!selectedCommit;
-  const { data: diffResponse, isLoading } = useGetDiff(
+  const { data: changedFiles = [], isLoading } = useGetChangedFiles(
     {
       feature_id: featureId,
       mode,
@@ -130,31 +129,19 @@ export function useDiffData(
     },
     { query: { enabled: diffParamsReady } },
   );
-  const rawDiff = diffResponse?.diff;
-
-  // Parsing + line-stat'ing the whole diff is O(diff size); for large diffs it
-  // runs off the main thread so the Git tab doesn't jank on open.
-  const { fileMeta, fileNames, isParsing } = useParsedDiff(rawDiff);
+  const fileNames = useMemo(() => changedFiles.map((f) => f.file), [changedFiles]);
 
   // Per-file staging state. Only meaningful in the working-tree views; in
-  // `branch` mode the set stays empty so the badge never renders.
+  // `branch`/commit views the set stays empty so the badge never renders.
   const isUncommittedView = mode === "uncommitted" || mode === "worktree";
-  const { data: changedFiles = [] } = useGetChangedFiles(
-    {
-      feature_id: featureId,
-      mode,
-      target_branch: targetBranch,
-    },
-    { query: { enabled: isUncommittedView && !selectedCommit } },
-  );
   const stagedFiles: Set<string> = useMemo(() => {
     const set = new Set<string>();
-    if (!isUncommittedView) return set;
+    if (!isUncommittedView || selectedCommit) return set;
     for (const f of changedFiles) {
       if (f.is_staged) set.add(f.file);
     }
     return set;
-  }, [changedFiles, isUncommittedView]);
+  }, [changedFiles, isUncommittedView, selectedCommit]);
 
   // ---- Blob SHAs & viewed tracking ----
   const { data: blobShasList = [] } = useGetFileBlobShas({ feature_id: featureId });
@@ -253,12 +240,11 @@ export function useDiffData(
   const hasInitializedCollapse = useRef(false);
 
   return {
-    // Surface off-thread parsing — and the branch-mode target-resolution gate —
-    // as loading so the diff view shows its loader (and never a momentary empty
-    // body) while a large diff is fetched or parsed.
-    isLoading: isLoading || isParsing || !diffParamsReady,
-    rawDiff,
-    fileMeta,
+    // Surface the branch-mode target-resolution gate as loading so the view
+    // shows its loader (and never a momentary empty body) until the file list
+    // is ready.
+    isLoading: isLoading || !diffParamsReady,
+    changedFiles,
     fileNames,
     stagedFiles,
     selectedCommit,

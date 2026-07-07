@@ -128,12 +128,17 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   const isListView = isGraph || isStashes;
   const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
   const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
+  // Stats are byte-identical for "worktree" and "uncommitted" on the backend, so
+  // label the working-tree stats query "worktree" — the value ProjectFeatureRow
+  // and the prefetch use — to share one cache entry instead of firing a
+  // duplicate under the "uncommitted" key when the Git tab is open.
+  const statsMode = viewMode === "vs-target" ? "branch" : "worktree";
   // The list views have their own per-row stats — skip the diff-wide stats
   // query entirely while one is active so we don't fire a wasted request.
   const statsQuery = useGetStats(
     {
       feature_id: featureId,
-      mode: effectiveDiffMode,
+      mode: statsMode,
       target_branch: diffTargetBranch,
     },
     { query: { enabled: !isListView } },

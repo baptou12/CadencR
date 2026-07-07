@@ -2,6 +2,21 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { DiffFileBlock } from "./DiffFileBlock";
+import type { FileDiffSection } from "@/lib/parse-unified-diff";
+
+const patch = `diff --git a/src/foo.ts b/src/foo.ts
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1 +1 @@
+-old
++new
+`;
+
+const defaultSection: FileDiffSection = {
+  oldFileName: "src/foo.ts",
+  newFileName: "src/foo.ts",
+  hunks: [patch],
+};
 
 const mocks = vi.hoisted(() => ({
   patchDiffViewMock: vi.fn(
@@ -26,6 +41,10 @@ const mocks = vi.hoisted(() => ({
       </div>
     ),
   ),
+  // The per-file diff is fetched lazily; tests drive the returned section
+  // through this mutable holder instead of passing it as a prop.
+  section: null as FileDiffSection | null,
+  isLoading: false,
 }));
 
 vi.mock("./PatchDiffView", () => ({
@@ -33,16 +52,21 @@ vi.mock("./PatchDiffView", () => ({
     mocks.patchDiffViewMock(props),
 }));
 
-const patch = `diff --git a/src/foo.ts b/src/foo.ts
---- a/src/foo.ts
-+++ b/src/foo.ts
-@@ -1 +1 @@
--old
-+new
-`;
+vi.mock("./useFileDiffSection", () => ({
+  useFileDiffSection: ({ enabled }: { enabled: boolean }) => ({
+    // Models the real hook: a row that hasn't been fetched (collapsed / off
+    // screen → `enabled` false) has no section yet.
+    section: enabled ? mocks.section : null,
+    isLoading: enabled && mocks.isLoading,
+    isError: false,
+  }),
+}));
 
 const baseProps = {
-  section: { oldFileName: "src/foo.ts", newFileName: "src/foo.ts", hunks: [patch] },
+  featureId: 1,
+  mode: "uncommitted" as const,
+  status: "M",
+  isVisible: true,
   diffMode: "unified" as const,
   displayName: "src/foo.ts",
   additions: 1,
@@ -59,6 +83,8 @@ const baseProps = {
 
 beforeEach(() => {
   mocks.patchDiffViewMock.mockClear();
+  mocks.section = defaultSection;
+  mocks.isLoading = false;
 });
 
 describe("DiffFileBlock", () => {
@@ -68,15 +94,25 @@ describe("DiffFileBlock", () => {
     expect(queryByTestId("patch-diff-view")).not.toBeInTheDocument();
   });
 
-  it("shows the file-change status icon in the collapsed header", () => {
+  it("shows the file-change status icon in the collapsed header from the status code", () => {
     const { container } = render(<DiffFileBlock {...baseProps} isCollapsed />);
-    // src/foo.ts → src/foo.ts (no /dev/null) resolves to a "modified" glyph.
+    // status "M" resolves to a "modified" glyph without fetching the patch.
     expect(container.querySelector('use[href="#diffs-icon-symbol-modified"]')).toBeInTheDocument();
   });
 
-  it("renders the authoritative patch hunk instead of fetching full file contents", () => {
+  it("renders the lazily-fetched patch hunk once expanded", () => {
     const { getByTestId } = render(<DiffFileBlock {...baseProps} isCollapsed={false} />);
     expect(getByTestId("patch-diff-view")).toHaveAttribute("data-patch", patch);
+  });
+
+  it("shows a loader while the per-file diff is still fetching", () => {
+    mocks.section = null;
+    mocks.isLoading = true;
+    const { getByText, queryByTestId } = render(
+      <DiffFileBlock {...baseProps} isCollapsed={false} />,
+    );
+    expect(getByText("Loading diff…")).toBeInTheDocument();
+    expect(queryByTestId("patch-diff-view")).not.toBeInTheDocument();
   });
 
   it("opens the file at the first changed line from the expanded header", async () => {
@@ -90,7 +126,10 @@ describe("DiffFileBlock", () => {
     expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", 1);
   });
 
-  it("opens the file at the first changed line from the collapsed header", async () => {
+  it("opens a collapsed file at the top — its patch isn't fetched, so no line", async () => {
+    // A collapsed row never fetches its diff, so there's no patch to derive a
+    // first-changed line from; it opens at the top (undefined line) rather than
+    // paying for a whole-file fetch just to compute a jump target.
     const onOpenFileInEditor = vi.fn();
     const { user } = render(
       <DiffFileBlock {...baseProps} isCollapsed onOpenFileInEditor={onOpenFileInEditor} />,
@@ -98,23 +137,21 @@ describe("DiffFileBlock", () => {
 
     await user.click(screen.getByRole("button", { name: "Open src/foo.ts in editor" }));
 
-    expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", 1);
+    expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", undefined);
   });
 
   it("renders a binary placeholder for binary/no-hunk patches", () => {
-    const binaryPatch = `diff --git a/image.png b/image.png
+    mocks.section = {
+      oldFileName: "image.png",
+      newFileName: "image.png",
+      hunks: [
+        `diff --git a/image.png b/image.png
 Binary files a/image.png and b/image.png differ
-`;
+`,
+      ],
+    };
     const { getByText, queryByTestId } = render(
-      <DiffFileBlock
-        {...baseProps}
-        section={{
-          oldFileName: "image.png",
-          newFileName: "image.png",
-          hunks: [binaryPatch],
-        }}
-        isCollapsed={false}
-      />,
+      <DiffFileBlock {...baseProps} displayName="image.png" status="M" isCollapsed={false} />,
     );
     expect(getByText("Binary file")).toBeInTheDocument();
     // Binary files have no useful textual diff — Pierre must not hydrate.
@@ -131,10 +168,10 @@ Binary files a/image.png and b/image.png differ
 @@ -0,0 +1,2000 @@
 ${bigHunkBody}
 `;
+    mocks.section = { oldFileName: "big.ts", newFileName: "big.ts", hunks: [bigPatch] };
     const { getByText, queryByTestId, getByRole, user } = render(
       <DiffFileBlock
         {...baseProps}
-        section={{ oldFileName: "big.ts", newFileName: "big.ts", hunks: [bigPatch] }}
         displayName="big.ts"
         additions={2000}
         deletions={0}
@@ -152,37 +189,5 @@ ${bigHunkBody}
     expect(chunks.length).toBeGreaterThan(0);
     expect(chunks[0].getAttribute("data-patch")).toContain("diff --git a/big.ts b/big.ts");
     expect(chunks[0].getAttribute("data-patch")?.length).toBeLessThan(bigPatch.length);
-  });
-
-  it("memoizes structurally-equal sections so unchanged files don't re-render", () => {
-    const { rerender } = render(<DiffFileBlock {...baseProps} isCollapsed={false} />);
-    const initialCalls = mocks.patchDiffViewMock.mock.calls.length;
-    expect(initialCalls).toBeGreaterThan(0);
-
-    rerender(
-      <DiffFileBlock
-        {...baseProps}
-        section={{
-          oldFileName: "src/foo.ts",
-          newFileName: "src/foo.ts",
-          hunks: [patch],
-        }}
-        isCollapsed={false}
-      />,
-    );
-    expect(mocks.patchDiffViewMock.mock.calls.length).toBe(initialCalls);
-
-    rerender(
-      <DiffFileBlock
-        {...baseProps}
-        section={{
-          oldFileName: "src/foo.ts",
-          newFileName: "src/foo.ts",
-          hunks: [patch.replace("+new", "+changed")],
-        }}
-        isCollapsed={false}
-      />,
-    );
-    expect(mocks.patchDiffViewMock.mock.calls.length).toBeGreaterThan(initialCalls);
   });
 });

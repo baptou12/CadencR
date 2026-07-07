@@ -22,7 +22,11 @@ pub async fn get_changed_files(
     worktree_path: &Path,
     mode: &str,
     target_branch: Option<&str>,
+    commit_sha: Option<&str>,
 ) -> Result<Vec<ChangedFile>, AppError> {
+    if let Some(sha) = commit_sha {
+        return get_commit_changed_files(worktree_path, sha).await;
+    }
     if mode == "worktree" || mode == "uncommitted" {
         return get_uncommitted_changed_files(worktree_path).await;
     }
@@ -33,6 +37,43 @@ pub async fn get_changed_files(
 
     let name_status_args = ["diff", "--name-status", diff_arg.as_str()];
     let numstat_args = ["diff", "--numstat", diff_arg.as_str()];
+    let (name_status, numstat) = tokio::join!(
+        run_git_quiet(&name_status_args, worktree_path),
+        run_git_quiet(&numstat_args, worktree_path),
+    );
+
+    let name_status = name_status.trim();
+    if name_status.is_empty() {
+        return Ok(vec![]);
+    }
+    let stat_map = parse_numstat(&numstat);
+    Ok(parse_name_status_with_stats(
+        name_status,
+        &stat_map,
+        /* is_staged */ false,
+    ))
+}
+
+/// Changed-file list for a single commit (`sha^..sha`). Uses `diff-tree` so
+/// root commits (no parent) diff cleanly against the empty tree instead of
+/// failing on an unresolvable `sha^`. `is_staged` is always `false`.
+async fn get_commit_changed_files(
+    worktree_path: &Path,
+    sha: &str,
+) -> Result<Vec<ChangedFile>, AppError> {
+    crate::shared::git_cli::guard_positionals(&[sha])?;
+    // `-M` enables rename detection so a rename shows as one `R*` entry (with
+    // `old_file`) instead of an add + delete pair — matching `git diff` and
+    // letting the per-file diff scope both paths for rename detection.
+    let name_status_args = [
+        "diff-tree",
+        "--no-commit-id",
+        "-M",
+        "--name-status",
+        "-r",
+        sha,
+    ];
+    let numstat_args = ["diff-tree", "--no-commit-id", "-M", "--numstat", "-r", sha];
     let (name_status, numstat) = tokio::join!(
         run_git_quiet(&name_status_args, worktree_path),
         run_git_quiet(&numstat_args, worktree_path),

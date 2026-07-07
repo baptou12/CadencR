@@ -1,29 +1,23 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@/test-utils";
-import type { FileDiffSection } from "@/lib/parse-unified-diff";
-import { DiffStatusIcon, deriveChangeType } from "./DiffStatusIcon";
+import { DiffStatusIcon, deriveChangeTypeFromStatus } from "./DiffStatusIcon";
 
-const section = (oldFileName: string, newFileName: string): FileDiffSection => ({
-  oldFileName,
-  newFileName,
-  hunks: [],
-});
-
-describe("deriveChangeType", () => {
-  it("maps an added file (old is /dev/null)", () => {
-    expect(deriveChangeType(section("/dev/null", "a.ts"))).toBe("new");
+describe("deriveChangeTypeFromStatus", () => {
+  it("maps an added file", () => {
+    expect(deriveChangeTypeFromStatus("A")).toBe("new");
   });
 
-  it("maps a deleted file (new is /dev/null)", () => {
-    expect(deriveChangeType(section("a.ts", "/dev/null"))).toBe("deleted");
+  it("maps a deleted file", () => {
+    expect(deriveChangeTypeFromStatus("D")).toBe("deleted");
   });
 
-  it("maps a renamed file (different names)", () => {
-    expect(deriveChangeType(section("a.ts", "b.ts"))).toBe("renamed");
+  it("maps rename and copy codes (with a similarity score)", () => {
+    expect(deriveChangeTypeFromStatus("R100")).toBe("renamed");
+    expect(deriveChangeTypeFromStatus("C075")).toBe("renamed");
   });
 
-  it("defaults to a modification (same name)", () => {
-    expect(deriveChangeType(section("a.ts", "a.ts"))).toBe("change");
+  it("defaults to a modification", () => {
+    expect(deriveChangeTypeFromStatus("M")).toBe("change");
   });
 });
 

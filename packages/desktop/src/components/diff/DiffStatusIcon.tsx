@@ -1,6 +1,5 @@
 import { type ReactElement } from "react";
 import { SVGSpriteSheet, getIconForType } from "@pierre/diffs";
-import { type FileDiffSection } from "@/lib/parse-unified-diff";
 import type { ThemeAppearance } from "@/lib/themes";
 
 /**
@@ -10,11 +9,15 @@ import type { ThemeAppearance } from "@/lib/themes";
  */
 export type DiffChangeType = "new" | "deleted" | "change" | "renamed";
 
-/** Derive the change kind from a parsed diff section's old/new file names. */
-export function deriveChangeType(section: FileDiffSection): DiffChangeType {
-  if (section.oldFileName === "/dev/null") return "new";
-  if (section.newFileName === "/dev/null") return "deleted";
-  if (section.oldFileName !== section.newFileName) return "renamed";
+/**
+ * Derive the change kind from a `git status` code (`M`, `A`, `D`, `R100`, …).
+ * Used by the collapsed file header, whose status is known from the cheap
+ * changed-files list before (or without ever) fetching that file's patch.
+ */
+export function deriveChangeTypeFromStatus(status: string): DiffChangeType {
+  if (status.startsWith("A")) return "new";
+  if (status.startsWith("D")) return "deleted";
+  if (status.startsWith("R") || status.startsWith("C")) return "renamed";
   return "change";
 }
 
