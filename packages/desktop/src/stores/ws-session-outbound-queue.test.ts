@@ -200,4 +200,67 @@ describe("ws-session outbound queue", () => {
     // The entry may survive (no live conn to tear down) but its queue must not.
     expect(session?.outboundQueue ?? []).toHaveLength(0);
   });
+
+  it("does not resend a sendRequest() envelope that timed out before the reconnect", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "7" },
+    });
+    // Socket goes non-OPEN (reconnect window) without a close event, so no
+    // auto-reconnect timer competes with the 10s request timeout. This models a
+    // long outage where the reconnect lands *after* the request has given up.
+    ws.readyState = MockWebSocket.CLOSED;
+
+    vi.useFakeTimers();
+    try {
+      const envelope = createEnvelope("session", "retry_worktree_setup", { feature_id: 42 });
+      const pending = store.sendRequest("s1", envelope);
+      expect(useWsSessionStore.getState().sessions.s1.outboundQueue).toHaveLength(1);
+
+      // 10s elapse with the socket still down: the request times out and its
+      // envelope must leave the queue instead of lingering as a stale flush.
+      await vi.advanceTimersByTimeAsync(10_000);
+      await expect(pending).resolves.toBeNull();
+      expect(useWsSessionStore.getState().sessions.s1.outboundQueue).toHaveLength(0);
+
+      // The socket comes back: the timed-out envelope must not be replayed.
+      ws.readyState = MockWebSocket.OPEN;
+      ws.fireEvent("open");
+      expect(sentActions(ws)).not.toContain("session.retry_worktree_setup");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves an in-flight sendRequest() immediately on disconnect", async () => {
+    await connectInitializedThenDrop();
+    const store = useWsSessionStore.getState();
+
+    const pending = store.sendRequest(
+      "s1",
+      createEnvelope("session", "retry_worktree_setup", { feature_id: 42 }),
+    );
+    store.disconnect("s1");
+
+    // Resolves now instead of hanging until the 10s timeout after teardown.
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it("resolves an in-flight sendRequest() immediately on destroy", async () => {
+    await connectInitializedThenDrop();
+    const store = useWsSessionStore.getState();
+
+    const pending = store.sendRequest(
+      "s1",
+      createEnvelope("session", "retry_worktree_setup", { feature_id: 42 }),
+    );
+    store.destroy("s1");
+
+    await expect(pending).resolves.toBeNull();
+  });
 });

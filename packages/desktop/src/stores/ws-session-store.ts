@@ -96,6 +96,17 @@ function shouldTrackPromptReceipt(session: SessionEntry): boolean {
   );
 }
 
+/**
+ * Resolve every in-flight `sendRequest()` with `null` and clear the map, so
+ * callers stop waiting the moment the socket is gone (transient drop or
+ * deliberate teardown) instead of hanging until the 10s timeout.
+ */
+function rejectPendingRequests(session: SessionEntry): void {
+  if (!session.pendingWsRequests.size) return;
+  for (const cb of session.pendingWsRequests.values()) cb(null);
+  session.pendingWsRequests.clear();
+}
+
 export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   function getSession(sessionId: string): SessionEntry {
     return get().sessions[sessionId] ?? createSessionEntry();
@@ -126,10 +137,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   function forceReconnectSession(sessionId: string): void {
     const session = get().sessions[sessionId];
     if (session?.conn) {
-      if (session.pendingWsRequests.size) {
-        for (const cb of session.pendingWsRequests.values()) cb(null);
-        session.pendingWsRequests.clear();
-      }
+      rejectPendingRequests(session);
       session.conn.close(1000, "force-reconnect");
       set(updateSession(get(), sessionId, { conn: null, isConnected: false }));
     }
@@ -257,10 +265,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           // so the transcript keeps them in order.
           flushStreamDeltas(ctx, sessionId);
           const session = get().sessions[sessionId];
-          if (session?.pendingWsRequests.size) {
-            for (const cb of session.pendingWsRequests.values()) cb(null);
-            session.pendingWsRequests.clear();
-          }
+          if (session) rejectPendingRequests(session);
           const wasRunning = session != null && isTurnActive(session.lifecycle);
           const closedDerived = wasRunning
             ? blocksPatchWithDerived(session.streamingState, [
@@ -297,10 +302,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           if (intentional) return;
           flushStreamDeltas(ctx, sessionId);
           const session = get().sessions[sessionId];
-          if (session?.pendingWsRequests.size) {
-            for (const cb of session.pendingWsRequests.values()) cb(null);
-            session.pendingWsRequests.clear();
-          }
+          if (session) rejectPendingRequests(session);
           set(
             updateSession(get(), sessionId, {
               conn: null,
@@ -346,6 +348,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       // had closed. In-place splice because the queue is mutated in place by
       // design (see SessionEntry.outboundQueue).
       session?.outboundQueue.splice(0);
+      // The deliberate close() below skips onClose's pending-request sweep
+      // (it early-returns on `intentional`), so resolve in-flight requests now
+      // rather than leaving permission/worktree calls hanging until the timeout.
+      if (session) rejectPendingRequests(session);
       if (!session?.conn) return;
 
       if (session.serverSessionId) {
@@ -372,6 +378,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         // sweep) still bound the wait.
         const timer = setTimeout(() => {
           session.pendingWsRequests.delete(envelope.id);
+          // Drop the still-queued envelope too. Otherwise a reconnect after the
+          // timeout flushes a request the caller already gave up on — e.g. a
+          // permission response the user was told "timed out" would silently
+          // reach the backend on the next onOpen.
+          const queued = session.outboundQueue.indexOf(envelope);
+          if (queued !== -1) session.outboundQueue.splice(queued, 1);
           resolve(null);
         }, 10_000);
         session.pendingWsRequests.set(envelope.id, (payload) => {
@@ -562,8 +574,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       discardStreamDeltas(sessionId);
       const session = get().sessions[sessionId];
       // Same rationale as disconnect(): a destroyed session must not replay
-      // its queued envelopes on a future connect.
+      // its queued envelopes on a future connect, nor leave sendRequest()
+      // callers hanging until the timeout after a deliberate close().
       session?.outboundQueue.splice(0);
+      if (session) rejectPendingRequests(session);
       if (!session?.conn) return;
 
       if (session.serverSessionId) {
