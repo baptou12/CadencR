@@ -142,7 +142,18 @@ pub async fn canonical_model_or_error(
     let provider_id = canonical_provider_or_error(provider_id)?;
     let adapter = runtime_adapter(&provider_id).expect("canonical provider has adapter");
     let catalog = provider_catalog_entry_live_for_settings(read_pool, None, None, adapter).await;
-    let canonical_model = adapter.canonicalize_model_id(model_id, &catalog.models);
+
+    // Canonicalize against the live catalog when it is populated, but degrade to
+    // the adapter's static catalog when the live probe is unavailable (e.g. the
+    // CLI is not installed). Otherwise a family alias like `opus` cannot be
+    // resolved to a concrete id and validation rejects a perfectly valid model.
+    let static_catalog = adapter.catalog_entry();
+    let canonicalize_source = if catalog.models.is_empty() {
+        &static_catalog.models
+    } else {
+        &catalog.models
+    };
+    let canonical_model = adapter.canonicalize_model_id(model_id, canonicalize_source);
 
     if model_is_available(&canonical_model, &catalog, adapter) {
         return Ok(canonical_model);
