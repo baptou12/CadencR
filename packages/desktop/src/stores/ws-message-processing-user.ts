@@ -1,6 +1,18 @@
 import type { BlockMutation, ParserSignals, StreamingState } from "./ws-message-processing-core";
 import { nextSyntheticBlockId } from "./ws-message-processing-utils";
 
+/**
+ * Claude's harness may run a Task/Agent subagent asynchronously. Instead of the
+ * subagent's output, the Agent tool_result then carries a fixed launch ack —
+ * "Async agent launched successfully. … The agent is working in the background."
+ * Detect it so we don't mistake the ack for completion. Matching two stable
+ * phrases (rather than one) keeps a real subagent report that happens to mention
+ * "background" from tripping this.
+ */
+function isBackgroundAgentLaunchAck(content: string): boolean {
+  return content.includes("Async agent launched") && content.includes("in the background");
+}
+
 export function processUserMessage(
   msg: Record<string, unknown>,
   state: StreamingState,
@@ -34,14 +46,32 @@ export function processUserMessage(
     const matchingBlock = state.toolUseIdToBlock.get(toolUseId);
     const sourceToolName = matchingBlock?.toolName ?? "unknown";
     const isSubagentResult = sourceToolName === "Agent" || sourceToolName === "Task";
+    const rawContent =
+      typeof item.content === "string" ? item.content : JSON.stringify(item.content ?? "");
+
+    if (isSubagentResult && matchingBlock) {
+      // A background subagent's Agent tool_result is only an "Async agent
+      // launched" ACK, delivered immediately while the subagent's real work
+      // still streams in afterward (interleaved with the main agent). It is NOT
+      // completion — treating it as such drops the panel's running state the
+      // instant the first event arrives. Flag the block as background so the
+      // stream-transition heuristic also leaves it running, and skip appending
+      // the ack (it is internal metadata the model is told never to surface).
+      // A foreground subagent, by contrast, returns its actual output here — the
+      // authoritative "it finished" signal, so complete it now (feedback #2).
+      if (isBackgroundAgentLaunchAck(rawContent)) {
+        matchingBlock.taskBackground = true;
+        continue;
+      }
+      matchingBlock.taskComplete = true;
+    }
 
     results.push({
       action: "append",
       block: {
         id: nextSyntheticBlockId(state),
         type: "tool_result",
-        content:
-          typeof item.content === "string" ? item.content : JSON.stringify(item.content ?? ""),
+        content: rawContent,
         isError: item.is_error === true,
         sourceToolName,
         toolUseId,

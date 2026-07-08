@@ -433,3 +433,92 @@ describe("stream resilience — fault injection", () => {
     warn.mockRestore();
   });
 });
+
+describe("processSdkMessage – subagent completion transitions", () => {
+  type StreamState = ReturnType<typeof createStreamingState>;
+
+  function streamEvent(
+    state: StreamState,
+    parentToolUseId: string | null,
+    event: Record<string, unknown>,
+  ): void {
+    processSdkMessage(
+      {
+        type: "stream_event",
+        session_id: "s1",
+        ...(parentToolUseId ? { parent_tool_use_id: parentToolUseId } : {}),
+        event,
+      },
+      state,
+    );
+  }
+
+  function startAgent(state: StreamState): void {
+    streamEvent(state, null, {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "tool_use", id: "toolu_task", name: "Agent", input: {} },
+    });
+  }
+
+  it("does not complete a Task when its own input_json_delta streams at root", () => {
+    const state = createStreamingState();
+    startAgent(state);
+    // A subagent child begins → stream context switches to the Task.
+    streamEvent(state, "toolu_task", {
+      type: "content_block_start",
+      index: 1,
+      content_block: { type: "text", text: "working" },
+    });
+    // The Task's own args (title/description) finish streaming at root.
+    streamEvent(state, null, {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "input_json_delta", partial_json: '{"description":"Run lint"}' },
+    });
+    expect(state.toolUseIdToBlock.get("toolu_task")?.taskComplete).not.toBe(true);
+  });
+
+  it("completes a Task when the main agent resumes with a new root block", () => {
+    const state = createStreamingState();
+    startAgent(state);
+    streamEvent(state, "toolu_task", {
+      type: "content_block_start",
+      index: 1,
+      content_block: { type: "text", text: "working" },
+    });
+    // Main agent resumes at root with a fresh block → the subagent is done.
+    streamEvent(state, null, {
+      type: "content_block_start",
+      index: 2,
+      content_block: { type: "text", text: "Done" },
+    });
+    expect(state.toolUseIdToBlock.get("toolu_task")?.taskComplete).toBe(true);
+  });
+
+  it("completes a Task when the main agent resumes via message_start", () => {
+    const state = createStreamingState();
+    startAgent(state);
+    // Subagent speaks (its own message opens under the Task's id).
+    streamEvent(state, "toolu_task", { type: "message_start", message: {} });
+    // Main agent resumes — a fresh message at root, no content_block_start yet.
+    streamEvent(state, null, { type: "message_start", message: {} });
+    expect(state.toolUseIdToBlock.get("toolu_task")?.taskComplete).toBe(true);
+  });
+
+  it("does not complete a background Task when the main agent resumes", () => {
+    const state = createStreamingState();
+    startAgent(state);
+    // The launch ack flagged this subagent as running in the background.
+    const task = state.toolUseIdToBlock.get("toolu_task");
+    if (task) task.taskBackground = true;
+    streamEvent(state, "toolu_task", {
+      type: "content_block_start",
+      index: 1,
+      content_block: { type: "text", text: "working" },
+    });
+    // Main agent interleaves — a background subagent keeps running.
+    streamEvent(state, null, { type: "message_start", message: {} });
+    expect(state.toolUseIdToBlock.get("toolu_task")?.taskComplete).not.toBe(true);
+  });
+});

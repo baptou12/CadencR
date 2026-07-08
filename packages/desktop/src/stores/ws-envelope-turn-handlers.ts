@@ -76,12 +76,15 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
       console.warn("[ws-session] post-turn transcript repair failed; will retry", err);
     });
   }
+  // The turn only ends once every subagent — foreground and background — has
+  // finished, so mark them all complete. Iterating the block map (rather than
+  // the live streams) is what makes this correct for parallel background
+  // subagents: they share one per-session stream context whose `parentToolUseId`
+  // only points at the last-seen agent, which would leave the others spinning.
+  for (const block of state.toolUseIdToBlock.values()) {
+    if (block.childBlocks && !block.taskComplete) block.taskComplete = true;
+  }
   for (const stream of state.streams.values()) {
-    if (!stream.parentToolUseId) {
-      continue;
-    }
-    const parent = state.toolUseIdToBlock.get(stream.parentToolUseId);
-    if (parent?.childBlocks) parent.taskComplete = true;
     stream.parentToolUseId = null;
   }
 
