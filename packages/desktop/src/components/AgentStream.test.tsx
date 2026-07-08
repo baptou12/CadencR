@@ -59,6 +59,13 @@ vi.mock("react-virtuoso", () => ({
   },
 }));
 
+// Break the AgentBlock → TaskAgentBlock → AgentStreamItem → AgentBlock import
+// cycle before `importActual("./AgentBlock")` below pulls it: loading the real
+// TaskAgentBlock re-enters AgentBlock mid-mock and leaves the AgentBlock export
+// unresolved, so AgentStreamItem renders nothing. Subagent panels aren't
+// exercised here, so a stub is enough.
+vi.mock("./TaskAgentBlock", () => ({ TaskAgentBlock: () => null }));
+
 // Per-block render counts captured by the AgentBlock mock. Tests that care
 // about the memoisation of `AgentStreamItem` read this map after re-rendering.
 const blockRenderCounts = new Map<string, number>();

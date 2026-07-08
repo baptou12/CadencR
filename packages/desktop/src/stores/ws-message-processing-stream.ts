@@ -39,9 +39,27 @@ export function processStreamEvent(
     stream.model = msg.model;
   }
   const parentToolUseId = (msg.parent_tool_use_id as string) ?? null;
-  if (stream.parentToolUseId && stream.parentToolUseId !== parentToolUseId) {
+  // Mark the previous subagent complete when a new message/block context opens
+  // under a different parent — a real context switch for a *foreground* subagent
+  // (subagent → subagent, or subagent → main-agent resume). A switch begins with
+  // either a `message_start` (a new speaker) or a `content_block_start`; both are
+  // valid triggers. Two things must NOT trigger it:
+  //  - Deltas: a Task's own `input_json_delta` streams at root (parent=null)
+  //    while its children already set the context, so keying completion off
+  //    deltas marks the Task complete the instant its args finish streaming.
+  //    (This is why the trigger is gated to the two "context opens" events and
+  //    excludes `content_block_delta`.)
+  //  - Background subagents: they interleave with the main agent, so the context
+  //    legitimately switches away and back while they keep running. Completing
+  //    them here kills the panel the moment the main agent resumes — only
+  //    `turn_complete` ends a background subagent.
+  if (
+    (event.type === "message_start" || event.type === "content_block_start") &&
+    stream.parentToolUseId &&
+    stream.parentToolUseId !== parentToolUseId
+  ) {
     const prevParent = state.toolUseIdToBlock.get(stream.parentToolUseId);
-    if (prevParent?.childBlocks) {
+    if (prevParent?.childBlocks && !prevParent.taskBackground) {
       prevParent.taskComplete = true;
     }
   }

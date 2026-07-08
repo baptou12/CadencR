@@ -72,6 +72,15 @@ export interface AgentBlockData {
   /** Whether this Task's subagent has completed */
   taskComplete?: boolean;
   /**
+   * Whether this Task's subagent runs in the background. Claude's harness may
+   * launch a subagent asynchronously: the Agent tool returns an immediate
+   * "Async agent launched" ack (not the real output), and the subagent's work
+   * streams afterward, interleaved with the main agent. Such a subagent must
+   * NOT be completed by its own tool_result (the ack) nor by a context switch
+   * away from it — only `turn_complete` truly ends it.
+   */
+  taskBackground?: boolean;
+  /**
    * Persisted DB message id. For history-loaded blocks the id is encoded in
    * `id` (`msg-<n>`); for a message sent live this session (a `ws-user-*`
    * block) it is stamped here by the `prompt_persisted` ack so rewind/fork can
@@ -145,7 +154,7 @@ export const AgentBlock = memo(function AgentBlock({
     case "tool_call": {
       if (block.toolName === "TodoWrite" || isTaskTodoTool(block.toolName)) return null;
       if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
-        return <TaskAgentBlock block={block} isStreaming={isStreaming} basePath={basePath} />;
+        return <TaskAgentBlock block={block} basePath={basePath} />;
       }
       if (
         block.toolName === "ExitPlanMode" ||

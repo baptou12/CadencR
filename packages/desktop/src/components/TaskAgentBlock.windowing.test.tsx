@@ -32,7 +32,7 @@ function taskBlock(childCount: number, taskComplete = false): AgentBlockData {
 
 describe("TaskAgentBlock windowing", () => {
   it("renders only the last N children while streaming, with a show-all affordance", () => {
-    render(<TaskAgentBlock block={taskBlock(40)} isStreaming />);
+    render(<TaskAgentBlock block={taskBlock(40)} />);
     // 40 children, cap 30 → last 30 rendered (child-10 … child-39).
     expect(screen.getAllByTestId("child")).toHaveLength(30);
     expect(screen.queryByText("child-9")).toBeNull();
@@ -47,13 +47,13 @@ describe("TaskAgentBlock windowing", () => {
   });
 
   it("renders all children (no cap, no button) once the task is complete", () => {
-    render(<TaskAgentBlock block={taskBlock(40, true)} isStreaming />);
+    render(<TaskAgentBlock block={taskBlock(40, true)} />);
     expect(screen.getAllByTestId("child")).toHaveLength(40);
     expect(screen.queryByRole("button", { name: /earlier step/i })).toBeNull();
   });
 
   it("does not window a small streaming child list", () => {
-    render(<TaskAgentBlock block={taskBlock(5)} isStreaming />);
+    render(<TaskAgentBlock block={taskBlock(5)} />);
     expect(screen.getAllByTestId("child")).toHaveLength(5);
     expect(screen.queryByRole("button", { name: /earlier step/i })).toBeNull();
   });
