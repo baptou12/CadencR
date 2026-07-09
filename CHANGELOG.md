@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.6.7 - 2026-07-09
+
+Previous release: v0.6.6 - 2026-07-05
+
+### 🔧 Changed
+
+- [**Desktop**] Improved sub-agent panels with sticky auto-scroll, collapsible thinking and shell output, streaming reasoning previews, and accurate running state for Claude background sub-agents so long delegated work stays readable without looking finished too early.
+- [**Desktop**] Expanded context menus for feature rows and terminal panes, including clipboard-backed feature copy actions and terminal pane controls with shared icon and shortcut rendering.
+- [**Desktop**] Made large workspaces significantly more responsive by coalescing streaming agent updates, throttling active markdown re-parses, windowing streaming sub-agent steps, narrowing sidebar subscriptions, deferring heavy feature mounts, deduplicating terminal/status/catalog requests, and reducing file-tree invalidation storms.
+- [**Desktop**] Reworked Git diff loading for large changesets so the Git panel opens from a cheap changed-files list and fetches visible file patches lazily, preventing multi-megabyte unified diffs from freezing the renderer.
+- [**Desktop**] Reduced packaged macOS app size by trimming renderer-only dependencies from the app archive, shipping a single renderer copy, and size-optimizing the Rust sidecar release profile.
+- [**Backend**] Improved project and workspace MCP tool reliability with clearer schemas, provider discovery guidance, canonical provider/model handling, and adapter-owned model alias resolution.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed file-tree freshness in large repositories by deciding lazy versus full-tree loading before starting full walks, refreshing open file/image reads through coalesced exact invalidations, and honoring nested `.gitignore` rules in the watcher.
+- [**Desktop**] Fixed worktree Git status and diff inconsistencies for untracked files by sharing the same binary-file heuristic across stats and diffs, showing small non-UTF-8 text files lossily, and skipping large binaries instead of mislabeling them.
+- [**Backend**] Fixed Sync from CLI for worktree-backed features so Claude transcript refreshes resolve the feature worktree cwd instead of the project root.
+- [**Backend**] Fixed agent model alias validation when a live provider probe is unavailable by falling back to the static catalog during canonicalization.
+- [**Backend**] Fixed the hot agent-state todo lookup to use the session/tool-use index instead of scanning the full agent message table.
+- [**Backend**] Fixed malformed streaming deltas so an inline error block stays in transcript order within its coalesced batch instead of jumping ahead of earlier valid deltas.
+- [**Desktop**] Fixed terminal paste security by removing the privileged Electron clipboard-read IPC and relying on browser clipboard permissions for user-initiated paste actions.
+- [**Desktop**] Fixed `pnpm dev` shutdown so Ctrl-C reaps the full dev process group instead of leaving child processes behind.
+
 ## v0.6.6 - 2026-07-05
 
 Previous release: v0.6.5 - 2026-07-05
