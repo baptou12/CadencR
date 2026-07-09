@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   app,
-  clipboard,
   dialog,
   ipcMain,
   nativeTheme,
@@ -47,10 +46,6 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
   ipcMain.handle("fs:read-file-base64", (event, fileHandle: unknown) => {
     assertTrustedSender(event, getMainWindow);
     return readFileBase64(fileHandle);
-  });
-  ipcMain.handle("clipboard:read-text", (event) => {
-    assertTrustedSender(event, getMainWindow);
-    return clipboard.readText();
   });
   ipcMain.handle("shell:reveal", (event, filePath: unknown) => {
     assertTrustedSender(event, getMainWindow);

@@ -175,7 +175,6 @@ contextBridge.exposeInMainWorld("cadencr", {
   runtimeConfig: (): Promise<RuntimeConfig> => ipcRenderer.invoke("runtime-config"),
   readFileBase64: (handle: string): Promise<string> =>
     ipcRenderer.invoke("fs:read-file-base64", handle),
-  readClipboardText: (): Promise<string> => ipcRenderer.invoke("clipboard:read-text"),
   suppressNextNativeContextMenu: (): void => {
     ipcRenderer.sendSync("context-menu:suppress-next");
   },

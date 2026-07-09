@@ -100,7 +100,6 @@ export interface CadencrDesktopBridge {
   isElectron: boolean;
   runtimeConfig: () => Promise<RuntimeConfig>;
   readFileBase64: (handle: string) => Promise<string>;
-  readClipboardText?: () => Promise<string>;
   suppressNextNativeContextMenu?: () => void;
   onFileDrop: (cb: (payload: FileDropPayload) => void) => () => void;
   revealInFinder: (path: string) => Promise<void>;
@@ -243,7 +242,6 @@ const browserBridge: CadencrBrowserBridge = {
   isElectron: false,
   runtimeConfig: () => unavailable("runtimeConfig"),
   readFileBase64: () => unavailable("readFileBase64"),
-  readClipboardText: () => navigator.clipboard.readText(),
   suppressNextNativeContextMenu: () => undefined,
   onFileDrop: () => () => undefined,
   revealInFinder: () => unavailable("revealInFinder"),

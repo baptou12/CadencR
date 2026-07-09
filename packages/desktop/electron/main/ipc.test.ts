@@ -181,7 +181,7 @@ describe("ipc validators", () => {
     expect(log).toContain("message: global crash");
   });
 
-  it("exposes clipboard text to trusted renderers for terminal paste", () => {
+  it("does not expose privileged clipboard reads to renderers", () => {
     registerIpc({
       getMainWindow: () => mainWindow(),
       confirmClose: vi.fn(),
@@ -191,11 +191,8 @@ describe("ipc validators", () => {
     const handlerCall = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => {
       return channel === "clipboard:read-text";
     });
-    expect(handlerCall).toBeDefined();
-    const handler = handlerCall?.[1] as (event: IpcMainInvokeEvent) => string;
-
-    expect(handler(trustedEvent())).toBe("terminal paste");
-    expect(clipboard.readText).toHaveBeenCalledTimes(1);
+    expect(handlerCall).toBeUndefined();
+    expect(clipboard.readText).not.toHaveBeenCalled();
   });
 
   it("registers trusted native context-menu suppression for renderer-owned menus", () => {

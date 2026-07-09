@@ -229,7 +229,7 @@ export const TerminalPanel = memo(
 
     const pasteIntoPane = useCallback(async (paneId: string) => {
       try {
-        const text = await (desktopBridge.readClipboardText?.() ?? navigator.clipboard.readText());
+        const text = await navigator.clipboard.readText();
         if (text) paneRefs.current.get(paneId)?.write(text);
       } catch {
         toast.error("Failed to paste from clipboard");
