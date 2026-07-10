@@ -1,11 +1,11 @@
 //! Codex-specific helpers for surfacing sub-agent output.
 //!
-//! Unlike Claude Code (which streams sub-agent events live with
-//! `parent_tool_use_id`) and OpenCode (which streams them on a child session
-//! id), Codex's app-server delivers a sub-agent's full output as a single
-//! string in `wait_agent` / `close_agent` tool_results, under
-//! `output.agentsStates[<threadId>].message`. There is no per-event live
-//! stream for the sub-agent on the parent's JSON-RPC channel.
+//! Current Codex app-server versions stream sub-agent events live on child
+//! thread ids; [`super::event_subagent_routes`] maps those threads back to the
+//! spawning `Agent` block. Older versions delivered only a final output string
+//! in `wait_agent` / `close_agent` tool results, under
+//! `output.agentsStates[<threadId>].message`, so this module also preserves the
+//! legacy synthesis fallback.
 //!
 //! To match the provider-neutral UI contract (an `Agent` block with
 //! `childBlocks` populated) the codex adapter synthesizes a single Text
