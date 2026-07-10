@@ -11,6 +11,7 @@ pub(super) struct IndexState {
     command_action_items: HashSet<String>,
     delayed_command_inputs: HashMap<String, Value>,
     command_output_snapshots: HashMap<String, String>,
+    reasoning_marker_prefixes: HashMap<String, String>,
     suppressed_raw_tool_items: HashSet<String>,
     /// Maps a sub-agent's `threadId` to the `tool_use_id` of the parent
     /// `spawn_agent` collab tool call. Codex routes sub-agent traffic on the
@@ -55,6 +56,7 @@ impl IndexState {
         self.command_action_items.clear();
         self.delayed_command_inputs.clear();
         self.command_output_snapshots.clear();
+        self.reasoning_marker_prefixes.clear();
         self.suppressed_raw_tool_items.clear();
         // `subagent_threads` is intentionally not cleared: sub-agent threads
         // may continue streaming across multiple root turns.
@@ -128,6 +130,33 @@ impl IndexState {
             .strip_prefix(&previous)
             .unwrap_or(snapshot)
             .to_string()
+    }
+
+    pub(super) fn reasoning_delta_without_marker(&mut self, id: &str, delta: &str) -> String {
+        const MARKER: &str = "<!-- -->";
+        let combined = match self.reasoning_marker_prefixes.remove(id) {
+            Some(mut pending) => {
+                pending.push_str(delta);
+                pending
+            }
+            None if !delta.contains('<') => return delta.to_string(),
+            None => delta.to_string(),
+        };
+        let mut cleaned = combined.replace(MARKER, "");
+        let pending_len = (1..MARKER.len())
+            .rev()
+            .find(|length| cleaned.ends_with(&MARKER[..*length]))
+            .unwrap_or_default();
+        if pending_len > 0 {
+            let pending = cleaned.split_off(cleaned.len() - pending_len);
+            self.reasoning_marker_prefixes
+                .insert(id.to_string(), pending);
+        }
+        cleaned
+    }
+
+    pub(super) fn take_reasoning_pending(&mut self, id: &str) -> Option<String> {
+        self.reasoning_marker_prefixes.remove(id)
     }
 
     pub(super) fn record_suppressed_raw_tool_item(&mut self, id: &str) {
