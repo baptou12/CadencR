@@ -66,6 +66,11 @@ vi.mock("react-virtuoso", () => ({
 // exercised here, so a stub is enough.
 vi.mock("./TaskAgentBlock", () => ({ TaskAgentBlock: () => null }));
 
+// ToolSummaryBlock (summary-mode recap) adds the same AgentBlock →
+// ToolSummaryBlock → AgentStreamItem → AgentBlock cycle; stub it for the same
+// reason. Summary rendering is covered by agentStreamSummary.test.ts.
+vi.mock("./agent-session/ToolSummaryBlock", () => ({ ToolSummaryBlock: () => null }));
+
 // Per-block render counts captured by the AgentBlock mock. Tests that care
 // about the memoisation of `AgentStreamItem` read this map after re-rendering.
 const blockRenderCounts = new Map<string, number>();

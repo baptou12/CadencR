@@ -3,6 +3,7 @@
  */
 
 import type { AgentBlockData } from "@/components/AgentBlock";
+import type { DisplayRowMode } from "@/components/agentStreamDisplay";
 import { isCadencrPlanPresentationTool } from "@/lib/tool-call-parser";
 import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
@@ -354,7 +355,7 @@ export interface WsSessionStore {
    * prepended to the conversation. The store also increments
    * `historyPrependDisplayOffset` by the rendered row count for Virtuoso.
    */
-  loadOlderMessages: (sessionId: string) => Promise<number>;
+  loadOlderMessages: (sessionId: string, displayMode?: DisplayRowMode) => Promise<number>;
   /**
    * Pull any messages persisted after the newest block we hold and merge them
    * in — the same catch-up path used on WS reconnect. Used after a manual

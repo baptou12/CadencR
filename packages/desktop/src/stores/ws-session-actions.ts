@@ -5,7 +5,7 @@ import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
 import { parseAskUserQuestions, type AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
-import { countRenderableDisplayRows } from "@/components/agentStreamDisplay";
+import { countRenderableDisplayRows, type DisplayRowMode } from "@/components/agentStreamDisplay";
 import {
   blocksPatchWithDerived,
   injectPlanIntoBlocks,
@@ -335,6 +335,7 @@ export function applyPersistedState(
 export async function loadOlderSessionMessages(
   ctx: StoreAccessors,
   sessionId: string,
+  displayMode?: DisplayRowMode,
 ): Promise<number> {
   const session = ctx.get().sessions[sessionId];
   if (
@@ -362,7 +363,12 @@ export async function loadOlderSessionMessages(
   const currentSession = ctx.get().sessions[sessionId];
   if (!currentSession) return 0;
   const mergedBlocks = [...olderBlocks, ...currentSession.blocks];
-  const prependedDisplayRows = countRenderableDisplayRows(olderBlocks);
+  // Use the actual growth in rendered rows, not the older chunk's rows in
+  // isolation — under summary/compact mode a segment can span the chunk
+  // boundary, so the net delta is what keeps `firstItemIndex` aligned.
+  const prependedDisplayRows =
+    countRenderableDisplayRows(mergedBlocks, displayMode) -
+    countRenderableDisplayRows(currentSession.blocks, displayMode);
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...blocksPatchWithDerived(currentSession.streamingState, mergedBlocks),

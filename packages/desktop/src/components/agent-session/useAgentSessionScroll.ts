@@ -4,6 +4,7 @@ import type { VirtuosoHandle, FollowOutputCallback } from "react-virtuoso";
 import type { AgentBlockData } from "../AgentBlock";
 import { subscribeResize } from "@/lib/resize-coordinator";
 import { isIos } from "@/lib/is-ios";
+import { isAutoScrollPinSuppressed } from "@/lib/agent-scroll-suppression";
 import {
   canScroll,
   MAX_VIEWPORT_FILL_PAGES,
@@ -236,7 +237,9 @@ export function useAgentSessionScroll({
   }, [resetHistoryLoadIntent, setAutoScrollEnabled, pinToEnd]);
 
   const followOutput = useCallback<FollowOutputCallback>(() => {
-    return stickRef.current ? "auto" : false;
+    // A recap expand/collapse animates row height; don't let its transient
+    // growth re-pin the view (see `agent-scroll-suppression`).
+    return stickRef.current && !isAutoScrollPinSuppressed() ? "auto" : false;
   }, []);
 
   const onAtBottomStateChange = useCallback(
@@ -263,7 +266,10 @@ export function useAgentSessionScroll({
   const onTotalListHeightChanged = useCallback(
     (_height: number): void => {
       restoreHistoryAnchor();
-      if (!stickRef.current) return;
+      // Skip the bottom-pin while a recap toggle is animating its height — that
+      // height delta is user-driven, not new content, so re-pinning would jump
+      // the clicked recap out of view.
+      if (!stickRef.current || isAutoScrollPinSuppressed()) return;
       pinToEnd();
       maybeFillViewport();
     },

@@ -20,6 +20,8 @@ import { PlanBlock } from "@/components/PlanBlock";
 import { BashBlock } from "@/components/BashBlock";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { CompactDivider, ClearDivider, TurnSummaryDivider } from "@/components/StreamDividers";
+import { ToolSummaryBlock } from "@/components/agent-session/ToolSummaryBlock";
+import type { ToolSummaryCount } from "@/components/agentStreamSummary";
 import { ErrorBlock } from "@/components/ErrorBlock";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
@@ -38,6 +40,7 @@ export type BlockType =
   | "thinking"
   | "user_message"
   | "turn_summary"
+  | "tool_summary"
   | "compact_divider"
   | "clear_divider"
   | "error";
@@ -67,8 +70,10 @@ export interface AgentBlockData {
   toolUseId?: string;
   /** Parent tool_use_id if this block comes from a subagent */
   parentToolUseId?: string | null;
-  /** Child blocks nested under this Task block */
+  /** Child blocks nested under this Task block, or a tool_summary's turn detail */
   childBlocks?: AgentBlockData[];
+  /** Per-tool counts for a synthetic `tool_summary` recap block (in-memory only) */
+  summaryCounts?: ToolSummaryCount[];
   /** Whether this Task's subagent has completed */
   taskComplete?: boolean;
   /**
@@ -238,6 +243,16 @@ export const AgentBlock = memo(function AgentBlock({
       );
     case "turn_summary":
       return <TurnSummaryDivider content={block.content} />;
+    case "tool_summary":
+      return (
+        <ToolSummaryBlock
+          counts={block.summaryCounts}
+          childBlocks={block.childBlocks}
+          basePath={basePath}
+          toolResultMap={toolResultMap}
+          verbosityMode={verbosityMode}
+        />
+      );
     case "compact_divider":
       return <CompactDivider metadata={block.content} />;
     case "clear_divider":
