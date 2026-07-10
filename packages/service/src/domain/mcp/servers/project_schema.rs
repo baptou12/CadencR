@@ -54,7 +54,7 @@ fn tool_description(name: &str) -> &'static str {
             "List canonical CadencR provider ids, common aliases, and model guidance for project_spawn_session."
         }
         "project_spawn_session" => {
-            "Create another CadencR session in the current project. Use canonical provider ids; call project_list_agent_providers when unsure."
+            "Create another CadencR session in a target project. You MUST specify the target with project_id or project_path (call workspace_list_projects to list projects, then pass the caller's own project id to spawn in the current project). Targeting a different project is useful when related codebases live as separate CadencR projects. Use canonical provider ids; call project_list_agent_providers when unsure."
         }
         "project_send_session_message" => {
             "Send a provenance-tracked user message to another current-project session."
@@ -173,6 +173,8 @@ fn spawn_session_schema() -> Value {
         "properties": {
             "title": { "type": "string" },
             "initial_message": { "type": "string" },
+            "project_id": { "type": "number" },
+            "project_path": { "type": "string" },
             "provider": {
                 "type": "string",
                 "enum": valid_provider_ids()
@@ -195,7 +197,11 @@ fn spawn_session_schema() -> Value {
             },
             "link_to_current_session": { "type": "boolean" }
         },
-        "required": ["title"]
+        "required": ["title"],
+        "anyOf": [
+            { "required": ["project_id"] },
+            { "required": ["project_path"] }
+        ]
     })
 }
 
@@ -215,6 +221,12 @@ fn property_description(tool_name: &str, property: &str) -> String {
     match (tool_name, property) {
         ("project_spawn_session", "provider") => {
             "Canonical provider id: claude_code, codex_cli, or opencode. Common aliases are normalized, but canonical ids are preferred.".into()
+        }
+        ("project_spawn_session", "project_id") => {
+            "Target project id for the new session (required unless project_path is given). Pass the caller's own project id to spawn in the current project, or another project's id to spawn there. Get ids from workspace_list_projects.".into()
+        }
+        ("project_spawn_session", "project_path") => {
+            "Target project root path (alternative to project_id). Must exactly match a registered project's path; see workspace_list_projects. If both project_id and project_path are given they must agree.".into()
         }
         ("project_spawn_session", "model") => {
             let claude_guidance = provider_alias_metadata("claude_code")
@@ -293,6 +305,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn project_spawn_session_schema_exposes_cross_project_targeting() {
+        let tools = tools();
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == "project_spawn_session")
+            .expect("project_spawn_session tool");
+        let schema = serde_json::to_value(&tool.input_schema).expect("schema json");
+
+        assert_eq!(schema["properties"]["project_id"]["type"], "number");
+        assert_eq!(schema["properties"]["project_path"]["type"], "string");
+        // A target project is mandatory: either project_id or project_path.
+        assert_eq!(schema["anyOf"][0]["required"][0], "project_id");
+        assert_eq!(schema["anyOf"][1]["required"][0], "project_path");
+        assert!(schema["properties"]["project_id"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("workspace_list_projects"));
     }
 
     #[test]
