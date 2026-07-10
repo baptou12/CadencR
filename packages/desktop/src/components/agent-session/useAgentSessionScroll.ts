@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { VirtuosoHandle, FollowOutputCallback } from "react-virtuoso";
 import type { AgentBlockData } from "../AgentBlock";
 import { subscribeResize } from "@/lib/resize-coordinator";
+import { isIos } from "@/lib/is-ios";
 import {
   canScroll,
   MAX_VIEWPORT_FILL_PAGES,
@@ -115,7 +116,19 @@ export function useAgentSessionScroll({
     requestAnimationFrame(pinScrollerToEnd);
   }, [pinScrollerToEnd]);
 
+  /**
+   * The absolute-scrollTop restore below assumes the user holds still while a
+   * history page loads — true for wheel scrolling, false for iOS momentum
+   * scrolling. On iOS WebKit, Virtuoso routes upward-resize compensation
+   * through a CSS "deviation" offset while a scroll is in flight and flushes
+   * it as a single scrollBy once scrolling stops; writing
+   * `anchor.scrollTop + delta` on top of that fights both the momentum (the
+   * anchor is pre-momentum, so the view snaps back *down*) and the pending
+   * deviation (double compensation). Skip the anchor entirely there —
+   * `firstItemIndex` plus Virtuoso's iOS path own prepend anchoring.
+   */
   const captureHistoryAnchor = useCallback((): void => {
+    if (isIos()) return;
     const el = scrollerElRef.current;
     historyAnchorRef.current = el
       ? { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight }
