@@ -107,7 +107,9 @@ pub async fn spawn_session_with_client(
                 "permission_mode": optional_string(args, "permission_mode"),
                 "codex_permission_mode": optional_string(args, "codex_permission_mode"),
                 "source_note": optional_string(args, "source_note"),
-                "link_to_current_session": optional_bool(args, "link_to_current_session")
+                "link_to_current_session": optional_bool(args, "link_to_current_session"),
+                "target_project_id": optional_i64(args, "project_id"),
+                "target_project_path": optional_string(args, "project_path")
             }),
         )
         .await
@@ -152,6 +154,10 @@ fn optional_string(args: &serde_json::Value, key: &str) -> Option<String> {
 
 fn optional_bool(args: &serde_json::Value, key: &str) -> Option<bool> {
     args.get(key).and_then(serde_json::Value::as_bool)
+}
+
+fn optional_i64(args: &serde_json::Value, key: &str) -> Option<i64> {
+    args.get(key).and_then(serde_json::Value::as_i64)
 }
 
 #[cfg(test)]
@@ -251,6 +257,43 @@ mod tests {
             "Please investigate and report findings."
         );
         assert_eq!(request["branch"]["mode"], "none");
+        assert!(request["target_project_id"].is_null());
+        assert!(request["target_project_path"].is_null());
+    }
+
+    #[tokio::test]
+    async fn spawn_session_forwards_target_project_selectors() {
+        let captured = Arc::new(Mutex::new(None));
+        let url = spawn_project_route(
+            "/internal/mcp/project/spawn-session",
+            json!({ "featureId": 51, "sessionId": 900, "crossProject": true }),
+            captured.clone(),
+        )
+        .await;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let ctx = McpContext::new_with_source_session(pool.clone(), pool, 42, Some(777));
+        let client = McpControlClient::from_env_values(Some(url), Some("secret".to_string()))
+            .expect("control client");
+
+        spawn_session_with_client(
+            &json!({
+                "title": "Ship the shared API change",
+                "project_id": 9,
+                "project_path": "/repos/api"
+            }),
+            &ctx,
+            client,
+        )
+        .await
+        .expect("spawn result");
+
+        let request = captured.lock().await.take().expect("captured request");
+        assert_eq!(request["target_project_id"], 9);
+        assert_eq!(request["target_project_path"], "/repos/api");
     }
 
     async fn spawn_send_message_route(captured: Arc<Mutex<Option<serde_json::Value>>>) -> String {
