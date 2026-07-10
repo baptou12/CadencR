@@ -286,6 +286,15 @@ mod tests {
         assert!(!is_project_key_allowed("agent_stream_verbosity_mode"));
     }
     #[test]
+    fn workspace_accepts_agent_stream_summary_mode() {
+        // Persisted by the global Settings page → "Agent output verbosity" →
+        // "Summary mode" toggle via useDebouncedSetting. Stored as "true" /
+        // "false"; without this the toggle 400s and the FE toasts a save error.
+        assert!(is_workspace_key_allowed("agent_stream_summary_mode"));
+        assert!(!is_feature_key_allowed("agent_stream_summary_mode"));
+        assert!(!is_project_key_allowed("agent_stream_summary_mode"));
+    }
+    #[test]
     fn workspace_accepts_animations_enabled() {
         // Master switch for fluid UI animations, persisted from the Welcome
         // onboarding step and the Settings → Appearance toggle.

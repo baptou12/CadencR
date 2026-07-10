@@ -126,6 +126,13 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // "auto_collapse" | "collapsed" | "compact"). The frontend is the source
     // of truth for the set; this allowlist only gates the write endpoint.
     "agent_stream_verbosity_mode",
+    // Global agent stream "Summary mode" toggle. Stored as "true" / "false"
+    // (default false when unset). When on, the frontend collapses each agent
+    // turn's tool calls into a single recap block (per-tool counts) followed by
+    // the turn's final message. Independent of the verbosity mode above; this
+    // allowlist only gates the write endpoint. See
+    // packages/desktop/src/lib/agent-verbosity.ts.
+    "agent_stream_summary_mode",
     // Plays the welcome-step intro animation exactly once, on the very first
     // open of the onboarding overlay. Set to "true" by `WelcomeIntro` after
     // the animation completes (or the user clicks to skip).

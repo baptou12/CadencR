@@ -65,6 +65,7 @@ import {
   updateSession,
 } from "./ws-session-types";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
+import type { DisplayRowMode } from "@/components/agentStreamDisplay";
 import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
@@ -696,8 +697,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       applyPersistedState(ctx, sessionId, payload, PLAN_RESTORE_PREFIX);
     },
 
-    async loadOlderMessages(sessionId: string): Promise<number> {
-      return loadOlderSessionMessages(ctx, sessionId);
+    async loadOlderMessages(sessionId: string, displayMode?: DisplayRowMode): Promise<number> {
+      return loadOlderSessionMessages(ctx, sessionId, displayMode);
     },
 
     refreshSessionMessages(sessionId: string, target?: ResyncTarget): Promise<void> {
