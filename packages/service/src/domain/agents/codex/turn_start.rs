@@ -79,13 +79,17 @@ mod tests {
             Path::new("/tmp/app"),
             None,
             None,
-            Some("gpt-5.5".to_string()),
-            Some("xhigh".to_string()),
+            Some("gpt-5.6-sol".to_string()),
+            Some("ultra".to_string()),
         );
 
         assert_eq!(params["summary"], "detailed");
-        assert_eq!(params["effort"], "xhigh");
-        assert_eq!(params["model"], "gpt-5.5");
+        assert_eq!(params["effort"], "ultra");
+        assert_eq!(params["model"], "gpt-5.6-sol");
+        assert_eq!(
+            params["collaborationMode"]["settings"]["reasoning_effort"],
+            "ultra"
+        );
     }
 
     #[test]
