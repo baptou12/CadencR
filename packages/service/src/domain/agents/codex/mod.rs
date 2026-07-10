@@ -16,6 +16,7 @@ mod event_plan_item;
 mod event_raw;
 #[cfg(test)]
 mod event_raw_tests;
+mod event_reasoning;
 mod event_state;
 mod event_subagents;
 mod event_system;
