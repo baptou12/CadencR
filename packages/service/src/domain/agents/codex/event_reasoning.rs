@@ -117,6 +117,24 @@ mod tests {
         )
     }
 
+    fn summary_delta(
+        summary_index: u64,
+        text: &str,
+        indexes: &mut IndexState,
+    ) -> Vec<RuntimeEvent> {
+        notification_events(
+            "item/reasoning/summaryTextDelta",
+            json!({
+                "threadId": "thread",
+                "itemId": "reasoning_1",
+                "summaryIndex": summary_index,
+                "delta": text
+            }),
+            None,
+            indexes,
+        )
+    }
+
     fn complete(indexes: &mut IndexState) -> Vec<RuntimeEvent> {
         notification_events(
             "item/completed",
@@ -132,17 +150,34 @@ mod tests {
     #[test]
     fn summary_delta_starts_clean_thinking_block() {
         let mut indexes = IndexState::default();
-        let events = delta(
-            "item/reasoning/summaryTextDelta",
-            "**Planning**\n\n<!-- -->",
-            &mut indexes,
-        );
+        let events = summary_delta(0, "**Planning**\n\n<!-- -->", &mut indexes);
 
         assert_eq!(thinking_content(&events), "**Planning**\n\n");
         assert!(matches!(
             events[0].stream_event(),
             Some(RuntimeStreamEvent::ContentBlockStart { .. })
         ));
+    }
+
+    #[test]
+    fn multiple_summary_parts_preserve_paragraphs_in_order() {
+        let mut indexes = IndexState::default();
+        let mut events = summary_delta(
+            0,
+            "**Comparing event paths**\n\nFirst detail.",
+            &mut indexes,
+        );
+        events.extend(summary_delta(
+            1,
+            "\n\n**Checking persistence**\n\nSecond detail.",
+            &mut indexes,
+        ));
+
+        assert_eq!(
+            thinking_content(&events),
+            "**Comparing event paths**\n\nFirst detail.\n\n\
+             **Checking persistence**\n\nSecond detail."
+        );
     }
 
     #[test]
