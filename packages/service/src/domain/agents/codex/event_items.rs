@@ -16,6 +16,7 @@ use super::event_payloads::{
 use super::event_plan_item::plan_item;
 use super::event_reasoning::reasoning_item_event;
 use super::event_state::IndexState;
+use super::event_subagent_routes::register_subagent_activity_route;
 use super::event_subagents::{
     agent_tool_input, synthesize_subagent_messages, synthesize_subagent_prompt,
 };
@@ -55,6 +56,14 @@ pub(super) fn item_events(
     };
     let item_value = parsed.item.as_value();
     let item_type = parsed.item.item_type.clone();
+    if item_type == "subAgentActivity" {
+        register_subagent_activity_route(
+            parsed.thread_id(),
+            parsed.item.agent_thread_id.as_deref(),
+            parsed.item.agent_path.as_deref(),
+            index_state,
+        );
+    }
     let params = parsed.into_raw();
     match item_type.as_str() {
         "agentMessage" => text_item(params, completed, index_state),
