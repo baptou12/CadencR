@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
-import { createWsConnection } from "@/lib/ws-connection";
+import { createWsConnection, type WsConnection } from "@/lib/ws-connection";
 import {
   scheduleReconnect,
   resetReconnectState,
@@ -242,10 +242,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       registerReconnector(reconnectKey, () => forceReconnectSession(sessionId), {
         onManualRequired: reportManualReconnectRequired,
       });
-      const conn = createWsConnection({
+      // A replaced mobile socket can remain registered on the service while its
+      // close is in flight, so stale callbacks must not mutate the shared store.
+      let conn: WsConnection;
+      conn = createWsConnection({
         url: getWsUrl(),
         protocols: getWsProtocols(),
         onOpen: () => {
+          if (get().sessions[sessionId]?.conn !== conn) return;
           resetReconnectState(reconnectKey);
           set(updateSession(get(), sessionId, { isConnected: true }));
           useConnectionStatusStore.getState().reportSource(reconnectKey, "connected");
@@ -270,6 +274,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           void resyncMessagesOnReconnect(ctx, sessionId);
         },
         onClose: (intentional) => {
+          if (get().sessions[sessionId]?.conn !== conn) return;
           if (intentional) return;
           // Apply any buffered tokens before the "connection lost" error block
           // so the transcript keeps them in order.
@@ -309,6 +314,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           if (!intentional) scheduleReconnect(reconnectKey, () => get().connect(sessionId));
         },
         onError: (intentional) => {
+          if (get().sessions[sessionId]?.conn !== conn) return;
           if (intentional) return;
           flushStreamDeltas(ctx, sessionId);
           const session = get().sessions[sessionId];
@@ -330,7 +336,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             .reportSource(reconnectKey, "reconnecting", "Session WebSocket error");
           if (!intentional) scheduleReconnect(reconnectKey, () => get().connect(sessionId));
         },
-        onMessage: (data) => handleSocketMessage(socketDeps, sessionId, data),
+        onMessage: (data) => {
+          if (get().sessions[sessionId]?.conn !== conn) return;
+          handleSocketMessage(socketDeps, sessionId, data);
+        },
       });
 
       set({
