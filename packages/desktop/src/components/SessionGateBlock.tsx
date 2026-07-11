@@ -1,8 +1,9 @@
-import { ShieldAlertIcon } from "lucide-react";
+import { ExternalLinkIcon, ShieldAlertIcon } from "lucide-react";
 import { memo, useCallback, type ReactElement } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useGetFeature } from "@/api/generated";
 import { navigateToFeatureIdOrHome } from "@/components/project-feature-navigation";
+import { SessionGateDetails } from "@/components/SessionGateDetails";
 import type { SessionGateEnvelope } from "@/lib/session-gate";
 
 interface SessionGateBlockProps {
@@ -59,32 +60,38 @@ const GatePresentation = memo(function GatePresentation({
     if (projectId !== undefined)
       navigateToFeatureIdOrHome(navigate, projectId, gate.childFeatureId);
   }, [gate.childFeatureId, navigate, projectId]);
-  const policy =
-    gate.autonomy === "human_only"
-      ? "Human action required"
-      : gate.autonomy === "parent_answers_all"
-        ? "Parent answers all eligible gates"
-        : "Parent may answer eligible gates";
-
   return (
-    <div className="mx-auto my-2 flex w-full max-w-[85%] flex-col gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
-      <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
-        <ShieldAlertIcon className="size-3.5" aria-hidden="true" />
-        <span className="font-medium">Child {gate.kind} gate</span>
+    <aside className="mx-auto my-2 w-full max-w-[85%] overflow-hidden rounded-lg border border-amber-500/30 bg-amber-500/[0.035] shadow-sm">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.055] px-3 py-2">
+        <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
+          <ShieldAlertIcon className="size-3.5" aria-hidden="true" />
+          <span className="text-[11px] font-semibold capitalize">Child {gate.kind}</span>
+        </span>
         <button
           type="button"
           onClick={openChild}
           disabled={projectId === undefined}
-          className="underline underline-offset-2 disabled:no-underline"
+          className="group flex min-w-0 items-center gap-1 text-[11px] font-medium text-foreground hover:text-primary disabled:pointer-events-none"
           title={lookupError ? "Child conversation could not be loaded" : "Open child conversation"}
         >
-          “{lookupError ? `${title} (title unavailable)` : title}”
+          <span className="max-w-64 truncate">
+            {lookupError ? `${title} (title unavailable)` : title}
+          </span>
+          <ExternalLinkIcon
+            className="size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary"
+            aria-hidden="true"
+          />
         </button>
-        <span className="text-muted-foreground">{policy}</span>
+        <span className="ml-auto rounded-full border border-border/70 bg-background/45 px-2 py-0.5 text-[9px] font-medium text-muted-foreground">
+          Parent can respond
+        </span>
+      </header>
+      <div className="px-3 py-2.5">
+        <SessionGateDetails gate={gate} />
       </div>
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded border border-border/60 bg-background/60 p-2 text-[11px] text-muted-foreground">
-        {JSON.stringify(gate.payload, null, 2)}
-      </pre>
-    </div>
+      <footer className="border-t border-border/50 px-3 py-1.5 font-mono text-[9px] text-muted-foreground/80">
+        Request {gate.requestId}
+      </footer>
+    </aside>
   );
 });
