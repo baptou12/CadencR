@@ -58,7 +58,7 @@ export function SlidingText({ text, className }: { text: string; className?: str
   return (
     <div
       ref={outerRef}
-      className={cn("min-w-0 overflow-hidden", !isSliding && "truncate", className)}
+      className={cn("min-w-0 overflow-hidden leading-none", !isSliding && "truncate", className)}
       style={wrapperStyle}
     >
       <span
