@@ -7,6 +7,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 mod audit;
+mod gate_envelope;
+pub(crate) mod gate_notify;
+mod gate_policy;
+mod gate_respond;
 pub(crate) mod message_queue;
 mod reply_audit;
 mod reply_envelope;
@@ -24,13 +28,11 @@ fn trimmed_optional(value: Option<&str>) -> Option<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
 }
-
 #[derive(Debug, Deserialize)]
 struct ProjectContextQuery {
     feature_id: i64,
     source_session_id: i64,
 }
-
 #[derive(Debug, Serialize, sqlx::FromRow)]
 struct ProjectContextRow {
     project_id: i64,
@@ -41,7 +43,6 @@ struct ProjectContextRow {
     source_session_id: i64,
     source_session_status: String,
 }
-
 #[derive(Debug, Serialize)]
 struct ProjectContextResponse {
     project: IdNamePath,
@@ -49,14 +50,12 @@ struct ProjectContextResponse {
     #[serde(rename = "sourceSession")]
     source_session: IdStatus,
 }
-
 #[derive(Debug, Serialize)]
 struct IdNamePath {
     id: i64,
     name: String,
     path: String,
 }
-
 #[derive(Debug, Serialize)]
 struct IdTitle {
     id: i64,
@@ -83,6 +82,7 @@ pub fn control_router() -> Router<AppState> {
             "/internal/mcp/project/spawn-session",
             post(spawn_session::spawn_session_handler),
         )
+        .merge(gate_respond::routes())
 }
 
 async fn project_context_handler(

@@ -57,6 +57,7 @@ mod tests {
         assert!(is_feature_key_allowed("model_session"));
         assert!(is_feature_key_allowed("layout_state"));
         assert!(is_feature_key_allowed("draft_prompt"));
+        assert!(is_feature_key_allowed("gate_escalation_autonomy"));
     }
     #[test]
     fn rejects_retired_bypass_acknowledged_key() {

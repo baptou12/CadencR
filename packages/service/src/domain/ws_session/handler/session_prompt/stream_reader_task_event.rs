@@ -129,8 +129,7 @@ impl StreamReaderTask {
             .map(PendingUserInput::Question)
             .unwrap_or(PendingUserInput::Permission(payload));
         WsSessionPersistence::mark_awaiting_user_static(
-            &self.write_pool,
-            &self.session_status_tx,
+            &self.app_state,
             self.db_session_id,
             self.feature_id,
             &pending,

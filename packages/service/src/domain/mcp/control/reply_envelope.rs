@@ -27,7 +27,7 @@ pub(super) fn build_reply_envelope(metadata: ReplyEnvelopeMetadata<'_>, body: &s
     )
 }
 
-fn escape_xml_attribute(value: &str) -> String {
+pub(super) fn escape_xml_attribute(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('"', "&quot;")

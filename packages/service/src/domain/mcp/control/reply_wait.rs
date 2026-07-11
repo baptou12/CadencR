@@ -1,10 +1,10 @@
 use serde::Deserialize;
 
-use super::message_queue::{enqueue_message, persist_generated_user_message};
+use super::message_queue::{enqueue_message, persist_and_broadcast_generated_user_message};
 use super::reply_audit::record_reply_delivery_audit;
 use super::reply_envelope::{build_reply_envelope, ReplyEnvelopeMetadata};
 use super::scope::{resolve_session_scope, SessionScope};
-use super::send_message::{broadcast_generated_user_message, requires_user_resolution};
+use super::send_message::requires_user_resolution;
 use crate::app_state::AppState;
 use crate::domain::mcp::message_queries::latest_assistant_text_after;
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
@@ -192,28 +192,21 @@ async fn deliver_one(
     delivery
 }
 
-async fn deliver_to_requester(
+pub(super) async fn deliver_to_requester(
     state: &AppState,
     responder: &SessionScope,
     requester: &SessionScope,
     envelope: &str,
 ) -> Result<(), AppError> {
-    persist_generated_user_message(
+    persist_and_broadcast_generated_user_message(
         state,
+        responder,
         requester.session_id,
-        responder.session_id,
+        requester.feature_id,
         envelope,
         DELIVERY_NOTE,
     )
     .await?;
-    broadcast_generated_user_message(
-        state,
-        responder,
-        requester.feature_id,
-        envelope,
-        Some(DELIVERY_NOTE),
-    )
-    .await;
     if requester_is_busy(&requester.status) {
         enqueue_message(&state.write_pool, requester.session_id, None, envelope).await?;
         return Ok(());

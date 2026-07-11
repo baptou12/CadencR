@@ -36,6 +36,7 @@ pub struct PermissionResponse {
 }
 
 pub(crate) struct WsBridgeCanUseTool {
+    pub(crate) app_state: crate::app_state::AppState,
     pub(crate) sender: WsSender,
     /// Every other device viewing this feature. A gate is mirrored to them so
     /// it appears on all connected clients, not just whichever one owns the
@@ -96,29 +97,16 @@ impl WsBridgeCanUseTool {
     ) -> RuntimeToolPermissionResult {
         info!("ExitPlanMode detected, sending permission request and blocking");
 
-        let initial_payload = self.plan_permission_payload(request, request.input.clone());
+        let enriched_input = self.attach_plan_to_exit_block(request).await;
+        let payload = self.plan_permission_payload(request, enriched_input);
         WsSessionPersistence::mark_awaiting_user_static(
-            &self.write_pool,
-            &self.session_status_tx,
+            &self.app_state,
             self.db_session_id,
             self.feature_id,
-            &PendingUserInput::Permission(&initial_payload),
+            &PendingUserInput::Permission(&payload),
         )
         .await;
-
-        self.send_permission_payload(initial_payload).await;
-
-        let enriched_input = self.attach_plan_to_exit_block(request).await;
-        if enriched_input != request.input {
-            let enriched_payload = self.plan_permission_payload(request, enriched_input);
-            WsSessionPersistence::set_pending_user_input_static(
-                &self.write_pool,
-                self.db_session_id,
-                &PendingUserInput::Permission(&enriched_payload),
-            )
-            .await;
-            self.send_permission_payload(enriched_payload).await;
-        }
+        self.send_permission_payload(payload).await;
 
         let mut rx = self.response_rx.lock().await;
         match rx.recv().await {
@@ -355,8 +343,7 @@ impl WsBridgeCanUseTool {
             options: permission_bridge::build_provider_permission_options(&permission_updates),
         };
         WsSessionPersistence::mark_awaiting_user_static(
-            &self.write_pool,
-            &self.session_status_tx,
+            &self.app_state,
             self.db_session_id,
             self.feature_id,
             &PendingUserInput::Permission(&payload),

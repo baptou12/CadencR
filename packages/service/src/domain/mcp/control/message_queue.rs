@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::scope::resolve_session_scope;
+use super::scope::{resolve_session_scope, SessionScope};
 use crate::app_state::AppState;
 use crate::domain::mcp::control::send_message::broadcast_generated_user_message;
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
@@ -61,23 +61,16 @@ async fn deliver_message(
     message: &QueuedMessage,
 ) -> Result<(), AppError> {
     if let Some(source_session_id) = message.source_session_id {
-        persist_generated_user_message(
+        let source = resolve_session_scope(&state.write_pool, source_session_id).await?;
+        persist_and_broadcast_generated_user_message(
             state,
+            &source,
             target_session_id,
-            source_session_id,
+            target_feature_id,
             &message.content,
             "delivered from queued project_send_session_message",
         )
         .await?;
-        let source = resolve_session_scope(&state.write_pool, source_session_id).await?;
-        broadcast_generated_user_message(
-            state,
-            &source,
-            target_feature_id,
-            &message.content,
-            Some("delivered from queued project_send_session_message"),
-        )
-        .await;
     }
     dispatch_control_prompt(
         state,
@@ -90,14 +83,13 @@ async fn deliver_message(
     .await
 }
 
-pub(crate) async fn persist_generated_user_message(
+async fn persist_generated_user_message(
     state: &AppState,
     target_session_id: i64,
-    source_session_id: i64,
+    source: &SessionScope,
     content: &str,
     note: &str,
 ) -> Result<i64, AppError> {
-    let source = resolve_session_scope(&state.write_pool, source_session_id).await?;
     let mut tx = state.write_pool.begin().await?;
     let message_id: i64 = sqlx::query_scalar(
         "INSERT INTO agent_messages (session_id, role, content, message_type)
@@ -122,6 +114,19 @@ pub(crate) async fn persist_generated_user_message(
     .await?;
     tx.commit().await?;
     Ok(message_id)
+}
+
+pub(super) async fn persist_and_broadcast_generated_user_message(
+    state: &AppState,
+    source: &SessionScope,
+    target_session_id: i64,
+    target_feature_id: i64,
+    content: &str,
+    note: &str,
+) -> Result<(), AppError> {
+    persist_generated_user_message(state, target_session_id, source, content, note).await?;
+    broadcast_generated_user_message(state, source, target_feature_id, content, Some(note)).await;
+    Ok(())
 }
 
 pub(crate) async fn enqueue_message(
