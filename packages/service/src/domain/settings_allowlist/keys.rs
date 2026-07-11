@@ -118,6 +118,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // step (provider id from the agent catalog).
     "onboarding_step",
     "default_agent_provider",
+    // Set to "true" from the per-project onboarding dialog's "Don't show this
+    // again" checkbox. When "true", adding a new project skips the color +
+    // worktree-setup onboarding modal. Missing/unset = show the modal.
+    "project_onboarding_dismissed",
     // Master switch for fluid UI animations. When unset the frontend falls back
     // to the OS `prefers-reduced-motion` media query. Stored as "true" / "false".
     "animations_enabled",

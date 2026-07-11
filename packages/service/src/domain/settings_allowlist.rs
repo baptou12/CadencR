@@ -275,6 +275,7 @@ mod tests {
         assert!(is_workspace_key_allowed("onboarding_step"));
         assert!(is_workspace_key_allowed("default_agent_provider"));
         assert!(is_workspace_key_allowed("onboarding_intro_shown"));
+        assert!(is_workspace_key_allowed("project_onboarding_dismissed"));
     }
     #[test]
     fn workspace_accepts_agent_stream_verbosity_mode() {
