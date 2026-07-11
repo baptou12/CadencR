@@ -15,6 +15,7 @@ pub(crate) mod message_queue;
 mod reply_audit;
 mod reply_envelope;
 pub(crate) mod reply_wait;
+mod requester_delivery;
 mod scope;
 mod send_message;
 mod spawn_persist;
@@ -61,7 +62,6 @@ struct IdTitle {
     id: i64,
     title: String,
 }
-
 #[derive(Debug, Serialize)]
 struct IdStatus {
     id: i64,

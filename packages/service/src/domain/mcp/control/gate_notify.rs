@@ -2,7 +2,7 @@ use tracing::error;
 
 use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
 use super::gate_envelope::{build_gate_envelope, GateEnvelopeMetadata};
-use super::reply_wait::deliver_to_requester;
+use super::requester_delivery::deliver_gate;
 use super::scope::resolve_session_scope;
 use crate::app_state::AppState;
 use crate::error::AppError;
@@ -10,14 +10,11 @@ use crate::error::AppError;
 pub(crate) fn spawn_gate_notification(
     state: AppState,
     child_session_id: i64,
-    child_feature_id: i64,
     payload: serde_json::Value,
 ) {
     tokio::spawn(async move {
-        if let Err(cause) =
-            notify_linked_parent(&state, child_session_id, child_feature_id, &payload).await
-        {
-            error!(child_session_id, child_feature_id, error = %cause, "failed to notify linked parent about child gate");
+        if let Err(cause) = notify_linked_parent(&state, child_session_id, &payload).await {
+            error!(child_session_id, error = %cause, "failed to notify linked parent about child gate");
         }
     });
 }
@@ -25,17 +22,15 @@ pub(crate) fn spawn_gate_notification(
 async fn notify_linked_parent(
     state: &AppState,
     child_session_id: i64,
-    child_feature_id: i64,
     payload: &serde_json::Value,
 ) -> Result<(), AppError> {
     let started_at = std::time::Instant::now();
     let Some(parent_session_id) = linked_parent(&state.read_pool, child_session_id).await? else {
         return Ok(());
     };
-    let (child, parent, autonomy) = tokio::try_join!(
+    let (child, parent) = tokio::try_join!(
         resolve_session_scope(&state.write_pool, child_session_id),
         resolve_session_scope(&state.write_pool, parent_session_id),
-        feature_autonomy(&state.read_pool, child_feature_id),
     )?;
     let request_id = payload
         .get("request_id")
@@ -51,17 +46,16 @@ async fn notify_linked_parent(
     let envelope = build_gate_envelope(
         GateEnvelopeMetadata {
             child_session_id,
-            child_feature_id,
+            child_feature_id: child.feature_id,
             child_feature_title: &child.feature_title,
             child_project_id: child.project_id,
             kind: gate.kind.as_str(),
             request_id: &gate.request_id,
-            autonomy: autonomy.as_str(),
         },
         payload,
     )
     .map_err(|error| AppError::Internal(format!("failed to serialize gate envelope: {error}")))?;
-    let delivery = deliver_to_requester(state, &child, &parent, &envelope).await;
+    let delivery = deliver_gate(state, &child, &parent, &envelope).await;
     let delivery_error = delivery.as_ref().err().map(ToString::to_string);
     record_tool_audit(
         &state.write_pool,
@@ -102,41 +96,6 @@ pub(super) async fn linked_parent(
     .await?)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum GateAutonomy {
-    HumanOnly,
-    ParentMayAnswer,
-    ParentAnswersAll,
-}
-
-impl GateAutonomy {
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::HumanOnly => "human_only",
-            Self::ParentMayAnswer => "parent_may_answer",
-            Self::ParentAnswersAll => "parent_answers_all",
-        }
-    }
-}
-
-pub(super) async fn feature_autonomy(
-    pool: &sqlx::SqlitePool,
-    feature_id: i64,
-) -> Result<GateAutonomy, AppError> {
-    let value: Option<String> = sqlx::query_scalar(
-        "SELECT value FROM feature_settings
-         WHERE feature_id = ? AND key = 'gate_escalation_autonomy'",
-    )
-    .bind(feature_id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(match value.as_deref() {
-        Some("parent_may_answer") => GateAutonomy::ParentMayAnswer,
-        Some("parent_answers_all") => GateAutonomy::ParentAnswersAll,
-        _ => GateAutonomy::HumanOnly,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,7 +103,7 @@ mod tests {
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
     #[tokio::test]
-    async fn linked_child_gate_is_enqueued_for_busy_parent_with_full_payload() {
+    async fn linked_child_gate_is_enqueued_when_parent_has_its_own_gate() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&MigrationContext {
             pool: &pool,
@@ -171,7 +130,7 @@ mod tests {
             )
             .await;
 
-        notify_linked_parent(&state, 22, 2, &payload).await.unwrap();
+        notify_linked_parent(&state, 22, &payload).await.unwrap();
 
         let content: String = sqlx::query_scalar(
             "SELECT content FROM agent_session_message_queue WHERE target_session_id = 11",
@@ -191,7 +150,7 @@ mod tests {
             .unwrap();
         sqlx::query("INSERT INTO features (id, project_id, title, status, type) VALUES (1, 1, 'Parent', 'active', 'ws-session'), (2, 1, 'Child', 'active', 'ws-session')")
             .execute(pool).await.unwrap();
-        sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, runtime_provider) VALUES (11, 1, 'session', 'running', 'missing'), (22, 2, 'session', 'running', 'missing')")
+        sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, runtime_provider) VALUES (11, 1, 'session', 'awaiting_question', 'missing'), (22, 2, 'session', 'running', 'missing')")
             .execute(pool).await.unwrap();
         sqlx::query("INSERT INTO agent_session_links (source_session_id, target_session_id, link_type) VALUES (11, 22, 'spawned')")
             .execute(pool).await.unwrap();

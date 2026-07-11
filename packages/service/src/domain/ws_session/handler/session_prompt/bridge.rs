@@ -330,6 +330,12 @@ impl WsBridgeCanUseTool {
         request: &RuntimeToolPermissionRequest,
     ) -> RuntimeToolPermissionResult {
         debug!(tool_name = %request.tool_name, "prompting user for provider-native permission");
+        let is_question = crate::domain::ws_session::protocol::is_question_tool(&request.tool_name);
+        let pending_kind = if is_question {
+            PendingUserInputKind::Question
+        } else {
+            PendingUserInputKind::Permission
+        };
         let permission_updates =
             permission_bridge::persistent_permission_updates(&request.permission_updates);
 
@@ -342,17 +348,24 @@ impl WsBridgeCanUseTool {
             preview: permission_bridge::extract_permission_preview(&request.input),
             options: permission_bridge::build_provider_permission_options(&permission_updates),
         };
+        let question_payload = is_question.then(|| {
+            serde_json::to_value(&payload).expect("question permission payload should serialize")
+        });
+        let pending = question_payload
+            .as_ref()
+            .map(PendingUserInput::Question)
+            .unwrap_or(PendingUserInput::Permission(&payload));
         WsSessionPersistence::mark_awaiting_user_static(
             &self.app_state,
             self.db_session_id,
             self.feature_id,
-            &PendingUserInput::Permission(&payload),
+            &pending,
         )
         .await;
         self.send_permission_payload(payload).await;
 
         // `wait_and_apply_decision` owns the clear + terminal-turn broadcast.
-        permission_bridge::wait_and_apply_decision(
+        let result = permission_bridge::wait_and_apply_decision(
             &self.response_rx,
             &request.tool_use_id,
             request.input.clone(),
@@ -361,8 +374,13 @@ impl WsBridgeCanUseTool {
             self.feature_id,
             &self.write_pool,
             self.db_session_id,
-            PendingUserInputKind::Permission,
+            pending_kind,
         )
-        .await
+        .await;
+        if is_question {
+            crate::domain::agents::claude_code::question_answers::normalize_result(result)
+        } else {
+            result
+        }
     }
 }

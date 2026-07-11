@@ -1,16 +1,12 @@
 use serde::Deserialize;
 
-use super::message_queue::{enqueue_message, persist_and_broadcast_generated_user_message};
 use super::reply_audit::record_reply_delivery_audit;
 use super::reply_envelope::{build_reply_envelope, ReplyEnvelopeMetadata};
+use super::requester_delivery::deliver_reply;
 use super::scope::{resolve_session_scope, SessionScope};
-use super::send_message::requires_user_resolution;
 use crate::app_state::AppState;
 use crate::domain::mcp::message_queries::latest_assistant_text_after;
-use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
 use crate::error::AppError;
-
-const DELIVERY_NOTE: &str = "automatic reply from agent session turn";
 
 #[derive(Debug, Deserialize, sqlx::FromRow)]
 struct ReplyWait {
@@ -175,7 +171,7 @@ async fn deliver_one(
     let responder = resolve_session_scope(&state.write_pool, wait.responder_session_id).await?;
     let requester = resolve_session_scope(&state.write_pool, wait.requester_session_id).await?;
     let envelope = reply_envelope(wait, &responder, outcome.envelope_status(), body);
-    let delivery = deliver_to_requester(state, &responder, &requester, &envelope).await;
+    let delivery = deliver_reply(state, &responder, &requester, &envelope).await;
     let error = delivery.as_ref().err().map(ToString::to_string);
     if let Some(error) = error.as_deref() {
         record_delivery_error(&state.write_pool, wait.id, error).await?;
@@ -190,39 +186,6 @@ async fn deliver_one(
     )
     .await?;
     delivery
-}
-
-pub(super) async fn deliver_to_requester(
-    state: &AppState,
-    responder: &SessionScope,
-    requester: &SessionScope,
-    envelope: &str,
-) -> Result<(), AppError> {
-    persist_and_broadcast_generated_user_message(
-        state,
-        responder,
-        requester.session_id,
-        requester.feature_id,
-        envelope,
-        DELIVERY_NOTE,
-    )
-    .await?;
-    if requester_is_busy(&requester.status) {
-        enqueue_message(&state.write_pool, requester.session_id, None, envelope).await?;
-        return Ok(());
-    }
-    dispatch_control_prompt(
-        state,
-        requester.feature_id,
-        requester.session_id,
-        envelope,
-        true,
-    )
-    .await
-}
-
-fn requester_is_busy(status: &str) -> bool {
-    status == "running" || requires_user_resolution(status)
 }
 
 async fn record_delivery_error(

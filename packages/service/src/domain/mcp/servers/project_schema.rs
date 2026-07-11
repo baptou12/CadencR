@@ -60,8 +60,8 @@ fn tool_description(name: &str) -> &'static str {
         "project_send_session_message" => {
             "Send a provenance-tracked user message to another current-project session."
         }
-        "project_list_pending_gates" => "List the current pending gate for a linked child session.",
-        "project_respond_gate" => "Answer a linked child session's pending gate when its autonomy policy permits parent decisions.",
+        "project_list_pending_gates" => "Recover or reconcile the current pending gate for a linked child session. A live <cadencr-gate> notification already includes the complete request id, kind, options, and tool/question payload, so do not list again unless recovery or stale-state verification is needed.",
+        "project_respond_gate" => "Answer a linked child session's pending gate. Use the session id, request id, kind, and complete payload directly from the live <cadencr-gate> notification.",
         _ => "Coordinate CadencR sessions in the current project.",
     }
 }

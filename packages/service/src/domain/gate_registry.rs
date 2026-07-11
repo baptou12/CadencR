@@ -23,9 +23,11 @@ impl GateKind {
         }
     }
 
-    fn from_pending(kind: PendingUserInputKind, tool_name: &str) -> Self {
+    pub(crate) fn from_pending(kind: PendingUserInputKind, tool_name: &str) -> Self {
         if tool_name == "ExitPlanMode" {
             Self::Plan
+        } else if crate::domain::ws_session::protocol::is_question_tool(tool_name) {
+            Self::Question
         } else {
             match kind {
                 PendingUserInputKind::Permission => Self::Permission,

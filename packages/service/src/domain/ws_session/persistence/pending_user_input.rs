@@ -321,6 +321,31 @@ mod pending_user_input_tests {
     }
 
     #[tokio::test]
+    async fn ask_user_question_payload_is_registered_as_question_defensively() {
+        let pool = setup_pool().await;
+        let id = insert_session(&pool).await;
+        let state = crate::app_state::AppState::with_pool(pool);
+        let mut payload = sample_permission_payload();
+        payload.tool_name = "AskUserQuestion".into();
+        payload.tool_input = serde_json::json!({
+            "question": "Which provider?",
+            "options": ["Claude", "OpenCode"]
+        });
+
+        WsSessionPersistence::mark_awaiting_user_static(
+            &state,
+            id,
+            1,
+            &PendingUserInput::Permission(&payload),
+        )
+        .await;
+
+        let gate = state.pending_gates.latest_open(id).await.unwrap();
+        assert_eq!(gate.kind, crate::domain::gate_registry::GateKind::Question);
+        assert_eq!(gate.payload["tool_input"]["question"], "Which provider?");
+    }
+
+    #[tokio::test]
     async fn mark_agent_resumed_clears_db_before_broadcasting() {
         use crate::domain::session_status::AgentStatus;
         let pool = setup_pool().await;

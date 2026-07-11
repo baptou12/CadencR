@@ -98,15 +98,10 @@ impl StreamReaderTask {
         else {
             return false;
         };
-        let is_question = request.tool_name == "AskUserQuestion";
+        let is_question = crate::domain::ws_session::protocol::is_question_tool(&request.tool_name);
         let payload: PermissionRequestPayload = permission_request_payload(request);
         let question_payload = is_question.then(|| {
-            serde_json::json!({
-                "tool_name": payload.tool_name.clone(),
-                "tool_input": payload.tool_input.clone(),
-                "request_id": payload.request_id.clone(),
-                "pattern": payload.pattern.clone(),
-            })
+            serde_json::to_value(&payload).expect("question permission payload should serialize")
         });
         self.persist_pending_user_input(&payload, question_payload.as_ref())
             .await;

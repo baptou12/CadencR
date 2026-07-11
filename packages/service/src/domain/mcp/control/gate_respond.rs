@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use super::audit::{elapsed_ms, record_tool_audit, ToolAudit};
-use super::gate_notify::{feature_autonomy, linked_parent};
+use super::gate_notify::linked_parent;
 use super::gate_policy::{authorize_decision, GateDecision};
 use super::message_queue::persist_and_broadcast_generated_user_message;
 use super::scope::{resolve_session_scope, SessionScope};
@@ -65,23 +65,20 @@ pub(super) async fn respond_gate_handler(
         resolve_session_scope(&state.read_pool, request.source_session_id),
         resolve_session_scope(&state.read_pool, request.session_id),
     )?;
-    let response = respond_authorized(&state, &request, target.feature_id).await;
+    let response = respond_authorized(&state, &request).await;
     finish_response(state, source, target, request, response, started_at).await
 }
 
 async fn respond_authorized(
     state: &AppState,
     request: &RespondGateRequest,
-    target_feature_id: i64,
 ) -> Result<(), AppError> {
     require_linked_parent(state, request.source_session_id, request.session_id).await?;
-    let autonomy = feature_autonomy(&state.read_pool, target_feature_id).await?;
     let payload = authorize_decision(
         state,
         request.session_id,
         &request.request_id,
         &request.decision,
-        autonomy,
     )
     .await?;
     dispatch_response(state, request.session_id, payload).await

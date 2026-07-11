@@ -9,9 +9,6 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "skip_worktree",
     "layout_state",
     "draft_prompt",
-    // Parent gate escalation policy: human_only (default), parent_may_answer,
-    // or parent_answers_all. Runtime validation remains authoritative.
-    "gate_escalation_autonomy",
     // Git workflow (per-feature). `worktree_mode` selects how the worktree is
     // provisioned at feature creation: "new" (default), "reuse" (attach to an
     // existing branch / its worktree), or "skip". `worktree_reuse_branch`

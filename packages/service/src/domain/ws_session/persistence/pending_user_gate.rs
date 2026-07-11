@@ -86,7 +86,6 @@ impl WsSessionPersistence {
             crate::domain::mcp::control::gate_notify::spawn_gate_notification(
                 state.clone(),
                 session_id,
-                feature_id,
                 payload,
             );
         }
@@ -175,24 +174,16 @@ async fn register_gate(
             session_id,
             crate::domain::gate_registry::PendingGate {
                 request_id: request_id.to_string(),
-                kind: gate_kind(&payload, input.kind()),
+                kind: crate::domain::gate_registry::GateKind::from_pending(
+                    input.kind(),
+                    payload
+                        .get("tool_name")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default(),
+                ),
                 payload: payload.clone(),
             },
         )
         .await;
     Some(payload)
-}
-
-fn gate_kind(
-    payload: &serde_json::Value,
-    kind: PendingUserInputKind,
-) -> crate::domain::gate_registry::GateKind {
-    if payload.get("tool_name").and_then(serde_json::Value::as_str) == Some("ExitPlanMode") {
-        crate::domain::gate_registry::GateKind::Plan
-    } else {
-        match kind {
-            PendingUserInputKind::Permission => crate::domain::gate_registry::GateKind::Permission,
-            PendingUserInputKind::Question => crate::domain::gate_registry::GateKind::Question,
-        }
-    }
 }

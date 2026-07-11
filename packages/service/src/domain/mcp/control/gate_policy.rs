@@ -1,6 +1,5 @@
 use serde::Deserialize;
 
-use super::gate_notify::GateAutonomy;
 use crate::app_state::AppState;
 use crate::domain::gate_registry::{GateKind, PendingGate};
 use crate::domain::ws_session::protocol::{PermissionDecision, PermissionRespondPayload};
@@ -43,7 +42,6 @@ pub(super) async fn authorize_decision(
     session_id: i64,
     request_id: &str,
     decision: &GateDecision,
-    autonomy: GateAutonomy,
 ) -> Result<PermissionRespondPayload, AppError> {
     state
         .pending_gates
@@ -54,65 +52,8 @@ pub(super) async fn authorize_decision(
         .find_pending(session_id, request_id)
         .await
         .ok_or_else(|| AppError::Conflict("gate is no longer pending".into()))?;
-    enforce_autonomy(autonomy, &gate)?;
     validate_decision_kind(decision, gate.kind)?;
     permission_payload(session_id, request_id, decision, &gate)
-}
-
-fn enforce_autonomy(autonomy: GateAutonomy, gate: &PendingGate) -> Result<(), AppError> {
-    match autonomy {
-        GateAutonomy::HumanOnly => Err(AppError::BadRequest(
-            "feature autonomy is human_only".into(),
-        )),
-        GateAutonomy::ParentMayAnswer if !parent_may_answer(gate) => Err(AppError::BadRequest(
-            "parent_may_answer permits only question, plan, and read-only permission gates".into(),
-        )),
-        GateAutonomy::ParentAnswersAll if forced_human_gate(gate) => Err(AppError::BadRequest(
-            "this dangerous or unclassified permission must be answered by a human".into(),
-        )),
-        _ => Ok(()),
-    }
-}
-
-fn parent_may_answer(gate: &PendingGate) -> bool {
-    gate.kind != GateKind::Permission || read_only_permission(&gate.payload)
-}
-
-fn forced_human_gate(gate: &PendingGate) -> bool {
-    gate.kind == GateKind::Permission && !known_delegable_permission(&gate.payload)
-}
-
-fn known_delegable_permission(payload: &serde_json::Value) -> bool {
-    let tool = tool_name(payload);
-    // Provider-neutral allowlist only. Shell and unknown tools always fall
-    // through to the human because generic code cannot classify their risk.
-    matches!(
-        tool,
-        "Read"
-            | "Glob"
-            | "Grep"
-            | "LS"
-            | "WebFetch"
-            | "WebSearch"
-            | "Write"
-            | "Edit"
-            | "MultiEdit"
-            | "NotebookEdit"
-    )
-}
-
-fn read_only_permission(payload: &serde_json::Value) -> bool {
-    matches!(
-        tool_name(payload),
-        "Read" | "Glob" | "Grep" | "LS" | "WebFetch" | "WebSearch"
-    )
-}
-
-fn tool_name(payload: &serde_json::Value) -> &str {
-    payload
-        .get("tool_name")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("")
 }
 
 fn validate_decision_kind(decision: &GateDecision, kind: GateKind) -> Result<(), AppError> {
@@ -269,38 +210,63 @@ mod tests {
         assert!(error.to_string().contains("allow_future"));
     }
 
-    #[test]
-    fn shell_permission_is_forced_to_human() {
-        let gate = gate(GateKind::Permission, "Bash");
-        assert!(forced_human_gate(&gate));
-    }
-
-    #[test]
-    fn autonomy_levels_have_distinct_write_policy() {
-        let gate = gate(GateKind::Permission, "Write");
-        assert!(enforce_autonomy(GateAutonomy::HumanOnly, &gate).is_err());
-        assert!(enforce_autonomy(GateAutonomy::ParentMayAnswer, &gate).is_err());
-        assert!(enforce_autonomy(GateAutonomy::ParentAnswersAll, &gate).is_ok());
-    }
-
     #[tokio::test]
-    async fn parent_may_answer_builds_registered_read_response() {
+    async fn linked_parent_can_authorize_shell_permission() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         let state = AppState::with_pool(pool);
         state
             .pending_gates
-            .register(2, gate(GateKind::Permission, "Read"))
+            .register(2, gate(GateKind::Permission, "Bash"))
             .await;
         let decision = GateDecision::Permission {
             action: PermissionAction::AllowOnce,
             message: None,
         };
 
-        let payload = authorize_decision(&state, 2, "r1", &decision, GateAutonomy::ParentMayAnswer)
+        let payload = authorize_decision(&state, 2, "r1", &decision)
             .await
             .unwrap();
 
         assert_eq!(payload.request_id, "r1");
         assert_eq!(payload.option_id.as_deref(), Some("native-once"));
+    }
+
+    #[test]
+    fn preserves_single_string_answer_for_provider_adapter() {
+        let mut gate = gate(GateKind::Question, "AskUserQuestion");
+        gate.payload["tool_input"] = serde_json::json!({
+            "questions": [{"question": "Choose a path?"}]
+        });
+        let decision = GateDecision::Question {
+            answers: serde_json::json!("Question path"),
+        };
+
+        let payload = permission_payload(2, "r1", &decision, &gate).unwrap();
+
+        assert_eq!(
+            payload.updated_input.unwrap()["answers"],
+            serde_json::json!("Question path")
+        );
+    }
+
+    #[test]
+    fn preserves_structured_question_answers_for_provider_adapter() {
+        let mut gate = gate(GateKind::Question, "AskUserQuestion");
+        gate.payload["tool_input"] = serde_json::json!({
+            "questions": [
+                {"question": "First?"},
+                {"question": "Second?"}
+            ]
+        });
+        let decision = GateDecision::Question {
+            answers: serde_json::json!([["Alpha", "Beta"], "Gamma"]),
+        };
+
+        let payload = permission_payload(2, "r1", &decision, &gate).unwrap();
+
+        assert_eq!(
+            payload.updated_input.unwrap()["answers"],
+            serde_json::json!([["Alpha", "Beta"], "Gamma"])
+        );
     }
 }
