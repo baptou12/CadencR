@@ -10,6 +10,8 @@ interface AgentSessionStreamContentProps {
   rootBlocks?: AgentBlockData[];
   toolResultMap?: Map<string, AgentBlockData>;
   isAgentWorking: boolean;
+  /** Turn still in flight (working OR paused on a question/permission). */
+  turnActive: boolean;
   lifecycle?: TurnLifecycle;
   workingLabel: string;
   projectPath?: string;
@@ -31,6 +33,7 @@ export const AgentSessionStreamContent = memo(function AgentSessionStreamContent
   rootBlocks,
   toolResultMap,
   isAgentWorking,
+  turnActive,
   lifecycle,
   workingLabel,
   projectPath,
@@ -54,6 +57,7 @@ export const AgentSessionStreamContent = memo(function AgentSessionStreamContent
       rootBlocks={rootBlocks}
       toolResultMap={toolResultMap}
       isStreaming={isAgentWorking}
+      turnActive={turnActive}
       lifecycle={lifecycle}
       workingLabel={workingLabel}
       basePath={projectPath}

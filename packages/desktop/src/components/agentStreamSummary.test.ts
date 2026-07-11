@@ -5,6 +5,10 @@ import { collapseTurnsToSummary } from "./agentStreamSummary";
 function user(id: string, content = "hi"): AgentBlockData {
   return { id, type: "user_message", content };
 }
+/** A steer message that's been sent but not yet acknowledged by the agent. */
+function pendingUser(id: string, content = "steer"): AgentBlockData {
+  return { id, type: "user_message", content, promptDeliveryState: "pending_agent" };
+}
 function tool(id: string, toolName: string): AgentBlockData {
   return { id, type: "tool_call", content: "", toolName };
 }
@@ -167,6 +171,50 @@ describe("collapseTurnsToSummary", () => {
     // childBlocks = every body block except the final text (shown separately).
     expect(recap?.childBlocks?.map((b) => b.id)).toEqual(["t1", "m0", "t2"]);
     expect(result[2].content).toBe("final");
+  });
+
+  it("keeps a pending steer message inside the live turn until the agent receives it", () => {
+    // Steer sent mid-turn: the block is appended immediately but the agent hasn't
+    // acknowledged it yet, so the in-flight turn must NOT collapse around it.
+    const blocks = [
+      user("u1"),
+      tool("t1", "Read"),
+      text("m1", "first done"),
+      pendingUser("u2", "actually also do this"),
+    ];
+    const result = collapseTurnsToSummary(blocks, { activeStreaming: true });
+
+    // No new segment: the whole thing is still one live turn streaming raw.
+    expect(result.map((b) => b.type)).toEqual([
+      "user_message",
+      "tool_call",
+      "text",
+      "user_message",
+    ]);
+    expect(result.some((b) => b.type === "tool_summary")).toBe(false);
+  });
+
+  it("starts a fresh segment once the steer message is received by the agent", () => {
+    // Same blocks, but the steer has flipped to received (no promptDeliveryState).
+    const blocks = [
+      user("u1"),
+      tool("t1", "Read"),
+      text("m1", "first done"),
+      user("u2", "actually also do this"),
+      tool("t2", "Bash"),
+      text("m2", "second"),
+    ];
+    const result = collapseTurnsToSummary(blocks, { activeStreaming: true });
+
+    // First turn folds; the received steer opens the new (live) turn.
+    expect(result.map((b) => b.type)).toEqual([
+      "user_message",
+      "tool_summary",
+      "text",
+      "user_message",
+      "tool_call",
+      "text",
+    ]);
   });
 
   it("collapses a pending steering message segment without a recap", () => {

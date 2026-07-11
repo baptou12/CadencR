@@ -114,6 +114,9 @@ export const AgentSession = memo(
     // mixing scopes created dual-source bugs where the header showed
     // "In Progress" next to a visible Resume button.
     const isAgentWorking = status === "agent";
+    // Turn is in flight while working OR paused on a question/permission; only
+    // "idle" ends it. Summary mode keeps the live turn uncollapsed until then.
+    const isTurnActive = status !== "idle";
     const timerLifecycle = isAgentWorking && !isCompacting ? lifecycle : undefined;
     const streamLifecycle = isAgentWorking ? lifecycle : undefined;
     const turnWorkingLabel = useTurnWorkingLabel(timerLifecycle, turnTiming);
@@ -330,6 +333,7 @@ export const AgentSession = memo(
         rootBlocks={rootBlocks}
         toolResultMap={toolResultMap}
         isAgentWorking={isAgentWorking}
+        turnActive={isTurnActive}
         lifecycle={streamLifecycle}
         workingLabel={workingLabel}
         projectPath={projectPath}

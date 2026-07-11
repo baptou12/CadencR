@@ -31,6 +31,20 @@ const SEGMENT_BOUNDARY_TYPES = new Set<AgentBlockData["type"]>([
   "error",
 ]);
 
+/**
+ * Whether a block closes the current turn and opens a new one. A steer message
+ * sent mid-turn is appended immediately with `promptDeliveryState: "pending_agent"`,
+ * but the agent hasn't received it yet — collapsing the in-flight turn at that
+ * moment is wrong. So a `user_message` only becomes a boundary once the agent has
+ * acknowledged it (delivery state flips to `received_agent`, or is untracked for
+ * history/idle sends). Until then the pending message rides inside the live turn.
+ */
+function isSegmentBoundary(block: AgentBlockData): boolean {
+  if (!SEGMENT_BOUNDARY_TYPES.has(block.type)) return false;
+  if (block.type === "user_message" && block.promptDeliveryState === "pending_agent") return false;
+  return true;
+}
+
 /** A turn: an optional leading boundary block plus the blocks that follow it. */
 interface Segment {
   boundary: AgentBlockData | null;
@@ -86,7 +100,7 @@ function splitSegments(blocks: AgentBlockData[]): Segment[] {
   const segments: Segment[] = [];
   let current: Segment = { boundary: null, body: [] };
   for (const block of blocks) {
-    if (SEGMENT_BOUNDARY_TYPES.has(block.type)) {
+    if (isSegmentBoundary(block)) {
       segments.push(current);
       current = { boundary: block, body: [] };
       continue;
@@ -142,7 +156,8 @@ function emitSegment(result: AgentBlockData[], segment: Segment, active: boolean
  *
  * Pure function of the current (already root-filtered) block list, so it
  * recomputes cleanly on every batch — including mid-turn steering, where a
- * pinned user message simply starts a fresh segment.
+ * pending steer message stays inside the live turn until the agent acknowledges
+ * it and only then starts a fresh segment (see `isSegmentBoundary`).
  */
 export function collapseTurnsToSummary(
   blocks: AgentBlockData[],

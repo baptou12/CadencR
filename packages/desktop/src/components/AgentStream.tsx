@@ -52,6 +52,13 @@ interface AgentStreamProps {
   toolResultMap?: Map<string, AgentBlockData>;
   /** Whether the agent is currently streaming */
   isStreaming?: boolean;
+  /**
+   * Whether the last turn is still in flight (status !== "idle"), including
+   * question/permission pauses. Distinct from `isStreaming` (tokens arriving):
+   * summary mode keeps the turn live off this signal, not `isStreaming`.
+   * Defaults to `isStreaming` when omitted.
+   */
+  turnActive?: boolean;
   showStreamingIndicator?: boolean;
   lifecycle?: TurnLifecycle;
   workingLabel?: string;
@@ -159,6 +166,7 @@ export const AgentStream = memo(function AgentStream({
   rootBlocks: rootBlocksProp,
   toolResultMap: toolResultMapProp,
   isStreaming,
+  turnActive,
   showStreamingIndicator = true,
   lifecycle,
   workingLabel = "Working",
@@ -179,11 +187,13 @@ export const AgentStream = memo(function AgentStream({
   const displayBlocks = useMemo(() => {
     const filtered = filterRenderableBlocks(rootBlocks);
     if (!summaryMode) return filtered;
-    // The in-flight turn streams live; recaps appear only once a turn ends. Each
-    // recap reveals its turn detail inline (local to the block), so no expand
-    // state is threaded here.
-    return collapseTurnsToSummary(filtered, { activeStreaming: !!isStreaming });
-  }, [rootBlocks, summaryMode, isStreaming]);
+    // The in-flight turn streams live and folds to a recap only once it ends —
+    // keyed on `turnActive` so a question/permission pause doesn't collapse it
+    // (see `isSegmentBoundary`). Each recap reveals its detail inline, so no
+    // expand state is threaded here.
+    const activeStreaming = turnActive ?? !!isStreaming;
+    return collapseTurnsToSummary(filtered, { activeStreaming });
+  }, [rootBlocks, summaryMode, isStreaming, turnActive]);
   const toolResultMap = useToolResultMap(blocks, toolResultMapProp);
   const isCompact = verbosityMode === "compact";
   const displayItems = useMemo(
