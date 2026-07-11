@@ -1,9 +1,10 @@
 //! Routing signals for Codex multi-agent v2.
 //!
 //! The raw `spawn_agent` function call contains the Cadencr `Agent` block id
-//! and task name, while the spawned thread id is announced independently on
-//! `thread/started` (and, defensively, `subAgentActivity`). Joining those two
-//! shapes lets the adapter stamp every child event with `parent_tool_use_id`.
+//! and task name, while the spawned thread id can be announced independently
+//! on `thread/started`. Joining those shapes lets the adapter stamp every
+//! child event with `parent_tool_use_id`. Authoritative `subAgentActivity`
+//! items are handled separately by [`super::event_subagent_activity`].
 
 use serde_json::Value;
 
@@ -24,26 +25,6 @@ pub(super) fn register_thread_started_route(
         return;
     };
     register_route(route, index_state);
-}
-
-pub(super) fn register_subagent_activity_route(
-    parent_thread_id: Option<&str>,
-    child_thread_id: Option<&str>,
-    agent_path: Option<&str>,
-    index_state: &mut IndexState,
-) {
-    let (Some(parent_thread_id), Some(child_thread_id)) = (parent_thread_id, child_thread_id)
-    else {
-        return;
-    };
-    register_route(
-        SubagentRoute {
-            parent_thread_id,
-            child_thread_id,
-            agent_path,
-        },
-        index_state,
-    );
 }
 
 fn register_route(route: SubagentRoute<'_>, index_state: &mut IndexState) {
@@ -233,14 +214,14 @@ mod tests {
         indexes.should_reset_for_turn_started("thread_root");
         record_spawn(&mut indexes, "reuse_review", "call_reuse");
 
-        notification_events(
+        let activity = notification_events(
             "item/started",
             json!({
                 "threadId": "thread_root",
                 "turnId": "root_turn",
                 "item": {
                     "type": "subAgentActivity",
-                    "id": "activity_1",
+                    "id": "call_reuse",
                     "kind": "started",
                     "agentPath": "/root/reuse_review",
                     "agentThreadId": "thread_child"
@@ -250,6 +231,10 @@ mod tests {
             &mut indexes,
         );
 
+        assert!(
+            activity.is_empty(),
+            "raw spawn already emitted the Agent block"
+        );
         assert_eq!(
             indexes.subagent_parent_tool_use_id("thread_child"),
             Some("call_reuse")

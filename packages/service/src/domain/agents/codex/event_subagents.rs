@@ -37,6 +37,14 @@ pub(super) fn agent_tool_input(item: &Value) -> Value {
     })
 }
 
+pub(super) fn agent_tool_block(id: &str, item: &Value) -> RuntimeContentBlock {
+    RuntimeContentBlock::ToolUse {
+        id: id.to_string(),
+        name: "Agent".to_string(),
+        input: agent_tool_input(item),
+    }
+}
+
 /// Extract the spawn prompt from either the collab item shape (top-level
 /// `prompt` string) or the raw OpenAI function_call shape (JSON-encoded
 /// `arguments` whose object contains `prompt`).
@@ -55,6 +63,13 @@ pub(super) fn subagent_prompt(item: &Value) -> Option<String> {
 fn agent_description(item: &Value, prompt: &str) -> String {
     if let Some(line) = prompt.lines().map(str::trim).find(|line| !line.is_empty()) {
         return truncate_label(line);
+    }
+    if let Some(agent_path) = item
+        .get("agentPath")
+        .and_then(Value::as_str)
+        .and_then(|path| path.rsplit('/').find(|segment| !segment.is_empty()))
+    {
+        return agent_path.to_string();
     }
     item.get("model")
         .and_then(Value::as_str)
@@ -281,6 +296,8 @@ mod tests {
 
     #[test]
     fn agent_tool_input_falls_back_to_model_or_subagent_label() {
+        let input = agent_tool_input(&json!({ "agentPath": "/root/quality_review" }));
+        assert_eq!(input["description"], "quality_review");
         let input = agent_tool_input(&json!({ "prompt": "   ", "model": "gpt-5.4" }));
         assert_eq!(input["description"], "gpt-5.4");
         let input = agent_tool_input(&json!({}));
