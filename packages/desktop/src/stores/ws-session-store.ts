@@ -100,11 +100,21 @@ function shouldTrackPromptReceipt(session: SessionEntry): boolean {
  * Resolve every in-flight `sendRequest()` with `null` and clear the map, so
  * callers stop waiting the moment the socket is gone (transient drop or
  * deliberate teardown) instead of hanging until the 10s timeout.
+ *
+ * A request resolved as failed must not execute later as a stale side effect:
+ * its envelope may still sit in `outboundQueue` (queued while the socket was
+ * down), so drop it too. Non-request envelopes (prompts, resume, control)
+ * keep the queue-and-flush policy — only rejected requests are removed.
  */
 function rejectPendingRequests(session: SessionEntry): void {
   if (!session.pendingWsRequests.size) return;
+  const requestIds = new Set(session.pendingWsRequests.keys());
   for (const cb of session.pendingWsRequests.values()) cb(null);
   session.pendingWsRequests.clear();
+  const queue = session.outboundQueue;
+  for (let i = queue.length - 1; i >= 0; i -= 1) {
+    if (requestIds.has(queue[i].id)) queue.splice(i, 1);
+  }
 }
 
 export const useWsSessionStore = create<WsSessionStore>((set, get) => {

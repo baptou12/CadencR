@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useWsSessionStore } from "./ws-session-store";
 import { createEnvelope } from "@/lib/ws-envelope";
+import { forceReconnectAll } from "@/lib/ws-reconnect";
 
 // --- Mock WebSocket (same shape as ws-session-store.test.ts) ---
 
@@ -235,6 +236,64 @@ describe("ws-session outbound queue", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("drops a queued sendRequest() envelope when a transient close rejects it", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "7" },
+    });
+
+    // Socket goes non-OPEN (no close event yet): the request gets queued.
+    ws.readyState = MockWebSocket.CLOSED;
+    const pending = store.sendRequest(
+      "s1",
+      createEnvelope("session", "retry_worktree_setup", { feature_id: 42 }),
+    );
+    expect(useWsSessionStore.getState().sessions.s1.outboundQueue).toHaveLength(1);
+
+    // The close lands: the pending-request sweep resolves the promise null
+    // and must take the matching queued envelope with it.
+    ws.fireEvent("close");
+    await expect(pending).resolves.toBeNull();
+    expect(useWsSessionStore.getState().sessions.s1.outboundQueue).toHaveLength(0);
+
+    // The reconnect must not replay a request the caller was told failed.
+    store.connect("s1");
+    await tick();
+    expect(sentActions(getWs())).not.toContain("session.retry_worktree_setup");
+  });
+
+  it("drops a queued sendRequest() envelope on a forced reconnect", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "7" },
+    });
+
+    ws.readyState = MockWebSocket.CLOSED;
+    const pending = store.sendRequest(
+      "s1",
+      createEnvelope("session", "retry_worktree_setup", { feature_id: 42 }),
+    );
+    expect(useWsSessionStore.getState().sessions.s1.outboundQueue).toHaveLength(1);
+
+    // Wake-style force reconnect (usePowerEvents.handleResume): closes the
+    // old socket, sweeps pending requests, opens a replacement.
+    forceReconnectAll();
+    await tick();
+
+    await expect(pending).resolves.toBeNull();
+    expect(sentActions(getWs())).not.toContain("session.retry_worktree_setup");
   });
 
   it("resolves an in-flight sendRequest() immediately on disconnect", async () => {
