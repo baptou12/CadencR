@@ -162,6 +162,22 @@ describe("AgentStream", () => {
     expect(screen.getByText("User")).toBeInTheDocument();
   });
 
+  it("suppresses the user header for session replies", () => {
+    const block: AgentBlockData = {
+      ...makeBlock(
+        "1",
+        '<cadencr-reply from-session="3291" from-feature="1780" from-feature-title="QA reply routing" from-project="6" status="completed" link="spawned" request-message-id="1959337">\nREPLY_ROUTING_SUCCESS\n</cadencr-reply>',
+        "user_message",
+      ),
+      createdAt: "2026-07-11T06:38:00Z",
+      origin: { originKind: "session_generated", sourceSessionId: 3291 },
+    };
+
+    render(<AgentStream blocks={[block]} />);
+
+    expect(screen.queryByText("User")).toBeNull();
+  });
+
   it("renders 'unknown' when model is not set", () => {
     const block: AgentBlockData = {
       ...makeBlock("1", "Hello"),

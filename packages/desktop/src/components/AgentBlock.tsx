@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useMemo } from "react";
+import { useState, useCallback, memo, useMemo, type ReactNode } from "react";
 import { toRelativePath } from "@/lib/utils";
 import { CopyIcon, CheckIcon } from "lucide-react";
 import { isCadencrPlanPresentationTool } from "@/lib/tool-call-parser";
@@ -14,6 +14,7 @@ import { Markdown } from "@/components/Markdown";
 import { useStreamingMarkdownThrottle } from "@/hooks/useStreamingMarkdownThrottle";
 import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
+import { SessionReplyBlock } from "@/components/SessionReplyBlock";
 import { UserMessageActions } from "@/components/agent-session/UserMessageActions";
 import { TaskAgentBlock } from "@/components/TaskAgentBlock";
 import { PlanBlock } from "@/components/PlanBlock";
@@ -30,8 +31,8 @@ import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 import { verbosityControlsCollapse, type AgentVerbosityMode } from "@/lib/agent-verbosity";
 import type { PromptDeliveryState } from "@/types/agent";
 import type { AgentMessageOrigin } from "@/api/generated";
+import { parseGeneratedSessionReply, type SessionReplyEnvelope } from "@/lib/session-reply";
 
-/** Block types that the agent stream can produce */
 export type BlockType =
   | "text"
   | "code"
@@ -45,7 +46,6 @@ export type BlockType =
   | "clear_divider"
   | "error";
 
-/** Build a lookup map from toolUseId → tool_result block. */
 export function buildToolResultMap(blocks: AgentBlockData[]): Map<string, AgentBlockData> {
   const map = new Map<string, AgentBlockData>();
   for (const b of blocks) {
@@ -114,15 +114,14 @@ export interface AgentBlockData {
 
 interface AgentBlockProps {
   block: AgentBlockData;
-  /** Whether the parent agent is still streaming */
   isStreaming?: boolean;
-  /** Base path to strip from file paths in diffs */
   basePath?: string;
   /** Map of toolUseId → tool_result block for inlining results into tool_call blocks */
   toolResultMap?: Map<string, AgentBlockData>;
   verbosityMode?: AgentVerbosityMode;
   isCollapsedByPolicy?: boolean;
   onExpandedChange?: (next: boolean) => void;
+  sessionReply?: SessionReplyEnvelope | null;
 }
 
 export const AgentBlock = memo(function AgentBlock({
@@ -133,6 +132,7 @@ export const AgentBlock = memo(function AgentBlock({
   verbosityMode = "maximal",
   isCollapsedByPolicy = false,
   onExpandedChange,
+  sessionReply,
 }: AgentBlockProps) {
   // Cache the rendered markdown tree for STABLE blocks (keyed by block id) so
   // Virtuoso recycling reuses it across mounts. The actively streaming block is
@@ -156,70 +156,18 @@ export const AgentBlock = memo(function AgentBlock({
       );
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
-    case "tool_call": {
-      if (block.toolName === "TodoWrite" || isTaskTodoTool(block.toolName)) return null;
-      if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
-        return <TaskAgentBlock block={block} basePath={basePath} />;
-      }
-      if (
-        block.toolName === "ExitPlanMode" ||
-        (isPlanPresentationTool(block.toolName) && hasAttachedPlanContent(block.toolArgs))
-      ) {
-        return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
-      }
-      // Bash: unified block with command header + output body
-      if (block.toolName === "Bash") {
-        const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
-        const running = !result && isToolCallRunning(block.toolArgs);
-        const resultOutput = result ? extractBashResultOutput(result.content) : undefined;
-        const rawCommand = extractBashCommand(block.toolArgs);
-        return (
-          <BashBlock
-            command={rawCommand ? toRelativePath(rawCommand, basePath) : rawCommand}
-            content={resultOutput ?? extractBashOutput(block.toolArgs)}
-            running={running}
-            isError={result?.isError}
-            messageId={result ? messageIdFromBlockId(result.id) : undefined}
-            truncatedContent={result?.truncatedContent === true}
-            expanded={controlledExpanded}
-            onExpandedChange={onExpandedChange}
-          />
-        );
-      }
-      // Edit/Write: unified diff block (no separate ToolCallBlock header)
-      if (isFileChangeTool(block.toolName)) {
-        const fileChangeBlocks = renderFileChangeBlocks(
-          block.toolName,
-          block.toolArgs,
-          basePath,
-          controlledExpanded,
-          onExpandedChange,
-        );
-        if (fileChangeBlocks) return fileChangeBlocks;
-      }
+    case "tool_call":
       return (
-        <ToolCallBlock
-          name={block.toolName ?? "unknown"}
-          args={block.toolArgs}
+        <ToolCallContent
+          block={block}
           basePath={basePath}
+          toolResultMap={toolResultMap}
+          controlledExpanded={controlledExpanded}
+          onExpandedChange={onExpandedChange}
         />
       );
-    }
-    case "tool_result": {
-      // Bash results are inlined into the tool_call block — skip standalone rendering
-      if (block.sourceToolName === "Bash") {
-        return null;
-      }
-      // Edit/Write results are already shown via the diff — skip
-      if (isFileChangeTool(block.sourceToolName)) {
-        return null;
-      }
-      if (block.sourceToolName === "Agent" || block.sourceToolName === "Task") {
-        return <AgentResultBlock content={block.content} />;
-      }
-      // Hide generic tool results (Grep, Read, Glob, etc.) to reduce noise.
-      return null;
-    }
+    case "tool_result":
+      return <ToolResultContent block={block} />;
     case "thinking":
       return (
         <ThinkingBlock
@@ -231,16 +179,7 @@ export const AgentBlock = memo(function AgentBlock({
         />
       );
     case "user_message":
-      return (
-        <UserMessageBlock
-          content={block.content}
-          origin={block.origin}
-          deliveryState={
-            block.promptDeliveryState === "pending_agent" ? block.promptDeliveryState : undefined
-          }
-          actions={<UserMessageActions block={block} />}
-        />
-      );
+      return <UserMessageContent block={block} sessionReply={sessionReply} />;
     case "turn_summary":
       return <TurnSummaryDivider content={block.content} />;
     case "tool_summary":
@@ -263,6 +202,95 @@ export const AgentBlock = memo(function AgentBlock({
       return null;
   }
 });
+
+interface ToolCallContentProps {
+  block: AgentBlockData;
+  basePath?: string;
+  toolResultMap?: Map<string, AgentBlockData>;
+  controlledExpanded?: boolean;
+  onExpandedChange?: (next: boolean) => void;
+}
+
+function ToolCallContent({
+  block,
+  basePath,
+  toolResultMap,
+  controlledExpanded,
+  onExpandedChange,
+}: ToolCallContentProps): ReactNode {
+  if (block.toolName === "TodoWrite" || isTaskTodoTool(block.toolName)) return null;
+  if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
+    return <TaskAgentBlock block={block} basePath={basePath} />;
+  }
+  if (
+    block.toolName === "ExitPlanMode" ||
+    (isPlanPresentationTool(block.toolName) && hasAttachedPlanContent(block.toolArgs))
+  ) {
+    return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
+  }
+  if (block.toolName === "Bash") {
+    const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
+    const resultOutput = result ? extractBashResultOutput(result.content) : undefined;
+    const rawCommand = extractBashCommand(block.toolArgs);
+    return (
+      <BashBlock
+        command={rawCommand ? toRelativePath(rawCommand, basePath) : rawCommand}
+        content={resultOutput ?? extractBashOutput(block.toolArgs)}
+        running={!result && isToolCallRunning(block.toolArgs)}
+        isError={result?.isError}
+        messageId={result ? messageIdFromBlockId(result.id) : undefined}
+        truncatedContent={result?.truncatedContent === true}
+        expanded={controlledExpanded}
+        onExpandedChange={onExpandedChange}
+      />
+    );
+  }
+  if (isFileChangeTool(block.toolName)) {
+    const fileChangeBlocks = renderFileChangeBlocks(
+      block.toolName,
+      block.toolArgs,
+      basePath,
+      controlledExpanded,
+      onExpandedChange,
+    );
+    if (fileChangeBlocks) return fileChangeBlocks;
+  }
+  return (
+    <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} basePath={basePath} />
+  );
+}
+
+function ToolResultContent({ block }: { block: AgentBlockData }): ReactNode {
+  if (block.sourceToolName === "Bash" || isFileChangeTool(block.sourceToolName)) return null;
+  if (block.sourceToolName === "Agent" || block.sourceToolName === "Task") {
+    return <AgentResultBlock content={block.content} />;
+  }
+  return null;
+}
+
+function UserMessageContent({
+  block,
+  sessionReply,
+}: {
+  block: AgentBlockData;
+  sessionReply?: SessionReplyEnvelope | null;
+}): ReactNode {
+  const parsedReply =
+    sessionReply === undefined
+      ? parseGeneratedSessionReply(block.content, block.origin)
+      : sessionReply;
+  if (parsedReply) return <SessionReplyBlock reply={parsedReply} />;
+  return (
+    <UserMessageBlock
+      content={block.content}
+      origin={block.origin}
+      deliveryState={
+        block.promptDeliveryState === "pending_agent" ? block.promptDeliveryState : undefined
+      }
+      actions={<UserMessageActions block={block} />}
+    />
+  );
+}
 
 function isPlanPresentationTool(toolName: string | undefined): boolean {
   return toolName === "ExitPlanMode" || isCadencrPlanPresentationTool(toolName);
