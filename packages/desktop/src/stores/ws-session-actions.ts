@@ -1,4 +1,4 @@
-import { createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
+import { createPermissionRespond, createPromptSend, type WsEnvelope } from "@/lib/ws-envelope";
 import { getFeatureAgentState } from "@/api/generated";
 import { AGENT_STATE_OLDER_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
@@ -61,7 +61,7 @@ function decodeSnapshotQuestion(value: unknown): DecodedQuestion | null {
 export function applyApprovePlan(
   ctx: StoreAccessors,
   sessionId: string,
-  sendRaw: (sessionId: string, data: unknown) => void,
+  sendRaw: (sessionId: string, envelope: WsEnvelope) => void,
   planRestorePrefix: string,
 ): void {
   const session = ctx.getSession(sessionId);
@@ -129,7 +129,7 @@ export function applyPlanChangesRequest(
   ctx: StoreAccessors,
   sessionId: string,
   feedback: string,
-  sendRaw: (sessionId: string, data: unknown) => void,
+  sendRaw: (sessionId: string, envelope: WsEnvelope) => void,
   planRestorePrefix: string,
 ): void {
   const session = ctx.getSession(sessionId);
