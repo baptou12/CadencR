@@ -14,7 +14,7 @@ import { Markdown } from "@/components/Markdown";
 import { useStreamingMarkdownThrottle } from "@/hooks/useStreamingMarkdownThrottle";
 import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
-import { SessionReplyBlock } from "@/components/SessionReplyBlock";
+import { renderGeneratedSessionMessage } from "@/components/session-generated-message";
 import { UserMessageActions } from "@/components/agent-session/UserMessageActions";
 import { TaskAgentBlock } from "@/components/TaskAgentBlock";
 import { PlanBlock } from "@/components/PlanBlock";
@@ -31,7 +31,7 @@ import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 import { verbosityControlsCollapse, type AgentVerbosityMode } from "@/lib/agent-verbosity";
 import type { PromptDeliveryState } from "@/types/agent";
 import type { AgentMessageOrigin } from "@/api/generated";
-import { parseGeneratedSessionReply, type SessionReplyEnvelope } from "@/lib/session-reply";
+import type { SessionReplyEnvelope } from "@/lib/session-reply";
 
 export type BlockType =
   | "text"
@@ -275,11 +275,8 @@ function UserMessageContent({
   block: AgentBlockData;
   sessionReply?: SessionReplyEnvelope | null;
 }): ReactNode {
-  const parsedReply =
-    sessionReply === undefined
-      ? parseGeneratedSessionReply(block.content, block.origin)
-      : sessionReply;
-  if (parsedReply) return <SessionReplyBlock reply={parsedReply} />;
+  const generated = renderGeneratedSessionMessage(block.content, block.origin, sessionReply);
+  if (generated) return generated;
   return (
     <UserMessageBlock
       content={block.content}
