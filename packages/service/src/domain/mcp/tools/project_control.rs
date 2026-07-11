@@ -108,6 +108,7 @@ pub async fn spawn_session_with_client(
                 "codex_permission_mode": optional_string(args, "codex_permission_mode"),
                 "source_note": optional_string(args, "source_note"),
                 "link_to_current_session": optional_bool(args, "link_to_current_session"),
+                "await_result": optional_bool(args, "await_result"),
                 "target_project_id": optional_i64(args, "project_id"),
                 "target_project_path": optional_string(args, "project_path")
             }),
@@ -130,6 +131,7 @@ pub async fn send_session_message_with_client(
         .ok_or_else(|| "Missing required parameter: message".to_string())?;
     let source_note = args.get("source_note").and_then(serde_json::Value::as_str);
     let delivery = args.get("delivery").and_then(serde_json::Value::as_str);
+    let reply = args.get("reply").and_then(serde_json::Value::as_str);
     client
         .post_json(
             "/internal/mcp/project/send-message",
@@ -139,6 +141,7 @@ pub async fn send_session_message_with_client(
                 "target_session_id": target_session_id,
                 "message": message,
                 "delivery": delivery,
+                "reply": reply,
                 "source_note": source_note,
                 "link_to_current_session": optional_bool(args, "link_to_current_session")
             }),

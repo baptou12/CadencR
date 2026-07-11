@@ -66,6 +66,7 @@ async fn deliver_message(
             target_session_id,
             source_session_id,
             &message.content,
+            "delivered from queued project_send_session_message",
         )
         .await?;
         let source = resolve_session_scope(&state.write_pool, source_session_id).await?;
@@ -89,12 +90,13 @@ async fn deliver_message(
     .await
 }
 
-async fn persist_generated_user_message(
+pub(crate) async fn persist_generated_user_message(
     state: &AppState,
     target_session_id: i64,
     source_session_id: i64,
     content: &str,
-) -> Result<(), AppError> {
+    note: &str,
+) -> Result<i64, AppError> {
     let source = resolve_session_scope(&state.write_pool, source_session_id).await?;
     let mut tx = state.write_pool.begin().await?;
     let message_id: i64 = sqlx::query_scalar(
@@ -115,11 +117,29 @@ async fn persist_generated_user_message(
     .bind(source.session_id)
     .bind(source.feature_id)
     .bind(source.project_id)
-    .bind("delivered from queued project_send_session_message")
+    .bind(note)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(())
+    Ok(message_id)
+}
+
+pub(crate) async fn enqueue_message(
+    pool: &sqlx::SqlitePool,
+    target_session_id: i64,
+    source_session_id: Option<i64>,
+    content: &str,
+) -> Result<i64, AppError> {
+    Ok(sqlx::query_scalar(
+        "INSERT INTO agent_session_message_queue
+         (target_session_id, source_session_id, content, status)
+         VALUES (?, ?, ?, 'pending') RETURNING id",
+    )
+    .bind(target_session_id)
+    .bind(source_session_id)
+    .bind(content)
+    .fetch_one(pool)
+    .await?)
 }
 
 async fn mark_delivered(pool: &sqlx::SqlitePool, id: i64) -> Result<(), AppError> {

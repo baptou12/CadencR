@@ -1,21 +1,21 @@
+use crate::app_state::AppState;
+use crate::error::AppError;
 use axum::{
     extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::app_state::AppState;
-use crate::error::AppError;
-
 mod audit;
 pub(crate) mod message_queue;
+mod reply_audit;
+mod reply_envelope;
+pub(crate) mod reply_wait;
 mod scope;
 mod send_message;
 mod spawn_persist;
 mod spawn_resolve;
 mod spawn_session;
-
 /// Trim a borrowed optional string, treating whitespace-only values as absent.
 /// Shared by the spawn submodules (`spawn_session`, `spawn_resolve`, `spawn_persist`).
 fn trimmed_optional(value: Option<&str>) -> Option<String> {

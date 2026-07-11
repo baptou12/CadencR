@@ -2,7 +2,6 @@ use rmcp::model::Tool;
 use serde_json::{json, Value};
 
 use crate::domain::agents::providers::{provider_alias_metadata, valid_provider_ids};
-
 const PROJECT_TOOL_NAMES: [&str; 11] = [
     "project_list_sessions",
     "project_read_session",
@@ -136,6 +135,7 @@ fn tool_schema(name: &str) -> Value {
                 "target_session_id": { "type": "number" },
                 "message": { "type": "string" },
                 "delivery": { "type": "string", "enum": ["send_now", "queue_if_busy", "reject_if_busy"] },
+                "reply": { "type": "string", "enum": ["none", "on_turn_end"], "default": "none" },
                 "source_note": { "type": "string" },
                 "link_to_current_session": { "type": "boolean" }
             },
@@ -145,7 +145,6 @@ fn tool_schema(name: &str) -> Value {
     };
     document_schema(name, schema)
 }
-
 fn paginated_session_schema(include_query: bool) -> Value {
     let mut schema = json!({
         "type": "object",
@@ -166,7 +165,6 @@ fn paginated_session_schema(include_query: bool) -> Value {
     }
     schema
 }
-
 fn spawn_session_schema() -> Value {
     json!({
         "type": "object",
@@ -195,7 +193,8 @@ fn spawn_session_schema() -> Value {
                     "reuse_branch": { "type": "string", "description": "Existing branch to reuse when mode is reuse_worktree." }
                 }
             },
-            "link_to_current_session": { "type": "boolean" }
+            "link_to_current_session": { "type": "boolean" },
+            "await_result": { "type": "boolean", "default": false }
         },
         "required": ["title"],
         "anyOf": [
