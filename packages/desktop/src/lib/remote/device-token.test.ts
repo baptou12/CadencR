@@ -3,6 +3,7 @@ import {
   __resetDeviceTokenMemoryForTests,
   clearDeviceToken,
   isBrowserRemote,
+  isHiddenBrowserRemote,
   readDeviceToken,
   writeDeviceToken,
 } from "./device-token";
@@ -13,7 +14,10 @@ describe("isBrowserRemote", () => {
   beforeEach(() => {
     Reflect.deleteProperty(window, "cadencr");
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("is true over https with no preload bridge", () => {
     vi.stubGlobal("location", { protocol: "https:" });
@@ -29,6 +33,18 @@ describe("isBrowserRemote", () => {
   it("is false over http (dev / loopback)", () => {
     vi.stubGlobal("location", { protocol: "http:" });
     expect(isBrowserRemote()).toBe(false);
+  });
+
+  it("identifies a hidden remote browser", () => {
+    vi.stubGlobal("location", { protocol: "https:" });
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    expect(isHiddenBrowserRemote()).toBe(true);
+  });
+
+  it("does not treat a visible remote browser as hidden", () => {
+    vi.stubGlobal("location", { protocol: "https:" });
+    vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    expect(isHiddenBrowserRemote()).toBe(false);
   });
 });
 

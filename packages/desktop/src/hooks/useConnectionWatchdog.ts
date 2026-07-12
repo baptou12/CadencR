@@ -27,6 +27,7 @@ import {
   stopHealthPolling,
 } from "@/stores/connection-status-store";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { isHiddenBrowserRemote } from "@/lib/remote/device-token";
 
 /** Threshold above which a setInterval delta is interpreted as a wake. */
 const CLOCK_JUMP_WAKE_MS = 30_000;
@@ -40,6 +41,10 @@ export function useConnectionWatchdog(): void {
   useEffect(() => {
     let lastForceAt = 0;
     function force(): void {
+      // Web Push can wake a hidden mobile PWA and emit `online` without the
+      // user opening it. Do not turn that background notification delivery
+      // into a remote WebSocket connection (and a host-side connection toast).
+      if (isHiddenBrowserRemote()) return;
       const now = Date.now();
       if (now - lastForceAt < FORCE_COOLDOWN_MS) return;
       lastForceAt = now;

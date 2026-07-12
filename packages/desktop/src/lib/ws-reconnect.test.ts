@@ -14,11 +14,18 @@ import {
   clearRateLimit,
 } from "./ws-reconnect";
 
+const runtimeMocks = vi.hoisted(() => ({ isHiddenBrowserRemote: false }));
+
+vi.mock("@/lib/remote/device-token", () => ({
+  isHiddenBrowserRemote: () => runtimeMocks.isHiddenBrowserRemote,
+}));
+
 describe("ws-reconnect", () => {
   let randomSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
+    runtimeMocks.isHiddenBrowserRemote = false;
     // Pin jitter to 0 so backoff delays are deterministic (delay === base).
     randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
   });
@@ -30,6 +37,10 @@ describe("ws-reconnect", () => {
     randomSpy.mockRestore();
     vi.useRealTimers();
   });
+
+  function setHiddenRemotePwa(): void {
+    runtimeMocks.isHiddenBrowserRemote = true;
+  }
 
   it("exposes the base and max delays", () => {
     expect(RECONNECT_INTERVAL_MS).toBe(1000);
@@ -43,6 +54,19 @@ describe("ws-reconnect", () => {
     vi.advanceTimersByTime(RECONNECT_INTERVAL_MS - 1);
     expect(connect).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
+    expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it("defers a scheduled reconnect while a remote PWA is hidden", () => {
+    setHiddenRemotePwa();
+    const connect = vi.fn();
+    scheduleReconnect("test", connect);
+
+    vi.advanceTimersByTime(RECONNECT_INTERVAL_MS);
+    expect(connect).not.toHaveBeenCalled();
+
+    runtimeMocks.isHiddenBrowserRemote = false;
+    forceReconnect("test");
     expect(connect).toHaveBeenCalledOnce();
   });
 
@@ -188,6 +212,26 @@ describe("ws-reconnect", () => {
       registerReconnector("force-a", connect);
       forceReconnect("force-a");
       expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it("defers an automatic forced reconnect while a remote PWA is hidden", () => {
+      setHiddenRemotePwa();
+      const connect = vi.fn();
+      registerReconnector("force-a", connect);
+
+      forceReconnect("force-a");
+
+      expect(connect).not.toHaveBeenCalled();
+    });
+
+    it("allows an explicit manual reconnect while a remote PWA is hidden", () => {
+      setHiddenRemotePwa();
+      const connect = vi.fn();
+      registerReconnector("force-a", connect);
+
+      forceReconnect("force-a", { bypassManualPause: true });
+
+      expect(connect).toHaveBeenCalledOnce();
     });
 
     it("forceReconnect cancels a pending scheduled timer", () => {

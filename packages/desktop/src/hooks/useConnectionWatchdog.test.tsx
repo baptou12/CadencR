@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   forceReconnectAll: vi.fn(),
   startHealthPolling: vi.fn(),
   stopHealthPolling: vi.fn(),
+  isHiddenBrowserRemote: false,
 }));
 
 vi.mock("@/stores/connection-status-store", () => ({
@@ -19,6 +20,10 @@ vi.mock("@/stores/connection-status-store", () => ({
   },
   startHealthPolling: mocks.startHealthPolling,
   stopHealthPolling: mocks.stopHealthPolling,
+}));
+
+vi.mock("@/lib/remote/device-token", () => ({
+  isHiddenBrowserRemote: () => mocks.isHiddenBrowserRemote,
 }));
 
 function bridge(isElectron: boolean): CadencrDesktopBridge {
@@ -73,6 +78,7 @@ describe("useConnectionWatchdog", () => {
   beforeEach(() => {
     clearDesktopBridgeOverrideForTests();
     setVisibilityState("visible");
+    mocks.isHiddenBrowserRemote = false;
     mocks.forceReconnectAll.mockClear();
     mocks.startHealthPolling.mockClear();
     mocks.stopHealthPolling.mockClear();
@@ -100,6 +106,31 @@ describe("useConnectionWatchdog", () => {
 
     dispatchVisibilityChange("hidden");
     dispatchVisibilityChange("visible");
+
+    expect(mocks.forceReconnectAll).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("waits for visibility after an online event wakes a hidden browser tab", () => {
+    setDesktopBridgeOverrideForTests(bridge(false));
+    setVisibilityState("hidden");
+    mocks.isHiddenBrowserRemote = true;
+    const { unmount } = renderHook(() => useConnectionWatchdog());
+
+    window.dispatchEvent(new Event("online"));
+    expect(mocks.forceReconnectAll).not.toHaveBeenCalled();
+
+    mocks.isHiddenBrowserRemote = false;
+    dispatchVisibilityChange("visible");
+    expect(mocks.forceReconnectAll).toHaveBeenCalledOnce();
+    unmount();
+  });
+
+  it("reconnects browser sockets when online while the tab is visible", () => {
+    setDesktopBridgeOverrideForTests(bridge(false));
+    const { unmount } = renderHook(() => useConnectionWatchdog());
+
+    window.dispatchEvent(new Event("online"));
 
     expect(mocks.forceReconnectAll).toHaveBeenCalledTimes(1);
     unmount();

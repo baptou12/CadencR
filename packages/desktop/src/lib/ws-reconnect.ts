@@ -7,7 +7,11 @@
  * `RECONNECT_MAX_MS`) plus `notifyRateLimited` (defer until a 429's
  * `Retry-After` elapses) break that loop. After `AUTO_RECONNECT_TIMEOUT_MS` of
  * continuous failure, automatic retries pause for a manual "Retry now".
+ * Hidden remote PWAs leave their connectors registered for the visibility
+ * watchdog instead of reconnecting during background Web Push delivery.
  */
+
+import { isHiddenBrowserRemote } from "@/lib/remote/device-token";
 
 export const RECONNECT_INTERVAL_MS = 1000;
 export const RECONNECT_MAX_MS = 30_000;
@@ -113,6 +117,7 @@ export function scheduleReconnect(
   entry.timer = setTimeout(() => {
     entry.timer = null;
     if (entry.manualOnly) return;
+    if (isHiddenBrowserRemote()) return;
     connect();
   }, delay);
 }
@@ -171,6 +176,7 @@ export function forceReconnect(key: string, options?: ForceReconnectOptions): vo
   } else {
     if (entry.manualOnly) return;
     if (Date.now() < rateLimitedUntil) return;
+    if (isHiddenBrowserRemote()) return;
   }
   if (entry.timer) {
     clearTimeout(entry.timer);
