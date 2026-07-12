@@ -44,7 +44,7 @@ describe("buildToolChips", () => {
     expect(chips[0].deletions).toBe(0);
   });
 
-  it("labels Cadencr MCP tools with the friendly name, accent, and server badge", () => {
+  it("labels MCP tools with the friendly name, accent, and server badge", () => {
     const chips = buildToolChips([
       tool("t1", "mcp__cadencr-browser__browser_open_url", JSON.stringify({ url: "https://x" })),
     ]);
@@ -54,5 +54,42 @@ describe("buildToolChips", () => {
       mcpServer: "browser",
       count: 1,
     });
+  });
+
+  it("groups semantic skill reads as Skill without changing ordinary reads", () => {
+    const skillArgs = JSON.stringify({
+      type: "read",
+      command: "cat .agents/skills/db/SKILL.md",
+      path: "/repo/.agents/skills/db/SKILL.md",
+    });
+    const chips = buildToolChips([tool("t1", "Read", skillArgs), tool("t2", "Read")]);
+    expect(chips.map((chip) => [chip.label, chip.count])).toEqual([
+      ["Skill", 1],
+      ["Read", 1],
+    ]);
+  });
+
+  it("normalizes historical bare MCP tool names", () => {
+    const chips = buildToolChips([
+      tool(
+        "t1",
+        "chrome-devtools_take_screenshot",
+        JSON.stringify({ filePath: "/tmp/capture.png" }),
+      ),
+    ]);
+    expect(chips[0]).toMatchObject({
+      label: "Taking screenshot",
+      accent: "mcp",
+      mcpServer: "chrome-devtools",
+    });
+  });
+
+  it("groups equivalent MCP namespace variants by semantic identity", () => {
+    const chips = buildToolChips([
+      tool("t1", "mcp__chrome-devtools__click"),
+      tool("t2", "mcp__chrome_devtools____click"),
+    ]);
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toMatchObject({ label: "Clicking", count: 2 });
   });
 });

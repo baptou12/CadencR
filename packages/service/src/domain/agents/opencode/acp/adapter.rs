@@ -18,6 +18,7 @@ use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionMode, RuntimePermissionResponse,
     RuntimeSlashCommand, RuntimeUsage,
 };
+use crate::domain::agents::mcp_tool_names::McpToolNameResolver;
 use crate::domain::agents::opencode::questions::extract_question_answers;
 use crate::domain::agents::opencode::tool_names::{
     canonical_acp_tool_name, canonical_cadencr_tool_name,
@@ -39,6 +40,7 @@ pub struct OpenCodeAcpAdapter {
     cwd: String,
     pending_subagent_calls: PendingSubagentTasks,
     permissions: PermissionRegistry,
+    mcp_tool_names: McpToolNameResolver,
 }
 impl OpenCodeAcpAdapter {
     pub fn new(question_sidecar: QuestionSidecar, opencode_http_port: u16, cwd: &Path) -> Self {
@@ -48,13 +50,17 @@ impl OpenCodeAcpAdapter {
             cwd: cwd.to_string_lossy().into_owned(),
             pending_subagent_calls: Arc::new(StdMutex::new(VecDeque::new())),
             permissions: Arc::new(RwLock::new(HashMap::new())),
+            mcp_tool_names: McpToolNameResolver::default(),
         }
     }
 }
 #[async_trait]
 impl AcpProviderHooks for OpenCodeAcpAdapter {
     fn normalize_tool_name(&self, raw: &str) -> String {
-        canonical_cadencr_tool_name(&canonical_acp_tool_name(raw))
+        let canonical = canonical_cadencr_tool_name(&canonical_acp_tool_name(raw));
+        self.mcp_tool_names
+            .canonical_name(&canonical)
+            .unwrap_or(canonical)
     }
     fn normalize_tool_input(&self, tool_name: &str, input: Value) -> Value {
         normalize_edit_input(tool_name, input)
@@ -89,7 +95,7 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         cwd: &Path,
         configured: Vec<RuntimeMcpServerStatus>,
     ) -> Vec<RuntimeMcpServerStatus> {
-        match opencode_sdk_rs::list_mcp_servers_from_cli(Some(cwd)).await {
+        let servers = match opencode_sdk_rs::list_mcp_servers_from_cli(Some(cwd)).await {
             Ok(servers) if !servers.is_empty() => merge_configured_mcp_servers(
                 servers
                     .into_iter()
@@ -105,7 +111,9 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
                 tracing::warn!(%error, "failed to read OpenCode MCP server statuses");
                 configured
             }
-        }
+        };
+        self.mcp_tool_names.remember(&servers);
+        servers
     }
     fn supports_durable_resume(&self) -> bool {
         true
@@ -243,7 +251,9 @@ mod tests {
     use super::OpenCodeAcpAdapter;
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
-    use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEventMetadata};
+    use crate::domain::agents::adapter::{
+        RuntimeContentBlock, RuntimeEventMetadata, RuntimeMcpServerStatus,
+    };
     use serde_json::json;
     fn metadata() -> RuntimeEventMetadata {
         RuntimeEventMetadata {
@@ -264,6 +274,14 @@ mod tests {
         assert!(adapter.supports_durable_resume());
         assert_eq!(adapter.normalize_tool_name("write"), "Write");
         assert_eq!(adapter.normalize_tool_name("question"), "AskUserQuestion");
+        adapter.mcp_tool_names.remember(&[RuntimeMcpServerStatus {
+            name: "chrome-devtools".to_string(),
+            status: "connected".to_string(),
+        }]);
+        assert_eq!(
+            adapter.normalize_tool_name("chrome-devtools_take_screenshot"),
+            "mcp__chrome-devtools__take_screenshot"
+        );
         assert_eq!(
             adapter.normalize_tool_name("cadencr-browser_browser_open_url"),
             "mcp__cadencr-browser__browser_open_url"

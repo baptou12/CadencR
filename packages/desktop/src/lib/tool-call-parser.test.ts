@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   getToolActivityLabel,
   isCadencrPlanPresentationTool,
-  parseCadencrMcpTool,
   parseToolCall,
 } from "./tool-call-parser";
+import { parseMcpTool } from "./mcp-tool-parser";
 
 describe("parseToolCall", () => {
   it("returns undefined for unknown tool", () => {
@@ -190,27 +190,34 @@ describe("getToolActivityLabel", () => {
     ).toBe("[browser] Opening URL: http://localhost:5173");
   });
 
-  it("falls back for unknown MCP tools", () => {
-    expect(getToolActivityLabel("mcp__unknown__read")).toBe("Running mcp__unknown__read");
+  it("uses a generic label for unknown MCP tools", () => {
+    expect(getToolActivityLabel("mcp__unknown__read")).toBe("[unknown] Read");
   });
 });
 
-describe("parseCadencrMcpTool", () => {
-  it("returns undefined for non-cadencr tool", () => {
-    expect(parseCadencrMcpTool("Read")).toBeUndefined();
-    expect(parseCadencrMcpTool("mcp__chrome-devtools__click")).toBeUndefined();
-    expect(parseCadencrMcpTool("mcp__chrome_devtools____click")).toBeUndefined();
+describe("parseMcpTool", () => {
+  it("returns undefined for non-MCP tools", () => {
+    expect(parseMcpTool("Read")).toBeUndefined();
+  });
+
+  it("does not infer MCP identity from ordinary tool arguments", () => {
+    expect(
+      parseMcpTool(
+        "Deploy",
+        JSON.stringify({ server: "production", tool: "release", arguments: { version: "1" } }),
+      ),
+    ).toBeUndefined();
   });
 
   it("parses server and tool from cadencr MCP tool name", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-browser__browser_open_url");
+    const result = parseMcpTool("mcp__cadencr-browser__browser_open_url");
     expect(result).toBeDefined();
     expect(result!.server).toBe("browser");
     expect(result!.tool).toBe("browser_open_url");
   });
 
   it("parses Cadencr MCP tool names", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-browser__browser_list_tabs");
+    const result = parseMcpTool("mcp__cadencr-browser__browser_list_tabs");
     expect(result).toBeDefined();
     expect(result!.server).toBe("browser");
     expect(result!.tool).toBe("browser_list_tabs");
@@ -218,15 +225,77 @@ describe("parseCadencrMcpTool", () => {
   });
 
   it("parses Codex namespace MCP tool names as Cadencr tools", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr_browser____browser_screenshot");
+    const result = parseMcpTool("mcp__cadencr_browser____browser_screenshot");
     expect(result).toBeDefined();
     expect(result!.server).toBe("browser");
     expect(result!.tool).toBe("browser_screenshot");
     expect(result!.label).toBe("Taking screenshot");
   });
 
+  it("unwraps current structured MCP arguments", () => {
+    const result = parseMcpTool(
+      "mcp__chrome-devtools__take_screenshot",
+      JSON.stringify({
+        server: "chrome-devtools",
+        tool: "take_screenshot",
+        status: "inProgress",
+        arguments: { filePath: "/tmp/capture.png", fullPage: true },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      server: "chrome-devtools",
+      tool: "take_screenshot",
+      label: "Taking screenshot",
+      detail: "/tmp/capture.png",
+      arguments: { filePath: "/tmp/capture.png", fullPage: true },
+    });
+  });
+
+  it("parses historical bare MCP names", () => {
+    expect(
+      parseMcpTool(
+        "chrome-devtools_take_screenshot",
+        JSON.stringify({ filePath: "/tmp/open-code.png" }),
+      ),
+    ).toMatchObject({
+      server: "chrome-devtools",
+      tool: "take_screenshot",
+      detail: "/tmp/open-code.png",
+    });
+    expect(parseMcpTool("codegraph_codegraph_context", "null")).toMatchObject({
+      server: "codegraph",
+      tool: "codegraph_context",
+      arguments: {},
+    });
+  });
+
+  it("normalizes current and historical app connector names", () => {
+    const current = parseMcpTool(
+      "mcp__codex_apps__github.search_commits",
+      JSON.stringify({
+        server: "codex_apps",
+        tool: "github.search_commits",
+        arguments: { repository_full_name: "org/repo" },
+      }),
+    );
+    const historical = parseMcpTool("mcp__codex_apps__github___search_commits");
+
+    expect(current).toMatchObject({
+      server: "github",
+      tool: "search_commits",
+      label: "Searching commits",
+      detail: "org/repo",
+    });
+    expect(historical).toMatchObject({
+      server: "github",
+      tool: "search_commits",
+      label: "Searching commits",
+    });
+  });
+
   it("parses project and workspace MCP tool names as Cadencr tools", () => {
-    const project = parseCadencrMcpTool(
+    const project = parseMcpTool(
       "mcp__cadencr-project__project_spawn_session",
       JSON.stringify({ title: "Investigate flaky login test" }),
     );
@@ -237,7 +306,7 @@ describe("parseCadencrMcpTool", () => {
       detail: "Investigate flaky login test",
     });
 
-    const workspace = parseCadencrMcpTool(
+    const workspace = parseMcpTool(
       "mcp__cadencr_workspace____workspace_read_sessions",
       JSON.stringify({ query: "MCP session spawning" }),
     );
@@ -250,10 +319,8 @@ describe("parseCadencrMcpTool", () => {
   });
 
   it("returns known human-readable label", () => {
-    expect(parseCadencrMcpTool("mcp__cadencr-browser__browser_open_url")!.label).toBe(
-      "Opening URL",
-    );
-    expect(parseCadencrMcpTool("mcp__cadencr-browser__browser_screenshot")!.label).toBe(
+    expect(parseMcpTool("mcp__cadencr-browser__browser_open_url")!.label).toBe("Opening URL");
+    expect(parseMcpTool("mcp__cadencr-browser__browser_screenshot")!.label).toBe(
       "Taking screenshot",
     );
   });
@@ -264,13 +331,11 @@ describe("parseCadencrMcpTool", () => {
   });
 
   it("title-cases unknown tool names as fallback", () => {
-    expect(parseCadencrMcpTool("mcp__cadencr-browser__do_something_new")!.label).toBe(
-      "Do Something New",
-    );
+    expect(parseMcpTool("mcp__cadencr-browser__do_something_new")!.label).toBe("Do Something New");
   });
 
   it("extracts title from args as detail", () => {
-    const result = parseCadencrMcpTool(
+    const result = parseMcpTool(
       "mcp__cadencr-browser__browser_open_url",
       JSON.stringify({ title: "Setup DB" }),
     );
@@ -278,7 +343,7 @@ describe("parseCadencrMcpTool", () => {
   });
 
   it("extracts tab_id as detail for browser_screenshot", () => {
-    const result = parseCadencrMcpTool(
+    const result = parseMcpTool(
       "mcp__cadencr-browser__browser_screenshot",
       JSON.stringify({ tab_id: "tab-42" }),
     );
@@ -286,27 +351,27 @@ describe("parseCadencrMcpTool", () => {
   });
 
   it("handles missing args gracefully", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-browser__browser_list_tabs");
+    const result = parseMcpTool("mcp__cadencr-browser__browser_list_tabs");
     expect(result).toBeDefined();
     expect(result!.detail).toBeUndefined();
   });
 
   it("handles malformed JSON args", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-browser__browser_open_url", "{bad json");
+    const result = parseMcpTool("mcp__cadencr-browser__browser_open_url", "{bad json");
     expect(result).toBeDefined();
     expect(result!.label).toBe("Opening URL");
     expect(result!.detail).toBeUndefined();
   });
 
   it("handles null args", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-browser__browser_open_url", "null");
+    const result = parseMcpTool("mcp__cadencr-browser__browser_open_url", "null");
     expect(result).toBeDefined();
     expect(result!.label).toBe("Opening URL");
     expect(result!.detail).toBeUndefined();
   });
 
   it("falls back past empty-string title to summary", () => {
-    const result = parseCadencrMcpTool(
+    const result = parseMcpTool(
       "mcp__cadencr-browser__browser_open_url",
       JSON.stringify({ title: "", summary: "Explored the theme" }),
     );
@@ -314,7 +379,7 @@ describe("parseCadencrMcpTool", () => {
   });
 
   it("falls back past empty title/summary to commit_message", () => {
-    const result = parseCadencrMcpTool(
+    const result = parseMcpTool(
       "mcp__cadencr-browser__browser_open_url",
       JSON.stringify({ title: "", summary: "", commit_message: "feat: add one-dark theme" }),
     );
@@ -323,7 +388,7 @@ describe("parseCadencrMcpTool", () => {
 
   it("falls back to truncated prompt when title/summary/commit_message are empty", () => {
     const longPrompt = "a".repeat(120);
-    const result = parseCadencrMcpTool(
+    const result = parseMcpTool(
       "mcp__cadencr-browser__browser_open_url",
       JSON.stringify({ title: "", prompt: longPrompt }),
     );

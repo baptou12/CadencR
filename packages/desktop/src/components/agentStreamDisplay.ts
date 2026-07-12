@@ -1,5 +1,6 @@
 import type { AgentBlockData } from "./AgentBlock";
 import { collapseTurnsToSummary } from "./agentStreamSummary";
+import { shouldHideToolCall } from "@/lib/tool-display-policy";
 
 /**
  * A renderable row in the agent stream. In every mode except "compact" each
@@ -25,6 +26,7 @@ function isFlowEligible(block: AgentBlockData): boolean {
   // Surface Task/Agent results inline as their own row (they own their card
   // chrome); skip the rest, which the renderer hides anyway.
   if (block.type === "tool_result") {
+    if (block.isError && shouldHideToolCall(block.sourceToolName)) return false;
     return block.sourceToolName !== "Agent" && block.sourceToolName !== "Task";
   }
   return true;
@@ -68,7 +70,9 @@ export function buildDisplayItems(
 
 function isHiddenByRenderer(block: AgentBlockData): boolean {
   if (block.type === "thinking") return !block.content.trim();
+  if (block.type === "tool_call") return shouldHideToolCall(block.toolName);
   if (block.type !== "tool_result") return false;
+  if (block.isError && shouldHideToolCall(block.sourceToolName)) return false;
   if (block.sourceToolName === "Agent" || block.sourceToolName === "Task") return false;
   return true;
 }

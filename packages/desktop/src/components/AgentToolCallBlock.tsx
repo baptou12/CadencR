@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { ChevronRightIcon, WrenchIcon } from "lucide-react";
 import { cn, formatJson, toRelativePath } from "@/lib/utils";
-import { parseCadencrMcpTool, parseToolCall } from "@/lib/tool-call-parser";
+import { parseToolCall } from "@/lib/tool-call-parser";
 import { isFileChangeTool, normalizeToolName } from "@/lib/tool-adapter";
-import { CadencrMcpBlock } from "@/components/CadencrMcpBlock";
+import { parseMcpTool } from "@/lib/mcp-tool-parser";
+import { McpToolBlock } from "@/components/McpToolBlock";
 
 /**
  * Generic collapsible tool-call row (the fallback for tool calls that don't get
@@ -19,10 +20,22 @@ export function ToolCallBlock({
   args?: string;
   basePath?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const canonicalName = normalizeToolName(name);
-  const cadencrMcp = parseCadencrMcpTool(canonicalName, args);
-  if (cadencrMcp) return <CadencrMcpBlock mcp={cadencrMcp} args={args} />;
+  const mcp = parseMcpTool(canonicalName, args);
+  if (mcp) return <McpToolBlock mcp={mcp} />;
+  return <GenericToolCallBlock name={canonicalName} args={args} basePath={basePath} />;
+}
+
+function GenericToolCallBlock({
+  name: canonicalName,
+  args,
+  basePath,
+}: {
+  name: string;
+  args?: string;
+  basePath?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
 
   const summary = parseToolCall(canonicalName, args);
   const detail =

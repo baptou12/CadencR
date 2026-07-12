@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { cn, formatJson } from "@/lib/utils";
 import { ChevronRightIcon } from "lucide-react";
-import type { CadencrMcpTool } from "@/lib/tool-call-parser";
+import type { McpTool } from "@/lib/mcp-tool-parser";
+import { cn } from "@/lib/utils";
 
-/** Full-size Cadencr MCP tool call block with primary purple color scheme and server badge. */
-export function CadencrMcpBlock({ mcp, args }: { mcp: CadencrMcpTool; args?: string }) {
+/** Full-size MCP call with a provider badge and normalized arguments. */
+export function McpToolBlock({ mcp }: { mcp: McpTool }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -26,9 +26,9 @@ export function CadencrMcpBlock({ mcp, args }: { mcp: CadencrMcpTool; args?: str
           )}
         />
       </button>
-      {expanded && args && (
+      {expanded && Object.keys(mcp.arguments).length > 0 && (
         <pre className="border-t border-primary/20 bg-muted/30 p-3 text-xs overflow-x-auto">
-          {formatJson(args)}
+          {JSON.stringify(mcp.arguments, null, 2)}
         </pre>
       )}
     </div>

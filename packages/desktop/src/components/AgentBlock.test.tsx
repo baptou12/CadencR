@@ -119,6 +119,35 @@ describe("AgentBlock", () => {
       expect(container.firstChild).toBeNull();
     });
 
+    it("renders semantic skill reads as Skill without exposing the source path", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Read",
+            toolArgs: JSON.stringify({
+              type: "read",
+              command: "cat .agents/skills/db/SKILL.md",
+              path: "/repo/.agents/skills/db/SKILL.md",
+            }),
+          })}
+        />,
+      );
+
+      expect(screen.getByText("Skill")).toBeInTheDocument();
+      expect(screen.getByText("db")).toBeInTheDocument();
+      await user.click(screen.getByRole("button"));
+      expect(screen.queryByText(/SKILL\.md/)).not.toBeInTheDocument();
+    });
+
+    it("hides internal runtime tool calls", () => {
+      const { container } = render(
+        <AgentBlock block={makeBlock({ type: "tool_call", toolName: "update_plan" })} />,
+      );
+      expect(container).toBeEmptyDOMElement();
+    });
+
     it("renders Write tool with InlineDiffBlock", () => {
       render(
         <AgentBlock
@@ -273,6 +302,20 @@ describe("AgentBlock", () => {
   });
 
   describe("tool_result block", () => {
+    it("surfaces errors from hidden runtime tools", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_result",
+            content: "Runtime coordination failed",
+            sourceToolName: "update_plan",
+            isError: true,
+          })}
+        />,
+      );
+      expect(screen.getByText("Runtime coordination failed")).toBeInTheDocument();
+    });
+
     it("returns null for generic tool_result", () => {
       const { container } = render(
         <AgentBlock
