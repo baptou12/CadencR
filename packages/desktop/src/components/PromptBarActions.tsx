@@ -42,6 +42,9 @@ export function PromptBarActions({
   showSendButton,
   schedule,
 }: PromptBarActionsProps) {
+  const showScheduleButton = !isRunning && !!schedule;
+  const showActionGroup = showSendButton || showScheduleButton;
+
   return (
     <div className="flex shrink-0 items-center gap-1.5 self-end">
       <ImageAttachmentButton
@@ -49,7 +52,7 @@ export function PromptBarActions({
         disabled={inputsDisabled}
         providerId={providerId}
       />
-      {isRunning ? (
+      {isRunning && (
         <button
           type="button"
           onClick={onStop}
@@ -58,7 +61,8 @@ export function PromptBarActions({
         >
           <Pause className="size-3.5" />
         </button>
-      ) : (
+      )}
+      {showActionGroup && (
         // Send + the "auto message" chevron form a split button: Send is the
         // primary action, the chevron opens scheduling (and future auto kinds).
         <div className="inline-flex items-center">
@@ -71,7 +75,7 @@ export function PromptBarActions({
               aria-busy={sending}
               className={cn(
                 "flex h-7 w-7 shrink-0 items-center justify-center bg-primary text-primary-foreground transition-opacity hover:bg-primary/90 disabled:opacity-30",
-                schedule ? "rounded-l-md rounded-r-none" : "rounded-md",
+                showScheduleButton ? "rounded-l-md rounded-r-none" : "rounded-md",
               )}
             >
               {sending ? (
@@ -81,7 +85,7 @@ export function PromptBarActions({
               )}
             </button>
           )}
-          {schedule && (
+          {showScheduleButton && (
             <AutoMessageMenu
               getText={schedule.getText}
               onSchedule={schedule.onSchedule}

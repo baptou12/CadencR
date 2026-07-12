@@ -353,7 +353,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               onSend={handleSend}
               canSend={canSend}
               sending={sending}
-              showSendButton={!splitSendActions}
+              showSendButton={!splitSendActions && (!isRunning || isMobile)}
               schedule={scheduleControl}
             />
           </div>

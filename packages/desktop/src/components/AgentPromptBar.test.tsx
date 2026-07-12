@@ -4,6 +4,11 @@ import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
 
+const isMobileMock = vi.fn(() => false);
+vi.mock("@/hooks/useIsMobile", () => ({
+  useIsMobile: () => isMobileMock(),
+}));
+
 interface HotkeyEntry {
   handler: (e: Partial<KeyboardEvent>) => void;
   options?: { enabled?: boolean };
@@ -150,6 +155,7 @@ describe("AgentPromptBar", () => {
   beforeEach(() => {
     onSend.mockClear();
     onStop.mockClear();
+    isMobileMock.mockReturnValue(false);
     hotkeyHandlers.clear();
   });
 
@@ -164,10 +170,26 @@ describe("AgentPromptBar", () => {
     expect(buttons.length).toBeGreaterThan(0);
   });
 
-  it("shows stop button when running", () => {
+  it("shows stop instead of send while running on desktop", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
-    const buttons = screen.getAllByRole("button");
-    expect(buttons.length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Stop agent")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Send message")).not.toBeInTheDocument();
+  });
+
+  it("keeps send available beside stop while running on mobile", async () => {
+    isMobileMock.mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
+
+    expect(screen.getByLabelText("Stop agent")).toBeInTheDocument();
+    const sendButton = screen.getByLabelText("Send message");
+    expect(sendButton).toBeDisabled();
+
+    await user.type(screen.getByRole("textbox"), "Follow up");
+    expect(sendButton).toBeEnabled();
+    await user.click(sendButton);
+
+    expect(onSend).toHaveBeenCalledWith("Follow up", undefined);
   });
 
   it("renders send button that is disabled when empty", () => {
