@@ -96,6 +96,11 @@ pub struct SessionStatusEvent {
     pub status: AgentStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<PendingKind>,
+    /// Request id for the currently active user-input gate. This lets remote
+    /// surfaces distinguish a resolved historical gate from a newer gate of
+    /// the same kind on the same session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     /// Server wall-clock (epoch ms) when the current turn started. Carried on
     /// `Agent` events (and in the snapshot for a running session) so every
     /// connected client anchors its elapsed timer to one source of truth
@@ -147,7 +152,32 @@ impl SessionStatusBroadcaster {
         kind: Option<PendingKind>,
     ) -> u64 {
         let derived = derive_broadcast_status(status, kind);
-        self.broadcast_inner(session_id, feature_id, derived.status, derived.kind, None)
+        self.broadcast_inner(
+            session_id,
+            feature_id,
+            derived.status,
+            derived.kind,
+            None,
+            None,
+        )
+    }
+
+    /// Broadcast a pending user-input gate with its stable request identity.
+    pub fn broadcast_gate(
+        &self,
+        session_id: i64,
+        feature_id: i64,
+        kind: PendingKind,
+        request_id: String,
+    ) -> u64 {
+        self.broadcast_inner(
+            session_id,
+            feature_id,
+            AgentStatus::Question,
+            Some(kind),
+            Some(request_id),
+            None,
+        )
     }
 
     /// Broadcast that a turn has started, carrying the server-stamped start
@@ -163,6 +193,7 @@ impl SessionStatusBroadcaster {
             feature_id,
             AgentStatus::Agent,
             None,
+            None,
             Some(turn_started_at_ms),
         )
     }
@@ -173,6 +204,7 @@ impl SessionStatusBroadcaster {
         feature_id: i64,
         status: AgentStatus,
         kind: Option<PendingKind>,
+        request_id: Option<String>,
         turn_started_at_ms: Option<i64>,
     ) -> u64 {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
@@ -181,6 +213,7 @@ impl SessionStatusBroadcaster {
             feature_id,
             status,
             kind,
+            request_id,
             turn_started_at_ms,
             seq,
         });
@@ -336,5 +369,19 @@ mod tests {
             derive_broadcast_status(AgentStatus::Question, Some(PendingKind::Permission)),
             DerivedSessionStatus::question(PendingKind::Permission)
         );
+    }
+
+    #[tokio::test]
+    async fn gate_broadcast_carries_request_identity() {
+        let (tx, _) = tokio::sync::broadcast::channel(4);
+        let broadcaster = SessionStatusBroadcaster::new(tx, Arc::new(AtomicU64::new(0)));
+        let mut rx = broadcaster.subscribe();
+
+        broadcaster.broadcast_gate(7, 8, PendingKind::Permission, "req-42".into());
+
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.status, AgentStatus::Question);
+        assert_eq!(event.kind, Some(PendingKind::Permission));
+        assert_eq!(event.request_id.as_deref(), Some("req-42"));
     }
 }

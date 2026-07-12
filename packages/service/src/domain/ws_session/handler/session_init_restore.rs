@@ -53,15 +53,11 @@ fn send_pending(
     kind: PendingKind,
 ) {
     let envelope =
-        permission_request_envelope(payload).expect("permission request payload should serialize");
+        permission_request_envelope(&payload).expect("permission request payload should serialize");
     let _ = sender.send(Message::Text(String::from(envelope).into()));
-    WsSessionPersistence::broadcast_session_status(
-        &app_state.session_status_tx,
-        db_session_id,
-        feature_id,
-        AgentStatus::Question,
-        Some(kind),
-    );
+    app_state
+        .session_status_tx
+        .broadcast_gate(db_session_id, feature_id, kind, payload.request_id);
 }
 
 async fn clear_stale_pending(app_state: &AppState, db_session_id: i64, feature_id: i64) {
@@ -222,6 +218,7 @@ mod tests {
         let status = status_rx.recv().await.unwrap();
         assert_eq!(status.status, AgentStatus::Question);
         assert_eq!(status.kind, Some(PendingKind::Permission));
+        assert_eq!(status.request_id.as_deref(), Some("perm_1"));
     }
 
     #[tokio::test]

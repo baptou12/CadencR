@@ -86,6 +86,7 @@ export function applySnapshot(
     const status = isStatus(obj.status) ? obj.status : null;
     if (!status) continue;
     const kind = isPendingKind(obj.kind) ? obj.kind : null;
+    const requestId = typeof obj.request_id === "string" ? obj.request_id : null;
     const turnStartedAtMs =
       typeof obj.turn_started_at_ms === "number" ? obj.turn_started_at_ms : null;
 
@@ -95,7 +96,14 @@ export function applySnapshot(
       next[sessionId] = existing;
       continue;
     }
-    next[sessionId] = { status, kind, featureId, seq: snapshotSeq, turnStartedAtMs };
+    next[sessionId] = {
+      status,
+      kind,
+      requestId,
+      featureId,
+      seq: snapshotSeq,
+      turnStartedAtMs,
+    };
 
     if (status === "question" && existing?.status !== "question") {
       notifyTransition(featureId, existing?.status, status);
@@ -131,7 +139,7 @@ export function applyUpdate(
   featureId: number | null;
   prevStatus: LiveAgentStatus | undefined;
   nextStatus: LiveAgentStatus | null;
-  entry: Pick<SessionStatusEntry, "status" | "kind" | "turnStartedAtMs"> | null;
+  entry: Pick<SessionStatusEntry, "status" | "kind" | "requestId" | "turnStartedAtMs"> | null;
 } {
   const sessionId = typeof payload.session_id === "number" ? payload.session_id : null;
   const featureId = typeof payload.feature_id === "number" ? payload.feature_id : null;
@@ -159,6 +167,7 @@ export function applyUpdate(
     };
   }
   const kind = isPendingKind(payload.kind) ? payload.kind : null;
+  const requestId = typeof payload.request_id === "string" ? payload.request_id : null;
 
   const existing = prev[sessionId];
   if (existing && seq <= existing.seq) {
@@ -176,6 +185,7 @@ export function applyUpdate(
   const sameValue =
     existing?.status === payload.status &&
     (existing?.kind ?? null) === kind &&
+    (existing?.requestId ?? null) === requestId &&
     existing?.featureId === featureId;
 
   if (sameValue) {
@@ -187,20 +197,27 @@ export function applyUpdate(
       featureId,
       prevStatus: existing.status,
       nextStatus: payload.status,
-      entry: { status: payload.status, kind, turnStartedAtMs },
+      entry: { status: payload.status, kind, requestId, turnStartedAtMs },
     };
   }
 
   return {
     next: {
       ...prev,
-      [sessionId]: { status: payload.status, kind, featureId, seq, turnStartedAtMs },
+      [sessionId]: {
+        status: payload.status,
+        kind,
+        requestId,
+        featureId,
+        seq,
+        turnStartedAtMs,
+      },
     },
     sessionId,
     featureId,
     prevStatus: existing?.status,
     nextStatus: payload.status,
-    entry: { status: payload.status, kind, turnStartedAtMs },
+    entry: { status: payload.status, kind, requestId, turnStartedAtMs },
   };
 }
 

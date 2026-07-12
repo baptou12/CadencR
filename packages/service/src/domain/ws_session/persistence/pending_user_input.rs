@@ -299,6 +299,7 @@ mod pending_user_input_tests {
         assert_eq!(event.feature_id, 42);
         assert_eq!(event.status, AgentStatus::Question);
         assert_eq!(event.kind, Some(PendingKind::Permission));
+        assert_eq!(event.request_id.as_deref(), Some(payload.request_id.as_str()));
         assert!(event.seq > 0);
     }
 
@@ -317,7 +318,9 @@ mod pending_user_input_tests {
             &PendingUserInput::Question(&question),
         )
         .await;
-        assert_eq!(rx.recv().await.unwrap().kind, Some(PendingKind::Question));
+        let event = rx.recv().await.unwrap();
+        assert_eq!(event.kind, Some(PendingKind::Question));
+        assert_eq!(event.request_id.as_deref(), Some("q1"));
     }
 
     #[tokio::test]

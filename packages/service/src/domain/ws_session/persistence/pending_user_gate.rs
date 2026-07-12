@@ -75,18 +75,27 @@ impl WsSessionPersistence {
         let kind = input.kind().as_session_kind();
         Self::set_pending_user_input_static(&state.write_pool, session_id, input).await;
         let registered = register_gate(state, session_id, input).await;
-        Self::broadcast_session_status(
-            &state.session_status_tx,
-            session_id,
-            feature_id,
-            crate::domain::session_status::AgentStatus::Question,
-            Some(kind),
-        );
-        if let Some(payload) = registered {
+        if let Some(gate) = &registered {
+            state.session_status_tx.broadcast_gate(
+                session_id,
+                feature_id,
+                kind,
+                gate.request_id.clone(),
+            );
+        } else {
+            Self::broadcast_session_status(
+                &state.session_status_tx,
+                session_id,
+                feature_id,
+                crate::domain::session_status::AgentStatus::Question,
+                Some(kind),
+            );
+        }
+        if let Some(gate) = registered {
             crate::domain::mcp::control::gate_notify::spawn_gate_notification(
                 state.clone(),
                 session_id,
-                payload,
+                gate.payload,
             );
         }
     }
@@ -156,7 +165,7 @@ async fn register_gate(
     state: &crate::app_state::AppState,
     session_id: i64,
     input: &PendingUserInput<'_>,
- ) -> Option<serde_json::Value> {
+) -> Option<crate::domain::gate_registry::PendingGate> {
     let payload = match gate_payload(input) {
         Ok(payload) => payload,
         Err(error) => {
@@ -168,22 +177,17 @@ async fn register_gate(
         error!(session_id, "pending gate payload has no request_id; escalation unavailable");
         return None;
     };
-    state
-        .pending_gates
-        .register(
-            session_id,
-            crate::domain::gate_registry::PendingGate {
-                request_id: request_id.to_string(),
-                kind: crate::domain::gate_registry::GateKind::from_pending(
-                    input.kind(),
-                    payload
-                        .get("tool_name")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or_default(),
-                ),
-                payload: payload.clone(),
-            },
-        )
-        .await;
-    Some(payload)
+    let gate = crate::domain::gate_registry::PendingGate {
+        request_id: request_id.to_string(),
+        kind: crate::domain::gate_registry::GateKind::from_pending(
+            input.kind(),
+            payload
+                .get("tool_name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default(),
+        ),
+        payload,
+    };
+    state.pending_gates.register(session_id, gate.clone()).await;
+    Some(gate)
 }

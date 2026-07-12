@@ -232,8 +232,7 @@ pub struct MessagePreviewResponse {
     pub preview: Option<String>,
 }
 
-/// Raw row used by `get_session_status_snapshot`. Boolean projections of
-/// the active `pending_*` columns keep the SQL → derive pipeline trivial.
+/// Raw row used by `get_session_status_snapshot`.
 #[derive(Debug, sqlx::FromRow)]
 pub struct SessionStatusSnapshotRow {
     pub session_id: i64,
@@ -241,6 +240,7 @@ pub struct SessionStatusSnapshotRow {
     pub status: String,
     pub pending_permission: bool,
     pub pending_question: bool,
+    pub request_id: Option<String>,
 }
 
 /// Public-facing per-session status entry serialized in
@@ -254,6 +254,8 @@ pub struct SessionStatusSnapshotEntry {
     pub status: crate::domain::session_status::AgentStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<crate::domain::session_status::PendingKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
     /// Server-stamped turn start (epoch ms) for a running session, so a
     /// (re)connecting client anchors its elapsed timer to the same instant as
     /// every other device. Filled in by the WS handler from the in-memory
