@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+
 export type BrowserAutomationAccess = "full" | "read-only" | "denied";
 
 const SENSITIVE_HEADER_PATTERNS = [
@@ -32,7 +34,11 @@ export function browserAutomationAccess(rawUrl: string): BrowserAutomationAccess
 export function normalizeBrowserOpenUrl(rawInput: string): string {
   const trimmed = rawInput.trim();
   if (trimmed.length === 0) throw new Error("Browser URL is required.");
-  const candidate = needsHttpPrefix(trimmed) ? `http://${trimmed}` : trimmed;
+  const candidate = trimmed.startsWith("/")
+    ? pathToFileURL(trimmed).href
+    : needsHttpPrefix(trimmed)
+      ? `http://${trimmed}`
+      : trimmed;
   const parsed = safeUrl(candidate);
   if (!parsed) throw new Error("Browser URL is invalid.");
   if (parsed.href === "about:blank") return parsed.href;

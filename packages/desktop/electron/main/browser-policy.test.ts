@@ -35,6 +35,14 @@ describe("browser-policy", () => {
     expect(normalizeBrowserOpenUrl("file:///tmp/a.html")).toBe("file:///tmp/a.html");
   });
 
+  it("normalizes absolute filesystem paths to file URLs", () => {
+    expect(normalizeBrowserOpenUrl("/tmp/a.html")).toBe("file:///tmp/a.html");
+    expect(normalizeBrowserOpenUrl("  /Users/alice/My File.html  ")).toBe(
+      "file:///Users/alice/My%20File.html",
+    );
+    expect(normalizeBrowserOpenUrl("/tmp/a#b?.html")).toBe("file:///tmp/a%23b%3F.html");
+  });
+
   it("normalizes bare localhost-like input to http URLs", () => {
     expect(normalizeBrowserOpenUrl("localhost:5173")).toBe("http://localhost:5173/");
     expect(normalizeBrowserOpenUrl("127.0.0.1:5005/health")).toBe("http://127.0.0.1:5005/health");
