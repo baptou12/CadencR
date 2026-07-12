@@ -31,6 +31,11 @@ export function isBrowserRemote(): boolean {
   return location.protocol === "https:";
 }
 
+/** True when a remote browser is running without a foreground page. */
+export function isHiddenBrowserRemote(): boolean {
+  return isBrowserRemote() && typeof document !== "undefined" && document.hidden;
+}
+
 /**
  * Read the current device token: the in-memory value wins; otherwise it's
  * hydrated once from storage (a trusted `localStorage` token beats a
