@@ -248,6 +248,7 @@ mod tests {
         AgentMessageRow {
             id,
             session_id: 1,
+            message_uuid: None,
             message_type: message_type.to_string(),
             content: content.to_string(),
             tool_name: tool_name.map(ToOwned::to_owned),

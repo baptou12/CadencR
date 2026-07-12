@@ -35,6 +35,18 @@ impl StreamReaderTask {
         self.forward_compaction_state(state, &runtime_event).await;
         track_background_agents(&mut state.live_background_agents, &runtime_event);
 
+        if let Some(message_uuid) = runtime_event.prompt_received_client_message_id() {
+            if !state
+                .received_prompt_message_uuids
+                .iter()
+                .any(|received| received == message_uuid)
+            {
+                state
+                    .received_prompt_message_uuids
+                    .push(message_uuid.to_string());
+            }
+        }
+
         match forward_immediate_event(self, &runtime_event).await {
             // `prompt_received` / `commands.updated` / `stream_status` are
             // transient UI acks that are never persisted. `SenderClosed` here

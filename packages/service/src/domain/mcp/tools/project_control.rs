@@ -183,6 +183,7 @@ pub async fn send_session_message_with_client(
                 "source_session_id": source_session_id,
                 "target_session_id": target_session_id,
                 "message": message,
+                "message_uuid": uuid::Uuid::new_v4().to_string(),
                 "delivery": delivery,
                 "reply": reply,
                 "source_note": source_note,
@@ -255,6 +256,7 @@ mod tests {
         assert_eq!(request["source_session_id"], 777);
         assert_eq!(request["target_session_id"], 888);
         assert_eq!(request["message"], "Please verify provenance.");
+        assert!(uuid::Uuid::parse_str(request["message_uuid"].as_str().unwrap()).is_ok());
         assert_eq!(request["source_note"], "delegated by project MCP");
     }
 

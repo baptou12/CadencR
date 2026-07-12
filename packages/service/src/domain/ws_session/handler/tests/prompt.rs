@@ -104,7 +104,6 @@ async fn test_replayed_prompt_send_streams_without_persisting_duplicate_user_mes
         serde_json::json!({
             "session_id": session_id,
             "text": "replayed steering prompt",
-            "client_message_id": "client-1",
             "replay": true,
         }),
     );
@@ -289,7 +288,8 @@ async fn test_prompt_send_steers_turn_owned_by_another_connection_without_spawni
         serde_json::json!({
             "session_id": session_id,
             "text": "continue from the host",
-            "client_message_id": "host-1",
+            "message_uuid": "eea8648c-6786-4f20-ae17-56c6878a08ff",
+            "track_prompt_receipt": true,
         }),
     );
     dispatch_envelope(envelope, &tx_b, &host_sessions, &app_state).await;

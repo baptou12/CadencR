@@ -83,10 +83,18 @@ export function parseErrorPayload(
   };
 }
 
-export function parseEndedPayload(payload: unknown): { reason?: string } | null {
+export function parseEndedPayload(
+  payload: unknown,
+): { reason?: string; receivedPromptMessageUuids: string[] } | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { reason: optionalString(record, "reason") };
+  const receivedPromptMessageUuids = (
+    optionalArray(record, "received_prompt_message_uuids") ?? []
+  ).filter((value): value is string => typeof value === "string");
+  return {
+    reason: optionalString(record, "reason"),
+    receivedPromptMessageUuids,
+  };
 }
 
 /**
@@ -105,43 +113,59 @@ export function parseStreamStatusPayload(
   return { state, reason: optionalString(record, "reason") };
 }
 
-export function parsePromptReceivedPayload(
-  payload: unknown,
-): { client_message_id?: string } | null {
+export function parsePromptReceivedPayload(payload: unknown): {
+  message_uuid: string;
+  delivery_state: "received_agent" | "delivery_failed";
+} | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { client_message_id: optionalString(record, "client_message_id") };
+  const messageUuid = optionalString(record, "message_uuid");
+  const deliveryState = optionalString(record, "delivery_state");
+  if (!messageUuid || (deliveryState !== "received_agent" && deliveryState !== "delivery_failed")) {
+    return null;
+  }
+  return {
+    message_uuid: messageUuid,
+    delivery_state: deliveryState,
+  };
 }
 
-/**
- * Parse the `session.prompt_persisted` envelope — the persisted DB id for a
- * user message this device sent optimistically. Stamping it onto the live block
- * (matched by `user_message_ref`) lets rewind/fork target it without a reload.
- */
-export function parsePromptPersistedPayload(
-  payload: unknown,
-): { user_message_ref: string; message_id: number } | null {
+/** Parse the canonical persisted `session.user_message` envelope. */
+export function parseCanonicalUserMessagePayload(payload: unknown): {
+  messageId: number;
+  messageUuid: string;
+  text: string;
+  createdAt: string;
+  origin?: AgentMessageOrigin;
+  promptDeliveryState?: "pending_agent";
+} | null {
   const record = asRecord(payload);
   if (!record) return null;
-  const user_message_ref = optionalString(record, "user_message_ref");
-  const message_id = optionalNumber(record, "message_id");
-  if (!user_message_ref || message_id === undefined) return null;
-  return { user_message_ref, message_id };
-}
-
-/**
- * Parse the `session.user_message` envelope — a prompt another device just sent,
- * mirrored here so this (passive) viewer's conversation stays live.
- */
-export function parseUserMessageMirrorPayload(
-  payload: unknown,
-): { text: string; origin?: AgentMessageOrigin } | null {
-  const record = asRecord(payload);
-  if (!record) return null;
+  const messageId = optionalNumber(record, "message_id");
+  const messageUuid = optionalString(record, "message_uuid");
   const text = optionalString(record, "text");
-  if (typeof text !== "string") return null;
+  const createdAt = optionalString(record, "created_at");
+  if (
+    messageId === undefined ||
+    !Number.isSafeInteger(messageId) ||
+    messageId <= 0 ||
+    !messageUuid ||
+    typeof text !== "string" ||
+    !createdAt
+  ) {
+    return null;
+  }
   const origin = parseMessageOrigin(record.origin);
-  return origin ? { text, origin } : { text };
+  const deliveryState = optionalString(record, "prompt_delivery_state");
+  const promptDeliveryState = deliveryState === "pending_agent" ? deliveryState : undefined;
+  return {
+    messageId,
+    messageUuid,
+    text,
+    createdAt,
+    ...(origin ? { origin } : {}),
+    ...(promptDeliveryState ? { promptDeliveryState } : {}),
+  };
 }
 
 function parseMessageOrigin(value: unknown): AgentMessageOrigin | undefined {

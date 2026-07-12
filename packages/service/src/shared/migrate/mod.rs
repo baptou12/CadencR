@@ -12,6 +12,8 @@ mod codex_permission_mode_migration_tests;
 #[cfg(test)]
 mod mcp_orchestration_migration_tests;
 #[cfg(test)]
+mod message_uuid_migration_tests;
+#[cfg(test)]
 mod rewind_fork_migration_tests;
 mod seed;
 mod support;
@@ -342,6 +344,11 @@ mod tests {
             CREATE TABLE agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL
+            );
+            CREATE TABLE agent_session_message_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_session_id INTEGER NOT NULL,
+                content TEXT NOT NULL
             );
             INSERT INTO agent_sessions (id, feature_id, status, is_pinned)
                 VALUES (1, 7, 'running', 1);"#,

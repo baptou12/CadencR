@@ -114,6 +114,7 @@ fn permission_payload(
             return Ok(PermissionRespondPayload {
                 session_id: session_id.to_string(),
                 request_id: request_id.to_string(),
+                message_uuid: None,
                 decision: PermissionDecision::AllowOnce,
                 option_id: advertised_option(&gate.payload, "allow_once").flatten(),
                 feedback: None,
@@ -129,6 +130,7 @@ fn permission_payload(
     Ok(PermissionRespondPayload {
         session_id: session_id.to_string(),
         request_id: request_id.to_string(),
+        message_uuid: None,
         decision,
         option_id,
         feedback,

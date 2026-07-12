@@ -1,17 +1,19 @@
-use serde::Deserialize;
+#[path = "message_queue_persistence.rs"]
+mod persistence;
 
+pub(crate) use self::persistence::enqueue_message;
+use self::persistence::{
+    claim_next_message, mark_delivered, mark_error, queued_message_uuid, QueuedMessage,
+};
 use super::scope::{resolve_session_scope, SessionScope};
 use crate::app_state::AppState;
-use crate::domain::mcp::control::send_message::broadcast_generated_user_message;
-use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
+use crate::domain::mcp::control::send_message::publish_generated_user_message;
+use crate::domain::sessions::models::AgentMessageOrigin;
+use crate::domain::sessions::user_messages::{
+    persist_user_message, NewUserMessage, PersistedUserMessage,
+};
+use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt_with_message_uuid;
 use crate::error::AppError;
-
-#[derive(Debug, Deserialize, sqlx::FromRow)]
-struct QueuedMessage {
-    id: i64,
-    source_session_id: Option<i64>,
-    content: String,
-}
 
 pub(crate) async fn drain_next_queued_message(
     state: &AppState,
@@ -33,52 +35,39 @@ pub(crate) async fn drain_next_queued_message(
     }
 }
 
-async fn claim_next_message(
-    pool: &sqlx::SqlitePool,
-    target_session_id: i64,
-) -> Result<Option<QueuedMessage>, AppError> {
-    Ok(sqlx::query_as(
-        "UPDATE agent_session_message_queue
-         SET status = 'delivering', error = NULL
-         WHERE id = (
-             SELECT id
-             FROM agent_session_message_queue
-             WHERE target_session_id = ? AND status = 'pending'
-             ORDER BY id ASC
-             LIMIT 1
-         )
-         RETURNING id, source_session_id, content",
-    )
-    .bind(target_session_id)
-    .fetch_optional(pool)
-    .await?)
-}
-
 async fn deliver_message(
     state: &AppState,
     target_feature_id: i64,
     target_session_id: i64,
     message: &QueuedMessage,
 ) -> Result<(), AppError> {
-    if let Some(source_session_id) = message.source_session_id {
+    let dispatch_message_uuid = if let Some(source_session_id) = message.source_session_id {
         let source = resolve_session_scope(&state.write_pool, source_session_id).await?;
-        persist_and_broadcast_generated_user_message(
+        let message_uuid = queued_message_uuid(message)?;
+        let (persisted, origin) = persist_generated_user_message(
             state,
-            &source,
             target_session_id,
-            target_feature_id,
+            &source,
             &message.content,
             "delivered from queued project_send_session_message",
+            message_uuid,
         )
         .await?;
-    }
-    dispatch_control_prompt(
+        publish_generated_user_message(state, target_feature_id, &persisted, origin).await;
+        Some(message_uuid)
+    } else {
+        // Automatic reply/gate delivery is persisted before it is queued; the
+        // queue row is transport-only and must still dispatch on drain.
+        None
+    };
+    dispatch_control_prompt_with_message_uuid(
         state,
         target_feature_id,
         target_session_id,
         &message.content,
         // The user message was already persisted/broadcast above.
         true,
+        dispatch_message_uuid,
     )
     .await
 }
@@ -89,31 +78,66 @@ async fn persist_generated_user_message(
     source: &SessionScope,
     content: &str,
     note: &str,
-) -> Result<i64, AppError> {
+    message_uuid: uuid::Uuid,
+) -> Result<(PersistedUserMessage, AgentMessageOrigin), AppError> {
     let mut tx = state.write_pool.begin().await?;
-    let message_id: i64 = sqlx::query_scalar(
-        "INSERT INTO agent_messages (session_id, role, content, message_type)
-         VALUES (?, 'user', ?, 'user_message')
-         RETURNING id",
+    let persisted = persist_user_message(
+        &mut tx,
+        NewUserMessage {
+            session_id: target_session_id,
+            content,
+            message_uuid,
+            created_at: None,
+        },
     )
-    .bind(target_session_id)
-    .bind(content)
-    .fetch_one(&mut *tx)
     .await?;
-    sqlx::query(
-        "INSERT INTO agent_message_origins
-         (message_id, origin_kind, source_session_id, source_feature_id, source_project_id, note)
-         VALUES (?, 'session_generated', ?, ?, ?, ?)",
-    )
-    .bind(message_id)
-    .bind(source.session_id)
-    .bind(source.feature_id)
-    .bind(source.project_id)
-    .bind(note)
-    .execute(&mut *tx)
-    .await?;
+    if persisted.inserted {
+        sqlx::query(
+            "INSERT INTO agent_message_origins
+             (message_id, origin_kind, source_session_id, source_feature_id, source_project_id, note)
+             VALUES (?, 'session_generated', ?, ?, ?, ?)",
+        )
+        .bind(persisted.id)
+        .bind(source.session_id)
+        .bind(source.feature_id)
+        .bind(source.project_id)
+        .bind(note)
+        .execute(&mut *tx)
+        .await?;
+    }
     tx.commit().await?;
-    Ok(message_id)
+    let origin =
+        crate::domain::sessions::repository::get_message_origin(&state.write_pool, persisted.id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Internal(format!(
+                    "message {} is missing canonical provenance",
+                    persisted.id
+                ))
+            })?;
+    validate_generated_origin(&persisted, &origin, source, note)?;
+    Ok((persisted, origin))
+}
+
+fn validate_generated_origin(
+    message: &PersistedUserMessage,
+    origin: &AgentMessageOrigin,
+    source: &SessionScope,
+    note: &str,
+) -> Result<(), AppError> {
+    if crate::domain::sessions::repository::origin_matches_session_generated(
+        origin,
+        source.session_id,
+        source.feature_id,
+        source.project_id,
+        Some(note),
+    ) {
+        return Ok(());
+    }
+    Err(AppError::Conflict(format!(
+        "message UUID {} already has different queued provenance on message row {}",
+        message.message_uuid, message.id
+    )))
 }
 
 pub(super) async fn persist_and_broadcast_generated_user_message(
@@ -123,58 +147,24 @@ pub(super) async fn persist_and_broadcast_generated_user_message(
     target_feature_id: i64,
     content: &str,
     note: &str,
-) -> Result<(), AppError> {
-    persist_generated_user_message(state, target_session_id, source, content, note).await?;
-    broadcast_generated_user_message(state, source, target_feature_id, content, Some(note)).await;
-    Ok(())
-}
-
-pub(crate) async fn enqueue_message(
-    pool: &sqlx::SqlitePool,
-    target_session_id: i64,
-    source_session_id: Option<i64>,
-    content: &str,
-) -> Result<i64, AppError> {
-    Ok(sqlx::query_scalar(
-        "INSERT INTO agent_session_message_queue
-         (target_session_id, source_session_id, content, status)
-         VALUES (?, ?, ?, 'pending') RETURNING id",
+) -> Result<PersistedUserMessage, AppError> {
+    let (message, origin) = persist_generated_user_message(
+        state,
+        target_session_id,
+        source,
+        content,
+        note,
+        uuid::Uuid::new_v4(),
     )
-    .bind(target_session_id)
-    .bind(source_session_id)
-    .bind(content)
-    .fetch_one(pool)
-    .await?)
-}
-
-async fn mark_delivered(pool: &sqlx::SqlitePool, id: i64) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE agent_session_message_queue
-         SET status = 'delivered', delivered_at = datetime('now'), error = NULL
-         WHERE id = ? AND status = 'delivering'",
-    )
-    .bind(id)
-    .execute(pool)
     .await?;
-    Ok(())
-}
-
-async fn mark_error(pool: &sqlx::SqlitePool, id: i64, error: &str) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE agent_session_message_queue
-         SET status = 'error', error = ?
-         WHERE id = ? AND status = 'delivering'",
-    )
-    .bind(error)
-    .bind(id)
-    .execute(pool)
-    .await?;
-    Ok(())
+    publish_generated_user_message(state, target_feature_id, &message, origin).await;
+    Ok(message)
 }
 
 #[cfg(test)]
 mod tests {
     use super::drain_next_queued_message;
+    use super::persistence::{enqueue_message, seed_queue_fixture};
     use crate::app_state::AppState;
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
@@ -213,58 +203,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn claim_next_message_marks_row_delivering_atomically() {
+    async fn retried_queue_row_dispatches_when_its_user_message_already_exists() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        run_migrations(&MigrationContext {
-            pool: &pool,
-            db_path: None,
-            app_version: None,
-        })
-        .await
-        .unwrap();
-        seed_queue_fixture(&pool).await;
-
-        let first = super::claim_next_message(&pool, 888).await.unwrap();
-        let second = super::claim_next_message(&pool, 888).await.unwrap();
-
-        assert!(first.is_some());
-        assert!(second.is_none());
-        let status: String =
-            sqlx::query_scalar("SELECT status FROM agent_session_message_queue WHERE id = 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(status, "delivering");
-    }
-
-    async fn seed_queue_fixture(pool: &sqlx::SqlitePool) {
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (7, 'Proj', '/tmp/proj')")
-            .execute(pool)
+        run_migrations(&MigrationContext::pool_only(&pool))
             .await
             .unwrap();
-        sqlx::query(
-            "INSERT INTO features (id, project_id, title, status, type)
-             VALUES (42, 7, 'Source', 'active', 'ws-session'),
-                    (43, 7, 'Target', 'active', 'ws-session')",
+        seed_queue_fixture(&pool).await;
+        sqlx::query("DELETE FROM agent_session_message_queue")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let state = AppState::with_pool(pool.clone());
+        let source = super::resolve_session_scope(&pool, 777).await.unwrap();
+        let message_uuid = uuid::Uuid::new_v4();
+        super::persist_generated_user_message(
+            &state,
+            888,
+            &source,
+            "already persisted",
+            "delivered from queued project_send_session_message",
+            message_uuid,
         )
-        .execute(pool)
         .await
         .unwrap();
-        sqlx::query(
-            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, runtime_provider)
-             VALUES (777, 42, 'session', 'completed', 'missing_provider'),
-                    (888, 43, 'session', 'completed', 'missing_provider')",
+        enqueue_message(&pool, 888, Some(777), "already persisted", message_uuid)
+            .await
+            .unwrap();
+
+        assert!(drain_next_queued_message(&state, 43, 888).await.unwrap());
+
+        let status: String = sqlx::query_scalar("SELECT status FROM agent_sessions WHERE id = 888")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            status, "paused",
+            "the missing-provider dispatch path proves the retry was attempted"
+        );
+        let message_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM agent_messages
+             WHERE session_id = 888 AND message_uuid = ?",
         )
-        .execute(pool)
+        .bind(message_uuid.to_string())
+        .fetch_one(&pool)
         .await
         .unwrap();
-        sqlx::query(
-            "INSERT INTO agent_session_message_queue
-             (id, target_session_id, source_session_id, content, status)
-             VALUES (1, 888, 777, 'Queued work item', 'pending')",
-        )
-        .execute(pool)
-        .await
-        .unwrap();
+        assert_eq!(message_count, 1);
     }
 }

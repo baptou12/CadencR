@@ -12,6 +12,7 @@ mod mode;
 mod model;
 mod permission;
 mod permission_dispatch;
+mod permission_user_message;
 mod power;
 mod profile;
 mod provider;
@@ -70,7 +71,8 @@ pub(super) async fn resolve_owner_sessions(
 /// Mirror a session-control change to the *other* devices viewing the same
 /// feature so their UI chips stay in sync (the originating sender already got
 /// its own reply). Uses a ref-less envelope so receivers process it as an
-/// unsolicited broadcast, exactly like `mirror_user_message`.
+/// unsolicited broadcast, exactly like the canonical `session.user_message`
+/// event.
 pub(super) async fn broadcast_control_change<P: Serialize>(
     app_state: &AppState,
     sender: &WsSender,

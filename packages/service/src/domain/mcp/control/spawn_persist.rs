@@ -2,6 +2,10 @@ use super::spawn_resolve::SpawnRuntimeSelection;
 use super::spawn_session::SpawnSessionRequest;
 use super::trimmed_optional;
 use crate::app_state::AppState;
+use crate::domain::sessions::models::AgentMessageOrigin;
+use crate::domain::sessions::user_messages::{
+    persist_user_message, NewUserMessage, PersistedUserMessage,
+};
 use crate::error::AppError;
 
 pub(super) async fn insert_spawned_session(
@@ -34,26 +38,27 @@ pub(super) async fn insert_initial_message(
     source: &super::scope::SessionScope,
     session_id: i64,
     body: &SpawnSessionRequest,
-) -> Result<Option<i64>, AppError> {
+) -> Result<Option<(PersistedUserMessage, AgentMessageOrigin)>, AppError> {
     let Some(message) = trimmed_optional(body.initial_message.as_deref()) else {
         return Ok(None);
     };
     let mut tx = state.write_pool.begin().await?;
-    let message_id: i64 = sqlx::query_scalar(
-        "INSERT INTO agent_messages (session_id, role, content, message_type)
-         VALUES (?, 'user', ?, 'user_message')
-         RETURNING id",
+    let persisted = persist_user_message(
+        &mut tx,
+        NewUserMessage {
+            session_id,
+            content: &message,
+            message_uuid: uuid::Uuid::new_v4(),
+            created_at: None,
+        },
     )
-    .bind(session_id)
-    .bind(&message)
-    .fetch_one(&mut *tx)
     .await?;
     if body.await_result.unwrap_or(false) {
         super::reply_wait::insert_pending(
             &mut tx,
             source.session_id,
             session_id,
-            message_id,
+            persisted.id,
             "spawn",
         )
         .await?;
@@ -63,7 +68,7 @@ pub(super) async fn insert_initial_message(
          (message_id, origin_kind, source_session_id, source_feature_id, source_project_id, note)
          VALUES (?, 'session_generated', ?, ?, ?, ?)",
     )
-    .bind(message_id)
+    .bind(persisted.id)
     .bind(source.session_id)
     .bind(source.feature_id)
     .bind(source.project_id)
@@ -71,7 +76,16 @@ pub(super) async fn insert_initial_message(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(Some(message_id))
+    let origin = AgentMessageOrigin {
+        origin_kind: "session_generated".to_string(),
+        source_session_id: Some(source.session_id),
+        source_feature_id: Some(source.feature_id),
+        source_project_id: Some(source.project_id),
+        source_message_id: None,
+        note: body.source_note.clone(),
+        created_at: Some(persisted.created_at.clone()),
+    };
+    Ok(Some((persisted, origin)))
 }
 
 pub(super) async fn insert_spawn_link(
@@ -132,7 +146,9 @@ mod tests {
         let message_id = insert_initial_message(&state, &source, 888, &body)
             .await
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .0
+            .id;
 
         let wait: (i64, i64, i64, String, String) = sqlx::query_as(
             "SELECT requester_session_id, responder_session_id, request_message_id, kind, status

@@ -5,10 +5,11 @@ import { GeneratedBySessionBadge } from "@/components/GeneratedBySessionBadge";
 import { cn } from "@/lib/utils";
 import { parseUserMessageContent, type ParsedPromptAttachment } from "@/types/agent-types";
 import type { AgentMessageOrigin } from "@/api/generated";
+import type { PromptDeliveryState } from "@/types/agent";
 
 interface UserMessageBlockProps {
   content: string;
-  deliveryState?: "pending_agent";
+  deliveryState?: PromptDeliveryState;
   origin?: AgentMessageOrigin | null;
   /** On-hover action row (Copy / Fork / Rewind) rendered under the bubble. */
   actions?: ReactNode;
@@ -22,6 +23,8 @@ export function UserMessageBlock({
 }: UserMessageBlockProps): ReactElement {
   const { text: textContent, images, attachments } = parseUserMessageContent(content);
   const isPendingDelivery = deliveryState === "pending_agent";
+  const isUnknownDelivery = deliveryState === "delivery_unknown";
+  const isFailedDelivery = deliveryState === "delivery_failed";
   const isGenerated = origin?.originKind === "session_generated";
 
   return (
@@ -33,7 +36,11 @@ export function UserMessageBlock({
           "max-w-[80%] rounded-md border px-3 py-1.5 text-sm",
           isPendingDelivery
             ? "border-amber-500/50 bg-amber-500/10"
-            : "border-primary/30 bg-primary/10",
+            : isUnknownDelivery
+              ? "border-border bg-muted/40"
+              : isFailedDelivery
+                ? "border-destructive/50 bg-destructive/10"
+                : "border-primary/30 bg-primary/10",
         )}
       >
         <Markdown content={textContent} className="user-message-markdown" />
@@ -59,6 +66,18 @@ export function UserMessageBlock({
             aria-hidden="true"
           />
           <span className="text-amber-300">Not received by agent yet…</span>
+        </div>
+      )}
+      {isUnknownDelivery && (
+        <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-muted-foreground/70" aria-hidden="true" />
+          <span>Agent receipt could not be confirmed</span>
+        </div>
+      )}
+      {isFailedDelivery && (
+        <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] text-destructive">
+          <span className="size-1.5 rounded-full bg-destructive/80" aria-hidden="true" />
+          <span>Message was not delivered to the agent</span>
         </div>
       )}
       {actions}

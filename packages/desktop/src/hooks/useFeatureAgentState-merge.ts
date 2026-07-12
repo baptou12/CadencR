@@ -7,6 +7,11 @@
 
 import type { AgentBlock } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
+import {
+  mergeCanonicalUserBlock,
+  messageDbIdFromBlockId,
+  sameMessageIdentity,
+} from "@/stores/ws-user-message-reconciliation";
 
 function nullToUndefined<T>(value: T | null | undefined): T | undefined {
   return value ?? undefined;
@@ -21,6 +26,8 @@ export function serverBlocksToAgentBlocks(serverBlocks: AgentBlock[]): AgentBloc
       : undefined;
     return {
       id: sb.id,
+      messageUuid: nullToUndefined(sb.messageUuid),
+      messageDbId: messageDbIdFromBlockId(sb.id) ?? undefined,
       type: sb.type as AgentBlockData["type"],
       content: sb.content,
       toolName: nullToUndefined(sb.toolName),
@@ -110,6 +117,14 @@ export function mergeIncrementalBlocks(acc: AccumulatedSession, newBlocks: Agent
       }
     } else {
       targetList = acc.blocks;
+    }
+
+    if (block.type === "user_message") {
+      const existingIndex = targetList.findIndex((held) => sameMessageIdentity(held, block));
+      if (existingIndex !== -1) {
+        targetList[existingIndex] = mergeCanonicalUserBlock(targetList[existingIndex], block);
+        continue;
+      }
     }
 
     // Resolve sourceToolName for tool_result blocks that couldn't find their

@@ -88,7 +88,7 @@ pub(crate) async fn insert_message(
     conv: &ImportedConversation,
 ) -> Result<(), AppError> {
     sqlx::query(
-        "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))",
+        "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, model, message_uuid, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))",
     )
     .bind(session_id)
     .bind(&msg.role)
@@ -98,6 +98,7 @@ pub(crate) async fn insert_message(
     .bind(msg.tool_use_id.as_deref())
     .bind(None::<&str>)
     .bind(msg.model.as_deref().or_else(|| fallback_message_model(msg, conv)))
+    .bind((msg.role == "user").then(|| uuid::Uuid::new_v4().to_string()))
     .bind(msg.created_at.as_deref())
     .execute(conn)
     .await?;
@@ -143,7 +144,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', tool_name TEXT, tool_use_id TEXT, parent_tool_use_id TEXT, model TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))")
+        sqlx::query("CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', tool_name TEXT, tool_use_id TEXT, parent_tool_use_id TEXT, model TEXT, message_uuid TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))")
             .execute(&pool)
             .await
             .unwrap();

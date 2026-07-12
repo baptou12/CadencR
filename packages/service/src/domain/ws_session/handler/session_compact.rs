@@ -11,7 +11,7 @@ pub(super) async fn handle_compact(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
-    _app_state: &AppState,
+    app_state: &AppState,
 ) {
     let payload = match compact_payload(&envelope, sender) {
         Some(payload) => payload,
@@ -32,17 +32,79 @@ pub(super) async fn handle_compact(
 
     match compaction_strategy(sdk_sessions, db_session_id).await {
         Ok(RuntimeCompactionStrategy::LiveRuntime) => {
+            match persist_compact_command(
+                app_state,
+                sender,
+                db_session_id,
+                payload.message_uuid.as_deref(),
+            )
+            .await
+            {
+                Ok(true) => {}
+                Ok(false) => {
+                    send_compact_started(sender, &envelope.id);
+                    return;
+                }
+                Err(message) => {
+                    send_error(
+                        sender,
+                        &envelope.id,
+                        "USER_MESSAGE_PERSIST_FAILED",
+                        &message,
+                    );
+                    return;
+                }
+            }
             handle_active_runtime_compact(
                 &envelope.id,
                 sender,
                 sdk_sessions,
                 db_session_id,
-                Some(_app_state),
+                Some(app_state),
             )
             .await;
         }
         Err(message) => send_error(sender, &envelope.id, "COMPACT_REJECTED", &message),
     }
+}
+
+async fn persist_compact_command(
+    app_state: &AppState,
+    sender: &WsSender,
+    session_id: i64,
+    message_uuid: Option<&str>,
+) -> Result<bool, String> {
+    let feature_id: i64 = sqlx::query_scalar("SELECT feature_id FROM agent_sessions WHERE id = ?")
+        .bind(session_id)
+        .fetch_one(&app_state.read_pool)
+        .await
+        .map_err(|error| error.to_string())?;
+    let message_uuid =
+        crate::domain::sessions::user_messages::canonical_user_message_uuid(message_uuid)
+            .map_err(|_| "message_uuid must be a valid UUID".to_string())?;
+    let message = super::session_prompt::persist_and_publish_user_message(
+        super::session_prompt::CanonicalUserMessageRequest {
+            pool: &app_state.write_pool,
+            feature_senders: &app_state.ws_feature_senders,
+            owner: Some(sender),
+            feature_id,
+            session_id,
+            content: "/compact",
+            message_uuid,
+            origin: None,
+            pending_agent_receipt: false,
+        },
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    if message.inserted {
+        app_state.feature_events_tx.emit(
+            feature_id,
+            None,
+            crate::domain::feature_events::FeatureEventAction::Reordered,
+        );
+    }
+    Ok(message.inserted)
 }
 
 fn compact_payload(envelope: &WsEnvelope, sender: &WsSender) -> Option<SessionActionPayload> {
@@ -120,6 +182,10 @@ async fn handle_active_runtime_compact(
         return;
     }
 
+    send_compact_started(sender, envelope_id);
+}
+
+fn send_compact_started(sender: &WsSender, envelope_id: &str) {
     let reply = WsEnvelope::session_reply(
         envelope_id,
         WsSessionAction::CompactStarted,

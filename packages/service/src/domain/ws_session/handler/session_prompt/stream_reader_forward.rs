@@ -21,17 +21,20 @@ pub(super) async fn forward_immediate_event(
     task: &StreamReaderTask,
     runtime_event: &RuntimeEvent,
 ) -> ForwardOutcome {
-    if let Some(client_message_id) = runtime_event.prompt_received_client_message_id() {
+    if let Some(message_uuid) = runtime_event.prompt_received_client_message_id() {
         // Mirror to every viewer, not just the turn owner. With cross-device
         // steering the device that SENT this prompt may not be the turn owner
         // (e.g. the host steers a turn owned by a now-disconnected phone), so
         // sending the ack only to the owner socket would leave the real sender's
         // message stuck pending. Other viewers ignore an unknown
-        // `client_message_id`, so mirroring is safe.
+        // canonical message UUID, so mirroring is safe.
         return send_envelope(
             task,
             WsSessionAction::PromptReceived.as_str(),
-            prompt_received_envelope(client_message_id.to_string()),
+            prompt_received_envelope(
+                message_uuid.to_string(),
+                crate::domain::ws_session::protocol::PromptReceiptState::ReceivedAgent,
+            ),
             true,
         )
         .await;

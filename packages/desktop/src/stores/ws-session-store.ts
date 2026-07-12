@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { buildUserMessageContent } from "@/types/agent-types";
 import {
   type PromptDispatchOptions,
   type WsEnvelope,
@@ -12,9 +11,7 @@ import type { BranchDeps } from "./ws-session-branch";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload } from "./ws-envelope-payload";
 import { buildClearedGatePatch, isGateClosingErrorCode } from "./ws-gate-state";
-import { formatQuestionResponse } from "./ws-session-actions";
 import {
-  appendLocalUserMessage,
   makeErrorBlock,
   buildQueuedInitEnvelopes,
   buildQueuedPromptPatch,
@@ -86,9 +83,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     const session = get().sessions[sessionId];
     if (session?.conn?.sendJson(envelope)) return;
     // The socket is not OPEN (reconnecting, or still CONNECTING). Dropping the
-    // envelope here is silent data loss — a prompt sent during the gap shows
-    // up locally but never reaches the agent. Hold it and flush on `onOpen`,
-    // after the reconnect `session.init` replay.
+    // envelope here is silent data loss. Hold it and flush on `onOpen`, after
+    // the reconnect `session.init` replay; the canonical user-message event is
+    // created only after the backend persists the queued prompt.
     session?.outboundQueue.push(envelope);
   }
 
@@ -216,35 +213,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sendPrompt(sessionId: string, text: string, options: PromptDispatchOptions = {}) {
       const session = getSession(sessionId);
       const trackProviderReceipt = shouldTrackPromptReceipt(session);
-      // Always correlate the local block with its eventual DB id so rewind/fork
-      // light up on it without a reload (the `prompt_persisted` ack echoes this
-      // ref). `client_message_id` stays receipt/steering-only — unchanged.
-      const userMessageRef = crypto.randomUUID();
-      const clientMessageId = trackProviderReceipt ? userMessageRef : undefined;
+      const messageUuid = options.messageUuid ?? crypto.randomUUID();
       if (session.serverSessionId) {
         sendRaw(
           sessionId,
           createPromptSend(session.serverSessionId, text, {
             ...options,
-            userMessageRef,
-            clientMessageId,
+            messageUuid,
+            trackPromptReceipt: trackProviderReceipt,
           }),
         );
       } else {
-        queuePrompt(sessionId, text, { ...options, userMessageRef });
+        queuePrompt(sessionId, text, { ...options, messageUuid });
       }
-
-      const content = buildUserMessageContent(text, options.attachments);
-      set(
-        updateSession(
-          get(),
-          sessionId,
-          appendLocalUserMessage(session, content, {
-            clientMessageId: userMessageRef,
-            promptDeliveryState: trackProviderReceipt ? "pending_agent" : undefined,
-          }),
-        ),
-      );
     },
 
     respondToPermission(
@@ -323,6 +304,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     respondToQuestion(sessionId: string, response: AgentQuestionAnswers) {
       const session = getSession(sessionId);
+      const messageUuid = crypto.randomUUID();
       sendRaw(
         sessionId,
         createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once", {
@@ -330,24 +312,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             session.pendingQuestionToolInput,
             response,
           ),
+          messageUuid,
         }),
       );
-
-      const formatted = formatQuestionResponse(session.pendingQuestionToolInput, response);
-      session.streamingState.counter += 1;
-      const nextBlocks = [
-        ...session.blocks,
-        {
-          id: `ws-user-${session.streamingState.counter}`,
-          type: "user_message" as const,
-          content: formatted,
-          isError: false,
-          createdAt: new Date().toISOString(),
-        },
-      ];
       set(
         updateSession(get(), sessionId, {
-          ...blocksPatchWithDerived(session.streamingState, nextBlocks),
           pendingQuestions: [],
           pendingQuestionToolInput: {},
           pendingRequestId: "",

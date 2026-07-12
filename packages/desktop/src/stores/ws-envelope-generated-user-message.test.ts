@@ -15,15 +15,18 @@ function createTestContext(session: SessionEntry): StoreAccessors {
   };
 }
 
-describe("generated user_message mirrors", () => {
-  it("preserves generated-message origin on mirrored prompts", () => {
+describe("generated canonical user messages", () => {
+  it("preserves generated-message origin on the canonical event", () => {
     const ctx = createTestContext(createSessionEntry());
 
     handleEnvelope(ctx, "s1", {
       domain: "session",
       action: "user_message",
       payload: {
+        message_id: 42,
+        message_uuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
         text: "delegated prompt",
+        created_at: "2026-07-12T20:00:00Z",
         origin: {
           originKind: "session_generated",
           sourceSessionId: 123,

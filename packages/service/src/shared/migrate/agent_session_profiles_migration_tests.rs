@@ -31,6 +31,11 @@ async fn agent_session_profiles_migration_adds_provider_neutral_profile_column()
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL
         );
+        CREATE TABLE agent_session_message_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_session_id INTEGER NOT NULL,
+            content TEXT NOT NULL
+        );
         INSERT INTO features (id) VALUES (1);
         INSERT INTO agent_sessions
             (id, feature_id, agent_type, status, runtime_provider, model)

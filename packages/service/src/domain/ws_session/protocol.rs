@@ -175,7 +175,6 @@ mod tests {
     fn ws_session_action_is_the_authoritative_wire_name_source() {
         let actions = WsSessionAction::all();
         assert!(actions.contains(&WsSessionAction::ProviderSetOk));
-        assert!(actions.contains(&WsSessionAction::PromptPersisted));
         assert!(actions.contains(&WsSessionAction::CompactStarted));
         assert!(actions.contains(&WsSessionAction::ModelSetOk));
         assert!(actions.contains(&WsSessionAction::EffortSetOk));

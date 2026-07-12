@@ -9,7 +9,7 @@ import { nextProviderMode } from "@/lib/provider-modes";
 import { getEnabledOptInModesFromCache } from "@/hooks/useEnabledOptInModes";
 import { type PermissionMode } from "@/types/permission-mode";
 import { makeErrorBlock } from "./ws-session-store-helpers";
-import { removePendingPromptBlocks } from "./ws-pending-prompts";
+import { markPendingPromptsFailed } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
 
 /**
@@ -81,7 +81,7 @@ export function handleError(ctx: StoreAccessors, sessionId: string, payload: unk
     return;
   }
   const errorBlock = makeErrorBlock(session, p.message, { code: p.code });
-  const blocks = removePendingPromptBlocks([...session.blocks, errorBlock]);
+  const blocks = markPendingPromptsFailed([...session.blocks, errorBlock]);
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...lifecyclePatch,

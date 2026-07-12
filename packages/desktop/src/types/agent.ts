@@ -32,7 +32,11 @@ export interface TodoItem {
   activeForm: string;
 }
 
-export type PromptDeliveryState = "pending_agent" | "received_agent";
+export type PromptDeliveryState =
+  | "pending_agent"
+  | "received_agent"
+  | "delivery_unknown"
+  | "delivery_failed";
 
 export interface ContextUsageState {
   inputTokens: number;

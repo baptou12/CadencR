@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useWsSessionStore } from "@/stores/ws-session-store";
-import { messageIdFromBlockId, type AgentBlockData } from "../AgentBlock";
+import { blockMessageDbId } from "@/stores/ws-user-message-reconciliation";
+import type { AgentBlockData } from "../AgentBlock";
 import { useAgentSessionContext } from "./agent-session-context";
 
 export interface MessageBranchActions {
@@ -17,20 +18,17 @@ export interface MessageBranchActions {
  * context menu and the on-hover user-message toolbar so the gating logic lives
  * in exactly one place.
  *
- * A persisted user message encodes its DB id in `id` (`msg-<n>`); a message
- * sent live this session is still a local `ws-user-*` block and relies on the
- * `messageDbId` stamped by the `prompt_persisted` ack. Both store actions are
- * stable refs, so subscribing here adds no streaming re-renders.
+ * A canonical user-message event carries `messageDbId` and also encodes it in
+ * `id` (`msg-<n>`). The explicit field remains the primary source so imported
+ * or compatibility blocks do not need to rely on string parsing. Both store
+ * actions are stable refs, so subscribing here adds no streaming re-renders.
  */
 export function useMessageBranchActions(block: AgentBlockData): MessageBranchActions {
   const { wsSessionId } = useAgentSessionContext();
   const rewindToMessage = useWsSessionStore((s) => s.rewindToMessage);
   const forkFromMessage = useWsSessionStore((s) => s.forkFromMessage);
 
-  const messageId =
-    block.type === "user_message"
-      ? (block.messageDbId ?? messageIdFromBlockId(block.id))
-      : undefined;
+  const messageId = block.type === "user_message" ? blockMessageDbId(block) : null;
   const canBranch = wsSessionId != null && messageId != null;
 
   const rewind = useCallback(() => {

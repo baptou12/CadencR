@@ -27,12 +27,11 @@ const SEGMENT_BOUNDARY_TYPES = new Set<AgentBlockData["type"]>([
 ]);
 
 /**
- * Whether a block closes the current turn and opens a new one. A steer message
- * sent mid-turn is appended immediately with `promptDeliveryState: "pending_agent"`,
- * but the agent hasn't received it yet — collapsing the in-flight turn at that
- * moment is wrong. So a `user_message` only becomes a boundary once the agent has
- * acknowledged it (delivery state flips to `received_agent`, or is untracked for
- * history/idle sends). Until then the pending message rides inside the live turn.
+ * Whether a block closes the current turn and opens a new one. A canonical
+ * steer event can be persisted with `promptDeliveryState: "pending_agent"`
+ * before the agent receives it, so collapsing the in-flight turn at that
+ * moment is wrong. The message becomes a boundary after a received, failed, or
+ * terminal-unknown receipt (or when historical delivery was not tracked).
  */
 function isSegmentBoundary(block: AgentBlockData): boolean {
   if (block.type === "tool_result" && block.isError) {

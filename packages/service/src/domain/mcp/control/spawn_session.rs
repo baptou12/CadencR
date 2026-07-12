@@ -12,6 +12,7 @@ use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::features::service::create_feature_with_worktree;
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
+use crate::domain::ws_session::handler::session_prompt::publish_user_message;
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize)]
@@ -148,7 +149,8 @@ async fn spawn_into_target(
         codex_permission_mode.as_deref(),
     )
     .await?;
-    let message_id = insert_initial_message(state, source, session_id, body).await?;
+    let initial_message = insert_initial_message(state, source, session_id, body).await?;
+    let message_id = initial_message.as_ref().map(|(message, _)| message.id);
     if body.link_to_current_session.unwrap_or(true) {
         insert_spawn_link(
             state,
@@ -163,6 +165,17 @@ async fn spawn_into_target(
         Some(target_project.id),
         FeatureEventAction::Created,
     );
+    if let Some((message, origin)) = initial_message.as_ref() {
+        publish_user_message(
+            &state.ws_feature_senders,
+            None,
+            created.id,
+            message,
+            Some(origin.clone()),
+            false,
+        )
+        .await;
+    }
     // The conversation is already fully persisted at this point. If dispatching the
     // initial prompt fails we must NOT return an error: that would leave a complete
     // target session behind while signalling failure, tempting the caller to spawn a

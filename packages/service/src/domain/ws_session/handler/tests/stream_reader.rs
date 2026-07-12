@@ -119,10 +119,17 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
         .register(feature_id, viewer_tx)
         .await;
 
-    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(2);
     msg_tx
         .send(Ok(RuntimeEvent::prompt_received_event(
             "client-xyz".to_string(),
+        )))
+        .await
+        .unwrap();
+    msg_tx
+        .send(Ok(RuntimeEvent::new(
+            crate::domain::agents::adapter::RuntimeEventMetadata::default(),
+            RuntimeEventKind::Result,
         )))
         .await
         .unwrap();
@@ -138,9 +145,20 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
         crate::domain::agents::runtime::DEFAULT_PROVIDER,
     );
 
-    tokio::time::timeout(std::time::Duration::from_secs(2), ws_rx.recv())
-        .await
-        .expect("owner should receive a message");
+    let mut terminal_receipts = None;
+    while let Ok(Some(message)) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), ws_rx.recv()).await
+    {
+        let Message::Text(text) = message else {
+            continue;
+        };
+        let envelope: WsEnvelope = serde_json::from_str(&text).unwrap();
+        if envelope.action == "ended" {
+            let payload: SessionEndedPayload = serde_json::from_value(envelope.payload).unwrap();
+            terminal_receipts = Some(payload.received_prompt_message_uuids);
+            break;
+        }
+    }
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     let saw_prompt_received = |rx: &mut mpsc::UnboundedReceiver<Message>| {
@@ -148,7 +166,7 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
             matches!(msg, Message::Text(text)
             if serde_json::from_str::<WsEnvelope>(&text).is_ok_and(|env| {
                 env.action == "prompt_received"
-                    && env.payload.get("client_message_id").and_then(|v| v.as_str())
+                    && env.payload.get("message_uuid").and_then(|v| v.as_str())
                         == Some("client-xyz")
             }))
         })
@@ -158,6 +176,7 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
         saw_prompt_received(&mut viewer_rx),
         "a passive viewer must also receive the mirrored prompt_received"
     );
+    assert_eq!(terminal_receipts, Some(vec!["client-xyz".to_string()]));
 }
 
 #[tokio::test]

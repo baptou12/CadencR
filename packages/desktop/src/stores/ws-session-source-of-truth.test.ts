@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { handleEnvelope, type StoreAccessors } from "./ws-envelope-handler";
-import { appendLocalUserMessage } from "./ws-session-store-helpers";
 import { createSessionEntry, type SessionEntry, type WsSessionStore } from "./ws-session-types";
 
 function createTestContext(session: SessionEntry): StoreAccessors {
@@ -17,14 +16,6 @@ function createTestContext(session: SessionEntry): StoreAccessors {
 }
 
 describe("session running source of truth", () => {
-  it("does not mark the agent active when appending a local user message", () => {
-    const session = createSessionEntry();
-
-    const patch = appendLocalUserMessage(session, "hello");
-
-    expect("lifecycle" in patch).toBe(false);
-  });
-
   it.each([
     ["COMPACT_REJECTED", "Start the session before using /compact"],
     ["SDK_SPAWN_ERROR", "compact runtime failed to spawn"],

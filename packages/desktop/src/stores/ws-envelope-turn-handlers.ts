@@ -7,7 +7,11 @@ import { blocksPatchWithDerived } from "./ws-message-processing";
 import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
-import { removePendingPromptBlocks, trimTailPromptTurnBoundary } from "./ws-pending-prompts";
+import {
+  markPendingPromptsUnknown,
+  markPromptsReceived,
+  trimTailPromptTurnBoundary,
+} from "./ws-pending-prompts";
 import { repairPersistedBlocksAfterTurn } from "./ws-session-resync";
 import type { StoreAccessors } from "./ws-envelope-types";
 
@@ -88,13 +92,17 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
     stream.parentToolUseId = null;
   }
 
-  const tailPromptBoundary = trimTailPromptTurnBoundary(session.blocks);
-  const blocks = tailPromptBoundary.shouldTrim
-    ? tailPromptBoundary.blocks
-    : removePendingPromptBlocks(session.blocks);
+  const ended = parseEndedPayload(payload);
+  const receivedBlocks = markPromptsReceived(
+    session.blocks,
+    ended?.receivedPromptMessageUuids ?? [],
+  );
+  const terminalBlocks = markPendingPromptsUnknown(receivedBlocks);
+  const tailPromptBoundary = trimTailPromptTurnBoundary(terminalBlocks);
+  const blocks = tailPromptBoundary.blocks;
   const lifecycle = transitionTurn(session.lifecycle, {
     type: "turn_ended",
-    reason: mapTerminalReason(parseEndedPayload(payload)?.reason),
+    reason: mapTerminalReason(ended?.reason),
   });
   const shouldClearRuntimeCompacting = session.runtimeCompacting;
   if (

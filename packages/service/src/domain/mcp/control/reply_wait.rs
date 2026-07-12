@@ -66,8 +66,9 @@ pub(crate) async fn arm(
 ) -> Result<(), AppError> {
     let result = sqlx::query(
         "UPDATE agent_session_reply_waits
-         SET status = 'armed', armed_at = datetime('now'), error = NULL
-         WHERE responder_session_id = ? AND request_message_id = ? AND status = 'pending'",
+         SET status = 'armed', armed_at = datetime('now'), delivered_at = NULL, error = NULL
+         WHERE responder_session_id = ? AND request_message_id = ?
+           AND status IN ('pending', 'armed', 'failed')",
     )
     .bind(responder_session_id)
     .bind(request_message_id)

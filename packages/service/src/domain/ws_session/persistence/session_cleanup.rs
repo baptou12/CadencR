@@ -109,8 +109,18 @@ mod session_cleanup_tests {
                 tool_name TEXT,
                 tool_use_id TEXT,
                 parent_tool_use_id TEXT,
-                model TEXT
+                model TEXT,
+                message_uuid TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "CREATE UNIQUE INDEX idx_agent_messages_session_message_uuid
+             ON agent_messages(session_id, message_uuid) WHERE message_uuid IS NOT NULL",
         )
         .execute(&pool)
         .await
@@ -157,7 +167,9 @@ mod session_cleanup_tests {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         let id = p.find_or_create_session(None, None).await.unwrap();
-        p.persist_user_message("hello").await;
+        p.persist_user_message("hello", uuid::Uuid::new_v4())
+            .await
+            .unwrap();
         WsSessionPersistence::mark_paused_static(&pool, id).await;
         sqlx::query("INSERT INTO session_runtime_ids (session_id, runtime_session_id) VALUES (?, ?)")
             .bind(id)

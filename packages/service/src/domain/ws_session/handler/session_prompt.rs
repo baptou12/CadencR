@@ -1,6 +1,8 @@
 mod bridge;
+mod bridge_user_message;
 mod content;
 mod control_dispatch;
+mod control_dispatch_payload;
 mod errors;
 mod mcp_servers;
 mod prompt_checkpoint;
@@ -26,7 +28,12 @@ mod stream_reader_turn_state;
 
 pub(crate) use bridge::PermissionResponse;
 pub(crate) use bridge::WsBridgeCanUseTool;
-pub(crate) use control_dispatch::dispatch_control_prompt;
+pub(crate) use control_dispatch::{
+    dispatch_control_prompt, dispatch_control_prompt_with_message_uuid,
+};
 pub(crate) use prompt_send::handle_prompt_send;
+pub(crate) use prompt_status::{
+    persist_and_publish_user_message, publish_user_message, CanonicalUserMessageRequest,
+};
 #[allow(unused_imports)]
 pub(crate) use stream_reader::spawn_stream_reader;

@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 use super::repository;
 use crate::app_state::AppState;
-use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
+use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt_with_message_uuid;
 use crate::error::AppError;
 
 /// How often the poll loop scans for due messages. Scheduling is human-grained
@@ -66,5 +66,17 @@ async fn dispatch_due(
         repository::resolve_or_create_session(&state.write_pool, msg.feature_id).await?;
     // `replay = false`: persist and broadcast the scheduled text as a normal
     // user message so it appears in the conversation when it fires.
-    dispatch_control_prompt(state, msg.feature_id, session_id, &msg.text, false).await
+    let message_uuid = uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_URL,
+        format!("cadencr:scheduled-message:{}", msg.id).as_bytes(),
+    );
+    dispatch_control_prompt_with_message_uuid(
+        state,
+        msg.feature_id,
+        session_id,
+        &msg.text,
+        false,
+        Some(message_uuid),
+    )
+    .await
 }

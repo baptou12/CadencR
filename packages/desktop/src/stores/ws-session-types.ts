@@ -65,11 +65,10 @@ export interface PersistedStatePayload {
 
 export interface QueuedPrompt {
   text: string;
+  messageUuid: string;
   attachments?: PromptAttachmentPayload[];
   branchSetup?: FirstPromptBranchSetup;
   claudeProfile?: string;
-  /** Correlation ref carried to the flushed `prompt.send` (see PromptDispatchOptions). */
-  userMessageRef?: string;
 }
 
 export interface McpServerStatus {

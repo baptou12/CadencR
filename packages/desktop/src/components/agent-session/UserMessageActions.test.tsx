@@ -13,10 +13,6 @@ vi.mock("@/stores/ws-session-store", () => ({
 vi.mock("@/lib/markdown-export", () => ({
   copyAs: (...args: unknown[]) => copyAs(...args),
 }));
-vi.mock("@/components/AgentBlock", () => ({
-  messageIdFromBlockId: (id: string) => (id.startsWith("msg-") ? Number(id.slice(4)) : undefined),
-}));
-
 import type { AgentBlockData } from "../AgentBlock";
 import { AgentSessionProvider } from "./agent-session-context";
 import { UserMessageActions } from "./UserMessageActions";
@@ -52,14 +48,14 @@ describe("UserMessageActions", () => {
     expect(rewindToMessage).toHaveBeenCalledWith("ws-feature-1", 42);
   });
 
-  it("resolves the DB id from a stamped live block (ws-user-*)", async () => {
-    renderActions({ id: "ws-user-3", type: "user_message", content: "live", messageDbId: 99 });
+  it("resolves the DB id from an explicit canonical cursor", async () => {
+    renderActions({ id: "canonical-user", type: "user_message", content: "live", messageDbId: 99 });
     await userEvent.click(screen.getByRole("button", { name: /rewind/i }));
     expect(rewindToMessage).toHaveBeenCalledWith("ws-feature-1", 99);
   });
 
-  it("hides fork/rewind for an unstamped live block", () => {
-    renderActions({ id: "ws-user-3", type: "user_message", content: "live" });
+  it("hides fork/rewind for a non-persisted synthetic block", () => {
+    renderActions({ id: "synthetic-user", type: "user_message", content: "live" });
     expect(screen.queryByRole("button", { name: /fork/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rewind/i })).toBeNull();
     expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();

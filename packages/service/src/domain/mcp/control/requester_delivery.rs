@@ -56,7 +56,7 @@ async fn deliver(
     running_delivery: RunningDelivery,
     delivery_note: &str,
 ) -> Result<(), AppError> {
-    persist_and_broadcast_generated_user_message(
+    let persisted = persist_and_broadcast_generated_user_message(
         state,
         responder,
         requester.session_id,
@@ -66,7 +66,17 @@ async fn deliver(
     )
     .await?;
     if should_queue(&requester.status, running_delivery) {
-        enqueue_message(&state.write_pool, requester.session_id, None, envelope).await?;
+        let message_uuid = uuid::Uuid::parse_str(&persisted.message_uuid).map_err(|_| {
+            AppError::Internal("persisted user message returned an invalid UUID".to_string())
+        })?;
+        enqueue_message(
+            &state.write_pool,
+            requester.session_id,
+            None,
+            envelope,
+            message_uuid,
+        )
+        .await?;
         return Ok(());
     }
     dispatch_control_prompt(

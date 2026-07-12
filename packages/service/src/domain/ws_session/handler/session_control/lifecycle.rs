@@ -171,6 +171,7 @@ pub(crate) async fn handle_destroy(
         "ended",
         serde_json::to_value(SessionEndedPayload {
             reason: "destroyed".into(),
+            ..Default::default()
         })
         .unwrap(),
     );

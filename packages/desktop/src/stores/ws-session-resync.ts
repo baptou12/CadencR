@@ -22,13 +22,13 @@
  *      fires layer 3 *immediately* (surface any wholly-missed message now, not
  *      hours later on a long/background turn) and arms layer 4 for the turn end.
  *
- *   3. Append resync           — reconnect / manual / gap. `resyncMessagesOnReconnect`.
- *      Pulls every persisted row `after` the newest message we hold and appends
- *      the ones we lack, de-duped by id. Triggered by socket reconnect (onOpen,
- *      e.g. a mobile client waking), the manual "Sync from CLI" action, or a
- *      layer-2 gap. Append-ONLY: it cannot fix a block we already hold whose
- *      deltas were truncated, because that block's id is deduped away — that is
- *      layer 4's job.
+ *   3. Canonical resync        — reconnect / manual / gap. `resyncMessagesOnReconnect`.
+ *      Pulls every persisted row after the last server-confirmed cursor and
+ *      appends the ones we lack, upserted by message UUID / DB id. Triggered by
+ *      socket reconnect (onOpen, e.g. a mobile client waking), the manual
+ *      "Sync from CLI" action, or a layer-2 gap. Append-ONLY: it cannot fix a
+ *      block we already hold whose deltas were truncated, because that block
+ *      is already present — that is layer 4's job.
  *
  *   4. Post-turn tail repair    — turn-end. `repairPersistedBlocksAfterTurn` +
  *      `repairBlockTree`. Runs at `turn_complete` when layer 2 saw a gap
@@ -45,11 +45,10 @@
  * the two halves of one repair, split by *when each half is safe to run*, not
  * two redundant safety nets — so both stay.
  *
- * Cursor note (layers 3/4): live and persisted blocks share the same
- * `msg-<dbId>` identity, so the cursor is derived from the blocks already on
- * screen (covering live messages, which don't advance `lastAppliedMessageId`).
- * The `after` batch then holds only genuinely-missed messages, appended in
- * chronological order and de-duped by id as a belt-and-braces guard.
+ * Cursor note (layers 3/4): only a completed server snapshot/resync advances
+ * `lastAppliedMessageId`. A later live DB id is not a safe cursor because an
+ * earlier envelope may have been dropped. Resync intentionally overlaps live
+ * blocks, then merges the batch by canonical UUID / DB id.
  */
 import { getFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
@@ -57,21 +56,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import { blocksPatchWithDerived, type StreamingState } from "./ws-message-processing";
 import { updateSession, type ResyncTarget } from "./ws-session-types";
 import type { StoreAccessors } from "./ws-envelope-handler";
-
-const MSG_ID_RE = /^msg-(\d+)$/;
-
-/** Highest `msg-<dbId>` across the block tree (0 if none). */
-function maxMessageIdInBlocks(blocks: AgentBlockData[]): number {
-  let max = 0;
-  for (const block of blocks) {
-    const match = MSG_ID_RE.exec(block.id);
-    if (match) max = Math.max(max, Number(match[1]));
-    if (block.childBlocks?.length) {
-      max = Math.max(max, maxMessageIdInBlocks(block.childBlocks));
-    }
-  }
-  return max;
-}
+import { mergeCanonicalBlocks } from "./ws-user-message-reconciliation";
 
 export async function resyncMessagesOnReconnect(
   ctx: StoreAccessors,
@@ -91,11 +76,9 @@ export async function resyncMessagesOnReconnect(
   const sessionDbId = target?.sessionDbId ?? session.sessionDbId;
   if (!featureId || !sessionDbId) return;
 
-  // Anchor at the newest message we hold — from the cursor seeded by the
-  // initial load OR from blocks received live since (whichever is higher).
-  const cursor =
-    target?.cursor ??
-    Math.max(session.lastAppliedMessageId ?? 0, maxMessageIdInBlocks(session.blocks));
+  // Anchor only at a cursor confirmed by a completed server response. A live
+  // row with a larger DB id does not prove every earlier row was received.
+  const cursor = target?.cursor ?? session.lastAppliedMessageId ?? 0;
   // Reconnect with no prior anchor has nothing to fetch after.
   if (!target && cursor <= 0) return;
 
@@ -118,14 +101,12 @@ export async function resyncMessagesOnReconnect(
     return;
   }
 
-  const existingIds = new Set(current.blocks.map((b) => b.id));
-  const appended = newBlocks.filter((b) => !existingIds.has(b.id));
-  if (appended.length === 0) {
+  const merged = mergeCanonicalBlocks(current.blocks, newBlocks);
+  if (merged === current.blocks) {
     ctx.set(updateSession(ctx.get(), sessionId, { ...idPatch, lastAppliedMessageId: nextCursor }));
     return;
   }
 
-  const merged = [...current.blocks, ...appended];
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...idPatch,
@@ -194,18 +175,17 @@ export async function repairPersistedBlocksAfterTurn(
   };
   const repaired = current.blocks.map((block) => repairBlockTree(block, serverById, markChanged));
 
-  const heldIds = new Set<string>();
-  collectBlockTree(current.blocks, heldIds);
-  const appended = fetched.filter((b) => !heldIds.has(b.id));
+  const merged = mergeCanonicalBlocks(repaired, fetched);
+  const appended = merged.length - repaired.length;
 
-  if (!changed && appended.length === 0) return;
+  if (!changed && appended === 0 && merged === repaired) return;
   console.warn("[ws-session] repaired stream-truncated blocks from persisted transcript", {
     replaced: changed,
-    appended: appended.length,
+    appended,
   });
   ctx.set(
     updateSession(ctx.get(), sessionId, {
-      ...blocksPatchWithDerived(current.streamingState, [...repaired, ...appended]),
+      ...blocksPatchWithDerived(current.streamingState, merged),
       lastAppliedMessageId: Math.max(
         current.lastAppliedMessageId ?? 0,
         serverSession.maxMessageId ?? 0,
@@ -214,16 +194,9 @@ export async function repairPersistedBlocksAfterTurn(
   );
 }
 
-function collectBlockTree(
-  blocks: AgentBlockData[],
-  into: Map<string, AgentBlockData> | Set<string>,
-): void {
+function collectBlockTree(blocks: AgentBlockData[], into: Map<string, AgentBlockData>): void {
   for (const block of blocks) {
-    if (into instanceof Set) {
-      into.add(block.id);
-    } else {
-      into.set(block.id, block);
-    }
+    into.set(block.id, block);
     if (block.childBlocks?.length) collectBlockTree(block.childBlocks, into);
   }
 }

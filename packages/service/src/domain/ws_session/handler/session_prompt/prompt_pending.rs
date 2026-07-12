@@ -7,7 +7,9 @@ use super::content::{
 use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
 use super::prompt_resume_resolution::refresh_resume_session_id_from_db;
-use super::prompt_status::{ack_persisted_user_message, mark_agent_running, mirror_user_message};
+use super::prompt_status::{
+    mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
+};
 use super::prompt_worktree::{prepare_branch_provisioning, spawn_auto_name_if_needed};
 use super::runtime_mcp::{
     attach_current_cadencr_browser_mcp, attach_current_cadencr_orchestration_mcps,
@@ -41,10 +43,13 @@ pub(super) struct PendingPromptContext {
     pub payload: PromptSendPayload,
     pub(super) permission_tx: Option<mpsc::Sender<PermissionResponse>>,
 }
-pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
-    let user_message_id = persist_initial_user_message(&context).await;
+pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> Result<(), String> {
+    let persistence = persist_initial_user_message(&context).await?;
+    if !persistence.should_dispatch() {
+        return Ok(());
+    }
     let Some(adapter) = resolve_adapter_or_report(&context).await else {
-        return;
+        return Ok(());
     };
     mark_agent_running(
         &context.app_state.write_pool,
@@ -59,18 +64,19 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
         Ok(handled) => handled,
         Err(error) => {
             report_branch_setup_error(context, error).await;
-            return;
+            return Ok(());
         }
     };
     reresolve_worktree_and_resume(&mut context).await;
-    super::prompt_checkpoint::capture_pre_turn_pending(&context, user_message_id).await;
+    super::prompt_checkpoint::capture_pre_turn_pending(&context, persistence.message_id()).await;
     attach_permission_bridge(&mut context);
     if let Err(error) = attach_cadencr_mcp(&mut context).await {
         report_spawn_error(context, error).await;
-        return;
+        return Ok(());
     }
     validate_resume_id(adapter, &mut context);
     spawn_runtime(context, adapter, auto_name_handled).await;
+    Ok(())
 }
 async fn attach_cadencr_mcp(context: &mut PendingPromptContext) -> Result<(), String> {
     let pool = &context.app_state.read_pool;
@@ -157,39 +163,29 @@ async fn reresolve_worktree_and_resume(context: &mut PendingPromptContext) {
         info!(context.db_session_id, runtime_session_id = %sid, "re-resolved resume id from DB before spawn");
     }
 }
-async fn persist_initial_user_message(context: &PendingPromptContext) -> Option<i64> {
-    if context.payload.replay {
-        return None;
-    }
+async fn persist_initial_user_message(
+    context: &PendingPromptContext,
+) -> Result<PromptPersistenceOutcome, String> {
     let attachments = payload_attachments(&context.payload);
     let persist_content = build_persist_content(&context.payload.text, &attachments);
-    let persistence = WsSessionPersistence::with_session_id(
-        context.app_state.write_pool.clone(),
-        context.feature_id,
-        Some(context.db_session_id),
-    );
-    let user_message_id = persistence.persist_user_message(&persist_content).await;
-    if let (Some(user_message_ref), Some(message_id)) =
-        (context.payload.user_message_ref.as_deref(), user_message_id)
-    {
-        ack_persisted_user_message(&context.sender, user_message_ref, message_id).await;
-    }
-    mirror_user_message(
+    let outcome = persist_and_publish_prompt(
+        &context.app_state.write_pool,
         &context.app_state.ws_feature_senders,
         &context.sender,
         context.feature_id,
+        context.db_session_id,
+        &context.payload,
         &persist_content,
     )
-    .await;
-    // The user message changed this feature's most-recent-user-message sort
-    // key. Broadcast so every client's sidebar re-sorts conversations and
-    // floats this one to the top of its project.
-    context.app_state.feature_events_tx.emit(
-        context.feature_id,
-        None,
-        FeatureEventAction::Reordered,
-    );
-    user_message_id
+    .await?;
+    if outcome.inserted() {
+        context.app_state.feature_events_tx.emit(
+            context.feature_id,
+            None,
+            FeatureEventAction::Reordered,
+        );
+    }
+    Ok(outcome)
 }
 async fn resolve_adapter_or_report(
     context: &PendingPromptContext,
@@ -296,9 +292,7 @@ async fn spawn_runtime(
         "spawning runtime query"
     );
     let attachments = payload_attachments(&context.payload);
-    // Expand a virtual `/cadencr:*` skill invocation into its full orchestration
-    // prompt for the agent. The persisted/displayed user message keeps the short
-    // invocation (it was built from the raw text before this point).
+    // Expand virtual skills for the agent while keeping the short token persisted.
     let prompt_text =
         crate::domain::agents::orchestration_skills::expand_prompt(&context.payload.text);
     let content_value =

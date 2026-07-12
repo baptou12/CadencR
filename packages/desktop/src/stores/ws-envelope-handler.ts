@@ -33,9 +33,8 @@ import {
   handleMcpServers,
   handleMessage,
   handlePermissionRequest,
-  handlePromptPersisted,
   handlePromptReceived,
-  handleUserMessageMirror,
+  handleCanonicalUserMessage,
 } from "./ws-envelope-session-handlers";
 import { handleError } from "./ws-envelope-error-handler";
 import {
@@ -145,7 +144,7 @@ const SESSION_ACTION_HANDLERS: Record<SessionActionName, SessionActionHandler> =
   [SESSION_ACTION.runtimeSessionId]: handleRuntimeSessionId,
   [SESSION_ACTION.mcpServers]: handleMcpServers,
   [SESSION_ACTION.message]: handleMessage,
-  [SESSION_ACTION.userMessage]: handleUserMessageMirror,
+  [SESSION_ACTION.userMessage]: handleCanonicalUserMessage,
   [SESSION_ACTION.permissionRequest]: handlePermissionRequest,
   [SESSION_ACTION.error]: handleError,
   [SESSION_ACTION.compacting]: handleCompacting,
@@ -162,7 +161,6 @@ const SESSION_ACTION_HANDLERS: Record<SessionActionName, SessionActionHandler> =
   [SESSION_ACTION.usageUpdate]: handleUsageUpdate,
   [SESSION_ACTION.streamStatus]: handleStreamStatus,
   [SESSION_ACTION.promptReceived]: handlePromptReceived,
-  [SESSION_ACTION.promptPersisted]: handlePromptPersisted,
   [SESSION_ACTION.lifecycle]: handleLifecyclePayload,
   [SESSION_ACTION.gateClosed]: handleGateClosed,
   [SESSION_ACTION.featureRenamed]: handleFeatureRenamed,

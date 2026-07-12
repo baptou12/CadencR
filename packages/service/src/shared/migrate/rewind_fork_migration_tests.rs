@@ -30,6 +30,11 @@ async fn rewind_fork_migration_adds_checkpoints_and_uuid_column() {
             message_type TEXT NOT NULL DEFAULT 'text',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE TABLE agent_session_message_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_session_id INTEGER NOT NULL,
+            content TEXT NOT NULL
+        );
         INSERT INTO agent_sessions (id, feature_id) VALUES (1, 1);
         INSERT INTO agent_messages (id, session_id, role, message_type)
             VALUES (10, 1, 'user', 'user_message');"#,

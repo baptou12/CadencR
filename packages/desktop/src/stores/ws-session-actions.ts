@@ -7,6 +7,7 @@ import { blocksPatchWithDerived } from "./ws-message-processing";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { markLastPlanBlock, type PersistedStatePayload, updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
+import { mergeCanonicalBlocks } from "./ws-user-message-reconciliation";
 
 export type { PersistedStatePayload };
 
@@ -18,19 +19,8 @@ export function applyApprovePlan(
 ): void {
   const session = ctx.getSession(sessionId);
   const markedBlocks = markLastPlanBlock(session.blocks, "approved");
-  session.streamingState.counter += 1;
-  const updatedBlocks = [
-    ...markedBlocks,
-    {
-      id: `ws-user-${session.streamingState.counter}`,
-      type: "user_message" as const,
-      content: "Plan approved.",
-      isError: false,
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
-  const blocksPatch = blocksPatchWithDerived(session.streamingState, updatedBlocks);
+  const blocksPatch = blocksPatchWithDerived(session.streamingState, markedBlocks);
+  const messageUuid = crypto.randomUUID();
 
   // The post-plan-approval mode change is owned by the backend bridge: it
   // calls `Query::set_permission_mode` on the live CLI atomically with
@@ -42,7 +32,9 @@ export function applyApprovePlan(
     const isRestored = session.pendingRequestId.startsWith(planRestorePrefix);
     sendRaw(
       sessionId,
-      createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once"),
+      createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once", {
+        messageUuid,
+      }),
     );
     if (isRestored) {
       sendRaw(
@@ -86,21 +78,8 @@ export function applyPlanChangesRequest(
 ): void {
   const session = ctx.getSession(sessionId);
   const blocksWithStatus = markLastPlanBlock(session.blocks, "rejected");
-  session.streamingState.counter += 1;
-  const blocksWithFeedback = feedback
-    ? [
-        ...blocksWithStatus,
-        {
-          id: `ws-user-${session.streamingState.counter}`,
-          type: "user_message" as const,
-          content: feedback,
-          isError: false,
-          createdAt: new Date().toISOString(),
-        },
-      ]
-    : blocksWithStatus;
-
-  const blocksPatch = blocksPatchWithDerived(session.streamingState, blocksWithFeedback);
+  const blocksPatch = blocksPatchWithDerived(session.streamingState, blocksWithStatus);
+  const messageUuid = crypto.randomUUID();
 
   if (session.pendingRequestId) {
     const isRestored = session.pendingRequestId.startsWith(planRestorePrefix);
@@ -108,6 +87,7 @@ export function applyPlanChangesRequest(
       sessionId,
       createPermissionRespond(session.serverSessionId, session.pendingRequestId, "deny", {
         feedback,
+        messageUuid,
       }),
     );
     if (isRestored) {
@@ -174,7 +154,8 @@ export async function loadOlderSessionMessages(
   const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
   const currentSession = ctx.get().sessions[sessionId];
   if (!currentSession) return 0;
-  const mergedBlocks = [...olderBlocks, ...currentSession.blocks];
+  const mergedBlocks = mergeCanonicalBlocks(currentSession.blocks, olderBlocks);
+  const addedBlocks = mergedBlocks.length - currentSession.blocks.length;
   // Use the actual growth in rendered rows, not the older chunk's rows in
   // isolation — under summary/compact mode a segment can span the chunk
   // boundary, so the net delta is what keeps `firstItemIndex` aligned.
@@ -190,7 +171,7 @@ export async function loadOlderSessionMessages(
       oldestMessageId: serverSession.oldestMessageId ?? null,
     }),
   );
-  return olderBlocks.length;
+  return addedBlocks;
 }
 
 /** Format question answers into a user-visible markdown string. */

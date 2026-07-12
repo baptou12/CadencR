@@ -3,3 +3,4 @@ pub mod models;
 pub mod repository;
 pub mod routes;
 pub mod unified_agents;
+pub mod user_messages;

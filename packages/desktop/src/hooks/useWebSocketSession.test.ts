@@ -739,7 +739,20 @@ describe("useWebSocketSession", () => {
       result.current.sendPrompt("hello");
     });
     expect(result.current.status).toBe("idle");
-    // User message block added locally
+    expect(result.current.blocks).toHaveLength(0);
+    const firstPrompt = JSON.parse(ws.sent.at(-1) ?? "{}");
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "user_message",
+        payload: {
+          message_id: 1,
+          message_uuid: firstPrompt.payload.message_uuid,
+          text: "hello",
+          created_at: "2026-07-12T20:00:00Z",
+        },
+      });
+    });
     expect(result.current.blocks).toHaveLength(1);
     expect(result.current.blocks[0].type).toBe("user_message");
 
@@ -806,6 +819,19 @@ describe("useWebSocketSession", () => {
       result.current.sendPrompt("thanks");
     });
     expect(result.current.status).toBe("idle");
+    const secondPrompt = JSON.parse(ws.sent.at(-1) ?? "{}");
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "user_message",
+        payload: {
+          message_id: 3,
+          message_uuid: secondPrompt.payload.message_uuid,
+          text: "thanks",
+          created_at: "2026-07-12T20:01:00Z",
+        },
+      });
+    });
     // Now: user_message + text + turn_summary + user_message = 4
     expect(result.current.blocks).toHaveLength(4);
     expect(result.current.blocks[2].type).toBe("turn_summary");
@@ -1114,14 +1140,27 @@ describe("useWebSocketSession", () => {
     expect(result.current.pendingPlanApproval).toBeNull();
     expect(result.current.status).toBe("agent");
 
-    // Feedback should appear as user message in blocks
+    const sentMessages = ws.sent.map((s) => JSON.parse(s));
+    const permissionRespond = sentMessages.find((m) => m.action === "permission.respond");
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "user_message",
+        payload: {
+          message_id: 42,
+          message_uuid: permissionRespond.payload.message_uuid,
+          text: "Use a different approach",
+          created_at: "2026-07-12T20:00:00Z",
+        },
+      });
+    });
+
+    // Feedback appears only from the canonical persisted event.
     const userMessages = result.current.blocks.filter((b) => b.type === "user_message");
     expect(userMessages).toHaveLength(1);
     expect(userMessages[0].content).toBe("Use a different approach");
 
     // Should have sent permission.respond with deny feedback
-    const sentMessages = ws.sent.map((s) => JSON.parse(s));
-    const permissionRespond = sentMessages.find((m) => m.action === "permission.respond");
     expect(permissionRespond).toBeDefined();
     expect(permissionRespond.payload.request_id).toBe("req-plan-2");
     expect(permissionRespond.payload.decision).toBe("deny");

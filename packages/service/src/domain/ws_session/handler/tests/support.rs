@@ -234,8 +234,18 @@ pub(crate) async fn make_test_app_state() -> AppState {
                 tool_name TEXT,
                 tool_use_id TEXT,
                 parent_tool_use_id TEXT,
-                model TEXT
+                model TEXT,
+                message_uuid TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "CREATE UNIQUE INDEX idx_agent_messages_session_message_uuid
+         ON agent_messages(session_id, message_uuid) WHERE message_uuid IS NOT NULL",
     )
     .execute(&pool)
     .await

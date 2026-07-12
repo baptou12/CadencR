@@ -74,31 +74,91 @@ describe("handleEnvelope turn_complete", () => {
   });
 });
 
-describe("handleEnvelope user_message mirror", () => {
-  it("appends a user_message block for a prompt sent from another device", () => {
+describe("handleEnvelope canonical user_message", () => {
+  it("upserts the persisted user message sent to every viewer", () => {
     const session = createSessionEntry();
     const ctx = createTestContext(session);
 
     handleEnvelope(ctx, "s1", {
       domain: "session",
       action: "user_message",
-      payload: { text: "hello from another device" },
+      payload: {
+        message_id: 42,
+        message_uuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+        text: "hello from another device",
+        created_at: "2026-07-12T20:00:00Z",
+      },
     });
 
     const last = ctx.getSession("s1").blocks.at(-1);
     expect(last?.type).toBe("user_message");
     expect(last?.content).toBe("hello from another device");
-    // Mirrored prompts are confirmed, not optimistic — no receipt tracking.
-    expect(last?.clientMessageId).toBeUndefined();
+    expect(last?.id).toBe("msg-42");
+    expect(last?.messageUuid).toBe("a48cc11a-8a72-47f7-8577-d5c533d7909c");
   });
 
-  it("ignores a payload without text", () => {
+  it("surfaces a malformed payload instead of silently losing the message", () => {
     const session = createSessionEntry();
     const ctx = createTestContext(session);
 
     handleEnvelope(ctx, "s1", { domain: "session", action: "user_message", payload: {} });
 
-    expect(ctx.getSession("s1").blocks).toHaveLength(0);
+    expect(ctx.getSession("s1").blocks).toMatchObject([
+      {
+        type: "error",
+        errorCode: "MALFORMED_USER_MESSAGE",
+      },
+    ]);
+  });
+
+  it("applies an explicit delivery failure to the canonical message", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+    const messageUuid = "a48cc11a-8a72-47f7-8577-d5c533d7909c";
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "user_message",
+      payload: {
+        message_id: 42,
+        message_uuid: messageUuid,
+        text: "steer",
+        created_at: "2026-07-12T20:00:00Z",
+        prompt_delivery_state: "pending_agent",
+      },
+    });
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "prompt_received",
+      payload: { message_uuid: messageUuid, delivery_state: "delivery_failed" },
+    });
+
+    expect(ctx.getSession("s1").blocks[0].promptDeliveryState).toBe("delivery_failed");
+  });
+
+  it("does not treat a malformed receipt as an agent acknowledgement", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+    const messageUuid = "a48cc11a-8a72-47f7-8577-d5c533d7909c";
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "user_message",
+      payload: {
+        message_id: 42,
+        message_uuid: messageUuid,
+        text: "steer",
+        created_at: "2026-07-12T20:00:00Z",
+        prompt_delivery_state: "pending_agent",
+      },
+    });
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "prompt_received",
+      payload: { message_uuid: messageUuid, delivery_state: "unexpected" },
+    });
+
+    expect(ctx.getSession("s1").blocks[0].promptDeliveryState).toBe("pending_agent");
   });
 });
 

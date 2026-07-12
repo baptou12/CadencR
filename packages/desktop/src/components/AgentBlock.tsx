@@ -30,6 +30,7 @@ import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 import { semanticSkillPresentation, shouldHideToolCall } from "@/lib/tool-display-policy";
 import { verbosityControlsCollapse, type AgentVerbosityMode } from "@/lib/agent-verbosity";
 import type { PromptDeliveryState } from "@/types/agent";
+import { messageDbIdFromBlockId } from "@/stores/ws-user-message-reconciliation";
 import type { AgentMessageOrigin } from "@/api/generated";
 import type { SessionReplyEnvelope } from "@/lib/session-reply";
 
@@ -83,13 +84,10 @@ export interface AgentBlockData {
    * away from it — only `turn_complete` truly ends it.
    */
   taskBackground?: boolean;
-  /**
-   * Persisted DB message id. For history-loaded blocks the id is encoded in
-   * `id` (`msg-<n>`); for a message sent live this session (a `ws-user-*`
-   * block) it is stamped here by the `prompt_persisted` ack so rewind/fork can
-   * target it without a reload.
-   */
+  /** Persisted DB message id used for chronological ordering and branching. */
   messageDbId?: number;
+  /** Stable Cadencr-owned logical identity for a persisted user message. */
+  messageUuid?: string;
   /** The tool name that produced this tool_result (resolved from parent tool_call) */
   sourceToolName?: string;
   /** ISO timestamp from the DB message */
@@ -100,8 +98,6 @@ export interface AgentBlockData {
   planApprovalStatus?: "approved" | "rejected";
   /** Whether `content` was server-side truncated and needs full-content fetch on expand. */
   truncatedContent?: boolean;
-  /** Client-generated id for local prompt delivery tracking. */
-  clientMessageId?: string;
   /** Receipt state for local user prompt blocks when a runtime supports it. */
   promptDeliveryState?: PromptDeliveryState;
   /** For `error` blocks — machine-readable code from the backend. */
@@ -238,7 +234,7 @@ function ToolCallContent({
         content={resultOutput ?? extractBashOutput(block.toolArgs)}
         running={!result && isToolCallRunning(block.toolArgs)}
         isError={result?.isError}
-        messageId={result ? messageIdFromBlockId(result.id) : undefined}
+        messageId={result ? (messageDbIdFromBlockId(result.id) ?? undefined) : undefined}
         truncatedContent={result?.truncatedContent === true}
         expanded={controlledExpanded}
         onExpandedChange={onExpandedChange}
@@ -284,9 +280,7 @@ function UserMessageContent({
     <UserMessageBlock
       content={block.content}
       origin={block.origin}
-      deliveryState={
-        block.promptDeliveryState === "pending_agent" ? block.promptDeliveryState : undefined
-      }
+      deliveryState={block.promptDeliveryState}
       actions={<UserMessageActions block={block} />}
     />
   );
@@ -294,12 +288,6 @@ function UserMessageContent({
 
 function isPlanPresentationTool(toolName: string | undefined): boolean {
   return toolName === "ExitPlanMode" || isCadencrPlanPresentationTool(toolName);
-}
-
-export function messageIdFromBlockId(id: string): number | undefined {
-  if (!id.startsWith("msg-")) return undefined;
-  const parsed = Number(id.slice(4));
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function hasAttachedPlanContent(args: string | undefined): boolean {

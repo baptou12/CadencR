@@ -2,6 +2,7 @@ use tracing::{debug, info};
 
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
+use crate::domain::sessions::user_messages::canonical_user_message_uuid;
 use crate::domain::ws_session::protocol::{PromptSendPayload, WsEnvelope};
 
 use crate::domain::agents::adapter::RuntimeSessionHandle;
@@ -24,12 +25,16 @@ pub(crate) async fn handle_prompt_send(
     sdk_sessions: &SdkSessions,
     app_state: &AppState,
 ) {
-    let Some(payload) = parse_prompt_payload(&envelope, sender) else {
+    let Some(mut payload) = parse_prompt_payload(&envelope, sender) else {
         return;
     };
     let Some(db_session_id) = parse_prompt_session_id(&payload, &envelope, sender) else {
         return;
     };
+    if let Err(message) = normalize_prompt_message_uuid(&mut payload) {
+        send_error(sender, &envelope.id, "INVALID_MESSAGE_UUID", &message);
+        return;
+    }
 
     let has_profile_update = prompt_profile(&payload).is_some();
     let profile_update = match resolve_prompt_profile_update(
@@ -81,7 +86,11 @@ pub(crate) async fn handle_prompt_send(
                 envelope.id.clone(),
             );
             drop(sessions);
-            handle_followup_prompt(context, payload).await;
+            report_user_message_persist_result(
+                sender,
+                &envelope.id,
+                handle_followup_prompt(context, payload).await,
+            );
             return;
         }
     }
@@ -103,7 +112,11 @@ pub(crate) async fn handle_prompt_send(
         {
             match target {
                 OwnerPromptTarget::Followup(context) => {
-                    handle_followup_prompt(context, payload).await;
+                    report_user_message_persist_result(
+                        sender,
+                        &envelope.id,
+                        handle_followup_prompt(context, payload).await,
+                    );
                 }
                 OwnerPromptTarget::Pending(owner_sessions) => {
                     spawn_pending_prompt(
@@ -282,7 +295,17 @@ async fn spawn_pending_prompt(
     };
     drop(sessions);
     // Persist user message in the pending helper after releasing sdk_sessions.
-    handle_pending_prompt(context).await;
+    report_user_message_persist_result(sender, &envelope.id, handle_pending_prompt(context).await);
+}
+
+fn report_user_message_persist_result(
+    sender: &WsSender,
+    envelope_id: &str,
+    result: Result<(), String>,
+) {
+    if let Err(error) = result {
+        send_error(sender, envelope_id, "USER_MESSAGE_PERSIST_FAILED", &error);
+    }
 }
 
 async fn resolve_prompt_profile_update(
@@ -358,4 +381,15 @@ fn parse_prompt_session_id(
             None
         }
     }
+}
+
+fn normalize_prompt_message_uuid(payload: &mut PromptSendPayload) -> Result<(), String> {
+    if payload.replay {
+        return Ok(());
+    }
+    let message_uuid = canonical_user_message_uuid(payload.message_uuid.as_deref())
+        .map_err(|_| "message_uuid must be a valid UUID".to_string())?
+        .to_string();
+    payload.message_uuid = Some(message_uuid);
+    Ok(())
 }

@@ -12,6 +12,7 @@ import { trimTailPromptTurnBoundary } from "./ws-pending-prompts";
 import { type PersistedStatePayload, type SessionEntry, updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
+import { mergeCanonicalBlocks } from "./ws-user-message-reconciliation";
 
 interface DecodedQuestion {
   questions: AgentQuestion[];
@@ -46,6 +47,63 @@ function decodeSnapshotQuestion(value: unknown): DecodedQuestion | null {
   return { questions, toolInput: parsed.tool_input, requestId: parsed.request_id };
 }
 
+interface SessionMetaPatchOptions {
+  payload: PersistedStatePayload;
+  existing: SessionEntry | undefined;
+  lifecycleWithPendingGate: PersistedStatePayload["lifecycle"];
+  shouldPreservePromptLifecycle: boolean;
+  permissionQueuePatch: ReturnType<typeof upsertPendingPermission> | null;
+  decodedQuestion: DecodedQuestion | null;
+  restoredRequestId: string;
+}
+
+function buildSessionMetaPatch(options: SessionMetaPatchOptions): Partial<SessionEntry> {
+  const {
+    payload,
+    existing,
+    lifecycleWithPendingGate,
+    shouldPreservePromptLifecycle,
+    permissionQueuePatch,
+    decodedQuestion,
+    restoredRequestId,
+  } = options;
+  const resolvedProviderId = payload.currentProviderId ?? payload.runtimeProvider ?? undefined;
+  const resolvedRuntimeProvider = payload.runtimeProvider ?? payload.currentProviderId ?? undefined;
+  return {
+    persistedLoaded: true,
+    historyPrependDisplayOffset: 0,
+    hasMore: payload.hasMore ?? false,
+    oldestMessageId: payload.oldestMessageId ?? null,
+    lastAppliedMessageId: payload.maxMessageId ?? null,
+    featureId: payload.featureId ?? null,
+    sessionDbId: payload.sessionDbId ?? null,
+    lifecycle:
+      shouldPreservePromptLifecycle && existing ? existing.lifecycle : lifecycleWithPendingGate,
+    ...(resolvedProviderId ? { currentProviderId: resolvedProviderId } : {}),
+    ...(payload.currentModelId ? { currentModelId: payload.currentModelId } : {}),
+    ...(payload.currentProfile ? { currentProfile: payload.currentProfile } : {}),
+    ...(payload.permissionMode ? { permissionMode: payload.permissionMode } : {}),
+    ...(payload.codexPermissionMode
+      ? { codexPermissionMode: parseCodexPermissionMode(payload.codexPermissionMode) }
+      : {}),
+    ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
+    ...(payload.runtimeSessionId ? { runtimeSessionId: payload.runtimeSessionId } : {}),
+    ...(payload.contextUsage !== undefined ? { contextUsage: payload.contextUsage } : {}),
+    ...(payload.hasFileChanges !== undefined ? { hasFileChanges: payload.hasFileChanges } : {}),
+    ...(payload.pendingPlanApproval != null
+      ? { pendingPlanApproval: payload.pendingPlanApproval }
+      : {}),
+    ...(permissionQueuePatch ?? {}),
+    ...(decodedQuestion
+      ? {
+          pendingQuestions: decodedQuestion.questions,
+          pendingQuestionToolInput: decodedQuestion.toolInput,
+        }
+      : {}),
+    ...(restoredRequestId !== "" ? { pendingRequestId: restoredRequestId } : {}),
+  };
+}
+
 export function applyPersistedState(
   ctx: StoreAccessors,
   sessionId: string,
@@ -55,28 +113,11 @@ export function applyPersistedState(
   const {
     blocks,
     lifecycle,
-    hasMore,
-    oldestMessageId,
-    maxMessageId,
-    featureId,
-    sessionDbId,
-    currentProviderId,
-    currentModelId,
-    currentProfile,
-    runtimeProvider,
-    runtimeSessionId,
-    permissionMode,
-    codexPermissionMode,
     pendingPlanApproval,
     pendingPermission: pendingPermissionSnapshot,
     pendingQuestions: pendingQuestionsSnapshot,
-    contextUsage,
-    hasFileChanges,
   } = payload;
 
-  const resolvedProviderId = currentProviderId ?? runtimeProvider ?? undefined;
-  const resolvedRuntimeProvider = runtimeProvider ?? currentProviderId ?? undefined;
-  const resolvedRuntimeSessionId = runtimeSessionId ?? undefined;
   const existing = ctx.get().sessions[sessionId];
 
   // Race guard: a live `permission.request` envelope can arrive before the
@@ -121,61 +162,33 @@ export function applyPersistedState(
     tailPromptBoundary?.shouldTrim === true &&
     lifecycleWithPendingGate.phase === "terminal" &&
     lifecycleWithPendingGate.reason === "completed";
-  const sessionMetaPatch: Partial<SessionEntry> = {
-    persistedLoaded: true,
-    historyPrependDisplayOffset: 0,
-    hasMore: hasMore ?? false,
-    oldestMessageId: oldestMessageId ?? null,
-    lastAppliedMessageId: maxMessageId ?? null,
-    featureId: featureId ?? null,
-    sessionDbId: sessionDbId ?? null,
-    lifecycle:
-      shouldPreservePromptLifecycle && existing ? existing.lifecycle : lifecycleWithPendingGate,
-    ...(resolvedProviderId ? { currentProviderId: resolvedProviderId } : {}),
-    ...(currentModelId ? { currentModelId } : {}),
-    ...(currentProfile ? { currentProfile } : {}),
-    // Rehydrate the persisted permission mode so sticky modes (notably
-    // `bypassPermissions`) survive a store re-seed — app relaunch, dev HMR
-    // reload, or a session entry rebuilt after a dropped connection. Without
-    // this the entry keeps the `createSessionEntry` default (`acceptEdits`)
-    // and the mode silently reverts. Mirrors `codexPermissionMode` above.
-    ...(permissionMode ? { permissionMode } : {}),
-    ...(codexPermissionMode
-      ? { codexPermissionMode: parseCodexPermissionMode(codexPermissionMode) }
-      : {}),
-    ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
-    ...(resolvedRuntimeSessionId ? { runtimeSessionId: resolvedRuntimeSessionId } : {}),
-    ...(contextUsage !== undefined ? { contextUsage } : {}),
-    ...(hasFileChanges !== undefined ? { hasFileChanges } : {}),
-    ...(pendingPlanApproval != null ? { pendingPlanApproval } : {}),
-    ...(permissionQueuePatch
-      ? {
-          pendingPermission: permissionQueuePatch.pendingPermission,
-          pendingPermissionQueue: permissionQueuePatch.pendingPermissionQueue,
-        }
-      : {}),
-    ...(decodedQuestion
-      ? {
-          pendingQuestions: decodedQuestion.questions,
-          pendingQuestionToolInput: decodedQuestion.toolInput,
-        }
-      : {}),
-    ...(restoredRequestId !== "" ? { pendingRequestId: restoredRequestId } : {}),
-  };
+  const sessionMetaPatch = buildSessionMetaPatch({
+    payload,
+    existing,
+    lifecycleWithPendingGate,
+    shouldPreservePromptLifecycle,
+    permissionQueuePatch,
+    decodedQuestion,
+    restoredRequestId,
+  });
 
+  const enrichedBlocks = injectPlanIntoBlocks(blocks, pendingPlanApproval);
   if (existing && existing.blocks.length > 0) {
+    const liveBlocks = tailPromptBoundary?.blocks ?? existing.blocks;
+    const mergedBlocks = mergeCanonicalBlocks(liveBlocks, enrichedBlocks);
+    const todos = parseTodosFromBlocks(mergedBlocks);
     ctx.set(
       updateSession(ctx.get(), sessionId, {
         ...sessionMetaPatch,
-        ...(tailPromptBoundary?.shouldTrim && tailPromptBoundary.blocks !== existing.blocks
-          ? blocksPatchWithDerived(existing.streamingState, tailPromptBoundary.blocks)
+        ...(mergedBlocks !== existing.blocks
+          ? blocksPatchWithDerived(existing.streamingState, mergedBlocks)
           : {}),
+        ...(todos ? { todos } : {}),
       }),
     );
     return;
   }
 
-  const enrichedBlocks = injectPlanIntoBlocks(blocks, pendingPlanApproval);
   const todos = parseTodosFromBlocks(enrichedBlocks);
   const session = ctx.getSession(sessionId);
 

@@ -129,11 +129,10 @@ impl From<ProjectContextRow> for ProjectContextResponse {
 
 #[cfg(test)]
 mod tests {
-    use axum::{body::Body, http::Request, http::StatusCode};
-    use tower::ServiceExt;
-
     use crate::api::middleware::MCP_CONTROL_HEADER;
     use crate::app_state::AppState;
+    use axum::{body::Body, http::Request, http::StatusCode};
+    use tower::ServiceExt;
 
     use super::control_router;
 
@@ -383,10 +382,13 @@ mod tests {
             CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL);
             CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT NOT NULL);
             CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL, status TEXT NOT NULL, runtime_provider TEXT, runtime_session_id TEXT, model TEXT, profile TEXT, permission_mode TEXT, codex_permission_mode TEXT DEFAULT 'default', pending_permission TEXT, pending_questions TEXT, input_tokens INTEGER, output_tokens INTEGER, context_window INTEGER, thinking_effort TEXT);
-            CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+            CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL, message_uuid TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+            CREATE UNIQUE INDEX idx_agent_messages_session_message_uuid ON agent_messages(session_id, message_uuid) WHERE message_uuid IS NOT NULL;
+            CREATE TABLE agent_message_dispatches (message_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending', attempt_count INTEGER NOT NULL DEFAULT 0, claim_token TEXT, claimed_at TEXT, dispatched_at TEXT, error TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
             CREATE TABLE agent_message_origins (message_id INTEGER PRIMARY KEY, origin_kind TEXT NOT NULL, source_session_id INTEGER, source_feature_id INTEGER, source_project_id INTEGER, source_message_id INTEGER, note TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
             CREATE TABLE agent_session_links (id INTEGER PRIMARY KEY AUTOINCREMENT, source_session_id INTEGER NOT NULL, target_session_id INTEGER NOT NULL, link_type TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), note TEXT);
-            CREATE TABLE agent_session_message_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, target_session_id INTEGER NOT NULL, source_session_id INTEGER, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT (datetime('now')), delivered_at TEXT, error TEXT);
+            CREATE TABLE agent_session_message_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, target_session_id INTEGER NOT NULL, source_session_id INTEGER, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', message_uuid TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivered_at TEXT, error TEXT);
+            CREATE UNIQUE INDEX idx_agent_message_queue_session_message_uuid ON agent_session_message_queue(target_session_id, message_uuid) WHERE message_uuid IS NOT NULL;
             CREATE TABLE mcp_tool_audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, server_name TEXT NOT NULL, tool_name TEXT NOT NULL, source_session_id INTEGER, source_feature_id INTEGER, source_project_id INTEGER, target_session_id INTEGER, target_feature_id INTEGER, target_project_id INTEGER, status TEXT NOT NULL, result_size_bytes INTEGER NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0, error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
             INSERT INTO projects (id, name, path) VALUES (7, 'Proj', '/tmp/proj');
             INSERT INTO features (id, project_id, title) VALUES (42, 7, 'Source'), (43, 7, 'Target');

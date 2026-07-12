@@ -11,7 +11,6 @@ import { appendErrorBlockPatch } from "./ws-session-store-helpers";
 import {
   type BlockMutation,
   type StreamingState,
-  blocksPatchWithDerived,
   isRecord,
   processSdkMessage,
   applyMutations,
@@ -21,7 +20,6 @@ import { trackStreamSeq } from "./ws-session-resync";
 import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
-import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
 
 export function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
@@ -118,23 +116,18 @@ function processMessageBlocks(
   if (allMutations.length > 0) {
     const rootVersionBefore = state.rootBlocksVersion;
     const toolResultVersionBefore = state.toolResultMapVersion;
-    const appliedBlocks = applyMutations(currentSession.blocks, allMutations, state);
-    const newBlocks = movePendingPromptBlocksToTail(appliedBlocks);
+    const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
     Object.assign(patch, buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested }));
     // applyMutations maintains the derived state on `streamState` in O(1) per
     // mutation; snapshot fresh refs only for the structures it actually touched.
     // A pure text/tool-call delta never appends a tool_result, so the O(M)
     // toolResultMap clone is skipped — its ref stays stable and tool blocks
     // don't needlessly re-render.
-    if (newBlocks === appliedBlocks) {
-      if (state.rootBlocksVersion !== rootVersionBefore) {
-        patch.rootBlocks = state.rootBlocks.slice();
-      }
-      if (state.toolResultMapVersion !== toolResultVersionBefore) {
-        patch.toolResultMap = new Map(state.toolResultMap);
-      }
-    } else {
-      Object.assign(patch, blocksPatchWithDerived(state, newBlocks));
+    if (state.rootBlocksVersion !== rootVersionBefore) {
+      patch.rootBlocks = state.rootBlocks.slice();
+    }
+    if (state.toolResultMapVersion !== toolResultVersionBefore) {
+      patch.toolResultMap = new Map(state.toolResultMap);
     }
   }
 

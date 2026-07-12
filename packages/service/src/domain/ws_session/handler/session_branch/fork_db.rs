@@ -93,9 +93,9 @@ pub(super) async fn create_forked_feature(
     sqlx::query(
         "INSERT INTO agent_messages \
             (session_id, role, content, message_type, tool_name, tool_use_id, \
-             parent_tool_use_id, model, provider_message_uuid, created_at) \
+             parent_tool_use_id, model, provider_message_uuid, message_uuid, created_at) \
          SELECT ?, role, content, message_type, tool_name, tool_use_id, \
-             parent_tool_use_id, model, provider_message_uuid, created_at \
+             parent_tool_use_id, model, provider_message_uuid, message_uuid, created_at \
          FROM agent_messages WHERE session_id = ? AND id < ? ORDER BY id",
     )
     .bind(new_session_id)
@@ -183,7 +183,7 @@ mod tests {
                 id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL,
                 role TEXT, content TEXT, message_type TEXT, tool_name TEXT,
                 tool_use_id TEXT, parent_tool_use_id TEXT, model TEXT,
-                provider_message_uuid TEXT, created_at TEXT);
+                provider_message_uuid TEXT, message_uuid TEXT, created_at TEXT);
              CREATE TABLE agent_message_origins (
                 message_id INTEGER PRIMARY KEY, origin_kind TEXT NOT NULL,
                 source_session_id INTEGER, source_feature_id INTEGER,

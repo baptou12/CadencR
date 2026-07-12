@@ -115,6 +115,9 @@ impl StreamReaderTask {
             "ended",
             serde_json::to_value(SessionEndedPayload {
                 reason: "turn_complete".into(),
+                received_prompt_message_uuids: std::mem::take(
+                    &mut state.received_prompt_message_uuids,
+                ),
             })
             .unwrap(),
         ))
@@ -213,13 +216,16 @@ impl StreamReaderTask {
         self.surface_session_error("AGENT_STOPPED", message).await;
     }
 
-    pub(super) async fn send_stream_closed(&self) {
+    pub(super) async fn send_stream_closed(&self, state: &mut StreamReaderState) {
         info!(self.db_session_id, "SDK stream closed");
         let end_env = WsEnvelope::new(
             "session",
             "ended",
             serde_json::to_value(SessionEndedPayload {
                 reason: "stream_closed".into(),
+                received_prompt_message_uuids: std::mem::take(
+                    &mut state.received_prompt_message_uuids,
+                ),
             })
             .unwrap(),
         );

@@ -96,7 +96,9 @@ async fn test_permission_respond_persists_ask_user_question_answer() {
     let answer_text =
         crate::domain::ws_session::question_answers::format_answers_plain_text(&updated_input)
             .unwrap();
-    p.persist_user_message(&answer_text).await;
+    p.persist_user_message(&answer_text, uuid::Uuid::new_v4())
+        .await
+        .unwrap();
 
     // Verify it was persisted
     let (role, content, msg_type): (String, String, String) = sqlx::query_as(
@@ -139,7 +141,9 @@ async fn test_permission_respond_no_persist_without_answers() {
             feature_id,
             Some(db_session_id),
         );
-        p.persist_user_message(&answer_text).await;
+        p.persist_user_message(&answer_text, uuid::Uuid::new_v4())
+            .await
+            .unwrap();
     }
 
     // Verify nothing was persisted
