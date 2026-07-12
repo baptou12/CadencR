@@ -84,16 +84,26 @@ pub const ORCHESTRATION_SKILLS: &[OrchestrationSkill] = &[
         description: "Render the live tree of spawned Cadencr sessions and any blocked gates",
         body: include_str!("prompts/status.md"),
     },
+    OrchestrationSkill {
+        name: "parallelize",
+        description: "Fan out independent sub-tasks into isolated Cadencr worktrees",
+        body: include_str!("prompts/parallelize.md"),
+    },
+    OrchestrationSkill {
+        name: "handoff",
+        description: "Transfer this work to a successor session with a self-contained brief",
+        body: include_str!("prompts/handoff.md"),
+    },
 ];
 
 #[cfg(test)]
 mod tests {
     use super::{expand_prompt, ORCHESTRATION_SKILLS};
 
-    fn status_body() -> &'static str {
+    fn skill_body(name: &str) -> &'static str {
         ORCHESTRATION_SKILLS
             .iter()
-            .find(|s| s.name == "status")
+            .find(|skill| skill.name == name)
             .unwrap()
             .body
     }
@@ -101,7 +111,7 @@ mod tests {
     #[test]
     fn expand_prompt_expands_namespaced_invocation_across_prefixes() {
         // With no arguments the `$ARGUMENTS` placeholder collapses to empty.
-        let expected = status_body().replace("$ARGUMENTS", "");
+        let expected = skill_body("status").replace("$ARGUMENTS", "");
         for token in ["cadencr:status", "/cadencr:status", "$cadencr:status"] {
             let expanded = expand_prompt(token);
             assert_eq!(expanded, expected, "prefix {token}");
@@ -110,17 +120,16 @@ mod tests {
 
     #[test]
     fn expand_prompt_substitutes_trailing_arguments() {
-        let expanded = expand_prompt("/cadencr:review branch");
-        // The trailing arg replaces the `$ARGUMENTS` placeholder in the body;
-        // no literal placeholder is left behind.
-        assert!(
-            expanded.contains("branch"),
-            "arg not substituted: {expanded}"
-        );
-        assert!(
-            !expanded.contains("$ARGUMENTS"),
-            "placeholder left unsubstituted: {expanded}"
-        );
+        for (name, arguments) in [
+            ("review", "branch"),
+            ("parallelize", "backend tests; frontend tests"),
+            ("handoff", "continue with a different model"),
+        ] {
+            let invocation = format!("/cadencr:{name} {arguments}");
+            let expanded = expand_prompt(&invocation);
+            let expected = skill_body(name).replace("$ARGUMENTS", arguments);
+            assert_eq!(expanded, expected, "skill {name}");
+        }
     }
 
     #[test]
@@ -143,9 +152,12 @@ mod tests {
     }
 
     #[test]
-    fn catalog_has_the_starter_skills_with_bodies() {
+    fn catalog_has_expected_skills_with_bodies() {
         let names: Vec<&str> = ORCHESTRATION_SKILLS.iter().map(|s| s.name).collect();
-        assert_eq!(names, vec!["review", "rescue", "status"]);
+        assert_eq!(
+            names,
+            vec!["review", "rescue", "status", "parallelize", "handoff"]
+        );
         for skill in ORCHESTRATION_SKILLS {
             assert!(
                 !skill.description.is_empty(),
