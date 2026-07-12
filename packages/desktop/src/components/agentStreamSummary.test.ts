@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentBlockData } from "./AgentBlock";
 import { collapseTurnsToSummary } from "./agentStreamSummary";
+import { buildToolChips } from "./agentStreamToolChips";
 
 function user(id: string, content = "hi"): AgentBlockData {
   return { id, type: "user_message", content };
@@ -12,11 +13,11 @@ function text(id: string, content = "done"): AgentBlockData {
   return { id, type: "text", content };
 }
 
-/** Extract the recap counts from the single tool_summary block in `blocks`. */
+/** Extract the recap chip counts from the single tool_summary block in `blocks`. */
 function summaryOf(blocks: AgentBlockData[]): Record<string, number> {
   const block = blocks.find((b) => b.type === "tool_summary");
-  if (!block?.summaryCounts) return {};
-  return Object.fromEntries(block.summaryCounts.map((c) => [c.name, c.count]));
+  if (!block?.childBlocks) return {};
+  return Object.fromEntries(buildToolChips(block.childBlocks).map((c) => [c.label, c.count]));
 }
 
 describe("collapseTurnsToSummary", () => {
@@ -108,8 +109,10 @@ describe("collapseTurnsToSummary", () => {
       "text",
     ]);
     const summaries = result.filter((b) => b.type === "tool_summary");
-    expect(summaries[0].summaryCounts).toEqual([{ name: "Read", count: 1 }]);
-    expect(summaries[1].summaryCounts).toEqual([{ name: "Bash", count: 2 }]);
+    const labelCounts = (b: AgentBlockData): Array<{ label: string; count: number }> =>
+      buildToolChips(b.childBlocks ?? []).map((c) => ({ label: c.label, count: c.count }));
+    expect(labelCounts(summaries[0])).toEqual([{ label: "Read", count: 1 }]);
+    expect(labelCounts(summaries[1])).toEqual([{ label: "Bash", count: 2 }]);
   });
 
   it("emits no recap for a text-only turn", () => {

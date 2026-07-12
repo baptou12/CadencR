@@ -22,7 +22,6 @@ import { BashBlock } from "@/components/BashBlock";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { CompactDivider, ClearDivider, TurnSummaryDivider } from "@/components/StreamDividers";
 import { ToolSummaryBlock } from "@/components/agent-session/ToolSummaryBlock";
-import type { ToolSummaryCount } from "@/components/agentStreamSummary";
 import { ErrorBlock } from "@/components/ErrorBlock";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
@@ -72,8 +71,6 @@ export interface AgentBlockData {
   parentToolUseId?: string | null;
   /** Child blocks nested under this Task block, or a tool_summary's turn detail */
   childBlocks?: AgentBlockData[];
-  /** Per-tool counts for a synthetic `tool_summary` recap block (in-memory only) */
-  summaryCounts?: ToolSummaryCount[];
   /** Whether this Task's subagent has completed */
   taskComplete?: boolean;
   /**
@@ -185,7 +182,6 @@ export const AgentBlock = memo(function AgentBlock({
     case "tool_summary":
       return (
         <ToolSummaryBlock
-          counts={block.summaryCounts}
           childBlocks={block.childBlocks}
           basePath={basePath}
           toolResultMap={toolResultMap}
