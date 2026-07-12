@@ -85,12 +85,18 @@ async fn project_list_agent_providers_returns_spawn_guidance() {
         .as_array()
         .unwrap()
         .contains(&json!("claude_code")));
-    assert!(body["providers"]
+    let codex = body["providers"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|provider| provider["id"] == "codex_cli"));
+        .find(|provider| provider["id"] == "codex_cli")
+        .expect("codex provider");
+    assert!(codex["models"].is_array());
     assert!(body["spawn_tip"].as_str().unwrap().contains("canonical"));
+    assert!(body["spawn_tip"]
+        .as_str()
+        .unwrap()
+        .contains("thinking_level"));
 }
 
 #[tokio::test]

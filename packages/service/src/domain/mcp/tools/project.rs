@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use rmcp::model::CallToolResult;
@@ -113,6 +114,12 @@ async fn current_project(ctx: &McpContext) -> Result<ProjectSummary, String> {
     .await
     .map_err(|e| format!("Failed to resolve current project: {e}"))?
     .ok_or_else(|| format!("Feature {} does not belong to a project", ctx.feature_id))
+}
+
+pub(super) async fn current_project_path(ctx: &McpContext) -> Result<PathBuf, String> {
+    current_project(ctx)
+        .await
+        .map(|project| PathBuf::from(project.path))
 }
 
 async fn session_scope(ctx: &McpContext, session_id: i64) -> Result<SessionScopeRow, String> {

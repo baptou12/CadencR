@@ -23,6 +23,10 @@ pub struct ModelCatalogEntry {
     pub supports_effort: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supported_effort_levels: Option<Vec<String>>,
+    /// Provider/CLI-advertised default for this model. `None` means callers
+    /// should leave effort unset and let the CLI apply its native default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_effort_level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_adaptive_thinking: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -42,6 +46,7 @@ impl ModelCatalogEntry {
             description: None,
             supports_effort: None,
             supported_effort_levels: None,
+            default_effort_level: None,
             supports_adaptive_thinking: None,
             supports_fast_mode: None,
             supports_auto_mode: None,

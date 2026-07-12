@@ -14,13 +14,14 @@ pub(super) async fn insert_spawned_session(
     let now = chrono::Utc::now().to_rfc3339();
     Ok(sqlx::query_scalar(
         "INSERT INTO agent_sessions
-         (feature_id, agent_type, status, runtime_provider, model, permission_mode, codex_permission_mode, started_at)
-         VALUES (?, 'session', 'paused', ?, ?, ?, COALESCE(?, 'default'), ?)
+         (feature_id, agent_type, status, runtime_provider, model, thinking_effort, permission_mode, codex_permission_mode, started_at)
+         VALUES (?, 'session', 'paused', ?, ?, ?, ?, COALESCE(?, 'default'), ?)
          RETURNING id",
     )
     .bind(feature_id)
     .bind(runtime.provider.as_deref())
     .bind(runtime.model.as_deref())
+    .bind(runtime.thinking_level.as_deref())
     .bind(trimmed_optional(body.permission_mode.as_deref()))
     .bind(codex_permission_mode)
     .bind(now)
@@ -118,6 +119,7 @@ mod tests {
             branch: None,
             provider: None,
             model: None,
+            thinking_level: None,
             permission_mode: None,
             codex_permission_mode: None,
             source_note: None,

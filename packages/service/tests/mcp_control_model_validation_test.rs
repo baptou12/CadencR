@@ -194,3 +194,37 @@ async fn project_spawn_session_rejects_cross_provider_model_for_selected_provide
     assert!(body_text.contains("Available models:"));
     assert!(body_text.contains("opus"));
 }
+
+#[tokio::test]
+async fn project_spawn_session_rejects_unadvertised_thinking_level() {
+    let pool = seeded_control_pool().await;
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(support::mcp_control::spawn_request_from_body(
+            serde_json::json!({
+                "source_feature_id": 42,
+                "source_session_id": 777,
+                "target_project_id": 7,
+                "title": "Unsupported thinking child",
+                "branch": { "mode": "none" },
+                "provider": "opencode",
+                "model": "default/default",
+                "thinking_level": "impossible"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body_text = response_text(response).await;
+    assert!(body_text.contains("unsupported thinking level 'impossible'"));
+    assert!(body_text.contains("project_list_agent_providers"));
+    let spawned_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM features WHERE title = 'Unsupported thinking child'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(spawned_count, 0);
+}

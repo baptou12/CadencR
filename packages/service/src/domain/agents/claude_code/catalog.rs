@@ -25,6 +25,7 @@ pub(super) fn sdk_model_to_catalog_entry(
         description: model.description,
         supports_effort: model.supports_effort,
         supported_effort_levels: model.supported_effort_levels,
+        default_effort_level: None,
         supports_adaptive_thinking: model.supports_adaptive_thinking,
         supports_fast_mode: model.supports_fast_mode,
         supports_auto_mode: model.supports_auto_mode,

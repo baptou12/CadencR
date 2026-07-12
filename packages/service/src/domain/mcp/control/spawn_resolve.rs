@@ -8,7 +8,8 @@ use crate::domain::agents::codex::{
     PROVIDER_ID as CODEX_PROVIDER_ID,
 };
 use crate::domain::agents::providers::{
-    canonical_model_or_error, canonical_provider_or_error, resolve_effective_provider,
+    canonical_provider_or_error, provider_model_catalog_entry, resolve_effective_provider,
+    resolve_model_or_error,
 };
 use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
 use crate::domain::settings;
@@ -34,6 +35,7 @@ pub(super) struct SpawnBranch {
 pub(super) struct SpawnRuntimeSelection {
     pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
+    pub(super) thinking_level: Option<String>,
     pub(super) effective_provider: String,
 }
 
@@ -158,17 +160,40 @@ pub(super) async fn resolve_spawn_runtime(
                 .map_err(|error| AppError::BadRequest(error.to_string()))?
         }
     };
-    let model = match trimmed_optional(body.model.as_deref()) {
-        Some(model) => Some(
-            canonical_model_or_error(&state.read_pool, &effective_provider, &model)
-                .await
-                .map_err(|error| AppError::BadRequest(error.to_string()))?,
-        ),
-        None => None,
+    let (model, model_entry) = match trimmed_optional(body.model.as_deref()) {
+        Some(model) => {
+            let (model, catalog_entry) = resolve_model_or_error(
+                &state.read_pool,
+                Some(std::path::Path::new(&target_project.path)),
+                &effective_provider,
+                &model,
+            )
+            .await
+            .map_err(|error| AppError::BadRequest(error.to_string()))?;
+            (Some(model), Some(catalog_entry))
+        }
+        None => {
+            let entry = provider_model_catalog_entry(
+                &state.read_pool,
+                Some(std::path::Path::new(&target_project.path)),
+                &effective_provider,
+                None,
+            )
+            .await;
+            (None, entry)
+        }
     };
+    let thinking_level = super::spawn_thinking::resolve(
+        state,
+        &effective_provider,
+        model_entry,
+        body.thinking_level.as_deref(),
+    )
+    .await?;
     Ok(SpawnRuntimeSelection {
         provider,
         model,
+        thinking_level,
         effective_provider,
     })
 }

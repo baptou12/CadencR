@@ -1154,6 +1154,12 @@ export interface ModeSetPayload {
   session_id: string;
 }
 
+/**
+ * Provider/CLI-advertised default for this model. `None` means callers
+should leave effort unset and let the CLI apply its native default.
+ */
+export type ModelCatalogEntryDefaultEffortLevel = string | null;
+
 export type ModelCatalogEntryDescription = string | null;
 
 export type ModelCatalogEntrySupportedEffortLevels = string[] | null;
@@ -1167,6 +1173,9 @@ export type ModelCatalogEntrySupportsEffort = boolean | null;
 export type ModelCatalogEntrySupportsFastMode = boolean | null;
 
 export interface ModelCatalogEntry {
+  /** Provider/CLI-advertised default for this model. `None` means callers
+should leave effort unset and let the CLI apply its native default. */
+  default_effort_level?: ModelCatalogEntryDefaultEffortLevel;
   description?: ModelCatalogEntryDescription;
   id: string;
   label: string;

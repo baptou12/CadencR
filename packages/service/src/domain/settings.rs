@@ -11,6 +11,24 @@ pub fn thinking_effort_model_key(provider_id: &str, model_id: &str) -> String {
     format!("thinking_effort_model_{provider_id}_{model_id}")
 }
 
+/// Resolve the workspace's last-used thinking effort for one provider/model
+/// pair. Keeping this lookup here ensures new-session and spawned-session
+/// defaults use the same persisted setting.
+pub async fn thinking_effort_model_default(
+    pool: &SqlitePool,
+    provider_id: &str,
+    model_id: &str,
+) -> Option<String> {
+    resolve_setting(
+        pool,
+        &thinking_effort_model_key(provider_id, model_id),
+        None,
+        None,
+        None,
+    )
+    .await
+}
+
 /// Feature-level real columns still resolved from SQLite (feature settings did
 /// not migrate to JSON — they hold runtime/worktree state).
 const SHARED_COLUMNS: &[&str] = &["model_session", "agent_runtime_session"];

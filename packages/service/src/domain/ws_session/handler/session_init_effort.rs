@@ -48,14 +48,8 @@ async fn workspace_default(
     effective_model: Option<&str>,
 ) -> Option<String> {
     let model_id = effective_model?;
-    settings::resolve_setting(
-        &app_state.read_pool,
-        &settings::thinking_effort_model_key(effective_provider, model_id),
-        None,
-        None,
-        None,
-    )
-    .await
+    settings::thinking_effort_model_default(&app_state.read_pool, effective_provider, model_id)
+        .await
 }
 
 async fn anchor_conversation_effort(
