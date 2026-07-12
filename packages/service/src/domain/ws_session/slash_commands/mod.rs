@@ -16,6 +16,11 @@ pub struct SlashCommand {
 pub enum SlashCommandKind {
     Command,
     Skill,
+    /// A Cadencr virtual orchestration skill (`/cadencr:*`). Not installed on
+    /// any provider — Cadencr surfaces it in the menu and expands it into the
+    /// prompt at send time. The FE renders these specially and disables them
+    /// when the project MCP they depend on is off.
+    Cadencr,
 }
 
 impl From<RuntimeSlashCommandKind> for SlashCommandKind {
@@ -36,6 +41,11 @@ pub async fn resolve_commands(cwd: &str, provider: &str) -> Vec<SlashCommand> {
     let Some(adapter) = runtime_adapter(provider) else {
         return commands;
     };
+
+    // Cadencr's virtual orchestration skills are provider-neutral and only
+    // meaningful inside a real session, so they're added once an adapter is
+    // resolved (an unknown provider gets none).
+    merge_commands(&mut commands, &mut seen, orchestration_skill_commands());
 
     match adapter.runtime_slash_commands(cwd).await {
         Ok(native_commands) => {
@@ -107,6 +117,19 @@ fn codex_app_builtin_commands() -> Vec<SlashCommand> {
         kind: SlashCommandKind::Command,
     })
     .collect()
+}
+
+/// Cadencr's virtual `/cadencr:*` orchestration skills as menu entries. Sourced
+/// from the single catalog in `domain::agents::orchestration_skills`.
+fn orchestration_skill_commands() -> Vec<SlashCommand> {
+    crate::domain::agents::orchestration_skills::ORCHESTRATION_SKILLS
+        .iter()
+        .map(|skill| SlashCommand {
+            name: skill.command(),
+            description: Some(skill.description.to_string()),
+            kind: SlashCommandKind::Cadencr,
+        })
+        .collect()
 }
 
 fn to_slash_commands(commands: Vec<RuntimeSlashCommand>) -> Vec<SlashCommand> {
@@ -209,6 +232,30 @@ mod tests {
 
         assert!(commands.iter().any(|command| command.name == "compact"));
         assert!(!commands.iter().any(|command| command.name == "item-add"));
+    }
+
+    #[test]
+    fn orchestration_skill_commands_are_namespaced_cadencr_kind() {
+        let skills = super::orchestration_skill_commands();
+        assert!(skills.iter().any(|c| c.name == "cadencr:status"));
+        assert!(skills.iter().any(|c| c.name == "cadencr:review"));
+        assert!(skills.iter().any(|c| c.name == "cadencr:rescue"));
+        assert!(skills
+            .iter()
+            .all(|c| matches!(c.kind, SlashCommandKind::Cadencr)));
+    }
+
+    #[tokio::test]
+    async fn resolve_commands_includes_virtual_skills_for_a_real_provider() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let commands = super::resolve_commands(
+            temp.path().to_str().unwrap(),
+            crate::domain::agents::codex::PROVIDER_ID,
+        )
+        .await;
+        assert!(commands
+            .iter()
+            .any(|c| c.name == "cadencr:status" && matches!(c.kind, SlashCommandKind::Cadencr)));
     }
 
     #[test]

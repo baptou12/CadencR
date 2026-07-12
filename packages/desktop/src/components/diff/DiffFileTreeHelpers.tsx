@@ -1,4 +1,3 @@
-import { useState, useRef, useEffect } from "react";
 import type { ReactNode } from "react";
 import { Circle } from "lucide-react";
 import { HoverCard } from "radix-ui";
@@ -60,45 +59,6 @@ function formatAbsoluteDate(dateStr: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-export function AutoScrollText({ text, className }: { text: string; className?: string }) {
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const textRef = useRef<HTMLSpanElement>(null);
-  const [overflows, setOverflows] = useState(false);
-
-  useEffect(() => {
-    const wrapper = wrapperRef.current;
-    const textEl = textRef.current;
-    if (!wrapper || !textEl) return;
-
-    const measure = () => {
-      const overflow = textEl.scrollWidth - wrapper.clientWidth;
-      if (overflow > 0) {
-        textEl.style.setProperty("--scroll-distance", `-${overflow}px`);
-        setOverflows(true);
-      } else {
-        textEl.style.removeProperty("--scroll-distance");
-        setOverflows(false);
-      }
-    };
-
-    const ro = new ResizeObserver(measure);
-    ro.observe(wrapper);
-    measure();
-    return () => ro.disconnect();
-  }, [text]);
-
-  return (
-    <div
-      ref={wrapperRef}
-      className={cn("auto-scroll-wrapper min-w-0 flex-1 overflow-hidden", className)}
-    >
-      <span ref={textRef} className="auto-scroll-text" data-overflows={overflows}>
-        {text}
-      </span>
-    </div>
-  );
 }
 
 function CommitHoverContent({ commit }: { commit: CommitEntry }) {

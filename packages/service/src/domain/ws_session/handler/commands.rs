@@ -12,6 +12,7 @@ impl From<SlashCommandKind> for SlashCommandKindPayload {
         match kind {
             SlashCommandKind::Command => Self::Command,
             SlashCommandKind::Skill => Self::Skill,
+            SlashCommandKind::Cadencr => Self::Cadencr,
         }
     }
 }

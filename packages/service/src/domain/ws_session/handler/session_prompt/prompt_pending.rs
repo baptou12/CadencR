@@ -296,8 +296,13 @@ async fn spawn_runtime(
         "spawning runtime query"
     );
     let attachments = payload_attachments(&context.payload);
+    // Expand a virtual `/cadencr:*` skill invocation into its full orchestration
+    // prompt for the agent. The persisted/displayed user message keeps the short
+    // invocation (it was built from the raw text before this point).
+    let prompt_text =
+        crate::domain::agents::orchestration_skills::expand_prompt(&context.payload.text);
     let content_value =
-        build_content_value_for_provider(&context.provider_id, &context.payload.text, &attachments);
+        build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
     let options = std::mem::take(&mut context.options);
     match adapter.spawn(content_value, options).await {
         Ok(runtime_session) => register_runtime(context, runtime_session, auto_name_handled).await,

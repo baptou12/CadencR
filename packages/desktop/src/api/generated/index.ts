@@ -2090,6 +2090,7 @@ export type SlashCommandKindPayload =
 export const SlashCommandKindPayload = {
   command: "command",
   skill: "skill",
+  cadencr: "cadencr",
 } as const;
 
 export type SlashCommandPayloadDescription = string | null;

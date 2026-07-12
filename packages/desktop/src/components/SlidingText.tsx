@@ -13,7 +13,17 @@ import { cn } from "@/lib/utils";
  * Like all CSS animations in the app, the slide is suppressed when the
  * global `data-animations="off"` kill-switch is active.
  */
-export function SlidingText({ text, className }: { text: string; className?: string }) {
+export function SlidingText({
+  text,
+  className,
+  pxPerSec = 60,
+}: {
+  text: string;
+  className?: string;
+  /** Slide speed in px/s. Lower is slower/easier to read; longer text runs
+   * proportionally longer at the same speed. Defaults to a brisk 60. */
+  pxPerSec?: number;
+}) {
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLSpanElement>(null);
   const [overflow, setOverflow] = useState(0);
@@ -33,10 +43,10 @@ export function SlidingText({ text, className }: { text: string; className?: str
   }, [text]);
 
   // Speed-based duration so longer titles don't run faster than short
-  // ones. ~60px/s feels readable; clamped to a 4s minimum so very small
-  // overflows don't whip back and forth.
+  // ones. Clamped to a 4s minimum so very small overflows don't whip back
+  // and forth.
   const isSliding = overflow > 0;
-  const duration = Math.max(4, overflow / 60 + 4);
+  const duration = Math.max(4, overflow / pxPerSec + 4);
 
   const wrapperStyle: CSSProperties | undefined = isSliding
     ? {

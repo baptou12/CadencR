@@ -1,6 +1,8 @@
-import { useRef, useEffect } from "react";
+import { memo, useRef, useEffect } from "react";
 import { TerminalIcon, Loader2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CadencrLogo } from "@/components/CadencrLogo";
+import { SlidingText } from "@/components/SlidingText";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 
 interface SlashCommandPopoverProps {
@@ -11,8 +13,97 @@ interface SlashCommandPopoverProps {
   /** Whether the commands query is loading */
   isLoading: boolean;
   triggerChar?: string;
+  /** When true, Cadencr virtual skills (`kind === "cadencr"`) are shown but
+   * disabled because a required MCP dependency (project or workspace) is off. */
+  cadencrDisabled?: boolean;
   children: React.ReactNode;
 }
+
+const CADENCR_DISABLED_HINT =
+  "Enable the project and workspace MCP (Settings → MCP) to use Cadencr orchestration skills.";
+
+interface SlashCommandItemProps {
+  item: SlashCommand;
+  selected: boolean;
+  disabled: boolean;
+  triggerChar: string;
+  onSelect: (commandName: string) => void;
+}
+
+const SlashCommandItem = memo(function SlashCommandItem({
+  item,
+  selected,
+  disabled,
+  triggerChar,
+  onSelect,
+}: SlashCommandItemProps) {
+  const isCadencr = item.kind === "cadencr";
+  return (
+    <button
+      type="button"
+      data-selected={selected}
+      aria-disabled={disabled}
+      title={disabled ? CADENCR_DISABLED_HINT : undefined}
+      className={cn(
+        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm",
+        selected
+          ? "bg-accent text-accent-foreground"
+          : isCadencr
+            ? // Cadencr virtual skills get a persistent brand-tinted background,
+              // pitched clearly above the plain hover state so they stand apart.
+              "bg-primary/[0.12] text-popover-foreground hover:bg-primary/20"
+            : "text-popover-foreground hover:bg-muted",
+        // `disabled` only ever applies to a Cadencr skill, so hold the brand tint
+        // static instead of reacting to hover.
+        disabled && "cursor-not-allowed opacity-50 hover:bg-primary/[0.12]",
+      )}
+      onMouseDown={(e) => {
+        e.preventDefault(); // prevent textarea blur
+        if (disabled) return;
+        onSelect(item.name);
+      }}
+    >
+      {isCadencr ? (
+        <CadencrLogo className="size-3.5 shrink-0" />
+      ) : (
+        <TerminalIcon
+          className={cn(
+            "size-3.5 shrink-0",
+            selected ? "text-accent-foreground/80" : "text-muted-foreground",
+          )}
+        />
+      )}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="shrink-0 font-medium">
+          {triggerChar}
+          {item.name}
+        </span>
+        {item.description && (
+          <SlidingText
+            text={item.description}
+            // Slower than the app default — skill descriptions run long and
+            // should stay comfortably readable as they slide.
+            pxPerSec={24}
+            className={cn(
+              "min-w-0 flex-1 text-xs",
+              selected ? "text-accent-foreground/80" : "text-muted-foreground",
+            )}
+          />
+        )}
+      </div>
+      {item.argumentHint && (
+        <span
+          className={cn(
+            "shrink-0 text-xs italic",
+            selected ? "text-accent-foreground/70" : "text-muted-foreground/60",
+          )}
+        >
+          {item.argumentHint}
+        </span>
+      )}
+    </button>
+  );
+});
 
 export function SlashCommandPopover({
   open,
@@ -21,6 +112,7 @@ export function SlashCommandPopover({
   onSelect,
   isLoading,
   triggerChar = "/",
+  cadencrDisabled = false,
   children,
 }: SlashCommandPopoverProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -47,54 +139,14 @@ export function SlashCommandPopover({
             </div>
           ) : items.length > 0 ? (
             items.map((item, i) => (
-              <button
+              <SlashCommandItem
                 key={item.name}
-                type="button"
-                data-selected={i === selectedIndex}
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm",
-                  i === selectedIndex
-                    ? "bg-accent text-accent-foreground"
-                    : "text-popover-foreground hover:bg-muted",
-                )}
-                onMouseDown={(e) => {
-                  e.preventDefault(); // prevent textarea blur
-                  onSelect(item.name);
-                }}
-              >
-                <TerminalIcon
-                  className={cn(
-                    "size-3.5 shrink-0",
-                    i === selectedIndex ? "text-accent-foreground/80" : "text-muted-foreground",
-                  )}
-                />
-                <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                  <span className="shrink-0 font-medium">
-                    {triggerChar}
-                    {item.name}
-                  </span>
-                  <span
-                    className={cn(
-                      "truncate text-xs",
-                      i === selectedIndex ? "text-accent-foreground/80" : "text-muted-foreground",
-                    )}
-                  >
-                    {item.description}
-                  </span>
-                </span>
-                {item.argumentHint && (
-                  <span
-                    className={cn(
-                      "shrink-0 text-xs italic",
-                      i === selectedIndex
-                        ? "text-accent-foreground/70"
-                        : "text-muted-foreground/60",
-                    )}
-                  >
-                    {item.argumentHint}
-                  </span>
-                )}
-              </button>
+                item={item}
+                selected={i === selectedIndex}
+                disabled={item.kind === "cadencr" && cadencrDisabled}
+                triggerChar={triggerChar}
+                onSelect={onSelect}
+              />
             ))
           ) : (
             <div className="px-3 py-2 text-xs text-muted-foreground">No matching commands</div>

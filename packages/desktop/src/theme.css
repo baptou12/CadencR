@@ -1281,32 +1281,6 @@
   appearance: textfield;
 }
 
-/* Auto-scrolling text for overflowing single-line content (e.g. commit messages) */
-.auto-scroll-text {
-  display: inline-block;
-  white-space: nowrap;
-}
-.auto-scroll-wrapper {
-  overflow: hidden;
-}
-.auto-scroll-text[data-overflows="true"] {
-  animation: scroll-left 10s linear infinite;
-}
-@keyframes scroll-left {
-  0%,
-  20% {
-    transform: translateX(0);
-  }
-  40%,
-  60% {
-    transform: translateX(var(--scroll-distance));
-  }
-  80%,
-  100% {
-    transform: translateX(0);
-  }
-}
-
 @keyframes browser-progress {
   0% {
     transform: translateX(-100%);

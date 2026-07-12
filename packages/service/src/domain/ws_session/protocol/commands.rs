@@ -25,6 +25,9 @@ pub struct SlashCommandPayload {
 pub enum SlashCommandKindPayload {
     Command,
     Skill,
+    /// Cadencr virtual orchestration skill (`/cadencr:*`); rendered specially by
+    /// the composer and disabled when its project MCP dependency is off.
+    Cadencr,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
