@@ -98,8 +98,11 @@ async fn persist_followup_user_message(
 
 async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptSendPayload) {
     let attachments = payload_attachments(&payload);
+    // Expand a virtual `/cadencr:*` skill invoked mid-conversation, same as the
+    // initial-prompt path. The persisted user message keeps the short token.
+    let prompt_text = crate::domain::agents::orchestration_skills::expand_prompt(&payload.text);
     let content =
-        build_content_value_for_provider(&context.provider_id, &payload.text, &attachments);
+        build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
     let client_message_id = payload.client_message_id.clone();
     let query_guard = context.query.read().await;
     let stream_result = query_guard
