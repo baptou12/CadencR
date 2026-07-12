@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { ChevronRightIcon, WrenchIcon } from "lucide-react";
+import { ChevronRightIcon, ChevronUpIcon, WrenchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildToolChips } from "@/components/agentStreamToolChips";
 import { NumStat } from "@/components/NumStat";
@@ -9,9 +9,35 @@ import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { suppressAutoScrollPin } from "@/lib/agent-scroll-suppression";
 import { AgentStreamItem } from "./AgentStreamItem";
 import type { AgentVerbosityMode } from "@/lib/agent-verbosity";
+import type { ToolChip } from "@/components/agentStreamToolChips";
 
 const EMPTY_BLOCKS: AgentBlockData[] = [];
 const EMPTY_TOOL_RESULT_MAP: Map<string, AgentBlockData> = new Map();
+
+/** Shared typography for the header hint and footer button collapse affordances. */
+const COLLAPSE_LABEL_CLASS =
+  "text-[10px] font-medium uppercase tracking-wide text-muted-foreground";
+
+/** One recap pill: tool label, its run count, and (for edits) the aggregate numstat. */
+function SummaryToolChip({ chip }: { chip: ToolChip }): React.JSX.Element {
+  const accent = TOOL_ACCENT_CLASSES[chip.accent];
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5", accent.wrapper)}
+    >
+      {chip.mcpServer && (
+        <span className="rounded-sm bg-primary/20 px-1 text-[9px] font-semibold uppercase leading-normal tracking-wide text-primary">
+          {chip.mcpServer}
+        </span>
+      )}
+      <span className={cn("font-medium", accent.label)}>{chip.label}</span>
+      {(chip.additions > 0 || chip.deletions > 0) && (
+        <NumStat additions={chip.additions} deletions={chip.deletions} hideZero />
+      )}
+      <span className="text-muted-foreground tabular-nums">×{chip.count}</span>
+    </span>
+  );
+}
 
 interface ToolSummaryBlockProps {
   /** The turn's detail (every block except its final message) to reveal inline. */
@@ -87,31 +113,16 @@ export const ToolSummaryBlock = memo(function ToolSummaryBlock({
         <span className="font-medium text-foreground">Tools used</span>
         <span className="text-muted-foreground tabular-nums">· {total}</span>
         <span className="mx-1 h-3 w-px bg-border" aria-hidden />
-        {chips.map((chip) => {
-          const accent = TOOL_ACCENT_CLASSES[chip.accent];
-          return (
-            <span
-              key={chip.key}
-              className={cn(
-                "inline-flex items-center gap-1 rounded border px-1.5 py-0.5",
-                accent.wrapper,
-              )}
-            >
-              {chip.mcpServer && (
-                <span className="rounded-sm bg-primary/20 px-1 text-[9px] font-semibold uppercase leading-normal tracking-wide text-primary">
-                  {chip.mcpServer}
-                </span>
-              )}
-              <span className={cn("font-medium", accent.label)}>{chip.label}</span>
-              {(chip.additions > 0 || chip.deletions > 0) && (
-                <NumStat additions={chip.additions} deletions={chip.deletions} hideZero />
-              )}
-              <span className="text-muted-foreground tabular-nums">×{chip.count}</span>
-            </span>
-          );
-        })}
+        {chips.map((chip) => (
+          <SummaryToolChip key={chip.key} chip={chip} />
+        ))}
         {canExpand && (
-          <span className="ml-auto shrink-0 pl-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+          <span
+            className={cn(
+              COLLAPSE_LABEL_CLASS,
+              "ml-auto shrink-0 pl-2 opacity-0 transition-opacity group-hover:opacity-100",
+            )}
+          >
             {expanded ? "Collapse" : "Expand"}
           </span>
         )}
@@ -128,6 +139,17 @@ export const ToolSummaryBlock = memo(function ToolSummaryBlock({
             />
           ))}
         </div>
+        <button
+          type="button"
+          onClick={toggle}
+          className={cn(
+            COLLAPSE_LABEL_CLASS,
+            "flex w-full items-center justify-center gap-1 border-t border-border px-3 py-1.5 transition-colors hover:bg-muted/50 hover:text-foreground",
+          )}
+        >
+          <ChevronUpIcon className="size-3 shrink-0" />
+          Collapse
+        </button>
       </CollapsibleSection>
     </div>
   );
