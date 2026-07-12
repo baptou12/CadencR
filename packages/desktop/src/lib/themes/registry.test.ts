@@ -19,6 +19,8 @@ describe("theme registry", () => {
     expect(ids).toContain("frost-light");
     expect(ids).toContain("carbon-owl");
     expect(ids).toContain("paper-owl");
+    expect(ids).toContain("catppuccin-mocha");
+    expect(ids).toContain("catppuccin-latte");
   });
 
   it("isThemeId narrows to known ids", () => {
@@ -30,6 +32,8 @@ describe("theme registry", () => {
     expect(isThemeId("monokai-light")).toBe(true);
     expect(isThemeId("carbon-owl")).toBe(true);
     expect(isThemeId("paper-owl")).toBe(true);
+    expect(isThemeId("catppuccin-mocha")).toBe(true);
+    expect(isThemeId("catppuccin-latte")).toBe(true);
     expect(isThemeId("solarized")).toBe(false);
     expect(isThemeId(null)).toBe(false);
     expect(isThemeId(undefined)).toBe(false);
@@ -102,5 +106,16 @@ describe("theme registry", () => {
     expect(paperOwl.appearance).toBe("light");
     expect(paperOwl.logo.variant).toBe("light");
     expect(paperOwl.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+
+    const catppuccinMocha = getTheme("catppuccin-mocha");
+    const catppuccinLatte = getTheme("catppuccin-latte");
+    expect(catppuccinMocha.label).toBe("Catppuccin Mocha");
+    expect(catppuccinMocha.appearance).toBe("dark");
+    expect(catppuccinMocha.logo.variant).toBe("dark");
+    expect(catppuccinMocha.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+    expect(catppuccinLatte.label).toBe("Catppuccin Latte");
+    expect(catppuccinLatte.appearance).toBe("light");
+    expect(catppuccinLatte.logo.variant).toBe("light");
+    expect(catppuccinLatte.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 });

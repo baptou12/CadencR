@@ -24,6 +24,8 @@ export const THEME_IDS = [
   "frost-light",
   "carbon-owl",
   "paper-owl",
+  "catppuccin-mocha",
+  "catppuccin-latte",
 ] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 export type ThemeAppearance = "light" | "dark";

@@ -1,5 +1,6 @@
 import { registerCustomTheme } from "@pierre/diffs";
 import type { ThemeId } from "@/lib/themes";
+import { buildPierreTheme } from "./pierre-theme-builder";
 
 const CADENCR_DRACULA_DIFF_THEME = "cadencr-dracula-diff";
 const CADENCR_AURORA_DIFF_THEME = "cadencr-aurora-diff";
@@ -11,6 +12,8 @@ const CADENCR_FROST_DARK_DIFF_THEME = "cadencr-frost-dark-diff";
 const CADENCR_FROST_LIGHT_DIFF_THEME = "cadencr-frost-light-diff";
 const CADENCR_CARBON_OWL_DIFF_THEME = "cadencr-carbon-owl-diff";
 const CADENCR_PAPER_OWL_DIFF_THEME = "cadencr-paper-owl-diff";
+const CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME = "cadencr-catppuccin-mocha-diff";
+const CADENCR_CATPPUCCIN_LATTE_DIFF_THEME = "cadencr-catppuccin-latte-diff";
 
 type PierreThemeName =
   | typeof CADENCR_DRACULA_DIFF_THEME
@@ -22,71 +25,9 @@ type PierreThemeName =
   | typeof CADENCR_FROST_DARK_DIFF_THEME
   | typeof CADENCR_FROST_LIGHT_DIFF_THEME
   | typeof CADENCR_CARBON_OWL_DIFF_THEME
-  | typeof CADENCR_PAPER_OWL_DIFF_THEME;
-type PierreThemeRegistration = Parameters<typeof registerCustomTheme>[1] extends () => Promise<
-  infer Theme
->
-  ? Theme
-  : never;
-
-/**
- * Shared TextMate scope groups for Pierre diff themes — kept in one place so
- * per-theme palettes only need to declare hex values, not repeat the scope
- * literals. Order is meaningful only insofar as it mirrors the TextMate
- * convention (comment → keyword → string → …).
- */
-const TOKEN_SCOPES = [
-  { key: "comment", scope: ["comment", "punctuation.definition.comment"], italic: true },
-  { key: "keyword", scope: ["keyword", "storage", "storage.type"] },
-  { key: "string", scope: ["string", "constant.other.symbol"] },
-  { key: "number", scope: ["constant.numeric", "constant.language", "support.constant"] },
-  { key: "function", scope: ["entity.name.function", "support.function", "variable.language"] },
-  { key: "type", scope: ["entity.name.type", "entity.name.class", "support.type"] },
-  { key: "tag", scope: ["entity.name.tag", "support.class", "variable.other.constant"] },
-  { key: "deleted", scope: ["invalid", "markup.deleted"] },
-  { key: "inserted", scope: ["markup.inserted"] },
-] as const satisfies ReadonlyArray<{
-  key: string;
-  scope: readonly string[];
-  italic?: boolean;
-}>;
-
-type TokenKey = (typeof TOKEN_SCOPES)[number]["key"];
-type Palette = Record<TokenKey, string>;
-
-interface EditorColors {
-  background: string;
-  foreground: string;
-  lineHighlight: string;
-  selection: string;
-}
-
-function buildPierreTheme(
-  name: PierreThemeName,
-  type: "dark" | "light",
-  editor: EditorColors,
-  palette: Palette,
-): PierreThemeRegistration {
-  return {
-    name,
-    type,
-    colors: {
-      "editor.background": editor.background,
-      "editor.foreground": editor.foreground,
-      "editor.lineHighlightBackground": editor.lineHighlight,
-      "editor.selectionBackground": editor.selection,
-    },
-    tokenColors: TOKEN_SCOPES.map((entry) => {
-      const italic = "italic" in entry && entry.italic;
-      return {
-        scope: [...entry.scope],
-        settings: italic
-          ? { foreground: palette[entry.key], fontStyle: "italic" }
-          : { foreground: palette[entry.key] },
-      };
-    }),
-  };
-}
+  | typeof CADENCR_PAPER_OWL_DIFF_THEME
+  | typeof CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME
+  | typeof CADENCR_CATPPUCCIN_LATTE_DIFF_THEME;
 
 const DRACULA_THEME = buildPierreTheme(
   CADENCR_DRACULA_DIFF_THEME,
@@ -308,6 +249,50 @@ const PAPER_OWL_THEME = buildPierreTheme(
   },
 );
 
+const CATPPUCCIN_MOCHA_THEME = buildPierreTheme(
+  CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME,
+  "dark",
+  {
+    background: "#1e1e2e",
+    foreground: "#cdd6f4",
+    lineHighlight: "#292a3b",
+    selection: "#45475a",
+  },
+  {
+    comment: "#7f849c",
+    keyword: "#cba6f7",
+    string: "#a6e3a1",
+    number: "#fab387",
+    function: "#89b4fa",
+    type: "#f9e2af",
+    tag: "#f38ba8",
+    deleted: "#f38ba8",
+    inserted: "#a6e3a1",
+  },
+);
+
+const CATPPUCCIN_LATTE_THEME = buildPierreTheme(
+  CADENCR_CATPPUCCIN_LATTE_DIFF_THEME,
+  "light",
+  {
+    background: "#eff1f5",
+    foreground: "#4c4f69",
+    lineHighlight: "#e6e9ef",
+    selection: "#acb0be",
+  },
+  {
+    comment: "#7c7f93",
+    keyword: "#8839ef",
+    string: "#40a02b",
+    number: "#fe640b",
+    function: "#1e66f5",
+    type: "#df8e1d",
+    tag: "#d20f39",
+    deleted: "#d20f39",
+    inserted: "#40a02b",
+  },
+);
+
 let registered = false;
 
 export function ensurePierreThemesRegistered(): void {
@@ -322,6 +307,12 @@ export function ensurePierreThemesRegistered(): void {
   registerCustomTheme(CADENCR_FROST_LIGHT_DIFF_THEME, () => Promise.resolve(FROST_LIGHT_THEME));
   registerCustomTheme(CADENCR_CARBON_OWL_DIFF_THEME, () => Promise.resolve(CARBON_OWL_THEME));
   registerCustomTheme(CADENCR_PAPER_OWL_DIFF_THEME, () => Promise.resolve(PAPER_OWL_THEME));
+  registerCustomTheme(CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME, () =>
+    Promise.resolve(CATPPUCCIN_MOCHA_THEME),
+  );
+  registerCustomTheme(CADENCR_CATPPUCCIN_LATTE_DIFF_THEME, () =>
+    Promise.resolve(CATPPUCCIN_LATTE_THEME),
+  );
   registered = true;
 }
 
@@ -347,5 +338,9 @@ export function getPierreThemeName(themeId: ThemeId): PierreThemeName {
       return CADENCR_CARBON_OWL_DIFF_THEME;
     case "paper-owl":
       return CADENCR_PAPER_OWL_DIFF_THEME;
+    case "catppuccin-mocha":
+      return CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME;
+    case "catppuccin-latte":
+      return CADENCR_CATPPUCCIN_LATTE_DIFF_THEME;
   }
 }

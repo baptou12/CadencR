@@ -1,5 +1,7 @@
 import { AURORA_THEME } from "./aurora";
 import { CARBON_OWL_THEME } from "./carbon-owl";
+import { CATPPUCCIN_LATTE_THEME } from "./catppuccin-latte";
+import { CATPPUCCIN_MOCHA_THEME } from "./catppuccin-mocha";
 import { DRACULA_THEME } from "./dracula";
 import { FROST_DARK_THEME } from "./frost-dark";
 import { FROST_LIGHT_THEME } from "./frost-light";
@@ -22,6 +24,8 @@ export const THEME_LIST: ThemeDefinition[] = [
   FROST_LIGHT_THEME,
   CARBON_OWL_THEME,
   PAPER_OWL_THEME,
+  CATPPUCCIN_MOCHA_THEME,
+  CATPPUCCIN_LATTE_THEME,
 ];
 
 /** All themes shipped with Cadencr, keyed by id. */
@@ -36,6 +40,8 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   "frost-light": FROST_LIGHT_THEME,
   "carbon-owl": CARBON_OWL_THEME,
   "paper-owl": PAPER_OWL_THEME,
+  "catppuccin-mocha": CATPPUCCIN_MOCHA_THEME,
+  "catppuccin-latte": CATPPUCCIN_LATTE_THEME,
 };
 
 export const DEFAULT_THEME_ID: ThemeId = "dracula";

@@ -958,6 +958,293 @@
   --terminal-warning-button-bg-hover: oklch(0.91 0.008 100);
 }
 
+/* Catppuccin Mocha — the flagship dark flavor (https://catppuccin.com).
+ * Soothing pastel accents over a deep indigo base. Mauve is the signature
+ * accent (--primary); rosewater is reserved for the editor/terminal cursor,
+ * lavender for focus rings — both per the Catppuccin style guide. Palette
+ * ladder (dark→light): crust #11111b · mantle #181825 · base #1e1e2e ·
+ * surface0 #313244 · surface1 #45475a · surface2 #585b70 · overlay0 #6c7086 ·
+ * overlay1 #7f849c · overlay2 #9399b2 · subtext0 #a6adc8 · text #cdd6f4. */
+:root[data-theme="catppuccin-mocha"] {
+  color-scheme: dark;
+  /* Tailwind semantic tokens */
+  --background: #1e1e2e;
+  --foreground: #cdd6f4;
+  --card: #1e1e2e;
+  --card-foreground: #cdd6f4;
+  /* Recessed grouping surface — the darker mantle sits below the base page. */
+  --surface-sunken: #181825;
+  --popover: #1e1e2e;
+  --popover-foreground: #cdd6f4;
+  --primary: #cba6f7;
+  --primary-foreground: #1e1e2e;
+  --secondary: #313244;
+  --secondary-foreground: #cdd6f4;
+  --muted: #313244;
+  /* subtext0 clears WCAG 4.5:1 on both --background (base) and --muted
+   * (surface0), so it doubles as UI muted text. */
+  --muted-foreground: #a6adc8;
+  --accent: #45475a;
+  --accent-foreground: #cdd6f4;
+  --destructive: #f38ba8;
+  --destructive-foreground: #11111b;
+  --border: #313244;
+  --input: #45475a;
+  --ring: #b4befe;
+  --chart-1: #cba6f7;
+  --chart-2: #f5c2e7;
+  --chart-3: #a6e3a1;
+  --chart-4: #89dceb;
+  --chart-5: #fab387;
+  --sidebar: #181825;
+  --sidebar-foreground: #cdd6f4;
+  --sidebar-primary: #cba6f7;
+  --sidebar-primary-foreground: #1e1e2e;
+  --sidebar-accent: #313244;
+  --sidebar-accent-foreground: #cdd6f4;
+  --sidebar-border: #313244;
+  --sidebar-ring: #b4befe;
+
+  /* Vibrant accent palette — drives editor syntax highlighting, diff
+   * decorations, markdown code blocks, and ad-hoc UI accents. */
+  --acc-cyan: #89dceb;
+  --acc-green: #a6e3a1;
+  --acc-orange: #fab387;
+  --acc-pink: #f5c2e7;
+  --acc-purple: #cba6f7;
+  --acc-red: #f38ba8;
+  --acc-yellow: #f9e2af;
+  --acc-comment: #7f849c;
+
+  /* Code surface — the darker mantle so code/bash blocks separate from base. */
+  --code-bg: #181825;
+  --code-fg: #cdd6f4;
+
+  /* Agent-stream block surfaces — see Dracula block for naming. Backgrounds
+   * are base blended toward each block's hue; accents are the pastel accent. */
+  --block-tool-bg: #1a1f2e;
+  --block-tool-accent: #89b4fa;
+  --block-thinking-bg: #221f31;
+  --block-thinking-accent: #cba6f7;
+  --block-plan-bg: #1a1f2e;
+  --block-plan-accent: #89b4fa;
+  --block-bash-header-bg: #181825;
+  --block-bash-body-bg: #11111b;
+  --block-bash-fg: #cdd6f4;
+  --block-bash-muted-fg: #a6adc8;
+  --block-task-bg: #11111b;
+
+  /* App-level semantic accents. */
+  --numstat-add-fg: #a6e3a1;
+  --numstat-del-fg: #f38ba8;
+  --chip-worktree-bg: rgba(137, 220, 235, 0.18);
+  --chip-worktree-bg-hover: rgba(137, 220, 235, 0.28);
+  --chip-worktree-fg: #89dceb;
+  --chip-shared-worktree-bg: rgba(250, 179, 135, 0.18);
+  --chip-shared-worktree-fg: #fab387;
+
+  /* Prompt chip palette — mapped onto Catppuccin's mauve / pink / blue while
+   * keeping the violet / fuchsia / blue chip identities (model picker,
+   * Auto-Accept-Edits, Build/Default modes). See Dracula block for shade roles. */
+  --chip-violet-bg: #cba6f7;
+  --chip-violet-fg: #cba6f7;
+  --chip-violet-soft: #d9c8fa;
+  --chip-fuchsia-bg: #f5c2e7;
+  --chip-fuchsia-fg: #f5c2e7;
+  --chip-blue-bg: #89b4fa;
+  --chip-blue-fg: #89b4fa;
+
+  /* CodeMirror editor — base surface sits a hair above --code-bg (mantle).
+   * Cursor is rosewater, per the Catppuccin style guide. */
+  --editor-bg: #1e1e2e;
+  --editor-fg: var(--code-fg);
+  --editor-comment: var(--acc-comment);
+  --editor-cyan: var(--acc-cyan);
+  --editor-green: var(--acc-green);
+  --editor-orange: var(--acc-orange);
+  --editor-pink: var(--acc-pink);
+  --editor-purple: var(--acc-purple);
+  --editor-red: var(--acc-red);
+  --editor-yellow: var(--acc-yellow);
+  --editor-border: #313244;
+  --editor-cursor: #f5e0dc;
+  /* Translucent overlay so the selection layer shows through on the caret line. */
+  --editor-line-highlight: rgba(255, 255, 255, 0.05);
+  --editor-gutter-bg: #1e1e2e;
+  --editor-gutter-fg: #6c7086;
+  --editor-selection-bg: #45475a;
+  --editor-selection-bg-soft: #313244;
+  --editor-search-match-bg: rgba(203, 166, 247, 0.25);
+
+  /* Diff decorations (CodeMirror merge view + InlineDiffBlock) */
+  --diff-add-bg: rgba(166, 227, 161, 0.08);
+  --diff-add-bg-strong: rgba(166, 227, 161, 0.18);
+  --diff-del-bg: rgba(243, 139, 168, 0.08);
+  --diff-del-bg-strong: rgba(243, 139, 168, 0.18);
+
+  /* Terminal chrome — panel buttons, resize handles, cwd-warning banner.
+   * The canvas-rendered xterm itself uses the JS palette in lib/themes/.
+   * Must equal that palette's background (base #1e1e2e) so the wrapper's
+   * horizontal padding doesn't frame the terminal in a darker gutter. */
+  --terminal-bg: #1e1e2e;
+  --terminal-panel-icon: #6c7086;
+  --terminal-panel-icon-hover: #cdd6f4;
+  --terminal-panel-icon-bg-hover: #313244;
+  --terminal-panel-handle-bg: #313244;
+  --terminal-panel-handle-bg-hover: #45475a;
+  --terminal-warning-bg: #313244;
+  --terminal-warning-border: #45475a;
+  --terminal-warning-fg: #cdd6f4;
+  --terminal-warning-fg-secondary: #a6adc8;
+  --terminal-warning-accent: #f9e2af;
+  --terminal-warning-link: #89b4fa;
+  --terminal-warning-button-bg: #45475a;
+  --terminal-warning-button-bg-hover: #585b70;
+}
+
+/* Catppuccin Latte — the light flavor (https://catppuccin.com). Warm off-white
+ * base with saturated, high-contrast accents tuned for daylight. Same UI
+ * treatment as Aurora (bash + terminal chrome follow the theme light); only the
+ * color identity changes. Palette ladder (light→dark): base #eff1f5 ·
+ * mantle #e6e9ef · crust #dce0e8 · surface0 #ccd0da · surface1 #bcc0cc ·
+ * surface2 #acb0be · overlay0 #9ca0b0 · overlay1 #8c8fa1 · overlay2 #7c7f93 ·
+ * subtext0 #6c6f85 · subtext1 #5c5f77 · text #4c4f69. */
+:root[data-theme="catppuccin-latte"] {
+  color-scheme: light;
+  /* Tailwind semantic tokens */
+  --background: #eff1f5;
+  --foreground: #4c4f69;
+  --card: #eff1f5;
+  --card-foreground: #4c4f69;
+  /* Darker mantle recedes below the base page (Latte has no lighter surface). */
+  --surface-sunken: #e6e9ef;
+  --popover: #eff1f5;
+  --popover-foreground: #4c4f69;
+  --primary: #8839ef;
+  --primary-foreground: #eff1f5;
+  --secondary: #ccd0da;
+  --secondary-foreground: #4c4f69;
+  --muted: #ccd0da;
+  /* subtext0 clears WCAG 4.5:1 on both base and surface0. */
+  --muted-foreground: #6c6f85;
+  --accent: #bcc0cc;
+  --accent-foreground: #4c4f69;
+  --destructive: #d20f39;
+  --destructive-foreground: #eff1f5;
+  --border: #ccd0da;
+  --input: #dce0e8;
+  --ring: #7287fd;
+  --chart-1: #8839ef;
+  --chart-2: #ea76cb;
+  --chart-3: #40a02b;
+  --chart-4: #04a5e5;
+  --chart-5: #fe640b;
+  --sidebar: #e6e9ef;
+  --sidebar-foreground: #4c4f69;
+  --sidebar-primary: #8839ef;
+  --sidebar-primary-foreground: #eff1f5;
+  --sidebar-accent: #ccd0da;
+  --sidebar-accent-foreground: #4c4f69;
+  --sidebar-border: #ccd0da;
+  --sidebar-ring: #7287fd;
+
+  /* Latte accents are already tuned by Catppuccin for contrast on a light
+   * base, so they drive both syntax and UI accents directly. */
+  --acc-cyan: #04a5e5;
+  --acc-green: #40a02b;
+  --acc-orange: #fe640b;
+  --acc-pink: #ea76cb;
+  --acc-purple: #8839ef;
+  --acc-red: #d20f39;
+  --acc-yellow: #df8e1d;
+  --acc-comment: #7c7f93;
+
+  /* Code surface — soft mantle so code/bash blocks separate from the base panel. */
+  --code-bg: #e6e9ef;
+  --code-fg: #4c4f69;
+
+  /* Agent-stream block surfaces — light hue-tinted fills with saturated
+   * accents, mirroring Aurora's light treatment. */
+  --block-tool-bg: #e3e9fb;
+  --block-tool-accent: #1e66f5;
+  --block-thinking-bg: #ece3fb;
+  --block-thinking-accent: #8839ef;
+  --block-plan-bg: #e3e9fb;
+  --block-plan-accent: #1e66f5;
+  /* Bash block follows the theme on Latte — see DESIGN.md "Bash variant".
+   * Live xterm/TerminalPanel palette is handled separately in lib/themes/. */
+  --block-bash-header-bg: var(--accent);
+  --block-bash-body-bg: var(--code-bg);
+  --block-bash-fg: var(--foreground);
+  --block-bash-muted-fg: var(--muted-foreground);
+  --block-task-bg: #e6e9ef;
+
+  /* App-level semantic accents — tuned for contrast on light surfaces. */
+  --numstat-add-fg: #40a02b;
+  --numstat-del-fg: #d20f39;
+  --chip-worktree-bg: rgba(23, 146, 153, 0.16);
+  --chip-worktree-bg-hover: rgba(23, 146, 153, 0.24);
+  --chip-worktree-fg: #179299;
+  --chip-shared-worktree-bg: rgba(254, 100, 11, 0.16);
+  --chip-shared-worktree-fg: #d2570a;
+
+  /* Prompt chip palette — Latte pulls these to their darker, saturated forms so
+   * the violet / fuchsia / blue identities read on light chips. On light
+   * surfaces `*-soft` flips to the darkest (highest-contrast) shade. */
+  --chip-violet-bg: #8839ef;
+  --chip-violet-fg: #8839ef;
+  --chip-violet-soft: #7526c9;
+  --chip-fuchsia-bg: #ea76cb;
+  --chip-fuchsia-fg: #d1409f;
+  --chip-blue-bg: #1e66f5;
+  --chip-blue-fg: #1e66f5;
+
+  /* CodeMirror — accents from the Latte `--acc-*` palette. Cursor is rosewater,
+   * per the Catppuccin style guide. */
+  --editor-bg: #eff1f5;
+  --editor-fg: #4c4f69;
+  --editor-comment: var(--acc-comment);
+  --editor-cyan: var(--acc-cyan);
+  --editor-green: var(--acc-green);
+  --editor-orange: var(--acc-orange);
+  --editor-pink: var(--acc-pink);
+  --editor-purple: var(--acc-purple);
+  --editor-red: var(--acc-red);
+  --editor-yellow: var(--acc-yellow);
+  --editor-border: #ccd0da;
+  --editor-cursor: #dc8a78;
+  /* Translucent overlay — see Mocha block. */
+  --editor-line-highlight: rgba(0, 0, 0, 0.04);
+  --editor-gutter-bg: #eff1f5;
+  --editor-gutter-fg: #9ca0b0;
+  --editor-selection-bg: #acb0be;
+  --editor-selection-bg-soft: #bcc0cc;
+  --editor-search-match-bg: rgba(136, 57, 239, 0.18);
+
+  /* Diff decorations — opacities tuned for a light canvas. */
+  --diff-add-bg: rgba(64, 160, 43, 0.12);
+  --diff-add-bg-strong: rgba(64, 160, 43, 0.22);
+  --diff-del-bg: rgba(210, 15, 57, 0.12);
+  --diff-del-bg-strong: rgba(210, 15, 57, 0.22);
+
+  /* Terminal chrome — fully light. The xterm canvas paints from the JS palette
+   * in lib/themes/catppuccin-latte.ts. */
+  --terminal-bg: #eff1f5;
+  --terminal-panel-icon: #8c8fa1;
+  --terminal-panel-icon-hover: #4c4f69;
+  --terminal-panel-icon-bg-hover: #ccd0da;
+  --terminal-panel-handle-bg: #ccd0da;
+  --terminal-panel-handle-bg-hover: #bcc0cc;
+  --terminal-warning-bg: #e6e9ef;
+  --terminal-warning-border: #ccd0da;
+  --terminal-warning-fg: #4c4f69;
+  --terminal-warning-fg-secondary: #6c6f85;
+  --terminal-warning-accent: #fe640b;
+  --terminal-warning-link: #1e66f5;
+  --terminal-warning-button-bg: #ccd0da;
+  --terminal-warning-button-bg-hover: #bcc0cc;
+}
+
 @layer base {
   * {
     @apply border-border;
