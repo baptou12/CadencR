@@ -73,6 +73,7 @@ export interface SessionStatusEntry {
   status: LiveAgentStatus;
   /** Only populated when `status === "question"`. `null` for agent/idle. */
   kind: PendingKind | null;
+  requestId?: string | null;
   featureId: number;
   seq: number;
   /**
@@ -83,10 +84,10 @@ export interface SessionStatusEntry {
    */
   turnStartedAtMs?: number | null;
 }
-
 interface SessionStatusState {
   ws: WebSocket | null;
   isConnected: boolean;
+  hasSnapshot: boolean;
   /** Per-session entries keyed by `session_id` (the DB primary key). */
   bySession: Record<number, SessionStatusEntry>;
   connect: () => void;
@@ -108,7 +109,7 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
     if (action === "session_status.snapshot") {
       const previous = get().bySession;
       const bySession = applySnapshot(previous, payload);
-      set({ bySession });
+      set({ bySession, hasSnapshot: true });
       syncWsLifecycles(previous, bySession);
       return;
     }
@@ -131,6 +132,7 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
   return {
     ws: null,
     isConnected: false,
+    hasSnapshot: false,
     bySession: {},
 
     connect() {

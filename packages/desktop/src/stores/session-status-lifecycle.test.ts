@@ -44,7 +44,12 @@ class MockWebSocket {
 describe("session status lifecycle sync", () => {
   afterEach(() => {
     useSessionStatusStore.getState().disconnect();
-    useSessionStatusStore.setState({ bySession: {}, ws: null, isConnected: false });
+    useSessionStatusStore.setState({
+      bySession: {},
+      ws: null,
+      isConnected: false,
+      hasSnapshot: false,
+    });
     useWsSessionStore.setState({ sessions: {} });
     MockWebSocket.reset();
     vi.useRealTimers();
@@ -163,6 +168,46 @@ describe("session status lifecycle sync", () => {
     const updated = useWsSessionStore.getState().sessions.s3;
     expect(updated.pendingPermission).toBeNull();
     expect(updated.pendingRequestId).toBe("");
+  });
+
+  it("tracks the active gate request id from snapshots and updates", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    useSessionStatusStore.getState().connect();
+
+    MockWebSocket.instances.at(-1)?.simulateMessage({
+      domain: "app",
+      action: "session_status.snapshot",
+      payload: {
+        seq: 1,
+        states: {
+          31: {
+            session_id: 31,
+            feature_id: 3,
+            status: "question",
+            kind: "permission",
+            request_id: "req-31",
+          },
+        },
+      },
+    });
+
+    expect(useSessionStatusStore.getState().hasSnapshot).toBe(true);
+    expect(useSessionStatusStore.getState().bySession[31]?.requestId).toBe("req-31");
+
+    MockWebSocket.instances.at(-1)?.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: {
+        session_id: 31,
+        feature_id: 3,
+        status: "question",
+        kind: "permission",
+        request_id: "req-32",
+        seq: 2,
+      },
+    });
+
+    expect(useSessionStatusStore.getState().bySession[31]?.requestId).toBe("req-32");
   });
 
   it("invalidates editor content and tree caches when file watcher events arrive", () => {

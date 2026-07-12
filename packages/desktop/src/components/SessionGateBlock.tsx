@@ -1,10 +1,13 @@
-import { ExternalLinkIcon, ShieldAlertIcon } from "lucide-react";
+import { CheckCircle2Icon, ExternalLinkIcon, ShieldAlertIcon } from "lucide-react";
 import { memo, useCallback, type ReactElement } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useShallow } from "zustand/react/shallow";
 import { useGetFeature } from "@/api/generated";
 import { navigateToFeatureIdOrHome } from "@/components/project-feature-navigation";
 import { SessionGateDetails } from "@/components/SessionGateDetails";
 import type { SessionGateEnvelope } from "@/lib/session-gate";
+import { cn } from "@/lib/utils";
+import { useSessionStatusStore } from "@/stores/session-status-store";
 
 interface SessionGateBlockProps {
   gate: SessionGateEnvelope;
@@ -56,15 +59,44 @@ const GatePresentation = memo(function GatePresentation({
   lookupError = false,
 }: GatePresentationProps): ReactElement {
   const navigate = useNavigate();
+  const [childStatus, hasStatusSnapshot] = useSessionStatusStore(
+    useShallow((state) => [state.bySession[gate.childSessionId], state.hasSnapshot] as const),
+  );
+  const isPending =
+    childStatus === undefined
+      ? !hasStatusSnapshot
+      : childStatus.status === "question" &&
+        (childStatus.requestId === null ||
+          childStatus.requestId === undefined ||
+          childStatus.requestId === gate.requestId);
   const openChild = useCallback((): void => {
     if (projectId !== undefined)
       navigateToFeatureIdOrHome(navigate, projectId, gate.childFeatureId);
   }, [gate.childFeatureId, navigate, projectId]);
   return (
-    <aside className="mx-auto my-2 w-full max-w-[85%] overflow-hidden rounded-lg border border-amber-500/30 bg-amber-500/[0.035] shadow-sm">
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-amber-500/20 bg-amber-500/[0.055] px-3 py-2">
-        <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300">
-          <ShieldAlertIcon className="size-3.5" aria-hidden="true" />
+    <aside
+      className={cn(
+        "mx-auto my-2 w-full max-w-[85%] overflow-hidden rounded-lg border shadow-sm",
+        isPending ? "border-amber-500/30 bg-amber-500/[0.035]" : "border-border/60 bg-muted/15",
+      )}
+    >
+      <header
+        className={cn(
+          "flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-2",
+          isPending ? "border-amber-500/20 bg-amber-500/[0.055]" : "border-border/50 bg-muted/20",
+        )}
+      >
+        <span
+          className={cn(
+            "flex items-center gap-1.5",
+            isPending ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+          )}
+        >
+          {isPending ? (
+            <ShieldAlertIcon className="size-3.5" aria-hidden="true" />
+          ) : (
+            <CheckCircle2Icon className="size-3.5" aria-hidden="true" />
+          )}
           <span className="text-[11px] font-semibold capitalize">Child {gate.kind}</span>
         </span>
         <button
@@ -83,7 +115,7 @@ const GatePresentation = memo(function GatePresentation({
           />
         </button>
         <span className="ml-auto rounded-full border border-border/70 bg-background/45 px-2 py-0.5 text-[9px] font-medium text-muted-foreground">
-          Parent can respond
+          {isPending ? "Parent can respond" : "Resolved"}
         </span>
       </header>
       <div className="px-3 py-2.5">

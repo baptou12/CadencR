@@ -46,7 +46,19 @@ pub async fn get_session_status_snapshot(
                   feature_id,
                   status,
                   pending_permission IS NOT NULL AS pending_permission,
-                  pending_questions IS NOT NULL AS pending_question
+                  pending_questions IS NOT NULL AS pending_question,
+                  COALESCE(
+                      json_extract(
+                          CASE WHEN json_valid(pending_questions)
+                               THEN pending_questions ELSE '{}' END,
+                          '$.request_id'
+                      ),
+                      json_extract(
+                          CASE WHEN json_valid(pending_permission)
+                               THEN pending_permission ELSE '{}' END,
+                          '$.request_id'
+                      )
+                  ) AS request_id
            FROM agent_sessions
            WHERE status = 'running'
               OR pending_questions IS NOT NULL
@@ -78,6 +90,7 @@ pub async fn get_session_status_snapshot(
                 feature_id: row.feature_id,
                 status: derived.status,
                 kind: derived.kind,
+                request_id: row.request_id,
                 // Filled by the WS handler from the active-turn registry; the
                 // DB has no per-turn start column.
                 turn_started_at_ms: None,
@@ -186,7 +199,7 @@ mod tests {
         // Feature 1: running session with pending_questions → Question/Question
         let sid1: i64 = sqlx::query_scalar(
             "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_questions) \
-             VALUES (?, 'main', 'running', '[\"q\"]') RETURNING id",
+             VALUES (?, 'main', 'running', '{\"request_id\":\"q-1\"}') RETURNING id",
         )
         .bind(fid1)
         .fetch_one(&pool)
@@ -216,15 +229,18 @@ mod tests {
         assert_eq!(s1.status, AgentStatus::Question);
         assert_eq!(s1.kind, Some(PendingKind::Question));
         assert_eq!(s1.feature_id, fid1);
+        assert_eq!(s1.request_id.as_deref(), Some("q-1"));
 
         let s2 = states.get(&sid2.to_string()).unwrap();
         assert_eq!(s2.status, AgentStatus::Agent);
         assert_eq!(s2.kind, None);
+        assert_eq!(s2.request_id, None);
 
         // Paused + pending must surface as Question (this was the sidebar-blank bug).
         let s3 = states.get(&sid3.to_string()).unwrap();
         assert_eq!(s3.status, AgentStatus::Question);
         assert_eq!(s3.kind, Some(PendingKind::Permission));
+        assert_eq!(s3.request_id.as_deref(), Some("r"));
 
         // Plain-paused must NOT appear (no pending → idle → filtered out).
         assert!(states.get(&sid5.to_string()).is_none());
