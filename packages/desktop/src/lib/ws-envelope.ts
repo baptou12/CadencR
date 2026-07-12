@@ -1,4 +1,5 @@
 import type { PromptAttachmentPayload } from "@/types/agent-types";
+import type { SlashCommandKind } from "@/hooks/useSlashCommand";
 
 /**
  * WebSocket envelope utilities for communicating with the Rust Axum WS endpoint.
@@ -253,7 +254,7 @@ export interface CommandsListPayload {
   commands: Array<{
     name: string;
     description?: string;
-    kind?: "command" | "skill";
+    kind?: SlashCommandKind;
   }>;
 }
 

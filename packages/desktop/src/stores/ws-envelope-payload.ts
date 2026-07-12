@@ -46,7 +46,7 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
       ): {
         name: string;
         description?: string;
-        kind: "command" | "skill";
+        kind: "command" | "skill" | "cadencr";
       } | null => {
         const item = asRecord(entry);
         if (!item) return null;
@@ -67,7 +67,7 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
       ): entry is {
         name: string;
         description?: string;
-        kind: "command" | "skill";
+        kind: "command" | "skill" | "cadencr";
       } => entry !== null,
     );
   return {
@@ -78,9 +78,9 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
 function optionalCommandKind(
   record: Record<string, unknown>,
   key: string,
-): "command" | "skill" | undefined {
+): "command" | "skill" | "cadencr" | undefined {
   const value = record[key];
-  return value === "command" || value === "skill" ? value : undefined;
+  return value === "command" || value === "skill" || value === "cadencr" ? value : undefined;
 }
 
 export function parseRuntimeSessionIdPayload(

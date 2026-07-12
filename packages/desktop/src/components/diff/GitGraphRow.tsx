@@ -4,12 +4,8 @@ import { NumStat } from "@/components/NumStat";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 import type { GraphRow } from "@/lib/git-graph-layout";
-import {
-  AutoScrollText,
-  CommitItemHoverCard,
-  formatRelativeDate,
-  type CommitEntry,
-} from "./DiffFileTreeHelpers";
+import { SlidingText } from "@/components/SlidingText";
+import { CommitItemHoverCard, formatRelativeDate, type CommitEntry } from "./DiffFileTreeHelpers";
 
 export const ROW_HEIGHT = 46;
 const COL_WIDTH = 14;
@@ -159,7 +155,10 @@ export const GitGraphRow = memo(function GitGraphRow({
                       {r}
                     </span>
                   ))}
-                  <AutoScrollText text={commit.message} className="text-xs text-foreground" />
+                  <SlidingText
+                    text={commit.message}
+                    className="min-w-0 flex-1 text-xs text-foreground"
+                  />
                 </div>
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                   <span className="truncate">{commit.author}</span>

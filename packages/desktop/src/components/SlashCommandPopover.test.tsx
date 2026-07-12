@@ -93,8 +93,12 @@ describe("SlashCommandPopover", () => {
       </SlashCommandPopover>,
     );
 
-    expect(screen.getByText("Commit changes")).toHaveClass("text-accent-foreground/80");
-    expect(screen.getByText("Create a plan")).toHaveClass("text-muted-foreground");
+    // The description text lives in SlidingText's inner span; the color class
+    // sits on its wrapper (the parent), since text color is inherited.
+    expect(screen.getByText("Commit changes").parentElement).toHaveClass(
+      "text-accent-foreground/80",
+    );
+    expect(screen.getByText("Create a plan").parentElement).toHaveClass("text-muted-foreground");
   });
 
   it("renders skill trigger prefix when provided", () => {
