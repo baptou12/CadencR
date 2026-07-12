@@ -8,6 +8,7 @@ import {
   type RuntimeModelPickerModel,
   type RuntimeModelPickerProvider,
 } from "@/components/RuntimeModelPicker";
+import { SlidingText } from "@/components/SlidingText";
 import { ThinkingEffortBars } from "@/components/ThinkingEffortBars";
 import {
   nextThinkingEffort,
@@ -105,7 +106,7 @@ export function ModelMetaChip({
               label={currentModelLabel}
               loading={isModelCatalogLoading}
             />
-            <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
+            <SlidingText text={currentModelLabel} className="max-w-[160px]" />
           </div>
         </ShortcutTooltip>
       )}
@@ -150,7 +151,7 @@ const ModelButton = forwardRef<HTMLButtonElement, ModelButtonProps>(function Mod
         label={currentModelLabel}
         loading={isModelCatalogLoading}
       />
-      <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
+      <SlidingText text={currentModelLabel} className="max-w-[160px]" />
       {!isModelCatalogLoading && <ChevronDownIcon className="size-3 shrink-0" />}
     </button>
   );
