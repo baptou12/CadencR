@@ -60,6 +60,24 @@ pub struct GetFileContentParams {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DiffImageSide {
+    Old,
+    New,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GetDiffImageParams {
+    pub feature_id: i64,
+    pub file_path: String,
+    pub old_file_path: Option<String>,
+    pub side: DiffImageSide,
+    pub mode: String,
+    pub commit_sha: Option<String>,
+    pub target_branch: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct GetFileContentBatchBody {
     pub feature_id: i64,
     pub file_paths: Vec<String>,

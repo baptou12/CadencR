@@ -47,6 +47,12 @@ const mocks = vi.hoisted(() => ({
   isLoading: false,
 }));
 
+vi.mock("./DiffImageView", () => ({
+  DiffImageView: ({ filePath, status }: { filePath: string; status: string }) => (
+    <div data-testid="diff-image-view" data-file-path={filePath} data-status={status} />
+  ),
+}));
+
 vi.mock("./PatchDiffView", () => ({
   PatchDiffView: (props: Parameters<typeof mocks.patchDiffViewMock>[0]) =>
     mocks.patchDiffViewMock(props),
@@ -140,7 +146,7 @@ describe("DiffFileBlock", () => {
     expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", undefined);
   });
 
-  it("renders a binary placeholder for binary/no-hunk patches", () => {
+  it("renders an image preview for binary image patches", () => {
     mocks.section = {
       oldFileName: "image.png",
       newFileName: "image.png",
@@ -150,12 +156,29 @@ Binary files a/image.png and b/image.png differ
 `,
       ],
     };
-    const { getByText, queryByTestId } = render(
+    const { getByTestId, queryByText, queryByTestId } = render(
       <DiffFileBlock {...baseProps} displayName="image.png" status="M" isCollapsed={false} />,
     );
-    expect(getByText("Binary file")).toBeInTheDocument();
-    // Binary files have no useful textual diff — Pierre must not hydrate.
+    expect(getByTestId("diff-image-view")).toHaveAttribute("data-file-path", "image.png");
+    expect(queryByText("Binary file")).not.toBeInTheDocument();
     expect(queryByTestId("patch-diff-view")).not.toBeInTheDocument();
+  });
+
+  it("keeps the binary placeholder for non-image binary files", () => {
+    mocks.section = {
+      oldFileName: "archive.zip",
+      newFileName: "archive.zip",
+      hunks: [
+        `diff --git a/archive.zip b/archive.zip
+Binary files a/archive.zip and b/archive.zip differ
+`,
+      ],
+    };
+    const { getByText, queryByTestId } = render(
+      <DiffFileBlock {...baseProps} displayName="archive.zip" status="M" isCollapsed={false} />,
+    );
+    expect(getByText("Binary file")).toBeInTheDocument();
+    expect(queryByTestId("diff-image-view")).not.toBeInTheDocument();
   });
 
   it("gates a large text diff behind an opt-in instead of freezing on expand", async () => {

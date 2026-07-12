@@ -9,6 +9,7 @@ mod blame;
 mod branch;
 mod diff;
 mod graph;
+mod image;
 mod stash;
 mod worktree;
 
@@ -16,6 +17,7 @@ pub use blame::*;
 pub use branch::*;
 pub use diff::*;
 pub use graph::*;
+pub use image::*;
 pub use stash::*;
 pub use worktree::*;
 

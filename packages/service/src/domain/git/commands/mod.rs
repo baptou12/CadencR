@@ -33,7 +33,7 @@ pub use blob_shas::get_file_blob_shas;
 pub use branch_name::build_branch_name;
 pub use changed_files::{get_changed_files, parse_numstat};
 pub use diff::{get_commit_diff, get_diff, get_file_diff, get_stats};
-pub use files::{get_file_content, get_file_content_batch, list_files};
+pub use files::{get_file_bytes, get_file_content, get_file_content_batch, list_files};
 pub use graph::get_commit_graph;
 pub use log::{get_commit_log, get_recent_commits};
 pub use merge::{get_current_branch, get_original_branch};

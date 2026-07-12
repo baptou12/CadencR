@@ -62,6 +62,14 @@ pub async fn get_file_content_handler(
     Ok(Json(service::get_file_content(&state, params).await?))
 }
 
+pub async fn get_diff_image_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetDiffImageParams>,
+) -> Result<axum::response::Response, AppError> {
+    let image = service::get_diff_image(&state, params).await?;
+    crate::shared::image_file::image_response(image.bytes, image.mime)
+}
+
 #[utoipa::path(post, path = "/api/git/file-content-batch", request_body = GetFileContentBatchBody, responses((status = 200, body = Vec<FileContentBatchItem>)))]
 pub async fn get_file_content_batch_handler(
     State(state): State<AppState>,
@@ -378,6 +386,7 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/file-diff", get(get_file_diff_handler))
         .route("/api/git/changed-files", get(get_changed_files_handler))
         .route("/api/git/file-content", get(get_file_content_handler))
+        .route("/api/git/diff-image", get(get_diff_image_handler))
         .route("/api/git/file-content-batch", post(get_file_content_batch_handler))
         .route("/api/git/commit-log", get(get_commit_log_handler))
         .route("/api/git/commit-graph", get(get_commit_graph_handler))

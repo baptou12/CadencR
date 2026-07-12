@@ -1,14 +1,31 @@
 //! File-content fetchers used by the diff viewer (single + batch) and
 //! `ls-files` listing.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::domain::git::file_size::classify_content;
 use crate::domain::git::models::FileContentBatchItem;
 use crate::error::AppError;
-use crate::shared::git_cli::run_git_safe_refs;
+use crate::shared::git_cli::{run_git_safe_refs, run_git_safe_refs_bytes};
 
 use super::util::run_git_quiet;
+
+fn resolve_worktree_file(
+    worktree_path: &Path,
+    file_path: &str,
+) -> Result<Option<PathBuf>, AppError> {
+    let canonical_worktree = worktree_path
+        .canonicalize()
+        .map_err(|e| AppError::BadRequest(format!("Invalid worktree path: {e}")))?;
+    let canonical_file = worktree_path.join(file_path).canonicalize().ok();
+    let Some(canonical_file) = canonical_file else {
+        return Ok(None);
+    };
+    if !canonical_file.starts_with(&canonical_worktree) {
+        return Err(AppError::BadRequest("Path traversal not allowed".into()));
+    }
+    Ok(Some(canonical_file))
+}
 
 /// Get file content at a given ref, or from working tree if ref is None.
 pub async fn get_file_content(
@@ -18,17 +35,8 @@ pub async fn get_file_content(
 ) -> Result<String, AppError> {
     match ref_spec {
         None => {
-            // Read from working tree — validate against path traversal
-            let full_path = worktree_path.join(file_path);
-            let canonical_wt = worktree_path
-                .canonicalize()
-                .map_err(|e| AppError::BadRequest(format!("Invalid worktree path: {e}")))?;
-            let canonical_file = full_path
-                .canonicalize()
-                .map_err(|_| AppError::BadRequest("File not found".into()))?;
-            if !canonical_file.starts_with(&canonical_wt) {
-                return Err(AppError::BadRequest("Path traversal not allowed".into()));
-            }
+            let canonical_file = resolve_worktree_file(worktree_path, file_path)?
+                .ok_or_else(|| AppError::BadRequest("File not found".into()))?;
             Ok(tokio::fs::read_to_string(&canonical_file)
                 .await
                 .unwrap_or_default())
@@ -42,6 +50,52 @@ pub async fn get_file_content(
             )
         }
     }
+}
+
+/// Get exact file bytes at a ref, or from the working tree when `ref_spec` is
+/// `None`. Unlike [`get_file_content`], this never applies UTF-8 conversion.
+pub async fn get_file_bytes(
+    worktree_path: &Path,
+    file_path: &str,
+    ref_spec: Option<&str>,
+    max_bytes: usize,
+) -> Result<Vec<u8>, AppError> {
+    match ref_spec {
+        None => {
+            let canonical_file = resolve_worktree_file(worktree_path, file_path)?
+                .ok_or_else(|| AppError::NotFound("File not found".into()))?;
+            let len = tokio::fs::metadata(&canonical_file)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?
+                .len();
+            ensure_file_size(len, max_bytes)?;
+            tokio::fs::read(canonical_file)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))
+        }
+        Some(reference) => {
+            let show_arg = format!("{reference}:{file_path}");
+            let len = run_git_safe_refs(&["cat-file"], &["-s"], &[&show_arg], worktree_path)
+                .await?
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| {
+                    AppError::GitCommandError("git returned an invalid blob size".into())
+                })?;
+            ensure_file_size(len, max_bytes)?;
+            run_git_safe_refs_bytes(&["show"], &[], &[&show_arg], worktree_path).await
+        }
+    }
+}
+
+fn ensure_file_size(len: u64, max_bytes: usize) -> Result<(), AppError> {
+    if len > max_bytes as u64 {
+        return Err(AppError::BadRequest(format!(
+            "File exceeds {} MB size limit",
+            max_bytes / (1024 * 1024)
+        )));
+    }
+    Ok(())
 }
 
 /// Get file content for multiple files (batch).
@@ -185,5 +239,55 @@ mod tests {
             !listed.iter().any(|p| p == "untracked.txt"),
             "untracked non-env file leaked through: {listed:?}",
         );
+    }
+
+    #[tokio::test]
+    async fn get_file_bytes_preserves_binary_data_from_ref_and_worktree() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        git(&["init", "-q", "-b", "main"], root);
+        git(&["config", "user.email", "test@example.com"], root);
+        git(&["config", "user.name", "Test"], root);
+        git(&["config", "commit.gpgsign", "false"], root);
+
+        let committed = b"\x89PNG\r\n\x1a\n\0committed";
+        let working = b"\x89PNG\r\n\x1a\n\0working";
+        std::fs::write(root.join("image.png"), committed).unwrap();
+        git(&["add", "image.png"], root);
+        git(&["commit", "-q", "-m", "add image"], root);
+        std::fs::write(root.join("image.png"), working).unwrap();
+
+        assert_eq!(
+            get_file_bytes(root, "image.png", Some("HEAD"), usize::MAX)
+                .await
+                .unwrap(),
+            committed
+        );
+        assert_eq!(
+            get_file_bytes(root, "image.png", None, usize::MAX)
+                .await
+                .unwrap(),
+            working
+        );
+    }
+
+    #[tokio::test]
+    async fn get_file_bytes_rejects_oversized_ref_and_worktree_before_reading() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        git(&["init", "-q", "-b", "main"], root);
+        git(&["config", "user.email", "test@example.com"], root);
+        git(&["config", "user.name", "Test"], root);
+        git(&["config", "commit.gpgsign", "false"], root);
+        std::fs::write(root.join("image.png"), b"1234").unwrap();
+        git(&["add", "image.png"], root);
+        git(&["commit", "-q", "-m", "add image"], root);
+
+        for reference in [Some("HEAD"), None] {
+            let error = get_file_bytes(root, "image.png", reference, 3)
+                .await
+                .unwrap_err();
+            assert!(matches!(error, AppError::BadRequest(_)), "{error:?}");
+        }
     }
 }
