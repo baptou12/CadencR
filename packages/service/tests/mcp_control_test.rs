@@ -121,6 +121,35 @@ async fn project_spawn_session_can_skip_session_link() {
 }
 
 #[tokio::test]
+async fn project_spawn_session_persists_explicit_thinking_level() {
+    let pool = seeded_control_pool().await;
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(spawn_request_from_body(serde_json::json!({
+            "source_feature_id": 42,
+            "source_session_id": 777,
+            "target_project_id": 7,
+            "title": "Explicit thinking child",
+            "branch": { "mode": "none" },
+            "provider": "claude_code",
+            "model": "opus",
+            "thinking_level": "low"
+        })))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let thinking_level: String = sqlx::query_scalar(
+        "SELECT thinking_effort FROM agent_sessions WHERE id != 777 ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(thinking_level, "low");
+}
+
+#[tokio::test]
 async fn project_spawn_session_inherits_configured_codex_permission_without_override() {
     let _settings_guard = SETTINGS_TEST_LOCK.lock().await;
     let pool = seeded_control_pool().await;

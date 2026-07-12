@@ -21,6 +21,7 @@ mod send_message;
 mod spawn_persist;
 mod spawn_resolve;
 mod spawn_session;
+mod spawn_thinking;
 /// Trim a borrowed optional string, treating whitespace-only values as absent.
 /// Shared by the spawn submodules (`spawn_session`, `spawn_resolve`, `spawn_persist`).
 fn trimmed_optional(value: Option<&str>) -> Option<String> {

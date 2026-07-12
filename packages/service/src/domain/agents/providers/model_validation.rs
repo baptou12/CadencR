@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 use std::fmt;
+use std::path::Path;
 
 use sqlx::SqlitePool;
 
 use super::{provider_catalog_entry_live_for_settings, runtime_adapter};
-use crate::domain::agents::adapter::AgentRuntimeAdapter;
-use crate::domain::agents::runtime::ProviderCatalogEntry;
+use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderAliasMetadata {
@@ -44,6 +44,12 @@ pub enum ProviderModelValidationError {
         model_id: String,
         available_models: Vec<String>,
     },
+    UnsupportedThinkingLevel {
+        provider_id: String,
+        model_id: String,
+        thinking_level: String,
+        available_thinking_levels: Vec<String>,
+    },
 }
 
 impl fmt::Display for ProviderModelValidationError {
@@ -77,6 +83,30 @@ impl fmt::Display for ProviderModelValidationError {
                     formatter,
                     ". Available models: {}",
                     available_models.join(", ")
+                )
+            }
+            Self::UnsupportedThinkingLevel {
+                provider_id,
+                model_id,
+                thinking_level,
+                available_thinking_levels,
+            } => {
+                write!(
+                    formatter,
+                    "unsupported thinking level '{thinking_level}' for model '{model_id}' on provider '{provider_id}'"
+                )?;
+                if available_thinking_levels.is_empty() {
+                    write!(formatter, ". This model advertises no thinking levels")?;
+                } else {
+                    write!(
+                        formatter,
+                        ". Available thinking levels: {}",
+                        available_thinking_levels.join(", ")
+                    )?;
+                }
+                write!(
+                    formatter,
+                    ". Call project_list_agent_providers for current model capabilities"
                 )
             }
         }
@@ -134,14 +164,15 @@ pub fn canonical_provider_or_error(
     })
 }
 
-pub async fn canonical_model_or_error(
+pub async fn resolve_model_or_error(
     read_pool: &SqlitePool,
+    cwd: Option<&Path>,
     provider_id: &str,
     model_id: &str,
-) -> Result<String, ProviderModelValidationError> {
+) -> Result<(String, ModelCatalogEntry), ProviderModelValidationError> {
     let provider_id = canonical_provider_or_error(provider_id)?;
     let adapter = runtime_adapter(&provider_id).expect("canonical provider has adapter");
-    let catalog = provider_catalog_entry_live_for_settings(read_pool, None, None, adapter).await;
+    let catalog = provider_catalog_entry_live_for_settings(read_pool, cwd, None, adapter).await;
 
     // Canonicalize against the live catalog when it is populated, but degrade to
     // the adapter's static catalog when the live probe is unavailable (e.g. the
@@ -155,15 +186,94 @@ pub async fn canonical_model_or_error(
     };
     let canonical_model = adapter.canonicalize_model_id(model_id, canonicalize_source);
 
-    if model_is_available(&canonical_model, &catalog, adapter) {
-        return Ok(canonical_model);
+    if let Some(catalog_entry) = catalog
+        .models
+        .iter()
+        .find(|model| model.id == canonical_model)
+        .or_else(|| {
+            static_catalog
+                .models
+                .iter()
+                .find(|model| model.id == canonical_model)
+        })
+        .cloned()
+    {
+        return Ok((canonical_model, catalog_entry));
     }
 
     Err(ProviderModelValidationError::UnknownModel {
         provider_id,
         model_id: model_id.to_string(),
-        available_models: available_model_ids(&catalog, adapter),
+        available_models: available_model_ids(&catalog, &static_catalog),
     })
+}
+
+/// Validate a user-selected thinking level against provider-advertised model
+/// capabilities. Unknown capability metadata is accepted so a failed provider
+/// probe cannot block spawning; explicit `supports_effort: false` and advertised
+/// level lists remain authoritative.
+pub fn validate_thinking_level_or_error(
+    provider_id: &str,
+    model: &ModelCatalogEntry,
+    thinking_level: &str,
+) -> Result<(), ProviderModelValidationError> {
+    if model_supports_thinking_level(model, thinking_level) != Some(false) {
+        return Ok(());
+    }
+
+    let advertised_levels = model.supported_effort_levels.as_deref();
+    Err(ProviderModelValidationError::UnsupportedThinkingLevel {
+        provider_id: provider_id.to_string(),
+        model_id: model.id.clone(),
+        thinking_level: thinking_level.to_string(),
+        available_thinking_levels: advertised_levels.unwrap_or_default().to_vec(),
+    })
+}
+
+/// Provider-neutral interpretation of advertised thinking capability. `None`
+/// means the CLI did not provide enough metadata to reject the level safely.
+pub fn model_supports_thinking_level(
+    model: &ModelCatalogEntry,
+    thinking_level: &str,
+) -> Option<bool> {
+    match model.supported_effort_levels.as_deref() {
+        Some(levels) => Some(levels.iter().any(|level| level == thinking_level)),
+        None if model.supports_effort == Some(false) => Some(false),
+        None => None,
+    }
+}
+
+/// Resolve one model's live capability metadata, falling back to the adapter's
+/// static catalog when the CLI probe is unavailable. With no model id, selects
+/// the provider's advertised default model.
+pub async fn provider_model_catalog_entry(
+    read_pool: &SqlitePool,
+    cwd: Option<&Path>,
+    provider_id: &str,
+    model_id: Option<&str>,
+) -> Option<ModelCatalogEntry> {
+    let adapter = runtime_adapter(provider_id)?;
+    let live_catalog =
+        provider_catalog_entry_live_for_settings(read_pool, cwd, None, adapter).await;
+    let selected_model = model_id.or(live_catalog.default_model.as_deref());
+    if let Some(model) = selected_model.and_then(|selected_model| {
+        live_catalog
+            .models
+            .iter()
+            .find(|model| model.id == selected_model)
+    }) {
+        return Some(model.clone());
+    }
+
+    let static_catalog = adapter.catalog_entry();
+    let selected_model = model_id
+        .or(live_catalog.default_model.as_deref())
+        .or(static_catalog.default_model.as_deref())?;
+    static_catalog
+        .models
+        .iter()
+        .find(|model| model.id == selected_model)
+        .cloned()
 }
 
 fn suggested_provider_id(provider_id: &str) -> Option<String> {
@@ -180,27 +290,14 @@ fn suggested_provider_id(provider_id: &str) -> Option<String> {
         .map(|metadata| metadata.provider_id.to_string())
 }
 
-fn model_is_available(
-    model_id: &str,
-    catalog: &ProviderCatalogEntry,
-    adapter: &dyn AgentRuntimeAdapter,
-) -> bool {
-    catalog.models.iter().any(|model| model.id == model_id)
-        || adapter
-            .catalog_entry()
-            .models
-            .iter()
-            .any(|model| model.id == model_id)
-}
-
 fn available_model_ids(
     catalog: &ProviderCatalogEntry,
-    adapter: &dyn AgentRuntimeAdapter,
+    static_catalog: &ProviderCatalogEntry,
 ) -> Vec<String> {
     catalog
         .models
         .iter()
-        .chain(adapter.catalog_entry().models.iter())
+        .chain(static_catalog.models.iter())
         .map(|model| model.id.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()

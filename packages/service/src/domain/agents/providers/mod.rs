@@ -8,8 +8,9 @@ use super::adapter::AgentRuntimeAdapter;
 use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, ProviderStatus, DEFAULT_PROVIDER};
 
 pub use model_validation::{
-    canonical_model_or_error, canonical_provider_or_error, provider_alias_metadata,
-    provider_aliases, valid_provider_ids,
+    canonical_provider_or_error, model_supports_thinking_level, provider_alias_metadata,
+    provider_aliases, provider_model_catalog_entry, resolve_model_or_error, valid_provider_ids,
+    validate_thinking_level_or_error,
 };
 
 /// All registered runtime adapters. Add new providers here.
@@ -79,13 +80,11 @@ pub async fn provider_catalog_live_for_cwd(
     cwd: Option<&Path>,
     profile: Option<&str>,
 ) -> AgentCatalogResponse {
-    let providers = futures::future::join_all(ADAPTERS.iter().map(|(_, adapter)| async move {
-        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, *adapter).await
-    }))
-    .await
-    .into_iter()
-    .filter(|provider| provider.status == ProviderStatus::Available)
-    .collect::<Vec<_>>();
+    let providers = provider_catalog_entries_live_for_cwd(read_pool, cwd, profile)
+        .await
+        .into_iter()
+        .filter(|provider| provider.status == ProviderStatus::Available)
+        .collect::<Vec<_>>();
 
     let default_provider = providers
         .iter()
@@ -98,6 +97,20 @@ pub async fn provider_catalog_live_for_cwd(
         default_provider,
         providers,
     }
+}
+
+/// Resolve every registered provider's live catalog without hiding unavailable
+/// entries. Discovery surfaces use this to explain provider availability while
+/// the frontend catalog keeps filtering down to providers that can be selected.
+pub async fn provider_catalog_entries_live_for_cwd(
+    read_pool: &SqlitePool,
+    cwd: Option<&Path>,
+    profile: Option<&str>,
+) -> Vec<super::runtime::ProviderCatalogEntry> {
+    futures::future::join_all(ADAPTERS.iter().map(|(_, adapter)| async move {
+        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, *adapter).await
+    }))
+    .await
 }
 
 pub(super) async fn provider_catalog_entry_live_for_settings(

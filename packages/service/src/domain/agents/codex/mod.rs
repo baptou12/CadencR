@@ -121,6 +121,10 @@ fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
 
 fn model_entry(model: CodexModel) -> ModelCatalogEntry {
     let mut seen = HashSet::new();
+    let default_effort_level = model
+        .default_effort
+        .map(|effort| effort.trim().to_string())
+        .filter(|effort| !effort.is_empty());
     let supported_efforts = model
         .supported_efforts
         .into_iter()
@@ -135,6 +139,7 @@ fn model_entry(model: CodexModel) -> ModelCatalogEntry {
         description: model.description,
         supports_effort: Some(!supported_efforts.is_empty()),
         supported_effort_levels: (!supported_efforts.is_empty()).then_some(supported_efforts),
+        default_effort_level,
         supports_adaptive_thinking: None,
         supports_fast_mode: None,
         supports_auto_mode: None,
@@ -355,6 +360,7 @@ mod tests {
                 "future".to_string(),
             ])
         );
+        assert_eq!(entry.default_effort_level.as_deref(), Some("low"));
     }
 
     #[test]

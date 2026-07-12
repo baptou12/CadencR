@@ -52,10 +52,10 @@ fn tool_description(name: &str) -> &'static str {
             "Record an explicit relationship between current-project sessions."
         }
         "project_list_agent_providers" => {
-            "List canonical CadencR provider ids, common aliases, and model guidance for project_spawn_session."
+            "List canonical CadencR provider ids, models, and each model's available thinking levels for project_spawn_session."
         }
         "project_spawn_session" => {
-            "Create another CadencR session in a target project. You MUST specify the target with project_id or project_path (call workspace_list_projects to list projects, then pass the caller's own project id to spawn in the current project). Targeting a different project is useful when related codebases live as separate CadencR projects. Use canonical provider ids; call project_list_agent_providers when unsure."
+            "Create another CadencR session in a target project. You MUST specify the target with project_id or project_path (call workspace_list_projects to list projects, then pass the caller's own project id to spawn in the current project). Targeting a different project is useful when related codebases live as separate CadencR projects. Use canonical provider ids and model-advertised thinking levels; call project_list_agent_providers when unsure."
         }
         "project_send_session_message" => {
             "Send a provenance-tracked user message to another current-project session."
@@ -180,7 +180,8 @@ fn spawn_session_schema() -> Value {
             "title": { "type": "string" }, "initial_message": { "type": "string" },
             "project_id": { "type": "number" }, "project_path": { "type": "string" },
             "provider": { "type": "string", "enum": valid_provider_ids() },
-            "model": { "type": "string" }, "permission_mode": { "type": "string" },
+            "model": { "type": "string" }, "thinking_level": { "type": "string" },
+            "permission_mode": { "type": "string" },
             "codex_permission_mode": { "type": "string" }, "source_note": { "type": "string" },
             "branch": { "type": "object", "properties": {
                 "mode": { "type": "string", "enum": ["none", "new_project_branch", "new_worktree", "reuse_worktree"], "description": "Worktree strategy. Prefer new_worktree for independent implementation tasks." },
@@ -224,6 +225,9 @@ fn property_description(tool_name: &str, property: &str) -> String {
             format!(
                 "Provider-specific model id. {claude_guidance} Codex uses gpt-* ids; OpenCode often uses provider/model ids. Call project_list_agent_providers when unsure."
             )
+        }
+        ("project_spawn_session", "thinking_level") => {
+            "Provider/model-specific thinking or reasoning level. Use one of the selected model's thinking_levels from project_list_agent_providers. When omitted, CadencR uses the last user-selected level for that target provider/model pair, then its CLI-advertised default_thinking_level; when no default is advertised, the CLI applies its native default.".into()
         }
         ("project_send_session_message", "delivery") => {
             "send_now sends immediately, queue_if_busy queues for running targets, reject_if_busy fails if the target is busy.".into()
@@ -334,6 +338,13 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("project_list_agent_providers"));
+        assert_eq!(schema["properties"]["thinking_level"]["type"], "string");
+        let thinking_description = schema["properties"]["thinking_level"]["description"]
+            .as_str()
+            .unwrap();
+        assert!(thinking_description.contains("thinking_levels"));
+        assert!(thinking_description.contains("target provider/model pair"));
+        assert!(thinking_description.contains("default_thinking_level"));
     }
 
     #[test]

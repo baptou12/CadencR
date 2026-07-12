@@ -30,6 +30,7 @@ fn row_to_entry(model_id: String, label: String, description: Option<String>) ->
         description,
         supports_effort: None,
         supported_effort_levels: None,
+        default_effort_level: None,
         supports_adaptive_thinking: None,
         supports_fast_mode: None,
         supports_auto_mode: None,

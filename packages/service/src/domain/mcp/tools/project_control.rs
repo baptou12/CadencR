@@ -148,6 +148,7 @@ pub async fn spawn_session_with_client(
                 "branch": args.get("branch").cloned().unwrap_or_else(|| json!({})),
                 "provider": optional_string(args, "provider"),
                 "model": optional_string(args, "model"),
+                "thinking_level": optional_string(args, "thinking_level"),
                 "permission_mode": optional_string(args, "permission_mode"),
                 "codex_permission_mode": optional_string(args, "codex_permission_mode"),
                 "source_note": optional_string(args, "source_note"),
@@ -282,6 +283,7 @@ mod tests {
                 "branch": { "mode": "none" },
                 "provider": "codex_cli",
                 "model": "openai/gpt-5.4",
+                "thinking_level": "high",
                 "permission_mode": "default",
                 "codex_permission_mode": "auto_review",
                 "source_note": "delegated by project MCP"
@@ -302,6 +304,7 @@ mod tests {
             "Please investigate and report findings."
         );
         assert_eq!(request["branch"]["mode"], "none");
+        assert_eq!(request["thinking_level"], "high");
         assert!(request["target_project_id"].is_null());
         assert!(request["target_project_path"].is_null());
     }

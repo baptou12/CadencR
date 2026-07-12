@@ -119,6 +119,7 @@ mod test_support {
             description: None,
             supports_effort: None,
             supported_effort_levels: None,
+            default_effort_level: None,
             supports_adaptive_thinking: None,
             supports_fast_mode: None,
             supports_auto_mode: supports_auto,
