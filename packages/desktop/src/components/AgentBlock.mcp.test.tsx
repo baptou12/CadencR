@@ -18,7 +18,7 @@ function makeBlock(overrides: Partial<AgentBlockData>): AgentBlockData {
   };
 }
 
-describe("AgentBlock Cadencr MCP browser tools", () => {
+describe("AgentBlock MCP tools", () => {
   it("renders a browser_open_url MCP call with custom styling", () => {
     render(
       <AgentBlock
@@ -49,7 +49,7 @@ describe("AgentBlock Cadencr MCP browser tools", () => {
     expect(screen.getByText("Tab tab-42")).toBeInTheDocument();
   });
 
-  it("renders project and workspace MCP calls with the existing Cadencr MCP block", () => {
+  it("renders project and workspace MCP calls with the shared MCP block", () => {
     const { rerender } = render(
       <AgentBlock
         block={makeBlock({
@@ -75,5 +75,48 @@ describe("AgentBlock Cadencr MCP browser tools", () => {
     expect(screen.getByText("workspace")).toBeInTheDocument();
     expect(screen.getByText("Searching workspace sessions")).toBeInTheDocument();
     expect(screen.getByText("MCP session spawning")).toBeInTheDocument();
+  });
+
+  it("renders direct and structured MCP arguments with the same shared block", () => {
+    const { rerender } = render(
+      <AgentBlock
+        block={makeBlock({
+          toolName: "mcp__chrome-devtools__take_screenshot",
+          toolArgs: JSON.stringify({ filePath: "/tmp/claude.png" }),
+        })}
+      />,
+    );
+    expect(screen.getByText("chrome-devtools")).toBeInTheDocument();
+    expect(screen.getByText("Taking screenshot")).toBeInTheDocument();
+    expect(screen.getByText("/tmp/claude.png")).toBeInTheDocument();
+
+    rerender(
+      <AgentBlock
+        block={makeBlock({
+          toolName: "mcp__chrome-devtools__take_screenshot",
+          toolArgs: JSON.stringify({
+            server: "chrome-devtools",
+            tool: "take_screenshot",
+            status: "inProgress",
+            arguments: { filePath: "/tmp/structured.png" },
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText("/tmp/structured.png")).toBeInTheDocument();
+  });
+
+  it("renders historical bare MCP names", () => {
+    render(
+      <AgentBlock
+        block={makeBlock({
+          toolName: "chrome-devtools_new_page",
+          toolArgs: JSON.stringify({ url: "http://localhost:1420" }),
+        })}
+      />,
+    );
+    expect(screen.getByText("chrome-devtools")).toBeInTheDocument();
+    expect(screen.getByText("Opening page")).toBeInTheDocument();
+    expect(screen.getByText("http://localhost:1420")).toBeInTheDocument();
   });
 });

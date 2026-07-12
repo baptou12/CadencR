@@ -11,7 +11,8 @@ import { cn, toRelativePath } from "@/lib/utils";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { NumStat } from "@/components/NumStat";
 import { extractBashCommand, isFileChangeTool, normalizeToolName } from "@/lib/tool-adapter";
-import { parseCadencrMcpTool } from "@/lib/tool-call-parser";
+import { parseMcpTool } from "@/lib/mcp-tool-parser";
+import { semanticSkillPresentation, shouldHideToolCall } from "@/lib/tool-display-policy";
 import { computeToolNumStat } from "@/lib/tool-numstat";
 import { TOOL_ACCENT_CLASSES, type ToolAccent } from "@/lib/tool-accent";
 
@@ -40,10 +41,15 @@ export const CompactToolTile = memo(function CompactToolTile({
 
 function CompactToolCallTile({ block, basePath }: CompactToolTileProps) {
   const rawToolName = block.toolName ?? "Tool";
+  if (shouldHideToolCall(rawToolName)) return null;
+  const skill = semanticSkillPresentation(rawToolName, block.toolArgs);
+  if (skill) {
+    return <BaseTile icon={WrenchIcon} accent="tool" label="Skill" detail={`· ${skill.name}`} />;
+  }
   const toolName = normalizeToolName(rawToolName);
 
   // Branch on toolName before any work — the heavier per-tool helpers
-  // (`parseCadencrMcpTool`, patch stats, command shortening) only need to
+  // (MCP parsing, patch stats, command shortening) only need to
   // run for the tile shape that actually consumes them. The `useMemo`s
   // below stay hook-stable because they're called unconditionally inside
   // each branch component.
@@ -109,9 +115,9 @@ function GenericToolTile({
   toolName: string;
   toolArgs: string | undefined;
 }) {
-  const cadencrMcp = useMemo(() => parseCadencrMcpTool(toolName, toolArgs), [toolName, toolArgs]);
-  const label = cadencrMcp?.label ?? toolName;
-  return <BaseTile icon={WrenchIcon} accent="tool" label={label} />;
+  const mcp = useMemo(() => parseMcpTool(toolName, toolArgs), [toolName, toolArgs]);
+  const label = mcp?.label ?? toolName;
+  return <BaseTile icon={WrenchIcon} accent={mcp ? "mcp" : "tool"} label={label} />;
 }
 
 interface BaseTileProps {

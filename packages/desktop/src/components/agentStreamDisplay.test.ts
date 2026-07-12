@@ -88,6 +88,26 @@ describe("agentStreamDisplay", () => {
     ).toBe(0);
   });
 
+  it("filters internal runtime calls but preserves shared ToolSearch calls", () => {
+    const internal = block("internal", "", { type: "tool_call", toolName: "update_plan" });
+    const shared = block("shared", "", { type: "tool_call", toolName: "ToolSearch" });
+
+    expect(filterRenderableBlocks([internal, shared])).toEqual([shared]);
+  });
+
+  it("keeps internal runtime errors as standalone compact rows", () => {
+    const error = block("internal-error", "Runtime coordination failed", {
+      type: "tool_result",
+      sourceToolName: "update_plan",
+      isError: true,
+    });
+
+    expect(filterRenderableBlocks([error])).toEqual([error]);
+    expect(buildDisplayItems([error], { compact: true })).toEqual([
+      { kind: "block", key: "internal-error", block: error },
+    ]);
+  });
+
   it("counts summary-mode rows as the collapsed row count (recap + final text)", () => {
     const turn = [
       block("u1", "prompt", { type: "user_message" }),

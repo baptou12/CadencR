@@ -1,7 +1,8 @@
 import type { AgentBlockData } from "./AgentBlock";
 import { isCountableTool } from "./agentStreamSummary";
 import { isFileChangeTool, normalizeToolName } from "@/lib/tool-adapter";
-import { parseCadencrMcpTool, type CadencrMcpTool } from "@/lib/tool-call-parser";
+import { mcpToolKey, parseMcpTool, type McpTool } from "@/lib/mcp-tool-parser";
+import { semanticSkillPresentation } from "@/lib/tool-display-policy";
 import { computeToolNumStat } from "@/lib/tool-numstat";
 import type { ToolAccent } from "@/lib/tool-accent";
 
@@ -26,7 +27,7 @@ export interface ToolChip {
   deletions: number;
 }
 
-function classifyAccent(name: string, mcp: CadencrMcpTool | undefined): ToolAccent {
+function classifyAccent(name: string, mcp: McpTool | undefined): ToolAccent {
   if (mcp) return "mcp";
   if (name === "Bash") return "bash";
   if (isFileChangeTool(name)) return "edit";
@@ -45,15 +46,17 @@ export function buildToolChips(blocks: AgentBlockData[]): ToolChip[] {
   for (const block of blocks) {
     if (!isCountableTool(block)) continue;
     const rawName = block.toolName ?? "unknown";
-    const name = normalizeToolName(rawName);
+    const skill = semanticSkillPresentation(rawName, block.toolArgs);
+    const name = skill ? "Skill" : normalizeToolName(rawName);
+    const args = skill?.args ?? block.toolArgs;
+    const mcpKey = mcpToolKey(rawName);
+    const key = mcpKey ? `mcp:${mcpKey}` : name;
 
-    let chip = groups.get(name);
+    let chip = groups.get(key);
     if (!chip) {
-      // Parse MCP metadata only on first appearance — the label/accent/server
-      // are group-wide, so re-parsing args for every repeat call is wasted work.
-      const mcp = parseCadencrMcpTool(rawName, block.toolArgs);
+      const mcp = parseMcpTool(rawName, args);
       chip = {
-        key: name,
+        key,
         label: mcp?.label ?? name,
         count: 0,
         accent: classifyAccent(name, mcp),
@@ -61,8 +64,8 @@ export function buildToolChips(blocks: AgentBlockData[]): ToolChip[] {
         additions: 0,
         deletions: 0,
       };
-      groups.set(name, chip);
-      order.push(name);
+      groups.set(key, chip);
+      order.push(key);
     }
     chip.count += 1;
 

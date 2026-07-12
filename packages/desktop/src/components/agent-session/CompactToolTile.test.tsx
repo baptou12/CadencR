@@ -50,6 +50,30 @@ describe("CompactToolTile", () => {
     expect(screen.getByText("Grep")).toBeInTheDocument();
   });
 
+  it("renders semantic skill reads as a Skill tile", () => {
+    render(
+      <CompactToolTile
+        block={toolCall({
+          toolName: "Read",
+          toolArgs: JSON.stringify({
+            type: "read",
+            command: "cat .agents/skills/qa/SKILL.md",
+            path: "/repo/.agents/skills/qa/SKILL.md",
+          }),
+        })}
+      />,
+    );
+    expect(screen.getByText("Skill")).toBeInTheDocument();
+    expect(screen.getByText(/qa/)).toBeInTheDocument();
+  });
+
+  it("renders nothing for hidden runtime tools", () => {
+    const { container } = render(
+      <CompactToolTile block={toolCall({ toolName: "collaboration__wait_agent" })} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("gives file-change tools a distinct accent from generic tools", () => {
     const { rerender } = render(
       <CompactToolTile

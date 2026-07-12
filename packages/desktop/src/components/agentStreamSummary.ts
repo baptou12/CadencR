@@ -1,5 +1,6 @@
 import type { AgentBlockData } from "./AgentBlock";
 import { isTaskTodoTool } from "@/lib/tool-adapter";
+import { shouldHideToolCall } from "@/lib/tool-display-policy";
 
 /** Options controlling how turns collapse into recaps. */
 export interface CollapseOptions {
@@ -34,6 +35,9 @@ const SEGMENT_BOUNDARY_TYPES = new Set<AgentBlockData["type"]>([
  * history/idle sends). Until then the pending message rides inside the live turn.
  */
 function isSegmentBoundary(block: AgentBlockData): boolean {
+  if (block.type === "tool_result" && block.isError) {
+    return shouldHideToolCall(block.sourceToolName);
+  }
   if (!SEGMENT_BOUNDARY_TYPES.has(block.type)) return false;
   if (block.type === "user_message" && block.promptDeliveryState === "pending_agent") return false;
   return true;
@@ -52,6 +56,7 @@ interface Segment {
 export function isCountableTool(block: AgentBlockData): boolean {
   if (block.type !== "tool_call") return false;
   if (block.toolName === "TodoWrite" || isTaskTodoTool(block.toolName)) return false;
+  if (shouldHideToolCall(block.toolName)) return false;
   return true;
 }
 

@@ -82,6 +82,24 @@ describe("collapseTurnsToSummary", () => {
     expect(result.map((b) => b.type)).toEqual(["user_message", "tool_summary", "text"]);
   });
 
+  it("keeps errors from hidden runtime tools visible outside the recap", () => {
+    const error: AgentBlockData = {
+      id: "r1",
+      type: "tool_result",
+      content: "Runtime coordination failed",
+      sourceToolName: "update_plan",
+      isError: true,
+    };
+    const result = collapseTurnsToSummary([
+      user("u1"),
+      tool("hidden", "update_plan"),
+      error,
+      text("m1"),
+    ]);
+
+    expect(result).toEqual([user("u1"), error, text("m1")]);
+  });
+
   it("excludes TodoWrite and task-todo tools from the recap", () => {
     const result = collapseTurnsToSummary([
       user("u1"),

@@ -38,7 +38,7 @@ export const TOOL_ACCENT_CLASSES: Record<ToolAccent, ToolAccentClasses> = {
     label: "text-[var(--block-tool-accent)]",
   },
   mcp: {
-    // Brand purple — mirrors `CadencrMcpBlock` so our own MCP tools keep their
+    // Brand purple — mirrors `McpToolBlock` so MCP tools keep their
     // identity wherever they surface. `--primary` is the reserved brand color.
     wrapper: "border-primary/30 bg-primary/5",
     label: "text-primary",

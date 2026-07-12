@@ -27,6 +27,7 @@ import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { isTaskTodoTool } from "@/lib/tool-adapter";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
+import { semanticSkillPresentation, shouldHideToolCall } from "@/lib/tool-display-policy";
 import { verbosityControlsCollapse, type AgentVerbosityMode } from "@/lib/agent-verbosity";
 import type { PromptDeliveryState } from "@/types/agent";
 import type { AgentMessageOrigin } from "@/api/generated";
@@ -215,6 +216,9 @@ function ToolCallContent({
   onExpandedChange,
 }: ToolCallContentProps): ReactNode {
   if (block.toolName === "TodoWrite" || isTaskTodoTool(block.toolName)) return null;
+  if (shouldHideToolCall(block.toolName)) return null;
+  const skill = semanticSkillPresentation(block.toolName, block.toolArgs);
+  if (skill) return <ToolCallBlock name="Skill" args={skill.args} basePath={basePath} />;
   if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
     return <TaskAgentBlock block={block} basePath={basePath} />;
   }
@@ -258,6 +262,9 @@ function ToolCallContent({
 
 function ToolResultContent({ block }: { block: AgentBlockData }): ReactNode {
   if (block.sourceToolName === "Bash" || isFileChangeTool(block.sourceToolName)) return null;
+  if (block.isError && shouldHideToolCall(block.sourceToolName)) {
+    return <ErrorBlock content={block.content} />;
+  }
   if (block.sourceToolName === "Agent" || block.sourceToolName === "Task") {
     return <AgentResultBlock content={block.content} />;
   }
