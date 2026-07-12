@@ -131,6 +131,22 @@ pub async fn run_git_safe_refs(
     run_raw(&args, cwd).await
 }
 
+/// Raw-byte variant of [`run_git_safe_refs`] for binary blobs such as images.
+pub async fn run_git_safe_refs_bytes(
+    subcommand_args: &[&str],
+    flags: &[&str],
+    positionals: &[&str],
+    cwd: &Path,
+) -> Result<Vec<u8>, AppError> {
+    validate_positionals(positionals)?;
+    let mut args: Vec<&str> =
+        Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len());
+    args.extend_from_slice(subcommand_args);
+    args.extend_from_slice(flags);
+    args.extend_from_slice(positionals);
+    run_raw_bytes(&args, cwd).await
+}
+
 fn validate_positionals(positionals: &[&str]) -> Result<(), AppError> {
     for p in positionals {
         if p.starts_with('-') {
@@ -163,6 +179,11 @@ pub fn guard_positionals(positionals: &[&str]) -> Result<(), AppError> {
 /// pass `--no-optional-locks` and can't race a concurrent user-initiated
 /// mutation for `.git/index.lock`.
 async fn run_raw(args: &[&str], cwd: &Path) -> Result<String, AppError> {
+    let stdout = run_raw_bytes(args, cwd).await?;
+    Ok(String::from_utf8_lossy(&stdout).to_string())
+}
+
+async fn run_raw_bytes(args: &[&str], cwd: &Path) -> Result<Vec<u8>, AppError> {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
@@ -180,8 +201,7 @@ async fn run_raw(args: &[&str], cwd: &Path) -> Result<String, AppError> {
         )));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    Ok(stdout)
+    Ok(output.stdout)
 }
 
 /// Run a git command and return the **raw** stderr verbatim on failure

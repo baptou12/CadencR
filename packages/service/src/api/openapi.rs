@@ -82,7 +82,7 @@ use crate::domain::ws_session::protocol as ws_protocol;
         routes::push_input_handler,
         routes::get_uncommitted_files_handler,
         editor_routes::read_file_handler,
-        // `read-image` is intentionally NOT exposed to orval: the response
+        // `read-image` and `diff-image` are intentionally NOT exposed to orval: their responses
         // is a binary blob that the OpenAPI spec can't usefully describe,
         // so the generated react-query hook would just take a `customInstance<unknown>`
         // round-trip. The frontend calls the endpoint directly via Axios instead.

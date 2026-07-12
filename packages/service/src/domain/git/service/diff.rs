@@ -126,7 +126,7 @@ pub async fn get_file_diff(
 /// was discarded in favor of the original-branch fallback. The file-content
 /// diff then used a different base than the stats endpoint and the user saw
 /// inconsistent diffs.
-async fn resolve_diff_refs(
+pub(super) async fn resolve_diff_refs(
     state: &AppState,
     feature_id: i64,
     mode: &str,

@@ -3,6 +3,7 @@ import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import { firstChangedNewLine } from "@/lib/diff-line";
 import { type FileDiffSection, hasTextHunks } from "@/lib/parse-unified-diff";
 import { LARGE_DIFF_BYTES, isLargeDiffByLines } from "@/lib/diff-thresholds";
+import { isImageFile } from "@/lib/file-language";
 import { DiffFileHeader } from "./DiffFileHeader";
 import {
   type CommentLineData,
@@ -15,6 +16,7 @@ import { ProgressiveLargeDiff } from "./ProgressiveLargeDiff";
 import { DiffStatusIcon, deriveChangeTypeFromStatus } from "./DiffStatusIcon";
 import { useFileDiffSection } from "./useFileDiffSection";
 import type { DiffMode } from "./useDiffData";
+import { DiffImageView } from "./DiffImageView";
 
 export interface DiffFileBlockProps {
   featureId: number;
@@ -79,6 +81,13 @@ function DiffFileNotice({
 }
 
 interface DiffFileBodyProps {
+  featureId: number;
+  displayName: string;
+  oldFile?: string;
+  status: string;
+  mode: DiffMode;
+  targetBranch?: string;
+  commitSha?: string | null;
   section: FileDiffSection;
   patch: string;
   diffMode: "unified" | "split";
@@ -97,6 +106,13 @@ interface DiffFileBodyProps {
 
 /** Body of an expanded file: binary/no-hunk/large placeholders or the diff. */
 function DiffFileBody({
+  featureId,
+  displayName,
+  oldFile,
+  status,
+  mode,
+  targetBranch,
+  commitSha,
   section,
   patch,
   diffMode,
@@ -124,6 +140,19 @@ function DiffFileBody({
     (isLargeDiffByLines(additions, deletions) || patch.length >= LARGE_DIFF_BYTES);
 
   if (isBinary) {
+    if (isImageFile(displayName)) {
+      return (
+        <DiffImageView
+          featureId={featureId}
+          filePath={displayName}
+          oldFilePath={oldFile}
+          status={status}
+          mode={mode}
+          targetBranch={targetBranch}
+          commitSha={commitSha}
+        />
+      );
+    }
     return (
       <LargeDiffPlaceholder
         variant="binary"
@@ -166,57 +195,22 @@ function DiffFileBody({
   );
 }
 
-function DiffFileBlockImpl({
-  featureId,
-  mode,
-  targetBranch,
-  commitSha,
-  status,
-  oldFile,
-  isVisible,
-  diffMode,
-  displayName,
-  isCollapsed,
-  isFocused,
-  isFileViewed,
-  showViewedCheckbox,
-  additions,
-  deletions,
-  commentLines,
-  activeWidget,
-  commentCallbacks,
-  onToggleFile,
-  onMarkViewedFile,
-  onUnmarkViewedFile,
-  onOpenFileInEditor,
-  onAddComment,
-  themeAppearance,
-  themeId,
-}: DiffFileBlockProps) {
-  // Fetch this file's patch lazily — only when it's expanded AND on screen.
-  // All rows mount (the outer list isn't component-virtualized), so gating on
-  // visibility is what keeps a 400-file diff from firing 400 requests on open.
-  const { section, isLoading, isError } = useFileDiffSection({
-    featureId,
-    filePath: displayName,
-    oldFilePath: oldFile,
-    mode,
-    targetBranch,
-    commitSha: commitSha ?? null,
-    enabled: !isCollapsed && isVisible,
-  });
-  const patch = section?.hunks[0] ?? "";
-  const [shownPatch, setShownPatch] = useState(patch);
-  const [forceDisplay, setForceDisplay] = useState(false);
-  // Reset the opt-in when the underlying patch changes so a newly-huge revision
-  // of the same file re-gates to the placeholder instead of auto-rendering.
-  // Done during render (not in an effect) so the stale `forceDisplay` never
-  // commits a large new patch for a frame before the reset lands.
-  if (shownPatch !== patch) {
-    setShownPatch(patch);
-    setForceDisplay(false);
-  }
-  const onDisplayLargeDiff = useCallback((): void => setForceDisplay(true), []);
+function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patch?: string }) {
+  const {
+    status,
+    displayName,
+    isCollapsed,
+    isFocused,
+    isFileViewed,
+    showViewedCheckbox,
+    additions,
+    deletions,
+    onToggleFile,
+    onMarkViewedFile,
+    onUnmarkViewedFile,
+    onOpenFileInEditor,
+    themeAppearance,
+  } = props;
   const onToggle = useCallback((): void => onToggleFile(displayName), [displayName, onToggleFile]);
   const onMarkViewed = useCallback(
     (): void => onMarkViewedFile(displayName),
@@ -226,25 +220,12 @@ function DiffFileBlockImpl({
     (): void => onUnmarkViewedFile(displayName),
     [displayName, onUnmarkViewedFile],
   );
-  const onAddLineComment = useCallback(
-    (lineNumber: number, side: CommentSide): void => onAddComment?.(displayName, lineNumber, side),
-    [displayName, onAddComment],
-  );
-  // When the row is expanded (patch fetched) jump to the first changed line;
-  // when it's collapsed there's no fetched patch, so `firstChangedNewLine("")`
-  // is `undefined` and the editor opens at the file top — we don't fetch a
-  // whole diff just to compute a line number for a collapsed file.
   const onOpenFile = useCallback(
-    (): void => onOpenFileInEditor?.(displayName, firstChangedNewLine(patch)),
+    (): void => onOpenFileInEditor?.(displayName, firstChangedNewLine(patch ?? "")),
     [displayName, onOpenFileInEditor, patch],
   );
 
-  // One header for both states: collapsed renders it alone (cheap — no Pierre);
-  // expanded renders it above a Pierre body whose own header is disabled, so the
-  // row looks identical either way (font, status icon, counts, edit, viewed).
-  // The status icon reads the changed-files status code, so it's correct even
-  // before (or without) the per-file patch being fetched.
-  const header = (
+  return (
     <DiffFileHeader
       displayName={displayName}
       additions={additions}
@@ -263,18 +244,73 @@ function DiffFileBlockImpl({
       onUnmarkViewed={onUnmarkViewed}
     />
   );
+}
 
-  if (isCollapsed) return header;
-
+function ExpandedDiffFileBlock(props: DiffFileBlockProps) {
+  const {
+    featureId,
+    mode,
+    targetBranch,
+    commitSha,
+    status,
+    oldFile,
+    isVisible,
+    diffMode,
+    displayName,
+    additions,
+    deletions,
+    commentLines,
+    activeWidget,
+    commentCallbacks,
+    onAddComment,
+    themeAppearance,
+    themeId,
+    isFocused,
+  } = props;
+  // Fetch this file's patch lazily — only when it's expanded AND on screen.
+  // All rows mount (the outer list isn't component-virtualized), so gating on
+  // visibility is what keeps a 400-file diff from firing 400 requests on open.
+  const { section, isLoading, isError } = useFileDiffSection({
+    featureId,
+    filePath: displayName,
+    oldFilePath: oldFile,
+    mode,
+    targetBranch,
+    commitSha: commitSha ?? null,
+    enabled: isVisible,
+  });
+  const patch = section?.hunks[0] ?? "";
+  const [shownPatch, setShownPatch] = useState(patch);
+  const [forceDisplay, setForceDisplay] = useState(false);
+  // Reset the opt-in when the underlying patch changes so a newly-huge revision
+  // of the same file re-gates to the placeholder instead of auto-rendering.
+  // Done during render (not in an effect) so the stale `forceDisplay` never
+  // commits a large new patch for a frame before the reset lands.
+  if (shownPatch !== patch) {
+    setShownPatch(patch);
+    setForceDisplay(false);
+  }
+  const onDisplayLargeDiff = useCallback((): void => setForceDisplay(true), []);
+  const onAddLineComment = useCallback(
+    (lineNumber: number, side: CommentSide): void => onAddComment?.(displayName, lineNumber, side),
+    [displayName, onAddComment],
+  );
   return (
     <>
-      {header}
+      <DiffFileBlockHeader props={props} patch={patch} />
       {isError ? (
         <DiffFileNotice tone="error">Failed to load this file's diff.</DiffFileNotice>
       ) : section === null || isLoading ? (
         <DiffFileNotice>Loading diff…</DiffFileNotice>
       ) : (
         <DiffFileBody
+          featureId={featureId}
+          displayName={displayName}
+          oldFile={oldFile}
+          status={status}
+          mode={mode}
+          targetBranch={targetBranch}
+          commitSha={commitSha}
           section={section}
           patch={patch}
           diffMode={diffMode}
@@ -293,6 +329,12 @@ function DiffFileBlockImpl({
       )}
     </>
   );
+}
+
+function DiffFileBlockImpl(props: DiffFileBlockProps) {
+  // A collapsed row stays header-only: no per-file patch or image requests.
+  if (props.isCollapsed) return <DiffFileBlockHeader props={props} />;
+  return <ExpandedDiffFileBlock {...props} />;
 }
 
 export const DiffFileBlock = memo(DiffFileBlockImpl);

@@ -105,6 +105,7 @@ describe("handleGitEnvelope", () => {
     expect(spy).toHaveBeenCalledOnce();
     const predicate = getInvalidatePredicate(spy.mock.calls[0]?.[0]);
     expect(predicate({ queryKey: ["/api/git/diff", { feature_id: 7 }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/git/diff-image", { feature_id: 7 }] })).toBe(true);
     expect(predicate({ queryKey: ["/api/git/commit-log", { feature_id: 7 }] })).toBe(false);
   });
 
