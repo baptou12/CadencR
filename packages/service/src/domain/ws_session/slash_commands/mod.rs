@@ -237,9 +237,15 @@ mod tests {
     #[test]
     fn orchestration_skill_commands_are_namespaced_cadencr_kind() {
         let skills = super::orchestration_skill_commands();
-        assert!(skills.iter().any(|c| c.name == "cadencr:status"));
-        assert!(skills.iter().any(|c| c.name == "cadencr:review"));
-        assert!(skills.iter().any(|c| c.name == "cadencr:rescue"));
+        let names = skills
+            .iter()
+            .map(|command| command.name.clone())
+            .collect::<Vec<_>>();
+        let expected = crate::domain::agents::orchestration_skills::ORCHESTRATION_SKILLS
+            .iter()
+            .map(|skill| skill.command())
+            .collect::<Vec<_>>();
+        assert_eq!(names, expected);
         assert!(skills
             .iter()
             .all(|c| matches!(c.kind, SlashCommandKind::Cadencr)));
