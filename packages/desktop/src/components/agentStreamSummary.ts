@@ -1,11 +1,5 @@
 import type { AgentBlockData } from "./AgentBlock";
-import { isTaskTodoTool, normalizeToolName } from "@/lib/tool-adapter";
-
-/** One row of the tool recap: a (normalized) tool name and how many times it ran. */
-export interface ToolSummaryCount {
-  name: string;
-  count: number;
-}
+import { isTaskTodoTool } from "@/lib/tool-adapter";
 
 /** Options controlling how turns collapse into recaps. */
 export interface CollapseOptions {
@@ -51,21 +45,14 @@ interface Segment {
   body: AgentBlockData[];
 }
 
-/** Tools that never render in the stream (todo bookkeeping) are not counted. */
-function isCountableTool(block: AgentBlockData): boolean {
+/**
+ * Tools that never render in the stream (todo bookkeeping) are not counted.
+ * Exported so the recap renderer builds its chips from the same tool set.
+ */
+export function isCountableTool(block: AgentBlockData): boolean {
   if (block.type !== "tool_call") return false;
   if (block.toolName === "TodoWrite" || isTaskTodoTool(block.toolName)) return false;
   return true;
-}
-
-/** Group tool calls by normalized name, preserving first-appearance order. */
-function countTools(tools: AgentBlockData[]): ToolSummaryCount[] {
-  const counts = new Map<string, number>();
-  for (const tool of tools) {
-    const name = normalizeToolName(tool.toolName ?? "unknown");
-    counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  return Array.from(counts, ([name, count]) => ({ name, count }));
 }
 
 /**
@@ -79,18 +66,17 @@ function toolSummaryId(firstToolId: string): string {
 }
 
 /**
- * Build the recap block. Counts ride on the typed `summaryCounts` field and the
- * turn's intermediate content (every body block except the final message) on
- * `childBlocks` — both in-memory only. The renderer reveals `childBlocks`
+ * Build the recap block. The turn's intermediate content (every body block
+ * except the final message) rides on `childBlocks` — in-memory only. The
+ * renderer derives the per-tool recap chips from those blocks and reveals them
  * inline when the recap is expanded, exactly like a Task/Agent block surfaces
- * its subagent steps.
+ * its subagent steps. `tools` only gates whether a recap is worth emitting.
  */
 function makeToolSummaryBlock(tools: AgentBlockData[], detail: AgentBlockData[]): AgentBlockData {
   return {
     id: toolSummaryId(tools[0].id),
     type: "tool_summary",
     content: "",
-    summaryCounts: countTools(tools),
     childBlocks: detail,
   };
 }

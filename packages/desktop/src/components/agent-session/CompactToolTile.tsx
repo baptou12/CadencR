@@ -10,15 +10,10 @@ import {
 import { cn, toRelativePath } from "@/lib/utils";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { NumStat } from "@/components/NumStat";
-import {
-  extractBashCommand,
-  extractInlineDiffPreviews,
-  isFileChangeTool,
-  normalizeToolName,
-} from "@/lib/tool-adapter";
+import { extractBashCommand, isFileChangeTool, normalizeToolName } from "@/lib/tool-adapter";
 import { parseCadencrMcpTool } from "@/lib/tool-call-parser";
-import { createUnifiedPatch } from "@/lib/create-unified-patch";
-import { countPatchStats } from "@/lib/patch-stats";
+import { computeToolNumStat } from "@/lib/tool-numstat";
+import { TOOL_ACCENT_CLASSES, type ToolAccent } from "@/lib/tool-accent";
 
 interface CompactToolTileProps {
   block: AgentBlockData;
@@ -94,7 +89,7 @@ function FileChangeTile({
   toolName: string;
   toolArgs: string | undefined;
 }) {
-  const stats = useMemo(() => computeNumStat(rawToolName, toolArgs), [rawToolName, toolArgs]);
+  const stats = useMemo(() => computeToolNumStat(rawToolName, toolArgs), [rawToolName, toolArgs]);
   if (!stats) return <BaseTile icon={WrenchIcon} accent="tool" label={toolName} />;
   const Icon = toolName === "Write" ? FilePlusIcon : PencilIcon;
   return (
@@ -119,31 +114,9 @@ function GenericToolTile({
   return <BaseTile icon={WrenchIcon} accent="tool" label={label} />;
 }
 
-type Accent = "thinking" | "bash" | "edit" | "tool";
-
-const ACCENT_CLASSES: Record<Accent, { wrapper: string; label: string }> = {
-  thinking: {
-    wrapper: "bg-[var(--block-thinking-bg)] border-border",
-    label: "text-[var(--block-thinking-accent)]",
-  },
-  bash: {
-    wrapper: "bg-[var(--block-bash-header-bg)] border-border",
-    label: "text-[var(--block-bash-fg)]",
-  },
-  edit: {
-    wrapper:
-      "bg-[color-mix(in_srgb,var(--numstat-add-fg)_12%,var(--card))] border-[color-mix(in_srgb,var(--numstat-add-fg)_35%,transparent)]",
-    label: "text-[var(--numstat-add-fg)]",
-  },
-  tool: {
-    wrapper: "bg-[var(--block-tool-bg)] border-border",
-    label: "text-[var(--block-tool-accent)]",
-  },
-};
-
 interface BaseTileProps {
   icon: LucideIcon;
-  accent: Accent;
+  accent: ToolAccent;
   label: string;
   /** Optional secondary text rendered next to the label (e.g. command head). */
   detail?: string;
@@ -152,7 +125,7 @@ interface BaseTileProps {
 }
 
 function BaseTile({ icon: Icon, accent, label, detail, trailing }: BaseTileProps) {
-  const classes = ACCENT_CLASSES[accent];
+  const classes = TOOL_ACCENT_CLASSES[accent];
   return (
     <div
       className={cn(
@@ -176,22 +149,4 @@ function shortenCommand(command: string, basePath: string | undefined): string {
   const single = command.replace(/\s+/g, " ").trim();
   const rel = toRelativePath(single, basePath);
   return rel.length > 80 ? `${rel.slice(0, 77)}…` : rel;
-}
-
-function computeNumStat(
-  toolName: string,
-  toolArgs: string | undefined,
-): { additions: number; deletions: number } | null {
-  const diffs = extractInlineDiffPreviews(toolName, toolArgs);
-  if (diffs.length === 0) return null;
-  return diffs.reduce(
-    (acc, diff) => {
-      const stats = countPatchStats(createUnifiedPatch(diff));
-      return {
-        additions: acc.additions + stats.additions,
-        deletions: acc.deletions + stats.deletions,
-      };
-    },
-    { additions: 0, deletions: 0 },
-  );
 }
