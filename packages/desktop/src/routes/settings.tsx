@@ -23,7 +23,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { ModelSelector } from "@/components/ModelSelector";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
 import { BrowserSection } from "@/components/settings/BrowserSection";
 import { McpSection } from "@/components/settings/McpSection";
@@ -50,6 +49,7 @@ import {
 import { IconTile } from "@/components/settings/IconTile";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { APP_VERSION } from "@/lib/app-version";
+import { RuntimeSettingsSection } from "@/components/settings/RuntimeSettingsSection";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -223,7 +223,7 @@ function SettingsPage() {
           <NotificationsSection />
           <BrowserSection />
           <McpSection />
-          <RuntimeSection />
+          <RuntimeSettingsSection />
           <GitSection />
           <ProvidersSection />
           <AboutSection />
@@ -384,18 +384,6 @@ function EditorSection(): React.JSX.Element {
             }
           />
         </SettingsSubsection>
-      </SettingsCard>
-    </SettingsSection>
-  );
-}
-
-/* ─── Runtime & Models ───────────────────────────────────────────────── */
-
-function RuntimeSection(): React.JSX.Element {
-  return (
-    <SettingsSection id="runtime" title="Runtime & Models" subtitle="Per-agent provider & model">
-      <SettingsCard>
-        <ModelSelector level="global" />
       </SettingsCard>
     </SettingsSection>
   );

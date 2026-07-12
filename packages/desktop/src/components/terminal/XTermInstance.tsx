@@ -1,4 +1,4 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from "react";
+import { useEffect, useRef, forwardRef, useCallback } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -6,70 +6,14 @@ import "@xterm/xterm/css/xterm.css";
 import { useTerminalWebSocket } from "@/hooks/useTerminalWebSocket";
 import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
 import { toControlChar } from "@/lib/terminal-keys";
-import type { XTermPalette } from "@/lib/themes";
 import { createXtermInstance } from "./createXtermInstance";
 import { attachXtermNavigationKeys } from "./xtermNavigationKeys";
 import { attachTouchScroll } from "./xtermTouchScroll";
 import { useLinkRouting } from "@/components/links/LinkRoutingContext";
+import type { XTermInstanceHandle, XTermInstanceProps } from "./XTermInstance.types";
+import { useXTermImperativeHandle } from "./useXTermImperativeHandle";
 
-interface XTermInstanceProps {
-  featureId: number;
-  projectId: number;
-  /** Existing PTY ID to reconnect to (from zustand store) */
-  existingPtyId?: string;
-  /** Working directory hint forwarded to the backend on a fresh PTY request. */
-  requestedCwd?: string;
-  /** Active theme's xterm palette — applied at mount and live-swapped when
-   *  the user picks a new theme. Canvas-rendered xterm can't read CSS vars,
-   *  so this has to flow through props. */
-  theme: XTermPalette;
-  /** Called when the PTY process exits (e.g. Ctrl+D) */
-  onExit?: (ptyId: string) => void;
-  /**
-   * Called after a PTY is created or reconnected — parent stores the ptyId
-   * and (when known) the working directory the PTY was spawned in. `cwd` is
-   * null on reconnect when the backend handle has been garbage-collected.
-   */
-  onPtyReady?: (ptyId: string, cwd: string | null) => void;
-  /** If true, kill the PTY when unmounting (explicit close). Default: false (detach only). */
-  killOnUnmount?: boolean;
-  /** Command to write to the PTY after creation (does NOT press Enter — command includes \n if needed) */
-  initialCommand?: string;
-  /** Called after the initial command has been written so the parent can clear it from state */
-  onInitialCommandConsumed?: () => void;
-  /**
-   * Display-only path shown as a "→ cd <path>" line once the PTY is ready, used
-   * when a pane was restarted into a new working directory (e.g. a worktree).
-   * Written to the terminal viewport only — never sent to the shell.
-   */
-  initialNotice?: string;
-  /** Called after the notice has been written so the parent can clear it from state */
-  onInitialNoticeConsumed?: () => void;
-  /** Called when the terminal receives focus */
-  onTerminalFocus?: () => void;
-  /**
-   * When true, the next character typed (e.g. from the mobile key bar's sticky
-   * Ctrl) is converted to its control byte before being sent to the PTY.
-   */
-  ctrlArmed?: boolean;
-  /** Called once an armed Ctrl modifier has been applied, so it can disarm. */
-  onConsumeCtrl?: () => void;
-}
-
-export interface XTermInstanceHandle {
-  /** Focus this terminal instance */
-  focus: () => void;
-  /** Clear the terminal viewport without deleting scrollback history */
-  clearScreen: () => void;
-  /** Delete the whole current shell input line without clearing terminal history */
-  clearInput: () => void;
-  /** Blur this terminal instance and stop cursor blink */
-  blur: () => void;
-  /** Mark this instance for PTY kill on next unmount */
-  markForKill: () => void;
-  /** Send a raw byte sequence to the PTY (e.g. Esc/Tab/arrows from the key bar). */
-  write: (data: string) => void;
-}
+export type { XTermInstanceHandle } from "./XTermInstance.types";
 
 export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>(
   function XTermInstance(
@@ -126,51 +70,21 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     const linkRoutingRef = useRef(linkRouting);
     linkRoutingRef.current = linkRouting;
 
-    useImperativeHandle(ref, () => ({
-      focus: () => {
-        const term = terminalRef.current;
-        if (!term) return;
-        term.options.cursorBlink = true;
-        if (!openedRef.current) {
-          // xterm isn't opened yet — there's no textarea to focus. Remember
-          // the request and replay it from `ensureOpen()` once `terminal.open`
-          // has run. Without this, post-create focus calls (CMD+T, post-split)
-          // silently no-op because the dimensions race wins.
-          pendingFocusRef.current = true;
-          return;
-        }
-        term.focus();
-      },
-      clearScreen: () => {
-        writeRef.current?.("\x0c");
-      },
-      clearInput: () => {
-        writeRef.current?.("\x05\x15");
-      },
-      blur: () => {
-        const term = terminalRef.current;
-        if (!term) return;
-        term.options.cursorBlink = false;
-        // Clear any pending focus so a blur after a deferred focus actually
-        // sticks instead of being overridden when the terminal finally opens.
-        pendingFocusRef.current = false;
-        term.blur();
-      },
-      markForKill: () => {
-        shouldKillRef.current = true;
-      },
-      write: (data: string) => {
-        if (ptyIdRef.current && !exitedRef.current) writeRef.current?.(data);
-      },
-    }));
-
     // Stable refs for ws actions so callbacks don't need to re-subscribe
     const writeRef = useRef<((data: string) => void) | null>(null);
     const resizeRef = useRef<((cols: number, rows: number) => void) | null>(null);
     const killRef = useRef<(() => void) | null>(null);
     const connectRef = useRef<((cols: number, rows: number) => void) | null>(null);
 
-    // -- WebSocket callbacks (stable refs to avoid re-connecting) --
+    useXTermImperativeHandle(ref, {
+      terminalRef,
+      openedRef,
+      pendingFocusRef,
+      shouldKillRef,
+      ptyIdRef,
+      exitedRef,
+      writeRef,
+    });
 
     const onWsData = useCallback((data: string) => {
       if (mountedRef.current) terminalRef.current?.write(data);

@@ -44,6 +44,11 @@ import {
 } from "./browser-manager-utils";
 import { createBrowserProfile } from "./browser-profiles";
 import { sendToWindow } from "./safe-send";
+import {
+  MAX_NETWORK_PER_TAB,
+  countTabsByScope,
+  tabCountRecordsEqual,
+} from "./browser-manager-tabs";
 import type {
   BrowserBounds,
   BrowserElementContext,
@@ -53,20 +58,12 @@ import type {
   BrowserTabMetadata,
 } from "./browser-types";
 
-const MAX_NETWORK_PER_TAB = 2000;
-
 export class BrowserManager {
   private readonly tabs = new Map<string, ManagedTab>();
   private lastTabCountsByScope: Record<number, number> = {};
-  // Per-feature-scope active-tab + viewport-bounds bookkeeping. Tabs are
-  // isolated by scope so a tab opened in one feature's Browser never leaks into
-  // another's.
   private readonly scopes = new BrowserScopeState();
   private lastError: string | null = null;
-  // Keeps a guest page from stealing the agent prompt's focus while the agent
-  // drives the browser; `focusGuard.run` wraps each MCP tool dispatch (index.ts).
   readonly focusGuard = new BrowserFocusGuard(() => this.getMainWindow());
-  // Native-view attachment + geometry (incl. overlay suppression) lives here.
   private readonly layout = new BrowserViewLayout(() => this.getMainWindow());
   private readonly origins = new BrowserOriginStore();
   private readonly network = new BrowserNetworkCollector((webContentsId, entry) => {
@@ -99,13 +96,10 @@ export class BrowserManager {
     this.tabs.set(id, tab);
     this.emitTabCountsIfChanged();
     installTabEvents(tab, {
-      // Every tab event belongs to this tab's scope, so its state push targets
-      // that scope alone.
       emitState: () => this.emitState(scopeId),
       setLastError: (message) => {
         this.lastError = message;
       },
-      // A child window/tab spawned by this page inherits its feature scope.
       openChildTab: (url, childProfileId) => this.openChildTab(url, childProfileId, scopeId),
       recordOrigin: (url) => this.origins.record(url),
       emitShortcut: (shortcut) => this.emitShortcut(shortcut),
@@ -129,13 +123,7 @@ export class BrowserManager {
   }
 
   tabCountsByScope(): Record<number, number> {
-    const counts: Record<number, number> = {};
-    for (const tab of this.tabs.values()) {
-      const scope = tab.metadata.scopeId;
-      if (scope === null) continue;
-      counts[scope] = (counts[scope] ?? 0) + 1;
-    }
-    return counts;
+    return countTabsByScope(this.tabs.values());
   }
 
   navigate(tabId: string, rawUrl: string): BrowserTabMetadata {
@@ -371,7 +359,6 @@ export class BrowserManager {
     return clearCommentBadges(this.requireTab(tabId));
   }
 
-  // See `BrowserScopeState.snapshot` for the scoped vs unscoped (agent/MCP) view.
   state(scopeId?: number | null): BrowserStateSnapshot {
     return this.scopes.snapshot(scopeId, this.tabs, this.origins.list(), this.lastError);
   }
@@ -391,12 +378,7 @@ export class BrowserManager {
     return tab;
   }
 
-  /**
-   * Push the snapshot for the one scope an operation changed. Browser state is
-   * isolated per feature scope, so an event only ever affects its own scope's
-   * snapshot — broadcasting to all of them would just be discarded by the rest.
-   * Scopeless (agent/MCP) tabs have no UI workspace, so they aren't broadcast.
-   */
+  /** Push the snapshot only to the feature scope changed by an operation. */
   private emitState(scope: number | null): void {
     const win = this.getMainWindow();
     if (scope === null) return;
@@ -415,13 +397,4 @@ export class BrowserManager {
     reclaimFocusForShortcut(win, shortcut);
     sendToWindow(win, "browser:shortcut", shortcut);
   }
-}
-
-function tabCountRecordsEqual(a: Record<number, number>, b: Record<number, number>): boolean {
-  const leftKeys = Object.keys(a);
-  const rightKeys = Object.keys(b);
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) => a[Number(key)] === b[Number(key)])
-  );
 }

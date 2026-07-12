@@ -1,13 +1,4 @@
-import {
-  useState,
-  useEffect,
-  useMemo,
-  useRef,
-  useImperativeHandle,
-  useCallback,
-  forwardRef,
-  memo,
-} from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, forwardRef, memo } from "react";
 import { capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
 import type { AgentPromptBarHandle } from "../AgentPromptBar";
@@ -38,6 +29,7 @@ import { useClaudeProfileSelection } from "./useClaudeProfileSelection";
 import { AgentSessionProvider } from "./agent-session-context";
 import { BranchConfirmDialog } from "./BranchConfirmDialog";
 import { useAgentSessionBranchEffects } from "./useAgentSessionBranchEffects";
+import { useAgentSessionImperativeHandle } from "./useAgentSessionImperativeHandle";
 
 const META_BAR_COMPACT_THRESHOLD_PX = 640;
 
@@ -173,43 +165,7 @@ export const AgentSession = memo(
       }
     }, [status, isControlled]);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        focusPromptBar: () => promptBarRef.current?.focusInput(),
-        focusActiveInput: () => {
-          const container = containerRef.current;
-          const permBtn = container?.querySelector<HTMLElement>("[data-permission-area] button");
-          if (permBtn) {
-            permBtn.scrollIntoView({ block: "nearest" });
-            permBtn.focus();
-            return;
-          }
-          const questionEl = container?.querySelector<HTMLElement>(
-            "[data-question-area] button, [data-question-area] input",
-          );
-          if (questionEl) {
-            questionEl.scrollIntoView({ block: "nearest" });
-            questionEl.focus();
-            return;
-          }
-          const editable = container?.querySelector<HTMLElement>(
-            '[contenteditable="true"], textarea',
-          );
-          if (editable) {
-            editable.scrollIntoView({ block: "nearest" });
-            editable.focus();
-            return;
-          }
-          if (headerRef.current) {
-            headerRef.current.scrollIntoView({ block: "nearest" });
-            headerRef.current.focus();
-          }
-        },
-        isOpen,
-      }),
-      [isOpen],
-    );
+    useAgentSessionImperativeHandle(ref, promptBarRef, containerRef, headerRef, isOpen);
 
     // Identity for the stream subtree (the per-block context menu dispatches
     // rewind/fork against this). Stable per session → no streaming re-renders.
