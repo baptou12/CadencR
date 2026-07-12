@@ -2,8 +2,7 @@
  * Module-scoped manager for `LSPClient` instances keyed by
  * `${workspaceRoot}::${lspId}` (Phase 4: a file may run several servers, e.g. a
  * type checker plus a linter, so the key is the concrete server id, not the
- * language). `languageId` is still carried for `didOpen`. Lives outside Zustand
- * on purpose:
+ * language). `languageId` is still carried for `didOpen`. Lives outside Zustand:
  * `LSPClient` is a non-reactive object — components must never re-render when
  * its internal state changes, so a plain `Map` is the right shape.
  *
@@ -13,8 +12,7 @@
  * status transitions), so a mounted editor can re-mount its LSP compartment
  * onto a fresh client after an unexpected socket death.
  *
- * Each entry holds a single LSP session: one POST to reserve, one WebSocket
- * to carry frames, one `LSPClient` + `CadencrWorkspace`. Concurrent
+ * Each entry holds one LSP session. Concurrent
  * `acquireLspClient(...)` calls for the same key share the in-flight init
  * promise so we don't claim two sessions for the same workspace+language.
  *

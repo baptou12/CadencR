@@ -1,16 +1,13 @@
 import path from "node:path";
-import { app, BrowserWindow, dialog, session, shell, type WebContents } from "electron";
-import { rendererCsp } from "./csp";
+import { app, BrowserWindow, dialog } from "electron";
 import { loadDevEnv } from "./env";
 import { clearRegisteredFilePaths, registerIpc, registerThemeEvents } from "./ipc";
 import { installApplicationMenu } from "./menu";
 import { registerPower, shutdownPower } from "./power";
-import { approvedExternalUrl, isAllowedNavigationUrl, isLoopbackDevUrl } from "./navigation";
 import { setRuntimeConfig } from "./runtime-config";
 import { initAutoUpdater, registerAutoUpdaterIpc, shutdownAutoUpdater } from "./updater";
 import {
   createDevSidecarHandle,
-  packagedRendererDir,
   productionDbPath,
   spawnProductionSidecar,
   type SidecarHandle,
@@ -27,6 +24,7 @@ import type { BrowserManager } from "./browser-manager";
 import { handleStartupRecoveryAction } from "./startup-recovery-actions";
 import { buildStartupRecovery, type StartupRecoveryState } from "./startup-recovery";
 import { installDefaultRendererCrashRecovery } from "./renderer-crash-recovery";
+import { installCsp, rendererLoadTarget, secureWebContents } from "./renderer-window-security";
 let mainWindow: BrowserWindow | null = null;
 let splash: SplashHandle | null = null;
 let sidecar: SidecarHandle | null = null;
@@ -45,18 +43,6 @@ let startupRecovery: StartupRecoveryState | null = null;
 function startupRecoveryDbPath(): string {
   if (app.isPackaged) return productionDbPath();
   return process.env.CADENCR_DB_PATH || productionDbPath();
-}
-
-function installCsp(): void {
-  const csp = rendererCsp(app.isPackaged);
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        "Content-Security-Policy": [csp],
-      },
-    });
-  });
 }
 
 async function prepareRuntime(): Promise<void> {
@@ -125,52 +111,6 @@ function requestQuit(): void {
   sendCloseRequest();
 }
 
-function rendererLoadUrl(): { kind: "url"; value: string } | { kind: "file"; value: string } {
-  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
-  if (!app.isPackaged && rendererUrl) {
-    if (!isLoopbackDevUrl(rendererUrl)) {
-      throw new Error(`Rejected untrusted ELECTRON_RENDERER_URL: ${rendererUrl}`);
-    }
-    return { kind: "url", value: rendererUrl };
-  }
-  // In packaged builds the renderer is NOT in the asar (excluded to avoid a
-  // duplicate); it ships as extraResources `renderer/` — the same directory the
-  // sidecar serves remotely. Dev builds without a renderer URL fall back to the
-  // on-disk `out/renderer` next to the compiled main.
-  const rendererIndex = app.isPackaged
-    ? path.join(packagedRendererDir(), "index.html")
-    : path.join(__dirname, "../renderer/index.html");
-  return { kind: "file", value: rendererIndex };
-}
-
-function secureWebContents(webContents: WebContents): void {
-  webContents.setWindowOpenHandler(({ url }) => {
-    void openApprovedExternalUrl(url);
-    return { action: "deny" };
-  });
-  webContents.on("will-navigate", (event, url) => {
-    if (isAllowedNavigationUrl(url, app.isPackaged)) return;
-    event.preventDefault();
-    void openApprovedExternalUrl(url);
-  });
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    // The renderer's async Clipboard API (`navigator.clipboard.writeText` /
-    // `.write`) requires `clipboard-sanitized-write` to be granted; without
-    // it the write rejects with `NotAllowedError`. Sanitized writes only
-    // emit standard MIME types, so granting this is safe.
-    if (permission === "clipboard-sanitized-write") {
-      callback(true);
-      return;
-    }
-    callback(false);
-  });
-}
-
-async function openApprovedExternalUrl(rawUrl: string): Promise<void> {
-  const url = approvedExternalUrl(rawUrl);
-  if (url) await shell.openExternal(url);
-}
-
 function createWindow(): BrowserWindow {
   allowClose = false;
   const win = new BrowserWindow({
@@ -199,7 +139,7 @@ function createWindow(): BrowserWindow {
   });
   win.webContents.on("did-start-navigation", () => clearRegisteredFilePaths());
 
-  const loadTarget = rendererLoadUrl();
+  const loadTarget = rendererLoadTarget();
   if (loadTarget.kind === "url") void win.loadURL(loadTarget.value);
   else void win.loadFile(loadTarget.value);
   return win;

@@ -1,11 +1,4 @@
-import {
-  forwardRef,
-  useEffect,
-  useRef,
-  useState,
-  type MouseEventHandler,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronRight,
@@ -54,9 +47,9 @@ import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ImportConversationsDialog } from "./import/ImportConversationsDialog";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
-import { ShortcutHintsProvider, useNavShortcutHint } from "@/hooks/useNavShortcutHints";
+import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
-import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
+import { ProjectRowButton } from "./ProjectRowButton";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -385,43 +378,3 @@ export function ProjectTree({
     </ShortcutHintsProvider>
   );
 }
-
-interface ProjectRowButtonProps {
-  projectId: number;
-  isActive: boolean;
-  onClick: MouseEventHandler<HTMLButtonElement>;
-  children: ReactNode;
-}
-
-/**
- * Project row trigger. Owns its own nav-shortcut registration so `⌘N`
- * activates this row. Forwards the DOM ref so `ContextMenuTrigger asChild`
- * can still attach its own listeners.
- */
-const ProjectRowButton = forwardRef<HTMLButtonElement, ProjectRowButtonProps>(
-  function ProjectRowButton({ projectId, isActive, onClick, children, ...rest }, forwardedRef) {
-    const { navRef, badgeRef } = useNavShortcutHint<HTMLButtonElement>();
-    const assignRef = (node: HTMLButtonElement | null): void => {
-      navRef.current = node;
-      if (typeof forwardedRef === "function") forwardedRef(node);
-      else if (forwardedRef) forwardedRef.current = node;
-    };
-    return (
-      <button
-        ref={assignRef}
-        type="button"
-        data-nav-item
-        data-nav-type="project"
-        data-nav-id={String(projectId)}
-        onClick={onClick}
-        className={`group/project relative flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
-          isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
-        }`}
-        {...rest}
-      >
-        <SidebarShortcutBadge ref={badgeRef} />
-        {children}
-      </button>
-    );
-  },
-);
