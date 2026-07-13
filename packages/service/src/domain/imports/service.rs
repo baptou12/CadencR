@@ -276,7 +276,7 @@ mod tests {
             "CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT NOT NULL)",
             "CREATE TABLE features (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', type TEXT NOT NULL DEFAULT 'ws-session', model_session TEXT, agent_runtime_session TEXT)",
             "CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL, agent_type TEXT NOT NULL, runtime_provider TEXT, runtime_session_id TEXT, status TEXT NOT NULL DEFAULT 'pending', started_at TEXT, ended_at TEXT, model TEXT, profile TEXT)",
-            "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', tool_name TEXT, tool_use_id TEXT, parent_tool_use_id TEXT, model TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+            "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', tool_name TEXT, tool_use_id TEXT, parent_tool_use_id TEXT, model TEXT, message_uuid TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
         ] {
             sqlx::query(sql).execute(&pool).await.unwrap();
         }

@@ -13,10 +13,6 @@ vi.mock("@/lib/queryClient", () => ({ queryClient: { invalidateQueries: vi.fn() 
 vi.mock("@/api/generated", () => ({
   getListFeaturesQueryKey: (params: { project_id: number }) => ["/api/features", params],
 }));
-vi.mock("@/components/AgentBlock", () => ({
-  messageIdFromBlockId: (id: string) => (id.startsWith("msg-") ? Number(id.slice(4)) : undefined),
-}));
-
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { createSessionEntry, type WsSessionStore } from "./ws-session-types";
 import {
@@ -85,24 +81,24 @@ describe("truncateBlocksAtMessage", () => {
   });
 
   it("keeps earlier live (id-less) blocks when rewinding a later message", () => {
-    // Repro of the wipe bug: a session chatted in live has `ws-user-*` /
+    // Repro of the wipe bug: a session chatted in live has canonical user /
     // streaming blocks with no `msg-<id>`. Rewinding the 2nd message (stamped
     // `messageDbId: 20`) must preserve turn 1, not drop the whole view.
     const h = harnessWithBlocks([
-      { id: "ws-user-1", type: "user_message", content: "first", messageDbId: 10 },
+      { id: "canonical-user-1", type: "user_message", content: "first", messageDbId: 10 },
       { id: "ws-assist-1", type: "text", content: "answer one" },
-      { id: "ws-user-2", type: "user_message", content: "second", messageDbId: 20 },
+      { id: "canonical-user-2", type: "user_message", content: "second", messageDbId: 20 },
       { id: "ws-assist-2", type: "text", content: "answer two" },
     ]);
     truncateBlocksAtMessage(h.get, h.set, "ws-1", 20);
-    expect(h.ids()).toEqual(["ws-user-1", "ws-assist-1"]);
+    expect(h.ids()).toEqual(["canonical-user-1", "ws-assist-1"]);
   });
 
   it("resolves the cut by stamped messageDbId on a live block", () => {
     const h = harnessWithBlocks([
       { id: "msg-10", type: "user_message", content: "first" },
       { id: "ws-assist-1", type: "text", content: "answer one" },
-      { id: "ws-user-2", type: "user_message", content: "second", messageDbId: 20 },
+      { id: "canonical-user-2", type: "user_message", content: "second", messageDbId: 20 },
     ]);
     truncateBlocksAtMessage(h.get, h.set, "ws-1", 20);
     expect(h.ids()).toEqual(["msg-10", "ws-assist-1"]);
@@ -110,7 +106,7 @@ describe("truncateBlocksAtMessage", () => {
 
   it("empties the conversation when rewinding the only/first message", () => {
     const h = harnessWithBlocks([
-      { id: "ws-user-1", type: "user_message", content: "only", messageDbId: 10 },
+      { id: "canonical-user-1", type: "user_message", content: "only", messageDbId: 10 },
       { id: "ws-assist-1", type: "text", content: "answer" },
     ]);
     truncateBlocksAtMessage(h.get, h.set, "ws-1", 10);
@@ -119,10 +115,10 @@ describe("truncateBlocksAtMessage", () => {
 
   it("leaves the view untouched when the cut block is absent", () => {
     const h = harnessWithBlocks([
-      { id: "ws-user-1", type: "user_message", content: "first", messageDbId: 10 },
+      { id: "canonical-user-1", type: "user_message", content: "first", messageDbId: 10 },
     ]);
     truncateBlocksAtMessage(h.get, h.set, "ws-1", 999);
-    expect(h.ids()).toEqual(["ws-user-1"]);
+    expect(h.ids()).toEqual(["canonical-user-1"]);
   });
 });
 

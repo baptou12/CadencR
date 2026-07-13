@@ -10,6 +10,8 @@ use super::tool_blocks::{handle_tool_call, handle_tool_result};
 
 pub(super) struct MutableBlock {
     pub(super) id: String,
+    pub(super) message_uuid: Option<String>,
+    pub(super) prompt_delivery_state: Option<UserMessageDeliveryState>,
     pub(super) type_: String,
     pub(super) content: String,
     pub(super) tool_name: Option<String>,
@@ -39,6 +41,8 @@ fn convert_block(idx: usize, all: &[MutableBlock]) -> AgentBlock {
     };
     AgentBlock {
         id: b.id.clone(),
+        message_uuid: b.message_uuid.clone(),
+        prompt_delivery_state: b.prompt_delivery_state.clone(),
         type_: b.type_.clone(),
         content: b.content.clone(),
         tool_name: b.tool_name.clone(),
@@ -109,6 +113,11 @@ fn push_or_merge_streaming(
     push_block(
         MutableBlock {
             id,
+            message_uuid: msg.message_uuid.clone(),
+            prompt_delivery_state: msg
+                .delivery_state
+                .as_deref()
+                .and_then(UserMessageDeliveryState::from_db),
             type_: block_type.to_string(),
             content: msg.content.clone(),
             tool_name: None,
@@ -145,6 +154,11 @@ fn make_simple_block(
 ) -> MutableBlock {
     MutableBlock {
         id,
+        message_uuid: msg.message_uuid.clone(),
+        prompt_delivery_state: msg
+            .delivery_state
+            .as_deref()
+            .and_then(UserMessageDeliveryState::from_db),
         type_: type_.to_string(),
         content,
         tool_name: None,

@@ -1,0 +1,195 @@
+use crate::error::AppError;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DispatchClaim {
+    Claimed { token: String },
+    InProgress,
+    Dispatched,
+}
+
+pub async fn claim(pool: &sqlx::SqlitePool, message_id: i64) -> Result<DispatchClaim, AppError> {
+    let token = uuid::Uuid::new_v4().to_string();
+    let claimed: Option<String> = sqlx::query_scalar(
+        "UPDATE agent_message_dispatches
+         SET status = 'dispatching', attempt_count = attempt_count + 1,
+             claim_token = ?, claimed_at = datetime('now'), error = NULL,
+             updated_at = datetime('now')
+         WHERE message_id = ? AND status IN ('pending', 'error')
+         RETURNING claim_token",
+    )
+    .bind(&token)
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await?;
+    if claimed.is_some() {
+        return Ok(DispatchClaim::Claimed { token });
+    }
+    dispatch_status(pool, message_id).await
+}
+
+async fn dispatch_status(
+    pool: &sqlx::SqlitePool,
+    message_id: i64,
+) -> Result<DispatchClaim, AppError> {
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM agent_message_dispatches WHERE message_id = ?")
+            .bind(message_id)
+            .fetch_optional(pool)
+            .await?;
+    match status.as_deref() {
+        Some("dispatching") => Ok(DispatchClaim::InProgress),
+        Some("dispatched") => Ok(DispatchClaim::Dispatched),
+        Some(other) => Err(AppError::Internal(format!(
+            "message {message_id} has unclaimable dispatch status '{other}'"
+        ))),
+        None => Err(AppError::Internal(format!(
+            "message {message_id} has no dispatch lifecycle"
+        ))),
+    }
+}
+
+pub async fn mark_succeeded(
+    pool: &sqlx::SqlitePool,
+    message_id: i64,
+    token: &str,
+) -> Result<(), AppError> {
+    update_claim(pool, message_id, token, "dispatched", None).await
+}
+
+pub async fn mark_failed(
+    pool: &sqlx::SqlitePool,
+    message_id: i64,
+    token: &str,
+    error: &str,
+) -> Result<(), AppError> {
+    update_claim(pool, message_id, token, "error", Some(error)).await
+}
+
+async fn update_claim(
+    pool: &sqlx::SqlitePool,
+    message_id: i64,
+    token: &str,
+    status: &str,
+    error: Option<&str>,
+) -> Result<(), AppError> {
+    let result = sqlx::query(
+        "UPDATE agent_message_dispatches
+         SET status = ?, error = ?, claim_token = NULL, claimed_at = NULL,
+             dispatched_at = CASE WHEN ? = 'dispatched' THEN datetime('now') ELSE NULL END,
+             updated_at = datetime('now')
+         WHERE message_id = ? AND status = 'dispatching' AND claim_token = ?",
+    )
+    .bind(status)
+    .bind(error)
+    .bind(status)
+    .bind(message_id)
+    .bind(token)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() != 1 {
+        return Err(AppError::Internal(format!(
+            "dispatch claim for message {message_id} is no longer current"
+        )));
+    }
+    Ok(())
+}
+
+pub async fn recover_orphaned_claims(pool: &sqlx::SqlitePool) -> anyhow::Result<u64> {
+    let mut tx = pool.begin().await?;
+    let mut recovered = sqlx::query(
+        "UPDATE agent_message_dispatches
+         SET status = 'error', error = 'service restarted during dispatch',
+             claim_token = NULL, claimed_at = NULL, updated_at = datetime('now')
+         WHERE status = 'dispatching'",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    recovered += sqlx::query(
+        "UPDATE agent_session_message_queue
+         SET status = 'error', error = 'service restarted during delivery',
+             claim_token = NULL, claimed_at = NULL
+         WHERE status = 'delivering'",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    sqlx::query(
+        "UPDATE agent_messages SET delivery_state = 'delivery_unknown'
+         WHERE delivery_state = 'pending_agent' AND EXISTS (
+             SELECT 1 FROM agent_session_message_queue q
+             WHERE q.target_session_id = agent_messages.session_id
+               AND q.message_uuid = agent_messages.message_uuid
+               AND q.status = 'error'
+               AND q.error = 'service restarted during delivery'
+         )",
+    )
+    .execute(&mut *tx)
+    .await?;
+    recovered += sqlx::query(
+        "UPDATE scheduled_messages
+         SET status = 'failed', error = 'service restarted during dispatch',
+             claim_token = NULL, claimed_at = NULL, updated_at = datetime('now')
+         WHERE status = 'dispatching'",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    sqlx::query(
+        "UPDATE agent_messages SET delivery_state = 'delivery_unknown'
+         WHERE delivery_state = 'pending_agent' AND id IN (
+             SELECT message_id FROM agent_message_dispatches WHERE status = 'error'
+         )",
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(recovered)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shared::migrate::{run_migrations, MigrationContext};
+
+    #[tokio::test]
+    async fn restart_recovers_every_abandoned_external_dispatch_claim() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&MigrationContext::pool_only(&pool))
+            .await
+            .unwrap();
+        seed(&pool).await;
+
+        assert_eq!(recover_orphaned_claims(&pool).await.unwrap(), 3);
+        assert_eq!(
+            claim(&pool, 1).await.unwrap(),
+            DispatchClaim::Claimed {
+                token: sqlx::query_scalar(
+                    "SELECT claim_token FROM agent_message_dispatches WHERE message_id = 1"
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        );
+        let state: String =
+            sqlx::query_scalar("SELECT delivery_state FROM agent_messages WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(state, "delivery_unknown");
+    }
+
+    async fn seed(pool: &sqlx::SqlitePool) {
+        sqlx::query("INSERT INTO projects (id,name,path) VALUES (1,'p','/tmp/p')")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id,project_id,title,status,type) VALUES (1,1,'f','active','ws-session')").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO agent_sessions (id,feature_id,agent_type,status) VALUES (1,1,'session','paused')").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO agent_messages (id,session_id,role,content,message_type,message_uuid,delivery_state) VALUES (1,1,'user','x','user_message','00000000-0000-0000-0000-000000000001','pending_agent')").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO agent_message_dispatches (message_id,status,claim_token) VALUES (1,'dispatching','a')").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO agent_session_message_queue (target_session_id,content,status,claim_token) VALUES (1,'q','delivering','b')").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO scheduled_messages (feature_id,text,scheduled_at,status,claim_token) VALUES (1,'s',datetime('now'),'dispatching','c')").execute(pool).await.unwrap();
+    }
+}

@@ -7,11 +7,10 @@ import {
   parseInitializedPayload,
   parseMcpServersPayload,
   parsePermissionPayload,
-  parsePromptPersistedPayload,
   parsePromptReceivedPayload,
-  parseUserMessageMirrorPayload,
+  parseCanonicalUserMessagePayload,
 } from "./ws-envelope-payload";
-import { appendLocalUserMessage } from "./ws-session-store-helpers";
+import { upsertCanonicalUserMessage } from "./ws-user-message-reconciliation";
 import { buildClearedGatePatch } from "./ws-gate-state";
 import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
 import { normalizeContextWindow } from "@/types/agent";
@@ -20,7 +19,8 @@ import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
-import { markPromptReceived, stampPersistedMessageId } from "./ws-pending-prompts";
+import { appendErrorBlockPatch } from "./ws-session-store-helpers";
+import { markPromptDeliveryFailed, markPromptReceived } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
 import { queryClient } from "@/lib/queryClient";
 import { getGetScheduledMessageQueryKey } from "@/api/generated";
@@ -181,30 +181,43 @@ export function handlePermissionRequest(
 }
 
 /**
- * Render a prompt another device sent on this feature (the remote-access
- * mirror). The sending device shows its own prompt optimistically and never
- * receives this echo — only passive viewers do — so we append a plain
- * user_message block with no client-message-id / delivery-state tracking.
+ * Upsert the backend-confirmed user message. The sender and passive viewers
+ * consume this exact same persisted event; no renderer creates a competing
+ * local user-message identity.
  */
-export function handleUserMessageMirror(
+export function handleCanonicalUserMessage(
   ctx: StoreAccessors,
   sessionId: string,
   payload: unknown,
 ): void {
-  const p = parseUserMessageMirrorPayload(payload);
-  if (!p) return;
+  const p = parseCanonicalUserMessagePayload(payload);
+  if (!p) {
+    console.warn("[ws-session] dropped malformed canonical user_message envelope", payload);
+    const session = ctx.getSession(sessionId);
+    ctx.set(
+      updateSession(
+        ctx.get(),
+        sessionId,
+        appendErrorBlockPatch(
+          session,
+          "A persisted user message could not be displayed because its live event was malformed. Reconnect to reload the canonical transcript.",
+          { code: "MALFORMED_USER_MESSAGE" },
+        ),
+      ),
+    );
+    return;
+  }
   const session = ctx.getSession(sessionId);
-  ctx.set(
-    updateSession(
-      ctx.get(),
-      sessionId,
-      appendLocalUserMessage(session, p.text, { origin: p.origin }),
-    ),
-  );
-  // A fired scheduled message arrives as this mirror; its row is already marked
+  const blocks = upsertCanonicalUserMessage(session.blocks, p);
+  if (blocks !== session.blocks) {
+    ctx.set(
+      updateSession(ctx.get(), sessionId, blocksPatchWithDerived(session.streamingState, blocks)),
+    );
+  }
+  // A fired scheduled message arrives as this canonical event; its row is already marked
   // `sent` server-side, so refetch clears the pending card in lockstep with the
   // bubble appearing (instead of waiting for the next poll). Only refetch when a
-  // pending row is actually cached — most mirrored messages aren't scheduled.
+  // pending row is actually cached — most user messages aren't scheduled.
   if (session.featureId != null) {
     const queryKey = getGetScheduledMessageQueryKey(session.featureId);
     if (queryClient.getQueryData(queryKey) != null) {
@@ -219,31 +232,12 @@ export function handlePromptReceived(
   payload: unknown,
 ): void {
   const p = parsePromptReceivedPayload(payload);
-  if (!p?.client_message_id) return;
-  const session = ctx.getSession(sessionId);
-  const blocks = markPromptReceived(session.blocks, p.client_message_id);
-  if (blocks === session.blocks) return;
-  ctx.set(
-    updateSession(ctx.get(), sessionId, blocksPatchWithDerived(session.streamingState, blocks)),
-  );
-}
-
-/**
- * Stamp the persisted DB id onto the live user block so rewind/fork light up on
- * it without a reload. Every prompt carries a `user_message_ref` (stored on the
- * block as `clientMessageId`), so this works for the first, idle, and steering
- * sends alike. Arrives before any `prompt_received` (emitted at persist time,
- * before the agent acks), so the ref is still on the block to match.
- */
-export function handlePromptPersisted(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
-  const p = parsePromptPersistedPayload(payload);
   if (!p) return;
   const session = ctx.getSession(sessionId);
-  const blocks = stampPersistedMessageId(session.blocks, p.user_message_ref, p.message_id);
+  const blocks =
+    p.delivery_state === "delivery_failed"
+      ? markPromptDeliveryFailed(session.blocks, p.message_uuid)
+      : markPromptReceived(session.blocks, p.message_uuid);
   if (blocks === session.blocks) return;
   ctx.set(
     updateSession(ctx.get(), sessionId, blocksPatchWithDerived(session.streamingState, blocks)),

@@ -9,12 +9,12 @@ use super::super::post_plan_mode::{
 use super::super::session_prompt::PermissionResponse;
 use super::super::types::{QueryState, SdkSessions, WsSender};
 use super::permission_dispatch::finish_gate_claim;
+use super::permission_user_message::persist_question_answer;
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
     RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionHandle,
 };
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-use crate::domain::ws_session::question_answers::format_answers_plain_text;
 
 struct ActivePermissionHandle {
     feature_id: i64,
@@ -37,19 +37,6 @@ enum ActivePermissionLookup {
 enum RuntimePermissionOutcome {
     Accepted(RuntimePermissionResponseKind),
     UsePermissionChannel,
-}
-
-async fn persist_question_answer(
-    pool: sqlx::SqlitePool,
-    feature_id: i64,
-    db_session_id: i64,
-    updated_input: Option<&serde_json::Value>,
-) {
-    let Some(answer_text) = updated_input.and_then(format_answers_plain_text) else {
-        return;
-    };
-    let p = WsSessionPersistence::with_session_id(pool, feature_id, Some(db_session_id));
-    p.persist_user_message(&answer_text).await;
 }
 
 fn acknowledge_permission_response(sender: &WsSender, envelope_id: &str) {
@@ -164,16 +151,20 @@ async fn finish_accepted_runtime_permission(
             "ended",
             serde_json::to_value(SessionEndedPayload {
                 reason: "permission_denied".into(),
+                ..Default::default()
             })
             .unwrap(),
         );
         let _ = sender.send(Message::Text(String::from(ended).into()));
     }
     persist_question_answer(
-        app_state.write_pool.clone(),
+        app_state,
+        sender,
+        envelope_id,
         feature_id,
         db_session_id,
         answer_to_persist,
+        payload.message_uuid.as_deref(),
     )
     .await;
     if !has_stacked_permission {
@@ -205,8 +196,10 @@ async fn send_permission_channel_response(
     db_session_id: i64,
     answer_to_persist: Option<serde_json::Value>,
 ) -> bool {
+    let message_uuid = payload.message_uuid.clone();
     let response = PermissionResponse {
         request_id: payload.request_id,
+        message_uuid: message_uuid.clone(),
         decision: payload.decision,
         option_id: payload.option_id,
         feedback: payload.feedback,
@@ -225,10 +218,13 @@ async fn send_permission_channel_response(
     } else {
         acknowledge_permission_response(sender, envelope_id);
         persist_question_answer(
-            app_state.write_pool.clone(),
+            app_state,
+            sender,
+            envelope_id,
             feature_id,
             db_session_id,
             answer_to_persist.as_ref(),
+            message_uuid.as_deref(),
         )
         .await;
         true

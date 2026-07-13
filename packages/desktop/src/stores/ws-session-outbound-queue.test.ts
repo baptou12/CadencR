@@ -130,17 +130,19 @@ describe("ws-session outbound queue", () => {
     const store = useWsSessionStore.getState();
 
     store.sendPrompt("s1", "hello from the gap");
-    // The local echo is appended immediately…
+    // No competing optimistic block is created while the transport is down.
     const blocks = useWsSessionStore.getState().sessions.s1.blocks;
-    expect(blocks.at(-1)?.type).toBe("user_message");
+    expect(blocks).toHaveLength(0);
 
     store.connect("s1");
     await tick();
 
-    // …and the prompt actually reaches the backend after the reconnect
+    // The prompt reaches the backend after reconnect with its stable identity.
     // (toContain also fails when no prompt.send envelope was sent at all).
     const promptRaw = getWs().sent.find((raw) => raw.includes("prompt.send"));
     expect(promptRaw).toContain("hello from the gap");
+    const prompt = JSON.parse(promptRaw ?? "{}");
+    expect(prompt.payload.message_uuid).toEqual(expect.any(String));
   });
 
   it("replays the reconnect session.init before flushing queued envelopes", async () => {

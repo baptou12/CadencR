@@ -87,6 +87,22 @@ describe("serverBlocksToAgentBlocks", () => {
     expect(blocks[0].origin?.originKind).toBe("session_generated");
     expect(blocks[0].origin?.sourceSessionId).toBe(123);
   });
+
+  it("maps canonical UUID and numeric cursor for persisted user messages", () => {
+    const blocks = serverBlocksToAgentBlocks([
+      {
+        id: "msg-42",
+        messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+        type: "user_message",
+        content: "hello",
+      },
+    ] as never[]);
+
+    expect(blocks[0]).toMatchObject({
+      messageDbId: 42,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+    });
+  });
 });
 
 describe("useFeatureAgentState", () => {

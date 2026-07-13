@@ -4,7 +4,7 @@
 
 /// Canonical column list for `agent_messages` reads. Shared so the various
 /// fetch helpers in this module can't drift out of sync.
-pub(super) const MESSAGE_SELECT: &str = "SELECT id, session_id, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model";
+pub(super) const MESSAGE_SELECT: &str = "SELECT id, session_id, message_uuid, delivery_state, content, message_type, tool_name, tool_use_id, parent_tool_use_id, created_at, model";
 
 mod blocks;
 mod drafts;
@@ -23,4 +23,5 @@ mod test_support;
 
 pub use drafts::{get_draft, get_message_content, save_draft};
 pub use feature_state::get_feature_agent_state;
+pub(crate) use origins::{get_message_origin, origin_matches_session_generated};
 pub use queries::{get_session_status_snapshot, get_sessions, latest_assistant_preview};

@@ -18,6 +18,7 @@ use super::super::{
     default_permission_mode, parse_permission_mode, QueryState, SdkHandle, SdkSessions,
     SessionConfig, WsSender,
 };
+use super::control_dispatch_payload::replay_payload;
 use super::prompt_followup::{handle_followup_prompt, FollowupPromptContext};
 use super::prompt_pending::{handle_pending_prompt, PendingPromptContext};
 
@@ -35,10 +36,22 @@ pub(crate) async fn dispatch_control_prompt(
     text: &str,
     replay: bool,
 ) -> Result<(), AppError> {
-    let mut payload = replay_payload(session_id, text, None, replay);
+    dispatch_control_prompt_with_message_uuid(app_state, feature_id, session_id, text, replay, None)
+        .await
+}
+
+pub(crate) async fn dispatch_control_prompt_with_message_uuid(
+    app_state: &AppState,
+    feature_id: i64,
+    session_id: i64,
+    text: &str,
+    replay: bool,
+    message_uuid: Option<uuid::Uuid>,
+) -> Result<(), AppError> {
+    let mut payload = replay_payload(session_id, text, None, replay, message_uuid);
     let sender = control_sender();
 
-    if dispatch_to_active_owner(app_state, &sender, session_id, payload.clone()).await {
+    if dispatch_to_active_owner(app_state, &sender, session_id, payload.clone(), replay).await? {
         return Ok(());
     }
 
@@ -50,8 +63,9 @@ pub(crate) async fn dispatch_control_prompt(
         &app_state.mcp_control_sessions,
         session_id,
         payload,
+        replay,
     )
-    .await;
+    .await?;
     Ok(())
 }
 
@@ -60,14 +74,15 @@ async fn dispatch_to_active_owner(
     sender: &WsSender,
     session_id: i64,
     payload: PromptSendPayload,
-) -> bool {
+    internal_replay: bool,
+) -> Result<bool, AppError> {
     let Some(owner) = app_state.active_turns.owner_sessions(session_id).await else {
-        return false;
+        return Ok(false);
     };
     let target = {
         let sessions = owner.lock().await;
         let Some(handle) = sessions.get(&session_id) else {
-            return false;
+            return Ok(false);
         };
         match &handle.state {
             QueryState::Active { query, .. } => Some(FollowupPromptContext {
@@ -83,15 +98,18 @@ async fn dispatch_to_active_owner(
                 sdk_sessions: owner.clone(),
                 active_turns: app_state.active_turns.clone(),
                 provider_id: handle.runtime_provider.clone(),
+                internal_replay,
             }),
             QueryState::Pending(_) => None,
         }
     };
     let Some(context) = target else {
-        return false;
+        return Ok(false);
     };
-    handle_followup_prompt(context, payload).await;
-    true
+    handle_followup_prompt(context, payload)
+        .await
+        .map_err(AppError::Internal)?;
+    Ok(true)
 }
 
 async fn ensure_control_pending_handle(
@@ -116,13 +134,23 @@ async fn dispatch_control_pending(
     sessions: &SdkSessions,
     session_id: i64,
     payload: PromptSendPayload,
-) {
-    let Some(context) =
-        pending_context_from_handle(app_state, sender, sessions, session_id, payload).await
+    internal_replay: bool,
+) -> Result<(), AppError> {
+    let Some(context) = pending_context_from_handle(
+        app_state,
+        sender,
+        sessions,
+        session_id,
+        payload,
+        internal_replay,
+    )
+    .await
     else {
-        return;
+        return Ok(());
     };
-    handle_pending_prompt(context).await;
+    handle_pending_prompt(context)
+        .await
+        .map_err(AppError::Internal)
 }
 
 async fn pending_context_from_handle(
@@ -131,6 +159,7 @@ async fn pending_context_from_handle(
     sessions: &SdkSessions,
     session_id: i64,
     payload: PromptSendPayload,
+    internal_replay: bool,
 ) -> Option<PendingPromptContext> {
     let mut guard = sessions.lock().await;
     let handle = guard.get_mut(&session_id)?;
@@ -158,6 +187,7 @@ async fn pending_context_from_handle(
         options,
         payload,
         permission_tx: None,
+        internal_replay,
     })
 }
 
@@ -306,29 +336,6 @@ fn session_config(options: &RuntimeSpawnConfig) -> SessionConfig {
     }
 }
 
-fn replay_payload(
-    session_id: i64,
-    text: &str,
-    use_worktree: Option<bool>,
-    replay: bool,
-) -> PromptSendPayload {
-    PromptSendPayload {
-        session_id: session_id.to_string(),
-        text: text.to_string(),
-        profile: None,
-        claude_profile: None,
-        images: Vec::new(),
-        attachments: Vec::new(),
-        use_worktree,
-        new_project_branch: None,
-        client_message_id: None,
-        // Replay re-sends an already-persisted message (replay → no new row),
-        // so there is nothing to ack a persisted id for.
-        user_message_ref: None,
-        replay,
-    }
-}
-
 async fn control_use_worktree(pool: &sqlx::SqlitePool, feature_id: i64) -> Option<bool> {
     match worktree::get_setting(pool, feature_id, "worktree_mode")
         .await
@@ -380,21 +387,6 @@ mod tests {
         let pool = pool_with_feature_settings().await;
 
         assert_eq!(control_use_worktree(&pool, 42).await, None);
-    }
-
-    #[test]
-    fn replay_payload_preserves_supplied_worktree_intent() {
-        let payload = replay_payload(7, "start", Some(true), true);
-
-        assert_eq!(payload.use_worktree, Some(true));
-        assert!(payload.replay);
-    }
-
-    #[test]
-    fn replay_payload_can_request_user_message_persistence() {
-        let payload = replay_payload(7, "scheduled", None, false);
-
-        assert!(!payload.replay);
     }
 }
 

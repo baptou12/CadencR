@@ -60,6 +60,7 @@ Object.assign(MockWebSocket, { OPEN: 1, CONNECTING: 0, CLOSED: 3 });
 
 beforeEach(() => {
   MockWebSocket.reset();
+  canonicalMessageSequence = 1000;
   useWsSessionStore.setState({ sessions: {} });
   vi.stubGlobal("WebSocket", MockWebSocket);
   vi.stubGlobal("window", { ...globalThis.window });
@@ -93,6 +94,41 @@ function tick(): Promise<void> {
 }
 
 const activeTimerIds = new Set<ReturnType<typeof setTimeout>>();
+let canonicalMessageSequence = 1000;
+
+function nextCanonicalMessageId(): number {
+  const messageId = canonicalMessageSequence;
+  canonicalMessageSequence += 1;
+  return messageId;
+}
+
+function simulateCanonicalUserMessage(
+  ws: MockWebSocket,
+  text: string,
+  messageUuid: string,
+  promptDeliveryState?: "pending_agent",
+  messageId = nextCanonicalMessageId(),
+): void {
+  ws.simulateMessage({
+    domain: "session",
+    action: "user_message",
+    payload: {
+      message_id: messageId,
+      message_uuid: messageUuid,
+      text,
+      created_at: "2026-07-12T20:00:00Z",
+      ...(promptDeliveryState ? { prompt_delivery_state: promptDeliveryState } : {}),
+    },
+  });
+}
+
+function lastSentEnvelope(ws: MockWebSocket, action: string): Record<string, unknown> {
+  const envelope = ws.sent
+    .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+    .findLast((candidate) => candidate.action === action);
+  if (!envelope) throw new Error(`missing ${action} envelope`);
+  return envelope;
+}
 
 async function connectInitializedSession(sessionId = "s1"): Promise<{
   store: ReturnType<typeof useWsSessionStore.getState>;
@@ -176,12 +212,19 @@ describe("ws-session-store", () => {
     expect(currentWs).not.toBe(staleWs);
 
     store.sendPrompt("s1", "hello from mobile");
+    const prompt = JSON.parse(currentWs.sent.at(-1) ?? "{}");
+    simulateCanonicalUserMessage(currentWs, "hello from mobile", prompt.payload.message_uuid);
     const currentSentBeforeStaleEvents = currentWs.sent.length;
     staleWs.fireEvent("open");
     staleWs.simulateMessage({
       domain: "session",
       action: "user_message",
-      payload: { text: "hello from mobile" },
+      payload: {
+        message_id: 9999,
+        message_uuid: "293319b5-bf87-48a4-a454-cf9a452d3581",
+        text: "stale",
+        created_at: "2026-07-12T20:00:00Z",
+      },
     });
     staleWs.fireEvent("error");
     staleWs.fireEvent("close");
@@ -223,7 +266,7 @@ describe("ws-session-store", () => {
     });
   });
 
-  it("sendPrompt appends user message block without marking the agent running", async () => {
+  it("sendPrompt waits for the canonical backend event without marking the agent running", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -234,8 +277,12 @@ describe("ws-session-store", () => {
       payload: { session_id: "srv-1" },
     });
     store.sendPrompt("s1", "hello");
-    const session = useWsSessionStore.getState().sessions["s1"];
+    let session = useWsSessionStore.getState().sessions["s1"];
     expect(session.lifecycle).toEqual({ phase: "idle" });
+    expect(session.blocks).toHaveLength(0);
+    const prompt = JSON.parse(ws.sent.at(-1) ?? "{}");
+    simulateCanonicalUserMessage(ws, "hello", prompt.payload.message_uuid);
+    session = useWsSessionStore.getState().sessions["s1"];
     expect(session.blocks.length).toBe(1);
     expect(session.blocks[0].type).toBe("user_message");
     expect(session.blocks[0].content).toBe("hello");
@@ -258,25 +305,24 @@ describe("ws-session-store", () => {
     });
   });
 
-  it("sendPrompt always carries a user_message_ref and stamps the live block on prompt_persisted", async () => {
+  it("sendPrompt carries one message UUID and hydrates identity from the canonical event", async () => {
     const { store, ws } = await connectInitializedSession();
 
     store.sendPrompt("s1", "hello");
 
     const sent = ws.sent.map((raw) => JSON.parse(raw));
-    const ref = sent.at(-1).payload.user_message_ref;
-    expect(ref).toEqual(expect.any(String));
-    const block = useWsSessionStore.getState().sessions["s1"].blocks.at(-1);
-    expect(block?.clientMessageId).toBe(ref);
-    expect(block?.messageDbId).toBeUndefined();
+    const messageUuid = sent.at(-1).payload.message_uuid;
+    expect(messageUuid).toEqual(expect.any(String));
+    expect(sent.at(-1).payload.track_prompt_receipt).toBeUndefined();
+    expect(useWsSessionStore.getState().sessions["s1"].blocks).toHaveLength(0);
 
-    // The persisted ack arrives and stamps the DB id (enables rewind/fork).
-    ws.simulateMessage({
-      domain: "session",
-      action: "prompt_persisted",
-      payload: { user_message_ref: ref, message_id: 4242 },
+    simulateCanonicalUserMessage(ws, "hello", messageUuid, undefined, 4242);
+    const block = useWsSessionStore.getState().sessions["s1"].blocks.at(-1);
+    expect(block).toMatchObject({
+      id: "msg-4242",
+      messageDbId: 4242,
+      messageUuid,
     });
-    expect(useWsSessionStore.getState().sessions["s1"].blocks.at(-1)?.messageDbId).toBe(4242);
   });
 
   it("setProfile sends a session-scoped profile.set envelope", async () => {
@@ -325,10 +371,11 @@ describe("ws-session-store", () => {
     store.sendPrompt("s1", "steer now");
 
     const sent = JSON.parse(ws.sent[ws.sent.length - 1]);
+    simulateCanonicalUserMessage(ws, "steer now", sent.payload.message_uuid, "pending_agent");
     const session = useWsSessionStore.getState().sessions["s1"];
     const pending = session.blocks.find((block) => block.type === "user_message");
-    expect(sent.payload.client_message_id).toEqual(expect.any(String));
-    expect(pending?.clientMessageId).toBe(sent.payload.client_message_id);
+    expect(sent.payload.track_prompt_receipt).toBe(true);
+    expect(pending?.messageUuid).toBe(sent.payload.message_uuid);
     expect(pending?.promptDeliveryState).toBe("pending_agent");
     expect(session.rootBlocks.at(-1)?.id).toBe(pending?.id);
   });
@@ -361,21 +408,21 @@ describe("ws-session-store", () => {
     });
     store.sendPrompt("s1", "steer now");
     const sent = JSON.parse(ws.sent[ws.sent.length - 1]);
+    simulateCanonicalUserMessage(ws, "steer now", sent.payload.message_uuid, "pending_agent");
 
     ws.simulateMessage({
       domain: "session",
       action: "prompt_received",
-      payload: { client_message_id: sent.payload.client_message_id },
+      payload: { message_uuid: sent.payload.message_uuid, delivery_state: "received_agent" },
     });
 
     const userBlock = useWsSessionStore
       .getState()
       .sessions["s1"].blocks.find((block) => block.type === "user_message");
     expect(userBlock?.promptDeliveryState).toBe("received_agent");
-    expect(userBlock?.clientMessageId).toBeUndefined();
   });
 
-  it("keeps a pending steering prompt after stop and clears it on resumed activity", async () => {
+  it("keeps a terminal-unknown steering prompt and accepts a late receipt", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -404,6 +451,7 @@ describe("ws-session-store", () => {
 
     store.sendPrompt("s1", "steer now");
     const sent = JSON.parse(ws.sent[ws.sent.length - 1]);
+    simulateCanonicalUserMessage(ws, "steer now", sent.payload.message_uuid, "pending_agent");
     ws.simulateMessage({
       domain: "session",
       action: "message",
@@ -444,19 +492,21 @@ describe("ws-session-store", () => {
     expect(userBlocks).toHaveLength(1);
     expect(userBlocks[0]).toMatchObject({
       content: "steer now",
-      promptDeliveryState: "pending_agent",
+      promptDeliveryState: "delivery_unknown",
     });
     expect(session.lifecycle).toEqual({
       phase: "terminal",
       reason: "completed",
     });
-    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(false);
+    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(true);
 
     store.sendPrompt("s1", "resume please");
+    const resumedPrompt = JSON.parse(ws.sent[ws.sent.length - 1]);
+    simulateCanonicalUserMessage(ws, "resume please", resumedPrompt.payload.message_uuid);
     ws.simulateMessage({
       domain: "session",
       action: "prompt_received",
-      payload: { client_message_id: sent.payload.client_message_id },
+      payload: { message_uuid: sent.payload.message_uuid, delivery_state: "received_agent" },
     });
 
     ws.simulateMessage({
@@ -482,10 +532,9 @@ describe("ws-session-store", () => {
       content: "steer now",
       promptDeliveryState: "received_agent",
     });
-    expect(userBlocks[0].clientMessageId).toBeUndefined();
     expect(userBlocks[1]).toMatchObject({ content: "resume please" });
     expect(userBlocks[1].promptDeliveryState).toBeUndefined();
-    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(false);
+    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(true);
 
     ws.simulateMessage({
       domain: "session",
@@ -2041,6 +2090,10 @@ describe("ws-session-store", () => {
 
     store.sendPrompt("a", "msg-a");
     store.sendPrompt("b", "msg-b");
+    const promptA = JSON.parse(wsA.sent.at(-1) ?? "{}");
+    const promptB = JSON.parse(wsB.sent.at(-1) ?? "{}");
+    simulateCanonicalUserMessage(wsA, "msg-a", promptA.payload.message_uuid);
+    simulateCanonicalUserMessage(wsB, "msg-b", promptB.payload.message_uuid);
 
     const sessions = useWsSessionStore.getState().sessions;
     expect(sessions["a"].blocks[0].content).toBe("msg-a");
@@ -2261,12 +2314,21 @@ describe("ws-session-store", () => {
       expect(session.permissionMode).toBe("default");
     });
 
-    it("approvePlan adds 'Plan approved.' user message and marks plan block approved", async () => {
+    it("approvePlan renders the backend-confirmed user message and marks the plan approved", async () => {
       const { ws } = await setupWithInit();
       streamExitPlanMode(ws);
       sendPlanPermissionRequest(ws);
 
       useWsSessionStore.getState().approvePlan("s1");
+      const permission = lastSentEnvelope(ws, "permission.respond");
+      const permissionPayload = permission.payload as Record<string, unknown>;
+      const messageUuid = permissionPayload.message_uuid;
+      expect(messageUuid).toEqual(expect.any(String));
+      if (typeof messageUuid !== "string" || messageUuid.length === 0) {
+        throw new Error("missing permission message_uuid");
+      }
+      expect(messageUuid).toMatch(/^[0-9a-f-]{36}$/i);
+      simulateCanonicalUserMessage(ws, "Plan approved.", messageUuid);
 
       const session = useWsSessionStore.getState().sessions["s1"];
       const userMsgs = session.blocks.filter((b) => b.type === "user_message");
@@ -2296,12 +2358,21 @@ describe("ws-session-store", () => {
       expect(permResp.payload.feedback).toBe("Use a simpler approach");
     });
 
-    it("requestPlanChanges adds feedback as user message and marks plan block rejected", async () => {
+    it("requestPlanChanges renders canonical feedback and marks the plan rejected", async () => {
       const { ws } = await setupWithInit();
       streamExitPlanMode(ws);
       sendPlanPermissionRequest(ws);
 
       useWsSessionStore.getState().requestPlanChanges("s1", "Try again differently");
+      const permission = lastSentEnvelope(ws, "permission.respond");
+      const permissionPayload = permission.payload as Record<string, unknown>;
+      const messageUuid = permissionPayload.message_uuid;
+      expect(messageUuid).toEqual(expect.any(String));
+      if (typeof messageUuid !== "string" || messageUuid.length === 0) {
+        throw new Error("missing permission message_uuid");
+      }
+      expect(messageUuid).toMatch(/^[0-9a-f-]{36}$/i);
+      simulateCanonicalUserMessage(ws, "Try again differently", messageUuid);
 
       const session = useWsSessionStore.getState().sessions["s1"];
       const userMsgs = session.blocks.filter((b) => b.type === "user_message");
@@ -2830,7 +2901,7 @@ describe("ws-session-store", () => {
   });
 
   describe("compaction handling", () => {
-    it("compactSession appends a local /compact user message", async () => {
+    it("compactSession renders /compact only after backend persistence", async () => {
       const store = useWsSessionStore.getState();
       store.connect("s1");
       await tick();
@@ -2845,7 +2916,11 @@ describe("ws-session-store", () => {
 
       const sent = ws.sent.map((s) => JSON.parse(s));
       expect(sent.some((message) => message.action === "compact")).toBe(true);
-      const session = useWsSessionStore.getState().sessions["s1"];
+      let session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.blocks).toHaveLength(0);
+      const compact = sent.find((message) => message.action === "compact");
+      simulateCanonicalUserMessage(ws, "/compact", compact.payload.message_uuid);
+      session = useWsSessionStore.getState().sessions["s1"];
       expect(session.blocks.at(-1)?.type).toBe("user_message");
       expect(session.blocks.at(-1)?.content).toBe("/compact");
       expect(session.lifecycle).toEqual({ phase: "idle" });
@@ -2870,6 +2945,7 @@ describe("ws-session-store", () => {
       const sent = ws.sent
         .map((s) => JSON.parse(s))
         .filter((message) => message.action === "compact");
+      simulateCanonicalUserMessage(ws, "/compact", sent[0].payload.message_uuid);
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(sent).toHaveLength(1);
       expect(session.blocks.filter((block) => block.type === "user_message")).toHaveLength(1);

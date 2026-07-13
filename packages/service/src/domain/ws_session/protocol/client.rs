@@ -61,22 +61,21 @@ pub struct PromptSendPayload {
     pub use_worktree: Option<bool>,
     #[serde(default)]
     pub new_project_branch: Option<NewProjectBranchPayload>,
+    /// Stable Cadencr-owned identity for this logical user message. The backend
+    /// persists it under a per-session unique constraint and echoes it on the
+    /// canonical `session.user_message` event.
     #[serde(default)]
-    pub client_message_id: Option<String>,
-    /// Client-generated reference echoed back in `prompt_persisted` with the
-    /// persisted DB id, so the sender can stamp its live block and enable
-    /// rewind/fork without a reload. Sent for every prompt (unlike
-    /// `client_message_id`, which is receipt/steering-only).
+    pub message_uuid: Option<String>,
     #[serde(default)]
-    pub user_message_ref: Option<String>,
-    #[serde(default)]
-    pub replay: bool,
+    pub track_prompt_receipt: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PermissionRespondPayload {
     pub session_id: String,
     pub request_id: String,
+    #[serde(default)]
+    pub message_uuid: Option<String>,
     pub decision: PermissionDecision,
     pub option_id: Option<String>,
     pub feedback: Option<String>,
@@ -100,6 +99,8 @@ pub struct GateClosePayload {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionActionPayload {
     pub session_id: String,
+    #[serde(default)]
+    pub message_uuid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

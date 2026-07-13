@@ -9,7 +9,7 @@ import { nextProviderMode } from "@/lib/provider-modes";
 import { getEnabledOptInModesFromCache } from "@/hooks/useEnabledOptInModes";
 import { type PermissionMode } from "@/types/permission-mode";
 import { makeErrorBlock } from "./ws-session-store-helpers";
-import { removePendingPromptBlocks } from "./ws-pending-prompts";
+import { markPendingPromptsFailed, markPromptsReceived } from "./ws-pending-prompts";
 import type { StoreAccessors } from "./ws-envelope-types";
 
 /**
@@ -74,14 +74,20 @@ export function handleError(ctx: StoreAccessors, sessionId: string, payload: unk
   } else {
     lifecyclePatch = turnErroredPatch;
   }
+  const receivedBlocks = markPromptsReceived(session.blocks, p?.receivedPromptMessageUuids ?? []);
+  const resolvedBlocks = markPendingPromptsFailed(receivedBlocks);
   if (!p?.message) {
-    const patch = { ...lifecyclePatch, ...gatePatch };
+    const blocksPatch =
+      resolvedBlocks === session.blocks
+        ? {}
+        : blocksPatchWithDerived(session.streamingState, resolvedBlocks);
+    const patch = { ...lifecyclePatch, ...blocksPatch, ...gatePatch };
     if (Object.keys(patch).length === 0) return;
     ctx.set(updateSession(ctx.get(), sessionId, patch));
     return;
   }
   const errorBlock = makeErrorBlock(session, p.message, { code: p.code });
-  const blocks = removePendingPromptBlocks([...session.blocks, errorBlock]);
+  const blocks = [...resolvedBlocks, errorBlock];
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...lifecyclePatch,

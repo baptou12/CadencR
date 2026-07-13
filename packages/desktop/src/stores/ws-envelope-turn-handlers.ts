@@ -7,9 +7,14 @@ import { blocksPatchWithDerived } from "./ws-message-processing";
 import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
-import { removePendingPromptBlocks, trimTailPromptTurnBoundary } from "./ws-pending-prompts";
+import {
+  markPendingPromptsUnknown,
+  markPromptsReceived,
+  trimTailPromptTurnBoundary,
+} from "./ws-pending-prompts";
 import { repairPersistedBlocksAfterTurn } from "./ws-session-resync";
 import type { StoreAccessors } from "./ws-envelope-types";
+import { toast } from "sonner";
 
 /**
  * `session.stream_status` envelope handler. The backend emits this when
@@ -63,6 +68,14 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
   if (session.pendingPlanApproval != null) {
     return;
   }
+  const ended = parseEndedPayload(payload);
+  if (!ended) {
+    console.warn("[ws-session] dropped malformed session.ended envelope", payload);
+    toast.error(
+      "The agent sent an invalid turn-complete update. The conversation was not changed.",
+    );
+    return;
+  }
   const state = session.streamingState;
   // A seq gap was detected mid-turn: now that no more deltas can arrive, the
   // persisted transcript is authoritative — overwrite any truncated blocks.
@@ -88,13 +101,13 @@ export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, paylo
     stream.parentToolUseId = null;
   }
 
-  const tailPromptBoundary = trimTailPromptTurnBoundary(session.blocks);
-  const blocks = tailPromptBoundary.shouldTrim
-    ? tailPromptBoundary.blocks
-    : removePendingPromptBlocks(session.blocks);
+  const receivedBlocks = markPromptsReceived(session.blocks, ended.receivedPromptMessageUuids);
+  const terminalBlocks = markPendingPromptsUnknown(receivedBlocks);
+  const tailPromptBoundary = trimTailPromptTurnBoundary(terminalBlocks);
+  const blocks = tailPromptBoundary.blocks;
   const lifecycle = transitionTurn(session.lifecycle, {
     type: "turn_ended",
-    reason: mapTerminalReason(parseEndedPayload(payload)?.reason),
+    reason: mapTerminalReason(ended.reason),
   });
   const shouldClearRuntimeCompacting = session.runtimeCompacting;
   if (

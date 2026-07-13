@@ -3,8 +3,6 @@ import type { PromptDispatchOptions, WsEnvelope } from "@/lib/ws-envelope";
 import { createModeSet, createPromptSend } from "@/lib/ws-envelope";
 import type { QueuedPrompt } from "./ws-session-types";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
-import type { LocalUserMessageOptions } from "./ws-pending-prompts";
-import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 import type { AgentBlockData } from "@/components/AgentBlock";
 export { buildSlashCommandsKey } from "@/lib/slash-command-key";
 
@@ -42,43 +40,19 @@ export function appendErrorBlockPatch(
   return blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]);
 }
 
-export function appendLocalUserMessage(
-  session: SessionEntry,
-  content: string,
-  options: LocalUserMessageOptions = {},
-): Pick<SessionEntry, "blocks" | "rootBlocks" | "toolResultMap"> {
-  session.streamingState.counter += 1;
-  const block = {
-    id: `ws-user-${session.streamingState.counter}`,
-    type: "user_message" as const,
-    content,
-    isError: false,
-    createdAt: new Date().toISOString(),
-    ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
-    ...(options.promptDeliveryState ? { promptDeliveryState: options.promptDeliveryState } : {}),
-    ...(options.origin ? { origin: options.origin } : {}),
-  };
-  const nextBlocks = [...session.blocks, block];
-  const blocks =
-    options.promptDeliveryState === "pending_agent"
-      ? movePendingPromptBlocksToTail(nextBlocks)
-      : nextBlocks;
-  return {
-    ...blocksPatchWithDerived(session.streamingState, blocks),
-  };
-}
-
 export function buildQueuedPromptPatch(
   session: SessionEntry,
   text: string,
   options: PromptDispatchOptions = {},
 ): Pick<SessionEntry, "queuedPrompts"> {
-  const queuedPrompt: QueuedPrompt = { text };
+  const queuedPrompt: QueuedPrompt = {
+    text,
+    messageUuid: options.messageUuid ?? crypto.randomUUID(),
+  };
   if (options.attachments && options.attachments.length > 0)
     queuedPrompt.attachments = options.attachments;
   if (options.branchSetup) queuedPrompt.branchSetup = options.branchSetup;
   if (options.claudeProfile) queuedPrompt.claudeProfile = options.claudeProfile;
-  if (options.userMessageRef) queuedPrompt.userMessageRef = options.userMessageRef;
   return {
     queuedPrompts: [...session.queuedPrompts, queuedPrompt],
   };
@@ -106,7 +80,7 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
         attachments: prompt.attachments,
         branchSetup: prompt.branchSetup,
         claudeProfile: prompt.claudeProfile,
-        userMessageRef: prompt.userMessageRef,
+        messageUuid: prompt.messageUuid,
       }),
     );
   }

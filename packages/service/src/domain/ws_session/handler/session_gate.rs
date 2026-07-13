@@ -193,6 +193,7 @@ async fn deny_runtime_gate(
         if respond_result.is_err() {
             let response = PermissionResponse {
                 request_id: request_id.to_string(),
+                message_uuid: None,
                 decision: PermissionDecision::Deny,
                 option_id: None,
                 feedback: None,

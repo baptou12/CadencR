@@ -65,11 +65,10 @@ export interface PersistedStatePayload {
 
 export interface QueuedPrompt {
   text: string;
+  messageUuid: string;
   attachments?: PromptAttachmentPayload[];
   branchSetup?: FirstPromptBranchSetup;
   claudeProfile?: string;
-  /** Correlation ref carried to the flushed `prompt.send` (see PromptDispatchOptions). */
-  userMessageRef?: string;
 }
 
 export interface McpServerStatus {
@@ -137,6 +136,8 @@ export interface SessionEntry {
    * the user doesn't double-submit while waiting for the ack.
    */
   submittingPermissionRequestId: string | null;
+  /** Stable idempotency keys retained while permission responses may be retried. */
+  permissionResponseMessageUuids: Map<string, string>;
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
@@ -215,6 +216,7 @@ export function createSessionEntry(): SessionEntry {
     pendingPermissionQueue: [],
     pendingRequestId: "",
     submittingPermissionRequestId: null,
+    permissionResponseMessageUuids: new Map(),
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     permissionMode: defaultEditModeFor(DEFAULT_PROVIDER),

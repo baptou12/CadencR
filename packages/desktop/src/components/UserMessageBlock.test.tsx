@@ -37,6 +37,27 @@ describe("UserMessageBlock", () => {
     expect(screen.getByText("Not received by agent yet…")).toHaveClass("text-amber-300");
   });
 
+  it("shows a terminal unknown receipt without a permanent pending spinner", () => {
+    render(<UserMessageBlock content="steer now" deliveryState="delivery_unknown" />);
+
+    expect(screen.getByText("Agent receipt could not be confirmed")).toBeInTheDocument();
+    expect(screen.queryByText("Not received by agent yet…")).not.toBeInTheDocument();
+    expect(screen.getByTestId("user-message-bubble")).toHaveAttribute(
+      "data-prompt-delivery-state",
+      "delivery_unknown",
+    );
+  });
+
+  it("shows a failed provider delivery explicitly", () => {
+    render(<UserMessageBlock content="steer now" deliveryState="delivery_failed" />);
+
+    expect(screen.getByText("Message was not delivered to the agent")).toBeInTheDocument();
+    expect(screen.getByTestId("user-message-bubble")).toHaveClass(
+      "border-destructive/50",
+      "bg-destructive/10",
+    );
+  });
+
   it("renders the resolved source feature title as a clickable conversation link", async () => {
     const user = userEvent.setup();
     useGetFeature.mockReturnValue({

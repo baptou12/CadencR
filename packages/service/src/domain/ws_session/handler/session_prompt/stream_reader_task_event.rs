@@ -35,13 +35,15 @@ impl StreamReaderTask {
         self.forward_compaction_state(state, &runtime_event).await;
         track_background_agents(&mut state.live_background_agents, &runtime_event);
 
-        match forward_immediate_event(self, &runtime_event).await {
+        match forward_immediate_event(self, state, &runtime_event).await {
             // `prompt_received` / `commands.updated` / `stream_status` are
             // transient UI acks that are never persisted. `SenderClosed` here
             // means only the owner socket is gone — mirrored acks
             // (`prompt_received`, `stream_status`) already reached other viewers
             // before that send — so either outcome just continues the stream.
-            ForwardOutcome::Forwarded | ForwardOutcome::SenderClosed => return,
+            ForwardOutcome::Forwarded
+            | ForwardOutcome::SenderClosed
+            | ForwardOutcome::Suppressed => return,
             ForwardOutcome::NotHandled => {}
         }
 

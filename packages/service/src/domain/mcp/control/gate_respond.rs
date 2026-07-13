@@ -210,6 +210,7 @@ async fn persist_visible_decision(
         "programmatic gate decision by linked parent",
     )
     .await
+    .map(|_| ())
 }
 
 async fn audit_response(

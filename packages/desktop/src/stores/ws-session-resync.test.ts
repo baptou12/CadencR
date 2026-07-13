@@ -44,6 +44,8 @@ function createSession(
   };
 }
 
+const afterCursor = (cursor: number) => ({ after: JSON.stringify({ 2586: cursor }) });
+
 describe("resyncMessagesOnReconnect", () => {
   beforeEach(() => {
     apiMocks.getFeatureAgentState.mockReset();
@@ -66,14 +68,12 @@ describe("resyncMessagesOnReconnect", () => {
     const session = ctx.get().sessions.s1;
     expect(session.blocks.map((b) => b.id)).toEqual(["msg-10", "msg-11", "msg-12"]);
     expect(session.lastAppliedMessageId).toBe(12);
-    // Cursor is derived from the newest block we already hold.
-    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077, {
-      after: JSON.stringify({ 2586: 10 }),
-    });
+    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077, afterCursor(10));
   });
 
-  it("de-dupes messages already received live (no duplicates, advances cursor)", async () => {
-    // A live message (msg-11) advanced the blocks past lastAppliedMessageId.
+  it("de-dupes messages already received live while using the snapshot cursor", async () => {
+    // A live message is present, but only the completed snapshot cursor is a
+    // safe assertion that every preceding row was received.
     const ctx = createCtx(
       createSession([makeBlock("msg-10", "a"), makeBlock("msg-11", "live")], 10),
     );
@@ -86,16 +86,143 @@ describe("resyncMessagesOnReconnect", () => {
     const session = ctx.get().sessions.s1;
     expect(session.blocks.map((b) => b.id)).toEqual(["msg-10", "msg-11"]);
     expect(session.lastAppliedMessageId).toBe(11);
-    // Cursor anchored to the newest block (msg-11), not the stale cursor (10).
-    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077, {
-      after: JSON.stringify({ 2586: 11 }),
-    });
+    // The overlapping fetch is reconciled rather than skipped.
+    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077, afterCursor(10));
   });
 
-  it("is a no-op before the initial load supplies a cursor", async () => {
-    const ctx = createCtx(createSession([], null));
+  it("does not treat an explicitly stamped live DB id as a gap-free cursor", async () => {
+    const liveUser: AgentBlockData = {
+      id: "legacy-local-user-1",
+      type: "user_message",
+      content: "live",
+      messageDbId: 11,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+    };
+    const ctx = createCtx(createSession([makeBlock("msg-10", "a"), liveUser], 10));
+    apiMocks.getFeatureAgentState.mockResolvedValue({
+      sessions: [{ sessionDbId: 2586, blocks: [], maxMessageId: 11 }],
+    });
+
     await resyncMessagesOnReconnect(ctx, "s1");
-    expect(apiMocks.getFeatureAgentState).not.toHaveBeenCalled();
+
+    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077, afterCursor(10));
+  });
+
+  it("recovers an earlier dropped row even after a later canonical event arrived", async () => {
+    const liveUser: AgentBlockData = {
+      id: "msg-12",
+      type: "user_message",
+      content: "later live message",
+      messageDbId: 12,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+    };
+    const ctx = createCtx(createSession([makeBlock("msg-10", "snapshot"), liveUser], 10));
+    apiMocks.getFeatureAgentState.mockResolvedValue({
+      sessions: [
+        {
+          sessionDbId: 2586,
+          blocks: [makeBlock("msg-11", "dropped"), { ...liveUser }],
+          maxMessageId: 12,
+        },
+      ],
+    });
+
+    await resyncMessagesOnReconnect(ctx, "s1");
+
+    const session = ctx.get().sessions.s1;
+    expect(session.blocks.map((block) => block.id)).toEqual(["msg-10", "msg-11", "msg-12"]);
+    expect(session.lastAppliedMessageId).toBe(12);
+    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077, afterCursor(10));
+  });
+
+  it("reconciles the former ws-user id with its canonical persisted clone", async () => {
+    const messageUuid = "a48cc11a-8a72-47f7-8577-d5c533d7909c";
+    const liveUser: AgentBlockData = {
+      id: "legacy-local-user-1",
+      type: "user_message",
+      content: "live",
+      messageUuid,
+    };
+    const ctx = createCtx(createSession([makeBlock("msg-10", "a"), liveUser], 10));
+    apiMocks.getFeatureAgentState.mockResolvedValue({
+      sessions: [
+        {
+          sessionDbId: 2586,
+          blocks: [
+            {
+              id: "msg-11",
+              type: "user_message",
+              content: "live",
+              messageDbId: 11,
+              messageUuid,
+            },
+          ],
+          maxMessageId: 11,
+        },
+      ],
+    });
+
+    await resyncMessagesOnReconnect(ctx, "s1");
+
+    const users = ctx.get().sessions.s1.blocks.filter((block) => block.type === "user_message");
+    expect(users).toHaveLength(1);
+    expect(users[0]).toMatchObject({ id: "msg-11", messageDbId: 11, messageUuid });
+  });
+
+  it("reconciles a slept pending prompt from persisted delivery state", async () => {
+    const pending: AgentBlockData = {
+      id: "msg-11",
+      type: "user_message",
+      content: "steer before sleep",
+      messageDbId: 11,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+      promptDeliveryState: "pending_agent",
+    };
+    const ctx = createCtx(createSession([pending], 10));
+    apiMocks.getFeatureAgentState.mockResolvedValue({
+      sessions: [
+        {
+          sessionDbId: 2586,
+          status: "completed",
+          blocks: [{ ...pending, promptDeliveryState: "delivery_unknown" }],
+          maxMessageId: 11,
+        },
+      ],
+    });
+
+    await resyncMessagesOnReconnect(ctx, "s1");
+
+    expect(ctx.get().sessions.s1.blocks[0].promptDeliveryState).toBe("delivery_unknown");
+    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077, afterCursor(10));
+  });
+
+  it("coalesces concurrent reconnect and gap resyncs", async () => {
+    const ctx = createCtx(createSession([makeBlock("msg-10", "before")], 10));
+    let resolveRequest: ((value: unknown) => void) | undefined;
+    apiMocks.getFeatureAgentState.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+
+    const first = resyncMessagesOnReconnect(ctx, "s1");
+    const second = resyncMessagesOnReconnect(ctx, "s1");
+    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledTimes(1);
+    resolveRequest?.({
+      sessions: [{ sessionDbId: 2586, blocks: [], maxMessageId: 10 }],
+    });
+    await Promise.all([first, second]);
+  });
+
+  it("hydrates from a full snapshot before the initial cursor exists", async () => {
+    const ctx = createCtx(createSession([], null));
+    apiMocks.getFeatureAgentState.mockResolvedValue({
+      sessions: [{ sessionDbId: 2586, blocks: [makeBlock("msg-1", "restored")], maxMessageId: 1 }],
+    });
+    await resyncMessagesOnReconnect(ctx, "s1");
+    expect(apiMocks.getFeatureAgentState).toHaveBeenCalledWith(1077);
+    expect(ctx.get().sessions.s1.blocks.map((block) => block.id)).toEqual(["msg-1"]);
   });
 });
 

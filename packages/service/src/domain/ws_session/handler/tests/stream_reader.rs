@@ -118,11 +118,19 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
         .ws_feature_senders
         .register(feature_id, viewer_tx)
         .await;
+    seed_pending_prompt(&app_state, db_session_id, feature_id, "client-xyz").await;
 
-    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(2);
     msg_tx
         .send(Ok(RuntimeEvent::prompt_received_event(
             "client-xyz".to_string(),
+        )))
+        .await
+        .unwrap();
+    msg_tx
+        .send(Ok(RuntimeEvent::new(
+            crate::domain::agents::adapter::RuntimeEventMetadata::default(),
+            RuntimeEventKind::Result,
         )))
         .await
         .unwrap();
@@ -138,9 +146,20 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
         crate::domain::agents::runtime::DEFAULT_PROVIDER,
     );
 
-    tokio::time::timeout(std::time::Duration::from_secs(2), ws_rx.recv())
-        .await
-        .expect("owner should receive a message");
+    let mut terminal_receipts = None;
+    while let Ok(Some(message)) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), ws_rx.recv()).await
+    {
+        let Message::Text(text) = message else {
+            continue;
+        };
+        let envelope: WsEnvelope = serde_json::from_str(&text).unwrap();
+        if envelope.action == "ended" {
+            let payload: SessionEndedPayload = serde_json::from_value(envelope.payload).unwrap();
+            terminal_receipts = Some(payload.received_prompt_message_uuids);
+            break;
+        }
+    }
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     let saw_prompt_received = |rx: &mut mpsc::UnboundedReceiver<Message>| {
@@ -148,7 +167,7 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
             matches!(msg, Message::Text(text)
             if serde_json::from_str::<WsEnvelope>(&text).is_ok_and(|env| {
                 env.action == "prompt_received"
-                    && env.payload.get("client_message_id").and_then(|v| v.as_str())
+                    && env.payload.get("message_uuid").and_then(|v| v.as_str())
                         == Some("client-xyz")
             }))
         })
@@ -158,6 +177,7 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
         saw_prompt_received(&mut viewer_rx),
         "a passive viewer must also receive the mirrored prompt_received"
     );
+    assert_eq!(terminal_receipts, Some(vec!["client-xyz".to_string()]));
 }
 
 #[tokio::test]
@@ -174,16 +194,15 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
         sessions.insert(db_session_id, make_active_handle(feature_id, None));
     }
 
-    sqlx::query(
-        "INSERT INTO agent_sessions (id, feature_id, agent_type, status) VALUES (?, ?, 'session', 'running')"
-    )
-    .bind(db_session_id)
-    .bind(feature_id)
-    .execute(&app_state.write_pool)
-    .await
-    .unwrap();
+    seed_pending_prompt(&app_state, db_session_id, feature_id, "error-receipt").await;
 
-    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(2);
+    msg_tx
+        .send(Ok(RuntimeEvent::prompt_received_event(
+            "error-receipt".to_string(),
+        )))
+        .await
+        .unwrap();
     msg_tx
         .send(Err(RuntimeError::from(SdkError::ProcessExit {
             code: Some(1),
@@ -203,13 +222,19 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
         crate::domain::agents::runtime::DEFAULT_PROVIDER,
     );
 
-    let msg = ws_rx.recv().await.unwrap();
-    if let Message::Text(text) = msg {
+    let error_payload = loop {
+        let Message::Text(text) = ws_rx.recv().await.unwrap() else {
+            continue;
+        };
         let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-        assert_eq!(env.action, "error");
-    } else {
-        panic!("expected text message");
-    }
+        if env.action == "error" {
+            break serde_json::from_value::<SessionErrorPayload>(env.payload).unwrap();
+        }
+    };
+    assert_eq!(
+        error_payload.received_prompt_message_uuids,
+        vec!["error-receipt"]
+    );
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
@@ -223,6 +248,33 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
             panic!("expected Pending state after stream error, but found Active");
         }
     }
+}
+
+async fn seed_pending_prompt(
+    app_state: &AppState,
+    session_id: i64,
+    feature_id: i64,
+    message_uuid: &str,
+) {
+    sqlx::query(
+        "INSERT INTO agent_sessions (id, feature_id, agent_type, status)
+         VALUES (?, ?, 'session', 'running')",
+    )
+    .bind(session_id)
+    .bind(feature_id)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_messages
+         (session_id, role, content, message_type, message_uuid, delivery_state)
+         VALUES (?, 'user', 'tracked prompt', 'user_message', ?, 'pending_agent')",
+    )
+    .bind(session_id)
+    .bind(message_uuid)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

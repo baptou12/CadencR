@@ -39,6 +39,36 @@ pub(super) async fn attach_message_origins(
     Ok(())
 }
 
+pub(crate) async fn get_message_origin(
+    pool: &SqlitePool,
+    message_id: i64,
+) -> Result<Option<AgentMessageOrigin>, AppError> {
+    let row = sqlx::query_as::<_, OriginRow>(
+        "SELECT message_id, origin_kind, source_session_id, source_feature_id,
+                source_project_id, source_message_id, note, created_at
+         FROM agent_message_origins WHERE message_id = ?",
+    )
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(AgentMessageOrigin::from))
+}
+
+pub(crate) fn origin_matches_session_generated(
+    origin: &AgentMessageOrigin,
+    source_session_id: i64,
+    source_feature_id: i64,
+    source_project_id: i64,
+    note: Option<&str>,
+) -> bool {
+    origin.origin_kind == "session_generated"
+        && origin.source_session_id == Some(source_session_id)
+        && origin.source_feature_id == Some(source_feature_id)
+        && origin.source_project_id == Some(source_project_id)
+        && origin.source_message_id.is_none()
+        && origin.note.as_deref() == note
+}
+
 fn message_ids(messages_by_session: &HashMap<i64, Vec<AgentMessageRow>>) -> Vec<i64> {
     let mut ids: Vec<i64> = messages_by_session
         .values()

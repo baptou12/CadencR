@@ -29,6 +29,7 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
     let feature_id = response_body["featureId"].as_i64().unwrap();
     let session_id = response_body["sessionId"].as_i64().unwrap();
     let message_id = response_body["messageId"].as_i64().unwrap();
+    assert!(!response_body["dispatchError"].as_str().unwrap().is_empty());
 
     let feature: (i64, String) =
         sqlx::query_as("SELECT project_id, title FROM features WHERE id = ?")
@@ -100,7 +101,7 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
             42,
             7,
             session_id,
-            "ok".into()
+            "error".into()
         )
     );
 }
@@ -271,7 +272,7 @@ async fn project_spawn_session_allows_spawning_beyond_legacy_descendant_cap() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(audit_status, "ok");
+    assert_eq!(audit_status, "error");
 }
 
 #[tokio::test]
@@ -308,6 +309,25 @@ async fn project_send_message_audits_invalid_delivery_without_persisting() {
 }
 
 #[tokio::test]
+async fn project_send_message_rejects_targets_awaiting_user_resolution() {
+    for target_status in ["awaiting_permission", "awaiting_question"] {
+        let pool = seeded_control_pool().await;
+        seed_send_target_session(&pool, target_status).await;
+        let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+        let response = app.oneshot(send_message_request("send_now")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let message_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_messages WHERE session_id = 888")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(message_count, 0);
+    }
+}
+
+#[tokio::test]
 async fn project_send_message_queue_if_busy_creates_messaged_link() {
     let pool = seeded_control_pool().await;
     seed_send_target_session(&pool, "running").await;
@@ -325,6 +345,22 @@ async fn project_send_message_queue_if_busy_creates_messaged_link() {
             .await
             .unwrap();
     assert_eq!(message_count, 0);
+    let queued: (i64, i64, String, String) = sqlx::query_as(
+        "SELECT target_session_id, source_session_id, content, status
+         FROM agent_session_message_queue",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        queued,
+        (
+            888,
+            777,
+            "Please validate delivery.".into(),
+            "pending".into()
+        )
+    );
     let link: (i64, i64, String, String) = sqlx::query_as(
         "SELECT source_session_id, target_session_id, link_type, note
          FROM agent_session_links

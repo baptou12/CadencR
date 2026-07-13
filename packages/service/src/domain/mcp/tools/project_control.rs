@@ -8,6 +8,28 @@ use crate::domain::mcp::tools::helpers::require_i64;
 const SERVICE_URL_ENV: &str = "CADENCR_SERVICE_URL";
 const CONTROL_TOKEN_ENV: &str = "CADENCR_MCP_CONTROL_TOKEN";
 
+#[derive(Debug)]
+struct ControlRequestError {
+    message: String,
+    retryable: bool,
+}
+
+impl ControlRequestError {
+    fn permanent(message: String) -> Self {
+        Self {
+            message,
+            retryable: false,
+        }
+    }
+
+    fn retryable(message: String) -> Self {
+        Self {
+            message,
+            retryable: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct McpControlClient {
     client: reqwest::Client,
@@ -46,10 +68,22 @@ impl McpControlClient {
         path: &str,
         body: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
+        self.post_json_attempt(path, body)
+            .await
+            .map_err(|error| error.message)
+    }
+
+    async fn post_json_attempt(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<serde_json::Value, ControlRequestError> {
         let url = self
             .service_url
             .join(path.trim_start_matches('/'))
-            .map_err(|e| format!("Control endpoint URL is invalid: {e}"))?;
+            .map_err(|e| {
+                ControlRequestError::permanent(format!("Control endpoint URL is invalid: {e}"))
+            })?;
         let response = self
             .client
             .post(url)
@@ -57,17 +91,50 @@ impl McpControlClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| format!("Control endpoint request failed: {e}"))?;
+            .map_err(|e| {
+                ControlRequestError::retryable(format!("Control endpoint request failed: {e}"))
+            })?;
         let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| format!("Control endpoint response read failed: {e}"))?;
+        let text = response.text().await.map_err(|e| {
+            ControlRequestError::retryable(format!("Control endpoint response read failed: {e}"))
+        })?;
         if !status.is_success() {
-            return Err(format!("Control endpoint returned {status}: {text}"));
+            let message = format!("Control endpoint returned {status}: {text}");
+            return Err(
+                if status.is_server_error()
+                    || status == reqwest::StatusCode::REQUEST_TIMEOUT
+                    || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                {
+                    ControlRequestError::retryable(message)
+                } else {
+                    ControlRequestError::permanent(message)
+                },
+            );
         }
-        serde_json::from_str(&text)
-            .map_err(|e| format!("Control endpoint response was invalid JSON: {e}"))
+        serde_json::from_str(&text).map_err(|e| {
+            ControlRequestError::permanent(format!(
+                "Control endpoint response was invalid JSON: {e}"
+            ))
+        })
+    }
+
+    async fn post_json_idempotent(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let mut last_error = None;
+        for attempt in 0..3 {
+            match self.post_json_attempt(path, body.clone()).await {
+                Ok(value) => return Ok(value),
+                Err(error) if !error.retryable => return Err(error.message),
+                Err(error) => last_error = Some(error.message),
+            }
+            if attempt < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(50 * (attempt + 1))).await;
+            }
+        }
+        Err(last_error.unwrap_or_else(|| "Control endpoint request failed".to_string()))
     }
 }
 
@@ -176,13 +243,15 @@ pub async fn send_session_message_with_client(
     let delivery = args.get("delivery").and_then(serde_json::Value::as_str);
     let reply = args.get("reply").and_then(serde_json::Value::as_str);
     client
-        .post_json(
+        .post_json_idempotent(
             "/internal/mcp/project/send-message",
             json!({
                 "source_feature_id": ctx.feature_id,
                 "source_session_id": source_session_id,
                 "target_session_id": target_session_id,
                 "message": message,
+                "message_uuid": optional_string(args, "message_uuid")
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                 "delivery": delivery,
                 "reply": reply,
                 "source_note": source_note,
@@ -209,10 +278,15 @@ fn optional_i64(args: &serde_json::Value, key: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     use axum::{
-        extract::State, http::HeaderMap, response::IntoResponse, routing::post, Json, Router,
+        extract::State,
+        http::{HeaderMap, StatusCode},
+        response::IntoResponse,
+        routing::post,
+        Json, Router,
     };
     use serde_json::json;
     use sqlx::sqlite::SqlitePoolOptions;
@@ -237,11 +311,13 @@ mod tests {
         let client = McpControlClient::from_env_values(Some(url), Some("secret".to_string()))
             .expect("control client");
 
+        let message_uuid = uuid::Uuid::new_v4().to_string();
         let result = send_session_message_with_client(
             &json!({
                 "target_session_id": 888,
                 "message": "Please verify provenance.",
-                "source_note": "delegated by project MCP"
+                "source_note": "delegated by project MCP",
+                "message_uuid": message_uuid
             }),
             &ctx,
             client,
@@ -255,7 +331,81 @@ mod tests {
         assert_eq!(request["source_session_id"], 777);
         assert_eq!(request["target_session_id"], 888);
         assert_eq!(request["message"], "Please verify provenance.");
+        assert_eq!(request["message_uuid"], message_uuid);
         assert_eq!(request["source_note"], "delegated by project MCP");
+    }
+
+    #[tokio::test]
+    async fn idempotent_post_does_not_retry_permanent_client_errors() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_for_handler = attempts.clone();
+        let app = Router::new().route(
+            "/internal/mcp/project/send-message",
+            post(move || {
+                let attempts = attempts_for_handler.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    (StatusCode::BAD_REQUEST, "invalid request")
+                }
+            }),
+        );
+        let url = spawn_router(app).await;
+        let client = McpControlClient::from_env_values(Some(url), Some("secret".to_string()))
+            .expect("control client");
+
+        let error = client
+            .post_json_idempotent("/internal/mcp/project/send-message", json!({}))
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("400 Bad Request"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn transient_retry_reuses_one_generated_message_uuid() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let app = Router::new()
+            .route(
+                "/internal/mcp/project/send-message",
+                post(
+                    |State((attempts, bodies)): State<(
+                        Arc<AtomicUsize>,
+                        Arc<Mutex<Vec<serde_json::Value>>>,
+                    )>,
+                     Json(body): Json<serde_json::Value>| async move {
+                        bodies.lock().await.push(body);
+                        if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                            (StatusCode::INTERNAL_SERVER_ERROR, "temporary").into_response()
+                        } else {
+                            Json(json!({ "messageId": 321 })).into_response()
+                        }
+                    },
+                ),
+            )
+            .with_state((attempts.clone(), bodies.clone()));
+        let url = spawn_router(app).await;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let ctx = McpContext::new_with_source_session(pool.clone(), pool, 42, Some(777));
+        let client = McpControlClient::from_env_values(Some(url), Some("secret".to_string()))
+            .expect("control client");
+
+        send_session_message_with_client(
+            &json!({"target_session_id": 888, "message": "retry safely"}),
+            &ctx,
+            client,
+        )
+        .await
+        .unwrap();
+
+        let bodies = bodies.lock().await;
+        assert_eq!(bodies.len(), 2);
+        assert_eq!(bodies[0]["message_uuid"], bodies[1]["message_uuid"]);
     }
 
     #[tokio::test]
@@ -373,6 +523,10 @@ mod tests {
         let app = Router::new()
             .route(path, post(spawn_handler))
             .with_state((captured, response));
+        spawn_router(app).await
+    }
+
+    async fn spawn_router(app: Router) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr: SocketAddr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });

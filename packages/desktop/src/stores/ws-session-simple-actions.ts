@@ -30,7 +30,7 @@ import { discardStreamDeltas } from "./ws-delta-coalescer";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload } from "./ws-envelope-payload";
 import { resyncMessagesOnReconnect } from "./ws-session-resync";
-import { appendLocalUserMessage, buildSlashCommandsKey } from "./ws-session-store-helpers";
+import { buildSlashCommandsKey } from "./ws-session-store-helpers";
 import type {
   PermissionMode,
   PersistedStatePayload,
@@ -131,7 +131,6 @@ function createLifecycleActions(deps: SimpleSessionActionDeps) {
       sendRaw(sessionId, createSessionCompact(session.serverSessionId));
       set(
         updateSession(get(), sessionId, {
-          ...appendLocalUserMessage(session, "/compact"),
           compactRequestPending: true,
         }),
       );

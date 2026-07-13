@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentBlockData } from "./AgentBlock";
 import { collapseTurnsToSummary } from "./agentStreamSummary";
 import { buildToolChips } from "./agentStreamToolChips";
+import { upsertCanonicalUserMessage } from "@/stores/ws-user-message-reconciliation";
 
 function user(id: string, content = "hi"): AgentBlockData {
   return { id, type: "user_message", content };
@@ -195,8 +196,8 @@ describe("collapseTurnsToSummary", () => {
   });
 
   it("keeps a pending steer message inside the live turn until the agent receives it", () => {
-    // Steer sent mid-turn: the block is appended immediately but the agent hasn't
-    // acknowledged it yet, so the in-flight turn must NOT collapse around it.
+    // The canonical steer has persisted, but the agent hasn't acknowledged it
+    // yet, so the in-flight turn must NOT collapse around it.
     const blocks = [
       user("u1"),
       tool("t1", "Read"),
@@ -239,18 +240,88 @@ describe("collapseTurnsToSummary", () => {
   });
 
   it("collapses a pending steering message segment without a recap", () => {
-    // While a steering prompt is pinned to the tail it has no tools yet.
-    const result = collapseTurnsToSummary([
-      user("u1"),
-      tool("t1", "Read"),
-      text("m1"),
-      user("u2", "steer"),
-    ]);
+    const pending = {
+      ...user("u2", "steer"),
+      promptDeliveryState: "pending_agent" as const,
+    };
+    // A steering prompt with no following tools has no recap of its own.
+    const result = collapseTurnsToSummary([user("u1"), tool("t1", "Read"), text("m1"), pending]);
     expect(result.map((b) => b.type)).toEqual([
       "user_message",
       "tool_summary",
       "text",
       "user_message",
     ]);
+  });
+
+  it("keeps an unknown-delivery steer visible without attributing later output to it", () => {
+    const unknown: AgentBlockData = {
+      ...user("u2", "steer"),
+      promptDeliveryState: "delivery_unknown",
+    };
+    const result = collapseTurnsToSummary([
+      user("u1"),
+      tool("t1", "Read"),
+      text("m1", "first"),
+      unknown,
+      tool("t2", "Bash"),
+      text("m2", "second"),
+    ]);
+
+    expect(result.map((block) => block.type)).toEqual([
+      "user_message",
+      "tool_summary",
+      "text",
+      "user_message",
+      "tool_summary",
+      "text",
+    ]);
+  });
+
+  it("does not open a turn boundary for a delivery-failed steer", () => {
+    const failed: AgentBlockData = {
+      ...user("u2", "steer"),
+      promptDeliveryState: "delivery_failed",
+    };
+    const result = collapseTurnsToSummary([
+      user("u1"),
+      tool("t1", "Read"),
+      text("m1", "first"),
+      failed,
+      tool("t2", "Bash"),
+      text("m2", "second"),
+    ]);
+
+    expect(result.map((block) => block.id)).toEqual([
+      "u1",
+      "tool-summary-t1",
+      "m1",
+      "u2",
+      "tool-summary-t2",
+      "m2",
+    ]);
+  });
+
+  it("preserves canonical user identity and count across full and summary projections", () => {
+    const canonical = {
+      messageId: 42,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+      text: "hello",
+      createdAt: "2026-07-12T20:00:00Z",
+    };
+    const once = upsertCanonicalUserMessage([], canonical);
+    const deduplicated = upsertCanonicalUserMessage(once, canonical);
+    const full = [...deduplicated, tool("t1", "Read"), text("m1", "done")];
+    const summary = collapseTurnsToSummary(full);
+
+    const fullUsers = full.filter((block) => block.type === "user_message");
+    const summaryUsers = summary.filter((block) => block.type === "user_message");
+    expect(fullUsers).toHaveLength(1);
+    expect(summaryUsers).toHaveLength(1);
+    expect(summaryUsers[0]).toBe(fullUsers[0]);
+    expect(summaryUsers[0]).toMatchObject({
+      id: "msg-42",
+      messageUuid: canonical.messageUuid,
+    });
   });
 });

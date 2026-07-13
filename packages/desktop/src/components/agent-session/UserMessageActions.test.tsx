@@ -4,19 +4,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const rewindToMessage = vi.fn();
 const forkFromMessage = vi.fn();
+const sendPrompt = vi.fn();
 const copyAs = vi.fn();
 
 vi.mock("@/stores/ws-session-store", () => ({
   useWsSessionStore: (selector: (s: unknown) => unknown) =>
-    selector({ rewindToMessage, forkFromMessage }),
+    selector({ rewindToMessage, forkFromMessage, sendPrompt }),
 }));
 vi.mock("@/lib/markdown-export", () => ({
   copyAs: (...args: unknown[]) => copyAs(...args),
 }));
-vi.mock("@/components/AgentBlock", () => ({
-  messageIdFromBlockId: (id: string) => (id.startsWith("msg-") ? Number(id.slice(4)) : undefined),
-}));
-
 import type { AgentBlockData } from "../AgentBlock";
 import { AgentSessionProvider } from "./agent-session-context";
 import { UserMessageActions } from "./UserMessageActions";
@@ -35,6 +32,7 @@ describe("UserMessageActions", () => {
   beforeEach(() => {
     rewindToMessage.mockClear();
     forkFromMessage.mockClear();
+    sendPrompt.mockClear();
     copyAs.mockClear();
   });
 
@@ -52,14 +50,14 @@ describe("UserMessageActions", () => {
     expect(rewindToMessage).toHaveBeenCalledWith("ws-feature-1", 42);
   });
 
-  it("resolves the DB id from a stamped live block (ws-user-*)", async () => {
-    renderActions({ id: "ws-user-3", type: "user_message", content: "live", messageDbId: 99 });
+  it("resolves the DB id from an explicit canonical cursor", async () => {
+    renderActions({ id: "canonical-user", type: "user_message", content: "live", messageDbId: 99 });
     await userEvent.click(screen.getByRole("button", { name: /rewind/i }));
     expect(rewindToMessage).toHaveBeenCalledWith("ws-feature-1", 99);
   });
 
-  it("hides fork/rewind for an unstamped live block", () => {
-    renderActions({ id: "ws-user-3", type: "user_message", content: "live" });
+  it("hides fork/rewind for a non-persisted synthetic block", () => {
+    renderActions({ id: "synthetic-user", type: "user_message", content: "live" });
     expect(screen.queryByRole("button", { name: /fork/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rewind/i })).toBeNull();
     expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();
@@ -69,5 +67,68 @@ describe("UserMessageActions", () => {
     renderActions(persisted, null);
     expect(screen.queryByRole("button", { name: /fork/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /rewind/i })).toBeNull();
+  });
+
+  it("retries plain text with the same canonical UUID", async () => {
+    renderActions({
+      ...persisted,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+      promptDeliveryState: "delivery_failed",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(sendPrompt).toHaveBeenCalledWith("ws-feature-1", "hello", {
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+    });
+    expect(screen.getByRole("button", { name: /retrying/i })).toBeDisabled();
+  });
+
+  it("retries persisted images as prompt attachments instead of JSON text", async () => {
+    const content = JSON.stringify([
+      { type: "text", text: "inspect" },
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" },
+      },
+    ]);
+    renderActions({
+      ...persisted,
+      content,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+      promptDeliveryState: "delivery_unknown",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(sendPrompt).toHaveBeenCalledWith("ws-feature-1", "inspect", {
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+      attachments: [
+        { base64: "aW1hZ2U=", fileName: "image", kind: "image", mimeType: "image/png" },
+      ],
+    });
+  });
+
+  it("disables retry when persisted attachment bytes are unavailable", async () => {
+    const content = JSON.stringify([
+      { type: "text", text: "inspect" },
+      {
+        type: "attachment",
+        file_name: "brief.pdf",
+        kind: "document",
+        media_type: "application/pdf",
+      },
+    ]);
+    renderActions({
+      ...persisted,
+      content,
+      messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+      promptDeliveryState: "delivery_failed",
+    });
+
+    const retry = screen.getByRole("button", { name: /retry/i });
+    expect(retry).toBeDisabled();
+    await userEvent.click(retry);
+    expect(sendPrompt).not.toHaveBeenCalled();
   });
 });

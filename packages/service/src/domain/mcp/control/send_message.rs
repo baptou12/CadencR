@@ -1,14 +1,22 @@
-use axum::{extract::ws::Message, extract::State, Json};
+use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
-use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
+#[path = "send_message_persistence.rs"]
+mod persistence;
+#[path = "send_message_audit.rs"]
+mod send_audit;
+
+use self::persistence::{insert_message_link, persist_immediate_message, ImmediateMessageRequest};
+use self::send_audit::{audit_send_message, audit_send_message_error};
 use super::message_queue::enqueue_message;
 use super::scope::resolve_session_scope;
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
+use crate::domain::sessions::message_dispatch::{self, DispatchClaim};
 use crate::domain::sessions::models::AgentMessageOrigin;
-use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
-use crate::domain::ws_session::protocol::{UserMessageMirrorPayload, WsEnvelope};
+use crate::domain::sessions::user_messages::PersistedUserMessage;
+use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt_with_message_uuid;
+use crate::domain::ws_session::handler::session_prompt::publish_user_message;
 use crate::error::AppError;
 
 const MAX_SEND_MESSAGES_PER_SOURCE_PER_HOUR: i64 = 20;
@@ -19,6 +27,7 @@ pub(super) struct SendMessageRequest {
     source_session_id: i64,
     target_session_id: i64,
     message: String,
+    message_uuid: Option<String>,
     delivery: Option<String>,
     reply: Option<String>,
     source_note: Option<String>,
@@ -33,6 +42,8 @@ pub(super) struct SendMessageResponse {
     queue_id: Option<i64>,
     #[serde(rename = "targetSessionId")]
     target_session_id: i64,
+    #[serde(rename = "messageUuid")]
+    message_uuid: String,
 }
 
 pub(super) async fn send_message_handler(
@@ -41,6 +52,7 @@ pub(super) async fn send_message_handler(
 ) -> Result<Json<SendMessageResponse>, AppError> {
     let started_at = std::time::Instant::now();
     let message = validated_message(&body.message)?;
+    let message_uuid = canonical_request_uuid(body.message_uuid.as_deref())?;
 
     let source = resolve_session_scope(&state.write_pool, body.source_session_id).await?;
     let target = resolve_session_scope(&state.write_pool, body.target_session_id).await?;
@@ -82,57 +94,110 @@ pub(super) async fn send_message_handler(
         return Err(AppError::BadRequest(message));
     }
     if target.status == "running" && delivery == DeliveryMode::QueueIfBusy {
-        if reply == ReplyMode::OnTurnEnd {
-            return Err(AppError::BadRequest(
-                "reply=on_turn_end is not yet supported with delivery=queue_if_busy".to_string(),
-            ));
-        }
-        let queue_id = enqueue_message(
-            &state.write_pool,
-            target.session_id,
-            Some(source.session_id),
+        return queue_busy_message(QueueBusyRequest {
+            state: &state,
+            source: &source,
+            target: &target,
+            body: &body,
             message,
-        )
-        .await?;
-        if body.link_to_current_session.unwrap_or(true) {
-            insert_message_link(
-                &state,
-                source.session_id,
-                target.session_id,
-                body.source_note.as_deref(),
-            )
-            .await?;
-        }
-        let response = SendMessageResponse {
-            message_id: None,
-            queue_id: Some(queue_id),
-            target_session_id: target.session_id,
-        };
-        audit_send_message(&state, &source, &target, &response, started_at).await?;
-        return Ok(Json(response));
+            message_uuid,
+            reply,
+            started_at,
+        })
+        .await;
     }
 
-    let message_id =
-        persist_immediate_message(&state, &source, &target, &body, message, reply).await?;
-
-    state
-        .feature_events_tx
-        .emit(target.feature_id, None, FeatureEventAction::Reordered);
-    broadcast_generated_user_message(
-        &state,
-        &source,
-        target.feature_id,
+    let (persisted_message, origin) = persist_immediate_message(ImmediateMessageRequest {
+        state: &state,
+        source: &source,
+        target: &target,
         message,
-        body.source_note.as_deref(),
+        message_uuid,
+        source_note: body.source_note.as_deref(),
+        link_to_current_session: body.link_to_current_session.unwrap_or(true),
+        await_reply: reply == ReplyMode::OnTurnEnd,
+    })
+    .await?;
+
+    publish_generated_user_message(&state, target.feature_id, &persisted_message, origin).await?;
+    if persisted_message.inserted {
+        state
+            .feature_events_tx
+            .emit(target.feature_id, None, FeatureEventAction::Reordered);
+    }
+    if let Err(error) = dispatch_immediate_message_once(
+        &state,
+        &target,
+        message,
+        message_uuid,
+        persisted_message.id,
+        reply,
     )
-    .await;
-    dispatch_immediate_message(&state, &target, message, message_id, reply).await?;
+    .await
+    {
+        audit_send_message_error(&state, &source, &target, &error.to_string(), started_at).await?;
+        return Err(error);
+    }
     let response = SendMessageResponse {
-        message_id: Some(message_id),
+        message_id: Some(persisted_message.id),
         queue_id: None,
         target_session_id: target.session_id,
+        message_uuid: message_uuid.to_string(),
     };
     audit_send_message(&state, &source, &target, &response, started_at).await?;
+    Ok(Json(response))
+}
+
+struct QueueBusyRequest<'a> {
+    state: &'a AppState,
+    source: &'a super::scope::SessionScope,
+    target: &'a super::scope::SessionScope,
+    body: &'a SendMessageRequest,
+    message: &'a str,
+    message_uuid: uuid::Uuid,
+    reply: ReplyMode,
+    started_at: std::time::Instant,
+}
+
+async fn queue_busy_message(
+    request: QueueBusyRequest<'_>,
+) -> Result<Json<SendMessageResponse>, AppError> {
+    if request.reply == ReplyMode::OnTurnEnd {
+        return Err(AppError::BadRequest(
+            "reply=on_turn_end is not yet supported with delivery=queue_if_busy".to_string(),
+        ));
+    }
+    let queued = enqueue_message(
+        &request.state.write_pool,
+        request.target.session_id,
+        Some(request.source.session_id),
+        request.message,
+        request.message_uuid,
+    )
+    .await?;
+    if queued.inserted && request.body.link_to_current_session.unwrap_or(true) {
+        insert_message_link(
+            request.state,
+            request.source.session_id,
+            request.target.session_id,
+            request.body.source_note.as_deref(),
+        )
+        .await?;
+    }
+    let response = SendMessageResponse {
+        message_id: None,
+        queue_id: Some(queued.id),
+        target_session_id: request.target.session_id,
+        message_uuid: request.message_uuid.to_string(),
+    };
+    audit_send_message(
+        request.state,
+        request.source,
+        request.target,
+        &response,
+        request.started_at,
+    )
+    .await?;
     Ok(Json(response))
 }
 
@@ -146,73 +211,34 @@ fn validated_message(message: &str) -> Result<&str, AppError> {
     Ok(message)
 }
 
-async fn persist_immediate_message(
-    state: &AppState,
-    source: &super::scope::SessionScope,
-    target: &super::scope::SessionScope,
-    body: &SendMessageRequest,
-    message: &str,
-    reply: ReplyMode,
-) -> Result<i64, AppError> {
-    let mut tx = state.write_pool.begin().await?;
-    let message_id = sqlx::query_scalar(
-        "INSERT INTO agent_messages (session_id, role, content, message_type)
-         VALUES (?, 'user', ?, 'user_message')
-         RETURNING id",
-    )
-    .bind(target.session_id)
-    .bind(message)
-    .fetch_one(&mut *tx)
-    .await?;
-    if reply == ReplyMode::OnTurnEnd {
-        super::reply_wait::insert_pending(
-            &mut tx,
-            source.session_id,
-            target.session_id,
-            message_id,
-            "message",
-        )
-        .await?;
+fn canonical_request_uuid(value: Option<&str>) -> Result<uuid::Uuid, AppError> {
+    match value {
+        Some(value) => uuid::Uuid::parse_str(value)
+            .map_err(|_| AppError::BadRequest("message_uuid must be a valid UUID".to_string())),
+        None => Ok(uuid::Uuid::new_v4()),
     }
-    sqlx::query(
-        "INSERT INTO agent_message_origins
-         (message_id, origin_kind, source_session_id, source_feature_id, source_project_id, note)
-         VALUES (?, 'session_generated', ?, ?, ?, ?)",
-    )
-    .bind(message_id)
-    .bind(source.session_id)
-    .bind(source.feature_id)
-    .bind(source.project_id)
-    .bind(body.source_note.as_deref())
-    .execute(&mut *tx)
-    .await?;
-    if body.link_to_current_session.unwrap_or(true) {
-        sqlx::query(
-            "INSERT INTO agent_session_links (source_session_id, target_session_id, link_type, note)
-             VALUES (?, ?, 'messaged', ?)",
-        )
-        .bind(source.session_id)
-        .bind(target.session_id)
-        .bind(body.source_note.as_deref())
-        .execute(&mut *tx)
-        .await?;
-    }
-    tx.commit().await?;
-    Ok(message_id)
 }
 
 async fn dispatch_immediate_message(
     state: &AppState,
     target: &super::scope::SessionScope,
     message: &str,
+    message_uuid: uuid::Uuid,
     message_id: i64,
     reply: ReplyMode,
 ) -> Result<(), AppError> {
     if reply == ReplyMode::OnTurnEnd {
         super::reply_wait::arm(&state.write_pool, target.session_id, message_id).await?;
     }
-    if let Err(error) =
-        dispatch_control_prompt(state, target.feature_id, target.session_id, message, true).await
+    if let Err(error) = dispatch_control_prompt_with_message_uuid(
+        state,
+        target.feature_id,
+        target.session_id,
+        message,
+        true,
+        Some(message_uuid),
+    )
+    .await
     {
         if reply == ReplyMode::OnTurnEnd {
             super::reply_wait::deliver_failed(state, target.session_id, &error.to_string()).await?;
@@ -222,39 +248,57 @@ async fn dispatch_immediate_message(
     Ok(())
 }
 
-pub(super) async fn broadcast_generated_user_message(
+async fn dispatch_immediate_message_once(
     state: &AppState,
-    source: &super::scope::SessionScope,
-    target_feature_id: i64,
+    target: &super::scope::SessionScope,
     message: &str,
-    note: Option<&str>,
-) {
-    let origin = AgentMessageOrigin {
-        origin_kind: "session_generated".to_string(),
-        source_session_id: Some(source.session_id),
-        source_feature_id: Some(source.feature_id),
-        source_project_id: Some(source.project_id),
-        source_message_id: None,
-        note: note.map(str::to_string),
-        created_at: None,
+    message_uuid: uuid::Uuid,
+    message_id: i64,
+    reply: ReplyMode,
+) -> Result<(), AppError> {
+    let claim = message_dispatch::claim(&state.write_pool, message_id).await?;
+    let token = match claim {
+        DispatchClaim::Claimed { token } => token,
+        DispatchClaim::Dispatched => return Ok(()),
+        DispatchClaim::InProgress => {
+            return Err(AppError::Conflict(format!(
+                "message {message_id} is already being dispatched; retry with the same message UUID"
+            )))
+        }
     };
-    let envelope = WsEnvelope::new(
-        "session",
-        "user_message",
-        serde_json::to_value(UserMessageMirrorPayload {
-            text: message.to_string(),
-            origin: Some(origin),
-        })
-        .unwrap(),
-    );
-    let ws_message = Message::Text(String::from(envelope).into());
-    for sender in state
-        .ws_feature_senders
-        .get_senders(target_feature_id)
-        .await
+    if let Err(dispatch_error) =
+        dispatch_immediate_message(state, target, message, message_uuid, message_id, reply).await
     {
-        let _ = sender.send(ws_message.clone());
+        let dispatch_message = dispatch_error.to_string();
+        if let Err(status_error) =
+            message_dispatch::mark_failed(&state.write_pool, message_id, &token, &dispatch_message)
+                .await
+        {
+            return Err(AppError::Internal(format!(
+                "message dispatch failed ({dispatch_message}) and its retry state could not be persisted ({status_error})"
+            )));
+        }
+        return Err(dispatch_error);
     }
+    message_dispatch::mark_succeeded(&state.write_pool, message_id, &token).await
+}
+
+pub(super) async fn publish_generated_user_message(
+    state: &AppState,
+    target_feature_id: i64,
+    message: &PersistedUserMessage,
+    origin: AgentMessageOrigin,
+) -> Result<(), AppError> {
+    publish_user_message(
+        &state.ws_feature_senders,
+        None,
+        target_feature_id,
+        message,
+        Some(origin),
+        false,
+    )
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))
 }
 
 async fn ensure_send_budget(
@@ -277,24 +321,6 @@ async fn ensure_send_budget(
             source.session_id
         )));
     }
-    Ok(())
-}
-
-async fn insert_message_link(
-    state: &AppState,
-    source_session_id: i64,
-    target_session_id: i64,
-    note: Option<&str>,
-) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO agent_session_links (source_session_id, target_session_id, link_type, note)
-         VALUES (?, ?, 'messaged', ?)",
-    )
-    .bind(source_session_id)
-    .bind(target_session_id)
-    .bind(note)
-    .execute(&state.write_pool)
-    .await?;
     Ok(())
 }
 
@@ -338,58 +364,4 @@ pub(super) fn requires_user_resolution(status: &str) -> bool {
             | "waiting_for_permission"
             | "waiting_for_question"
     )
-}
-
-async fn audit_send_message(
-    state: &AppState,
-    source: &super::scope::SessionScope,
-    target: &super::scope::SessionScope,
-    response: &SendMessageResponse,
-    started_at: std::time::Instant,
-) -> Result<(), AppError> {
-    record_tool_audit(
-        &state.write_pool,
-        ToolAudit {
-            server_name: "cadencr-project",
-            tool_name: "project_send_session_message",
-            source_session_id: Some(source.session_id),
-            source_feature_id: Some(source.feature_id),
-            source_project_id: Some(source.project_id),
-            target_session_id: Some(target.session_id),
-            target_feature_id: Some(target.feature_id),
-            target_project_id: Some(target.project_id),
-            status: "ok",
-            result_size_bytes: result_size_bytes(&response),
-            latency_ms: elapsed_ms(started_at),
-            error: None,
-        },
-    )
-    .await
-}
-
-async fn audit_send_message_error(
-    state: &AppState,
-    source: &super::scope::SessionScope,
-    target: &super::scope::SessionScope,
-    error: &str,
-    started_at: std::time::Instant,
-) -> Result<(), AppError> {
-    record_tool_audit(
-        &state.write_pool,
-        ToolAudit {
-            server_name: "cadencr-project",
-            tool_name: "project_send_session_message",
-            source_session_id: Some(source.session_id),
-            source_feature_id: Some(source.feature_id),
-            source_project_id: Some(source.project_id),
-            target_session_id: Some(target.session_id),
-            target_feature_id: Some(target.feature_id),
-            target_project_id: Some(target.project_id),
-            status: "error",
-            result_size_bytes: 0,
-            latency_ms: elapsed_ms(started_at),
-            error: Some(error),
-        },
-    )
-    .await
 }

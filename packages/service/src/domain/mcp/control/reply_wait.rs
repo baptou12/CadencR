@@ -66,8 +66,9 @@ pub(crate) async fn arm(
 ) -> Result<(), AppError> {
     let result = sqlx::query(
         "UPDATE agent_session_reply_waits
-         SET status = 'armed', armed_at = datetime('now'), error = NULL
-         WHERE responder_session_id = ? AND request_message_id = ? AND status = 'pending'",
+         SET status = 'armed', armed_at = datetime('now'), delivered_at = NULL, error = NULL
+         WHERE responder_session_id = ? AND request_message_id = ?
+           AND status IN ('pending', 'armed', 'failed')",
     )
     .bind(responder_session_id)
     .bind(request_message_id)
@@ -230,10 +231,39 @@ mod tests {
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
     #[tokio::test]
+    async fn arm_refreshes_already_armed_and_failed_waits() {
+        let (pool, _state) = test_state().await;
+        for starting_status in ["armed", "failed"] {
+            sqlx::query(
+                "UPDATE agent_session_reply_waits
+                 SET status = ?, armed_at = '2000-01-01 00:00:00',
+                     delivered_at = datetime('now'), error = 'old failure'
+                 WHERE id = 1",
+            )
+            .bind(starting_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            arm(&pool, 888, 1).await.unwrap();
+
+            let refreshed: (String, Option<String>, Option<String>) = sqlx::query_as(
+                "SELECT status, delivered_at, error
+                 FROM agent_session_reply_waits WHERE id = 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(refreshed, ("armed".to_string(), None, None));
+        }
+    }
+
+    #[tokio::test]
     async fn armed_result_delivers_envelope_with_responder_origin() {
         let (pool, state) = test_state().await;
 
-        deliver_completed(&state, 888).await.unwrap();
+        let error = deliver_completed(&state, 888).await.unwrap_err();
+        assert!(error.to_string().contains("runtime adapter unavailable"));
         deliver_completed(&state, 888).await.unwrap();
 
         let delivered: (String, String, i64, i64, i64) = sqlx::query_as(
@@ -256,7 +286,7 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(status, "delivered");
+        assert_eq!(status, "failed");
         let reply_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM agent_messages
              WHERE session_id = 777 AND role = 'user' AND content LIKE '<cadencr-reply%'",
@@ -275,7 +305,8 @@ mod tests {
             .await
             .unwrap();
 
-        deliver_completed(&state, 888).await.unwrap();
+        let error = deliver_completed(&state, 888).await.unwrap_err();
+        assert!(error.to_string().contains("runtime adapter unavailable"));
 
         let content: String = sqlx::query_scalar(
             "SELECT content FROM agent_messages

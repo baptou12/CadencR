@@ -55,18 +55,18 @@ describe("ws session history pagination", () => {
 
   it("increments historyPrependDisplayOffset by rendered display rows, not raw blocks", async () => {
     const currentBlocks = [
-      makeBlock("current", "Current", "text", {
+      makeBlock("msg-300", "Current", "text", {
         createdAt: "2026-05-05T10:00:00Z",
         model: "claude-sonnet-4-6",
       }),
     ];
     const olderBlocks = [
-      makeBlock("hidden", "hidden tool output", "tool_result", { sourceToolName: "Read" }),
-      makeBlock("older-a", "Older ", "text", {
+      makeBlock("msg-100", "hidden tool output", "tool_result", { sourceToolName: "Read" }),
+      makeBlock("msg-101", "Older ", "text", {
         createdAt: "2026-05-05T09:00:00Z",
         model: "gpt-5.5",
       }),
-      makeBlock("older-b", "chunk", "text", {
+      makeBlock("msg-102", "chunk", "text", {
         createdAt: "2026-05-05T09:00:00Z",
         model: "gpt-5.5",
       }),
@@ -88,23 +88,23 @@ describe("ws session history pagination", () => {
     const session = ctx.get().sessions.s1;
     expect(session.historyPrependDisplayOffset).toBe(7);
     expect(session.blocks.map((block) => block.id)).toEqual([
-      "hidden",
-      "older-a",
-      "older-b",
-      "current",
+      "msg-100",
+      "msg-101",
+      "msg-102",
+      "msg-300",
     ]);
   });
 
   it("sizes the prepend offset to the collapsed row count in summary mode", async () => {
     const currentBlocks = [
-      makeBlock("u2", "next", "user_message"),
-      makeBlock("current", "Current", "text"),
+      makeBlock("msg-200", "next", "user_message"),
+      makeBlock("msg-201", "Current", "text"),
     ];
     const olderBlocks = [
-      makeBlock("u1", "prompt", "user_message"),
-      makeBlock("t1", "read", "tool_call", { toolName: "Read" }),
-      makeBlock("t2", "bash", "tool_call", { toolName: "Bash" }),
-      makeBlock("m1", "older answer", "text"),
+      makeBlock("msg-100", "prompt", "user_message"),
+      makeBlock("msg-101", "read", "tool_call", { toolName: "Read" }),
+      makeBlock("msg-102", "bash", "tool_call", { toolName: "Bash" }),
+      makeBlock("msg-103", "older answer", "text"),
     ];
     const ctx = createCtx(createPaginationSession(currentBlocks));
     apiMocks.getFeatureAgentState.mockResolvedValue({
@@ -119,12 +119,12 @@ describe("ws session history pagination", () => {
     expect(session.historyPrependDisplayOffset).toBe(8);
     // The store still holds raw blocks; the collapse is display-only.
     expect(session.blocks.map((block) => block.id)).toEqual([
-      "u1",
-      "t1",
-      "t2",
-      "m1",
-      "u2",
-      "current",
+      "msg-100",
+      "msg-101",
+      "msg-102",
+      "msg-103",
+      "msg-200",
+      "msg-201",
     ]);
   });
 

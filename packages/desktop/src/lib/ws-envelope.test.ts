@@ -62,7 +62,11 @@ describe("ws-envelope", () => {
       const env = createPromptSend("s1", "hello");
       expect(env.domain).toBe("session");
       expect(env.action).toBe("prompt.send");
-      expect(env.payload).toEqual({ session_id: "s1", text: "hello" });
+      expect(env.payload).toEqual({
+        session_id: "s1",
+        text: "hello",
+        message_uuid: expect.any(String),
+      });
     });
 
     it("createPromptSend includes provider-aware attachments", () => {
@@ -74,6 +78,7 @@ describe("ws-envelope", () => {
       expect(env.payload).toEqual({
         session_id: "s1",
         text: "hello",
+        message_uuid: expect.any(String),
         attachments: [
           { base64: "abc", fileName: "brief.pdf", kind: "document", mimeType: "application/pdf" },
         ],
@@ -82,7 +87,12 @@ describe("ws-envelope", () => {
 
     it("createPromptSend maps a worktree branchSetup to use_worktree", () => {
       const env = createPromptSend("s1", "hello", { branchSetup: { kind: "worktree" } });
-      expect(env.payload).toEqual({ session_id: "s1", text: "hello", use_worktree: true });
+      expect(env.payload).toEqual({
+        session_id: "s1",
+        text: "hello",
+        message_uuid: expect.any(String),
+        use_worktree: true,
+      });
     });
 
     it("createPromptSend maps a project_branch branchSetup to new_project_branch", () => {
@@ -92,6 +102,7 @@ describe("ws-envelope", () => {
       expect(withBase.payload).toEqual({
         session_id: "s1",
         text: "hello",
+        message_uuid: expect.any(String),
         new_project_branch: { base: "develop" },
       });
       // A null base forks from the project's current HEAD.
@@ -101,6 +112,7 @@ describe("ws-envelope", () => {
       expect(fromHead.payload).toEqual({
         session_id: "s1",
         text: "hello",
+        message_uuid: expect.any(String),
         new_project_branch: { base: null },
       });
     });

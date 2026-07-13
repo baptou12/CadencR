@@ -1,5 +1,7 @@
 //! Narrow compatibility repairs for known sqlx migration checksum revisions.
 
+mod agent_message_uuid;
+
 use std::collections::HashSet;
 
 use anyhow::Context;
@@ -21,12 +23,16 @@ pub(super) async fn repair_known_sqlx_checksum_mismatches(
         return Ok(());
     }
 
-    let Some((applied_checksum, success)) = sqlx::query_as::<_, (Vec<u8>, bool)>(
-        "SELECT checksum, success FROM _sqlx_migrations WHERE version = ?",
-    )
-    .bind(REMOVE_WS_FEATURE_VERSION)
-    .fetch_optional(pool)
-    .await?
+    agent_message_uuid::repair_agent_message_uuid_checksum(pool, migrator).await?;
+    repair_remove_ws_feature_checksum(pool, migrator).await
+}
+
+async fn repair_remove_ws_feature_checksum(
+    pool: &SqlitePool,
+    migrator: &sqlx::migrate::Migrator,
+) -> anyhow::Result<()> {
+    let Some((applied_checksum, success)) =
+        applied_migration(pool, REMOVE_WS_FEATURE_VERSION).await?
     else {
         return Ok(());
     };
@@ -53,28 +59,52 @@ pub(super) async fn repair_known_sqlx_checksum_mismatches(
 
     verify_remove_ws_feature_postconditions(pool).await?;
 
+    replace_checksum(
+        pool,
+        REMOVE_WS_FEATURE_VERSION,
+        &applied_checksum,
+        &current_checksum,
+    )
+    .await
+}
+
+pub(super) async fn applied_migration(
+    pool: &SqlitePool,
+    version: i64,
+) -> anyhow::Result<Option<(Vec<u8>, bool)>> {
+    Ok(
+        sqlx::query_as("SELECT checksum, success FROM _sqlx_migrations WHERE version = ?")
+            .bind(version)
+            .fetch_optional(pool)
+            .await?,
+    )
+}
+
+pub(super) async fn replace_checksum(
+    pool: &SqlitePool,
+    version: i64,
+    applied: &[u8],
+    current: &[u8],
+) -> anyhow::Result<()> {
     let result = sqlx::query(
-        "UPDATE _sqlx_migrations
-         SET checksum = ?
+        "UPDATE _sqlx_migrations SET checksum = ?
          WHERE version = ? AND checksum = ? AND success = TRUE",
     )
-    .bind(current_checksum)
-    .bind(REMOVE_WS_FEATURE_VERSION)
-    .bind(&applied_checksum)
+    .bind(current)
+    .bind(version)
+    .bind(applied)
     .execute(pool)
     .await?;
-
     if result.rows_affected() == 1 {
-        info!(
-            version = REMOVE_WS_FEATURE_VERSION,
-            "reconciled known sqlx migration checksum revision"
-        );
+        info!(version, "reconciled known sqlx migration checksum revision");
     }
-
     Ok(())
 }
 
-fn current_migration_checksum(migrator: &sqlx::migrate::Migrator, version: i64) -> Option<Vec<u8>> {
+pub(super) fn current_migration_checksum(
+    migrator: &sqlx::migrate::Migrator,
+    version: i64,
+) -> Option<Vec<u8>> {
     migrator
         .iter()
         .find(|migration| migration.version == version)

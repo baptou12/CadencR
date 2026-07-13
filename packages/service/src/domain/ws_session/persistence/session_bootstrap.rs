@@ -90,30 +90,78 @@ impl WsSessionPersistence {
         }
     }
 
-    /// Persist a user prompt row and return its `agent_messages.id` (the seam
-    /// the checkpoints subsystem links a pre-turn snapshot to). Returns `None`
-    /// when there is no session id yet or the insert fails.
-    pub async fn persist_user_message(&self, text: &str) -> Option<i64> {
-        let session_id = self.session_db_id?;
-        match Self::insert_message(
-            &self.write_pool,
-            session_id,
-            "user",
-            text,
-            "user_message",
-            None,
-            None,
-            None,
-            None,
+    /// Persist a canonical user prompt. A repeated UUID returns the existing
+    /// row with `inserted = false`; callers must not dispatch that retry to the
+    /// provider again.
+    #[cfg(test)]
+    pub async fn persist_user_message(
+        &self,
+        text: &str,
+        message_uuid: uuid::Uuid,
+    ) -> Result<
+        crate::domain::sessions::user_messages::PersistedUserMessage,
+        crate::domain::sessions::user_messages::PersistUserMessageError,
+    > {
+        self.persist_user_message_with_delivery(text, message_uuid, None)
+            .await
+    }
+
+    pub async fn persist_user_message_with_delivery(
+        &self,
+        text: &str,
+        message_uuid: uuid::Uuid,
+        delivery_state: Option<&str>,
+    ) -> Result<
+        crate::domain::sessions::user_messages::PersistedUserMessage,
+        crate::domain::sessions::user_messages::PersistUserMessageError,
+    > {
+        let session_id = self.session_db_id.ok_or(
+            crate::domain::sessions::user_messages::PersistUserMessageError::MissingSessionId,
+        )?;
+        let mut connection = self.write_pool.acquire().await?;
+        crate::domain::sessions::user_messages::persist_user_message(
+            &mut connection,
+            crate::domain::sessions::user_messages::NewUserMessage {
+                session_id,
+                content: text,
+                message_uuid,
+                delivery_state,
+            },
         )
         .await
-        {
-            Ok(result) => Some(result.last_insert_rowid()),
-            Err(e) => {
-                error!(error = %e, "failed to persist user message");
-                None
-            }
-        }
+    }
+
+    pub async fn persist_prompt_user_message(
+        &self,
+        text: &str,
+        message_uuid: uuid::Uuid,
+    ) -> Result<
+        crate::domain::sessions::user_messages::PersistedUserMessage,
+        crate::domain::sessions::user_messages::PersistUserMessageError,
+    > {
+        let session_id = self.session_db_id.ok_or(
+            crate::domain::sessions::user_messages::PersistUserMessageError::MissingSessionId,
+        )?;
+        let mut tx = self.write_pool.begin().await?;
+        let message = crate::domain::sessions::user_messages::persist_user_message(
+            &mut tx,
+            crate::domain::sessions::user_messages::NewUserMessage {
+                session_id,
+                content: text,
+                message_uuid,
+                delivery_state: Some("pending_agent"),
+            },
+        )
+        .await?;
+        sqlx::query(
+            "INSERT INTO agent_message_dispatches (message_id, status)
+             VALUES (?, 'pending') ON CONFLICT(message_id) DO NOTHING",
+        )
+        .bind(message.id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(message)
     }
 }
 
@@ -178,8 +226,18 @@ mod session_bootstrap_tests {
                 tool_name TEXT,
                 tool_use_id TEXT,
                 parent_tool_use_id TEXT,
-                model TEXT
+                model TEXT,
+                message_uuid TEXT,
+                delivery_state TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE UNIQUE INDEX idx_agent_messages_session_message_uuid
+             ON agent_messages(session_id, message_uuid) WHERE message_uuid IS NOT NULL",
         )
         .execute(&pool)
         .await
@@ -277,7 +335,9 @@ mod session_bootstrap_tests {
         let mut p = WsSessionPersistence::new(pool.clone(), 1);
         p.find_or_create_session(None, None).await;
 
-        p.persist_user_message("Hello world").await;
+        p.persist_user_message("Hello world", uuid::Uuid::new_v4())
+            .await
+            .unwrap();
 
         let row: (String, String, String) = sqlx::query_as(
             "SELECT role, content, message_type FROM agent_messages WHERE session_id = ?",
@@ -302,7 +362,9 @@ mod session_bootstrap_tests {
         .unwrap();
 
         let p = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(id.0));
-        p.persist_user_message("hello from with_session_id").await;
+        p.persist_user_message("hello from with_session_id", uuid::Uuid::new_v4())
+            .await
+            .unwrap();
 
         let row: (String,) =
             sqlx::query_as("SELECT content FROM agent_messages WHERE session_id = ?")

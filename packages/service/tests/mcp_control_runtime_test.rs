@@ -1,6 +1,6 @@
 mod support;
 
-use axum::{extract::ws::Message, http::StatusCode};
+use axum::{extract::ws::Message, http::StatusCode, response::Response};
 use cadencr_service::app_state::AppState;
 use cadencr_service::domain::mcp::control::control_router;
 use serde_json::json;
@@ -11,14 +11,19 @@ use support::mcp_control::{
 };
 
 #[tokio::test]
-async fn send_now_routes_generated_message_through_runtime_pipeline() {
+async fn send_now_surfaces_runtime_dispatch_failure_and_keeps_retryable_identity() {
     let pool = seeded_control_pool().await;
     seed_target_session(&pool, 888, 43, "paused", Some("missing_provider")).await;
     let app = control_router().with_state(AppState::with_pool(pool.clone()));
 
     let response = app.oneshot(send_message_request("send_now")).await.unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_response_status(
+        response,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "runtime adapter unavailable",
+    )
+    .await;
     let generated_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM agent_messages
          WHERE session_id = 888 AND role = 'user' AND message_type = 'user_message'",
@@ -41,10 +46,46 @@ async fn send_now_routes_generated_message_through_runtime_pipeline() {
         error_count, 1,
         "runtime pipeline should surface adapter errors"
     );
+    let dispatch: (String, Option<String>) = sqlx::query_as(
+        "SELECT status, error FROM agent_message_dispatches
+         WHERE message_id = (SELECT id FROM agent_messages
+             WHERE session_id = 888 AND message_type = 'user_message')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(dispatch.0, "error");
+    assert!(dispatch.1.unwrap().contains("runtime adapter unavailable"));
+    let origin: (String, i64, i64, i64, String) = sqlx::query_as(
+        "SELECT origin_kind, source_session_id, source_feature_id, source_project_id, note
+         FROM agent_message_origins WHERE message_id =
+             (SELECT id FROM agent_messages WHERE session_id = 888 AND message_type = 'user_message')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        origin,
+        (
+            "session_generated".into(),
+            777,
+            42,
+            7,
+            "delegated by project MCP".into()
+        )
+    );
+    let link: (i64, i64, String) = sqlx::query_as(
+        "SELECT source_session_id, target_session_id, link_type
+         FROM agent_session_links WHERE source_session_id = 777 AND target_session_id = 888",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(link, (777, 888, "messaged".into()));
 }
 
 #[tokio::test]
-async fn send_now_broadcasts_generated_user_message_to_target_viewers() {
+async fn send_now_broadcasts_canonical_user_message_before_dispatch_failure() {
     let pool = seeded_control_pool().await;
     seed_target_session(&pool, 888, 43, "paused", Some("missing_provider")).await;
     let state = AppState::with_pool(pool.clone());
@@ -54,7 +95,12 @@ async fn send_now_broadcasts_generated_user_message_to_target_viewers() {
 
     let response = app.oneshot(send_message_request("send_now")).await.unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_response_status(
+        response,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "runtime adapter unavailable",
+    )
+    .await;
     let payload = recv_user_message_payload(&mut rx).await;
     assert_eq!(payload["text"], "Please validate delivery.");
     assert_eq!(payload["origin"]["originKind"], "session_generated");
@@ -104,4 +150,14 @@ async fn recv_user_message_payload(
         }
     }
     panic!("expected generated user_message broadcast");
+}
+
+async fn assert_response_status(response: Response, expected: StatusCode, message: &str) {
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8_lossy(&body);
+    assert_eq!(status, expected, "unexpected response: {body}");
+    assert!(body.contains(message), "unexpected response: {body}");
 }

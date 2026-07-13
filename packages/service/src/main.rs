@@ -127,6 +127,11 @@ async fn main() -> anyhow::Result<()> {
                 &write_pool,
             )
             .await;
+            let recovered =
+                domain::sessions::message_dispatch::recover_orphaned_claims(&write_pool).await?;
+            if recovered > 0 {
+                info!(recovered, "recovered orphaned message delivery claims");
+            }
 
             let auth_token = config.auth_token.ok_or_else(|| {
                 anyhow::anyhow!(
@@ -184,6 +189,7 @@ async fn main() -> anyhow::Result<()> {
             // Background dispatcher for user-scheduled messages (one poll loop
             // for the process lifetime; survives client disconnects).
             domain::scheduled_messages::scheduler::spawn(state.clone());
+            domain::mcp::control::message_queue::spawn(state.clone());
 
             // Auto-start remote access if the user left it enabled (persisted
             // setting). Failures are non-fatal — the loopback server must come

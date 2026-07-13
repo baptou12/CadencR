@@ -65,6 +65,10 @@ pub(super) struct StreamReaderState {
     /// resync. Restarts at 1 with each reader; clients treat a lower-than-
     /// expected value as a stream restart, not a gap.
     pub(super) message_seq: u64,
+    /// Prompt receipts emitted during the current logical turn. They are also
+    /// repeated on `session.ended` so the terminal envelope repairs a missed
+    /// transient acknowledgement on the client.
+    pub(super) received_prompt_message_uuids: Vec<String>,
     /// Bounded wire tap of the raw provider events this reader saw, dumped to
     /// a file when the turn ends abnormally so the surfaced error can point at
     /// evidence (issue #78).
@@ -89,6 +93,7 @@ impl StreamReaderState {
             turn_state: StreamTurnState::new(),
             live_background_agents: HashSet::new(),
             message_seq: 0,
+            received_prompt_message_uuids: Vec::new(),
             diagnostics: super::stream_diagnostics::StreamDiagnostics::new(),
         }
     }
@@ -141,14 +146,14 @@ impl StreamReaderTask {
                 ReaderAction::Break => break,
                 ReaderAction::Closed => {
                     if self.stream_close_was_unexpected(&state).await {
-                        self.handle_unexpected_stop(&state).await;
+                        self.handle_unexpected_stop(&mut state).await;
                     } else {
-                        self.send_stream_closed().await;
+                        self.send_stream_closed(&mut state).await;
                     }
                     break;
                 }
                 ReaderAction::Error(error) => {
-                    self.handle_stream_error(&state, error).await;
+                    self.handle_stream_error(&mut state, error).await;
                     break;
                 }
                 ReaderAction::Event(runtime_event) => {
@@ -214,11 +219,12 @@ impl StreamReaderTask {
             return ReaderAction::Continue;
         }
         state.last_provider_reconcile = Instant::now();
-        let Some(runtime_sid) = state.runtime_session_id.as_deref() else {
+        let Some(runtime_sid) = state.runtime_session_id.clone() else {
             return ReaderAction::Continue;
         };
-        if runtime_session_finished(&self.runtime_provider, runtime_sid).await {
-            self.reconcile_provider_completion(runtime_sid).await;
+        if runtime_session_finished(&self.runtime_provider, &runtime_sid).await {
+            self.reconcile_provider_completion(&runtime_sid, state)
+                .await;
             return ReaderAction::Break;
         }
         ReaderAction::Continue
@@ -254,7 +260,11 @@ impl StreamReaderTask {
         )
     }
 
-    async fn reconcile_provider_completion(&self, runtime_sid: &str) {
+    async fn reconcile_provider_completion(
+        &self,
+        runtime_sid: &str,
+        state: &mut StreamReaderState,
+    ) {
         info!(
             self.db_session_id,
             runtime_session_id = runtime_sid,
@@ -273,6 +283,9 @@ impl StreamReaderTask {
             "ended",
             serde_json::to_value(SessionEndedPayload {
                 reason: "provider_complete".into(),
+                received_prompt_message_uuids: std::mem::take(
+                    &mut state.received_prompt_message_uuids,
+                ),
             })
             .unwrap(),
         );

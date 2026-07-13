@@ -1,5 +1,6 @@
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { SlashCommandKind } from "@/hooks/useSlashCommand";
+import { normalizeMessageUuid } from "@/lib/message-uuid";
 
 /**
  * WebSocket envelope utilities for communicating with the Rust Axum WS endpoint.
@@ -72,18 +73,12 @@ export interface PromptDispatchOptions {
   attachments?: PromptAttachmentPayload[];
   branchSetup?: FirstPromptBranchSetup;
   claudeProfile?: string;
-  /**
-   * Client-generated reference for this user message, echoed back by the
-   * backend in `prompt_persisted` with the persisted DB id so the live block
-   * can be stamped (enables rewind/fork without a reload). Independent of
-   * `clientMessageId` (which is receipt/steering-only) — always sent.
-   */
-  userMessageRef?: string;
+  /** Stable Cadencr identity generated before dispatch and preserved on retries. */
+  messageUuid?: string;
 }
 
 export interface PromptSendOptions extends PromptDispatchOptions {
-  clientMessageId?: string;
-  replay?: boolean;
+  trackPromptReceipt?: boolean;
 }
 
 export function createPromptSend(
@@ -92,6 +87,9 @@ export function createPromptSend(
   options: PromptSendOptions = {},
 ): WsEnvelope {
   const { branchSetup } = options;
+  const messageUuid = options.messageUuid
+    ? normalizeMessageUuid(options.messageUuid)
+    : crypto.randomUUID();
   return createEnvelope("session", "prompt.send", {
     session_id: sessionId,
     text,
@@ -102,9 +100,8 @@ export function createPromptSend(
     ...(branchSetup?.kind === "project_branch"
       ? { new_project_branch: { base: branchSetup.base } }
       : {}),
-    ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {}),
-    ...(options.userMessageRef ? { user_message_ref: options.userMessageRef } : {}),
-    ...(options.replay ? { replay: true } : {}),
+    message_uuid: messageUuid,
+    ...(options.trackPromptReceipt ? { track_prompt_receipt: true } : {}),
     ...(options.claudeProfile ? { profile: options.claudeProfile } : {}),
   });
 }
@@ -113,6 +110,7 @@ interface PermissionRespondOptions {
   updatedInput?: Record<string, unknown>;
   feedback?: string;
   optionId?: string;
+  messageUuid?: string;
 }
 
 export function createPermissionRespond(
@@ -124,6 +122,7 @@ export function createPermissionRespond(
   return createEnvelope("session", "permission.respond", {
     session_id: sessionId,
     request_id: requestId,
+    ...(options.messageUuid ? { message_uuid: options.messageUuid } : {}),
     decision,
     ...(options.updatedInput ? { updated_input: options.updatedInput } : {}),
     ...(options.feedback ? { feedback: options.feedback } : {}),
@@ -243,7 +242,10 @@ export function createSessionDelete(sessionId: string): WsEnvelope {
 }
 
 export function createSessionCompact(sessionId: string): WsEnvelope {
-  return createEnvelope("session", "compact", { session_id: sessionId });
+  return createEnvelope("session", "compact", {
+    session_id: sessionId,
+    message_uuid: crypto.randomUUID(),
+  });
 }
 
 export function createCommandsGet(cwd: string, provider: string): WsEnvelope {

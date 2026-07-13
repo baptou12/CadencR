@@ -1,27 +1,24 @@
 mod active_session;
+mod delivery_lifecycle;
+mod runtime_registration;
 use super::super::{SdkSessions, SessionConfig, WsSender};
 use super::bridge::{PermissionResponse, WsBridgeCanUseTool};
 use super::content::{
     build_content_value_for_provider, build_persist_content, payload_attachments,
 };
 use super::errors::persist_pause_and_send_session_error;
-use super::mcp_servers::send_mcp_servers_for_runtime;
+use super::prompt_receipt::confirm_prompt_delivery;
 use super::prompt_resume_resolution::refresh_resume_session_id_from_db;
-use super::prompt_status::{ack_persisted_user_message, mark_agent_running, mirror_user_message};
-use super::prompt_worktree::{prepare_branch_provisioning, spawn_auto_name_if_needed};
-use super::runtime_mcp::{
-    attach_current_cadencr_browser_mcp, attach_current_cadencr_orchestration_mcps,
-    attach_current_cadencr_project_mcp, attach_current_cadencr_workspace_mcp, browser_mcp_enabled,
-    project_mcp_enabled, workspace_mcp_enabled,
+use super::prompt_status::{
+    mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
-use super::stream_reader::spawn_stream_reader;
+use super::prompt_worktree::prepare_branch_provisioning;
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeSpawnConfig};
 use crate::domain::agents::runtime_adapter;
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::permissions;
-use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::PromptSendPayload;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
@@ -40,11 +37,26 @@ pub(super) struct PendingPromptContext {
     pub options: RuntimeSpawnConfig,
     pub payload: PromptSendPayload,
     pub(super) permission_tx: Option<mpsc::Sender<PermissionResponse>>,
+    pub internal_replay: bool,
 }
-pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
-    let user_message_id = persist_initial_user_message(&context).await;
+pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> Result<(), String> {
+    let persistence = persist_initial_user_message(&context).await?;
+    if !persistence.should_dispatch() {
+        return Ok(());
+    }
+    let dispatch_claim = persistence
+        .dispatch_claim()
+        .map(|(message_id, token)| (message_id, token.to_string()));
+    let receipt_message_uuid = persistence.tracked_message_uuid(&context.payload);
     let Some(adapter) = resolve_adapter_or_report(&context).await else {
-        return;
+        delivery_lifecycle::fail_pending_receipt(
+            &context,
+            receipt_message_uuid.as_deref(),
+            dispatch_claim.as_ref(),
+            "runtime adapter unavailable",
+        )
+        .await;
+        return reported_failure(context.internal_replay, "runtime adapter unavailable");
     };
     mark_agent_running(
         &context.app_state.write_pool,
@@ -58,70 +70,50 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
     let auto_name_handled = match prepare_worktree(&mut context).await {
         Ok(handled) => handled,
         Err(error) => {
+            delivery_lifecycle::fail_pending_receipt(
+                &context,
+                receipt_message_uuid.as_deref(),
+                dispatch_claim.as_ref(),
+                &error,
+            )
+            .await;
+            let internal_replay = context.internal_replay;
             report_branch_setup_error(context, error).await;
-            return;
+            return reported_failure(internal_replay, "branch setup failed");
         }
     };
     reresolve_worktree_and_resume(&mut context).await;
-    super::prompt_checkpoint::capture_pre_turn_pending(&context, user_message_id).await;
+    super::prompt_checkpoint::capture_pre_turn_pending(&context, persistence.message_id()).await;
     attach_permission_bridge(&mut context);
-    if let Err(error) = attach_cadencr_mcp(&mut context).await {
-        report_spawn_error(context, error).await;
-        return;
+    if let Err(error) = super::prompt_pending_mcp::attach_cadencr_mcp(&mut context).await {
+        delivery_lifecycle::fail_pending_receipt(
+            &context,
+            receipt_message_uuid.as_deref(),
+            dispatch_claim.as_ref(),
+            &error,
+        )
+        .await;
+        let internal_replay = context.internal_replay;
+        report_mcp_attach_error(context, error).await;
+        return reported_failure(internal_replay, "failed to attach MCP servers");
     }
     validate_resume_id(adapter, &mut context);
-    spawn_runtime(context, adapter, auto_name_handled).await;
+    spawn_runtime(
+        context,
+        adapter,
+        auto_name_handled,
+        receipt_message_uuid,
+        dispatch_claim,
+    )
+    .await
 }
-async fn attach_cadencr_mcp(context: &mut PendingPromptContext) -> Result<(), String> {
-    let pool = &context.app_state.read_pool;
-    let db_path = &context.app_state.db_path;
-    let feature_id = context.feature_id;
-    let session_id = context.db_session_id;
-    let service_url = format!("http://127.0.0.1:{}", context.app_state.port);
-    let control_token = context.app_state.mcp_control_token.clone();
-    let options = &mut context.options;
-    let browser_enabled = browser_mcp_enabled(pool).await;
-    let project_enabled = project_mcp_enabled(pool).await;
-    match (browser_enabled, project_enabled) {
-        (true, true) => {
-            let browser_bridge = context.app_state.browser_bridge_config()?;
-            attach_current_cadencr_orchestration_mcps(
-                options,
-                db_path,
-                feature_id,
-                session_id,
-                browser_bridge,
-                &service_url,
-                &control_token,
-            )?;
-        }
-        (true, false) => {
-            let browser_bridge = context.app_state.browser_bridge_config()?;
-            attach_current_cadencr_browser_mcp(options, db_path, feature_id, browser_bridge)?;
-        }
-        (false, true) => {
-            attach_current_cadencr_project_mcp(
-                options,
-                db_path,
-                feature_id,
-                session_id,
-                &service_url,
-                &control_token,
-            )?;
-        }
-        (false, false) => {}
+
+fn reported_failure(internal_replay: bool, message: &str) -> Result<(), String> {
+    if internal_replay {
+        Err(message.to_string())
+    } else {
+        Ok(())
     }
-    if workspace_mcp_enabled(pool).await {
-        attach_current_cadencr_workspace_mcp(
-            options,
-            db_path,
-            feature_id,
-            session_id,
-            &service_url,
-            &control_token,
-        )?;
-    }
-    Ok(())
 }
 /// Correct stale session state from `session.init` before spawning. When a
 /// conversation was started on another device, this connection's `Pending`
@@ -157,39 +149,30 @@ async fn reresolve_worktree_and_resume(context: &mut PendingPromptContext) {
         info!(context.db_session_id, runtime_session_id = %sid, "re-resolved resume id from DB before spawn");
     }
 }
-async fn persist_initial_user_message(context: &PendingPromptContext) -> Option<i64> {
-    if context.payload.replay {
-        return None;
-    }
+async fn persist_initial_user_message(
+    context: &PendingPromptContext,
+) -> Result<PromptPersistenceOutcome, String> {
     let attachments = payload_attachments(&context.payload);
     let persist_content = build_persist_content(&context.payload.text, &attachments);
-    let persistence = WsSessionPersistence::with_session_id(
-        context.app_state.write_pool.clone(),
-        context.feature_id,
-        Some(context.db_session_id),
-    );
-    let user_message_id = persistence.persist_user_message(&persist_content).await;
-    if let (Some(user_message_ref), Some(message_id)) =
-        (context.payload.user_message_ref.as_deref(), user_message_id)
-    {
-        ack_persisted_user_message(&context.sender, user_message_ref, message_id).await;
-    }
-    mirror_user_message(
+    let outcome = persist_and_publish_prompt(
+        &context.app_state.write_pool,
         &context.app_state.ws_feature_senders,
         &context.sender,
         context.feature_id,
+        context.db_session_id,
+        &context.payload,
         &persist_content,
+        context.internal_replay,
     )
-    .await;
-    // The user message changed this feature's most-recent-user-message sort
-    // key. Broadcast so every client's sidebar re-sorts conversations and
-    // floats this one to the top of its project.
-    context.app_state.feature_events_tx.emit(
-        context.feature_id,
-        None,
-        FeatureEventAction::Reordered,
-    );
-    user_message_id
+    .await?;
+    if outcome.inserted() {
+        context.app_state.feature_events_tx.emit(
+            context.feature_id,
+            None,
+            FeatureEventAction::Reordered,
+        );
+    }
+    Ok(outcome)
 }
 async fn resolve_adapter_or_report(
     context: &PendingPromptContext,
@@ -245,6 +228,22 @@ async fn report_branch_setup_error(context: PendingPromptContext, message: Strin
     )
     .await;
 }
+
+async fn report_mcp_attach_error(context: PendingPromptContext, message: String) {
+    error!(context.db_session_id, error = %message, "failed to attach Cadencr MCP servers");
+    persist_pause_and_send_session_error(
+        &context.app_state.write_pool,
+        &context.app_state.session_status_tx,
+        &context.sender,
+        &context.envelope_id,
+        context.feature_id,
+        context.db_session_id,
+        "MCP_ATTACH_ERROR",
+        &message,
+    )
+    .await;
+}
+
 fn attach_permission_bridge(context: &mut PendingPromptContext) {
     let (permission_tx, permission_rx) = mpsc::channel::<PermissionResponse>(16);
     let bridge = WsBridgeCanUseTool {
@@ -283,7 +282,9 @@ async fn spawn_runtime(
     mut context: PendingPromptContext,
     adapter: &'static dyn AgentRuntimeAdapter,
     auto_name_handled: bool,
-) {
+    receipt_message_uuid: Option<String>,
+    dispatch_claim: Option<(i64, String)>,
+) -> Result<(), String> {
     info!(
         context.db_session_id,
         prompt = %context.payload.text,
@@ -296,17 +297,44 @@ async fn spawn_runtime(
         "spawning runtime query"
     );
     let attachments = payload_attachments(&context.payload);
-    // Expand a virtual `/cadencr:*` skill invocation into its full orchestration
-    // prompt for the agent. The persisted/displayed user message keeps the short
-    // invocation (it was built from the raw text before this point).
+    // Expand virtual skills for the agent while keeping the short token persisted.
     let prompt_text =
         crate::domain::agents::orchestration_skills::expand_prompt(&context.payload.text);
     let content_value =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
     let options = std::mem::take(&mut context.options);
     match adapter.spawn(content_value, options).await {
-        Ok(runtime_session) => register_runtime(context, runtime_session, auto_name_handled).await,
-        Err(error) => report_spawn_error(context, error.to_string()).await,
+        Ok(runtime_session) => {
+            delivery_lifecycle::mark_pending_dispatch_succeeded(&context, dispatch_claim.as_ref())
+                .await;
+            if let Some(message_uuid) = receipt_message_uuid.as_deref() {
+                let _ = confirm_prompt_delivery(
+                    &context.app_state.write_pool,
+                    &context.app_state.ws_feature_senders,
+                    &context.sender,
+                    context.feature_id,
+                    context.db_session_id,
+                    message_uuid,
+                )
+                .await;
+            }
+            runtime_registration::register_runtime(context, runtime_session, auto_name_handled)
+                .await;
+            Ok(())
+        }
+        Err(error) => {
+            let message = error.to_string();
+            let internal_replay = context.internal_replay;
+            delivery_lifecycle::fail_pending_receipt(
+                &context,
+                receipt_message_uuid.as_deref(),
+                dispatch_claim.as_ref(),
+                &message,
+            )
+            .await;
+            report_spawn_error(context, message).await;
+            reported_failure(internal_replay, "runtime query spawn failed")
+        }
     }
 }
 
@@ -323,83 +351,4 @@ async fn report_spawn_error(context: PendingPromptContext, message: String) {
         &message,
     )
     .await;
-}
-
-async fn register_runtime(
-    mut context: PendingPromptContext,
-    mut runtime_session: Box<dyn crate::domain::agents::adapter::AgentRuntimeSession>,
-    auto_name_handled: bool,
-) {
-    info!(
-        context.db_session_id,
-        "runtime query spawned successfully, starting stream reader"
-    );
-    let provider_context_window = runtime_session.context_window();
-    let runtime_control_endpoint = runtime_session.runtime_control_endpoint();
-    if let Some(context_window) = provider_context_window {
-        WsSessionPersistence::update_context_window(
-            &context.app_state.write_pool,
-            context.db_session_id,
-            Some(context_window),
-        )
-        .await;
-    }
-    if send_mcp_servers_for_runtime(
-        &context.sender,
-        context.db_session_id,
-        runtime_session.as_ref(),
-    )
-    .await
-    .is_err()
-    {
-        warn!(
-            context.db_session_id,
-            "websocket sender closed while sending post-spawn MCP servers"
-        );
-    }
-
-    let message_rx = runtime_session.take_message_rx();
-    let query_arc = Arc::new(tokio::sync::RwLock::new(runtime_session));
-    let permission_tx = context
-        .permission_tx
-        .take()
-        .expect("permission bridge must be attached before runtime spawn");
-    let stream_provider = context.provider_id.clone();
-    let stream_model = context.spawned_model.clone();
-    let cleanup_session_on_end = Arc::ptr_eq(
-        &context.sdk_sessions,
-        &context.app_state.mcp_control_sessions,
-    );
-
-    spawn_auto_name_if_needed(
-        auto_name_handled,
-        context.app_state.write_pool.clone(),
-        context.app_state.feature_events_tx.clone(),
-        context.sender.clone(),
-        context.feature_id,
-        context.payload.text.clone(),
-        context.config.cwd.to_string_lossy().to_string(),
-    );
-    active_session::insert_active_session(
-        &context,
-        query_arc,
-        permission_tx,
-        runtime_control_endpoint,
-    )
-    .await;
-    spawn_stream_reader(
-        context.db_session_id,
-        context.feature_id,
-        message_rx,
-        context.sender,
-        context.app_state.ws_feature_senders.clone(),
-        context.app_state.write_pool.clone(),
-        context.app_state.session_status_tx.clone(),
-        context.sdk_sessions.clone(),
-        stream_provider,
-        stream_model.as_deref(),
-        provider_context_window,
-        context.app_state.clone(),
-        cleanup_session_on_end,
-    );
 }

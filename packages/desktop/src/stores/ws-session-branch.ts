@@ -1,13 +1,13 @@
 import { toast } from "sonner";
 
 import { getListFeaturesQueryKey } from "@/api/generated";
-import { messageIdFromBlockId } from "@/components/AgentBlock";
 import { queryClient } from "@/lib/queryClient";
 import { createFork, createRewind, type WsEnvelope } from "@/lib/ws-envelope";
 
 import { blocksPatchWithDerived } from "./ws-block-mutations";
 import { isRecord } from "./ws-message-processing";
 import { updateSession, type WsSessionStore } from "./ws-session-types";
+import { blockMessageDbId } from "./ws-user-message-reconciliation";
 
 /**
  * Rewind / Fork dispatch + reply handling. The originating client drives the
@@ -149,11 +149,11 @@ export function resolveBranchConfirm(deps: BranchDeps, confirmed: boolean): void
  * `rootBlocks` / `toolResultMap`. Shared by the originating client and the
  * other-device broadcast handler.
  *
- * We locate the cut block by its DB id — stamped as `messageDbId` on a live
- * `ws-user-*` block, or encoded in `msg-<id>` after a reload — and keep every
+ * We locate the cut block by its canonical `messageDbId` (also encoded in the
+ * normal `msg-<id>` key) and keep every
  * block *before* it. Index slicing (not an `id < messageId` filter) is
- * essential: in a session chatted in live, earlier turns are still id-less
- * live/streaming blocks, and a numeric filter would drop them all, wiping
+ * essential: earlier streaming blocks can still be id-less, and a numeric
+ * filter would drop them all, wiping
  * preceding turns from the view even though the backend preserves them.
  */
 export function truncateBlocksAtMessage(
@@ -164,9 +164,7 @@ export function truncateBlocksAtMessage(
 ): void {
   const session = get().sessions[sessionId];
   if (!session) return;
-  const cutIndex = session.blocks.findIndex(
-    (block) => (block.messageDbId ?? messageIdFromBlockId(block.id)) === messageId,
-  );
+  const cutIndex = session.blocks.findIndex((block) => blockMessageDbId(block) === messageId);
   if (cutIndex === -1) return; // cut block not in this view; a reload reconciles it
   const keep = session.blocks.slice(0, cutIndex);
   if (keep.length === session.blocks.length) return;

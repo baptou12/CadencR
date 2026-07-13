@@ -28,11 +28,15 @@ export type AgentBlockCreatedAt = string | null;
 
 export type AgentBlockIsError = boolean | null;
 
+export type AgentBlockMessageUuid = string | null;
+
 export type AgentBlockModel = string | null;
 
 export type AgentBlockOrigin = null | AgentMessageOrigin;
 
 export type AgentBlockParentToolUseId = string | null;
+
+export type AgentBlockPromptDeliveryState = null | UserMessageDeliveryState;
 
 export type AgentBlockSourceToolName = string | null;
 
@@ -57,9 +61,11 @@ export interface AgentBlock {
   createdAt?: AgentBlockCreatedAt;
   id: string;
   isError?: AgentBlockIsError;
+  messageUuid?: AgentBlockMessageUuid;
   model?: AgentBlockModel;
   origin?: AgentBlockOrigin;
   parentToolUseId?: AgentBlockParentToolUseId;
+  promptDeliveryState?: AgentBlockPromptDeliveryState;
   sourceToolName?: AgentBlockSourceToolName;
   toolArgs?: AgentBlockToolArgs;
   toolName?: AgentBlockToolName;
@@ -1357,11 +1363,14 @@ export interface PermissionRequestPayload {
 
 export type PermissionRespondPayloadFeedback = string | null;
 
+export type PermissionRespondPayloadMessageUuid = string | null;
+
 export type PermissionRespondPayloadOptionId = string | null;
 
 export interface PermissionRespondPayload {
   decision: PermissionDecision;
   feedback?: PermissionRespondPayloadFeedback;
+  message_uuid?: PermissionRespondPayloadMessageUuid;
   option_id?: PermissionRespondPayloadOptionId;
   request_id: string;
   session_id: string;
@@ -1443,26 +1452,27 @@ export interface PromptAttachmentPayload {
   mimeType: string;
 }
 
-/**
- * Server → the *sending* client only: the persisted DB id of a user message
-the sender is showing optimistically (matched by its `user_message_ref`).
-The sender renders its own prompt from a local `ws-user-*` block that has no
-DB id, so rewind/fork — which cut at a persisted message id — stay hidden on
-it until the conversation is reloaded. Stamping the id back lets those
-actions light up on the live message immediately.
- */
-export interface PromptPersistedPayload {
-  message_id: number;
-  user_message_ref: string;
-}
+export type PromptReceiptState = (typeof PromptReceiptState)[keyof typeof PromptReceiptState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PromptReceiptState = {
+  received_agent: "received_agent",
+  delivery_failed: "delivery_failed",
+} as const;
 
 export interface PromptReceivedPayload {
-  client_message_id: string;
+  delivery_state: PromptReceiptState;
+  message_uuid: string;
 }
 
 export type PromptSendPayloadClaudeProfile = string | null;
 
-export type PromptSendPayloadClientMessageId = string | null;
+/**
+ * Stable Cadencr-owned identity for this logical user message. The backend
+persists it under a per-session unique constraint and echoes it on the
+canonical `session.user_message` event.
+ */
+export type PromptSendPayloadMessageUuid = string | null;
 
 export type PromptSendPayloadNewProjectBranch = null | NewProjectBranchPayload;
 
@@ -1470,30 +1480,20 @@ export type PromptSendPayloadProfile = string | null;
 
 export type PromptSendPayloadUseWorktree = boolean | null;
 
-/**
- * Client-generated reference echoed back in `prompt_persisted` with the
-persisted DB id, so the sender can stamp its live block and enable
-rewind/fork without a reload. Sent for every prompt (unlike
-`client_message_id`, which is receipt/steering-only).
- */
-export type PromptSendPayloadUserMessageRef = string | null;
-
 export interface PromptSendPayload {
   attachments?: PromptAttachmentPayload[];
   claude_profile?: PromptSendPayloadClaudeProfile;
-  client_message_id?: PromptSendPayloadClientMessageId;
   images?: ImagePayload[];
+  /** Stable Cadencr-owned identity for this logical user message. The backend
+persists it under a per-session unique constraint and echoes it on the
+canonical `session.user_message` event. */
+  message_uuid?: PromptSendPayloadMessageUuid;
   new_project_branch?: PromptSendPayloadNewProjectBranch;
   profile?: PromptSendPayloadProfile;
-  replay?: boolean;
   session_id: string;
   text: string;
+  track_prompt_receipt?: boolean;
   use_worktree?: PromptSendPayloadUseWorktree;
-  /** Client-generated reference echoed back in `prompt_persisted` with the
-persisted DB id, so the sender can stamp its live block and enable
-rewind/fork without a reload. Sent for every prompt (unlike
-`client_message_id`, which is receipt/steering-only). */
-  user_message_ref?: PromptSendPayloadUserMessageRef;
 }
 
 export type ProviderCatalogEntryDefaultModel = string | null;
@@ -1854,7 +1854,10 @@ export const ServerRole = {
   general: "general",
 } as const;
 
+export type SessionActionPayloadMessageUuid = string | null;
+
 export interface SessionActionPayload {
+  message_uuid?: SessionActionPayloadMessageUuid;
   session_id: string;
 }
 
@@ -2349,6 +2352,35 @@ export interface UpsertProfileRequest {
   env: UpsertProfileRequestEnv;
 }
 
+export type UserMessageDeliveryState =
+  (typeof UserMessageDeliveryState)[keyof typeof UserMessageDeliveryState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const UserMessageDeliveryState = {
+  pending_agent: "pending_agent",
+  received_agent: "received_agent",
+  delivery_unknown: "delivery_unknown",
+  delivery_failed: "delivery_failed",
+} as const;
+
+export type UserMessagePayloadOrigin = null | AgentMessageOrigin;
+
+export type UserMessagePayloadPromptDeliveryState = null | UserMessageDeliveryState;
+
+/**
+ * `session.user_message` — the canonical persisted user-message event sent to
+the originating client and every passive viewer. Consumers upsert it by
+`message_uuid`; `message_id` remains the ordering and pagination cursor.
+ */
+export interface UserMessagePayload {
+  created_at: string;
+  message_id: number;
+  message_uuid: string;
+  origin?: UserMessagePayloadOrigin;
+  prompt_delivery_state?: UserMessagePayloadPromptDeliveryState;
+  text: string;
+}
+
 /**
  * `GET /api/push/vapid-key` response: the server's VAPID public key, base64url,
 for the browser's `pushManager.subscribe({ applicationServerKey })`.
@@ -2419,7 +2451,6 @@ export const WsSessionAction = {
   draftsaved: "draft.saved",
   codex_permission_modechanged: "codex_permission_mode.changed",
   providersetok: "provider.set.ok",
-  prompt_persisted: "prompt_persisted",
   compactstarted: "compact.started",
   modelsetok: "model.set.ok",
   effortsetok: "effort.set.ok",

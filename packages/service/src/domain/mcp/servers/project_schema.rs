@@ -138,6 +138,7 @@ fn tool_schema(name: &str) -> Value {
             "properties": {
                 "target_session_id": { "type": "number" },
                 "message": { "type": "string" },
+                "message_uuid": { "type": "string", "description": "Stable UUID for explicitly retrying the same logical message." },
                 "delivery": { "type": "string", "enum": ["send_now", "queue_if_busy", "reject_if_busy"] },
                 "reply": { "type": "string", "enum": ["none", "on_turn_end"], "default": "none" },
                 "source_note": { "type": "string" },

@@ -14,6 +14,8 @@ mod custom_model_effort_migration_tests;
 #[cfg(test)]
 mod mcp_orchestration_migration_tests;
 #[cfg(test)]
+mod message_uuid_migration_tests;
+#[cfg(test)]
 mod rewind_fork_migration_tests;
 mod seed;
 mod support;
@@ -344,6 +346,22 @@ mod tests {
             CREATE TABLE agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL
+            );
+            CREATE TABLE agent_session_message_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_session_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+            );
+            CREATE TABLE scheduled_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                feature_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                scheduled_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                error TEXT,
+                created_at TEXT,
+                updated_at TEXT
             );
             INSERT INTO agent_sessions (id, feature_id, status, is_pinned)
                 VALUES (1, 7, 'running', 1);"#,

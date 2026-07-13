@@ -17,6 +17,19 @@ pub(crate) async fn handle_permission_respond(
             return;
         }
     };
+    if payload
+        .message_uuid
+        .as_deref()
+        .is_some_and(|value| uuid::Uuid::parse_str(value).is_err())
+    {
+        send_error(
+            sender,
+            &envelope.id,
+            "INVALID_MESSAGE_UUID",
+            "message_uuid must be a valid UUID",
+        );
+        return;
+    }
     let Some(session_id) = parse_session_id(&payload.session_id) else {
         send_error(
             sender,

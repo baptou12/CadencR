@@ -71,6 +71,8 @@ pub(super) async fn setup_test_db() -> SqlitePool {
         r#"CREATE TABLE IF NOT EXISTS agent_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,
+            message_uuid TEXT,
+            delivery_state TEXT,
             content TEXT NOT NULL DEFAULT '',
             message_type TEXT NOT NULL DEFAULT 'text',
             tool_name TEXT,
@@ -132,6 +134,8 @@ pub(super) fn make_message(
     AgentMessageRow {
         id,
         session_id,
+        message_uuid: None,
+        delivery_state: None,
         message_type: message_type.to_string(),
         content: content.to_string(),
         tool_name: None,
@@ -155,6 +159,8 @@ pub(super) fn make_message_full(
     AgentMessageRow {
         id,
         session_id,
+        message_uuid: None,
+        delivery_state: None,
         message_type: message_type.to_string(),
         content: content.to_string(),
         tool_name: tool_name.map(|s| s.to_string()),
@@ -169,6 +175,8 @@ pub(super) fn make_message_full(
 pub(super) fn make_root_block(id_num: i64) -> AgentBlock {
     AgentBlock {
         id: format!("msg-{id_num}"),
+        message_uuid: None,
+        prompt_delivery_state: None,
         type_: "text".to_string(),
         content: String::new(),
         tool_name: None,

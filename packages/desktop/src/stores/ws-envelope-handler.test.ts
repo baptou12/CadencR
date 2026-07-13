@@ -72,33 +72,123 @@ describe("handleEnvelope turn_complete", () => {
       expect(stream.parentToolUseId).toBeNull();
     }
   });
+
+  it("rejects a malformed terminal payload without mutating the turn", () => {
+    vi.mocked(toast.error).mockClear();
+    const session = createSessionEntry();
+    session.lifecycle = transitionTurn(session.lifecycle, { type: "prompt_sent" });
+    session.blocks = [
+      {
+        id: "pending-user",
+        type: "user_message",
+        content: "hello",
+        messageUuid: crypto.randomUUID(),
+        promptDeliveryState: "pending_agent",
+      },
+    ];
+    const ctx = createTestContext(session);
+    const before = ctx.getSession("s1");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "ended",
+      payload: null,
+    });
+
+    expect(ctx.getSession("s1")).toBe(before);
+    expect(toast.error).toHaveBeenCalledWith(
+      "The agent sent an invalid turn-complete update. The conversation was not changed.",
+    );
+    warnSpy.mockRestore();
+  });
 });
 
-describe("handleEnvelope user_message mirror", () => {
-  it("appends a user_message block for a prompt sent from another device", () => {
+describe("handleEnvelope canonical user_message", () => {
+  it("upserts the persisted user message sent to every viewer", () => {
     const session = createSessionEntry();
     const ctx = createTestContext(session);
 
     handleEnvelope(ctx, "s1", {
       domain: "session",
       action: "user_message",
-      payload: { text: "hello from another device" },
+      payload: {
+        message_id: 42,
+        message_uuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+        text: "hello from another device",
+        created_at: "2026-07-12T20:00:00Z",
+      },
     });
 
     const last = ctx.getSession("s1").blocks.at(-1);
     expect(last?.type).toBe("user_message");
     expect(last?.content).toBe("hello from another device");
-    // Mirrored prompts are confirmed, not optimistic — no receipt tracking.
-    expect(last?.clientMessageId).toBeUndefined();
+    expect(last?.id).toBe("msg-42");
+    expect(last?.messageUuid).toBe("a48cc11a-8a72-47f7-8577-d5c533d7909c");
   });
 
-  it("ignores a payload without text", () => {
+  it("surfaces a malformed payload instead of silently losing the message", () => {
     const session = createSessionEntry();
     const ctx = createTestContext(session);
 
     handleEnvelope(ctx, "s1", { domain: "session", action: "user_message", payload: {} });
 
-    expect(ctx.getSession("s1").blocks).toHaveLength(0);
+    expect(ctx.getSession("s1").blocks).toMatchObject([
+      {
+        type: "error",
+        errorCode: "MALFORMED_USER_MESSAGE",
+      },
+    ]);
+  });
+
+  it("applies an explicit delivery failure to the canonical message", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+    const messageUuid = "a48cc11a-8a72-47f7-8577-d5c533d7909c";
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "user_message",
+      payload: {
+        message_id: 42,
+        message_uuid: messageUuid,
+        text: "steer",
+        created_at: "2026-07-12T20:00:00Z",
+        prompt_delivery_state: "pending_agent",
+      },
+    });
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "prompt_received",
+      payload: { message_uuid: messageUuid, delivery_state: "delivery_failed" },
+    });
+
+    expect(ctx.getSession("s1").blocks[0].promptDeliveryState).toBe("delivery_failed");
+  });
+
+  it("does not treat a malformed receipt as an agent acknowledgement", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+    const messageUuid = "a48cc11a-8a72-47f7-8577-d5c533d7909c";
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "user_message",
+      payload: {
+        message_id: 42,
+        message_uuid: messageUuid,
+        text: "steer",
+        created_at: "2026-07-12T20:00:00Z",
+        prompt_delivery_state: "pending_agent",
+      },
+    });
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "prompt_received",
+      payload: { message_uuid: messageUuid, delivery_state: "unexpected" },
+    });
+
+    expect(ctx.getSession("s1").blocks[0].promptDeliveryState).toBe("pending_agent");
   });
 });
 
@@ -303,6 +393,66 @@ describe("handleEnvelope workflow worktree events", () => {
 });
 
 describe("handleEnvelope error handling", () => {
+  it("fails pending prompts even when the terminal error has no message text", () => {
+    const session = createSessionEntry();
+    session.blocks = [
+      {
+        id: "pending",
+        type: "user_message",
+        content: "steer",
+        messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+        promptDeliveryState: "pending_agent",
+      },
+    ];
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "error",
+      payload: { code: "SDK_ERROR" },
+    });
+
+    expect(ctx.getSession("s1").blocks[0].promptDeliveryState).toBe("delivery_failed");
+  });
+
+  it("reconciles observed receipts before failing remaining prompts on terminal error", () => {
+    const session = createSessionEntry();
+    session.blocks = [
+      {
+        id: "first",
+        type: "user_message",
+        content: "first",
+        messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+        promptDeliveryState: "pending_agent",
+      },
+      {
+        id: "second",
+        type: "user_message",
+        content: "second",
+        messageUuid: "293319b5-bf87-48a4-a454-cf9a452d3581",
+        promptDeliveryState: "pending_agent",
+      },
+    ];
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "error",
+      payload: {
+        code: "SDK_ERROR",
+        message: "stream failed",
+        received_prompt_message_uuids: ["a48cc11a-8a72-47f7-8577-d5c533d7909c"],
+      },
+    });
+
+    expect(
+      ctx
+        .getSession("s1")
+        .blocks.slice(0, 2)
+        .map((block) => block.promptDeliveryState),
+    ).toEqual(["received_agent", "delivery_failed"]);
+  });
+
   it("routes MODE_NOT_SUPPORTED to a toast and leaves the agent stream untouched", () => {
     vi.mocked(toast.error).mockClear();
     const session = createSessionEntry();

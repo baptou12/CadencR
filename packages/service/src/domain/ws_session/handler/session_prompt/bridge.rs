@@ -26,6 +26,7 @@ use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 #[derive(Clone)]
 pub struct PermissionResponse {
     pub(crate) request_id: String,
+    pub(crate) message_uuid: Option<String>,
     pub(crate) decision: PermissionDecision,
     #[allow(dead_code)]
     pub(crate) option_id: Option<String>,
@@ -157,14 +158,11 @@ impl WsBridgeCanUseTool {
         request: &RuntimeToolPermissionRequest,
         response: PermissionResponse,
     ) -> RuntimeToolPermissionResult {
+        let message_uuid = response.message_uuid.clone();
         match response.decision {
             PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => {
-                let p = WsSessionPersistence::with_session_id(
-                    self.write_pool.clone(),
-                    self.feature_id,
-                    Some(self.db_session_id),
-                );
-                p.persist_user_message("Plan approved.").await;
+                self.persist_and_publish_plan_message("Plan approved.", message_uuid.as_deref())
+                    .await;
                 self.transition_to_post_plan_mode().await;
                 RuntimeToolPermissionResult::Allow {
                     updated_input: request.input.clone(),
@@ -176,12 +174,8 @@ impl WsBridgeCanUseTool {
                 let feedback = response
                     .feedback
                     .unwrap_or_else(|| "User requested changes to the plan.".to_string());
-                let p = WsSessionPersistence::with_session_id(
-                    self.write_pool.clone(),
-                    self.feature_id,
-                    Some(self.db_session_id),
-                );
-                p.persist_user_message(&feedback).await;
+                self.persist_and_publish_plan_message(&feedback, message_uuid.as_deref())
+                    .await;
                 RuntimeToolPermissionResult::Deny {
                     message: feedback,
                     interrupt: Some(false),

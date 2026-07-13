@@ -34,7 +34,6 @@ pub enum WsSessionAction {
     CodexPermissionModeChanged,
     #[serde(rename = "provider.set.ok")]
     ProviderSetOk,
-    PromptPersisted,
     #[serde(rename = "compact.started")]
     CompactStarted,
     #[serde(rename = "model.set.ok")]
@@ -77,7 +76,6 @@ impl WsSessionAction {
             Self::DraftSaved => "draft.saved",
             Self::CodexPermissionModeChanged => "codex_permission_mode.changed",
             Self::ProviderSetOk => "provider.set.ok",
-            Self::PromptPersisted => "prompt_persisted",
             Self::CompactStarted => "compact.started",
             Self::ModelSetOk => "model.set.ok",
             Self::EffortSetOk => "effort.set.ok",
@@ -112,7 +110,6 @@ impl WsSessionAction {
             Self::DraftSaved,
             Self::CodexPermissionModeChanged,
             Self::ProviderSetOk,
-            Self::PromptPersisted,
             Self::CompactStarted,
             Self::ModelSetOk,
             Self::EffortSetOk,

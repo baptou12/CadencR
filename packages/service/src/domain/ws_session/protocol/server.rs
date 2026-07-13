@@ -3,6 +3,7 @@ use utoipa::ToSchema;
 
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 use crate::domain::sessions::models::AgentMessageOrigin;
+pub use crate::domain::sessions::models::UserMessageDeliveryState;
 
 use super::{GateCloseReason, PermissionDecision, WsEnvelope, WsSessionAction};
 
@@ -110,6 +111,10 @@ impl From<RuntimePermissionOption> for PermissionOptionPayload {
 pub struct SessionErrorPayload {
     pub code: String,
     pub message: String,
+    /// Prompt receipts observed before a terminal stream failure. Clients mark
+    /// these received before failing any remaining pending prompts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub received_prompt_message_uuids: Vec<String>,
     /// Optional context carrying the permission-mode wire id involved in
     /// the failure. Set only for mode-related rejections (e.g.
     /// `MODE_REJECTED_BY_CLI`) so the FE can advance past the rejected
@@ -118,9 +123,14 @@ pub struct SessionErrorPayload {
     pub mode: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct SessionEndedPayload {
     pub reason: String,
+    /// Canonical message UUIDs whose prompt receipts were emitted during this turn. Repeating them on the
+    /// terminal envelope lets clients reconcile a missed transient
+    /// `prompt_received` without leaving a delivered steer pending forever.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub received_prompt_message_uuids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -130,15 +140,19 @@ pub struct GateClosedPayload {
     pub reason: GateCloseReason,
 }
 
-/// `session.user_message` — mirrors a just-sent user prompt to *other* devices
-/// viewing the same feature (the remote-access conversation mirror). The device
-/// that sent the prompt renders it locally and never receives this echo; only
-/// passive viewers do, so their conversation shows the prompt as it's sent.
+/// `session.user_message` — the canonical persisted user-message event sent to
+/// the originating client and every passive viewer. Consumers upsert it by
+/// `message_uuid`; `message_id` remains the ordering and pagination cursor.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct UserMessageMirrorPayload {
+pub struct UserMessagePayload {
+    pub message_id: i64,
+    pub message_uuid: String,
     pub text: String,
+    pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origin: Option<AgentMessageOrigin>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_delivery_state: Option<UserMessageDeliveryState>,
 }
 
 /// Discriminant for `SessionLifecyclePayload`.
@@ -198,19 +212,15 @@ pub struct SessionStreamStatusPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PromptReceivedPayload {
-    pub client_message_id: String,
+    pub message_uuid: String,
+    pub delivery_state: PromptReceiptState,
 }
 
-/// Server → the *sending* client only: the persisted DB id of a user message
-/// the sender is showing optimistically (matched by its `user_message_ref`).
-/// The sender renders its own prompt from a local `ws-user-*` block that has no
-/// DB id, so rewind/fork — which cut at a persisted message id — stay hidden on
-/// it until the conversation is reloaded. Stamping the id back lets those
-/// actions light up on the live message immediately.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct PromptPersistedPayload {
-    pub user_message_ref: String,
-    pub message_id: i64,
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptReceiptState {
+    ReceivedAgent,
+    DeliveryFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

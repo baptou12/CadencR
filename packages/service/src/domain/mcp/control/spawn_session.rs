@@ -12,6 +12,7 @@ use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::features::service::create_feature_with_worktree;
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
+use crate::domain::ws_session::handler::session_prompt::publish_user_message;
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize)]
@@ -148,21 +149,15 @@ async fn spawn_into_target(
         codex_permission_mode.as_deref(),
     )
     .await?;
-    let message_id = insert_initial_message(state, source, session_id, body).await?;
-    if body.link_to_current_session.unwrap_or(true) {
-        insert_spawn_link(
-            state,
-            source.session_id,
-            session_id,
-            body.source_note.as_deref(),
-        )
-        .await?;
-    }
-    state.feature_events_tx.emit(
+    let message_id = persist_and_announce_spawn(
+        state,
+        source,
+        target_project.id,
         created.id,
-        Some(target_project.id),
-        FeatureEventAction::Created,
-    );
+        session_id,
+        body,
+    )
+    .await?;
     // The conversation is already fully persisted at this point. If dispatching the
     // initial prompt fails we must NOT return an error: that would leave a complete
     // target session behind while signalling failure, tempting the caller to spawn a
@@ -215,6 +210,46 @@ async fn spawn_into_target(
     )
     .await?;
     Ok(response)
+}
+
+async fn persist_and_announce_spawn(
+    state: &AppState,
+    source: &super::scope::SessionScope,
+    target_project_id: i64,
+    feature_id: i64,
+    session_id: i64,
+    body: &SpawnSessionRequest,
+) -> Result<Option<i64>, AppError> {
+    let initial_message = insert_initial_message(state, source, session_id, body).await?;
+    if body.link_to_current_session.unwrap_or(true) {
+        insert_spawn_link(
+            state,
+            source.session_id,
+            session_id,
+            body.source_note.as_deref(),
+        )
+        .await?;
+    }
+    state.feature_events_tx.emit(
+        feature_id,
+        Some(target_project_id),
+        FeatureEventAction::Created,
+    );
+    let Some((message, origin)) = initial_message else {
+        return Ok(None);
+    };
+    let message_id = message.id;
+    publish_user_message(
+        &state.ws_feature_senders,
+        None,
+        feature_id,
+        &message,
+        Some(origin),
+        false,
+    )
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?;
+    Ok(Some(message_id))
 }
 
 fn validate_await_result(body: &SpawnSessionRequest) -> Result<(), AppError> {

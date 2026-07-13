@@ -71,6 +71,25 @@ async function connectInitializedReceiptSession(): Promise<MockWebSocket> {
   return ws;
 }
 
+function confirmPrompt(
+  ws: MockWebSocket,
+  prompt: { payload: { message_uuid: string } },
+  text: string,
+  messageId: number,
+): void {
+  ws.simulateMessage({
+    domain: "session",
+    action: "user_message",
+    payload: {
+      message_id: messageId,
+      message_uuid: prompt.payload.message_uuid,
+      text,
+      created_at: "2026-07-12T20:00:00Z",
+      prompt_delivery_state: "pending_agent",
+    },
+  });
+}
+
 beforeEach(() => {
   MockWebSocket.instances = [];
   useWsSessionStore.setState({ sessions: {} });
@@ -86,12 +105,13 @@ afterEach(() => {
 });
 
 describe("interrupt pending steering prompts", () => {
-  it("keeps a pending steering prompt after the interrupted turn completes", async () => {
+  it("keeps an unresolved steering prompt as terminal unknown after interrupt", async () => {
     const ws = await connectInitializedReceiptSession();
     const store = useWsSessionStore.getState();
 
     store.sendPrompt("s1", "steer now");
     const originalPrompt = JSON.parse(ws.sent.at(-1) ?? "{}");
+    confirmPrompt(ws, originalPrompt, "steer now", 41);
     ws.sent = [];
 
     store.interrupt("s1");
@@ -111,9 +131,9 @@ describe("interrupt pending steering prompts", () => {
       useWsSessionStore
         .getState()
         .sessions.s1.blocks.find(
-          (block) => block.clientMessageId === originalPrompt.payload.client_message_id,
+          (block) => block.messageUuid === originalPrompt.payload.message_uuid,
         )?.promptDeliveryState,
-    ).toBe("pending_agent");
+    ).toBe("delivery_unknown");
   });
 
   it("clears a stuck steering prompt when the backend acks it after the interrupt", async () => {
@@ -126,9 +146,10 @@ describe("interrupt pending steering prompts", () => {
 
     store.sendPrompt("s1", "steer now");
     const prompt = JSON.parse(ws.sent.at(-1) ?? "{}");
+    confirmPrompt(ws, prompt, "steer now", 41);
     const blockId = useWsSessionStore
       .getState()
-      .sessions.s1.blocks.find((b) => b.clientMessageId === prompt.payload.client_message_id)?.id;
+      .sessions.s1.blocks.find((b) => b.messageUuid === prompt.payload.message_uuid)?.id;
     expect(blockId).toBeDefined();
 
     store.interrupt("s1");
@@ -140,12 +161,54 @@ describe("interrupt pending steering prompts", () => {
     ws.simulateMessage({
       domain: "session",
       action: "prompt_received",
-      payload: { client_message_id: prompt.payload.client_message_id },
+      payload: { message_uuid: prompt.payload.message_uuid, delivery_state: "received_agent" },
     });
 
     const block = useWsSessionStore.getState().sessions.s1.blocks.find((b) => b.id === blockId);
     expect(block?.promptDeliveryState).toBe("received_agent");
-    expect(block?.clientMessageId).toBeUndefined();
+  });
+
+  it("reconciles a missed receipt from turn completion without leaving the prompt at the tail", async () => {
+    const ws = await connectInitializedReceiptSession();
+    const store = useWsSessionStore.getState();
+
+    store.sendPrompt("s1", "steer now");
+    const prompt = JSON.parse(ws.sent.at(-1) ?? "{}");
+    const messageUuid = prompt.payload.message_uuid;
+    confirmPrompt(ws, prompt, "steer now", 42);
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "stream_event",
+            agent_message_id: 43,
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "text", text: "used the steer" },
+            },
+          },
+        ],
+      },
+    });
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "ended",
+      payload: {
+        reason: "turn_complete",
+        received_prompt_message_uuids: [messageUuid],
+      },
+    });
+
+    const blocks = useWsSessionStore.getState().sessions.s1.blocks;
+    const userIndex = blocks.findIndex((block) => block.messageDbId === 42);
+    const laterAgentIndex = blocks.findIndex((block) => block.id === "msg-43");
+    expect(userIndex).toBeGreaterThanOrEqual(0);
+    expect(userIndex).toBeLessThan(laterAgentIndex);
+    expect(blocks[userIndex].promptDeliveryState).toBe("received_agent");
   });
 
   it("does not replay pending steering prompts when an interrupted turn ends", async () => {
@@ -154,12 +217,14 @@ describe("interrupt pending steering prompts", () => {
 
     store.sendPrompt("s1", "first");
     const first = JSON.parse(ws.sent.at(-1) ?? "{}");
+    confirmPrompt(ws, first, "first", 41);
     store.sendPrompt("s1", "second");
     const second = JSON.parse(ws.sent.at(-1) ?? "{}");
+    confirmPrompt(ws, second, "second", 42);
     ws.simulateMessage({
       domain: "session",
       action: "prompt_received",
-      payload: { client_message_id: first.payload.client_message_id },
+      payload: { message_uuid: first.payload.message_uuid, delivery_state: "received_agent" },
     });
     ws.sent = [];
 
@@ -179,9 +244,8 @@ describe("interrupt pending steering prompts", () => {
     expect(
       useWsSessionStore
         .getState()
-        .sessions.s1.blocks.find(
-          (block) => block.clientMessageId === second.payload.client_message_id,
-        )?.promptDeliveryState,
-    ).toBe("pending_agent");
+        .sessions.s1.blocks.find((block) => block.messageUuid === second.payload.message_uuid)
+        ?.promptDeliveryState,
+    ).toBe("delivery_unknown");
   });
 });

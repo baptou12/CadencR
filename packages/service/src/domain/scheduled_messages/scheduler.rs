@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 use super::repository;
 use crate::app_state::AppState;
-use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
+use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt_with_message_uuid;
 use crate::error::AppError;
 
 /// How often the poll loop scans for due messages. Scheduling is human-grained
@@ -32,20 +32,27 @@ pub fn spawn(state: AppState) {
 }
 
 async fn tick(state: &AppState) -> Result<(), AppError> {
-    let due = repository::list_due(&state.read_pool).await?;
-    for msg in due {
+    while let Some(claimed) = repository::claim_due(&state.write_pool).await? {
+        let msg = claimed.message;
         // Mark terminal state regardless of dispatch outcome so a persistently
         // failing row can never wedge the loop or re-fire every tick.
         match dispatch_due(state, &msg).await {
             Ok(()) => {
-                if let Err(e) = repository::mark_sent(&state.write_pool, msg.id).await {
+                if let Err(e) =
+                    repository::mark_sent(&state.write_pool, msg.id, &claimed.claim_token).await
+                {
                     warn!(error = %e, id = msg.id, "failed to mark scheduled message sent");
                 }
             }
             Err(e) => {
                 warn!(error = %e, id = msg.id, feature_id = msg.feature_id, "scheduled message dispatch failed");
-                if let Err(e) =
-                    repository::mark_failed(&state.write_pool, msg.id, &e.to_string()).await
+                if let Err(e) = repository::mark_failed(
+                    &state.write_pool,
+                    msg.id,
+                    &claimed.claim_token,
+                    &e.to_string(),
+                )
+                .await
                 {
                     warn!(error = %e, id = msg.id, "failed to mark scheduled message failed");
                 }
@@ -66,5 +73,17 @@ async fn dispatch_due(
         repository::resolve_or_create_session(&state.write_pool, msg.feature_id).await?;
     // `replay = false`: persist and broadcast the scheduled text as a normal
     // user message so it appears in the conversation when it fires.
-    dispatch_control_prompt(state, msg.feature_id, session_id, &msg.text, false).await
+    let message_uuid = uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_URL,
+        format!("cadencr:scheduled-message:{}", msg.id).as_bytes(),
+    );
+    dispatch_control_prompt_with_message_uuid(
+        state,
+        msg.feature_id,
+        session_id,
+        &msg.text,
+        false,
+        Some(message_uuid),
+    )
+    .await
 }

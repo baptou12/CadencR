@@ -27,19 +27,24 @@ const SEGMENT_BOUNDARY_TYPES = new Set<AgentBlockData["type"]>([
 ]);
 
 /**
- * Whether a block closes the current turn and opens a new one. A steer message
- * sent mid-turn is appended immediately with `promptDeliveryState: "pending_agent"`,
- * but the agent hasn't received it yet — collapsing the in-flight turn at that
- * moment is wrong. So a `user_message` only becomes a boundary once the agent has
- * acknowledged it (delivery state flips to `received_agent`, or is untracked for
- * history/idle sends). Until then the pending message rides inside the live turn.
+ * Whether a block closes the current turn and opens a new one. A canonical
+ * steer event can be persisted with `promptDeliveryState: "pending_agent"`
+ * before the agent receives it, so collapsing the in-flight turn at that
+ * moment is wrong. The message becomes a boundary after a received, failed, or
+ * terminal-unknown receipt (or when historical delivery was not tracked).
  */
 function isSegmentBoundary(block: AgentBlockData): boolean {
   if (block.type === "tool_result" && block.isError) {
     return shouldHideToolCall(block.sourceToolName);
   }
   if (!SEGMENT_BOUNDARY_TYPES.has(block.type)) return false;
-  if (block.type === "user_message" && block.promptDeliveryState === "pending_agent") return false;
+  if (
+    block.type === "user_message" &&
+    block.promptDeliveryState !== undefined &&
+    block.promptDeliveryState !== "received_agent"
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -91,6 +96,16 @@ function splitSegments(blocks: AgentBlockData[]): Segment[] {
   const segments: Segment[] = [];
   let current: Segment = { boundary: null, body: [] };
   for (const block of blocks) {
+    if (
+      block.type === "user_message" &&
+      (block.promptDeliveryState === "delivery_failed" ||
+        block.promptDeliveryState === "delivery_unknown")
+    ) {
+      current.body.push(block);
+      segments.push(current);
+      current = { boundary: null, body: [] };
+      continue;
+    }
     if (isSegmentBoundary(block)) {
       segments.push(current);
       current = { boundary: block, body: [] };
@@ -122,9 +137,18 @@ function emitSegment(result: AgentBlockData[], segment: Segment, active: boolean
 
   const tools = segment.body.filter(isCountableTool);
   const finalText = findFinalText(segment.body);
+  const unresolvedMessages = segment.body.filter(
+    (block) =>
+      block.type === "user_message" &&
+      block.promptDeliveryState !== undefined &&
+      block.promptDeliveryState !== "received_agent",
+  );
+  const unresolvedMessageSet = new Set(unresolvedMessages);
   if (tools.length === 0) {
     // No countable tools — nothing to recap; keep just the closing message.
-    if (finalText) result.push(finalText);
+    result.push(
+      ...segment.body.filter((block) => block === finalText || unresolvedMessageSet.has(block)),
+    );
     return;
   }
 
@@ -132,8 +156,16 @@ function emitSegment(result: AgentBlockData[], segment: Segment, active: boolean
   // `childBlocks`; the renderer reveals it inline via an animated collapsible.
   // The closing message always stays visible below the recap.
   const detail = finalText ? segment.body.filter((block) => block !== finalText) : segment.body;
-  result.push(makeToolSummaryBlock(tools, detail));
-  if (finalText) result.push(finalText);
+  const hiddenDetail = detail.filter((block) => !unresolvedMessageSet.has(block));
+  const summary = makeToolSummaryBlock(tools, hiddenDetail);
+  let emittedSummary = false;
+  for (const block of segment.body) {
+    if (!emittedSummary && isCountableTool(block)) {
+      result.push(summary);
+      emittedSummary = true;
+    }
+    if (block === finalText || unresolvedMessageSet.has(block)) result.push(block);
+  }
 }
 
 /**
