@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { customInstance } from "./client";
 import { AGENT_TYPES, type AgentTypeSetting } from "../shared/models";
 import type { PermissionMode } from "@/types/permission-mode";
-import type { ModelCatalogEntry } from "./generated";
+import type { ModelCatalogEntry, UpsertCustomModelRequest } from "./generated";
 
 export type RuntimeModelOption = {
   [Key in keyof ModelCatalogEntry]: Exclude<ModelCatalogEntry[Key], null>;
@@ -266,19 +266,11 @@ export function useClaudeCodeCustomModels() {
 export function useUpsertClaudeCodeCustomModel() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      modelId,
-      label,
-      description,
-    }: {
-      modelId: string;
-      label: string;
-      description?: string;
-    }) =>
+    mutationFn: ({ modelId, data }: { modelId: string; data: UpsertCustomModelRequest }) =>
       customInstance<RuntimeModelOption>({
         method: "PUT",
         url: `/api/claude-code/custom-models/${encodeURIComponent(modelId)}`,
-        data: { label, description },
+        data,
       }),
     onSuccess: async () => {
       await Promise.all([
