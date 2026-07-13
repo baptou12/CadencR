@@ -13,16 +13,19 @@ export const CATPPUCCIN_MOCHA_THEME: ThemeDefinition = {
   appearance: "dark",
   logo: CADENCR_THEME_LOGOS.dark,
   swatch: {
-    background: "#1e1e2e",
+    background: "#181825",
     foreground: "#cdd6f4",
     primary: "#cba6f7",
     accent: "#f5c2e7",
   },
+  // Background sits at mantle to match the darker workspace surface
+  // (--terminal-bg / --background); cursorAccent (text under the block cursor)
+  // matches so the caret reads cleanly.
   xterm: {
-    background: "#1e1e2e",
+    background: "#181825",
     foreground: "#cdd6f4",
     cursor: "#f5e0dc",
-    cursorAccent: "#1e1e2e",
+    cursorAccent: "#181825",
     selectionBackground: "#585b70",
     selectionForeground: "#cdd6f4",
     selectionInactiveBackground: "#45475a",
