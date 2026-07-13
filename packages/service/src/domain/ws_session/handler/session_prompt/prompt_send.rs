@@ -18,24 +18,24 @@ use super::prompt_runtime_config::{
     apply_respawn_if_needed, dispatch_changes, log_dispatch_decision,
 };
 
-/// Handle session.prompt.send: send prompt to runtime or spawn new query.
-pub(crate) async fn handle_prompt_send(
-    envelope: WsEnvelope,
+pub(super) struct PreparedPrompt {
+    pub payload: PromptSendPayload,
+    pub db_session_id: i64,
+    pub profile_update: Option<SessionProfileUpdate>,
+}
+
+pub(super) async fn prepare_prompt(
+    envelope: &WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
     app_state: &AppState,
-) {
-    let Some(mut payload) = parse_prompt_payload(&envelope, sender) else {
-        return;
-    };
-    let Some(db_session_id) = parse_prompt_session_id(&payload, &envelope, sender) else {
-        return;
-    };
+) -> Option<PreparedPrompt> {
+    let mut payload = parse_prompt_payload(envelope, sender)?;
+    let db_session_id = parse_prompt_session_id(&payload, envelope, sender)?;
     if let Err(message) = normalize_prompt_message_uuid(&mut payload) {
         send_error(sender, &envelope.id, "INVALID_MESSAGE_UUID", &message);
-        return;
+        return None;
     }
-
     let has_profile_update = prompt_profile(&payload).is_some();
     let profile_update = match resolve_prompt_profile_update(
         app_state,
@@ -43,62 +43,79 @@ pub(crate) async fn handle_prompt_send(
         db_session_id,
         &payload,
         sender,
-        &envelope,
+        envelope,
     )
     .await
     {
         Ok(update) => update,
         Err(error) => {
             send_error(sender, &envelope.id, "PROFILE_ERROR", &error);
-            return;
+            return None;
         }
     };
     if has_profile_update && profile_update.is_none() {
-        return;
+        return None;
     }
+    Some(PreparedPrompt {
+        payload,
+        db_session_id,
+        profile_update,
+    })
+}
 
-    // Phase 1 — this connection's own map. Apply any respawn-on-config-change,
-    // then if we own the live turn, steer it directly (fast path).
-    {
-        let mut sessions = sdk_sessions.lock().await;
-        let Some(handle) = sessions.get_mut(&db_session_id) else {
-            send_error(
-                sender,
-                &envelope.id,
-                "SESSION_NOT_FOUND",
-                &format!("Session {db_session_id} not found. Send session.init first."),
-            );
-            return;
-        };
-        apply_prompt_profile_update(handle, profile_update.as_ref());
-        let changes = apply_respawn_if_needed(handle, app_state, db_session_id).await;
-        log_dispatch_decision(handle, db_session_id, &changes);
+pub(super) async fn dispatch_local_phase(
+    envelope: &WsEnvelope,
+    sender: &WsSender,
+    sdk_sessions: &SdkSessions,
+    app_state: &AppState,
+    db_session_id: i64,
+    payload: PromptSendPayload,
+    profile_update: Option<&SessionProfileUpdate>,
+) -> Option<PromptSendPayload> {
+    let mut sessions = sdk_sessions.lock().await;
+    let Some(handle) = sessions.get_mut(&db_session_id) else {
+        send_error(
+            sender,
+            &envelope.id,
+            "SESSION_NOT_FOUND",
+            &format!("Session {db_session_id} not found. Send session.init first."),
+        );
+        return None;
+    };
+    apply_prompt_profile_update(handle, profile_update);
+    let changes = apply_respawn_if_needed(handle, app_state, db_session_id).await;
+    log_dispatch_decision(handle, db_session_id, &changes);
 
-        if let QueryState::Active { query, .. } = &handle.state {
-            let context = build_followup_context(
-                query.clone(),
-                handle.feature_id,
-                db_session_id,
-                handle.runtime_provider.clone(),
-                sender,
-                sdk_sessions,
-                app_state,
-                envelope.id.clone(),
-            );
-            drop(sessions);
-            report_user_message_persist_result(
-                sender,
-                &envelope.id,
-                handle_followup_prompt(context, payload).await,
-            );
-            return;
-        }
+    if let QueryState::Active { query, .. } = &handle.state {
+        let context = build_followup_context(
+            query.clone(),
+            handle.feature_id,
+            db_session_id,
+            handle.runtime_provider.clone(),
+            sender,
+            sdk_sessions,
+            app_state,
+            envelope.id.clone(),
+        );
+        drop(sessions);
+        report_user_message_persist_result(
+            sender,
+            &envelope.id,
+            handle_followup_prompt(context, payload).await,
+        );
+        return None;
     }
+    Some(payload)
+}
 
-    // Phase 2 — another connection may be driving this session's live turn
-    // (multi-device, or a remote client whose socket is gone but whose agent we
-    // kept running via deferred teardown). Steer that live agent rather than
-    // starting a second one: never spawn a new agent on an existing conversation.
+pub(super) async fn dispatch_owner_phase(
+    envelope: &WsEnvelope,
+    sender: &WsSender,
+    app_state: &AppState,
+    db_session_id: i64,
+    payload: PromptSendPayload,
+    profile_update: Option<&SessionProfileUpdate>,
+) -> Option<PromptSendPayload> {
     if let Some(owner) = app_state.active_turns.owner_sessions(db_session_id).await {
         if let Some(target) = owner_prompt_target(
             &owner,
@@ -106,7 +123,7 @@ pub(crate) async fn handle_prompt_send(
             sender,
             app_state,
             &envelope.id,
-            profile_update.as_ref(),
+            profile_update,
         )
         .await
         {
@@ -130,22 +147,10 @@ pub(crate) async fn handle_prompt_send(
                     .await;
                 }
             }
-            return;
+            return None;
         }
     }
-
-    // Phase 3 — no live turn anywhere. Spawn, re-resolving worktree cwd + resume
-    // id from the DB (in `handle_pending_prompt`) so the conversation continues
-    // in the right place instead of forking a fresh, context-less agent.
-    spawn_pending_prompt(
-        &envelope,
-        sender,
-        sdk_sessions,
-        app_state,
-        db_session_id,
-        payload,
-    )
-    .await;
+    Some(payload)
 }
 
 /// Assemble a [`FollowupPromptContext`]. `sdk_sessions` is whichever map holds
@@ -233,7 +238,7 @@ async fn owner_prompt_target(
 
 /// First prompt (or respawn after a config change): take the stored spawn
 /// options off this connection's `Pending` handle and start the runtime.
-async fn spawn_pending_prompt(
+pub(super) async fn spawn_pending_prompt(
     envelope: &WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,

@@ -146,14 +146,14 @@ impl StreamReaderTask {
                 ReaderAction::Break => break,
                 ReaderAction::Closed => {
                     if self.stream_close_was_unexpected(&state).await {
-                        self.handle_unexpected_stop(&state).await;
+                        self.handle_unexpected_stop(&mut state).await;
                     } else {
                         self.send_stream_closed(&mut state).await;
                     }
                     break;
                 }
                 ReaderAction::Error(error) => {
-                    self.handle_stream_error(&state, error).await;
+                    self.handle_stream_error(&mut state, error).await;
                     break;
                 }
                 ReaderAction::Event(runtime_event) => {

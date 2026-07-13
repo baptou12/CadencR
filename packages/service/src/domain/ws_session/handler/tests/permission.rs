@@ -96,13 +96,15 @@ async fn test_permission_respond_persists_ask_user_question_answer() {
     let answer_text =
         crate::domain::ws_session::question_answers::format_answers_plain_text(&updated_input)
             .unwrap();
-    p.persist_user_message(&answer_text, uuid::Uuid::new_v4())
+    let message_uuid = uuid::Uuid::new_v4();
+    p.persist_user_message(&answer_text, message_uuid)
         .await
         .unwrap();
 
     // Verify it was persisted
-    let (role, content, msg_type): (String, String, String) = sqlx::query_as(
-        "SELECT role, content, message_type FROM agent_messages WHERE session_id = ?",
+    let (role, content, msg_type, stored_uuid): (String, String, String, String) = sqlx::query_as(
+        "SELECT role, content, message_type, message_uuid
+         FROM agent_messages WHERE session_id = ?",
     )
     .bind(db_session_id)
     .fetch_one(&app_state.read_pool)
@@ -112,6 +114,7 @@ async fn test_permission_respond_persists_ask_user_question_answer() {
     assert_eq!(role, "user");
     assert_eq!(content, "What is the project name?\nAnswer: Cadencr");
     assert_eq!(msg_type, "user_message");
+    assert_eq!(stored_uuid, message_uuid.to_string());
 }
 
 #[tokio::test]

@@ -275,7 +275,7 @@ mod tests {
     fn test_agent_block_serde_roundtrip() {
         let block = AgentBlock {
             id: "msg-1".to_string(),
-            message_uuid: None,
+            message_uuid: Some("a48cc11a-8a72-47f7-8577-d5c533d7909c".to_string()),
             type_: "text".to_string(),
             content: "hello".to_string(),
             tool_name: None,
@@ -295,6 +295,10 @@ mod tests {
         assert_eq!(parsed["id"], "msg-1");
         assert_eq!(parsed["type"], "text");
         assert_eq!(parsed["content"], "hello");
+        assert_eq!(
+            parsed["messageUuid"],
+            "a48cc11a-8a72-47f7-8577-d5c533d7909c"
+        );
         assert_eq!(parsed["createdAt"], "2024-01-01");
         // None fields skipped
         assert!(parsed.get("toolName").is_none());

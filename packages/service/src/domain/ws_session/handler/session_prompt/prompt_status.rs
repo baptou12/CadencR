@@ -6,12 +6,12 @@ use crate::domain::sessions::user_messages::{
 };
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{
-    PromptReceiptState, PromptReceivedPayload, PromptSendPayload, UserMessageDeliveryState,
-    UserMessagePayload, WsEnvelope, WsSessionAction,
+    PromptSendPayload, UserMessageDeliveryState, UserMessagePayload, WsEnvelope,
 };
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::WsSender;
+use super::user_message_delivery::{CanonicalUserMessageOutcome, UserMessageDeliveryError};
 
 pub(super) enum PromptPersistenceOutcome {
     Replay,
@@ -39,6 +39,16 @@ impl PromptPersistenceOutcome {
             Self::Persisted(PersistedUserMessage { inserted: true, .. })
         )
     }
+
+    pub fn tracked_message_uuid(&self, payload: &PromptSendPayload) -> Option<String> {
+        if !payload.track_prompt_receipt {
+            return None;
+        }
+        match self {
+            Self::Replay => payload.message_uuid.clone(),
+            Self::Persisted(message) => Some(message.message_uuid.clone()),
+        }
+    }
 }
 
 pub(super) async fn persist_and_publish_prompt(
@@ -55,7 +65,7 @@ pub(super) async fn persist_and_publish_prompt(
     }
     let message_uuid = canonical_user_message_uuid(payload.message_uuid.as_deref())
         .map_err(|_| "prompt has an invalid canonical message UUID".to_string())?;
-    let message = persist_and_publish_user_message(CanonicalUserMessageRequest {
+    let outcome = persist_and_publish_user_message(CanonicalUserMessageRequest {
         pool,
         feature_senders,
         owner: Some(sender),
@@ -68,6 +78,10 @@ pub(super) async fn persist_and_publish_prompt(
     })
     .await
     .map_err(|error| error.to_string())?;
+    if let Err(error) = outcome.delivery {
+        tracing::warn!(feature_id, session_id, error = %error, "canonical user-message owner disconnected");
+    }
+    let message = outcome.message;
     Ok(PromptPersistenceOutcome::Persisted(message))
 }
 
@@ -88,7 +102,7 @@ pub(crate) struct CanonicalUserMessageRequest<'a> {
 
 pub(crate) async fn persist_and_publish_user_message(
     request: CanonicalUserMessageRequest<'_>,
-) -> Result<PersistedUserMessage, PersistUserMessageError> {
+) -> Result<CanonicalUserMessageOutcome, PersistUserMessageError> {
     let persistence = WsSessionPersistence::with_session_id(
         request.pool.clone(),
         request.feature_id,
@@ -97,7 +111,7 @@ pub(crate) async fn persist_and_publish_user_message(
     let message = persistence
         .persist_user_message(request.content, request.message_uuid)
         .await?;
-    publish_user_message(
+    let delivery = publish_user_message(
         request.feature_senders,
         request.owner,
         request.feature_id,
@@ -106,7 +120,7 @@ pub(crate) async fn persist_and_publish_user_message(
         request.pending_agent_receipt,
     )
     .await;
-    Ok(message)
+    Ok(CanonicalUserMessageOutcome { message, delivery })
 }
 
 /// Publish the one canonical persisted user-message shape to every viewer.
@@ -119,7 +133,7 @@ pub(crate) async fn publish_user_message(
     message: &PersistedUserMessage,
     origin: Option<AgentMessageOrigin>,
     pending_agent_receipt: bool,
-) {
+) -> Result<(), UserMessageDeliveryError> {
     let env = WsEnvelope::new(
         "session",
         "user_message",
@@ -136,55 +150,21 @@ pub(crate) async fn publish_user_message(
     );
     let ws_message = Message::Text(String::from(env).into());
     if let Some(owner) = owner {
-        feature_senders
+        let owner_closed = feature_senders
             .send_and_mirror(feature_id, owner, ws_message)
             .await;
-        return;
+        if owner_closed {
+            feature_senders.unregister_sender(owner).await;
+            return Err(UserMessageDeliveryError::new(feature_id));
+        }
+        return Ok(());
     }
     for sender in feature_senders.get_senders(feature_id).await {
-        let _ = sender.send(ws_message.clone());
+        if sender.send(ws_message.clone()).is_err() {
+            feature_senders.unregister_sender(&sender).await;
+        }
     }
-}
-
-/// The `prompt_received` ack envelope — the signal that clears a prompt's
-/// "pending" decoration on the frontend. Built here so the live ack
-/// (`stream_reader_forward`) and the send-failure ack (`clear_pending_prompt_receipt`)
-/// share one wire shape.
-pub(super) fn prompt_received_envelope(
-    message_uuid: String,
-    delivery_state: PromptReceiptState,
-) -> WsEnvelope {
-    WsEnvelope::session_event(
-        WsSessionAction::PromptReceived,
-        PromptReceivedPayload {
-            message_uuid,
-            delivery_state,
-        },
-    )
-    .expect("prompt received payload should serialize")
-}
-
-/// Ack a tracked prompt the agent never received because the stream send
-/// failed. The backend receipt is already discarded; this only tells the
-/// client to stop the spinner (the accompanying `SDK_ERROR` envelope says why).
-/// Mirrored like the live ack so the original sender clears even when it is not
-/// the turn owner.
-pub(super) async fn clear_pending_prompt_receipt(
-    feature_senders: &WsFeatureSenderRegistry,
-    sender: &WsSender,
-    feature_id: i64,
-    message_uuid: String,
-) {
-    let msg = Message::Text(
-        String::from(prompt_received_envelope(
-            message_uuid,
-            PromptReceiptState::DeliveryFailed,
-        ))
-        .into(),
-    );
-    feature_senders
-        .send_and_mirror(feature_id, sender, msg)
-        .await;
+    Ok(())
 }
 
 pub(super) async fn mark_agent_running(
@@ -235,7 +215,8 @@ mod tests {
             None,
             true,
         )
-        .await;
+        .await
+        .unwrap();
 
         let Message::Text(raw) = receiver.try_recv().unwrap() else {
             panic!("expected text envelope");
@@ -248,6 +229,27 @@ mod tests {
             "a48cc11a-8a72-47f7-8577-d5c533d7909c"
         );
         assert_eq!(json["payload"]["prompt_delivery_state"], "pending_agent");
+    }
+
+    #[tokio::test]
+    async fn canonical_user_message_reports_and_prunes_disconnected_owner() {
+        let registry = WsFeatureSenderRegistry::new();
+        let (owner, receiver) = tokio::sync::mpsc::unbounded_channel();
+        registry.register(7, owner.clone()).await;
+        drop(receiver);
+
+        let result = publish_user_message(
+            &registry,
+            Some(&owner),
+            7,
+            &persisted_user_message(),
+            None,
+            false,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(registry.get_senders(7).await.is_empty());
     }
 
     #[tokio::test]

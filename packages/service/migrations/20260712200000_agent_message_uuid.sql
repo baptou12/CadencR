@@ -33,5 +33,7 @@ CREATE TABLE IF NOT EXISTS agent_message_dispatches (
     claimed_at TEXT,
     dispatched_at TEXT,
     error TEXT,
+    await_reply INTEGER NOT NULL DEFAULT 0 CHECK (await_reply IN (0, 1)),
+    link_to_current_session INTEGER NOT NULL DEFAULT 1 CHECK (link_to_current_session IN (0, 1)),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

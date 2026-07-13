@@ -243,6 +243,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       if (session.submittingPermissionRequestId === currentRequestId) {
         return;
       }
+      const permissionResponseMessageUuids = new Map(session.permissionResponseMessageUuids);
+      const messageUuid =
+        permissionResponseMessageUuids.get(currentRequestId) ?? crypto.randomUUID();
+      permissionResponseMessageUuids.set(currentRequestId, messageUuid);
       const envelope = createPermissionRespond(
         session.serverSessionId,
         currentRequestId,
@@ -250,11 +254,13 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         {
           feedback,
           optionId,
+          messageUuid,
         },
       );
       set(
         updateSession(get(), sessionId, {
           submittingPermissionRequestId: currentRequestId,
+          permissionResponseMessageUuids,
         }),
       );
       void get()
@@ -273,6 +279,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             // === null) leave the gate in place — the WS reconnects and a
             // retry can still land.
             const isDeadSessionError = isGateClosingErrorCode(error?.code);
+            const responseUuids = new Map(session.permissionResponseMessageUuids);
+            if (isDeadSessionError) responseUuids.delete(currentRequestId);
             const gatePatch: Partial<SessionEntry> = isDeadSessionError
               ? {
                   ...buildClearedGatePatch(session),
@@ -286,17 +294,21 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               updateSession(get(), sessionId, {
                 ...blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
                 ...gatePatch,
+                permissionResponseMessageUuids: responseUuids,
               }),
             );
             return;
           }
           const session = getSession(sessionId);
+          const responseUuids = new Map(session.permissionResponseMessageUuids);
+          responseUuids.delete(currentRequestId);
           const permissionPatch = advancePendingPermissionQueue(session.pendingPermissionQueue);
           set(
             updateSession(get(), sessionId, {
               ...permissionPatch,
               pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
               submittingPermissionRequestId: null,
+              permissionResponseMessageUuids: responseUuids,
             }),
           );
         });

@@ -53,7 +53,7 @@ async fn deliver_message(
             message_uuid,
         )
         .await?;
-        publish_generated_user_message(state, target_feature_id, &persisted, origin).await;
+        publish_generated_user_message(state, target_feature_id, &persisted, origin).await?;
         Some(message_uuid)
     } else {
         // Automatic reply/gate delivery is persisted before it is queued; the
@@ -157,7 +157,7 @@ pub(super) async fn persist_and_broadcast_generated_user_message(
         uuid::Uuid::new_v4(),
     )
     .await?;
-    publish_generated_user_message(state, target_feature_id, &message, origin).await;
+    publish_generated_user_message(state, target_feature_id, &message, origin).await?;
     Ok(message)
 }
 

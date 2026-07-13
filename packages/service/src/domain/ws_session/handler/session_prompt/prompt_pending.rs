@@ -6,16 +6,12 @@ use super::content::{
 };
 use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
+use super::prompt_receipt::clear_pending_prompt_receipt;
 use super::prompt_resume_resolution::refresh_resume_session_id_from_db;
 use super::prompt_status::{
     mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
 use super::prompt_worktree::{prepare_branch_provisioning, spawn_auto_name_if_needed};
-use super::runtime_mcp::{
-    attach_current_cadencr_browser_mcp, attach_current_cadencr_orchestration_mcps,
-    attach_current_cadencr_project_mcp, attach_current_cadencr_workspace_mcp, browser_mcp_enabled,
-    project_mcp_enabled, workspace_mcp_enabled,
-};
 use super::stream_reader::spawn_stream_reader;
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeSpawnConfig};
@@ -48,7 +44,9 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
     if !persistence.should_dispatch() {
         return Ok(());
     }
+    let receipt_message_uuid = persistence.tracked_message_uuid(&context.payload);
     let Some(adapter) = resolve_adapter_or_report(&context).await else {
+        fail_pending_receipt(&context, receipt_message_uuid.as_deref()).await;
         return Ok(());
     };
     mark_agent_running(
@@ -63,6 +61,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
     let auto_name_handled = match prepare_worktree(&mut context).await {
         Ok(handled) => handled,
         Err(error) => {
+            fail_pending_receipt(&context, receipt_message_uuid.as_deref()).await;
             report_branch_setup_error(context, error).await;
             return Ok(());
         }
@@ -70,63 +69,13 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
     reresolve_worktree_and_resume(&mut context).await;
     super::prompt_checkpoint::capture_pre_turn_pending(&context, persistence.message_id()).await;
     attach_permission_bridge(&mut context);
-    if let Err(error) = attach_cadencr_mcp(&mut context).await {
+    if let Err(error) = super::prompt_pending_mcp::attach_cadencr_mcp(&mut context).await {
+        fail_pending_receipt(&context, receipt_message_uuid.as_deref()).await;
         report_spawn_error(context, error).await;
         return Ok(());
     }
     validate_resume_id(adapter, &mut context);
-    spawn_runtime(context, adapter, auto_name_handled).await;
-    Ok(())
-}
-async fn attach_cadencr_mcp(context: &mut PendingPromptContext) -> Result<(), String> {
-    let pool = &context.app_state.read_pool;
-    let db_path = &context.app_state.db_path;
-    let feature_id = context.feature_id;
-    let session_id = context.db_session_id;
-    let service_url = format!("http://127.0.0.1:{}", context.app_state.port);
-    let control_token = context.app_state.mcp_control_token.clone();
-    let options = &mut context.options;
-    let browser_enabled = browser_mcp_enabled(pool).await;
-    let project_enabled = project_mcp_enabled(pool).await;
-    match (browser_enabled, project_enabled) {
-        (true, true) => {
-            let browser_bridge = context.app_state.browser_bridge_config()?;
-            attach_current_cadencr_orchestration_mcps(
-                options,
-                db_path,
-                feature_id,
-                session_id,
-                browser_bridge,
-                &service_url,
-                &control_token,
-            )?;
-        }
-        (true, false) => {
-            let browser_bridge = context.app_state.browser_bridge_config()?;
-            attach_current_cadencr_browser_mcp(options, db_path, feature_id, browser_bridge)?;
-        }
-        (false, true) => {
-            attach_current_cadencr_project_mcp(
-                options,
-                db_path,
-                feature_id,
-                session_id,
-                &service_url,
-                &control_token,
-            )?;
-        }
-        (false, false) => {}
-    }
-    if workspace_mcp_enabled(pool).await {
-        attach_current_cadencr_workspace_mcp(
-            options,
-            db_path,
-            feature_id,
-            session_id,
-            &service_url,
-            &control_token,
-        )?;
-    }
+    spawn_runtime(context, adapter, auto_name_handled, receipt_message_uuid).await;
     Ok(())
 }
 /// Correct stale session state from `session.init` before spawning. When a
@@ -279,6 +228,7 @@ async fn spawn_runtime(
     mut context: PendingPromptContext,
     adapter: &'static dyn AgentRuntimeAdapter,
     auto_name_handled: bool,
+    receipt_message_uuid: Option<String>,
 ) {
     info!(
         context.db_session_id,
@@ -300,7 +250,29 @@ async fn spawn_runtime(
     let options = std::mem::take(&mut context.options);
     match adapter.spawn(content_value, options).await {
         Ok(runtime_session) => register_runtime(context, runtime_session, auto_name_handled).await,
-        Err(error) => report_spawn_error(context, error.to_string()).await,
+        Err(error) => {
+            fail_pending_receipt(&context, receipt_message_uuid.as_deref()).await;
+            report_spawn_error(context, error.to_string()).await;
+        }
+    }
+}
+
+async fn fail_pending_receipt(context: &PendingPromptContext, message_uuid: Option<&str>) {
+    let Some(message_uuid) = message_uuid else {
+        return;
+    };
+    let owner_closed = clear_pending_prompt_receipt(
+        &context.app_state.ws_feature_senders,
+        &context.sender,
+        context.feature_id,
+        message_uuid.to_string(),
+    )
+    .await;
+    if owner_closed {
+        error!(
+            context.db_session_id,
+            "prompt delivery-failed receipt owner disconnected"
+        );
     }
 }
 

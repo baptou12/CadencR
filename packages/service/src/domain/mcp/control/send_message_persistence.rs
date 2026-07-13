@@ -41,6 +41,7 @@ pub(super) async fn persist_immediate_message(
     if persisted.inserted {
         persist_immediate_side_effects(&mut tx, &request, persisted.id).await?;
     }
+    validate_immediate_options(&mut tx, &request, persisted.id).await?;
     tx.commit().await?;
     let origin = crate::domain::sessions::repository::get_message_origin(
         &request.state.write_pool,
@@ -83,10 +84,13 @@ async fn persist_immediate_side_effects(
     message_id: i64,
 ) -> Result<(), AppError> {
     sqlx::query(
-        "INSERT INTO agent_message_dispatches (message_id, status)
-         VALUES (?, 'pending')",
+        "INSERT INTO agent_message_dispatches
+         (message_id, status, await_reply, link_to_current_session)
+         VALUES (?, 'pending', ?, ?)",
     )
     .bind(message_id)
+    .bind(request.await_reply)
+    .bind(request.link_to_current_session)
     .execute(&mut **tx)
     .await?;
     if request.await_reply {
@@ -121,6 +125,27 @@ async fn persist_immediate_side_effects(
         .await?;
     }
     Ok(())
+}
+
+async fn validate_immediate_options(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    request: &ImmediateMessageRequest<'_>,
+    message_id: i64,
+) -> Result<(), AppError> {
+    let options: (bool, bool) = sqlx::query_as(
+        "SELECT await_reply, link_to_current_session
+         FROM agent_message_dispatches WHERE message_id = ?",
+    )
+    .bind(message_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if options == (request.await_reply, request.link_to_current_session) {
+        return Ok(());
+    }
+    Err(AppError::Conflict(format!(
+        "message UUID {} was retried with different await_reply or link_to_current_session options",
+        request.message_uuid
+    )))
 }
 
 pub(super) async fn claim_immediate_dispatch(
@@ -287,6 +312,35 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(counts, (1, 1, 1, 1));
+    }
+
+    #[tokio::test]
+    async fn retry_rejects_changed_side_effect_options() {
+        let (_pool, state, source, target) = setup().await;
+        let message_uuid = uuid::Uuid::new_v4();
+        let request = |await_reply, link_to_current_session| ImmediateMessageRequest {
+            state: &state,
+            source: &source,
+            target: &target,
+            message: "same delegated prompt",
+            message_uuid,
+            source_note: None,
+            link_to_current_session,
+            await_reply,
+        };
+
+        persist_immediate_message(request(false, true))
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            persist_immediate_message(request(true, true)).await,
+            Err(AppError::Conflict(_))
+        ));
+        assert!(matches!(
+            persist_immediate_message(request(false, false)).await,
+            Err(AppError::Conflict(_))
+        ));
     }
 
     #[tokio::test]

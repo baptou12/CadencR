@@ -69,9 +69,12 @@ export function parsePermissionPayload(payload: unknown): {
   };
 }
 
-export function parseErrorPayload(
-  payload: unknown,
-): { code?: string; message?: string; mode?: string } | null {
+export function parseErrorPayload(payload: unknown): {
+  code?: string;
+  message?: string;
+  mode?: string;
+  receivedPromptMessageUuids: string[];
+} | null {
   const record = asRecord(payload);
   if (!record) return null;
   return {
@@ -80,6 +83,9 @@ export function parseErrorPayload(
     // Optional context attached to permission-mode rejections so the FE
     // can skip the rejected mode in the Shift+Tab cycle.
     mode: optionalString(record, "mode"),
+    receivedPromptMessageUuids: (
+      optionalArray(record, "received_prompt_message_uuids") ?? []
+    ).filter((value): value is string => typeof value === "string"),
   };
 }
 

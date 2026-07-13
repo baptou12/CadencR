@@ -202,7 +202,13 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
     .await
     .unwrap();
 
-    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(2);
+    msg_tx
+        .send(Ok(RuntimeEvent::prompt_received_event(
+            "error-receipt".to_string(),
+        )))
+        .await
+        .unwrap();
     msg_tx
         .send(Err(RuntimeError::from(SdkError::ProcessExit {
             code: Some(1),
@@ -222,13 +228,19 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
         crate::domain::agents::runtime::DEFAULT_PROVIDER,
     );
 
-    let msg = ws_rx.recv().await.unwrap();
-    if let Message::Text(text) = msg {
+    let error_payload = loop {
+        let Message::Text(text) = ws_rx.recv().await.unwrap() else {
+            continue;
+        };
         let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-        assert_eq!(env.action, "error");
-    } else {
-        panic!("expected text message");
-    }
+        if env.action == "error" {
+            break serde_json::from_value::<SessionErrorPayload>(env.payload).unwrap();
+        }
+    };
+    assert_eq!(
+        error_payload.received_prompt_message_uuids,
+        vec!["error-receipt"]
+    );
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 

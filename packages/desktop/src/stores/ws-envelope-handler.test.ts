@@ -72,6 +72,36 @@ describe("handleEnvelope turn_complete", () => {
       expect(stream.parentToolUseId).toBeNull();
     }
   });
+
+  it("rejects a malformed terminal payload without mutating the turn", () => {
+    vi.mocked(toast.error).mockClear();
+    const session = createSessionEntry();
+    session.lifecycle = transitionTurn(session.lifecycle, { type: "prompt_sent" });
+    session.blocks = [
+      {
+        id: "pending-user",
+        type: "user_message",
+        content: "hello",
+        messageUuid: crypto.randomUUID(),
+        promptDeliveryState: "pending_agent",
+      },
+    ];
+    const ctx = createTestContext(session);
+    const before = ctx.getSession("s1");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "ended",
+      payload: null,
+    });
+
+    expect(ctx.getSession("s1")).toBe(before);
+    expect(toast.error).toHaveBeenCalledWith(
+      "The agent sent an invalid turn-complete update. The conversation was not changed.",
+    );
+    warnSpy.mockRestore();
+  });
 });
 
 describe("handleEnvelope canonical user_message", () => {
@@ -363,6 +393,44 @@ describe("handleEnvelope workflow worktree events", () => {
 });
 
 describe("handleEnvelope error handling", () => {
+  it("reconciles observed receipts before failing remaining prompts on terminal error", () => {
+    const session = createSessionEntry();
+    session.blocks = [
+      {
+        id: "first",
+        type: "user_message",
+        content: "first",
+        messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+        promptDeliveryState: "pending_agent",
+      },
+      {
+        id: "second",
+        type: "user_message",
+        content: "second",
+        messageUuid: "293319b5-bf87-48a4-a454-cf9a452d3581",
+        promptDeliveryState: "pending_agent",
+      },
+    ];
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "error",
+      payload: {
+        code: "SDK_ERROR",
+        message: "stream failed",
+        received_prompt_message_uuids: ["a48cc11a-8a72-47f7-8577-d5c533d7909c"],
+      },
+    });
+
+    expect(
+      ctx
+        .getSession("s1")
+        .blocks.slice(0, 2)
+        .map((block) => block.promptDeliveryState),
+    ).toEqual(["received_agent", "delivery_failed"]);
+  });
+
   it("routes MODE_NOT_SUPPORTED to a toast and leaves the agent stream untouched", () => {
     vi.mocked(toast.error).mockClear();
     const session = createSessionEntry();

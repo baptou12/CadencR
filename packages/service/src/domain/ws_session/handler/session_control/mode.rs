@@ -233,6 +233,7 @@ fn mode_set_error_payload(
                 code: "MODE_REJECTED_BY_CLI".into(),
                 message: error.to_string(),
                 mode: Some(permission_mode_wire(new_mode)),
+                ..Default::default()
             }
         }
         _ => SessionErrorPayload {

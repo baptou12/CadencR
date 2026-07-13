@@ -45,19 +45,7 @@ pub(super) async fn create_forked_feature(
     .await?
     .last_insert_rowid();
 
-    // Share the source worktree: copy its worktree settings verbatim so the new
-    // feature resolves to the identical directory. The provisioning replay
-    // short-circuits on the already-present path, so no `git worktree add` (which
-    // would fail — the branch is already checked out) ever runs.
-    sqlx::query(
-        "INSERT INTO feature_settings (feature_id, key, value) \
-         SELECT ?, key, value FROM feature_settings \
-         WHERE feature_id = ? AND (key LIKE 'worktree%' OR key = 'skip_worktree')",
-    )
-    .bind(new_feature_id)
-    .bind(source_feature_id)
-    .execute(&mut *tx)
-    .await?;
+    copy_worktree_settings(&mut tx, new_feature_id, source_feature_id).await?;
 
     // The composer restores its draft from `feature_settings.draft_prompt`, so
     // the chosen message must land there (not the session-scoped column) to show
@@ -119,6 +107,25 @@ pub(super) async fn create_forked_feature(
         new_session_id,
         project_id,
     })
+}
+
+/// Share the source worktree verbatim. Provisioning then short-circuits on the
+/// existing path instead of attempting a second `git worktree add`.
+async fn copy_worktree_settings(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    new_feature_id: i64,
+    source_feature_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO feature_settings (feature_id, key, value) \
+         SELECT ?, key, value FROM feature_settings \
+         WHERE feature_id = ? AND (key LIKE 'worktree%' OR key = 'skip_worktree')",
+    )
+    .bind(new_feature_id)
+    .bind(source_feature_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// Mark the forked conversation's first message as session-generated from the
@@ -199,11 +206,12 @@ mod tests {
                 (9, 'unrelated_key', 'nope');
              INSERT INTO agent_sessions (id, feature_id, agent_type, runtime_provider, model, status)
                 VALUES (1, 9, 'session', 'claude_code', 'opus', 'paused');
-             INSERT INTO agent_messages (id, session_id, role, content, message_type) VALUES
-                (1, 1, 'user', 'q1', 'user_message'),
-                (2, 1, 'assistant', 'a1', 'text'),
-                (3, 1, 'user', 'q2', 'user_message'),
-                (4, 1, 'assistant', 'a2', 'text');",
+             INSERT INTO agent_messages
+                (id, session_id, role, content, message_type, message_uuid) VALUES
+                (1, 1, 'user', 'q1', 'user_message', 'a48cc11a-8a72-47f7-8577-d5c533d7909c'),
+                (2, 1, 'assistant', 'a1', 'text', NULL),
+                (3, 1, 'user', 'q2', 'user_message', NULL),
+                (4, 1, 'assistant', 'a2', 'text', NULL);",
         )
         .execute(&pool)
         .await
@@ -270,8 +278,9 @@ mod tests {
         assert_eq!(draft, "q2");
 
         // Only the pre-cut messages were copied, in order.
-        let copied: Vec<(String, String)> = sqlx::query_as(
-            "SELECT content, message_type FROM agent_messages WHERE session_id = ? ORDER BY id",
+        let copied: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT content, message_type, message_uuid
+             FROM agent_messages WHERE session_id = ? ORDER BY id",
         )
         .bind(fork.new_session_id)
         .fetch_all(&pool)
@@ -280,6 +289,11 @@ mod tests {
         assert_eq!(copied.len(), 2);
         assert_eq!(copied[0].0, "q1");
         assert_eq!(copied[1].0, "a1");
+        assert_eq!(
+            copied[0].2.as_deref(),
+            Some("a48cc11a-8a72-47f7-8577-d5c533d7909c")
+        );
+        assert_eq!(copied[1].2, None);
 
         // Source feature + session are untouched.
         let source_msgs: i64 =

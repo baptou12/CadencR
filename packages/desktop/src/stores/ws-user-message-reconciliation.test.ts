@@ -33,7 +33,7 @@ describe("canonical user-message reconciliation", () => {
 
   it("reconciles a canonical event with the same UUID even if the local key differs", () => {
     const existing: AgentBlockData = {
-      id: "msg-42",
+      id: "local-pending-message",
       type: "user_message",
       content: "hello",
       messageUuid: message().messageUuid,

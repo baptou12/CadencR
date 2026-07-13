@@ -120,7 +120,7 @@ pub(super) async fn send_message_handler(
     })
     .await?;
 
-    publish_generated_user_message(&state, target.feature_id, &persisted_message, origin).await;
+    publish_generated_user_message(&state, target.feature_id, &persisted_message, origin).await?;
     if persisted_message.inserted {
         state
             .feature_events_tx
@@ -277,7 +277,7 @@ pub(super) async fn publish_generated_user_message(
     target_feature_id: i64,
     message: &PersistedUserMessage,
     origin: AgentMessageOrigin,
-) {
+) -> Result<(), AppError> {
     publish_user_message(
         &state.ws_feature_senders,
         None,
@@ -286,7 +286,8 @@ pub(super) async fn publish_generated_user_message(
         Some(origin),
         false,
     )
-    .await;
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))
 }
 
 async fn ensure_send_budget(

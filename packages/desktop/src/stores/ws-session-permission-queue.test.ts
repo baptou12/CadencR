@@ -186,6 +186,11 @@ describe("ws-session-store permission queue", () => {
     expect(session.submittingPermissionRequestId).toBeNull();
     // Permission stays so the user can retry once the backend recovers.
     expect(session.pendingPermission?.requestId).toBe("req-1");
+
+    const firstPayload = response.payload as Record<string, unknown>;
+    useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+    const retry = JSON.parse(ws.sent.at(-1)!);
+    expect(retry.payload.message_uuid).toBe(firstPayload.message_uuid);
   });
 
   it("drops a duplicate respondToPermission call while one is already in flight", async () => {

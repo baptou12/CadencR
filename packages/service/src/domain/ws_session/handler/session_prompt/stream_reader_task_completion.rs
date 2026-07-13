@@ -123,7 +123,11 @@ impl StreamReaderTask {
         ))
     }
 
-    pub(super) async fn handle_stream_error(&self, state: &StreamReaderState, error: RuntimeError) {
+    pub(super) async fn handle_stream_error(
+        &self,
+        state: &mut StreamReaderState,
+        error: RuntimeError,
+    ) {
         let code = match &error {
             RuntimeError::CompactFailed(_) => "COMPACT_ERROR",
             _ => "SDK_ERROR",
@@ -134,14 +138,20 @@ impl StreamReaderTask {
             .diagnostics
             .dump(self.db_session_id, code, Some(&message));
         append_diagnostics_note(&mut message, self.db_session_id, dump);
-        self.surface_session_error(code, message).await;
+        let receipts = std::mem::take(&mut state.received_prompt_message_uuids);
+        self.surface_session_error(code, message, receipts).await;
     }
 
     /// Persist an error message, pause the session, announce idle, and emit a
     /// live `session.error` — the one proven path the frontend already renders.
     /// Shared by [`Self::handle_stream_error`] and the mid-turn stream-close
     /// path so a surfaced error always looks the same to the client.
-    async fn surface_session_error(&self, code: &str, message: String) {
+    async fn surface_session_error(
+        &self,
+        code: &str,
+        message: String,
+        received_prompt_message_uuids: Vec<String>,
+    ) {
         WsSessionPersistence::mark_paused_static(&self.write_pool, self.db_session_id).await;
         WsSessionPersistence::broadcast_session_status(
             &self.session_status_tx,
@@ -150,8 +160,13 @@ impl StreamReaderTask {
             AgentStatus::Idle,
             None,
         );
-        self.persist_and_emit_error(code, message.clone(), None)
-            .await;
+        self.persist_and_emit_error_with_receipts(
+            code,
+            message.clone(),
+            None,
+            received_prompt_message_uuids,
+        )
+        .await;
         if let Err(error) = crate::domain::mcp::control::reply_wait::deliver_failed(
             &self.app_state,
             self.db_session_id,
@@ -175,6 +190,17 @@ impl StreamReaderTask {
         message: String,
         parent_tool_use_id: Option<&str>,
     ) {
+        self.persist_and_emit_error_with_receipts(code, message, parent_tool_use_id, Vec::new())
+            .await;
+    }
+
+    async fn persist_and_emit_error_with_receipts(
+        &self,
+        code: &str,
+        message: String,
+        parent_tool_use_id: Option<&str>,
+        received_prompt_message_uuids: Vec<String>,
+    ) {
         WsSessionPersistence::persist_error_message_static(
             &self.write_pool,
             self.db_session_id,
@@ -188,6 +214,7 @@ impl StreamReaderTask {
             serde_json::to_value(SessionErrorPayload {
                 code: code.into(),
                 message,
+                received_prompt_message_uuids,
                 ..Default::default()
             })
             .unwrap(),
@@ -203,7 +230,7 @@ impl StreamReaderTask {
     /// (handled via [`Self::handle_stream_error`]); this covers the genuinely
     /// silent case (clean code-0 exit, empty stderr) so the user sees an error
     /// instead of an agent that simply froze.
-    pub(super) async fn handle_unexpected_stop(&self, state: &StreamReaderState) {
+    pub(super) async fn handle_unexpected_stop(&self, state: &mut StreamReaderState) {
         error!(
             self.db_session_id,
             "SDK stream closed mid-turn without a result"
@@ -213,7 +240,9 @@ impl StreamReaderTask {
             .diagnostics
             .dump(self.db_session_id, "AGENT_STOPPED", None);
         append_diagnostics_note(&mut message, self.db_session_id, dump);
-        self.surface_session_error("AGENT_STOPPED", message).await;
+        let receipts = std::mem::take(&mut state.received_prompt_message_uuids);
+        self.surface_session_error("AGENT_STOPPED", message, receipts)
+            .await;
     }
 
     pub(super) async fn send_stream_closed(&self, state: &mut StreamReaderState) {

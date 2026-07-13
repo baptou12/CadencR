@@ -64,6 +64,14 @@ async fn message_uuid_migration_preserves_legacy_rows_and_enforces_session_uniqu
             .unwrap(),
         "canonical user-message dispatch lifecycle table should exist"
     );
+    let dispatch_columns: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM pragma_table_info('agent_message_dispatches') ORDER BY cid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(dispatch_columns.contains(&"await_reply".to_string()));
+    assert!(dispatch_columns.contains(&"link_to_current_session".to_string()));
     let legacy: (String, Option<String>) =
         sqlx::query_as("SELECT content, message_uuid FROM agent_messages WHERE id = 7")
             .fetch_one(&pool)

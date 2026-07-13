@@ -32,14 +32,21 @@ impl WsBridgeCanUseTool {
         })
         .await;
         match result {
-            Ok(message) if message.inserted => {
+            Ok(outcome) if outcome.message.inserted => {
+                if let Err(error) = outcome.delivery {
+                    self.send_user_message_persist_error(&error.to_string());
+                }
                 self.app_state.feature_events_tx.emit(
                     self.feature_id,
                     None,
                     FeatureEventAction::Reordered,
                 );
             }
-            Ok(_) => {}
+            Ok(outcome) => {
+                if let Err(error) = outcome.delivery {
+                    self.send_user_message_persist_error(&error.to_string());
+                }
+            }
             Err(error) => self.send_user_message_persist_error(&error.to_string()),
         }
     }

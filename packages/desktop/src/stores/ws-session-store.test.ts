@@ -2322,7 +2322,13 @@ describe("ws-session-store", () => {
       useWsSessionStore.getState().approvePlan("s1");
       const permission = lastSentEnvelope(ws, "permission.respond");
       const permissionPayload = permission.payload as Record<string, unknown>;
-      simulateCanonicalUserMessage(ws, "Plan approved.", permissionPayload.message_uuid as string);
+      const messageUuid = permissionPayload.message_uuid;
+      expect(messageUuid).toEqual(expect.any(String));
+      if (typeof messageUuid !== "string" || messageUuid.length === 0) {
+        throw new Error("missing permission message_uuid");
+      }
+      expect(messageUuid).toMatch(/^[0-9a-f-]{36}$/i);
+      simulateCanonicalUserMessage(ws, "Plan approved.", messageUuid);
 
       const session = useWsSessionStore.getState().sessions["s1"];
       const userMsgs = session.blocks.filter((b) => b.type === "user_message");
@@ -2360,11 +2366,13 @@ describe("ws-session-store", () => {
       useWsSessionStore.getState().requestPlanChanges("s1", "Try again differently");
       const permission = lastSentEnvelope(ws, "permission.respond");
       const permissionPayload = permission.payload as Record<string, unknown>;
-      simulateCanonicalUserMessage(
-        ws,
-        "Try again differently",
-        permissionPayload.message_uuid as string,
-      );
+      const messageUuid = permissionPayload.message_uuid;
+      expect(messageUuid).toEqual(expect.any(String));
+      if (typeof messageUuid !== "string" || messageUuid.length === 0) {
+        throw new Error("missing permission message_uuid");
+      }
+      expect(messageUuid).toMatch(/^[0-9a-f-]{36}$/i);
+      simulateCanonicalUserMessage(ws, "Try again differently", messageUuid);
 
       const session = useWsSessionStore.getState().sessions["s1"];
       const userMsgs = session.blocks.filter((b) => b.type === "user_message");

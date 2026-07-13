@@ -8,7 +8,7 @@ use crate::domain::ws_session::protocol::{
     SlashCommandPayload, StreamStatusState, WsEnvelope, WsSessionAction,
 };
 
-use super::prompt_status::prompt_received_envelope;
+use super::prompt_receipt::prompt_received_envelope;
 use super::stream_reader_task::StreamReaderTask;
 
 pub(super) enum ForwardOutcome {

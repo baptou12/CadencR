@@ -38,6 +38,8 @@ mod tests {
 
         assert_eq!(payload.use_worktree, Some(true));
         assert!(payload.replay);
+        assert_eq!(payload.message_uuid, None);
+        assert!(!payload.track_prompt_receipt);
     }
 
     #[test]

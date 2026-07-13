@@ -8,9 +8,12 @@ mod mcp_servers;
 mod prompt_checkpoint;
 mod prompt_followup;
 mod prompt_pending;
+mod prompt_pending_mcp;
+mod prompt_receipt;
 mod prompt_resume_resolution;
 mod prompt_runtime_config;
 mod prompt_send;
+mod prompt_send_entry;
 mod prompt_status;
 mod prompt_worktree;
 mod runtime_mcp;
@@ -25,13 +28,14 @@ mod stream_reader_task_completion;
 mod stream_reader_task_error;
 mod stream_reader_task_event;
 mod stream_reader_turn_state;
+mod user_message_delivery;
 
 pub(crate) use bridge::PermissionResponse;
 pub(crate) use bridge::WsBridgeCanUseTool;
 pub(crate) use control_dispatch::{
     dispatch_control_prompt, dispatch_control_prompt_with_message_uuid,
 };
-pub(crate) use prompt_send::handle_prompt_send;
+pub(crate) use prompt_send_entry::handle_prompt_send;
 pub(crate) use prompt_status::{
     persist_and_publish_user_message, publish_user_message, CanonicalUserMessageRequest,
 };

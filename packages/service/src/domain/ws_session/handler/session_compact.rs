@@ -42,7 +42,9 @@ pub(super) async fn handle_compact(
             {
                 Ok(true) => {}
                 Ok(false) => {
-                    send_compact_started(sender, &envelope.id);
+                    if let Err(error) = send_compact_started(sender, &envelope.id) {
+                        tracing::warn!(error = %error, "compact.started reply delivery failed");
+                    }
                     return;
                 }
                 Err(message) => {
@@ -82,7 +84,7 @@ async fn persist_compact_command(
     let message_uuid =
         crate::domain::sessions::user_messages::canonical_user_message_uuid(message_uuid)
             .map_err(|_| "message_uuid must be a valid UUID".to_string())?;
-    let message = super::session_prompt::persist_and_publish_user_message(
+    let outcome = super::session_prompt::persist_and_publish_user_message(
         super::session_prompt::CanonicalUserMessageRequest {
             pool: &app_state.write_pool,
             feature_senders: &app_state.ws_feature_senders,
@@ -97,6 +99,10 @@ async fn persist_compact_command(
     )
     .await
     .map_err(|error| error.to_string())?;
+    if let Err(error) = outcome.delivery {
+        tracing::warn!(feature_id, session_id, error = %error, "compact command owner disconnected");
+    }
+    let message = outcome.message;
     if message.inserted {
         app_state.feature_events_tx.emit(
             feature_id,
@@ -182,17 +188,21 @@ async fn handle_active_runtime_compact(
         return;
     }
 
-    send_compact_started(sender, envelope_id);
+    if let Err(error) = send_compact_started(sender, envelope_id) {
+        tracing::warn!(error = %error, "compact.started reply delivery failed");
+    }
 }
 
-fn send_compact_started(sender: &WsSender, envelope_id: &str) {
+fn send_compact_started(sender: &WsSender, envelope_id: &str) -> Result<(), String> {
     let reply = WsEnvelope::session_reply(
         envelope_id,
         WsSessionAction::CompactStarted,
         serde_json::Value::Null,
     )
     .expect("compact started payload should serialize");
-    let _ = sender.send(Message::Text(String::from(reply).into()));
+    sender
+        .send(Message::Text(String::from(reply).into()))
+        .map_err(|_| "WebSocket connection closed before compact.started was delivered".to_string())
 }
 
 enum CompactTarget {

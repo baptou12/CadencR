@@ -43,12 +43,29 @@ pub(super) async fn persist_question_answer(
     })
     .await;
     match result {
-        Ok(message) if message.inserted => {
+        Ok(outcome) if outcome.message.inserted => {
+            if let Err(error) = outcome.delivery {
+                send_error(
+                    sender,
+                    envelope_id,
+                    "USER_MESSAGE_DELIVERY_FAILED",
+                    &error.to_string(),
+                );
+            }
             app_state
                 .feature_events_tx
                 .emit(feature_id, None, FeatureEventAction::Reordered);
         }
-        Ok(_) => {}
+        Ok(outcome) => {
+            if let Err(error) = outcome.delivery {
+                send_error(
+                    sender,
+                    envelope_id,
+                    "USER_MESSAGE_DELIVERY_FAILED",
+                    &error.to_string(),
+                );
+            }
+        }
         Err(error) => send_error(
             sender,
             envelope_id,

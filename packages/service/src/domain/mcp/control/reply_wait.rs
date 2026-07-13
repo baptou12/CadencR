@@ -231,6 +231,34 @@ mod tests {
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
     #[tokio::test]
+    async fn arm_refreshes_already_armed_and_failed_waits() {
+        let (pool, _state) = test_state().await;
+        for starting_status in ["armed", "failed"] {
+            sqlx::query(
+                "UPDATE agent_session_reply_waits
+                 SET status = ?, armed_at = '2000-01-01 00:00:00',
+                     delivered_at = datetime('now'), error = 'old failure'
+                 WHERE id = 1",
+            )
+            .bind(starting_status)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+            arm(&pool, 888, 1).await.unwrap();
+
+            let refreshed: (String, Option<String>, Option<String>) = sqlx::query_as(
+                "SELECT status, delivered_at, error
+                 FROM agent_session_reply_waits WHERE id = 1",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(refreshed, ("armed".to_string(), None, None));
+        }
+    }
+
+    #[tokio::test]
     async fn armed_result_delivers_envelope_with_responder_origin() {
         let (pool, state) = test_state().await;
 

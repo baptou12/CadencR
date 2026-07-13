@@ -12,9 +12,9 @@ use super::content::{
     build_content_value_for_provider, build_persist_content, payload_attachments,
 };
 use super::errors::persist_pause_and_send_session_error;
+use super::prompt_receipt::clear_pending_prompt_receipt;
 use super::prompt_status::{
-    clear_pending_prompt_receipt, mark_agent_running, persist_and_publish_prompt,
-    PromptPersistenceOutcome,
+    mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
 
 pub(super) struct FollowupPromptContext {
@@ -111,13 +111,19 @@ async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptS
         let message = error.to_string();
         error!(context.db_session_id, error = %message, "stream_input failed");
         if let Some(message_uuid) = receipt_message_uuid {
-            clear_pending_prompt_receipt(
+            let owner_closed = clear_pending_prompt_receipt(
                 &context.ws_feature_senders,
                 &context.sender,
                 context.feature_id,
                 message_uuid,
             )
             .await;
+            if owner_closed {
+                error!(
+                    context.db_session_id,
+                    "prompt delivery-failed receipt owner disconnected"
+                );
+            }
         }
         persist_pause_and_send_session_error(
             &context.write_pool,

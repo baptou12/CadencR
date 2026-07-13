@@ -110,6 +110,10 @@ impl From<RuntimePermissionOption> for PermissionOptionPayload {
 pub struct SessionErrorPayload {
     pub code: String,
     pub message: String,
+    /// Prompt receipts observed before a terminal stream failure. Clients mark
+    /// these received before failing any remaining pending prompts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub received_prompt_message_uuids: Vec<String>,
     /// Optional context carrying the permission-mode wire id involved in
     /// the failure. Set only for mode-related rejections (e.g.
     /// `MODE_REJECTED_BY_CLI`) so the FE can advance past the rejected

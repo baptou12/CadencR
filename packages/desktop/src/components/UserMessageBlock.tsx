@@ -15,6 +15,13 @@ interface UserMessageBlockProps {
   actions?: ReactNode;
 }
 
+const DELIVERY_BUBBLE_STYLES: Record<PromptDeliveryState, string> = {
+  pending_agent: "border-amber-500/50 bg-amber-500/10",
+  received_agent: "border-primary/30 bg-primary/10",
+  delivery_unknown: "border-border bg-muted/40",
+  delivery_failed: "border-destructive/50 bg-destructive/10",
+};
+
 export function UserMessageBlock({
   content,
   deliveryState,
@@ -34,13 +41,7 @@ export function UserMessageBlock({
         data-prompt-delivery-state={deliveryState}
         className={cn(
           "max-w-[80%] rounded-md border px-3 py-1.5 text-sm",
-          isPendingDelivery
-            ? "border-amber-500/50 bg-amber-500/10"
-            : isUnknownDelivery
-              ? "border-border bg-muted/40"
-              : isFailedDelivery
-                ? "border-destructive/50 bg-destructive/10"
-                : "border-primary/30 bg-primary/10",
+          deliveryState ? DELIVERY_BUBBLE_STYLES[deliveryState] : "border-primary/30 bg-primary/10",
         )}
       >
         <Markdown content={textContent} className="user-message-markdown" />

@@ -233,6 +233,14 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(message_types, vec!["user_message", "text"]);
+        let message_uuids: Vec<(String, Option<String>)> =
+            sqlx::query_as("SELECT role, message_uuid FROM agent_messages ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        let user_uuid = message_uuids[0].1.as_deref().expect("user UUID");
+        assert!(uuid::Uuid::parse_str(user_uuid).is_ok());
+        assert_eq!(message_uuids[1], ("assistant".to_string(), None));
     }
 
     #[tokio::test]
