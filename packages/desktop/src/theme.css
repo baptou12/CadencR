@@ -968,12 +968,17 @@
 :root[data-theme="catppuccin-mocha"] {
   color-scheme: dark;
   /* Tailwind semantic tokens */
-  --background: #1e1e2e;
+  /* Main workspace surface sits at mantle — one step below base — for a deeper,
+   * higher-contrast dark. Every workspace surface (agent stream, split panes,
+   * terminal, gutter) shares this mantle so the dark reads uniformly, with no
+   * isolated dark band around the split panes. The sidebar drops to crust to
+   * recede from the workspace. */
+  --background: #181825;
   --foreground: #cdd6f4;
   --card: #1e1e2e;
   --card-foreground: #cdd6f4;
-  /* Recessed grouping surface — the darker mantle sits below the base page. */
-  --surface-sunken: #181825;
+  /* Recessed grouping surface — crust sits below the mantle page. */
+  --surface-sunken: #11111b;
   --popover: #1e1e2e;
   --popover-foreground: #cdd6f4;
   --primary: #cba6f7;
@@ -981,7 +986,7 @@
   --secondary: #313244;
   --secondary-foreground: #cdd6f4;
   --muted: #313244;
-  /* subtext0 clears WCAG 4.5:1 on both --background (base) and --muted
+  /* subtext0 clears WCAG 4.5:1 on both --background (mantle) and --muted
    * (surface0), so it doubles as UI muted text. */
   --muted-foreground: #a6adc8;
   --accent: #45475a;
@@ -996,7 +1001,9 @@
   --chart-3: #a6e3a1;
   --chart-4: #89dceb;
   --chart-5: #fab387;
-  --sidebar: #181825;
+  /* Sidebar drops to crust — a step below the mantle workspace — so the nav
+   * rail reads as a darker, recessed frame around the lighter workspace. */
+  --sidebar: #11111b;
   --sidebar-foreground: #cdd6f4;
   --sidebar-primary: #cba6f7;
   --sidebar-primary-foreground: #1e1e2e;
@@ -1016,8 +1023,9 @@
   --acc-yellow: #f9e2af;
   --acc-comment: #7f849c;
 
-  /* Code surface — the darker mantle so code/bash blocks separate from base. */
-  --code-bg: #181825;
+  /* Code surface — crust, a step below the mantle page, so code/bash blocks
+   * stay recessed against the agent stream. */
+  --code-bg: #11111b;
   --code-fg: #cdd6f4;
 
   /* Agent-stream block surfaces — see Dracula block for naming. Backgrounds
@@ -1028,7 +1036,7 @@
   --block-thinking-accent: #cba6f7;
   --block-plan-bg: #1a1f2e;
   --block-plan-accent: #89b4fa;
-  --block-bash-header-bg: #181825;
+  --block-bash-header-bg: #1e1e2e;
   --block-bash-body-bg: #11111b;
   --block-bash-fg: #cdd6f4;
   --block-bash-muted-fg: #a6adc8;
@@ -1054,8 +1062,9 @@
   --chip-blue-bg: #89b4fa;
   --chip-blue-fg: #89b4fa;
 
-  /* CodeMirror editor — base surface sits a hair above --code-bg (mantle).
-   * Cursor is rosewater, per the Catppuccin style guide. */
+  /* CodeMirror editor — base surface, one rung above the mantle page and two
+   * above the crust --code-bg. Cursor is rosewater, per the Catppuccin style
+   * guide. */
   --editor-bg: #1e1e2e;
   --editor-fg: var(--code-fg);
   --editor-comment: var(--acc-comment);
@@ -1084,9 +1093,10 @@
 
   /* Terminal chrome — panel buttons, resize handles, cwd-warning banner.
    * The canvas-rendered xterm itself uses the JS palette in lib/themes/.
-   * Must equal that palette's background (base #1e1e2e) so the wrapper's
-   * horizontal padding doesn't frame the terminal in a darker gutter. */
-  --terminal-bg: #1e1e2e;
+   * Must equal that palette's background (mantle #181825) so the terminal
+   * matches the workspace surface and the wrapper's horizontal padding doesn't
+   * frame it in a differently-shaded gutter. */
+  --terminal-bg: #181825;
   --terminal-panel-icon: #6c7086;
   --terminal-panel-icon-hover: #cdd6f4;
   --terminal-panel-icon-bg-hover: #313244;

@@ -48,8 +48,8 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
       data-nav-type="feature"
       data-nav-id={String(feature.id)}
       data-nav-project-id={String(feature.project_id)}
-      className={`group/pinned relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md py-1.5 pl-2 pr-1.5 text-sm outline-none hover:bg-accent ${
-        isActive ? "bg-accent" : ""
+      className={`group/pinned relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md py-1.5 pl-2 pr-1.5 text-sm outline-none hover:bg-sidebar-accent ${
+        isActive ? "bg-sidebar-accent" : ""
       }`}
       onClick={(e) => {
         if (isActive || e.detail > 1) return;

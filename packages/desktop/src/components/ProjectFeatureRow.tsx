@@ -153,8 +153,8 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           data-nav-type="feature"
           data-nav-id={String(feature.id)}
           data-nav-project-id={String(projectId)}
-          className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none transition-colors hover:bg-accent ${
-            isActive ? "bg-accent" : ""
+          className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none transition-colors hover:bg-sidebar-accent ${
+            isActive ? "bg-sidebar-accent" : ""
           } ${isArchived ? "opacity-50" : ""}`}
           onClick={(e) => {
             if (isActive || e.detail > 1) return;

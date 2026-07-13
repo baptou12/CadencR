@@ -271,8 +271,8 @@ describe("ProjectFeatures", () => {
     );
     expect(screen.getByText("Feature Two")).toBeInTheDocument();
 
-    // Active-row color is the shared `bg-accent` — identical at every depth.
-    expect(childRow).toHaveClass("bg-accent");
+    // Active-row color is the shared `bg-sidebar-accent` — identical at every depth.
+    expect(childRow).toHaveClass("bg-sidebar-accent");
   });
 
   it("nests an active handoff child under its active parent", () => {
@@ -395,7 +395,7 @@ describe("ProjectFeatures", () => {
     );
     // Feature One should have active styling
     const featureEl = screen.getByText("Feature One").closest("[role=button]");
-    expect(featureEl).toHaveClass("bg-accent");
+    expect(featureEl).toHaveClass("bg-sidebar-accent");
   });
 
   it("navigates to feature on click", async () => {
