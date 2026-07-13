@@ -27,7 +27,7 @@ pub(super) async fn persist_immediate_message(
             session_id: request.target.session_id,
             content: request.message,
             message_uuid: request.message_uuid,
-            created_at: None,
+            delivery_state: Some("pending_agent"),
         },
     )
     .await?;

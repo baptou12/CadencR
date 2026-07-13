@@ -51,7 +51,7 @@ pub(crate) async fn dispatch_control_prompt_with_message_uuid(
     let mut payload = replay_payload(session_id, text, None, replay, message_uuid);
     let sender = control_sender();
 
-    if dispatch_to_active_owner(app_state, &sender, session_id, payload.clone()).await? {
+    if dispatch_to_active_owner(app_state, &sender, session_id, payload.clone(), replay).await? {
         return Ok(());
     }
 
@@ -63,6 +63,7 @@ pub(crate) async fn dispatch_control_prompt_with_message_uuid(
         &app_state.mcp_control_sessions,
         session_id,
         payload,
+        replay,
     )
     .await?;
     Ok(())
@@ -73,6 +74,7 @@ async fn dispatch_to_active_owner(
     sender: &WsSender,
     session_id: i64,
     payload: PromptSendPayload,
+    internal_replay: bool,
 ) -> Result<bool, AppError> {
     let Some(owner) = app_state.active_turns.owner_sessions(session_id).await else {
         return Ok(false);
@@ -96,6 +98,7 @@ async fn dispatch_to_active_owner(
                 sdk_sessions: owner.clone(),
                 active_turns: app_state.active_turns.clone(),
                 provider_id: handle.runtime_provider.clone(),
+                internal_replay,
             }),
             QueryState::Pending(_) => None,
         }
@@ -131,9 +134,17 @@ async fn dispatch_control_pending(
     sessions: &SdkSessions,
     session_id: i64,
     payload: PromptSendPayload,
+    internal_replay: bool,
 ) -> Result<(), AppError> {
-    let Some(context) =
-        pending_context_from_handle(app_state, sender, sessions, session_id, payload).await
+    let Some(context) = pending_context_from_handle(
+        app_state,
+        sender,
+        sessions,
+        session_id,
+        payload,
+        internal_replay,
+    )
+    .await
     else {
         return Ok(());
     };
@@ -148,6 +159,7 @@ async fn pending_context_from_handle(
     sessions: &SdkSessions,
     session_id: i64,
     payload: PromptSendPayload,
+    internal_replay: bool,
 ) -> Option<PendingPromptContext> {
     let mut guard = sessions.lock().await;
     let handle = guard.get_mut(&session_id)?;
@@ -175,6 +187,7 @@ async fn pending_context_from_handle(
         options,
         payload,
         permission_tx: None,
+        internal_replay,
     })
 }
 

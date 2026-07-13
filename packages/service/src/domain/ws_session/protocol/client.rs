@@ -68,8 +68,6 @@ pub struct PromptSendPayload {
     pub message_uuid: Option<String>,
     #[serde(default)]
     pub track_prompt_receipt: bool,
-    #[serde(default)]
-    pub replay: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -4,13 +4,13 @@ pub(super) fn replay_payload(
     session_id: i64,
     text: &str,
     use_worktree: Option<bool>,
-    replay: bool,
+    internal_replay: bool,
     message_uuid: Option<uuid::Uuid>,
 ) -> PromptSendPayload {
-    let track_prompt_receipt = replay && message_uuid.is_some();
+    let track_prompt_receipt = internal_replay && message_uuid.is_some();
     let message_uuid = match message_uuid {
         Some(message_uuid) => Some(message_uuid.to_string()),
-        None if replay => None,
+        None if internal_replay => None,
         None => Some(uuid::Uuid::new_v4().to_string()),
     };
     PromptSendPayload {
@@ -24,7 +24,6 @@ pub(super) fn replay_payload(
         new_project_branch: None,
         message_uuid,
         track_prompt_receipt,
-        replay,
     }
 }
 
@@ -37,7 +36,6 @@ mod tests {
         let payload = replay_payload(7, "start", Some(true), true, None);
 
         assert_eq!(payload.use_worktree, Some(true));
-        assert!(payload.replay);
         assert_eq!(payload.message_uuid, None);
         assert!(!payload.track_prompt_receipt);
     }
@@ -46,7 +44,6 @@ mod tests {
     fn non_replay_requests_user_message_persistence() {
         let payload = replay_payload(7, "scheduled", None, false, None);
 
-        assert!(!payload.replay);
         assert!(payload.message_uuid.is_some());
     }
 
@@ -57,6 +54,5 @@ mod tests {
 
         assert_eq!(payload.message_uuid, Some(message_uuid.to_string()));
         assert!(payload.track_prompt_receipt);
-        assert!(payload.replay);
     }
 }

@@ -1,7 +1,9 @@
 use axum::extract::ws::Message;
 
 use super::bridge::WsBridgeCanUseTool;
-use super::{persist_and_publish_user_message, CanonicalUserMessageRequest};
+use super::{
+    persist_and_publish_user_message, CanonicalUserMessageMode, CanonicalUserMessageRequest,
+};
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::sessions::user_messages::canonical_user_message_uuid;
 use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};
@@ -28,7 +30,7 @@ impl WsBridgeCanUseTool {
             content: text,
             message_uuid,
             origin: None,
-            pending_agent_receipt: false,
+            mode: CanonicalUserMessageMode::PersistOnly,
         })
         .await;
         match result {

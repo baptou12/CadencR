@@ -36,6 +36,16 @@ impl StreamReaderTask {
         track_background_agents(&mut state.live_background_agents, &runtime_event);
 
         if let Some(message_uuid) = runtime_event.prompt_received_client_message_id() {
+            if let Err(error) = crate::domain::sessions::user_messages::update_delivery_state(
+                &self.write_pool,
+                self.db_session_id,
+                message_uuid,
+                "received_agent",
+            )
+            .await
+            {
+                error!(self.db_session_id, error = %error, "failed to persist prompt receipt");
+            }
             if !state
                 .received_prompt_message_uuids
                 .iter()

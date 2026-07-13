@@ -8,6 +8,8 @@ pub(super) struct QueuedMessage {
     pub source_session_id: Option<i64>,
     pub content: String,
     pub message_uuid: Option<String>,
+    pub claim_token: String,
+    pub attempt_count: i64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -20,18 +22,28 @@ pub(super) async fn claim_next_message(
     pool: &sqlx::SqlitePool,
     target_session_id: i64,
 ) -> Result<Option<QueuedMessage>, AppError> {
+    let token = uuid::Uuid::new_v4().to_string();
     Ok(sqlx::query_as(
         "UPDATE agent_session_message_queue
-         SET status = 'delivering', error = NULL
+         SET status = 'delivering', error = NULL, claim_token = ?,
+             claimed_at = datetime('now'), attempt_count = attempt_count + 1
          WHERE id = (
              SELECT id
              FROM agent_session_message_queue
              WHERE target_session_id = ? AND status = 'pending'
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM agent_session_message_queue active
+                   WHERE active.target_session_id = ?
+                     AND active.status = 'delivering'
+               )
              ORDER BY id ASC
              LIMIT 1
          )
-         RETURNING id, source_session_id, content, message_uuid",
+         RETURNING id, source_session_id, content, message_uuid, claim_token, attempt_count",
     )
+    .bind(token)
+    .bind(target_session_id)
     .bind(target_session_id)
     .fetch_optional(pool)
     .await?)
@@ -59,6 +71,7 @@ pub(crate) async fn enqueue_message(
     .fetch_optional(pool)
     .await?;
     if let Some(row) = inserted {
+        super::notify_worker();
         return Ok(EnqueuedMessage {
             id: row.id,
             inserted: true,
@@ -81,6 +94,7 @@ pub(crate) async fn enqueue_message(
         &message_uuid,
     )?;
     retry_errored_identity(pool, &existing, &message_uuid).await?;
+    super::notify_worker();
     Ok(EnqueuedMessage {
         id: existing.id,
         inserted: false,
@@ -118,6 +132,7 @@ async fn retry_errored_identity(
     sqlx::query(
         "UPDATE agent_session_message_queue
          SET status = 'pending', delivered_at = NULL, error = NULL
+             , claim_token = NULL, claimed_at = NULL
          WHERE id = ? AND status = 'error' AND message_uuid = ?",
     )
     .bind(existing.id)
@@ -150,33 +165,53 @@ pub(super) fn queued_message_uuid(message: &QueuedMessage) -> Result<uuid::Uuid,
     }
 }
 
-pub(super) async fn mark_delivered(pool: &sqlx::SqlitePool, id: i64) -> Result<(), AppError> {
-    sqlx::query(
+pub(super) async fn mark_delivered(
+    pool: &sqlx::SqlitePool,
+    id: i64,
+    claim_token: &str,
+) -> Result<(), AppError> {
+    let result = sqlx::query(
         "UPDATE agent_session_message_queue
-         SET status = 'delivered', delivered_at = datetime('now'), error = NULL
-         WHERE id = ? AND status = 'delivering'",
+         SET status = 'delivered', delivered_at = datetime('now'), error = NULL,
+             claim_token = NULL, claimed_at = NULL
+         WHERE id = ? AND status = 'delivering' AND claim_token = ?",
     )
     .bind(id)
+    .bind(claim_token)
     .execute(pool)
     .await?;
+    require_claim_update(result.rows_affected(), id)?;
     Ok(())
 }
 
 pub(super) async fn mark_error(
     pool: &sqlx::SqlitePool,
     id: i64,
+    claim_token: &str,
     error: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    let result = sqlx::query(
         "UPDATE agent_session_message_queue
-         SET status = 'error', error = ?
-         WHERE id = ? AND status = 'delivering'",
+         SET status = 'error', error = ?, claim_token = NULL, claimed_at = NULL
+         WHERE id = ? AND status = 'delivering' AND claim_token = ?",
     )
     .bind(error)
     .bind(id)
+    .bind(claim_token)
     .execute(pool)
     .await?;
+    require_claim_update(result.rows_affected(), id)?;
     Ok(())
+}
+
+fn require_claim_update(rows_affected: u64, id: i64) -> Result<(), AppError> {
+    if rows_affected == 1 {
+        Ok(())
+    } else {
+        Err(AppError::Internal(format!(
+            "queued message {id} delivery claim is no longer current"
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -240,6 +275,42 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(status, "delivering");
+    }
+
+    #[tokio::test]
+    async fn concurrent_claims_serialize_delivery_per_target_session() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(tmp.path())
+            .create_if_missing(true);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(2)
+            .connect_with(options)
+            .await
+            .unwrap();
+        run_migrations(&MigrationContext::pool_only(&pool))
+            .await
+            .unwrap();
+        seed_queue_fixture(&pool).await;
+        sqlx::query(
+            "INSERT INTO agent_session_message_queue
+             (target_session_id, source_session_id, content, status)
+             VALUES (888, 777, 'second', 'pending')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let (first, second) = tokio::join!(
+            claim_next_message(&pool, 888),
+            claim_next_message(&pool, 888)
+        );
+        let claimed = [first.unwrap(), second.unwrap()]
+            .into_iter()
+            .flatten()
+            .count();
+
+        assert_eq!(claimed, 1);
     }
 
     #[tokio::test]

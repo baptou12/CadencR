@@ -262,7 +262,8 @@ mod tests {
     async fn armed_result_delivers_envelope_with_responder_origin() {
         let (pool, state) = test_state().await;
 
-        deliver_completed(&state, 888).await.unwrap();
+        let error = deliver_completed(&state, 888).await.unwrap_err();
+        assert!(error.to_string().contains("runtime adapter unavailable"));
         deliver_completed(&state, 888).await.unwrap();
 
         let delivered: (String, String, i64, i64, i64) = sqlx::query_as(
@@ -285,7 +286,7 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(status, "delivered");
+        assert_eq!(status, "failed");
         let reply_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM agent_messages
              WHERE session_id = 777 AND role = 'user' AND content LIKE '<cadencr-reply%'",
@@ -304,7 +305,8 @@ mod tests {
             .await
             .unwrap();
 
-        deliver_completed(&state, 888).await.unwrap();
+        let error = deliver_completed(&state, 888).await.unwrap_err();
+        assert!(error.to_string().contains("runtime adapter unavailable"));
 
         let content: String = sqlx::query_scalar(
             "SELECT content FROM agent_messages

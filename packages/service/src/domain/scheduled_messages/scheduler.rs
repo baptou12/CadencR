@@ -32,20 +32,27 @@ pub fn spawn(state: AppState) {
 }
 
 async fn tick(state: &AppState) -> Result<(), AppError> {
-    let due = repository::list_due(&state.read_pool).await?;
-    for msg in due {
+    while let Some(claimed) = repository::claim_due(&state.write_pool).await? {
+        let msg = claimed.message;
         // Mark terminal state regardless of dispatch outcome so a persistently
         // failing row can never wedge the loop or re-fire every tick.
         match dispatch_due(state, &msg).await {
             Ok(()) => {
-                if let Err(e) = repository::mark_sent(&state.write_pool, msg.id).await {
+                if let Err(e) =
+                    repository::mark_sent(&state.write_pool, msg.id, &claimed.claim_token).await
+                {
                     warn!(error = %e, id = msg.id, "failed to mark scheduled message sent");
                 }
             }
             Err(e) => {
                 warn!(error = %e, id = msg.id, feature_id = msg.feature_id, "scheduled message dispatch failed");
-                if let Err(e) =
-                    repository::mark_failed(&state.write_pool, msg.id, &e.to_string()).await
+                if let Err(e) = repository::mark_failed(
+                    &state.write_pool,
+                    msg.id,
+                    &claimed.claim_token,
+                    &e.to_string(),
+                )
+                .await
                 {
                     warn!(error = %e, id = msg.id, "failed to mark scheduled message failed");
                 }

@@ -393,6 +393,28 @@ describe("handleEnvelope workflow worktree events", () => {
 });
 
 describe("handleEnvelope error handling", () => {
+  it("fails pending prompts even when the terminal error has no message text", () => {
+    const session = createSessionEntry();
+    session.blocks = [
+      {
+        id: "pending",
+        type: "user_message",
+        content: "steer",
+        messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
+        promptDeliveryState: "pending_agent",
+      },
+    ];
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "error",
+      payload: { code: "SDK_ERROR" },
+    });
+
+    expect(ctx.getSession("s1").blocks[0].promptDeliveryState).toBe("delivery_failed");
+  });
+
   it("reconciles observed receipts before failing remaining prompts on terminal error", () => {
     const session = createSessionEntry();
     session.blocks = [

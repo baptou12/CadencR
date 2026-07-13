@@ -181,6 +181,7 @@ fn build_followup_context(
         sdk_sessions: sdk_sessions.clone(),
         active_turns: app_state.active_turns.clone(),
         provider_id,
+        internal_replay: false,
     }
 }
 
@@ -297,6 +298,7 @@ pub(super) async fn spawn_pending_prompt(
         options,
         payload,
         permission_tx: None,
+        internal_replay: false,
     };
     drop(sessions);
     // Persist user message in the pending helper after releasing sdk_sessions.
@@ -389,9 +391,6 @@ fn parse_prompt_session_id(
 }
 
 fn normalize_prompt_message_uuid(payload: &mut PromptSendPayload) -> Result<(), String> {
-    if payload.replay {
-        return Ok(());
-    }
     let message_uuid = canonical_user_message_uuid(payload.message_uuid.as_deref())
         .map_err(|_| "message_uuid must be a valid UUID".to_string())?
         .to_string();

@@ -1,23 +1,18 @@
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
-#[path = "send_message_dispatch.rs"]
-mod dispatch;
 #[path = "send_message_persistence.rs"]
 mod persistence;
 #[path = "send_message_audit.rs"]
 mod send_audit;
 
-use self::dispatch::{
-    claim_immediate_dispatch, mark_immediate_dispatch_failed, mark_immediate_dispatch_succeeded,
-    ImmediateDispatchClaim,
-};
 use self::persistence::{insert_message_link, persist_immediate_message, ImmediateMessageRequest};
 use self::send_audit::{audit_send_message, audit_send_message_error};
 use super::message_queue::enqueue_message;
 use super::scope::resolve_session_scope;
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
+use crate::domain::sessions::message_dispatch::{self, DispatchClaim};
 use crate::domain::sessions::models::AgentMessageOrigin;
 use crate::domain::sessions::user_messages::PersistedUserMessage;
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt_with_message_uuid;
@@ -47,6 +42,8 @@ pub(super) struct SendMessageResponse {
     queue_id: Option<i64>,
     #[serde(rename = "targetSessionId")]
     target_session_id: i64,
+    #[serde(rename = "messageUuid")]
+    message_uuid: String,
 }
 
 pub(super) async fn send_message_handler(
@@ -128,7 +125,7 @@ pub(super) async fn send_message_handler(
             .feature_events_tx
             .emit(target.feature_id, None, FeatureEventAction::Reordered);
     }
-    dispatch_immediate_message_once(
+    if let Err(error) = dispatch_immediate_message_once(
         &state,
         &target,
         message,
@@ -136,11 +133,16 @@ pub(super) async fn send_message_handler(
         persisted_message.id,
         reply,
     )
-    .await?;
+    .await
+    {
+        audit_send_message_error(&state, &source, &target, &error.to_string(), started_at).await?;
+        return Err(error);
+    }
     let response = SendMessageResponse {
         message_id: Some(persisted_message.id),
         queue_id: None,
         target_session_id: target.session_id,
+        message_uuid: message_uuid.to_string(),
     };
     audit_send_message(&state, &source, &target, &response, started_at).await?;
     Ok(Json(response))
@@ -186,6 +188,7 @@ async fn queue_busy_message(
         message_id: None,
         queue_id: Some(queued.id),
         target_session_id: request.target.session_id,
+        message_uuid: request.message_uuid.to_string(),
     };
     audit_send_message(
         request.state,
@@ -253,16 +256,22 @@ async fn dispatch_immediate_message_once(
     message_id: i64,
     reply: ReplyMode,
 ) -> Result<(), AppError> {
-    let claim = claim_immediate_dispatch(&state.write_pool, message_id).await?;
-    let ImmediateDispatchClaim::Claimed { token } = claim else {
-        return Ok(());
+    let claim = message_dispatch::claim(&state.write_pool, message_id).await?;
+    let token = match claim {
+        DispatchClaim::Claimed { token } => token,
+        DispatchClaim::Dispatched => return Ok(()),
+        DispatchClaim::InProgress => {
+            return Err(AppError::Conflict(format!(
+                "message {message_id} is already being dispatched; retry with the same message UUID"
+            )))
+        }
     };
     if let Err(dispatch_error) =
         dispatch_immediate_message(state, target, message, message_uuid, message_id, reply).await
     {
         let dispatch_message = dispatch_error.to_string();
         if let Err(status_error) =
-            mark_immediate_dispatch_failed(&state.write_pool, message_id, &token, &dispatch_message)
+            message_dispatch::mark_failed(&state.write_pool, message_id, &token, &dispatch_message)
                 .await
         {
             return Err(AppError::Internal(format!(
@@ -271,7 +280,7 @@ async fn dispatch_immediate_message_once(
         }
         return Err(dispatch_error);
     }
-    mark_immediate_dispatch_succeeded(&state.write_pool, message_id, &token).await
+    message_dispatch::mark_succeeded(&state.write_pool, message_id, &token).await
 }
 
 pub(super) async fn publish_generated_user_message(

@@ -37,7 +37,8 @@ pub(crate) use control_dispatch::{
 };
 pub(crate) use prompt_send_entry::handle_prompt_send;
 pub(crate) use prompt_status::{
-    persist_and_publish_user_message, publish_user_message, CanonicalUserMessageRequest,
+    persist_and_publish_user_message, publish_user_message, CanonicalUserMessageMode,
+    CanonicalUserMessageRequest,
 };
 #[allow(unused_imports)]
 pub(crate) use stream_reader::spawn_stream_reader;

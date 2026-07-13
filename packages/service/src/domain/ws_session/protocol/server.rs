@@ -3,6 +3,7 @@ use utoipa::ToSchema;
 
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 use crate::domain::sessions::models::AgentMessageOrigin;
+pub use crate::domain::sessions::models::UserMessageDeliveryState;
 
 use super::{GateCloseReason, PermissionDecision, WsEnvelope, WsSessionAction};
 
@@ -137,12 +138,6 @@ pub struct GateClosedPayload {
     pub session_id: String,
     pub request_id: Option<String>,
     pub reason: GateCloseReason,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum UserMessageDeliveryState {
-    PendingAgent,
 }
 
 /// `session.user_message` — the canonical persisted user-message event sent to

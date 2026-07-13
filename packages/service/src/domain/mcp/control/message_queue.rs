@@ -14,25 +14,147 @@ use crate::domain::sessions::user_messages::{
 };
 use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt_with_message_uuid;
 use crate::error::AppError;
+use futures::{stream, StreamExt};
+use std::sync::OnceLock;
+use tokio::sync::Notify;
+
+static QUEUE_WORKER_NOTIFY: OnceLock<Notify> = OnceLock::new();
+
+fn worker_notify() -> &'static Notify {
+    QUEUE_WORKER_NOTIFY.get_or_init(Notify::new)
+}
+
+pub(super) fn notify_worker() {
+    worker_notify().notify_one();
+}
+
+pub fn spawn(state: AppState) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {}
+                _ = worker_notify().notified() => {}
+            }
+            if let Err(error) = drain_idle_queues_once(&state).await {
+                tracing::error!(error = %error, "queued message background drain failed");
+            }
+        }
+    });
+}
+
+async fn drain_idle_queues_once(state: &AppState) -> Result<(), AppError> {
+    let targets: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT DISTINCT q.target_session_id, s.feature_id
+         FROM agent_session_message_queue q
+         JOIN agent_sessions s ON s.id = q.target_session_id
+         WHERE q.status = 'pending'
+           AND s.status NOT IN (
+             'running', 'awaiting_permission', 'awaiting_question',
+             'waiting_for_permission', 'waiting_for_question'
+           )",
+    )
+    .fetch_all(&state.read_pool)
+    .await?;
+    stream::iter(targets)
+        .for_each_concurrent(4, |(session_id, feature_id)| async move {
+            if let Err(error) = drain_next_queued_message(state, feature_id, session_id).await {
+                tracing::error!(session_id, error = %error, "queued message delivery failed");
+            }
+        })
+        .await;
+    Ok(())
+}
 
 pub(crate) async fn drain_next_queued_message(
     state: &AppState,
     target_feature_id: i64,
     target_session_id: i64,
 ) -> Result<bool, AppError> {
-    let Some(message) = claim_next_message(&state.write_pool, target_session_id).await? else {
-        return Ok(false);
-    };
-    match deliver_message(state, target_feature_id, target_session_id, &message).await {
-        Ok(()) => {
-            mark_delivered(&state.write_pool, message.id).await?;
-            Ok(true)
-        }
-        Err(error) => {
-            mark_error(&state.write_pool, message.id, &error.to_string()).await?;
-            Err(error)
+    let mut last_error = None;
+    loop {
+        let Some(message) = claim_next_message(&state.write_pool, target_session_id).await? else {
+            return match last_error {
+                Some(error) => Err(error),
+                None => Ok(false),
+            };
+        };
+        match deliver_message(state, target_feature_id, target_session_id, &message).await {
+            Ok(()) => {
+                mark_delivered(&state.write_pool, message.id, &message.claim_token).await?;
+                return Ok(true);
+            }
+            Err(error) => {
+                mark_error(
+                    &state.write_pool,
+                    message.id,
+                    &message.claim_token,
+                    &error.to_string(),
+                )
+                .await?;
+                last_error = match surface_delivery_failure(
+                    state,
+                    target_feature_id,
+                    target_session_id,
+                    &message,
+                    &error,
+                )
+                .await
+                {
+                    Ok(()) => Some(error),
+                    Err(notification_error) => Some(AppError::Internal(format!(
+                        "{error}; additionally failed to notify the requesting session: {notification_error}"
+                    ))),
+                };
+            }
         }
     }
+}
+
+async fn surface_delivery_failure(
+    state: &AppState,
+    target_feature_id: i64,
+    target_session_id: i64,
+    message: &QueuedMessage,
+    error: &AppError,
+) -> Result<(), AppError> {
+    let Some(source_session_id) = message.source_session_id else {
+        return Ok(());
+    };
+    let source = resolve_session_scope(&state.write_pool, source_session_id).await?;
+    let target = resolve_session_scope(&state.write_pool, target_session_id).await?;
+    let notification_uuid = uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_URL,
+        format!(
+            "cadencr:queued-message-delivery-error:{}:{}",
+            message.id, message.attempt_count
+        )
+        .as_bytes(),
+    );
+    let content = format!(
+        "<cadencr-delivery-error target-session=\"{target_session_id}\" target-feature=\"{target_feature_id}\" queue-id=\"{}\">\nQueued message delivery failed: {error}\n</cadencr-delivery-error>",
+        message.id
+    );
+    let (persisted, origin) = persist_generated_user_message(
+        state,
+        source.session_id,
+        &target,
+        &content,
+        "queued project_send_session_message delivery failure",
+        notification_uuid,
+    )
+    .await?;
+    publish_generated_user_message(state, source.feature_id, &persisted, origin).await?;
+    dispatch_control_prompt_with_message_uuid(
+        state,
+        source.feature_id,
+        source.session_id,
+        &content,
+        true,
+        Some(notification_uuid),
+    )
+    .await
 }
 
 async fn deliver_message(
@@ -87,7 +209,7 @@ async fn persist_generated_user_message(
             session_id: target_session_id,
             content,
             message_uuid,
-            created_at: None,
+            delivery_state: Some("pending_agent"),
         },
     )
     .await?;
@@ -169,7 +291,7 @@ mod tests {
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
     #[tokio::test]
-    async fn drain_next_queued_message_persists_origin_and_marks_delivered() {
+    async fn failed_queue_delivery_persists_origin_and_marks_error() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&MigrationContext {
             pool: &pool,
@@ -181,15 +303,17 @@ mod tests {
         seed_queue_fixture(&pool).await;
         let state = AppState::with_pool(pool.clone());
 
-        let delivered = drain_next_queued_message(&state, 43, 888).await.unwrap();
+        let error = drain_next_queued_message(&state, 43, 888)
+            .await
+            .unwrap_err();
 
-        assert!(delivered);
+        assert!(error.to_string().contains("runtime adapter unavailable"));
         let status: String =
             sqlx::query_scalar("SELECT status FROM agent_session_message_queue WHERE id = 1")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(status, "delivered");
+        assert_eq!(status, "error");
         let origin: (String, i64, i64, i64) = sqlx::query_as(
             "SELECT origin_kind, source_session_id, source_feature_id, source_project_id
              FROM agent_message_origins
@@ -200,6 +324,14 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(origin, ("session_generated".into(), 777, 42, 7));
+        let notification: String = sqlx::query_scalar(
+            "SELECT content FROM agent_messages
+             WHERE session_id = 777 AND content LIKE '<cadencr-delivery-error%'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(notification.contains("queue-id=\"1\""));
     }
 
     #[tokio::test]
@@ -230,7 +362,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(drain_next_queued_message(&state, 43, 888).await.unwrap());
+        let error = drain_next_queued_message(&state, 43, 888)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("runtime adapter unavailable"));
 
         let status: String = sqlx::query_scalar("SELECT status FROM agent_sessions WHERE id = 888")
             .fetch_one(&pool)
@@ -249,5 +384,35 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(message_count, 1);
+    }
+
+    #[tokio::test]
+    async fn one_failed_delivery_does_not_strand_later_pending_rows() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&MigrationContext::pool_only(&pool))
+            .await
+            .unwrap();
+        seed_queue_fixture(&pool).await;
+        enqueue_message(
+            &pool,
+            888,
+            Some(777),
+            "second queued item",
+            uuid::Uuid::new_v4(),
+        )
+        .await
+        .unwrap();
+        let state = AppState::with_pool(pool.clone());
+
+        drain_next_queued_message(&state, 43, 888)
+            .await
+            .unwrap_err();
+
+        let statuses: Vec<String> =
+            sqlx::query_scalar("SELECT status FROM agent_session_message_queue ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(statuses, vec!["error", "error"]);
     }
 }

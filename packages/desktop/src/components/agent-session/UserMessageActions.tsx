@@ -1,10 +1,12 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { CopyIcon, CheckIcon, RotateCcwIcon, GitBranchIcon } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CopyIcon, CheckIcon, RotateCcwIcon, GitBranchIcon, RefreshCwIcon } from "lucide-react";
 import { copyAs } from "@/lib/markdown-export";
-import { parseUserMessageContent } from "@/types/agent-types";
+import { parseUserMessageContent, type PromptAttachmentPayload } from "@/types/agent-types";
 import { cn } from "@/lib/utils";
 import type { AgentBlockData } from "../AgentBlock";
 import { useMessageBranchActions } from "./use-message-branch-actions";
+import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useAgentSessionContext } from "./agent-session-context";
 
 interface UserMessageActionsProps {
   block: AgentBlockData;
@@ -18,6 +20,10 @@ interface UserMessageActionsProps {
 function UserMessageActionsImpl({ block }: UserMessageActionsProps) {
   const [copied, setCopied] = useState(false);
   const { canBranch, rewind, fork } = useMessageBranchActions(block);
+  const { wsSessionId } = useAgentSessionContext();
+  const sendPrompt = useWsSessionStore((s) => s.sendPrompt);
+  const parsedContent = useMemo(() => parseUserMessageContent(block.content), [block.content]);
+  const retry = useUserMessageRetry(block, wsSessionId, parsedContent, sendPrompt);
   // Virtuoso recycles stream rows, so a row can unmount inside the 1.5s window —
   // track the timer and clear it on unmount to avoid a dangling timeout.
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -30,12 +36,11 @@ function UserMessageActionsImpl({ block }: UserMessageActionsProps) {
   );
 
   const handleCopy = useCallback(() => {
-    const { text } = parseUserMessageContent(block.content);
-    void copyAs("markdown", text);
+    void copyAs("markdown", parsedContent.text);
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 1500);
-  }, [block.content]);
+  }, [parsedContent.text]);
 
   return (
     <div className="mt-2 mb-2 flex items-center gap-1 opacity-0 transition-opacity group-hover/usermsg:opacity-100">
@@ -52,6 +57,20 @@ function UserMessageActionsImpl({ block }: UserMessageActionsProps) {
           </>
         )}
       </ActionButton>
+      {retry.visible && (
+        <ActionButton
+          disabled={!retry.available}
+          onClick={retry.send}
+          title={
+            retry.available
+              ? "Retry delivery with the same message identity"
+              : "Retry unavailable because the original attachment data is not stored"
+          }
+        >
+          <RefreshCwIcon className="size-3" />
+          <span>Retry</span>
+        </ActionButton>
+      )}
       {canBranch && (
         <>
           <ActionButton onClick={fork} title="Fork a new session from this message">
@@ -68,13 +87,63 @@ function UserMessageActionsImpl({ block }: UserMessageActionsProps) {
   );
 }
 
+type ParsedMessage = ReturnType<typeof parseUserMessageContent>;
+type SendPrompt = ReturnType<typeof useWsSessionStore.getState>["sendPrompt"];
+
+function useUserMessageRetry(
+  block: AgentBlockData,
+  wsSessionId: string | null,
+  content: ParsedMessage,
+  sendPrompt: SendPrompt,
+) {
+  const attachments = useMemo(() => retryAttachments(content), [content]);
+  const available = content.attachments.every((attachment) => attachment.base64 !== undefined);
+  const visible =
+    wsSessionId != null &&
+    block.messageUuid != null &&
+    (block.promptDeliveryState === "delivery_failed" ||
+      block.promptDeliveryState === "delivery_unknown");
+  const send = useCallback(() => {
+    if (!wsSessionId || !block.messageUuid || !available) return;
+    sendPrompt(wsSessionId, content.text, {
+      messageUuid: block.messageUuid,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
+  }, [attachments, available, block.messageUuid, content.text, sendPrompt, wsSessionId]);
+  return useMemo(() => ({ available, send, visible }), [available, send, visible]);
+}
+
+function retryAttachments(content: ParsedMessage): PromptAttachmentPayload[] {
+  const images: PromptAttachmentPayload[] = content.images.map((image) => ({
+    base64: image.data,
+    fileName: "image",
+    kind: "image",
+    mimeType: image.mediaType,
+  }));
+  const files = content.attachments.flatMap((attachment) =>
+    attachment.base64
+      ? [
+          {
+            base64: attachment.base64,
+            fileName: attachment.fileName,
+            kind: attachment.kind,
+            mimeType: attachment.mimeType,
+          },
+        ]
+      : [],
+  );
+  return [...images, ...files];
+}
+
 function ActionButton({
   onClick,
   title,
+  disabled = false,
   children,
 }: {
   onClick: () => void;
   title: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -82,9 +151,11 @@ function ActionButton({
       type="button"
       onClick={onClick}
       title={title}
+      disabled={disabled}
       className={cn(
         "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-foreground/70",
         "transition-colors hover:bg-accent hover:text-foreground",
+        "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-foreground/70",
       )}
     >
       {children}

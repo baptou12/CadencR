@@ -1,5 +1,6 @@
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { SlashCommandKind } from "@/hooks/useSlashCommand";
+import { normalizeMessageUuid } from "@/lib/message-uuid";
 
 /**
  * WebSocket envelope utilities for communicating with the Rust Axum WS endpoint.
@@ -78,7 +79,6 @@ export interface PromptDispatchOptions {
 
 export interface PromptSendOptions extends PromptDispatchOptions {
   trackPromptReceipt?: boolean;
-  replay?: boolean;
 }
 
 export function createPromptSend(
@@ -87,7 +87,9 @@ export function createPromptSend(
   options: PromptSendOptions = {},
 ): WsEnvelope {
   const { branchSetup } = options;
-  const messageUuid = options.messageUuid ?? crypto.randomUUID();
+  const messageUuid = options.messageUuid
+    ? normalizeMessageUuid(options.messageUuid)
+    : crypto.randomUUID();
   return createEnvelope("session", "prompt.send", {
     session_id: sessionId,
     text,
@@ -98,9 +100,8 @@ export function createPromptSend(
     ...(branchSetup?.kind === "project_branch"
       ? { new_project_branch: { base: branchSetup.base } }
       : {}),
-    ...(!options.replay ? { message_uuid: messageUuid } : {}),
+    message_uuid: messageUuid,
     ...(options.trackPromptReceipt ? { track_prompt_receipt: true } : {}),
-    ...(options.replay ? { replay: true } : {}),
     ...(options.claudeProfile ? { profile: options.claudeProfile } : {}),
   });
 }

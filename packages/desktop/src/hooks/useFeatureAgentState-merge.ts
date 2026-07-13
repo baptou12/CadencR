@@ -27,6 +27,7 @@ export function serverBlocksToAgentBlocks(serverBlocks: AgentBlock[]): AgentBloc
     return {
       id: sb.id,
       messageUuid: nullToUndefined(sb.messageUuid),
+      promptDeliveryState: nullToUndefined(sb.promptDeliveryState),
       messageDbId: messageDbIdFromBlockId(sb.id) ?? undefined,
       type: sb.type as AgentBlockData["type"],
       content: sb.content,

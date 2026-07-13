@@ -11,7 +11,7 @@ mod gate_envelope;
 pub(crate) mod gate_notify;
 mod gate_policy;
 mod gate_respond;
-pub(crate) mod message_queue;
+pub mod message_queue;
 mod reply_audit;
 mod reply_envelope;
 pub(crate) mod reply_wait;
@@ -173,7 +173,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_message_persists_generated_message_origin_and_link() {
+    async fn failed_send_surfaces_error_after_persisting_origin_and_link() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         seed_send_message_schema(&pool, "paused").await;
         let state = AppState::with_pool(pool.clone());
@@ -194,7 +194,7 @@ mod tests {
 
         let response = app.oneshot(req).await.unwrap();
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let message_id: i64 = sqlx::query_scalar(
             "SELECT id FROM agent_messages WHERE session_id = 888 AND role = 'user'",
         )
@@ -215,6 +215,15 @@ mod tests {
                 "Please verify the migration provenance path.".into()
             )
         );
+        let dispatch: (String, String) = sqlx::query_as(
+            "SELECT status, error FROM agent_message_dispatches WHERE message_id = ?",
+        )
+        .bind(message_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(dispatch.0, "error");
+        assert!(dispatch.1.contains("runtime adapter unavailable"));
         let origin: (String, i64, i64, i64, String) = sqlx::query_as(
             "SELECT origin_kind, source_session_id, source_feature_id, source_project_id, note FROM agent_message_origins WHERE message_id = ?",
         )
@@ -255,7 +264,7 @@ mod tests {
                 42,
                 7,
                 888,
-                "ok".into()
+                "error".into()
             )
         );
     }
@@ -382,12 +391,12 @@ mod tests {
             CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL);
             CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT NOT NULL);
             CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL, status TEXT NOT NULL, runtime_provider TEXT, runtime_session_id TEXT, model TEXT, profile TEXT, permission_mode TEXT, codex_permission_mode TEXT DEFAULT 'default', pending_permission TEXT, pending_questions TEXT, input_tokens INTEGER, output_tokens INTEGER, context_window INTEGER, thinking_effort TEXT);
-            CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL, message_uuid TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+            CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL, message_uuid TEXT, delivery_state TEXT CHECK (delivery_state IS NULL OR delivery_state IN ('pending_agent', 'received_agent', 'delivery_unknown', 'delivery_failed')), created_at TEXT NOT NULL DEFAULT (datetime('now')));
             CREATE UNIQUE INDEX idx_agent_messages_session_message_uuid ON agent_messages(session_id, message_uuid) WHERE message_uuid IS NOT NULL;
-            CREATE TABLE agent_message_dispatches (message_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending', attempt_count INTEGER NOT NULL DEFAULT 0, claim_token TEXT, claimed_at TEXT, dispatched_at TEXT, error TEXT, await_reply INTEGER NOT NULL DEFAULT 0, link_to_current_session INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+            CREATE TABLE agent_message_dispatches (message_id INTEGER PRIMARY KEY REFERENCES agent_messages(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dispatching', 'dispatched', 'error')), attempt_count INTEGER NOT NULL DEFAULT 0, claim_token TEXT, claimed_at TEXT, dispatched_at TEXT, error TEXT, await_reply INTEGER NOT NULL DEFAULT 0 CHECK (await_reply IN (0, 1)), link_to_current_session INTEGER NOT NULL DEFAULT 1 CHECK (link_to_current_session IN (0, 1)), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
             CREATE TABLE agent_message_origins (message_id INTEGER PRIMARY KEY, origin_kind TEXT NOT NULL, source_session_id INTEGER, source_feature_id INTEGER, source_project_id INTEGER, source_message_id INTEGER, note TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
             CREATE TABLE agent_session_links (id INTEGER PRIMARY KEY AUTOINCREMENT, source_session_id INTEGER NOT NULL, target_session_id INTEGER NOT NULL, link_type TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), note TEXT);
-            CREATE TABLE agent_session_message_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, target_session_id INTEGER NOT NULL, source_session_id INTEGER, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', message_uuid TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivered_at TEXT, error TEXT);
+            CREATE TABLE agent_session_message_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, target_session_id INTEGER NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE, source_session_id INTEGER REFERENCES agent_sessions(id) ON DELETE SET NULL, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivering', 'delivered', 'error', 'cancelled')), message_uuid TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivered_at TEXT, error TEXT, claim_token TEXT, claimed_at TEXT, attempt_count INTEGER NOT NULL DEFAULT 0);
             CREATE UNIQUE INDEX idx_agent_message_queue_session_message_uuid ON agent_session_message_queue(target_session_id, message_uuid) WHERE message_uuid IS NOT NULL;
             CREATE TABLE mcp_tool_audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, server_name TEXT NOT NULL, tool_name TEXT NOT NULL, source_session_id INTEGER, source_feature_id INTEGER, source_project_id INTEGER, target_session_id INTEGER, target_feature_id INTEGER, target_project_id INTEGER, status TEXT NOT NULL, result_size_bytes INTEGER NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0, error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
             INSERT INTO projects (id, name, path) VALUES (7, 'Proj', '/tmp/proj');

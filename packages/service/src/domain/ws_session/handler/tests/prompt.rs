@@ -70,7 +70,7 @@ async fn test_prompt_send_without_init_returns_session_not_found() {
 }
 
 #[tokio::test]
-async fn test_replayed_prompt_send_streams_without_persisting_duplicate_user_message() {
+async fn public_replay_flag_is_ignored_and_legacy_prompt_gets_canonical_identity() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
     let app_state = make_test_app_state().await;
@@ -103,24 +103,31 @@ async fn test_replayed_prompt_send_streams_without_persisting_duplicate_user_mes
         "prompt.send",
         serde_json::json!({
             "session_id": session_id,
-            "text": "replayed steering prompt",
+            "text": "legacy steering prompt",
             "replay": true,
         }),
     );
     dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
 
-    let streamed = tokio::time::timeout(std::time::Duration::from_secs(2), prompt_rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(streamed, serde_json::json!("replayed steering prompt"));
+    let streamed =
+        match tokio::time::timeout(std::time::Duration::from_secs(2), prompt_rx.recv()).await {
+            Ok(Some(streamed)) => streamed,
+            result => {
+                let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+                panic!("prompt was not dispatched ({result:?}); websocket events: {events:?}");
+            }
+        };
+    assert_eq!(streamed, serde_json::json!("legacy steering prompt"));
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_messages WHERE session_id = ?")
-        .bind(db_id)
-        .fetch_one(&app_state.write_pool)
-        .await
-        .unwrap();
-    assert_eq!(count, 0, "replayed steering prompts are already persisted");
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT content, message_uuid FROM agent_messages WHERE session_id = ?")
+            .bind(db_id)
+            .fetch_all(&app_state.write_pool)
+            .await
+            .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].0, "legacy steering prompt");
+    assert!(uuid::Uuid::parse_str(&rows[0].1).is_ok());
 }
 
 #[test]

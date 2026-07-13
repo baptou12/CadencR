@@ -1,5 +1,6 @@
 use axum::extract::ws::Message;
 
+use crate::domain::sessions::message_dispatch::{self, DispatchClaim};
 use crate::domain::sessions::models::AgentMessageOrigin;
 use crate::domain::sessions::user_messages::{
     canonical_user_message_uuid, PersistUserMessageError, PersistedUserMessage,
@@ -13,40 +14,54 @@ use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 use super::super::WsSender;
 use super::user_message_delivery::{CanonicalUserMessageOutcome, UserMessageDeliveryError};
 
+#[derive(Debug)]
 pub(super) enum PromptPersistenceOutcome {
     Replay,
-    Persisted(PersistedUserMessage),
+    Dispatch {
+        message: PersistedUserMessage,
+        claim_token: String,
+    },
+    Dispatched(PersistedUserMessage),
 }
 
 impl PromptPersistenceOutcome {
     pub fn should_dispatch(&self) -> bool {
-        matches!(
-            self,
-            Self::Replay | Self::Persisted(PersistedUserMessage { inserted: true, .. })
-        )
+        matches!(self, Self::Replay | Self::Dispatch { .. })
     }
 
     pub fn message_id(&self) -> Option<i64> {
         match self {
             Self::Replay => None,
-            Self::Persisted(message) => Some(message.id),
+            Self::Dispatch { message, .. } | Self::Dispatched(message) => Some(message.id),
         }
     }
 
     pub fn inserted(&self) -> bool {
         matches!(
             self,
-            Self::Persisted(PersistedUserMessage { inserted: true, .. })
+            Self::Dispatch {
+                message: PersistedUserMessage { inserted: true, .. },
+                ..
+            } | Self::Dispatched(PersistedUserMessage { inserted: true, .. })
         )
     }
 
     pub fn tracked_message_uuid(&self, payload: &PromptSendPayload) -> Option<String> {
-        if !payload.track_prompt_receipt {
-            return None;
-        }
         match self {
             Self::Replay => payload.message_uuid.clone(),
-            Self::Persisted(message) => Some(message.message_uuid.clone()),
+            Self::Dispatch { message, .. } | Self::Dispatched(message) => {
+                Some(message.message_uuid.clone())
+            }
+        }
+    }
+
+    pub fn dispatch_claim(&self) -> Option<(i64, &str)> {
+        match self {
+            Self::Dispatch {
+                message,
+                claim_token,
+            } => Some((message.id, claim_token)),
+            Self::Replay | Self::Dispatched(_) => None,
         }
     }
 }
@@ -59,8 +74,9 @@ pub(super) async fn persist_and_publish_prompt(
     session_id: i64,
     payload: &PromptSendPayload,
     content: &str,
+    internal_replay: bool,
 ) -> Result<PromptPersistenceOutcome, String> {
-    if payload.replay {
+    if internal_replay {
         return Ok(PromptPersistenceOutcome::Replay);
     }
     let message_uuid = canonical_user_message_uuid(payload.message_uuid.as_deref())
@@ -74,7 +90,7 @@ pub(super) async fn persist_and_publish_prompt(
         content,
         message_uuid,
         origin: None,
-        pending_agent_receipt: payload.track_prompt_receipt,
+        mode: CanonicalUserMessageMode::DispatchPrompt,
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -82,12 +98,88 @@ pub(super) async fn persist_and_publish_prompt(
         tracing::warn!(feature_id, session_id, error = %error, "canonical user-message owner disconnected");
     }
     let message = outcome.message;
-    Ok(PromptPersistenceOutcome::Persisted(message))
+    match message_dispatch::claim(pool, message.id)
+        .await
+        .map_err(|error| error.to_string())?
+    {
+        DispatchClaim::Claimed { token } => Ok(PromptPersistenceOutcome::Dispatch {
+            message,
+            claim_token: token,
+        }),
+        DispatchClaim::Dispatched => {
+            let message = resolve_dispatched_pending_state(
+                pool,
+                feature_senders,
+                sender,
+                feature_id,
+                session_id,
+                message,
+            )
+            .await?;
+            Ok(PromptPersistenceOutcome::Dispatched(message))
+        }
+        DispatchClaim::InProgress => Err(format!(
+            "message {} is already being dispatched; retry with the same UUID",
+            message.message_uuid
+        )),
+    }
+}
+
+async fn resolve_dispatched_pending_state(
+    pool: &sqlx::SqlitePool,
+    feature_senders: &WsFeatureSenderRegistry,
+    sender: &WsSender,
+    feature_id: i64,
+    session_id: i64,
+    mut message: PersistedUserMessage,
+) -> Result<PersistedUserMessage, String> {
+    if message.delivery_state.as_deref() != Some("pending_agent") {
+        return Ok(message);
+    }
+    crate::domain::sessions::user_messages::update_delivery_state(
+        pool,
+        session_id,
+        &message.message_uuid,
+        "delivery_unknown",
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    message.delivery_state = sqlx::query_scalar(
+        "SELECT delivery_state FROM agent_messages WHERE session_id = ? AND message_uuid = ?",
+    )
+    .bind(session_id)
+    .bind(&message.message_uuid)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| error.to_string())?;
+    publish_user_message(
+        feature_senders,
+        Some(sender),
+        feature_id,
+        &message,
+        None,
+        true,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(message)
 }
 
 /// Persist and publish one canonical user message through the shared live
 /// event path. All interactive ingress points use this helper so persistence
 /// and WebSocket identity cannot drift into separate implementations.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CanonicalUserMessageMode {
+    PersistOnly,
+    DispatchPrompt,
+}
+
+impl CanonicalUserMessageMode {
+    fn pending_agent_receipt(self) -> bool {
+        matches!(self, Self::DispatchPrompt)
+    }
+}
+
 pub(crate) struct CanonicalUserMessageRequest<'a> {
     pub pool: &'a sqlx::SqlitePool,
     pub feature_senders: &'a WsFeatureSenderRegistry,
@@ -97,7 +189,7 @@ pub(crate) struct CanonicalUserMessageRequest<'a> {
     pub content: &'a str,
     pub message_uuid: uuid::Uuid,
     pub origin: Option<AgentMessageOrigin>,
-    pub pending_agent_receipt: bool,
+    pub mode: CanonicalUserMessageMode,
 }
 
 pub(crate) async fn persist_and_publish_user_message(
@@ -108,16 +200,29 @@ pub(crate) async fn persist_and_publish_user_message(
         request.feature_id,
         Some(request.session_id),
     );
-    let message = persistence
-        .persist_user_message(request.content, request.message_uuid)
-        .await?;
+    let message = if matches!(request.mode, CanonicalUserMessageMode::DispatchPrompt) {
+        persistence
+            .persist_prompt_user_message(request.content, request.message_uuid)
+            .await?
+    } else {
+        persistence
+            .persist_user_message_with_delivery(
+                request.content,
+                request.message_uuid,
+                request
+                    .mode
+                    .pending_agent_receipt()
+                    .then_some("pending_agent"),
+            )
+            .await?
+    };
     let delivery = publish_user_message(
         request.feature_senders,
         request.owner,
         request.feature_id,
         &message,
         request.origin,
-        request.pending_agent_receipt,
+        request.mode.pending_agent_receipt(),
     )
     .await;
     Ok(CanonicalUserMessageOutcome { message, delivery })
@@ -143,8 +248,13 @@ pub(crate) async fn publish_user_message(
             text: message.content.clone(),
             created_at: message.created_at.clone(),
             origin,
-            prompt_delivery_state: pending_agent_receipt
-                .then_some(UserMessageDeliveryState::PendingAgent),
+            prompt_delivery_state: message
+                .delivery_state
+                .as_deref()
+                .and_then(UserMessageDeliveryState::from_db)
+                .or_else(|| {
+                    pending_agent_receipt.then_some(UserMessageDeliveryState::PendingAgent)
+                }),
         })
         .unwrap(),
     );
@@ -197,6 +307,7 @@ mod tests {
             message_uuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c".to_string(),
             content: "hello".to_string(),
             created_at: "2026-07-12 20:00:00".to_string(),
+            delivery_state: Some("pending_agent".to_string()),
             inserted: true,
         }
     }
@@ -253,6 +364,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn generated_user_message_is_broadcast_to_every_passive_viewer() {
+        let registry = WsFeatureSenderRegistry::new();
+        let (first, mut first_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (second, mut second_rx) = tokio::sync::mpsc::unbounded_channel();
+        registry.register(7, first).await;
+        registry.register(7, second).await;
+        let origin = AgentMessageOrigin {
+            origin_kind: "session_generated".to_string(),
+            source_session_id: Some(9),
+            source_feature_id: Some(8),
+            source_project_id: Some(1),
+            source_message_id: None,
+            note: Some("delegated".to_string()),
+            created_at: None,
+        };
+
+        publish_user_message(
+            &registry,
+            None,
+            7,
+            &persisted_user_message(),
+            Some(origin),
+            true,
+        )
+        .await
+        .unwrap();
+
+        for raw in [first_rx.try_recv().unwrap(), second_rx.try_recv().unwrap()] {
+            let Message::Text(raw) = raw else {
+                panic!("expected text envelope");
+            };
+            let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            assert_eq!(json["payload"]["origin"]["sourceSessionId"], 9);
+        }
+    }
+
+    #[tokio::test]
     async fn repeated_prompt_uuid_has_one_insert_and_one_dispatch_winner() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         crate::shared::migrate::run_migrations(
@@ -293,19 +441,30 @@ mod tests {
             new_project_branch: None,
             track_prompt_receipt: true,
             message_uuid: Some(message_uuid.clone()),
-            replay: false,
         };
 
-        let first =
-            persist_and_publish_prompt(&pool, &registry, &sender, 7, session_id, &payload, "hello")
-                .await
-                .unwrap();
-        let retry =
-            persist_and_publish_prompt(&pool, &registry, &sender, 7, session_id, &payload, "hello")
-                .await
-                .unwrap();
+        let first = persist_and_publish_prompt(
+            &pool, &registry, &sender, 7, session_id, &payload, "hello", false,
+        )
+        .await
+        .unwrap();
+        let in_progress = persist_and_publish_prompt(
+            &pool, &registry, &sender, 7, session_id, &payload, "hello", false,
+        )
+        .await
+        .unwrap_err();
 
         assert!(first.should_dispatch());
+        assert!(in_progress.contains("already being dispatched"));
+        let (message_id, claim_token) = first.dispatch_claim().unwrap();
+        crate::domain::sessions::message_dispatch::mark_succeeded(&pool, message_id, claim_token)
+            .await
+            .unwrap();
+        let retry = persist_and_publish_prompt(
+            &pool, &registry, &sender, 7, session_id, &payload, "hello", false,
+        )
+        .await
+        .unwrap();
         assert!(!retry.should_dispatch());
         assert_eq!(first.message_id(), retry.message_id());
         let count: i64 = sqlx::query_scalar(
@@ -359,7 +518,6 @@ mod tests {
             new_project_branch: None,
             track_prompt_receipt: false,
             message_uuid: None,
-            replay: false,
         };
 
         let outcome = persist_and_publish_prompt(
@@ -370,6 +528,7 @@ mod tests {
             session_id,
             &payload,
             "legacy hello",
+            false,
         )
         .await
         .unwrap();

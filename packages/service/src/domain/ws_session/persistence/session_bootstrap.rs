@@ -93,10 +93,24 @@ impl WsSessionPersistence {
     /// Persist a canonical user prompt. A repeated UUID returns the existing
     /// row with `inserted = false`; callers must not dispatch that retry to the
     /// provider again.
+    #[cfg(test)]
     pub async fn persist_user_message(
         &self,
         text: &str,
         message_uuid: uuid::Uuid,
+    ) -> Result<
+        crate::domain::sessions::user_messages::PersistedUserMessage,
+        crate::domain::sessions::user_messages::PersistUserMessageError,
+    > {
+        self.persist_user_message_with_delivery(text, message_uuid, None)
+            .await
+    }
+
+    pub async fn persist_user_message_with_delivery(
+        &self,
+        text: &str,
+        message_uuid: uuid::Uuid,
+        delivery_state: Option<&str>,
     ) -> Result<
         crate::domain::sessions::user_messages::PersistedUserMessage,
         crate::domain::sessions::user_messages::PersistUserMessageError,
@@ -111,10 +125,43 @@ impl WsSessionPersistence {
                 session_id,
                 content: text,
                 message_uuid,
-                created_at: None,
+                delivery_state,
             },
         )
         .await
+    }
+
+    pub async fn persist_prompt_user_message(
+        &self,
+        text: &str,
+        message_uuid: uuid::Uuid,
+    ) -> Result<
+        crate::domain::sessions::user_messages::PersistedUserMessage,
+        crate::domain::sessions::user_messages::PersistUserMessageError,
+    > {
+        let session_id = self.session_db_id.ok_or(
+            crate::domain::sessions::user_messages::PersistUserMessageError::MissingSessionId,
+        )?;
+        let mut tx = self.write_pool.begin().await?;
+        let message = crate::domain::sessions::user_messages::persist_user_message(
+            &mut tx,
+            crate::domain::sessions::user_messages::NewUserMessage {
+                session_id,
+                content: text,
+                message_uuid,
+                delivery_state: Some("pending_agent"),
+            },
+        )
+        .await?;
+        sqlx::query(
+            "INSERT INTO agent_message_dispatches (message_id, status)
+             VALUES (?, 'pending') ON CONFLICT(message_id) DO NOTHING",
+        )
+        .bind(message.id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(message)
     }
 }
 
@@ -181,6 +228,7 @@ mod session_bootstrap_tests {
                 parent_tool_use_id TEXT,
                 model TEXT,
                 message_uuid TEXT,
+                delivery_state TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )"#,
         )

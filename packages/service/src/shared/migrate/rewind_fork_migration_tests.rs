@@ -33,7 +33,18 @@ async fn rewind_fork_migration_adds_checkpoints_and_uuid_column() {
         CREATE TABLE agent_session_message_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             target_session_id INTEGER NOT NULL,
-            content TEXT NOT NULL
+            content TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending'
+        );
+        CREATE TABLE scheduled_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            feature_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            scheduled_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error TEXT,
+            created_at TEXT,
+            updated_at TEXT
         );
         INSERT INTO agent_sessions (id, feature_id) VALUES (1, 1);
         INSERT INTO agent_messages (id, session_id, role, message_type)

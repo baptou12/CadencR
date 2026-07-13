@@ -49,7 +49,7 @@ pub(super) async fn insert_initial_message(
             session_id,
             content: &message,
             message_uuid: uuid::Uuid::new_v4(),
-            created_at: None,
+            delivery_state: None,
         },
     )
     .await?;

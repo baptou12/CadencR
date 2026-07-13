@@ -111,6 +111,7 @@ mod session_cleanup_tests {
                 parent_tool_use_id TEXT,
                 model TEXT,
                 message_uuid TEXT,
+                delivery_state TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )"#,
         )

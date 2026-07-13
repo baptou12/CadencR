@@ -11,6 +11,22 @@ const SELECT: &str = "SELECT id, feature_id, text,
         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
      FROM scheduled_messages";
 
+pub struct ClaimedScheduledMessage {
+    pub message: ScheduledMessage,
+    pub claim_token: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct ClaimedScheduledRow {
+    id: i64,
+    feature_id: i64,
+    text: String,
+    scheduled_at: String,
+    status: String,
+    created_at: String,
+    claim_token: String,
+}
+
 /// The single pending scheduled message for a conversation, if any.
 pub async fn get_pending(
     pool: &SqlitePool,
@@ -70,6 +86,7 @@ pub async fn cancel(pool: &SqlitePool, feature_id: i64) -> Result<bool, AppError
 }
 
 /// Every pending message whose target time has arrived, oldest first.
+#[cfg(test)]
 pub async fn list_due(pool: &SqlitePool) -> Result<Vec<ScheduledMessage>, AppError> {
     let sql = format!(
         "{SELECT} WHERE status = 'pending' AND scheduled_at <= datetime('now') ORDER BY scheduled_at ASC"
@@ -77,27 +94,83 @@ pub async fn list_due(pool: &SqlitePool) -> Result<Vec<ScheduledMessage>, AppErr
     Ok(sqlx::query_as(AssertSqlSafe(sql)).fetch_all(pool).await?)
 }
 
-pub async fn mark_sent(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE scheduled_messages SET status = 'sent', updated_at = datetime('now') WHERE id = ?",
+pub async fn claim_due(pool: &SqlitePool) -> Result<Option<ClaimedScheduledMessage>, AppError> {
+    let token = uuid::Uuid::new_v4().to_string();
+    let row: Option<ClaimedScheduledRow> = sqlx::query_as(
+        "UPDATE scheduled_messages
+         SET status = 'dispatching', claim_token = ?, claimed_at = datetime('now'),
+             attempt_count = attempt_count + 1, error = NULL, updated_at = datetime('now')
+         WHERE id = (
+             SELECT id FROM scheduled_messages
+             WHERE status = 'pending' AND scheduled_at <= datetime('now')
+             ORDER BY scheduled_at ASC LIMIT 1
+         ) RETURNING id, feature_id, text,
+             strftime('%Y-%m-%dT%H:%M:%SZ', scheduled_at) AS scheduled_at,
+             status,
+             strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at,
+             claim_token",
+    )
+    .bind(&token)
+    .fetch_optional(pool)
+    .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    Ok(Some(ClaimedScheduledMessage {
+        message: ScheduledMessage {
+            id: row.id,
+            feature_id: row.feature_id,
+            text: row.text,
+            scheduled_at: row.scheduled_at,
+            status: row.status,
+            created_at: row.created_at,
+        },
+        claim_token: row.claim_token,
+    }))
+}
+
+pub async fn mark_sent(pool: &SqlitePool, id: i64, token: &str) -> Result<(), AppError> {
+    let result = sqlx::query(
+        "UPDATE scheduled_messages SET status = 'sent', claim_token = NULL, claimed_at = NULL,
+         updated_at = datetime('now') WHERE id = ? AND status = 'dispatching' AND claim_token = ?",
     )
     .bind(id)
+    .bind(token)
     .execute(pool)
     .await?;
+    require_claim(result.rows_affected(), id)?;
     Ok(())
 }
 
-pub async fn mark_failed(pool: &SqlitePool, id: i64, error: &str) -> Result<(), AppError> {
-    sqlx::query(
+pub async fn mark_failed(
+    pool: &SqlitePool,
+    id: i64,
+    token: &str,
+    error: &str,
+) -> Result<(), AppError> {
+    let result = sqlx::query(
         "UPDATE scheduled_messages
-         SET status = 'failed', error = ?, updated_at = datetime('now')
-         WHERE id = ?",
+         SET status = 'failed', error = ?, claim_token = NULL, claimed_at = NULL,
+             updated_at = datetime('now')
+         WHERE id = ? AND status = 'dispatching' AND claim_token = ?",
     )
     .bind(error)
     .bind(id)
+    .bind(token)
     .execute(pool)
     .await?;
+    require_claim(result.rows_affected(), id)?;
     Ok(())
+}
+
+fn require_claim(rows: u64, id: i64) -> Result<(), AppError> {
+    if rows == 1 {
+        Ok(())
+    } else {
+        Err(AppError::Internal(format!(
+            "scheduled message {id} dispatch claim is no longer current"
+        )))
+    }
 }
 
 /// Resolve the session a due message should dispatch into, creating a bare one
@@ -198,7 +271,9 @@ mod tests {
             .unwrap();
         assert_eq!(list_due(&pool).await.unwrap().len(), 1);
 
-        mark_sent(&pool, due.id).await.unwrap();
+        let claim = claim_due(&pool).await.unwrap().unwrap();
+        assert_eq!(claim.message.id, due.id);
+        mark_sent(&pool, due.id, &claim.claim_token).await.unwrap();
         assert!(list_due(&pool).await.unwrap().is_empty());
         assert!(get_pending(&pool, feature_id).await.unwrap().is_none());
 
@@ -207,6 +282,19 @@ mod tests {
             .await
             .unwrap();
         assert!(list_due(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn claimed_schedule_cannot_refire_when_mark_sent_fails() {
+        let (pool, feature_id) = fixture().await;
+        let due = upsert(&pool, feature_id, "once", "2000-01-01T00:00:00Z")
+            .await
+            .unwrap();
+
+        let claim = claim_due(&pool).await.unwrap().unwrap();
+        assert_eq!(claim.message.id, due.id);
+        assert!(mark_sent(&pool, due.id, "wrong-token").await.is_err());
+        assert!(claim_due(&pool).await.unwrap().is_none());
     }
 
     #[tokio::test]

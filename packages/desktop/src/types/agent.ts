@@ -20,6 +20,8 @@
  * question icon.
  */
 
+import type { UserMessageDeliveryState } from "@/api/generated";
+
 export type LiveAgentStatus = "idle" | "agent" | "question";
 
 export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
@@ -32,11 +34,7 @@ export interface TodoItem {
   activeForm: string;
 }
 
-export type PromptDeliveryState =
-  | "pending_agent"
-  | "received_agent"
-  | "delivery_unknown"
-  | "delivery_failed";
+export type PromptDeliveryState = UserMessageDeliveryState;
 
 export interface ContextUsageState {
   inputTokens: number;

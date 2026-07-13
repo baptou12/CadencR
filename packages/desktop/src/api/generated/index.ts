@@ -36,6 +36,8 @@ export type AgentBlockOrigin = null | AgentMessageOrigin;
 
 export type AgentBlockParentToolUseId = string | null;
 
+export type AgentBlockPromptDeliveryState = null | UserMessageDeliveryState;
+
 export type AgentBlockSourceToolName = string | null;
 
 export type AgentBlockToolArgs = string | null;
@@ -63,6 +65,7 @@ export interface AgentBlock {
   model?: AgentBlockModel;
   origin?: AgentBlockOrigin;
   parentToolUseId?: AgentBlockParentToolUseId;
+  promptDeliveryState?: AgentBlockPromptDeliveryState;
   sourceToolName?: AgentBlockSourceToolName;
   toolArgs?: AgentBlockToolArgs;
   toolName?: AgentBlockToolName;
@@ -1487,7 +1490,6 @@ canonical `session.user_message` event. */
   message_uuid?: PromptSendPayloadMessageUuid;
   new_project_branch?: PromptSendPayloadNewProjectBranch;
   profile?: PromptSendPayloadProfile;
-  replay?: boolean;
   session_id: string;
   text: string;
   track_prompt_receipt?: boolean;
@@ -2347,6 +2349,9 @@ export type UserMessageDeliveryState =
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const UserMessageDeliveryState = {
   pending_agent: "pending_agent",
+  received_agent: "received_agent",
+  delivery_unknown: "delivery_unknown",
+  delivery_failed: "delivery_failed",
 } as const;
 
 export type UserMessagePayloadOrigin = null | AgentMessageOrigin;

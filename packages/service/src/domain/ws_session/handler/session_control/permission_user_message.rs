@@ -1,5 +1,7 @@
 use super::super::helpers::send_error;
-use super::super::session_prompt::{persist_and_publish_user_message, CanonicalUserMessageRequest};
+use super::super::session_prompt::{
+    persist_and_publish_user_message, CanonicalUserMessageMode, CanonicalUserMessageRequest,
+};
 use super::super::types::WsSender;
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
@@ -39,7 +41,7 @@ pub(super) async fn persist_question_answer(
         content: &answer_text,
         message_uuid,
         origin: None,
-        pending_agent_receipt: false,
+        mode: CanonicalUserMessageMode::PersistOnly,
     })
     .await;
     match result {

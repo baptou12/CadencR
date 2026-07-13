@@ -1,4 +1,7 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { normalizeMessageUuid } from "@/lib/message-uuid";
+
+export { normalizeMessageUuid } from "@/lib/message-uuid";
 
 export interface CanonicalUserMessage {
   messageId: number;
@@ -90,7 +93,9 @@ export function mergeCanonicalBlocks(
 }
 
 export function sameMessageIdentity(left: AgentBlockData, right: AgentBlockData): boolean {
-  if (left.messageUuid && right.messageUuid) return left.messageUuid === right.messageUuid;
+  if (left.messageUuid && right.messageUuid) {
+    return normalizeMessageUuid(left.messageUuid) === normalizeMessageUuid(right.messageUuid);
+  }
   const leftId = blockMessageDbId(left);
   const rightId = blockMessageDbId(right);
   if (leftId != null && rightId != null) return leftId === rightId;
@@ -144,7 +149,7 @@ function buildIdentityIndexes(blocks: AgentBlockData[]): IdentityIndexes {
 }
 
 function registerIdentity(indexes: IdentityIndexes, block: AgentBlockData, index: number): void {
-  if (block.messageUuid) indexes.byUuid.set(block.messageUuid, index);
+  if (block.messageUuid) indexes.byUuid.set(normalizeMessageUuid(block.messageUuid), index);
   const databaseId = blockMessageDbId(block);
   if (databaseId != null) indexes.byDatabaseId.set(databaseId, index);
   indexes.byBlockId.set(block.id, index);
@@ -157,7 +162,7 @@ function findIdentityIndex(
 ): number {
   const candidates = new Set<number>();
   if (incoming.messageUuid) {
-    const byUuid = indexes.byUuid.get(incoming.messageUuid);
+    const byUuid = indexes.byUuid.get(normalizeMessageUuid(incoming.messageUuid));
     if (byUuid != null) candidates.add(byUuid);
   }
   const databaseId = blockMessageDbId(incoming);
@@ -224,7 +229,21 @@ function canonicalBlocksEqual(left: AgentBlockData, right: AgentBlockData): bool
     left.messageDbId === right.messageDbId &&
     left.messageUuid === right.messageUuid &&
     left.createdAt === right.createdAt &&
-    left.origin === right.origin &&
+    originsEqual(left.origin, right.origin) &&
     left.promptDeliveryState === right.promptDeliveryState
+  );
+}
+
+function originsEqual(left: AgentBlockData["origin"], right: AgentBlockData["origin"]): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.originKind === right.originKind &&
+    left.sourceSessionId === right.sourceSessionId &&
+    left.sourceFeatureId === right.sourceFeatureId &&
+    left.sourceProjectId === right.sourceProjectId &&
+    left.sourceMessageId === right.sourceMessageId &&
+    left.note === right.note &&
+    left.createdAt === right.createdAt
   );
 }

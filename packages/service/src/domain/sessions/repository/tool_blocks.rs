@@ -58,6 +58,10 @@ pub(super) fn handle_tool_call(
     all.push(MutableBlock {
         id,
         message_uuid: msg.message_uuid.clone(),
+        prompt_delivery_state: msg
+            .delivery_state
+            .as_deref()
+            .and_then(UserMessageDeliveryState::from_db),
         type_: "tool_call".to_string(),
         content: call_content,
         tool_name: msg.tool_name.clone().or(Some("tool".to_string())),
@@ -132,6 +136,10 @@ pub(super) fn handle_tool_result(
     all.push(MutableBlock {
         id,
         message_uuid: msg.message_uuid.clone(),
+        prompt_delivery_state: msg
+            .delivery_state
+            .as_deref()
+            .and_then(UserMessageDeliveryState::from_db),
         type_: "tool_result".to_string(),
         content: result_content,
         tool_name: None,

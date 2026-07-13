@@ -12,7 +12,7 @@ use super::content::{
     build_content_value_for_provider, build_persist_content, payload_attachments,
 };
 use super::errors::persist_pause_and_send_session_error;
-use super::prompt_receipt::clear_pending_prompt_receipt;
+use super::prompt_receipt::{clear_pending_prompt_receipt, confirm_prompt_delivery};
 use super::prompt_status::{
     mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
@@ -33,6 +33,7 @@ pub(super) struct FollowupPromptContext {
     pub sdk_sessions: SdkSessions,
     pub active_turns: Arc<ActiveTurnRegistry>,
     pub provider_id: String,
+    pub internal_replay: bool,
 }
 
 pub(super) async fn handle_followup_prompt(
@@ -43,6 +44,9 @@ pub(super) async fn handle_followup_prompt(
     if !persistence.should_dispatch() {
         return Ok(());
     }
+    let dispatch_claim = persistence
+        .dispatch_claim()
+        .map(|(message_id, token)| (message_id, token.to_string()));
     mark_agent_running(
         &context.write_pool,
         &context.session_status_tx,
@@ -59,7 +63,12 @@ pub(super) async fn handle_followup_prompt(
     super::prompt_checkpoint::capture_pre_turn_followup(&context, persistence.message_id()).await;
 
     info!(context.db_session_id, "follow-up prompt");
-    tokio::spawn(stream_followup_prompt(context, payload));
+    if context.internal_replay {
+        return stream_followup_prompt(context, payload, dispatch_claim).await;
+    }
+    tokio::spawn(async move {
+        let _ = stream_followup_prompt(context, payload, dispatch_claim).await;
+    });
     Ok(())
 }
 
@@ -77,6 +86,7 @@ async fn persist_followup_user_message(
         context.db_session_id,
         payload,
         &persist_content,
+        context.internal_replay,
     )
     .await?;
     // The user message changed this feature's most-recent-user-message sort
@@ -90,17 +100,18 @@ async fn persist_followup_user_message(
     Ok(outcome)
 }
 
-async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptSendPayload) {
+async fn stream_followup_prompt(
+    context: FollowupPromptContext,
+    payload: PromptSendPayload,
+    dispatch_claim: Option<(i64, String)>,
+) -> Result<(), String> {
     let attachments = payload_attachments(&payload);
     // Expand a virtual `/cadencr:*` skill invoked mid-conversation, same as the
     // initial-prompt path. The persisted user message keeps the short token.
     let prompt_text = crate::domain::agents::orchestration_skills::expand_prompt(&payload.text);
     let content =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
-    let receipt_message_uuid = payload
-        .track_prompt_receipt
-        .then(|| payload.message_uuid.clone())
-        .flatten();
+    let receipt_message_uuid = payload.message_uuid.clone();
     let query_guard = context.query.read().await;
     let stream_result = query_guard
         .stream_input_with_client_message_id(content, receipt_message_uuid.clone())
@@ -109,12 +120,15 @@ async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptS
 
     if let Err(error) = stream_result {
         let message = error.to_string();
+        mark_followup_dispatch_failed(&context, dispatch_claim.as_ref(), &message).await;
         error!(context.db_session_id, error = %message, "stream_input failed");
         if let Some(message_uuid) = receipt_message_uuid {
             let owner_closed = clear_pending_prompt_receipt(
+                &context.write_pool,
                 &context.ws_feature_senders,
                 &context.sender,
                 context.feature_id,
+                context.db_session_id,
                 message_uuid,
             )
             .await;
@@ -136,5 +150,48 @@ async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptS
             &message,
         )
         .await;
+        return Err(message);
+    } else if let Some((message_id, token)) = dispatch_claim {
+        if let Err(error) = crate::domain::sessions::message_dispatch::mark_succeeded(
+            &context.write_pool,
+            message_id,
+            &token,
+        )
+        .await
+        {
+            error!(context.db_session_id, error = %error, "failed to persist prompt dispatch success");
+        }
+    }
+    if let Some(message_uuid) = receipt_message_uuid {
+        let _ = confirm_prompt_delivery(
+            &context.write_pool,
+            &context.ws_feature_senders,
+            &context.sender,
+            context.feature_id,
+            context.db_session_id,
+            &message_uuid,
+        )
+        .await;
+    }
+    Ok(())
+}
+
+async fn mark_followup_dispatch_failed(
+    context: &FollowupPromptContext,
+    claim: Option<&(i64, String)>,
+    error: &str,
+) {
+    let Some((message_id, token)) = claim else {
+        return;
+    };
+    if let Err(status_error) = crate::domain::sessions::message_dispatch::mark_failed(
+        &context.write_pool,
+        *message_id,
+        token,
+        error,
+    )
+    .await
+    {
+        tracing::error!(context.db_session_id, error = %status_error, "failed to persist prompt dispatch failure");
     }
 }

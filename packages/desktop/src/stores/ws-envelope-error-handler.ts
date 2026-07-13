@@ -74,18 +74,20 @@ export function handleError(ctx: StoreAccessors, sessionId: string, payload: unk
   } else {
     lifecyclePatch = turnErroredPatch;
   }
+  const receivedBlocks = markPromptsReceived(session.blocks, p?.receivedPromptMessageUuids ?? []);
+  const resolvedBlocks = markPendingPromptsFailed(receivedBlocks);
   if (!p?.message) {
-    const patch = { ...lifecyclePatch, ...gatePatch };
+    const blocksPatch =
+      resolvedBlocks === session.blocks
+        ? {}
+        : blocksPatchWithDerived(session.streamingState, resolvedBlocks);
+    const patch = { ...lifecyclePatch, ...blocksPatch, ...gatePatch };
     if (Object.keys(patch).length === 0) return;
     ctx.set(updateSession(ctx.get(), sessionId, patch));
     return;
   }
   const errorBlock = makeErrorBlock(session, p.message, { code: p.code });
-  const receivedBlocks = markPromptsReceived(
-    [...session.blocks, errorBlock],
-    p.receivedPromptMessageUuids,
-  );
-  const blocks = markPendingPromptsFailed(receivedBlocks);
+  const blocks = [...resolvedBlocks, errorBlock];
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...lifecyclePatch,

@@ -29,6 +29,7 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
     let feature_id = response_body["featureId"].as_i64().unwrap();
     let session_id = response_body["sessionId"].as_i64().unwrap();
     let message_id = response_body["messageId"].as_i64().unwrap();
+    assert!(!response_body["dispatchError"].as_str().unwrap().is_empty());
 
     let feature: (i64, String) =
         sqlx::query_as("SELECT project_id, title FROM features WHERE id = ?")
@@ -100,7 +101,7 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
             42,
             7,
             session_id,
-            "ok".into()
+            "error".into()
         )
     );
 }
@@ -271,7 +272,7 @@ async fn project_spawn_session_allows_spawning_beyond_legacy_descendant_cap() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(audit_status, "ok");
+    assert_eq!(audit_status, "error");
 }
 
 #[tokio::test]

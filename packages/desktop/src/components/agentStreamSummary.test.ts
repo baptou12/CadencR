@@ -240,13 +240,12 @@ describe("collapseTurnsToSummary", () => {
   });
 
   it("collapses a pending steering message segment without a recap", () => {
+    const pending = {
+      ...user("u2", "steer"),
+      promptDeliveryState: "pending_agent" as const,
+    };
     // A steering prompt with no following tools has no recap of its own.
-    const result = collapseTurnsToSummary([
-      user("u1"),
-      tool("t1", "Read"),
-      text("m1"),
-      user("u2", "steer"),
-    ]);
+    const result = collapseTurnsToSummary([user("u1"), tool("t1", "Read"), text("m1"), pending]);
     expect(result.map((b) => b.type)).toEqual([
       "user_message",
       "tool_summary",
@@ -255,7 +254,7 @@ describe("collapseTurnsToSummary", () => {
     ]);
   });
 
-  it("treats a terminal unknown receipt as a real chronological boundary", () => {
+  it("keeps an unknown-delivery steer visible without attributing later output to it", () => {
     const unknown: AgentBlockData = {
       ...user("u2", "steer"),
       promptDeliveryState: "delivery_unknown",
@@ -276,6 +275,30 @@ describe("collapseTurnsToSummary", () => {
       "user_message",
       "tool_summary",
       "text",
+    ]);
+  });
+
+  it("does not open a turn boundary for a delivery-failed steer", () => {
+    const failed: AgentBlockData = {
+      ...user("u2", "steer"),
+      promptDeliveryState: "delivery_failed",
+    };
+    const result = collapseTurnsToSummary([
+      user("u1"),
+      tool("t1", "Read"),
+      text("m1", "first"),
+      failed,
+      tool("t2", "Bash"),
+      text("m2", "second"),
+    ]);
+
+    expect(result.map((block) => block.id)).toEqual([
+      "u1",
+      "tool-summary-t1",
+      "m1",
+      "u2",
+      "tool-summary-t2",
+      "m2",
     ]);
   });
 

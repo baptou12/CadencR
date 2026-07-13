@@ -205,6 +205,7 @@ mod tests {
                 id INTEGER PRIMARY KEY,
                 session_id INTEGER NOT NULL,
                 message_uuid TEXT,
+                delivery_state TEXT,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 message_type TEXT NOT NULL,

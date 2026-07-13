@@ -94,7 +94,7 @@ async fn persist_compact_command(
             content: "/compact",
             message_uuid,
             origin: None,
-            pending_agent_receipt: false,
+            mode: super::session_prompt::CanonicalUserMessageMode::PersistOnly,
         },
     )
     .await

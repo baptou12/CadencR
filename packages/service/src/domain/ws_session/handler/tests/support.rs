@@ -227,7 +227,7 @@ pub(crate) async fn make_test_app_state() -> AppState {
     sqlx::query(
         r#"CREATE TABLE agent_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
+                session_id INTEGER NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
                 role TEXT,
                 content TEXT NOT NULL DEFAULT '',
                 message_type TEXT NOT NULL DEFAULT 'text',
@@ -236,7 +236,26 @@ pub(crate) async fn make_test_app_state() -> AppState {
                 parent_tool_use_id TEXT,
                 model TEXT,
                 message_uuid TEXT,
+                delivery_state TEXT CHECK (delivery_state IS NULL OR delivery_state IN ('pending_agent', 'received_agent', 'delivery_unknown', 'delivery_failed')),
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"CREATE TABLE agent_message_dispatches (
+                message_id INTEGER PRIMARY KEY REFERENCES agent_messages(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dispatching', 'dispatched', 'error')),
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                claim_token TEXT,
+                claimed_at TEXT,
+                dispatched_at TEXT,
+                error TEXT,
+                await_reply INTEGER NOT NULL DEFAULT 0 CHECK (await_reply IN (0, 1)),
+                link_to_current_session INTEGER NOT NULL DEFAULT 1 CHECK (link_to_current_session IN (0, 1)),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             )"#,
     )
     .execute(&pool)

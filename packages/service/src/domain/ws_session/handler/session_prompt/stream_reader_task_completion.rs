@@ -96,6 +96,15 @@ impl StreamReaderTask {
         }
 
         WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
+        if let Err(error) = crate::domain::sessions::user_messages::resolve_pending_delivery_states(
+            &self.write_pool,
+            self.db_session_id,
+            "delivery_unknown",
+        )
+        .await
+        {
+            error!(self.db_session_id, error = %error, "failed to resolve pending prompt receipts at turn end");
+        }
         let has_pending_user_input =
             WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
                 .await
@@ -152,6 +161,15 @@ impl StreamReaderTask {
         message: String,
         received_prompt_message_uuids: Vec<String>,
     ) {
+        if let Err(error) = crate::domain::sessions::user_messages::resolve_pending_delivery_states(
+            &self.write_pool,
+            self.db_session_id,
+            "delivery_failed",
+        )
+        .await
+        {
+            error!(self.db_session_id, error = %error, "failed to resolve pending prompt receipts after stream error");
+        }
         WsSessionPersistence::mark_paused_static(&self.write_pool, self.db_session_id).await;
         WsSessionPersistence::broadcast_session_status(
             &self.session_status_tx,

@@ -2,6 +2,27 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UserMessageDeliveryState {
+    PendingAgent,
+    ReceivedAgent,
+    DeliveryUnknown,
+    DeliveryFailed,
+}
+
+impl UserMessageDeliveryState {
+    pub fn from_db(value: &str) -> Option<Self> {
+        match value {
+            "pending_agent" => Some(Self::PendingAgent),
+            "received_agent" => Some(Self::ReceivedAgent),
+            "delivery_unknown" => Some(Self::DeliveryUnknown),
+            "delivery_failed" => Some(Self::DeliveryFailed),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
 pub struct AgentSessionRow {
     pub id: i64,
@@ -32,6 +53,7 @@ pub struct AgentMessageRow {
     pub id: i64,
     pub session_id: i64,
     pub message_uuid: Option<String>,
+    pub delivery_state: Option<String>,
     pub content: String,
     pub message_type: String,
     pub tool_name: Option<String>,
@@ -60,6 +82,11 @@ pub struct AgentBlock {
     pub id: String,
     #[serde(rename = "messageUuid", skip_serializing_if = "Option::is_none")]
     pub message_uuid: Option<String>,
+    #[serde(
+        rename = "promptDeliveryState",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub prompt_delivery_state: Option<UserMessageDeliveryState>,
     #[serde(rename = "type")]
     pub type_: String,
     pub content: String,
@@ -276,6 +303,7 @@ mod tests {
         let block = AgentBlock {
             id: "msg-1".to_string(),
             message_uuid: Some("a48cc11a-8a72-47f7-8577-d5c533d7909c".to_string()),
+            prompt_delivery_state: Some(UserMessageDeliveryState::ReceivedAgent),
             type_: "text".to_string(),
             content: "hello".to_string(),
             tool_name: None,
@@ -309,6 +337,7 @@ mod tests {
         let block = AgentBlock {
             id: "msg-2".to_string(),
             message_uuid: None,
+            prompt_delivery_state: None,
             type_: "tool_call".to_string(),
             content: "{\"cmd\":\"ls\"}".to_string(),
             tool_name: Some("Bash".to_string()),
@@ -335,6 +364,7 @@ mod tests {
         let child = AgentBlock {
             id: "msg-child".to_string(),
             message_uuid: None,
+            prompt_delivery_state: None,
             type_: "text".to_string(),
             content: "child content".to_string(),
             tool_name: None,
@@ -352,6 +382,7 @@ mod tests {
         let parent = AgentBlock {
             id: "msg-task".to_string(),
             message_uuid: None,
+            prompt_delivery_state: None,
             type_: "tool_call".to_string(),
             content: "{}".to_string(),
             tool_name: Some("Task".to_string()),

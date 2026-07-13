@@ -56,9 +56,26 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import { blocksPatchWithDerived, type StreamingState } from "./ws-message-processing";
 import { updateSession, type ResyncTarget } from "./ws-session-types";
 import type { StoreAccessors } from "./ws-envelope-handler";
-import { mergeCanonicalBlocks } from "./ws-user-message-reconciliation";
+import { blockMessageDbId, mergeCanonicalBlocks } from "./ws-user-message-reconciliation";
 
-export async function resyncMessagesOnReconnect(
+const reconnectResyncs = new Map<string, Promise<void>>();
+
+export function resyncMessagesOnReconnect(
+  ctx: StoreAccessors,
+  sessionId: string,
+  target?: ResyncTarget,
+): Promise<void> {
+  if (target) return performMessageResync(ctx, sessionId, target);
+  const existing = reconnectResyncs.get(sessionId);
+  if (existing) return existing;
+  const pending = performMessageResync(ctx, sessionId).finally(() => {
+    if (reconnectResyncs.get(sessionId) === pending) reconnectResyncs.delete(sessionId);
+  });
+  reconnectResyncs.set(sessionId, pending);
+  return pending;
+}
+
+async function performMessageResync(
   ctx: StoreAccessors,
   sessionId: string,
   target?: ResyncTarget,
@@ -79,11 +96,17 @@ export async function resyncMessagesOnReconnect(
   // Anchor only at a cursor confirmed by a completed server response. A live
   // row with a larger DB id does not prove every earlier row was received.
   const cursor = target?.cursor ?? session.lastAppliedMessageId ?? 0;
-  // Reconnect with no prior anchor has nothing to fetch after.
-  if (!target && cursor <= 0) return;
-
-  const afterParam = JSON.stringify({ [sessionDbId]: cursor });
-  const data = await getFeatureAgentState(featureId, { after: afterParam });
+  // Delivery-state changes mutate an existing message row. Overlap from the
+  // earliest locally pending prompt while retaining the confirmed snapshot
+  // cursor for sessions without pending receipts.
+  const fetchCursor = target ? cursor : reconnectFetchCursor(session.blocks, cursor);
+  const data =
+    target || fetchCursor > 0
+      ? await getFeatureAgentState(featureId, {
+          after: JSON.stringify({ [sessionDbId]: fetchCursor }),
+        })
+      : await getFeatureAgentState(featureId);
+  if (!data?.sessions) return;
   const serverSession = data.sessions.find((s) => s.sessionDbId === sessionDbId);
   if (!serverSession) return;
 
@@ -97,7 +120,12 @@ export async function resyncMessagesOnReconnect(
   const nextCursor = Math.max(cursor, serverSession.maxMessageId ?? 0);
 
   if (newBlocks.length === 0) {
-    ctx.set(updateSession(ctx.get(), sessionId, { ...idPatch, lastAppliedMessageId: nextCursor }));
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        ...idPatch,
+        lastAppliedMessageId: nextCursor,
+      }),
+    );
     return;
   }
 
@@ -114,6 +142,16 @@ export async function resyncMessagesOnReconnect(
       lastAppliedMessageId: nextCursor,
     }),
   );
+}
+
+function reconnectFetchCursor(blocks: AgentBlockData[], confirmedCursor: number): number {
+  let cursor = confirmedCursor;
+  for (const block of blocks) {
+    if (block.type !== "user_message" || block.promptDeliveryState !== "pending_agent") continue;
+    const messageId = blockMessageDbId(block);
+    if (messageId != null) cursor = Math.min(cursor, messageId - 1);
+  }
+  return Math.max(0, cursor);
 }
 
 /**
