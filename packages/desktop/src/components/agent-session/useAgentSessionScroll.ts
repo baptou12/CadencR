@@ -327,6 +327,7 @@ export function useAgentSessionScroll({
   // and returns the container ref callback.
   const scrollContainerRef = useAgentSessionScrollInput({
     scrollerElRef,
+    stickRef,
     historyLoadArmedRef,
     lastScrollTopRef,
     userScrollIntentRef,

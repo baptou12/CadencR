@@ -1,4 +1,6 @@
 import { useCallback, useRef } from "react";
+import { isAutoScrollPinSuppressed } from "@/lib/agent-scroll-suppression";
+import { isResizing } from "@/lib/resize-coordinator";
 import {
   canScroll,
   isVerticalScrollbarPointer,
@@ -8,6 +10,8 @@ import {
 
 interface ScrollInputParams {
   scrollerElRef: React.MutableRefObject<HTMLElement | null>;
+  /** Bottom-stick engaged? Read live so the height-pin observer respects it. */
+  stickRef: React.MutableRefObject<boolean>;
   historyLoadArmedRef: React.MutableRefObject<boolean>;
   lastScrollTopRef: React.MutableRefObject<number>;
   userScrollIntentRef: React.MutableRefObject<boolean>;
@@ -29,6 +33,7 @@ interface ScrollInputParams {
  */
 export function useAgentSessionScrollInput({
   scrollerElRef,
+  stickRef,
   historyLoadArmedRef,
   lastScrollTopRef,
   userScrollIntentRef,
@@ -38,6 +43,7 @@ export function useAgentSessionScrollInput({
   requestOlderHistory,
 }: ScrollInputParams): ScrollRef {
   const touchStartYRef = useRef(0);
+  const growthObserverRef = useRef<MutationObserver | null>(null);
 
   const onWheel = useCallback(
     (e: WheelEvent): void => {
@@ -118,6 +124,8 @@ export function useAgentSessionScrollInput({
         prev.removeEventListener("touchstart", onTouchStart);
         prev.removeEventListener("touchmove", onTouchMove);
       }
+      growthObserverRef.current?.disconnect();
+      growthObserverRef.current = null;
       scrollerElRef.current = el;
       if (el) {
         lastScrollTopRef.current = el.scrollTop;
@@ -127,10 +135,12 @@ export function useAgentSessionScrollInput({
         el.addEventListener("scroll", onScroll, { passive: true });
         el.addEventListener("touchstart", onTouchStart, { passive: true });
         el.addEventListener("touchmove", onTouchMove, { passive: true });
+        observeListGrowth(el, stickRef, growthObserverRef);
       }
     },
     [
       scrollerElRef,
+      stickRef,
       lastScrollTopRef,
       onKeyDown,
       onPointerDown,
@@ -140,4 +150,40 @@ export function useAgentSessionScrollInput({
       onTouchMove,
     ],
   );
+}
+
+/**
+ * Glue the view to the bottom in the SAME frame the conversation grows.
+ *
+ * When the agent streams a new line, React commits the taller DOM but
+ * react-virtuoso's `followOutput` only re-pins `scrollTop` on the *next*
+ * frame, so the growth frame paints with the new content pushed below the
+ * fold — a visible one-frame "jump down, then up" on the trailing "Working…"
+ * cursor and any not-yet-received message. A `ResizeObserver` can't fix it:
+ * its callback for the growth is delivered a frame late, after the bad frame
+ * has already painted (measured: gap still spikes ~86px). A `MutationObserver`
+ * fires as a microtask right after the DOM mutation — before layout and paint
+ * — so pinning `scrollTop` there closes the gap in the same frame the content
+ * grows. MutationObserver coalesces a commit's mutations into one callback, so
+ * this reads layout once per streamed chunk, not per character.
+ *
+ * Only pins while bottom-stick is engaged, not suppressed (recap-toggle height
+ * animations), and not mid split-pane resize (the `resize-coordinator` owns
+ * scroll during a drag), so it never fights a scrolled-up reader or a resize.
+ * Degrades to the (one-frame-late) `followOutput` behaviour if Virtuoso's DOM
+ * contract changes and the item list can't be found.
+ */
+function observeListGrowth(
+  scroller: HTMLElement,
+  stickRef: React.MutableRefObject<boolean>,
+  observerRef: React.MutableRefObject<MutationObserver | null>,
+): void {
+  const list = scroller.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]');
+  if (!list) return;
+  const observer = new MutationObserver(() => {
+    if (!stickRef.current || isAutoScrollPinSuppressed() || isResizing()) return;
+    scroller.scrollTop = scroller.scrollHeight;
+  });
+  observer.observe(list, { childList: true, subtree: true, characterData: true });
+  observerRef.current = observer;
 }
