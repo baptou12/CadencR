@@ -56,6 +56,32 @@ async fn send_now_surfaces_runtime_dispatch_failure_and_keeps_retryable_identity
     .unwrap();
     assert_eq!(dispatch.0, "error");
     assert!(dispatch.1.unwrap().contains("runtime adapter unavailable"));
+    let origin: (String, i64, i64, i64, String) = sqlx::query_as(
+        "SELECT origin_kind, source_session_id, source_feature_id, source_project_id, note
+         FROM agent_message_origins WHERE message_id =
+             (SELECT id FROM agent_messages WHERE session_id = 888 AND message_type = 'user_message')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        origin,
+        (
+            "session_generated".into(),
+            777,
+            42,
+            7,
+            "delegated by project MCP".into()
+        )
+    );
+    let link: (i64, i64, String) = sqlx::query_as(
+        "SELECT source_session_id, target_session_id, link_type
+         FROM agent_session_links WHERE source_session_id = 777 AND target_session_id = 888",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(link, (777, 888, "messaged".into()));
 }
 
 #[tokio::test]

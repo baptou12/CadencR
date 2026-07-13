@@ -81,6 +81,7 @@ describe("UserMessageActions", () => {
     expect(sendPrompt).toHaveBeenCalledWith("ws-feature-1", "hello", {
       messageUuid: "a48cc11a-8a72-47f7-8577-d5c533d7909c",
     });
+    expect(screen.getByRole("button", { name: /retrying/i })).toBeDisabled();
   });
 
   it("retries persisted images as prompt attachments instead of JSON text", async () => {

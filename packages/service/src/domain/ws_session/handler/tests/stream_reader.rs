@@ -118,6 +118,7 @@ async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
         .ws_feature_senders
         .register(feature_id, viewer_tx)
         .await;
+    seed_pending_prompt(&app_state, db_session_id, feature_id, "client-xyz").await;
 
     let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(2);
     msg_tx
@@ -193,14 +194,7 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
         sessions.insert(db_session_id, make_active_handle(feature_id, None));
     }
 
-    sqlx::query(
-        "INSERT INTO agent_sessions (id, feature_id, agent_type, status) VALUES (?, ?, 'session', 'running')"
-    )
-    .bind(db_session_id)
-    .bind(feature_id)
-    .execute(&app_state.write_pool)
-    .await
-    .unwrap();
+    seed_pending_prompt(&app_state, db_session_id, feature_id, "error-receipt").await;
 
     let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(2);
     msg_tx
@@ -254,6 +248,33 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
             panic!("expected Pending state after stream error, but found Active");
         }
     }
+}
+
+async fn seed_pending_prompt(
+    app_state: &AppState,
+    session_id: i64,
+    feature_id: i64,
+    message_uuid: &str,
+) {
+    sqlx::query(
+        "INSERT INTO agent_sessions (id, feature_id, agent_type, status)
+         VALUES (?, ?, 'session', 'running')",
+    )
+    .bind(session_id)
+    .bind(feature_id)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_messages
+         (session_id, role, content, message_type, message_uuid, delivery_state)
+         VALUES (?, 'user', 'tracked prompt', 'user_message', ?, 'pending_agent')",
+    )
+    .bind(session_id)
+    .bind(message_uuid)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

@@ -152,8 +152,8 @@ pub async fn update_delivery_state(
     session_id: i64,
     message_uuid: &str,
     state: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
         "UPDATE agent_messages SET delivery_state = ?
          WHERE session_id = ? AND message_uuid = ?
            AND (? = 'received_agent' OR delivery_state IS NULL OR delivery_state = 'pending_agent')",
@@ -164,7 +164,7 @@ pub async fn update_delivery_state(
     .bind(state)
     .execute(pool)
     .await?;
-    Ok(())
+    Ok(result.rows_affected() == 1)
 }
 
 pub async fn resolve_pending_delivery_states(
@@ -352,5 +352,49 @@ mod tests {
             error,
             PersistUserMessageError::IdentityConflict { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn terminal_delivery_update_reports_only_eligible_canonical_transitions() {
+        let (pool, session_id) = setup().await;
+        let message_uuid = Uuid::new_v4();
+        let mut connection = pool.acquire().await.unwrap();
+        persist_user_message(
+            &mut connection,
+            NewUserMessage {
+                session_id,
+                content: "tracked",
+                message_uuid,
+                delivery_state: Some("pending_agent"),
+            },
+        )
+        .await
+        .unwrap();
+        drop(connection);
+
+        assert!(!update_delivery_state(
+            &pool,
+            session_id,
+            &Uuid::new_v4().to_string(),
+            "delivery_failed"
+        )
+        .await
+        .unwrap());
+        assert!(update_delivery_state(
+            &pool,
+            session_id,
+            &message_uuid.to_string(),
+            "delivery_failed"
+        )
+        .await
+        .unwrap());
+        assert!(!update_delivery_state(
+            &pool,
+            session_id,
+            &message_uuid.to_string(),
+            "delivery_failed"
+        )
+        .await
+        .unwrap());
     }
 }

@@ -1,5 +1,5 @@
 use axum::extract::ws::Message;
-use tracing::debug;
+use tracing::{debug, error};
 
 use crate::domain::agents::adapter::RuntimeStreamStatus;
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeSlashCommandKind};
@@ -9,19 +9,24 @@ use crate::domain::ws_session::protocol::{
 };
 
 use super::prompt_receipt::prompt_received_envelope;
-use super::stream_reader_task::StreamReaderTask;
+use super::stream_reader_task::{StreamReaderState, StreamReaderTask};
 
 pub(super) enum ForwardOutcome {
     Forwarded,
     NotHandled,
     SenderClosed,
+    Suppressed,
 }
 
 pub(super) async fn forward_immediate_event(
     task: &StreamReaderTask,
+    state: &mut StreamReaderState,
     runtime_event: &RuntimeEvent,
 ) -> ForwardOutcome {
     if let Some(message_uuid) = runtime_event.prompt_received_client_message_id() {
+        if !persist_prompt_receipt(task, state, message_uuid).await {
+            return ForwardOutcome::Suppressed;
+        }
         // Mirror to every viewer, not just the turn owner. With cross-device
         // steering the device that SENT this prompt may not be the turn owner
         // (e.g. the host steers a turn owned by a now-disconnected phone), so
@@ -76,6 +81,42 @@ pub(super) async fn forward_immediate_event(
     }
 
     ForwardOutcome::NotHandled
+}
+
+async fn persist_prompt_receipt(
+    task: &StreamReaderTask,
+    state: &mut StreamReaderState,
+    message_uuid: &str,
+) -> bool {
+    match crate::domain::sessions::user_messages::update_delivery_state(
+        &task.write_pool,
+        task.db_session_id,
+        message_uuid,
+        "received_agent",
+    )
+    .await
+    {
+        Ok(true) => {
+            if !state
+                .received_prompt_message_uuids
+                .iter()
+                .any(|received| received == message_uuid)
+            {
+                state
+                    .received_prompt_message_uuids
+                    .push(message_uuid.to_string());
+            }
+            true
+        }
+        Ok(false) => {
+            error!(task.db_session_id, %message_uuid, "ignored receipt for an unknown canonical prompt");
+            false
+        }
+        Err(error) => {
+            error!(task.db_session_id, error = %error, "failed to persist prompt receipt");
+            false
+        }
+    }
 }
 
 /// Forward `envelope` to the turn's owner. When `mirror` is set, also relay it

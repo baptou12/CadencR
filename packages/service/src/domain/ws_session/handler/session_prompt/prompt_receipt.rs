@@ -31,7 +31,7 @@ pub(super) async fn clear_pending_prompt_receipt(
     session_id: i64,
     message_uuid: String,
 ) -> bool {
-    if let Err(error) = crate::domain::sessions::user_messages::update_delivery_state(
+    let transitioned = match crate::domain::sessions::user_messages::update_delivery_state(
         pool,
         session_id,
         &message_uuid,
@@ -39,7 +39,15 @@ pub(super) async fn clear_pending_prompt_receipt(
     )
     .await
     {
-        tracing::error!(session_id, error = %error, "failed to persist prompt delivery failure");
+        Ok(transitioned) => transitioned,
+        Err(error) => {
+            tracing::error!(session_id, error = %error, "failed to persist prompt delivery failure");
+            return false;
+        }
+    };
+    if !transitioned {
+        tracing::warn!(session_id, %message_uuid, "ignored prompt delivery failure for an ineligible canonical message");
+        return false;
     }
     let msg = Message::Text(
         String::from(prompt_received_envelope(
@@ -61,7 +69,7 @@ pub(super) async fn confirm_prompt_delivery(
     session_id: i64,
     message_uuid: &str,
 ) -> bool {
-    if let Err(error) = crate::domain::sessions::user_messages::update_delivery_state(
+    let transitioned = match crate::domain::sessions::user_messages::update_delivery_state(
         pool,
         session_id,
         message_uuid,
@@ -69,7 +77,15 @@ pub(super) async fn confirm_prompt_delivery(
     )
     .await
     {
-        tracing::error!(session_id, error = %error, "failed to persist prompt delivery success");
+        Ok(transitioned) => transitioned,
+        Err(error) => {
+            tracing::error!(session_id, error = %error, "failed to persist prompt delivery success");
+            return false;
+        }
+    };
+    if !transitioned {
+        tracing::warn!(session_id, %message_uuid, "ignored prompt delivery receipt for an unknown canonical message");
+        return false;
     }
     let msg = Message::Text(
         String::from(prompt_received_envelope(
@@ -81,4 +97,34 @@ pub(super) async fn confirm_prompt_delivery(
     feature_senders
         .send_and_mirror(feature_id, sender, msg)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn rejected_terminal_transitions_do_not_emit_receipts() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE agent_messages (
+                session_id INTEGER NOT NULL,
+                message_uuid TEXT,
+                delivery_state TEXT
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let registry = WsFeatureSenderRegistry::new();
+        let (owner, mut owner_rx) = mpsc::unbounded_channel();
+
+        assert!(!confirm_prompt_delivery(&pool, &registry, &owner, 1, 7, "missing").await);
+        let owner_closed =
+            clear_pending_prompt_receipt(&pool, &registry, &owner, 1, 7, "missing".to_string())
+                .await;
+        assert!(!owner_closed);
+        assert!(owner_rx.try_recv().is_err());
+    }
 }

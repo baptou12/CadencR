@@ -59,16 +59,18 @@ function UserMessageActionsImpl({ block }: UserMessageActionsProps) {
       </ActionButton>
       {retry.visible && (
         <ActionButton
-          disabled={!retry.available}
+          disabled={!retry.available || retry.retrying}
           onClick={retry.send}
           title={
-            retry.available
-              ? "Retry delivery with the same message identity"
-              : "Retry unavailable because the original attachment data is not stored"
+            retry.retrying
+              ? "Retrying delivery with the same message identity"
+              : retry.available
+                ? "Retry delivery with the same message identity"
+                : "Retry unavailable because the original attachment data is not stored"
           }
         >
-          <RefreshCwIcon className="size-3" />
-          <span>Retry</span>
+          <RefreshCwIcon className={cn("size-3", retry.retrying && "animate-spin")} />
+          <span>{retry.retrying ? "Retrying" : "Retry"}</span>
         </ActionButton>
       )}
       {canBranch && (
@@ -96,6 +98,8 @@ function useUserMessageRetry(
   content: ParsedMessage,
   sendPrompt: SendPrompt,
 ) {
+  const [retryingMessageUuid, setRetryingMessageUuid] = useState<string | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attachments = useMemo(() => retryAttachments(content), [content]);
   const available = content.attachments.every((attachment) => attachment.base64 !== undefined);
   const visible =
@@ -103,14 +107,27 @@ function useUserMessageRetry(
     block.messageUuid != null &&
     (block.promptDeliveryState === "delivery_failed" ||
       block.promptDeliveryState === "delivery_unknown");
+  const retrying = retryingMessageUuid === block.messageUuid;
+  useEffect(
+    () => () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    },
+    [],
+  );
   const send = useCallback(() => {
-    if (!wsSessionId || !block.messageUuid || !available) return;
+    if (!wsSessionId || !block.messageUuid || !available || retrying) return;
+    setRetryingMessageUuid(block.messageUuid);
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = setTimeout(() => setRetryingMessageUuid(null), 15_000);
     sendPrompt(wsSessionId, content.text, {
       messageUuid: block.messageUuid,
       ...(attachments.length > 0 ? { attachments } : {}),
     });
-  }, [attachments, available, block.messageUuid, content.text, sendPrompt, wsSessionId]);
-  return useMemo(() => ({ available, send, visible }), [available, send, visible]);
+  }, [attachments, available, block.messageUuid, content.text, retrying, sendPrompt, wsSessionId]);
+  return useMemo(
+    () => ({ available, retrying, send, visible }),
+    [available, retrying, send, visible],
+  );
 }
 
 function retryAttachments(content: ParsedMessage): PromptAttachmentPayload[] {

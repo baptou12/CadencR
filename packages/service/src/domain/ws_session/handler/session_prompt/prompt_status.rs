@@ -136,7 +136,7 @@ async fn resolve_dispatched_pending_state(
     if message.delivery_state.as_deref() != Some("pending_agent") {
         return Ok(message);
     }
-    crate::domain::sessions::user_messages::update_delivery_state(
+    let transitioned = crate::domain::sessions::user_messages::update_delivery_state(
         pool,
         session_id,
         &message.message_uuid,
@@ -144,6 +144,12 @@ async fn resolve_dispatched_pending_state(
     )
     .await
     .map_err(|error| error.to_string())?;
+    if !transitioned {
+        return Err(format!(
+            "message {} no longer has a pending delivery state",
+            message.message_uuid
+        ));
+    }
     message.delivery_state = sqlx::query_scalar(
         "SELECT delivery_state FROM agent_messages WHERE session_id = ? AND message_uuid = ?",
     )
