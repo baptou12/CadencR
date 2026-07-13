@@ -5,6 +5,7 @@ use super::event_json::thread_id;
 use super::event_payloads::parse_raw_response_item_params;
 use super::event_state::IndexState;
 use super::event_subagents::{synthesize_subagent_messages, synthesize_subagent_prompt};
+use super::event_web::{record_raw_web_item, web_search_input};
 use super::raw_tool_names::{canonical_tool_name, function_tool_name, string_field};
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEvent};
 
@@ -21,6 +22,7 @@ pub(super) fn raw_response_item_events(
     };
     let params = parsed.raw();
     let item = parsed.item.as_value();
+    record_raw_web_item(&parsed.item.item_type, &item, index_state);
     match parsed.item.item_type.as_str() {
         "function_call" => tool_call_event(
             &params,
@@ -214,23 +216,6 @@ fn tool_search_input(item: &Value) -> Value {
         "execution".to_string(),
         item.get("execution").cloned().unwrap_or(Value::Null),
     );
-    if let Some(status) = item.get("status").cloned() {
-        input.insert("status".to_string(), status);
-    }
-    Value::Object(input)
-}
-
-fn web_search_input(item: &Value) -> Value {
-    let mut input = serde_json::Map::new();
-    if let Some(action) = item.get("action") {
-        if let Some(query) = action.get("query").and_then(Value::as_str) {
-            input.insert("query".to_string(), Value::String(query.to_string()));
-        }
-        if let Some(url) = action.get("url").and_then(Value::as_str) {
-            input.insert("url".to_string(), Value::String(url.to_string()));
-        }
-        input.insert("action".to_string(), action.clone());
-    }
     if let Some(status) = item.get("status").cloned() {
         input.insert("status".to_string(), status);
     }

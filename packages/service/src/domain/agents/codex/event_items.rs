@@ -20,6 +20,7 @@ use super::event_subagent_activity::subagent_activity_events;
 use super::event_subagents::{
     agent_tool_block, synthesize_subagent_messages, synthesize_subagent_prompt,
 };
+use super::event_web::web_search_item;
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
     RuntimeTurnStartedSource, RuntimeUserContentBlock, RuntimeUserMessage,
@@ -68,6 +69,7 @@ pub(super) fn item_events(
         "commandExecution" => command_execution_events(params, completed, index_state),
         "fileChange" => tool_item(params, "ApplyPatch", file_input, completed, index_state),
         "mcpToolCall" => mcp_tool_item(params, completed, index_state),
+        "webSearch" => web_search_item(params, completed, index_state),
         "dynamicToolCall" => {
             let name = dynamic_tool_name(&item_value);
             tool_item(params, &name, dynamic_tool_input, completed, index_state)
@@ -203,7 +205,7 @@ fn tool_item(
     tool_item_with_input(params, name, input, completed, index_state)
 }
 
-fn tool_item_with_input(
+pub(super) fn tool_item_with_input(
     params: Value,
     name: &str,
     input: Value,

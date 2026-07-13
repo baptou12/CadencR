@@ -24,6 +24,7 @@ mod event_subagents;
 mod event_system;
 mod event_turn_state;
 mod event_usage;
+mod event_web;
 mod events;
 mod input;
 mod instructions;
