@@ -2,6 +2,7 @@ import { PaperclipIcon } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { Markdown } from "@/components/Markdown";
 import { GeneratedBySessionBadge } from "@/components/GeneratedBySessionBadge";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { cn } from "@/lib/utils";
 import { parseUserMessageContent, type ParsedPromptAttachment } from "@/types/agent-types";
 import type { AgentMessageOrigin } from "@/api/generated";
@@ -40,7 +41,7 @@ export function UserMessageBlock({
         data-testid="user-message-bubble"
         data-prompt-delivery-state={deliveryState}
         className={cn(
-          "max-w-[80%] rounded-md border px-3 py-1.5 text-sm",
+          "max-w-[80%] rounded-md border px-3 py-1.5 text-sm transition-colors duration-500 ease-[var(--ease-fluid)]",
           deliveryState ? DELIVERY_BUBBLE_STYLES[deliveryState] : "border-primary/30 bg-primary/10",
         )}
       >
@@ -60,7 +61,13 @@ export function UserMessageBlock({
         {attachments.length > 0 && <AttachmentFileList attachments={attachments} />}
         {isGenerated && <GeneratedBySessionBadge origin={origin} />}
       </div>
-      {isPendingDelivery && (
+      {/*
+        Collapse the pending-receipt row on exit so the surrounding stream
+        slides up smoothly instead of jumping when the agent acknowledges the
+        message. CollapsibleSection honours the global `data-animations` kill-
+        switch, so it unmounts instantly when Fluid animations are off.
+      */}
+      <CollapsibleSection open={isPendingDelivery}>
         <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px]">
           <span
             className="size-1.5 animate-pulse rounded-full bg-amber-400/90"
@@ -68,7 +75,7 @@ export function UserMessageBlock({
           />
           <span className="text-amber-300">Not received by agent yet…</span>
         </div>
-      )}
+      </CollapsibleSection>
       {isUnknownDelivery && (
         <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground">
           <span className="size-1.5 rounded-full bg-muted-foreground/70" aria-hidden="true" />
