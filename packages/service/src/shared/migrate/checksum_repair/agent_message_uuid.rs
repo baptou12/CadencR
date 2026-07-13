@@ -101,7 +101,7 @@ mod tests {
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use std::str::FromStr;
 
-    const MESSAGE_DELIVERY_DURABILITY_VERSION: i64 = 20260713120000;
+    const MESSAGE_DELIVERY_DURABILITY_VERSION: i64 = 20260713121500;
 
     #[tokio::test]
     async fn reconciles_initial_agent_message_uuid_migration() {

@@ -13,7 +13,16 @@ async fn migration_preserves_existing_custom_models_with_unknown_effort() {
         "PRAGMA foreign_keys = ON; \
          CREATE TABLE claude_code_custom_models (id INTEGER PRIMARY KEY, model_id TEXT NOT NULL \
          UNIQUE, label TEXT NOT NULL, description TEXT, created_at DATETIME NOT NULL DEFAULT \
-         CURRENT_TIMESTAMP); INSERT INTO claude_code_custom_models (model_id, label, description) \
+         CURRENT_TIMESTAMP); \
+         CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT \
+         NULL); \
+         CREATE TABLE agent_session_message_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+         target_session_id INTEGER NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT \
+         'pending'); \
+         CREATE TABLE scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER \
+         NOT NULL, text TEXT NOT NULL, scheduled_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT \
+         'pending'); \
+         INSERT INTO claude_code_custom_models (model_id, label, description) \
          VALUES ('legacy-proxy', 'Legacy proxy', 'keep me')",
     )
     .execute(&pool)
