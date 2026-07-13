@@ -10,6 +10,8 @@ mod checksum_repair_data;
 #[cfg(test)]
 mod codex_permission_mode_migration_tests;
 #[cfg(test)]
+mod custom_model_effort_migration_tests;
+#[cfg(test)]
 mod mcp_orchestration_migration_tests;
 #[cfg(test)]
 mod rewind_fork_migration_tests;

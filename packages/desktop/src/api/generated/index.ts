@@ -2327,11 +2327,20 @@ export interface UpdatedResponse {
   updated: number;
 }
 
+export type UpsertCustomModelRequestDefaultEffortLevel = string | null;
+
 export type UpsertCustomModelRequestDescription = string | null;
 
+export type UpsertCustomModelRequestSupportedEffortLevels = string[] | null;
+
+export type UpsertCustomModelRequestSupportsEffort = boolean | null;
+
 export interface UpsertCustomModelRequest {
+  default_effort_level?: UpsertCustomModelRequestDefaultEffortLevel;
   description?: UpsertCustomModelRequestDescription;
   label: string;
+  supported_effort_levels?: UpsertCustomModelRequestSupportedEffortLevels;
+  supports_effort?: UpsertCustomModelRequestSupportsEffort;
 }
 
 export type UpsertProfileRequestEnv = { [key: string]: string };

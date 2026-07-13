@@ -58,6 +58,12 @@ pub struct UpsertCustomModelRequest {
     pub label: String,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub supports_effort: Option<bool>,
+    #[serde(default)]
+    pub supported_effort_levels: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_effort_level: Option<String>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -150,6 +156,11 @@ pub async fn upsert_custom_model_handler(
         &model_id,
         &body.label,
         body.description.as_deref(),
+        custom_models::CustomModelEffort {
+            supports_effort: body.supports_effort,
+            supported_effort_levels: body.supported_effort_levels,
+            default_effort_level: body.default_effort_level,
+        },
     )
     .await?;
     Ok(Json(entry))
