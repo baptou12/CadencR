@@ -71,7 +71,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
     attach_permission_bridge(&mut context);
     if let Err(error) = super::prompt_pending_mcp::attach_cadencr_mcp(&mut context).await {
         fail_pending_receipt(&context, receipt_message_uuid.as_deref()).await;
-        report_spawn_error(context, error).await;
+        report_mcp_attach_error(context, error).await;
         return Ok(());
     }
     validate_resume_id(adapter, &mut context);
@@ -190,6 +190,22 @@ async fn report_branch_setup_error(context: PendingPromptContext, message: Strin
     )
     .await;
 }
+
+async fn report_mcp_attach_error(context: PendingPromptContext, message: String) {
+    error!(context.db_session_id, error = %message, "failed to attach Cadencr MCP servers");
+    persist_pause_and_send_session_error(
+        &context.app_state.write_pool,
+        &context.app_state.session_status_tx,
+        &context.sender,
+        &context.envelope_id,
+        context.feature_id,
+        context.db_session_id,
+        "MCP_ATTACH_ERROR",
+        &message,
+    )
+    .await;
+}
+
 fn attach_permission_bridge(context: &mut PendingPromptContext) {
     let (permission_tx, permission_rx) = mpsc::channel::<PermissionResponse>(16);
     let bridge = WsBridgeCanUseTool {

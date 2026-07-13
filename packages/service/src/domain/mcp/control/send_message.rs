@@ -1,16 +1,18 @@
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
+#[path = "send_message_dispatch.rs"]
+mod dispatch;
 #[path = "send_message_persistence.rs"]
 mod persistence;
 #[path = "send_message_audit.rs"]
 mod send_audit;
 
-use self::persistence::{
-    claim_immediate_dispatch, insert_message_link, mark_immediate_dispatch_failed,
-    mark_immediate_dispatch_succeeded, persist_immediate_message, ImmediateDispatchClaim,
-    ImmediateMessageRequest,
+use self::dispatch::{
+    claim_immediate_dispatch, mark_immediate_dispatch_failed, mark_immediate_dispatch_succeeded,
+    ImmediateDispatchClaim,
 };
+use self::persistence::{insert_message_link, persist_immediate_message, ImmediateMessageRequest};
 use self::send_audit::{audit_send_message, audit_send_message_error};
 use super::message_queue::enqueue_message;
 use super::scope::resolve_session_scope;
