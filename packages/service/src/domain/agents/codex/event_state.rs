@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
+use super::event_web::WebEventState;
+
 struct PendingSpawnRoute {
     sender_thread_id: String,
     task_name: Option<String>,
@@ -18,6 +20,7 @@ pub(super) struct IndexState {
     command_output_snapshots: HashMap<String, String>,
     reasoning_marker_prefixes: HashMap<String, String>,
     suppressed_raw_tool_items: HashSet<String>,
+    pub(super) web: WebEventState,
     /// Maps a sub-agent's `threadId` to the `tool_use_id` of the parent
     /// `spawn_agent` collab tool call. Codex routes sub-agent traffic on the
     /// same JSON-RPC stream but with the spawned thread's id, so the codex
@@ -66,6 +69,7 @@ impl IndexState {
         self.command_output_snapshots.clear();
         self.reasoning_marker_prefixes.clear();
         self.suppressed_raw_tool_items.clear();
+        self.web.reset();
         self.pending_spawn_calls.clear();
         self.pending_spawn_routes.clear();
         // `subagent_threads` is intentionally not cleared: sub-agent threads
