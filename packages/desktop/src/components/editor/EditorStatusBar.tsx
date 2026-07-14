@@ -4,7 +4,7 @@
  * — for files that support it — a markdown preview toggle. Extracted from
  * `CodeMirrorEditor.tsx` to keep that file under the 400-line limit.
  */
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { EyeIcon, PencilIcon } from "lucide-react";
 import { LspStatusIndicator } from "./LspStatusIndicator";
 import type { LspStatus } from "@/lib/lsp/useLsp";
@@ -17,7 +17,7 @@ interface PreviewToggle {
 export interface EditorStatusBarProps {
   line: number;
   col: number;
-  language: string;
+  language: ReactNode;
   autoSavedVisible: boolean;
   lspStatus: LspStatus;
   lspLanguageId: string | null;

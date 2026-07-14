@@ -10,7 +10,7 @@ import { EditorView } from "@codemirror/view";
 import { CornerDownRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { scrollToEditorLine } from "./CodeMirrorEditor";
+import { scrollToEditorLine } from "./editor-lines";
 
 interface EditorGoToLinePanelProps {
   view: EditorView;

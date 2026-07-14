@@ -38,6 +38,7 @@ import { lspModHoverExtension } from "./mod-hover";
 import { jumpToDefinitionKeymap } from "./definition";
 import { lspLanguageFeatures } from "./language-features";
 import type { LspStatus } from "./lsp-status";
+import type { EditorLanguageId } from "@/lib/editor-language";
 
 export type { LspStatus } from "./lsp-status";
 
@@ -47,6 +48,8 @@ interface UseLspArgs {
   projectId: number;
   featureId: number;
   paneId: string;
+  /** User-selected editor language, after resolving file/extension overrides. */
+  editorLanguageId?: EditorLanguageId;
   /**
    * When false, acquire no client and return an empty extension array + an
    * idle status. Used by large-file read-only mode. Defaults to true.
@@ -76,13 +79,14 @@ export function useLsp({
   projectId,
   featureId,
   paneId,
+  editorLanguageId,
   enabled = true,
 }: UseLspArgs): UseLspResult {
   const tooling = useProjectEditorTooling(projectId);
 
   const languageId = useMemo(
-    () => (enabled ? getLspLanguageId(filePath) : null),
-    [enabled, filePath],
+    () => (enabled ? getLspLanguageId(filePath, editorLanguageId) : null),
+    [enabled, filePath, editorLanguageId],
   );
 
   const absPath = useMemo(() => {

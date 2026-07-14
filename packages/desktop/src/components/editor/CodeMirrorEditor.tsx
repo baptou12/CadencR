@@ -5,17 +5,19 @@ import { Loader2Icon } from "lucide-react";
 import { useReadFile, useGetBlame, useGetFeatureWorkingDir } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useEditorLanguage } from "@/hooks/useEditorLanguage";
 import { useLsp } from "@/lib/lsp/useLsp";
 import { useScopedShortcut } from "@/hooks/useShortcut";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { getPreviewKind } from "@/lib/file-language";
-import { getLanguageExtension, getLanguageName } from "./language-extensions";
+import { getLanguageExtension } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { useGitGutter } from "@/lib/editor/git-gutter/useGitGutter";
 import { setGitGutterBaseline } from "@/lib/editor/git-gutter/git-gutter-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
+import { EditorLanguageSelector } from "./EditorLanguageSelector";
 import { EditorStatusBar } from "./EditorStatusBar";
 import { useLargeFileMode } from "./useLargeFileMode";
 import { useEditorSave } from "./useEditorSave";
@@ -31,6 +33,7 @@ import { bufferSearchExtension } from "./editor-search/search-extension";
 import { editorBufferKeymap } from "./editor-buffer-keymap";
 import { EditorGoToLinePanel } from "./EditorGoToLinePanel";
 import { EditorCommandsSlot } from "./lsp/EditorLspLayer";
+import { scrollToEditorLine } from "./editor-lines";
 
 interface CodeMirrorEditorProps {
   filePath: string;
@@ -51,19 +54,6 @@ interface CodeMirrorEditorProps {
 }
 
 const AUTO_SAVE_DELAY_MS = 1500;
-
-export function clampEditorLineNumber(lineNumber: number, lineCount: number): number {
-  return Math.min(Math.max(1, lineNumber), Math.max(1, lineCount));
-}
-
-export function scrollToEditorLine(view: EditorView, lineNumber: number): void {
-  const target = clampEditorLineNumber(lineNumber, view.state.doc.lines);
-  const line = view.state.doc.line(target);
-  view.dispatch({
-    selection: { anchor: line.from },
-    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
-  });
-}
 
 const BUFFER_KEYMAP_EXT = editorBufferKeymap();
 const BUFFER_SEARCH_EXT = bufferSearchExtension();
@@ -88,6 +78,7 @@ export default function CodeMirrorEditor({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const previewKind = getPreviewKind(filePath);
+  const language = useEditorLanguage(projectId, filePath);
 
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
   const { value: autoSaveSetting } = useDebouncedSetting("editor_auto_save");
@@ -133,6 +124,7 @@ export default function CodeMirrorEditor({
     projectId,
     featureId,
     paneId,
+    editorLanguageId: language.languageId,
     enabled: !largeMode,
   });
 
@@ -230,8 +222,8 @@ export default function CodeMirrorEditor({
 
   // Syntax highlighting is heavy on multi-MB files — skip it in large mode.
   const langExt = useMemo(
-    () => (largeMode ? null : getLanguageExtension(filePath)),
-    [largeMode, filePath],
+    () => (largeMode ? null : getLanguageExtension(filePath, language.languageId)),
+    [largeMode, filePath, language.languageId],
   );
 
   useEffect(() => {
@@ -389,7 +381,7 @@ export default function CodeMirrorEditor({
       <EditorStatusBar
         line={cursorPosition.line}
         col={cursorPosition.col}
-        language={getLanguageName(filePath)}
+        language={<EditorLanguageSelector filePath={filePath} language={language} />}
         autoSavedVisible={autoSavedVisible}
         lspStatus={lsp.status}
         lspLanguageId={lsp.languageId}

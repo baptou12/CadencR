@@ -3,7 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { highlightTree, classHighlighter } from "@lezer/highlight";
 import { describe, it, expect } from "vitest";
-import { getLanguageExtension, getLanguageName } from "../language-extensions";
+import { getLanguageExtension } from "../language-extensions";
 
 describe("getLanguageExtension", () => {
   const supported = [
@@ -57,13 +57,16 @@ describe("getLanguageExtension", () => {
     expect(getLanguageExtension("Makefile")).toBeNull();
   });
 
+  it("uses an explicit language instead of the file extension", () => {
+    expect(getLanguageExtension("schema.data", "json")).not.toBeNull();
+    expect(getLanguageExtension("script.ts", "plaintext")).toBeNull();
+  });
+
   it("does not treat unrelated files as env", () => {
     // `env` (no extension) and `env.txt` shouldn't trigger env-file
     // detection — only filenames with `.env` as a real segment.
     expect(getLanguageExtension("env")).toBeNull();
     expect(getLanguageExtension("env.txt")).toBeNull();
-    // `environment.json` is a JSON file, not an env file.
-    expect(getLanguageName("environment.json")).toBe("JSON");
   });
 });
 
@@ -101,27 +104,5 @@ describe("rich syntax highlighting", () => {
 
   it("highlights YAML keys", () => {
     expect(highlightClassesFor("file.yaml", "name: test\n")).toContain("tok-propertyName");
-  });
-});
-
-describe("getLanguageName", () => {
-  it("labels new LSP-backed file types", () => {
-    expect(getLanguageName("file.jsonc")).toBe("JSONC");
-    expect(getLanguageName("file.scss")).toBe("SCSS");
-    expect(getLanguageName("file.svelte")).toBe("Svelte");
-    expect(getLanguageName("file.vue")).toBe("Vue");
-    expect(getLanguageName("file.astro")).toBe("Astro");
-    expect(getLanguageName("services/api.Dockerfile")).toBe("Dockerfile");
-    expect(getLanguageName("Dockerfile.prod")).toBe("Dockerfile");
-  });
-
-  it("labels env files", () => {
-    expect(getLanguageName(".env")).toBe("Env");
-    expect(getLanguageName(".env.local")).toBe("Env");
-    expect(getLanguageName(".env.production.local")).toBe("Env");
-    expect(getLanguageName("local.env")).toBe("Env");
-    expect(getLanguageName("development.env")).toBe("Env");
-    expect(getLanguageName("API.ENV")).toBe("Env");
-    expect(getLanguageName("env.txt")).toBe("Plain Text");
   });
 });

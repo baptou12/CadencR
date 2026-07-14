@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
-import CodeMirrorEditor, { clampEditorLineNumber } from "../CodeMirrorEditor";
+import CodeMirrorEditor from "../CodeMirrorEditor";
+import { clampEditorLineNumber } from "../editor-lines";
 import { gitBlameExtension } from "../git-blame-extension";
-import { isMarkdownFile } from "../language-extensions";
+import { getLanguageExtension, isMarkdownFile } from "../language-extensions";
+import { useLsp } from "@/lib/lsp/useLsp";
 
 vi.mock("@codemirror/state", () => ({
   Compartment: class {
@@ -73,10 +75,8 @@ vi.mock("../BaseCodeMirrorEditor", () => ({
 }));
 
 vi.mock("../language-extensions", () => ({
-  // Real impl — `getLanguageName` (inside CodeMirrorEditor) depends on it.
   getFileExtension: (p: string) => p.split(".").at(-1)?.toLowerCase() ?? "",
   getLanguageExtension: vi.fn(() => null),
-  getLanguageName: vi.fn(() => "TypeScript"),
   isMarkdownFile: vi.fn(() => false),
 }));
 
@@ -112,6 +112,7 @@ vi.mock("@/components/Markdown", () => ({
 }));
 
 vi.mock("@/hooks/useShortcut", () => ({
+  useShortcut: vi.fn(),
   useScopedShortcut: vi.fn(),
   useScopedGlobalShortcutById: vi.fn(),
 }));
@@ -184,6 +185,23 @@ vi.mock("@/hooks/useDebouncedSetting", () => ({
   })),
 }));
 
+vi.mock("@/hooks/useEditorLanguage", () => ({
+  useEditorLanguage: vi.fn(() => ({
+    languageId: "typescript",
+    detectedLanguageId: "typescript",
+    inheritedLanguageId: "typescript",
+    preference: "auto",
+    applyToExtension: false,
+    extension: "ts",
+    isLoading: false,
+    isSaving: false,
+    loadError: null,
+    canSave: true,
+    save: vi.fn(),
+    retry: vi.fn(),
+  })),
+}));
+
 const defaultProps = {
   filePath: "/test.ts",
   projectId: 42,
@@ -203,6 +221,8 @@ beforeEach(() => {
   baseEditorProps.mockClear();
   mockSetDirty.mockClear();
   vi.mocked(gitBlameExtension).mockClear();
+  vi.mocked(getLanguageExtension).mockClear();
+  vi.mocked(useLsp).mockClear();
   vi.mocked(isMarkdownFile).mockReset().mockReturnValue(false);
 });
 
@@ -243,6 +263,16 @@ describe("CodeMirrorEditor", () => {
     expect(screen.getByText("Ln 1, Col 1")).toBeInTheDocument();
     expect(screen.getByText("TypeScript")).toBeInTheDocument();
     expect(screen.getByText("UTF-8")).toBeInTheDocument();
+  });
+
+  it("applies the resolved language to syntax highlighting and LSP", () => {
+    mockReadFileReturn = { data: { content: "hello" }, isLoading: false, error: null };
+    render(<CodeMirrorEditor {...defaultProps} />);
+
+    expect(getLanguageExtension).toHaveBeenCalledWith("/test.ts", "typescript");
+    expect(useLsp).toHaveBeenCalledWith(
+      expect.objectContaining({ filePath: "/test.ts", editorLanguageId: "typescript" }),
+    );
   });
 
   it("applies the blame extension once the editor mounts even if blame data arrived earlier", () => {
