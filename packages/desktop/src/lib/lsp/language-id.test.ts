@@ -48,6 +48,11 @@ describe("getLspLanguageId", () => {
     expect(getLspLanguageId("noext")).toBeNull();
   });
 
+  it("uses an explicit editor language override", () => {
+    expect(getLspLanguageId("schema.data", "json")).toBe("json");
+    expect(getLspLanguageId("script.ts", "markdown")).toBeNull();
+  });
+
   it("returns null for env files so we don't try to spawn an LSP", () => {
     // Env files get shell syntax highlighting (see language-extensions),
     // but they're not shell programs — LSPs reject or fail on them, and

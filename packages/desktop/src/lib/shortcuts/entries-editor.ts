@@ -69,6 +69,18 @@ export const EDITOR_SHORTCUTS = [
     scope: "editor",
   },
   {
+    id: "editor-language-confirm",
+    keys: ["mod", "enter"],
+    description: "Apply language selection",
+    scope: "editor",
+  },
+  {
+    id: "editor-language-toggle-extension",
+    keys: ["a"],
+    description: "Toggle language selection for file extension",
+    scope: "editor",
+  },
+  {
     id: "editor-next-tab",
     keys: ["mod", "shift", "rbracket"],
     description: "Next file tab",

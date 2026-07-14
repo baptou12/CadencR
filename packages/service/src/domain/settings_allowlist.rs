@@ -148,6 +148,13 @@ mod tests {
     }
 
     #[test]
+    fn editor_language_overrides_are_project_scoped() {
+        assert!(is_project_key_allowed("editor_language_overrides"));
+        assert!(!is_workspace_key_allowed("editor_language_overrides"));
+        assert!(!is_feature_key_allowed("editor_language_overrides"));
+    }
+
+    #[test]
     fn project_allows_default_worktree_mode_only() {
         assert!(is_project_key_allowed("default_worktree_mode"));
         assert!(!is_feature_key_allowed("default_worktree_mode"));

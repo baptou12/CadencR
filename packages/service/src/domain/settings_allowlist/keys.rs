@@ -43,6 +43,9 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     "editor_linter",
     "editor_formatter",
     "editor_format_on_save",
+    // Project-scoped JSON map of exact-file and extension language-mode
+    // associations selected from the editor status bar.
+    "editor_language_overrides",
 ];
 
 /// Keys writable via `PUT /api/workspace/settings/{key}`.
