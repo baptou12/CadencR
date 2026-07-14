@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.7.0 - 2026-07-14
+
+Previous release: v0.6.7 - 2026-07-09
+
+### ✨ Added
+
+- [**Desktop**] Added cross-conversation prompt references: type `@@` in the composer to search conversations across registered projects, insert a clickable reference, and have the agent load the selected history as scoped context through the workspace MCP.
+- [**Desktop**] Added provider-neutral `/cadencr:*` orchestration skills for review, rescue, status, parallel work, and handoff, surfaced in both `/` and `$` composer menus and expanded only when sent so repositories stay untouched.
+- [**Desktop**] Added an agent-session hierarchy to the project sidebar, with linked parent/child gate and reply events, actionable child permission and question summaries, and source-conversation links on generated messages so delegated work stays traceable.
+- [**Backend**] Added explicit cross-project spawning through `project_spawn_session`, including target-project provider/model defaults, target-aware thinking levels, provenance checks, and safe dispatch-error reporting that avoids duplicate retries.
+- [**Desktop**] Added an opt-in Summary conversation mode that folds each completed turn into an expandable tool recap and final answer, with per-tool counts, attributed colors, Git numstat, and a footer collapse control for long expanded turns.
+- [**Desktop**] Added richer first-run onboarding with preferences, runtime and auto-name model selection, a welcome step, and a dismissible per-project setup dialog for accent color and worktree defaults.
+- [**Desktop**] Added sanitized inline and block HTML rendering to Markdown surfaces, plus repo-relative image resolution in editor Markdown previews with visible loading and error states.
+- [**Desktop**] Added Catppuccin Mocha and Latte themes across the workspace, terminal, and Git diff viewer.
+- [**Desktop**] Added background commit execution with live progress, workspace access while pre-commit hooks run, and preserved actionable output when a commit fails.
+
+### 🔧 Changed
+
+- [**provider:codex**] Improved Codex conversations with server-advertised reasoning levels such as Ultra, detailed multi-part thinking summaries, complete WebSearch and WebFetch details, and correct nesting for new and resumed sub-agent streams.
+- [**provider:claude**] Let custom Claude proxy models declare their supported thinking levels so existing effort controls work without provider-specific hardcoding.
+- [**Desktop**] Cleaned up tool-call presentation across providers by normalizing MCP calls, hiding internal runtime plumbing, presenting skill reads semantically, and enriching compact and Summary-mode tool chips.
+
+### 🐛 Fixed
+
+- [**Backend**] Fixed user prompts that could be lost, duplicated, reordered, or left pending across steering, reconnects, scheduled delivery, multi-viewer sessions, and transient dispatch failures by giving each message one canonical UUID and a durable, idempotent delivery lifecycle.
+- [**Desktop**] Fixed prompts, permission responses, resume requests, and other controls being silently dropped during WebSocket reconnect windows by queueing outbound envelopes and flushing them in order after session initialization.
+- [**Desktop**] Fixed PNG and other image files in Git diffs being treated as empty textless binaries by preserving their bytes and rendering added, deleted, and before/after previews with accurate metadata.
+- [**Desktop**] Fixed live conversations jumping while the agent streams, first prompts rendering out of chronological order after pagination, older-history loading appearing stuck when Summary mode collapses a page, pending-message receipts snapping away, and Summary mode folding turns before a steered prompt is received or while a question is still active.
+- [**Desktop**] Fixed mobile and remote conversation usability by keeping Send available while an agent runs, preserving iOS scroll position when older history loads, and preventing background push wakes from masquerading as active device connections.
+- [**Desktop**] Fixed Git diff expansion and scroll state resetting during live updates, and ignored callbacks from replaced session sockets so stale connections cannot overwrite current state.
+- [**Desktop**] Fixed absolute filesystem paths entered in the Browser so they open as correctly encoded local `file://` URLs, including names with reserved characters.
+
+### 🔒 Security
+
+- [**dependencies**] Updated Electron, Axios, CodeMirror, Lexical, Mermaid, Radix UI, the Agent Client Protocol, CodeQL, Rust concurrency/authentication/file-walking libraries, and build tooling, including upstream memory-safety fixes in Electron and `rand`.
+
 ## v0.6.7 - 2026-07-09
 
 Previous release: v0.6.6 - 2026-07-05

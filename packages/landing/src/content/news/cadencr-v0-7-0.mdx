@@ -1,0 +1,201 @@
+---
+title: "CadencR v0.7.0 brings loop engineering to agent orchestration"
+date: 2026-07-14
+summary: "CadencR v0.7.0 adds built-in review, rescue, status, parallelize, and handoff workflows, with visible session hierarchies, cross-conversation context, actionable child gates, and cross-project orchestration."
+author: "Raphaël - RLE - Le Minor"
+tags: ["release", "orchestration", "agents", "mcp"]
+---
+
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
+import childGateScreenshot from "@/assets/news/v0.7.0/babysit.png";
+import loopEngineeringSkillsScreenshot from "@/assets/news/v0.7.0/loop-engineering-skills.png";
+import summaryModeScreenshot from "@/assets/news/v0.7.0/summary_mode.png";
+
+<DocScreenshot
+  src={loopEngineeringSkillsScreenshot}
+  alt="CadencR composer showing the review, rescue, status, parallelize, and handoff orchestration skills"
+  caption="Five built-in CadencR skills turn review, rescue, status, parallel work, and handoff into repeatable orchestration loops."
+  bordered={false}
+  rounded
+  elevated
+/>
+
+> **Prompt engineering improves the instruction. Loop engineering improves everything that happens around it.**
+
+When agents work on real software, the prompt is only the beginning. The useful system also needs to decide **when work should split**, **how parallel edits stay isolated**, **when another model should review the result**, **how blocked work returns to a human**, and **how context survives a handoff**.
+
+CadencR v0.7.0 is built around that idea. It turns recurring multi-agent patterns into explicit orchestration workflows, then makes their relationships, replies, and approval gates visible inside the workspace.
+
+The goal is not autonomy for its own sake. The goal is to make serious agent work **repeatable, inspectable, and safe to steer**. Instead of rebuilding a coordination prompt every time, you can invoke a known loop, watch it run, and keep its result attached to the project and conversation that produced it.
+
+## From prompt engineering to loop engineering
+
+Prompt engineering asks: _What should this model do next?_
+
+Loop engineering asks a wider set of questions:
+
+1. **Context:** What does the next agent need to know, and what should stay out of its prompt?
+2. **Isolation:** Should it share this worktree, or work concurrently in a new one?
+3. **Specialization:** Should the same model continue, or would a different provider offer a better perspective?
+4. **Return path:** How does the result get back to the session that delegated the work?
+5. **Control:** Who can answer a permission, question, or plan gate when a child session stops?
+6. **Failure:** If a spawn, message, or handoff fails, is that failure visible and actionable?
+
+CadencR already had the project and workspace MCP foundation for agent coordination. Version 0.7.0 builds **product-level loops** on top of it: named workflows with defined scope, isolation, lineage, return behavior, and failure handling.
+
+## Five built-in orchestration loops
+
+The composer now exposes five provider-neutral CadencR skills in both the `/` and `$` menus.
+
+### `/cadencr:review` — bring in an independent reviewer
+
+`/cadencr:review` starts a fresh reviewer session against either the **current uncommitted work** or the **whole branch**. The reviewer reuses the exact worktree so it sees the real changes, but its instructions are strictly read-only.
+
+The result comes back as a prioritized review with severity, file and line context, a concise problem statement, and a concrete fix. A clean review must say so explicitly instead of returning an ambiguous empty result.
+
+This turns independent review into a repeatable loop:
+
+**implement → inspect the real diff → return findings → decide what to fix**
+
+### `/cadencr:rescue` — change perspective when a task is stuck
+
+`/cadencr:rescue` is the escape hatch for a conversation that has exhausted its current approach. It builds a self-contained summary of the goal, failed attempts, exact blocker, relevant files, and constraints, then deliberately sends that brief to a **different model or provider**.
+
+The rescue session shares the current worktree so it can inspect the same state. It returns **one concrete next step and one alternative**, giving the parent session a focused way forward rather than another broad restatement of the problem.
+
+### `/cadencr:status` — read the live agent organization
+
+`/cadencr:status` is a read-only operational loop. It reads the relationship graph, resolves the related sessions, checks their live state, and surfaces any pending gates.
+
+The output is a compact tree showing which sessions are **active**, **idle**, or **blocked**, plus the permission, question, or plan that needs attention. It does not message, spawn, or modify anything.
+
+### `/cadencr:parallelize` — fan out without edit collisions
+
+`/cadencr:parallelize` takes independent sub-tasks and starts them concurrently. Each child gets a **self-contained instruction** and a **new isolated worktree**, so parallel edits cannot collide with the parent or with another child.
+
+Replies return to the parent as they finish and are consolidated by sub-task, including failures and worktree details when available. The loop is deliberately for independent work: tasks with ordering dependencies or overlapping edits should stay sequential.
+
+### `/cadencr:handoff` — transfer ownership without losing the thread
+
+`/cadencr:handoff` prepares a successor session with a concise brief containing the goal, constraints, decisions, worktree and branch state, changed files, verification results, and the next concrete step.
+
+The successor can reuse the current worktree when it needs the exact uncommitted state, or start from a clean isolated worktree when that is the safer choice. CadencR records the handoff relationship explicitly, so the successor remains visible as part of the same orchestration graph.
+
+### Virtual skills, not repository files
+
+These workflows are **virtual CadencR skills**. They expand only when sent and are never copied into the repository, where their Cadencr-specific MCP calls would not make sense. They also do not belong to one provider.
+
+The same loop can select the **project**, **provider**, **model**, **thinking level**, **branch**, and **worktree policy** that fit the job. `project_spawn_session` can now target any registered project explicitly, which lets orchestration cross repository boundaries while preserving target-project defaults and provenance.
+
+## Orchestration you can see and control
+
+Multi-agent work becomes difficult when coordination disappears into background terminals or nested logs. CadencR v0.7.0 makes the graph part of the product.
+
+### Session hierarchy in the project sidebar
+
+Spawned and handed-off sessions now appear as a hierarchy in the project sidebar. The tree preserves active project organization without disrupting pinned, archived, or worktree-based grouping.
+
+At a glance, you can answer:
+
+- **What spawned this session?**
+- **Which child is still working?**
+- **Where did this result come from?**
+- **Which conversation owns the next step?**
+
+### Linked replies and source conversations
+
+Child turn results come back as linked orchestration events instead of detached text. Messages generated by another session include their source conversation, and that footer becomes a navigation path back to the work that produced them.
+
+This matters when several agents are contributing to one decision. A result should carry its lineage, not require you to remember which terminal or tab produced it.
+
+### Actionable child gates
+
+Permissions, questions, and plan approvals are also part of the orchestration graph. When a delegated session stops on a gate, the parent can receive a compact, provenance-checked summary containing the relevant command, question choices, or plan content.
+
+Eligible gates can be answered through the orchestration path, while the normal human approval surface stays available and retains first-answer authority. Delegation does not remove control; it gives blocked work a visible route back to it.
+
+<DocScreenshot
+  src={childGateScreenshot}
+  alt="CadencR parent conversation showing a child session status update and an escalated question with selectable answers"
+  caption="A linked child can surface its question in the parent conversation, with the relevant choices and session context kept visible."
+  bordered={false}
+  rounded
+  elevated
+/>
+
+## Context can cross conversation boundaries
+
+Good loops need continuity, but pasting an entire conversation into a new prompt is noisy and fragile. Version 0.7.0 adds **cross-conversation references** directly to the composer.
+
+Type `@@` to search conversations across registered projects and insert a clickable reference. When the prompt is sent, the agent receives a scoped instruction to read the selected session through the CadencR workspace MCP and use it as historical context.
+
+Referenced history stays **context**, not an instruction channel that can override the current request. That boundary makes the feature useful for workflows such as:
+
+- comparing two previous investigations;
+- continuing a decision made in another project;
+- asking a reviewer to account for earlier constraints;
+- preparing a handoff without copying pages of transcript;
+- connecting frontend, backend, and infrastructure conversations around one change.
+
+---
+
+## More in CadencR v0.7.0
+
+Orchestration is the headline, but this release also improves how conversations are read, how projects are configured, how Markdown and images are reviewed, and how provider capabilities reach the UI.
+
+### Summary mode for readable long sessions
+
+The new opt-in **Summary conversation mode** folds each completed turn into an expandable tool recap followed by the final answer. Recaps include per-tool counts, attributed colors, Git addition and deletion totals, and distinct CadencR MCP styling.
+
+The active turn still streams normally. A turn folds only after it actually ends, not when it pauses on a question or when a mid-turn steering prompt is still waiting for the provider. Expanded summaries include a footer collapse control, so you do not need to scroll back to the top of a long tool run.
+
+<DocScreenshot
+  src={summaryModeScreenshot}
+  alt="CadencR conversation in Summary mode showing a completed handoff, compact tool recap chips, and the final response"
+  caption="Summary mode keeps the final result readable while preserving expandable, attributed recaps of the tools and orchestration actions used during the turn."
+  bordered={false}
+  rounded
+  elevated
+/>
+
+### A stronger onboarding and project setup flow
+
+First-run onboarding now includes a dedicated **Preferences** step for Summary mode, verbosity, notifications, and MCP toggles. Provider selection has been replaced with the same runtime and auto-name model selection used elsewhere in the product, and the final step is now a real welcome screen.
+
+New projects can open a lightweight setup dialog for **accent color** and **worktree defaults**. Shared controls keep onboarding and Settings aligned, and failed project-setting writes now surface a visible error instead of disappearing silently.
+
+### Better Markdown, HTML, and local images
+
+Markdown surfaces can now render **sanitized inline and block HTML**. Scripts, event handlers, and dangerous URL schemes are stripped before content reaches the Electron renderer, while the renderer avoids the extra parse cost when a message contains no raw HTML.
+
+Editor Markdown previews can also resolve repository-relative images such as `./diagram.png` or `docs/logo.png`. The image is fetched through the local image route, displayed through a safe object URL, and given visible loading and error states.
+
+### Image-aware Git diffs
+
+Git diffs now preserve binary image bytes across refs and render **added**, **deleted**, and **before/after** previews with accurate dimensions and file metadata. PNG and other image changes no longer collapse into a misleading empty-binary placeholder when the visual diff is the information you actually need.
+
+Live Git updates are more stable too: expanded files and scroll position stay anchored instead of resetting when unrelated agent activity refreshes the diff state.
+
+### Background commits with visible progress
+
+Long pre-commit hooks no longer have to block the whole workspace. Commit execution can continue in the background with live output, while the rest of the project remains usable.
+
+If the commit fails, the actionable output remains available for inspection instead of disappearing with the dialog. This is another small loop improvement: **start the commit → keep working → return to a durable result**.
+
+### Better reasoning and tool visibility across providers
+
+Codex model capabilities now follow the reasoning efforts advertised by the server, including new levels such as **Ultra**, without waiting for a client-side allowlist update. Detailed multi-part reasoning summaries keep their order, WebSearch and WebFetch calls retain completed queries and resolved page URLs, and new or resumed sub-agent activity stays nested under the correct Agent block.
+
+Custom Claude proxy models can now declare their own effort capabilities, exposing the existing thinking-level controls without adding provider-specific branches to shared UI code. Spawned sessions can resolve an omitted effort from the target model's saved preference or CLI default.
+
+### Themes, mobile polish, and Browser paths
+
+**Catppuccin Mocha and Latte** join the built-in themes with complete workspace, terminal, and Git diff palettes. Mobile users keep the Send action while an agent is running, and iOS history loading no longer fights momentum scrolling and snaps the conversation down.
+
+Remote push wakes no longer look like an actively connected device, and absolute filesystem paths entered in the Browser are converted into correctly encoded local `file://` URLs.
+
+## Get CadencR v0.7.0
+
+For every feature, fix, and dependency update, read the changelog in the [v0.7.0 GitHub release notes](https://github.com/merkr-software/CadencR/releases/tag/v0.7.0).
+
+**CadencR v0.7.0 is available now.** [Download the release](https://github.com/merkr-software/CadencR/releases/tag/v0.7.0), or read the full changelog from the same page.

@@ -13,6 +13,7 @@ interface Props {
    */
   bordered?: boolean;
   rounded?: boolean;
+  elevated?: boolean;
   maxWidthClass?: string;
 }
 
@@ -22,13 +23,19 @@ const {
   caption,
   bordered = true,
   rounded = bordered,
+  elevated = false,
   maxWidthClass = "",
 } = Astro.props;
 
 const radiusClass = rounded ? "rounded-xl" : "";
-const imageClass = bordered
-  ? ["block h-auto w-full border border-border shadow-md", radiusClass].filter(Boolean).join(" ")
-  : ["block h-auto w-full", radiusClass].filter(Boolean).join(" ");
+const imageClass = [
+  "block h-auto w-full",
+  bordered ? "border border-border" : "",
+  elevated ? "shadow-xl shadow-black/35" : bordered ? "shadow-md" : "",
+  radiusClass,
+]
+  .filter(Boolean)
+  .join(" ");
 const figureClass = ["my-6", maxWidthClass].filter(Boolean).join(" ");
 ---
 <figure class={figureClass}>
