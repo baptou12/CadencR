@@ -1,6 +1,9 @@
 use axum::extract::ws::Message;
 use tracing::warn;
 
+use crate::domain::agents::adapter::{
+    RuntimePromptCommandPlacement, RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger,
+};
 use crate::domain::agents::runtime_adapter;
 use crate::domain::ws_session::slash_commands::SlashCommandKind;
 
@@ -13,6 +16,23 @@ impl From<SlashCommandKind> for SlashCommandKindPayload {
             SlashCommandKind::Command => Self::Command,
             SlashCommandKind::Skill => Self::Skill,
             SlashCommandKind::Cadencr => Self::Cadencr,
+        }
+    }
+}
+
+impl From<RuntimePromptCommandPolicy> for PromptCommandPolicyPayload {
+    fn from(policy: RuntimePromptCommandPolicy) -> Self {
+        Self {
+            slash_command_placement: match policy.slash_command_placement {
+                RuntimePromptCommandPlacement::PromptStart => {
+                    PromptCommandPlacementPayload::PromptStart
+                }
+                RuntimePromptCommandPlacement::Anywhere => PromptCommandPlacementPayload::Anywhere,
+            },
+            skill_reference_trigger: match policy.skill_reference_trigger {
+                RuntimeSkillReferenceTrigger::Slash => SkillReferenceTriggerPayload::Slash,
+                RuntimeSkillReferenceTrigger::Dollar => SkillReferenceTriggerPayload::Dollar,
+            },
         }
     }
 }
@@ -88,6 +108,11 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
         "list",
         serde_json::to_value(CommandsListPayload {
             commands: cached_payload_commands,
+            prompt_command_policy: adapter
+                .as_ref()
+                .map(|adapter| adapter.prompt_command_policy())
+                .unwrap_or_default()
+                .into(),
             refreshing,
         })
         .unwrap(),
@@ -144,7 +169,10 @@ mod tests {
     use axum::extract::ws::Message;
     use tokio::sync::mpsc;
 
-    use crate::domain::ws_session::protocol::{CommandsListPayload, SlashCommandKindPayload};
+    use crate::domain::ws_session::protocol::{
+        CommandsListPayload, PromptCommandPlacementPayload, SkillReferenceTriggerPayload,
+        SlashCommandKindPayload,
+    };
     use crate::domain::ws_session::slash_commands::{SlashCommand, SlashCommandKind};
 
     use super::{handle_commands_get, to_payload_commands, SessionErrorPayload, WsEnvelope};
@@ -224,6 +252,14 @@ mod tests {
             payload.refreshing,
             "opencode should advertise refreshing=true"
         );
+        assert_eq!(
+            payload.prompt_command_policy.slash_command_placement,
+            PromptCommandPlacementPayload::PromptStart
+        );
+        assert_eq!(
+            payload.prompt_command_policy.skill_reference_trigger,
+            SkillReferenceTriggerPayload::Slash
+        );
     }
 
     #[tokio::test]
@@ -250,6 +286,14 @@ mod tests {
         assert!(
             !payload.refreshing,
             "codex should not advertise refreshing=true"
+        );
+        assert_eq!(
+            payload.prompt_command_policy.slash_command_placement,
+            PromptCommandPlacementPayload::PromptStart
+        );
+        assert_eq!(
+            payload.prompt_command_policy.skill_reference_trigger,
+            SkillReferenceTriggerPayload::Dollar
         );
     }
 

@@ -135,6 +135,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
             runtimeSessionId={controls.ws.runtimeSessionId || undefined}
             slashCommandsOverride={data.session?.slashCommands ?? []}
             slashCommandsLoading={data.session?.slashCommandsLoading ?? false}
+            promptCommandPolicy={data.session?.promptCommandPolicy}
             todos={agentVisible ? (data.session?.todos ?? null) : null}
             disableShortcuts={!hotkeysEnabled}
             agentTabActive={agentVisible && hotkeysEnabled}

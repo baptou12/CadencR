@@ -15,7 +15,8 @@ use self::permissions::{
 };
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
-    RuntimePermissionRequest, RuntimeSlashCommand, RuntimeSpawnConfig,
+    RuntimePermissionRequest, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
+    RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSpawnConfig,
 };
 
 pub struct OpenCodeAdapter;
@@ -30,6 +31,13 @@ fn normalize_resume_session_id(session_id: &str) -> Option<String> {
 
 #[async_trait]
 impl AgentRuntimeAdapter for OpenCodeAdapter {
+    fn prompt_command_policy(&self) -> RuntimePromptCommandPolicy {
+        RuntimePromptCommandPolicy {
+            slash_command_placement: RuntimePromptCommandPlacement::PromptStart,
+            skill_reference_trigger: RuntimeSkillReferenceTrigger::Slash,
+        }
+    }
+
     fn session_branching(&self) -> Option<&dyn super::adapter::SessionBranching> {
         Some(&branching::OPENCODE_SESSION_BRANCHING)
     }

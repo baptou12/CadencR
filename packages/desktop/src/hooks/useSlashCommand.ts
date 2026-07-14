@@ -6,19 +6,9 @@ import {
   type KeyboardEvent,
   type SetStateAction,
 } from "react";
+import type { SlashCommand } from "@/lib/slash-command";
 
-/** `cadencr` = a Cadencr virtual orchestration skill (`/cadencr:*`), surfaced in
- * both the `/` and `$` menus, rendered specially, and disabled when its project
- * MCP dependency is off. */
-export type SlashCommandKind = "command" | "skill" | "cadencr";
-
-export interface SlashCommand {
-  [key: string]: unknown;
-  name: string;
-  description: string;
-  kind: SlashCommandKind;
-  argumentHint?: string;
-}
+export type { SlashCommand, SlashCommandKind } from "@/lib/slash-command";
 
 interface SlashCommandState {
   isOpen: boolean;

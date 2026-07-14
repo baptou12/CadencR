@@ -18,7 +18,12 @@ import { ImagePastePlugin } from "./plugins/ImagePastePlugin";
 import { ConversationReferencePlugin } from "./plugins/ConversationReferencePlugin";
 import { ConversationReferenceNode } from "./nodes/ConversationReferenceNode";
 import { getEditorText, initializeEditorText, setEditorText } from "./editor-utils";
-import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { SlashCommand } from "@/lib/slash-command";
+import {
+  DEFAULT_PROMPT_COMMAND_POLICY,
+  promptCommandTriggers,
+  type PromptCommandPolicy,
+} from "@/lib/prompt-command-policy";
 
 export interface PromptEditorHandle {
   focus: () => void;
@@ -37,6 +42,7 @@ interface PromptEditorProps {
   mentionFeatureId?: number;
   slashCommands?: SlashCommand[];
   slashCommandsLoading?: boolean;
+  promptCommandPolicy?: PromptCommandPolicy;
   /** Called when Enter pressed (no shift, no popover). Return true to consume. */
   onEnterSend?: () => boolean;
   /** Called on ArrowUp at the document start for prompt history. */
@@ -89,6 +95,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       mentionFeatureId,
       slashCommands,
       slashCommandsLoading,
+      promptCommandPolicy = DEFAULT_PROMPT_COMMAND_POLICY,
       onEnterSend,
       onArrowUp,
       onArrowDown,
@@ -159,18 +166,16 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
         <MentionPlugin projectId={mentionProjectId} featureId={mentionFeatureId} />
         <ConversationReferencePlugin currentFeatureId={mentionFeatureId} />
-        <SlashCommandPlugin
-          commands={slashCommands}
-          isLoading={slashCommandsLoading}
-          commandKind="command"
-          triggerChar="/"
-        />
-        <SlashCommandPlugin
-          commands={slashCommands}
-          isLoading={slashCommandsLoading}
-          commandKind="skill"
-          triggerChar="$"
-        />
+        {promptCommandTriggers(promptCommandPolicy).map((trigger) => (
+          <SlashCommandPlugin
+            key={`${trigger.triggerChar}:${trigger.commandKindsAtPromptStart.join(",")}:${trigger.commandKindsMidPrompt.join(",")}`}
+            commands={slashCommands}
+            isLoading={slashCommandsLoading}
+            commandKindsAtPromptStart={trigger.commandKindsAtPromptStart}
+            commandKindsMidPrompt={trigger.commandKindsMidPrompt}
+            triggerChar={trigger.triggerChar}
+          />
+        ))}
         <KeyboardShortcutsPlugin
           onEnterSend={onEnterSend}
           onArrowUp={onArrowUp}

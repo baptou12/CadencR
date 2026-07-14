@@ -1,5 +1,6 @@
 import type { PromptAttachmentPayload } from "@/types/agent-types";
-import type { SlashCommandKind } from "@/hooks/useSlashCommand";
+import type { SlashCommandKind } from "@/lib/slash-command";
+import type { PromptCommandPolicyPayload } from "@/lib/prompt-command-policy";
 import { normalizeMessageUuid } from "@/lib/message-uuid";
 
 /**
@@ -258,6 +259,7 @@ export interface CommandsListPayload {
     description?: string;
     kind?: SlashCommandKind;
   }>;
+  prompt_command_policy?: PromptCommandPolicyPayload;
 }
 
 export function createHistoryGet(projectId: number): WsEnvelope {

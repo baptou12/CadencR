@@ -183,6 +183,7 @@ function AgentSessionPrompt(
       noTopPadding={props.hasMeta}
       slashCommandsOverride={session.slashCommandsOverride}
       slashCommandsLoading={session.slashCommandsLoading}
+      promptCommandPolicy={session.promptCommandPolicy}
       pendingPermission={session.pendingPermission}
       onPermissionDecision={session.onPermissionDecision}
       isSubmittingPermission={session.isSubmittingPermission}

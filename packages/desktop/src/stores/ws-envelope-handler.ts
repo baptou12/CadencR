@@ -1,4 +1,5 @@
-import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { SlashCommand } from "@/lib/slash-command";
+import { promptCommandPolicyFromPayload } from "@/lib/prompt-command-policy";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { queryClient } from "@/lib/queryClient";
 import { getWorkspaceSettingsQueryKey } from "@/api/settings";
@@ -122,6 +123,7 @@ function handleCommandsDomain(
     ctx.set(
       updateSession(ctx.get(), sessionId, {
         slashCommands: cmds,
+        promptCommandPolicy: promptCommandPolicyFromPayload(p.prompt_command_policy),
         slashCommandsLoading: false,
       }),
     );

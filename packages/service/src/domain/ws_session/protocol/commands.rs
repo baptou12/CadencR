@@ -30,9 +30,33 @@ pub enum SlashCommandKindPayload {
     Cadencr,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptCommandPlacementPayload {
+    #[default]
+    PromptStart,
+    Anywhere,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillReferenceTriggerPayload {
+    #[default]
+    Slash,
+    Dollar,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PromptCommandPolicyPayload {
+    pub slash_command_placement: PromptCommandPlacementPayload,
+    pub skill_reference_trigger: SkillReferenceTriggerPayload,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CommandsListPayload {
     pub commands: Vec<SlashCommandPayload>,
+    #[serde(default)]
+    pub prompt_command_policy: PromptCommandPolicyPayload,
     /// `true` when the server is currently re-resolving the catalog in
     /// the background (the FE returned cached data instantly; a fresh
     /// `commands.updated` envelope will follow when the probe

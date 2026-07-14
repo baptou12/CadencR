@@ -2,6 +2,20 @@ import { createRef } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, act, fireEvent } from "@/test-utils";
 import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
+import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
+
+const SLASH_ANYWHERE_POLICY: PromptCommandPolicy = {
+  slashCommandPlacement: "anywhere",
+  skillReferenceTrigger: "slash",
+};
+const SLASH_AT_START_POLICY: PromptCommandPolicy = {
+  slashCommandPlacement: "prompt_start",
+  skillReferenceTrigger: "slash",
+};
+const DOLLAR_SKILLS_POLICY: PromptCommandPolicy = {
+  slashCommandPlacement: "prompt_start",
+  skillReferenceTrigger: "dollar",
+};
 
 vi.mock("@/hooks/useDebouncedValue", () => ({
   useDebouncedValue: <T,>(value: T): T => value,
@@ -173,7 +187,14 @@ describe("PromptEditor", () => {
         kind: "skill" as const,
       },
     ];
-    render(<PromptEditor ref={ref} slashCommands={slashCommands} slashCommandsLoading={false} />);
+    render(
+      <PromptEditor
+        ref={ref}
+        slashCommands={slashCommands}
+        slashCommandsLoading={false}
+        promptCommandPolicy={DOLLAR_SKILLS_POLICY}
+      />,
+    );
 
     await act(async () => {
       ref.current!.setText("first do this then $brain");
@@ -192,7 +213,14 @@ describe("PromptEditor", () => {
         kind: "command" as const,
       },
     ];
-    render(<PromptEditor ref={ref} slashCommands={slashCommands} slashCommandsLoading={false} />);
+    render(
+      <PromptEditor
+        ref={ref}
+        slashCommands={slashCommands}
+        slashCommandsLoading={false}
+        promptCommandPolicy={SLASH_AT_START_POLICY}
+      />,
+    );
 
     await act(async () => {
       ref.current!.setText("first do this then /brain");
@@ -200,6 +228,141 @@ describe("PromptEditor", () => {
 
     // Slash commands (/) only trigger at the very start of the prompt.
     expect(screen.queryByText("/superpowers:brainstorming")).not.toBeInTheDocument();
+  });
+
+  it("shows Claude slash commands mid-prompt", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    const slashCommands = [
+      {
+        name: "review",
+        description: "Review the current changes",
+        kind: "command" as const,
+      },
+      {
+        name: "cadencr:review",
+        description: "Run the Cadencr review workflow",
+        kind: "cadencr" as const,
+      },
+    ];
+    render(
+      <PromptEditor
+        ref={ref}
+        slashCommands={slashCommands}
+        slashCommandsLoading={false}
+        promptCommandPolicy={SLASH_ANYWHERE_POLICY}
+      />,
+    );
+
+    await act(async () => {
+      ref.current!.setText("please /rev");
+    });
+
+    expect(screen.getByText("/review")).toBeInTheDocument();
+    expect(screen.queryByText("/cadencr:review")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["slash anywhere", SLASH_ANYWHERE_POLICY],
+    ["slash at start", SLASH_AT_START_POLICY],
+  ])("does not offer dollar skills with %s policy", async (_name, promptCommandPolicy) => {
+    const ref = createRef<PromptEditorHandle>();
+    const slashCommands = [
+      {
+        name: "review",
+        description: "Review the current changes",
+        kind: "skill" as const,
+      },
+    ];
+    render(
+      <PromptEditor
+        ref={ref}
+        slashCommands={slashCommands}
+        slashCommandsLoading={false}
+        promptCommandPolicy={promptCommandPolicy}
+      />,
+    );
+
+    await act(async () => {
+      ref.current!.setText("please $rev");
+    });
+
+    expect(screen.queryByText("$review")).not.toBeInTheDocument();
+  });
+
+  it("keeps Codex skills out of the slash-command menu", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    const slashCommands = [
+      { name: "review-command", description: "Command", kind: "command" as const },
+      { name: "review-skill", description: "Skill", kind: "skill" as const },
+    ];
+    render(
+      <PromptEditor
+        ref={ref}
+        slashCommands={slashCommands}
+        slashCommandsLoading={false}
+        promptCommandPolicy={DOLLAR_SKILLS_POLICY}
+      />,
+    );
+
+    await act(async () => {
+      ref.current!.setText("/review");
+    });
+
+    expect(screen.getByText("/review-command")).toBeInTheDocument();
+    expect(screen.queryByText("/review-skill")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["slash anywhere", SLASH_ANYWHERE_POLICY, "please /rev", "command", "please /review "],
+    ["slash at start", SLASH_AT_START_POLICY, "/rev", "command", "/review "],
+    ["dollar skill", DOLLAR_SKILLS_POLICY, "use $rev", "skill", "use $review "],
+  ] as const)(
+    "serializes a selected %s suggestion",
+    async (_name, promptCommandPolicy, input, kind, expected) => {
+      const ref = createRef<PromptEditorHandle>();
+      render(
+        <PromptEditor
+          ref={ref}
+          slashCommands={[{ name: "review", description: "Review changes", kind }]}
+          slashCommandsLoading={false}
+          promptCommandPolicy={promptCommandPolicy}
+        />,
+      );
+
+      await act(async () => {
+        ref.current!.setText(input);
+      });
+      await act(async () => {
+        fireEvent.mouseDown(screen.getByText(`${kind === "skill" ? "$" : "/"}review`));
+      });
+
+      expect(ref.current!.getText()).toBe(expected);
+    },
+  );
+
+  it("closes an open menu when the command policy changes", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    const onArrowDown = vi.fn(() => null);
+    const props = {
+      ref,
+      onArrowDown,
+      slashCommands: [{ name: "review", description: "Review changes", kind: "skill" as const }],
+      slashCommandsLoading: false,
+    };
+    const { rerender } = render(
+      <PromptEditor {...props} promptCommandPolicy={SLASH_AT_START_POLICY} />,
+    );
+
+    await act(async () => {
+      ref.current!.setText("/rev");
+    });
+    expect(screen.getByText("/review")).toBeInTheDocument();
+
+    rerender(<PromptEditor {...props} promptCommandPolicy={DOLLAR_SKILLS_POLICY} />);
+    expect(screen.queryByText("/review")).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "ArrowDown" });
+
+    expect(onArrowDown).toHaveBeenCalledOnce();
   });
 
   it("selects a conversation with @@ and serializes its stable feature reference", async () => {

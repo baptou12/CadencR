@@ -19,6 +19,10 @@ import { useAgentPromptShortcuts } from "@/hooks/useAgentPromptShortcuts";
 import { useAgentPromptSend } from "./agent-prompt-send";
 import { useFeaturePromptDraftRestore } from "./agent-prompt-draft-restore";
 import { useDeferredAgentPrompts } from "./useDeferredAgentPrompts";
+import {
+  DEFAULT_PROMPT_COMMAND_POLICY,
+  supportsDollarSkillReferences,
+} from "@/lib/prompt-command-policy";
 import type {
   AgentPromptBarHandle,
   AgentPromptBarProps,
@@ -57,6 +61,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       noTopPadding,
       slashCommandsOverride,
       slashCommandsLoading,
+      promptCommandPolicy = DEFAULT_PROMPT_COMMAND_POLICY,
       pendingPermission,
       onPermissionDecision,
       isSubmittingPermission,
@@ -66,6 +71,9 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     const editorRef = useRef<PromptEditorHandle>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const isMobile = useIsMobile();
+    const promptCommandHint = supportsDollarSkillReferences(promptCommandPolicy)
+      ? "/ commands, $ skills"
+      : "/ commands";
     const [text, setText] = useState("");
     const textRef = useRef(text);
     textRef.current = text;
@@ -335,13 +343,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               placeholder={
                 status === "question"
                   ? "Send a message to resume…"
-                  : "Send a message… (@ files, @@ conversations, / commands, $ skills)"
+                  : `Send a message… (@ files, @@ conversations, ${promptCommandHint})`
               }
               className="max-h-[40vh] min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
               mentionProjectId={projectId}
               mentionFeatureId={featureId}
               slashCommands={slashCommandsOverride}
               slashCommandsLoading={slashCommandsLoading}
+              promptCommandPolicy={promptCommandPolicy}
               onPasteImages={addFiles}
             />
             <PromptBarActions

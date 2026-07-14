@@ -18,6 +18,7 @@ import {
   type WsEnvelope,
 } from "@/lib/ws-envelope";
 import { clearReconnect, unregisterReconnector } from "@/lib/ws-reconnect";
+import { DEFAULT_PROMPT_COMMAND_POLICY } from "@/lib/prompt-command-policy";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import {
@@ -265,6 +266,9 @@ function createWorkflowActions(deps: SimpleSessionActionDeps) {
       set(
         updateSession(get(), sessionId, {
           slashCommands: sameTarget ? session.slashCommands : [],
+          promptCommandPolicy: sameTarget
+            ? session.promptCommandPolicy
+            : DEFAULT_PROMPT_COMMAND_POLICY,
           slashCommandsLoading: true,
           slashCommandsKey: nextKey,
           slashCommandsRequestRef: envelope.id,

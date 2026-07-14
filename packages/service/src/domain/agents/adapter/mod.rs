@@ -23,7 +23,8 @@ pub use event_types::{
 pub use permission::{
     RuntimeCompactionStrategy, RuntimePermissionDecision, RuntimePermissionOption,
     RuntimePermissionRequest, RuntimePermissionResponse, RuntimePermissionResponseKind,
-    RuntimePermissionUpdate, RuntimeSlashCommand, RuntimeSlashCommandKind,
+    RuntimePermissionUpdate, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
+    RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSlashCommandKind,
     RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
 pub use session::{

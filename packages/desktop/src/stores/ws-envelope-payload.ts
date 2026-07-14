@@ -13,7 +13,13 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
   const record = asRecord(payload);
   if (!record) return null;
   const commands = optionalArray(record, "commands");
-  if (!commands) return { commands: [] };
+  const promptCommandPolicy = parsePromptCommandPolicy(record.prompt_command_policy);
+  if (!commands) {
+    return {
+      commands: [],
+      ...(promptCommandPolicy ? { prompt_command_policy: promptCommandPolicy } : {}),
+    };
+  }
   const parsed = commands
     .map(
       (
@@ -47,6 +53,26 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
     );
   return {
     commands: parsed,
+    ...(promptCommandPolicy ? { prompt_command_policy: promptCommandPolicy } : {}),
+  };
+}
+
+function parsePromptCommandPolicy(
+  value: unknown,
+): CommandsListPayload["prompt_command_policy"] | undefined {
+  const policy = asRecord(value);
+  if (!policy) return undefined;
+  const placement = optionalString(policy, "slash_command_placement");
+  const skillTrigger = optionalString(policy, "skill_reference_trigger");
+  if (
+    (placement !== "prompt_start" && placement !== "anywhere") ||
+    (skillTrigger !== "slash" && skillTrigger !== "dollar")
+  ) {
+    return undefined;
+  }
+  return {
+    slash_command_placement: placement,
+    skill_reference_trigger: skillTrigger,
   };
 }
 

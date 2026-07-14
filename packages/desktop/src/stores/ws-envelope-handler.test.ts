@@ -331,6 +331,10 @@ describe("handleEnvelope commands.list", () => {
       action: "list",
       ref: "commands-1",
       payload: {
+        prompt_command_policy: {
+          slash_command_placement: "prompt_start",
+          skill_reference_trigger: "dollar",
+        },
         commands: [
           { name: "review", description: "Review code", kind: "command" },
           { name: "finish-job", description: "Finish safely", kind: "skill" },
@@ -345,6 +349,10 @@ describe("handleEnvelope commands.list", () => {
       { name: "compact", description: "Compact context", kind: "command" },
     ]);
     expect(ctx.getSession("s1").slashCommandsLoading).toBe(false);
+    expect(ctx.getSession("s1").promptCommandPolicy).toEqual({
+      slashCommandPlacement: "prompt_start",
+      skillReferenceTrigger: "dollar",
+    });
   });
 });
 

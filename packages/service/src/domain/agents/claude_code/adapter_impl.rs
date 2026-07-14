@@ -14,12 +14,20 @@ use super::worktree_config;
 use super::{ClaudeCodeAdapter, CLAUDE_CODE_ADAPTER};
 use crate::domain::agents::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimePermissionMode,
+    RuntimePromptCommandPlacement, RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger,
     RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeSpawnConfig,
 };
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 #[async_trait]
 impl AgentRuntimeAdapter for ClaudeCodeAdapter {
+    fn prompt_command_policy(&self) -> RuntimePromptCommandPolicy {
+        RuntimePromptCommandPolicy {
+            slash_command_placement: RuntimePromptCommandPlacement::Anywhere,
+            skill_reference_trigger: RuntimeSkillReferenceTrigger::Slash,
+        }
+    }
+
     fn is_valid_resume_session_id(&self, session_id: &str) -> bool {
         uuid::Uuid::parse_str(session_id).is_ok()
     }
@@ -314,13 +322,27 @@ fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
 mod tests {
     use super::super::test_support::new_test_adapter;
     use crate::domain::agents::adapter::{
-        AgentRuntimeAdapter, RuntimeSlashCommand, RuntimeSlashCommandKind,
+        AgentRuntimeAdapter, RuntimePromptCommandPlacement, RuntimeSkillReferenceTrigger,
+        RuntimeSlashCommand, RuntimeSlashCommandKind,
     };
 
     #[test]
     fn adapter_advertises_prompt_receipts() {
         let adapter = new_test_adapter();
         assert!(adapter.supports_prompt_receipts());
+    }
+
+    #[test]
+    fn adapter_advertises_mid_prompt_slash_commands() {
+        let policy = new_test_adapter().prompt_command_policy();
+        assert_eq!(
+            policy.slash_command_placement,
+            RuntimePromptCommandPlacement::Anywhere
+        );
+        assert_eq!(
+            policy.skill_reference_trigger,
+            RuntimeSkillReferenceTrigger::Slash
+        );
     }
 
     #[test]

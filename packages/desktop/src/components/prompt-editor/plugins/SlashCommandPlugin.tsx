@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { $getRoot, $getSelection, $isRangeSelection, $isTextNode } from "lexical";
+import { $getRoot, $getSelection, $isRangeSelection, $isTextNode, type TextNode } from "lexical";
 import { $createSlashCommandNode } from "../nodes/SlashCommandNode";
 import { SlashCommandPopover } from "@/components/SlashCommandPopover";
-import { useSlashCommand, type SlashCommand } from "@/hooks/useSlashCommand";
+import { useSlashCommand } from "@/hooks/useSlashCommand";
 import { useProjectMcpEnabled, useWorkspaceMcpEnabled } from "@/lib/mcp-settings";
+import type { PromptCommandTriggerChar } from "@/lib/prompt-command-policy";
+import type { SlashCommand } from "@/lib/slash-command";
 import {
   getTriggerMatch,
   replaceTriggerWithNode,
@@ -14,8 +16,9 @@ import {
 interface SlashCommandPluginProps {
   commands: SlashCommand[] | undefined;
   isLoading?: boolean;
-  commandKind?: SlashCommand["kind"];
-  triggerChar?: "/" | "$";
+  commandKindsAtPromptStart: readonly SlashCommand["kind"][];
+  commandKindsMidPrompt: readonly SlashCommand["kind"][];
+  triggerChar: PromptCommandTriggerChar;
 }
 
 /** Minimal view of the `useSlashCommand` hook the editor sync callback needs. */
@@ -25,9 +28,22 @@ interface TriggerSync {
   handleChange: (text: string, cursor: number) => void;
 }
 
+function isAtPromptStart(node: TextNode, triggerOffset: number): boolean {
+  return (
+    triggerOffset === 0 &&
+    node.getPreviousSibling() === null &&
+    node.getParent() === $getRoot().getFirstChild()
+  );
+}
+
 /** Re-derive the open/query state of the trigger popover from the current
  * editor selection. Read-only (runs inside `editorState.read`). */
-function syncTriggerFromEditor(s: TriggerSync, triggerChar: "/" | "$"): void {
+function syncTriggerFromEditor(
+  s: TriggerSync,
+  triggerChar: PromptCommandTriggerChar,
+  allowsMidPrompt: boolean,
+  setAtPromptStart: (value: boolean) => void,
+): void {
   const selection = $getSelection();
   if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
     if (s.isOpen) s.close();
@@ -44,18 +60,12 @@ function syncTriggerFromEditor(s: TriggerSync, triggerChar: "/" | "$"): void {
     if (s.isOpen) s.close();
     return;
   }
-  // Slash commands ("/") only open at the very start of the editor. Skills
-  // ("$") can appear anywhere and multiple times, like @ mentions.
-  if (triggerChar === "/") {
-    const isAtStart =
-      match.triggerOffset === 0 &&
-      node.getPreviousSibling() === null &&
-      node.getParent() === $getRoot().getFirstChild();
-    if (!isAtStart) {
-      if (s.isOpen) s.close();
-      return;
-    }
+  const matchAtPromptStart = isAtPromptStart(node, match.triggerOffset);
+  if (!matchAtPromptStart && !allowsMidPrompt) {
+    if (s.isOpen) s.close();
+    return;
   }
+  setAtPromptStart(matchAtPromptStart);
   const syntheticText = triggerChar + match.query;
   s.handleChange(syntheticText, syntheticText.length);
 }
@@ -63,20 +73,24 @@ function syncTriggerFromEditor(s: TriggerSync, triggerChar: "/" | "$"): void {
 export function SlashCommandPlugin({
   commands,
   isLoading,
-  commandKind,
-  triggerChar = "/",
+  commandKindsAtPromptStart,
+  commandKindsMidPrompt,
+  triggerChar,
 }: SlashCommandPluginProps) {
   const [editor] = useLexicalComposerContext();
-  // Cadencr virtual skills are provider-neutral and appear in BOTH the `/` and
-  // `$` menus, so they're never filtered out by `commandKind`.
+  const [atPromptStart, setAtPromptStart] = useState(true);
+  const atPromptStartRef = useRef(true);
+  const updateAtPromptStart = useCallback((value: boolean) => {
+    if (atPromptStartRef.current === value) return;
+    atPromptStartRef.current = value;
+    setAtPromptStart(value);
+  }, []);
+  const allowedCommandKinds = atPromptStart ? commandKindsAtPromptStart : commandKindsMidPrompt;
   const filteredCommands = useMemo(
-    () =>
-      commands?.filter(
-        (command) => !commandKind || command.kind === commandKind || command.kind === "cadencr",
-      ),
-    [commands, commandKind],
+    () => commands?.filter((command) => allowedCommandKinds.includes(command.kind)),
+    [commands, allowedCommandKinds],
   );
-  // The `/cadencr:*` skills call both the project MCP (spawn/link/gates) and
+  // Cadencr virtual skills call both the project MCP (spawn/link/gates) and
   // the workspace MCP (session graph, project listing) tools, so both must be
   // on. When either is off the skills are shown but disabled (non-selectable)
   // rather than hidden.
@@ -92,9 +106,16 @@ export function SlashCommandPlugin({
   slashRef.current = slash;
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState }) => {
-      editorState.read(() => syncTriggerFromEditor(slashRef.current, triggerChar));
+      editorState.read(() =>
+        syncTriggerFromEditor(
+          slashRef.current,
+          triggerChar,
+          commandKindsMidPrompt.length > 0,
+          updateAtPromptStart,
+        ),
+      );
     });
-  }, [editor, triggerChar]);
+  }, [commandKindsMidPrompt.length, editor, triggerChar, updateAtPromptStart]);
 
   const handleSelect = useCallback(
     (commandName: string) => {

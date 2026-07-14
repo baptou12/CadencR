@@ -8,7 +8,11 @@ import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
-import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { SlashCommand } from "@/lib/slash-command";
+import {
+  DEFAULT_PROMPT_COMMAND_POLICY,
+  type PromptCommandPolicy,
+} from "@/lib/prompt-command-policy";
 import type { WorktreeStatus } from "@/types/workflow";
 import type { WsConnection } from "@/lib/ws-connection";
 import type { FirstPromptBranchSetup, WsEnvelope } from "@/lib/ws-envelope";
@@ -159,6 +163,7 @@ export interface SessionEntry {
   contextUsage: ContextUsageState | null;
   hasFileChanges: boolean;
   slashCommands: SlashCommand[];
+  promptCommandPolicy: PromptCommandPolicy;
   slashCommandsLoading: boolean;
   slashCommandsKey: string | null;
   slashCommandsRequestRef: string | null;
@@ -237,6 +242,7 @@ export function createSessionEntry(): SessionEntry {
     contextUsage: null,
     hasFileChanges: false,
     slashCommands: [],
+    promptCommandPolicy: DEFAULT_PROMPT_COMMAND_POLICY,
     slashCommandsLoading: false,
     slashCommandsKey: null,
     slashCommandsRequestRef: null,

@@ -11,7 +11,8 @@ import type { PendingPermission } from "../ToolPermissionPrompt";
 // status pushed by the backend. Workflow-level lifecycle decisions live
 // elsewhere (and use the legacy `AgentStatus`).
 import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
-import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { SlashCommand } from "@/lib/slash-command";
+import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import type { PermissionMode } from "@/types/permission-mode";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
@@ -185,6 +186,8 @@ export interface AgentSessionProps {
   runtimeSessionId?: string;
   /** Override slash commands (bypasses tRPC fetch). Used by ws-session. */
   slashCommandsOverride?: SlashCommand[];
+  /** Provider-owned syntax for invoking commands and skills. */
+  promptCommandPolicy?: PromptCommandPolicy;
   /** Whether the override commands are still loading */
   slashCommandsLoading?: boolean;
   /** Whether older messages exist beyond current window */

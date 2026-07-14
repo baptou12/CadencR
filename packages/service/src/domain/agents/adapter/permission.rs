@@ -47,6 +47,26 @@ pub enum RuntimeSlashCommandKind {
     Skill,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RuntimePromptCommandPlacement {
+    #[default]
+    PromptStart,
+    Anywhere,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RuntimeSkillReferenceTrigger {
+    #[default]
+    Slash,
+    Dollar,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RuntimePromptCommandPolicy {
+    pub slash_command_placement: RuntimePromptCommandPlacement,
+    pub skill_reference_trigger: RuntimeSkillReferenceTrigger,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeCompactionStrategy {
     /// The runtime drives compaction itself (e.g. via an SDK `compact()`

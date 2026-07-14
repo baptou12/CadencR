@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { SlashCommand } from "@/lib/slash-command";
+import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
 import type { LiveAgentStatus } from "@/types/agent";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { PermissionMode } from "@/types/permission-mode";
@@ -57,6 +58,7 @@ export interface AgentPromptBarProps {
   onToggleMaximize?: () => void;
   noTopPadding?: boolean;
   slashCommandsOverride?: SlashCommand[];
+  promptCommandPolicy?: PromptCommandPolicy;
   slashCommandsLoading?: boolean;
   pendingPermission?: PendingPermission | null;
   onPermissionDecision?: (

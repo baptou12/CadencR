@@ -271,6 +271,7 @@ provider instead of falling back to shared filesystem scans. */
 
 export interface CommandsListPayload {
   commands: SlashCommandPayload[];
+  prompt_command_policy?: PromptCommandPolicyPayload;
   /** `true` when the server is currently re-resolving the catalog in
 the background (the FE returned cached data instantly; a fresh
 `commands.updated` envelope will follow when the probe
@@ -1459,6 +1460,20 @@ export interface PromptAttachmentPayload {
   mimeType: string;
 }
 
+export type PromptCommandPlacementPayload =
+  (typeof PromptCommandPlacementPayload)[keyof typeof PromptCommandPlacementPayload];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PromptCommandPlacementPayload = {
+  prompt_start: "prompt_start",
+  anywhere: "anywhere",
+} as const;
+
+export interface PromptCommandPolicyPayload {
+  skill_reference_trigger: SkillReferenceTriggerPayload;
+  slash_command_placement: PromptCommandPlacementPayload;
+}
+
 export type PromptReceiptState = (typeof PromptReceiptState)[keyof typeof PromptReceiptState];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -2081,6 +2096,15 @@ export interface SharedFeatureRef {
   feature_id: number;
   title: string;
 }
+
+export type SkillReferenceTriggerPayload =
+  (typeof SkillReferenceTriggerPayload)[keyof typeof SkillReferenceTriggerPayload];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SkillReferenceTriggerPayload = {
+  slash: "slash",
+  dollar: "dollar",
+} as const;
 
 /**
  * Reason a single session wasn't imported. Typed so the frontend can switch

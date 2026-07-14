@@ -3442,6 +3442,10 @@ describe("ws-session-store", () => {
       useWsSessionStore.setState((state) =>
         updateSession(state, "s1", {
           slashCommands: [{ name: "compact", description: "Compact", kind: "command" }],
+          promptCommandPolicy: {
+            slashCommandPlacement: "prompt_start",
+            skillReferenceTrigger: "dollar",
+          },
           slashCommandsLoading: false,
           slashCommandsKey: "claude_code::/repo",
           slashCommandsRequestRef: firstRequest.id,
@@ -3457,6 +3461,10 @@ describe("ws-session-store", () => {
       );
       expect(useWsSessionStore.getState().sessions["s1"].slashCommandsLoading).toBe(true);
       expect(useWsSessionStore.getState().sessions["s1"].slashCommands).toEqual([]);
+      expect(useWsSessionStore.getState().sessions["s1"].promptCommandPolicy).toEqual({
+        slashCommandPlacement: "prompt_start",
+        skillReferenceTrigger: "slash",
+      });
     });
 
     it("re-requests slash commands for the same provider and cwd after commands are loaded", async () => {

@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
+import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
+
+const DOLLAR_SKILLS_POLICY: PromptCommandPolicy = {
+  slashCommandPlacement: "prompt_start",
+  skillReferenceTrigger: "dollar",
+};
 
 const isMobileMock = vi.fn(() => false);
 vi.mock("@/hooks/useIsMobile", () => ({
@@ -162,6 +168,31 @@ describe("AgentPromptBar", () => {
   it("renders textarea", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("does not advertise dollar skills for slash-native providers", () => {
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+
+    expect(screen.getByRole("textbox")).toHaveAttribute(
+      "placeholder",
+      "Send a message… (@ files, @@ conversations, / commands)",
+    );
+  });
+
+  it("advertises dollar skill references for Codex", () => {
+    render(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="idle"
+        promptCommandPolicy={DOLLAR_SKILLS_POLICY}
+      />,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveAttribute(
+      "placeholder",
+      "Send a message… (@ files, @@ conversations, / commands, $ skills)",
+    );
   });
 
   it("shows buttons when idle", () => {

@@ -3,7 +3,7 @@ import { TerminalIcon, Loader2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { SlidingText } from "@/components/SlidingText";
-import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { SlashCommand } from "@/lib/slash-command";
 
 interface SlashCommandPopoverProps {
   open: boolean;

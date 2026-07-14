@@ -71,7 +71,8 @@ use self::thread_params::{thread_resume_params, thread_start_params};
 use self::timeouts::{with_probe_timeout, PROBE_TIMEOUT};
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
-    RuntimePermissionRequest, RuntimeSlashCommand, RuntimeSpawnConfig,
+    RuntimePermissionRequest, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
+    RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSpawnConfig,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
@@ -219,6 +220,13 @@ async fn start_thread(
 
 #[async_trait]
 impl AgentRuntimeAdapter for CodexAdapter {
+    fn prompt_command_policy(&self) -> RuntimePromptCommandPolicy {
+        RuntimePromptCommandPolicy {
+            slash_command_placement: RuntimePromptCommandPlacement::PromptStart,
+            skill_reference_trigger: RuntimeSkillReferenceTrigger::Dollar,
+        }
+    }
+
     fn session_branching(&self) -> Option<&dyn super::adapter::SessionBranching> {
         Some(&branching::CODEX_SESSION_BRANCHING)
     }

@@ -7,7 +7,10 @@ use super::branching::SessionBranching;
 use super::config::{RuntimePermissionMode, RuntimeSpawnConfig};
 use super::error::RuntimeError;
 use super::event_types::RuntimeEvent;
-use super::permission::{RuntimeCompactionStrategy, RuntimePermissionRequest, RuntimeSlashCommand};
+use super::permission::{
+    RuntimeCompactionStrategy, RuntimePermissionRequest, RuntimePromptCommandPolicy,
+    RuntimeSlashCommand,
+};
 use super::session::AgentRuntimeSession;
 
 #[async_trait]
@@ -187,6 +190,12 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         Err(RuntimeError::new(
             "runtime slash command discovery is not supported by this provider",
         ))
+    }
+
+    /// Provider-owned syntax for invoking the normalized command catalog.
+    /// Shared UI consumes this policy without branching on provider identity.
+    fn prompt_command_policy(&self) -> RuntimePromptCommandPolicy {
+        RuntimePromptCommandPolicy::default()
     }
 
     /// Whether `refresh_runtime_slash_commands` performs a real
