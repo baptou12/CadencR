@@ -55,7 +55,7 @@ Here are the main capabilities around the prompt bar:
 ### Mentions and slash commands in detail
 
 - **`@` mentions** open a file picker as you type. Pick a file (or a folder) and CadencR inlines the reference so the agent knows exactly what to read.
-- **`/` slash commands** at the start of the prompt expose project-specific and built-in commands — pre-baked prompts your agent provider exposes. Arrow keys to pick, <kbd>Enter</kbd> or <kbd>Tab</kbd> to insert.
+- **`/` slash commands** at the start of the prompt expose project-specific, built-in, and CadencR orchestration commands. Arrow keys to pick, <kbd>Enter</kbd> or <kbd>Tab</kbd> to insert. See [MCP & orchestration](../mcp/) for the provider-neutral `cadencr:*` commands, which also accept a `$` prefix.
 - **Attachments** support paste, drag-and-drop, and the attach button. Images show previews; non-image files show as removable file chips. CadencR filters accepted file types by the active provider and sends provider-aware payloads — for example, Codex receives PDFs as file references.
 
 ### Picking model, profile, and effort per message
@@ -97,5 +97,6 @@ The prompt feature becomes especially helpful when:
 - [Feature workspace](../feature-workspace/) — understand the bigger home base around the prompt bar
 - [Unified agent list](../unified-agent-list/) — find the session you want to continue
 - [Browser](../browser/) — page comments and browser context for agents
+- [MCP & orchestration](../mcp/) — search session history, delegate work, and use `cadencr:*` commands
 - [Custom actions](../custom-actions/) — related shortcuts for repeatable actions
 - [Shortcuts](../shortcuts/) — keyboard help for moving quickly around the app

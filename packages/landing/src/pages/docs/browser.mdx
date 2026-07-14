@@ -58,6 +58,87 @@ The Browser can open local files and external URLs, but CadencR treats that as p
 
 If a provider or trusted browser tool opens a URL, CadencR reuses the active Browser tab for that feature when it can. That keeps browser-driven agent work attached to the same workspace you are already reviewing.
 
+The two agent-facing URL tools have deliberately different boundaries:
+
+| Tool                        | Allowed target                                                   | Permission and automation behavior                                                                                                                             |
+| --------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_open_url`          | Loopback `http(s)` URLs such as `localhost`, plus `file://` URLs | Trusted for local development. Loopback pages can be automated; local files can be inspected but not mutated.                                                  |
+| `browser_open_external_url` | Any valid `http(s)` URL                                          | Goes through the provider's normal permission flow. Approval unlocks automation only for the opened origin; navigating to another origin locks mutation again. |
+
+## Ask an agent to use the Browser
+
+You can describe the result you want instead of naming every tool.
+
+### Smoke-test a local form
+
+```text
+Open http://localhost:3000/signup in the CadencR Browser. Inspect the page first,
+fill the email field with test@example.com, submit the form, and wait for the
+"Check your inbox" confirmation. Report console errors and failed network requests.
+```
+
+### Investigate a visual regression
+
+```text
+Open http://localhost:5173/settings, take a snapshot, and inspect the Account panel.
+Capture a screenshot of the panel only. Compare what is visible with the expected
+two-column layout and tell me what looks wrong. Do not change page state.
+```
+
+### Let the user point at the problem
+
+```text
+Ask me to select the broken element in the current Browser tab. Use the returned
+selector candidates, computed styles, screenshot, and diagnostics to trace the
+likely component in the codebase. Do not edit anything yet.
+```
+
+## Browser MCP tool reference
+
+Browser MCP tools default to the active tab in the current feature. Pass `tab_id` only when the agent must target a different tab. URL openers reuse the active tab by default; pass `new_tab: true` only when another tab is intentional.
+
+### Open and inspect
+
+| Tool                        | What it does                                                                                                                      | Important inputs                                                                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `browser_list_tabs`         | Lists feature-scoped tabs with IDs, titles, URLs, load state, and the active tab.                                                 | None                                                                             |
+| `browser_open_url`          | Opens a loopback or `file://` URL, reusing the active tab unless told otherwise, and waits for loading to settle.                 | Required `url`; optional `tab_id`, `new_tab`                                     |
+| `browser_open_external_url` | Permission-gated opener for an external `http(s)` site. Approval also allows automation while the tab remains on that origin.     | Required `url`; optional `tab_id`, `new_tab`                                     |
+| `browser_get_snapshot`      | Preferred page-inspection tool. Returns a compact accessibility-style outline with stable element refs such as `e1`, or raw HTML. | Optional `tab_id`, `format` (`outline` or `html`), `selector`, `max_length`      |
+| `browser_screenshot`        | Captures the whole viewport, one element selected by ref/CSS, or an explicit rectangular clip as a PNG.                           | Optional `tab_id`, `ref`, `selector`, or `clip` with `x`, `y`, `width`, `height` |
+| `browser_get_console`       | Returns recent console messages, newest last.                                                                                     | Optional `tab_id`, `level`, `limit`                                              |
+| `browser_get_network`       | Returns recent network requests and can narrow the result to failures or matching URLs. Headers are omitted by default.           | Optional `tab_id`, `failed_only`, `url_contains`, `include_headers`, `limit`     |
+
+<DocCallout title="Snapshot refs are short-lived" variant="note">
+  A snapshot labels interactive elements with refs such as `e1` and `e2`. Refs reset after
+  navigation and every new snapshot, so the agent should take a fresh snapshot after the page
+  changes instead of reusing an old ref.
+</DocCallout>
+
+### Interact and verify
+
+| Tool                             | What it does                                                                                                                                                              | Important inputs                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `browser_click`                  | Clicks an element by snapshot `ref` or CSS `selector`; viewport coordinates are a fallback.                                                                               | Optional `tab_id`; `ref` or `selector`, otherwise both `x` and `y` |
+| `browser_fill`                   | Replaces the value of an input, textarea, select, or contenteditable and fires framework-friendly input/change events.                                                    | Required `value`; optional `tab_id`; plus `ref` or `selector`      |
+| `browser_hover`                  | Moves over a referenced or selected element to reveal hover UI such as tooltips and menus.                                                                                | Optional `tab_id`; plus `ref` or `selector`                        |
+| `browser_type`                   | Inserts text into the currently focused element. Prefer `browser_fill` for ordinary form fields.                                                                          | Required `text`; optional `tab_id`                                 |
+| `browser_keypress`               | Presses one key such as `Enter`, `Tab`, or `Escape` in the active page.                                                                                                   | Required `key`; optional `tab_id`                                  |
+| `browser_wait_for`               | Waits for a CSS selector to appear or visible text to be present, returning whether it appeared and how long it took.                                                     | `selector` or `text`; optional `tab_id`, `timeout_ms`              |
+| `browser_evaluate`               | Runs JavaScript in the page and returns the last expression's value.                                                                                                      | Required `script`; optional `tab_id`                               |
+| `browser_select_element_context` | Puts the Browser into a user-selection mode, then returns selector candidates, attributes, computed styles, a region screenshot, and diagnostics for the clicked element. | Optional `tab_id`                                                  |
+
+Mutation tools (`click`, `fill`, `hover`, `type`, `keypress`, and `evaluate`) work on loopback pages by default. They also work on the exact external origin approved through `browser_open_external_url`. Snapshots, screenshots, console reads, network reads, waits, and user-selected element context remain useful for inspection-first workflows.
+
+### A reliable browser-agent loop
+
+1. Open the URL and reuse the active feature tab.
+2. Call `browser_get_snapshot` before interacting.
+3. Target elements by `ref` rather than guessed coordinates.
+4. Use `browser_wait_for` to confirm that an action landed.
+5. Re-snapshot after navigation or a meaningful DOM change.
+6. Read console and failed network requests before declaring the flow successful.
+
 ## Shortcuts
 
 The Browser has its own shortcut scope. The full list appears on [Shortcuts](../shortcuts/), but the ones you will probably reach for first are:
@@ -75,5 +156,6 @@ The Browser has its own shortcut scope. The full list appears on [Shortcuts](../
 
 - [Feature workspace](../feature-workspace/) — where the Browser sits next to Agent, Editor, Terminal, and Git
 - [Prompt](../prompting/) — send page context and screenshots back into a session
+- [MCP & orchestration](../mcp/) — workspace and project MCP tools plus `cadencr:*` commands
 - [Settings](../settings/) — default Browser mode and related preferences
 - [Shortcuts](../shortcuts/) — the complete Browser shortcut scope
