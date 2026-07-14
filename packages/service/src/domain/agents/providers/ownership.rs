@@ -37,6 +37,7 @@ mod tests {
                 .map(|model| ModelCatalogEntry::alias(*model, *model))
                 .collect(),
             modes: Vec::new(),
+            access_modes: Vec::new(),
             default_model: None,
         }
     }

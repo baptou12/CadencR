@@ -5,7 +5,7 @@
 //! - `lifecycle` / `power`: interrupt/destroy/delete/clear and
 //!   suspend/resume/retry_worktree_setup
 
-mod codex_mode;
+mod access_mode;
 mod effort;
 mod lifecycle;
 mod mode;
@@ -17,7 +17,7 @@ mod power;
 mod profile;
 mod provider;
 
-pub(super) use codex_mode::handle_codex_permission_mode_set;
+pub(super) use access_mode::handle_access_mode_set;
 pub(super) use effort::handle_effort_set;
 pub(super) use lifecycle::{handle_clear, handle_delete, handle_destroy, handle_interrupt};
 pub(super) use mode::handle_mode_set;

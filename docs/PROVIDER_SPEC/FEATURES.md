@@ -1,12 +1,12 @@
 # Cadencr Provider Specification — Features
 
 This document specifies the **provider-neutral feature surface** that any
-Cadencr agent provider (Claude Code, Codex, OpenCode, …) must implement to be
+Cadencr agent provider (Claude Code, Codex, OpenCode, Cursor, …) must implement to be
 considered a first-class adapter.
 
 The reference implementations are **Claude Code** and **Codex** — both fully
 working today. Each per-provider companion document
-(`CLAUDE_CODE.md`, `CODEX.md`) tracks status against this list.
+(`CLAUDE_CODE.md`, `CODEX.md`, `OPENCODE.md`, `CURSOR.md`) tracks status against this list.
 
 The contract is expressed as a `RuntimeAdapter` trait (see
 `packages/service/src/domain/agents/adapter.rs`). Provider SDKs handle wire
@@ -38,7 +38,7 @@ provider branching outside the adapter.
 
 ---
 
-## 1. Modes: plan / build / accept-edits
+## 1. Modes: default / plan / ask / provider-specific execution modes
 
 Cadencr exposes a single provider-neutral mode enum
 (`RuntimePermissionMode`):
@@ -48,6 +48,7 @@ Cadencr exposes a single provider-neutral mode enum
 - `BypassPermissions` — auto-approve everything (full-access escape hatch).
 - `Plan` — model produces a plan; risky tools are blocked until the user
   approves and the session leaves plan mode.
+- `Ask` — read-only Q&A without edits or command execution.
 - `Auto` — Claude Code v2.1.83+ classifier-backed mode. Providers without an
   equivalent fall back to their everyday permission level.
 - `DontAsk` — no prompts, but no sandbox widening either.

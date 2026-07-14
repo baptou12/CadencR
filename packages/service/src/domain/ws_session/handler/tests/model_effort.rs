@@ -114,6 +114,54 @@ async fn providerless_model_set_validates_the_active_provider_catalog() {
 }
 
 #[tokio::test]
+async fn model_set_preserves_explicit_cursor_provider() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+
+    let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+    let db_id: i64 = session_id.parse().unwrap();
+
+    let provider_envelope = make_envelope(
+        "session",
+        "provider.set",
+        serde_json::json!({
+            "session_id": session_id,
+            "provider": "cursor",
+        }),
+    );
+    dispatch_envelope(provider_envelope, &tx, &sdk_sessions, &app_state).await;
+    let _ = rx.recv().await.unwrap();
+    let _ = rx.recv().await.unwrap();
+
+    let model_envelope = make_envelope(
+        "session",
+        "model.set",
+        serde_json::json!({
+            "session_id": session_id,
+            "provider": "cursor",
+            "model": "auto",
+        }),
+    );
+    dispatch_envelope(model_envelope, &tx, &sdk_sessions, &app_state).await;
+
+    let msg = rx.recv().await.unwrap();
+    let Message::Text(text) = msg else {
+        panic!("expected text message");
+    };
+    let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+    assert_eq!(env.action, "model.set.ok");
+
+    let persisted: Option<String> =
+        sqlx::query_scalar("SELECT runtime_provider FROM agent_sessions WHERE id = ?")
+            .bind(db_id)
+            .fetch_one(&app_state.read_pool)
+            .await
+            .unwrap();
+    assert_eq!(persisted.as_deref(), Some("cursor"));
+}
+
+#[tokio::test]
 async fn test_effort_set_updates_spawned_effort_for_in_place_runtime() {
     let app_state = make_test_app_state().await;
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));

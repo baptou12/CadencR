@@ -30,8 +30,8 @@ pub enum WsSessionAction {
     DraftResult,
     #[serde(rename = "draft.saved")]
     DraftSaved,
-    #[serde(rename = "codex_permission_mode.changed")]
-    CodexPermissionModeChanged,
+    #[serde(rename = "access_mode.changed")]
+    AccessModeChanged,
     #[serde(rename = "provider.set.ok")]
     ProviderSetOk,
     #[serde(rename = "compact.started")]
@@ -74,7 +74,7 @@ impl WsSessionAction {
             Self::HistoryAdded => "history.added",
             Self::DraftResult => "draft.result",
             Self::DraftSaved => "draft.saved",
-            Self::CodexPermissionModeChanged => "codex_permission_mode.changed",
+            Self::AccessModeChanged => "access_mode.changed",
             Self::ProviderSetOk => "provider.set.ok",
             Self::CompactStarted => "compact.started",
             Self::ModelSetOk => "model.set.ok",
@@ -108,7 +108,7 @@ impl WsSessionAction {
             Self::HistoryAdded,
             Self::DraftResult,
             Self::DraftSaved,
-            Self::CodexPermissionModeChanged,
+            Self::AccessModeChanged,
             Self::ProviderSetOk,
             Self::CompactStarted,
             Self::ModelSetOk,

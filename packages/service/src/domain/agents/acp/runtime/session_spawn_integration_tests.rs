@@ -168,6 +168,61 @@ async fn stream_input_steers_immediately_and_cancel_is_non_error() {
 }
 
 #[tokio::test]
+async fn provider_followup_waits_for_current_prompt_completion() {
+    let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+    let negotiated = NegotiatedSession {
+        session_id: "s-followup".to_string(),
+        model: None,
+        mcp_servers: Vec::new(),
+        context_window: None,
+        current_mode: Some("build".to_string()),
+    };
+    let (tx, rx) = mpsc::channel(8);
+    let session = Arc::new(AcpRuntimeSession::assemble(
+        &client,
+        &negotiated,
+        std::env::temp_dir(),
+        None,
+        rx,
+        tx,
+        Arc::new(SpawnHooks),
+        Arc::new(StdMutex::new(EventIndexer::default())),
+    ));
+    session
+        .pending_followups
+        .write()
+        .await
+        .push_back(("plan-1".to_string(), json!("execute approved plan")));
+
+    let turn = tokio::spawn({
+        let session = Arc::clone(&session);
+        async move { session.stream_input(json!("create plan")).await }
+    });
+    let first = read_request(&mut agent_stdin).await;
+    assert_eq!(first["method"], "session/prompt");
+    assert!(first["params"].to_string().contains("create plan"));
+    send_response(
+        &mut agent_stdout,
+        first["id"].clone(),
+        json!({ "stopReason": "end_turn" }),
+    )
+    .await;
+
+    let followup = read_request(&mut agent_stdin).await;
+    assert_eq!(followup["method"], "session/prompt");
+    assert!(followup["params"]
+        .to_string()
+        .contains("execute approved plan"));
+    send_response(
+        &mut agent_stdout,
+        followup["id"].clone(),
+        json!({ "stopReason": "end_turn" }),
+    )
+    .await;
+    turn.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn prompt_receipt_waits_for_user_message_echo() {
     let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
     let negotiated = NegotiatedSession {

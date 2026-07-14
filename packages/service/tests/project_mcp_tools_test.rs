@@ -85,6 +85,10 @@ async fn project_list_agent_providers_returns_spawn_guidance() {
         .as_array()
         .unwrap()
         .contains(&json!("claude_code")));
+    assert!(body["valid_provider_ids"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("cursor")));
     let codex = body["providers"]
         .as_array()
         .unwrap()

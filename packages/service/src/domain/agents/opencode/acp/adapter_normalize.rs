@@ -9,6 +9,8 @@
 
 use serde_json::Value;
 
+use crate::domain::agents::acp::runtime::tool_input;
+
 /// Rename ACP-flavoured edit-tool keys to the canonical Anthropic-style
 /// keys the FE diff renderer expects. Operates only on known edit tool
 /// names (Edit / MultiEdit / Write / ApplyPatch — `ApplyPatch` shares the
@@ -18,38 +20,8 @@ use serde_json::Value;
 /// `Write` takes a different canonical shape: the FE Write renderer reads
 /// `content`, not `new_string`, and there is no diff base (`oldText` is
 /// dropped). Edit / MultiEdit / ApplyPatch keep `{old_string, new_string}`.
-pub fn normalize_edit_input(tool_name: &str, mut input: Value) -> Value {
-    if !matches!(tool_name, "Edit" | "MultiEdit" | "Write" | "ApplyPatch") {
-        return input;
-    }
-    let Some(map) = input.as_object_mut() else {
-        return input;
-    };
-    rename_key(map, "filePath", "file_path");
-    if !map.contains_key("file_path") {
-        if let Some(path) = map.remove("path") {
-            map.insert("file_path".to_string(), path);
-        }
-    }
-    if tool_name == "Write" {
-        // FE Write renderer reads `content` (see tool-adapter.ts);
-        // `new_string` would render blank.
-        rename_key(map, "newText", "content");
-        map.remove("oldText");
-    } else {
-        rename_key(map, "oldText", "old_string");
-        rename_key(map, "newText", "new_string");
-    }
-    input
-}
-
-fn rename_key(map: &mut serde_json::Map<String, Value>, from: &str, to: &str) {
-    if map.contains_key(to) {
-        return;
-    }
-    if let Some(value) = map.remove(from) {
-        map.insert(to.to_string(), value);
-    }
+pub fn normalize_edit_input(tool_name: &str, input: Value) -> Value {
+    tool_input::normalize_edit_input(tool_name, input)
 }
 
 #[cfg(test)]

@@ -5,15 +5,17 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::sync::{mpsc, RwLock};
 
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimePermissionDecision,
-    RuntimePermissionOption, RuntimePermissionRequest,
+    RuntimePermissionRequest,
 };
 
+use super::permission_events::permission_raw_event;
+use super::provider_hooks::AcpProviderHooks;
 use super::schema_bridge::permission_response_value;
 use super::session_permissions::PermissionKey;
 use super::session_permissions::SessionPermissions;
@@ -25,53 +27,13 @@ use super::trusted_mcp_permissions::try_auto_allow_trusted_cadencr_browser_permi
 #[derive(Debug, Clone)]
 pub struct PendingPermission {
     pub server_id: Value,
+    pub method: String,
     pub request: RuntimePermissionRequest,
     pub params: Value,
 }
 
 /// Map keyed by Cadencr `request_id` (the ACP server-request id, stringified).
 pub type PendingPermissions = Arc<RwLock<HashMap<String, PendingPermission>>>;
-
-/// Surface a `session/request_permission` payload to the runtime channel as
-/// a permission event the WS bridge can pick up via
-/// `parse_permission_request` on the raw envelope.
-pub fn permission_raw_event(request: &RuntimePermissionRequest, params: &Value) -> Value {
-    json!({
-        "type": "acp_permission_request",
-        "transport": "acp",
-        "request_id": request.request_id,
-        "call_id": request.tool_use_id,
-        "tool_name": request.tool_name,
-        "tool_input": request.tool_input,
-        "description": request.description,
-        "preview": request.preview,
-        "options": request.options.iter().map(permission_option_json).collect::<Vec<_>>(),
-        "acp": params.clone(),
-    })
-}
-
-pub fn permission_option_json(option: &RuntimePermissionOption) -> Value {
-    // The wire string the FE consumes today is one of three values:
-    // `allow_once`, `allow_future`, `deny`. `AllowForSession` is a
-    // backend-only refinement of `AllowFuture` (different `optionId`
-    // routing on the way back to ACP) so it shares the same wire
-    // discriminant. Distinct labels & descriptions still let the FE
-    // render two separate buttons when an agent advertises both kinds.
-    let decision = match option.decision {
-        RuntimePermissionDecision::AllowOnce => "allow_once",
-        RuntimePermissionDecision::AllowFuture | RuntimePermissionDecision::AllowForSession => {
-            "allow_future"
-        }
-        RuntimePermissionDecision::Deny => "deny",
-    };
-    json!({
-        "decision": decision,
-        "option_id": option.option_id,
-        "label": option.label,
-        "description": option.description,
-        "collect_feedback": option.collect_feedback,
-    })
-}
 
 /// Send a permission event upstream and stash the ACP server-request id in
 /// the pending map so `respond_permission()` can answer later.
@@ -84,10 +46,38 @@ pub async fn dispatch_permission_request(
     params: &Value,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
 ) -> Result<(), RuntimeError> {
+    dispatch_permission_request_for_method(
+        pending,
+        session_id,
+        request_id,
+        raw_id,
+        "session/request_permission",
+        request,
+        params,
+        tx,
+    )
+    .await
+}
+
+/// Provider-extension variant of [`dispatch_permission_request`]. The method
+/// is retained so the adapter can encode the eventual response in its native
+/// schema rather than receiving a canonical ACP permission payload.
+#[allow(clippy::too_many_arguments)]
+pub async fn dispatch_permission_request_for_method(
+    pending: &PendingPermissions,
+    session_id: Option<String>,
+    request_id: &str,
+    raw_id: Value,
+    method: &str,
+    request: RuntimePermissionRequest,
+    params: &Value,
+    tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+) -> Result<(), RuntimeError> {
     pending.write().await.insert(
         request_id.to_string(),
         PendingPermission {
             server_id: raw_id,
+            method: method.to_string(),
             request: request.clone(),
             params: params.clone(),
         },
@@ -111,6 +101,7 @@ pub async fn dispatch_permission_request(
 
 pub async fn dispatch_permission_request_with_cache(
     client: &AcpClient,
+    hooks: &dyn AcpProviderHooks,
     pending: &PendingPermissions,
     session_permissions: &SessionPermissions,
     session_id: Option<String>,
@@ -122,6 +113,20 @@ pub async fn dispatch_permission_request_with_cache(
 ) -> Result<(), RuntimeError> {
     if try_auto_allow_trusted_cadencr_browser_permission(client, raw_id.clone(), &request).await? {
         return Ok(());
+    }
+
+    if let Some(decision) = hooks.automatic_permission_decision(&request, params) {
+        if let Some(option_id) = option_id_for_decision(&request, decision) {
+            let payload = permission_response_value(decision, Some(option_id), None);
+            match client.respond_server_request(raw_id.clone(), payload).await {
+                Ok(()) => return Ok(()),
+                Err(error) => tracing::warn!(
+                    %error,
+                    request_id,
+                    "provider ACP permission preflight failed; surfacing prompt"
+                ),
+            }
+        }
     }
 
     let key = PermissionKey::new(&request.tool_name, &request.tool_input);
@@ -200,6 +205,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{dispatch_permission_request_with_cache, PendingPermissions, SessionPermissions};
+    use crate::domain::agents::acp::runtime::provider_hooks::DefaultFlattenHooks;
     use crate::domain::agents::acp::runtime::session_permissions::PermissionKey;
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo, AcpEvent};
     use crate::domain::agents::adapter::{
@@ -288,6 +294,7 @@ mod tests {
 
         dispatch_permission_request_with_cache(
             &client,
+            &DefaultFlattenHooks,
             &pending,
             &session_permissions,
             Some("s-cache".to_string()),
@@ -333,6 +340,7 @@ mod tests {
 
         dispatch_permission_request_with_cache(
             &client,
+            &DefaultFlattenHooks,
             &pending,
             &session_permissions,
             Some("s-cache".to_string()),
@@ -367,6 +375,7 @@ mod tests {
 
         let error = dispatch_permission_request_with_cache(
             &client,
+            &DefaultFlattenHooks,
             &pending,
             &session_permissions,
             Some("s-closed".to_string()),

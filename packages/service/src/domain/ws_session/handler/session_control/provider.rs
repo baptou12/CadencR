@@ -6,7 +6,7 @@ use super::super::helpers::{default_permission_mode_wire, parse_session_id, send
 use super::super::types::{QueryState, SdkSessions, WsSender};
 use super::session_has_messages;
 use crate::app_state::AppState;
-use crate::domain::agents::codex::{parse_access_mode, PROVIDER_ID as CODEX_PROVIDER_ID};
+use crate::domain::agents::adapter::access_mode_wire;
 use crate::domain::agents::runtime_adapter;
 
 async fn persist_provider_selection(
@@ -53,6 +53,7 @@ fn send_provider_set_ok(
             provider: provider.to_string(),
             supports_prompt_receipts,
             codex_permission_mode: codex_permission_mode.map(ToOwned::to_owned),
+            access_mode: codex_permission_mode.map(ToOwned::to_owned),
         },
     )
     .expect("provider set payload should serialize");
@@ -164,17 +165,14 @@ pub(crate) async fn handle_provider_set(
         return;
     }
 
-    let configured_codex_access_mode = if payload.provider == CODEX_PROVIDER_ID {
-        Some(super::super::codex_access::configured_access_mode(&app_state.read_pool).await)
-    } else {
-        None
-    };
+    let configured_access_mode = adapter.configured_access_mode(&app_state.read_pool).await;
+    let configured_access_wire = configured_access_mode.as_ref().map(access_mode_wire);
     let new_mode_wire = default_permission_mode_wire(&payload.provider);
     if let Err(error) = persist_provider_selection(
         &app_state.write_pool,
         db_session_id,
         &payload.provider,
-        configured_codex_access_mode.as_deref(),
+        configured_access_wire,
         new_mode_wire,
     )
     .await
@@ -194,9 +192,7 @@ pub(crate) async fn handle_provider_set(
         return;
     }
 
-    let next_access_mode = configured_codex_access_mode
-        .as_deref()
-        .map(|mode| parse_access_mode(Some(mode)));
+    let next_access_mode = configured_access_mode;
     let feature_id = {
         let mut sessions = sdk_sessions.lock().await;
         let handle = match sessions.get_mut(&db_session_id) {
@@ -241,9 +237,12 @@ pub(crate) async fn handle_provider_set(
         feature_id,
         WsSessionAction::ProviderSetOk,
         ProviderSetOkPayload {
+            codex_permission_mode: (payload.provider == crate::domain::agents::codex::PROVIDER_ID)
+                .then(|| configured_access_wire.map(ToOwned::to_owned))
+                .flatten(),
+            access_mode: configured_access_wire.map(ToOwned::to_owned),
             provider: payload.provider,
             supports_prompt_receipts,
-            codex_permission_mode: configured_codex_access_mode,
         },
     )
     .await;

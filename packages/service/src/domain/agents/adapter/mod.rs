@@ -11,8 +11,8 @@ mod user_shell;
 pub use adapter_trait::AgentRuntimeAdapter;
 pub use branching::{BranchContext, BranchError, BranchResult, SessionBranching};
 pub use config::{
-    RuntimeAccessMode, RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimePermissionMode,
-    RuntimeSpawnConfig, RuntimeUsage,
+    access_mode_wire, parse_access_mode_wire, RuntimeAccessMode, RuntimeMcpServerConfig,
+    RuntimeMcpServerStatus, RuntimePermissionMode, RuntimeSpawnConfig, RuntimeUsage,
 };
 pub use error::RuntimeError;
 pub use event_types::{

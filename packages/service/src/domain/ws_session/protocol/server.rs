@@ -33,6 +33,8 @@ pub struct SessionInitializedPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_permission_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
@@ -251,6 +253,8 @@ pub struct ProviderSetOkPayload {
     pub supports_prompt_receipts: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_permission_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

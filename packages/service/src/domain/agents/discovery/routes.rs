@@ -65,7 +65,7 @@ pub struct ProviderDiscovery {
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct BinaryDiscoveryResponse {
-    /// Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`).
+    /// Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`).
     pub providers: HashMap<String, ProviderDiscovery>,
 }
 
@@ -80,14 +80,16 @@ pub async fn binary_discovery_handler(
     let claude_spec = claude_agent_sdk_rs::claude_discovery_spec();
     let opencode_spec = opencode_sdk_rs::opencode_discovery_spec();
     let codex_spec = codex_app_server_sdk_rs::codex_discovery_spec();
+    let cursor_spec = cursor_agent_sdk_rs::cursor_discovery_spec();
 
     // Read overrides once, then run discoveries in parallel — they're
     // independent and each spawns subprocesses we don't want to serialize.
     let overrides = read_overrides(&state.read_pool).await;
-    let (claude_candidates, opencode_candidates, codex_candidates) = tokio::join!(
+    let (claude_candidates, opencode_candidates, codex_candidates, cursor_candidates) = tokio::join!(
         cli_discovery::discover_all(&claude_spec, overrides.claude.as_deref()),
         cli_discovery::discover_all(&opencode_spec, overrides.opencode.as_deref()),
         cli_discovery::discover_all(&codex_spec, overrides.codex.as_deref()),
+        cli_discovery::discover_all(&cursor_spec, overrides.cursor.as_deref()),
     );
 
     let providers = HashMap::from([
@@ -102,6 +104,10 @@ pub async fn binary_discovery_handler(
         (
             "codex".to_string(),
             build_provider_discovery(&codex_spec, codex_candidates, overrides.codex),
+        ),
+        (
+            "cursor".to_string(),
+            build_provider_discovery(&cursor_spec, cursor_candidates, overrides.cursor),
         ),
     ]);
 

@@ -61,19 +61,16 @@ use tokio::sync::{Mutex, RwLock};
 use self::instructions::codex_developer_instructions;
 use self::mcp::{mcp_server_names, thread_config};
 use self::mcp_status::mcp_server_statuses;
-pub(crate) use self::model::{
-    access_mode_wire, canonical_access_mode_wire, configured_access_mode, parse_access_mode,
-    parse_access_mode_wire,
-};
+pub(crate) use self::model::{canonical_access_mode_wire, configured_access_mode};
 pub(crate) use self::raw_tool_names::function_tool_name;
 use self::session::CodexSession;
 use self::thread_params::{thread_resume_params, thread_start_params};
 use self::timeouts::{with_probe_timeout, PROBE_TIMEOUT};
 use super::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
-    RuntimePermissionRequest, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
-    RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSpawnConfig,
-    RuntimeUserShellStrategy,
+    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAccessMode, RuntimeCompactionStrategy,
+    RuntimeError, RuntimePermissionRequest, RuntimePromptCommandPlacement,
+    RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger, RuntimeSlashCommand,
+    RuntimeSpawnConfig, RuntimeUserShellStrategy,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
@@ -114,8 +111,38 @@ fn catalog_from_models(models: Vec<CodexModel>) -> ProviderCatalogEntry {
         status_message: None,
         models: models.into_iter().map(model_entry).collect(),
         modes: Vec::new(),
+        access_modes: access_mode_catalog(),
         default_model,
     }
+}
+
+fn access_mode_catalog() -> Vec<super::runtime::ProviderModeCatalogEntry> {
+    vec![
+        super::runtime::ProviderModeCatalogEntry {
+            id: "default".to_string(),
+            label: "Default".to_string(),
+            description: Some(
+                "Runs in the workspace-write sandbox. Codex asks you to review command, network, or file access when approval is needed."
+                    .to_string(),
+            ),
+        },
+        super::runtime::ProviderModeCatalogEntry {
+            id: "fullAccess".to_string(),
+            label: "Full Access".to_string(),
+            description: Some(
+                "Disables sandboxing and approval prompts. Codex can run commands and access files or network without asking first."
+                    .to_string(),
+            ),
+        },
+        super::runtime::ProviderModeCatalogEntry {
+            id: "autoReview".to_string(),
+            label: "Auto Review".to_string(),
+            description: Some(
+                "Keeps the workspace-write sandbox, but lets Codex automatically review approval requests instead of routing each one to you."
+                    .to_string(),
+            ),
+        },
+    ]
 }
 
 fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
@@ -293,6 +320,18 @@ impl AgentRuntimeAdapter for CodexAdapter {
                 | RuntimePermissionMode::Plan
                 | RuntimePermissionMode::BypassPermissions
         )
+    }
+
+    fn supports_access_mode(&self, _mode: &RuntimeAccessMode) -> bool {
+        true
+    }
+
+    fn access_mode_setting_key(&self) -> Option<&'static str> {
+        Some(self::model::ACCESS_MODE_SETTING_KEY)
+    }
+
+    fn applies_access_mode_in_place(&self) -> bool {
+        true
     }
 
     fn default_permission_mode_wire(&self) -> &'static str {

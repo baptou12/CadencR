@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::branching::SessionBranching;
-use super::config::{RuntimePermissionMode, RuntimeSpawnConfig};
+use super::config::{
+    access_mode_wire, parse_access_mode_wire, RuntimeAccessMode, RuntimePermissionMode,
+    RuntimeSpawnConfig,
+};
 use super::error::RuntimeError;
 use super::event_types::RuntimeEvent;
 use super::permission::{
@@ -264,6 +267,48 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         false
     }
 
+    /// Whether this provider supports the provider-neutral access/autonomy
+    /// axis (Default, Full Access, Auto Review). Providers own the concrete
+    /// CLI mapping; shared orchestration only persists and transports it.
+    fn supports_access_mode(&self, _mode: &RuntimeAccessMode) -> bool {
+        false
+    }
+
+    /// Workspace setting used as the default for new conversations. Keeping
+    /// this on the adapter avoids provider ids and setting keys in shared
+    /// session orchestration.
+    fn access_mode_setting_key(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Whether a live runtime can apply an access-mode change without a
+    /// respawn. Providers launched with CLI flags (Cursor) return false;
+    /// app-server providers with a live policy hook (Codex) return true.
+    fn applies_access_mode_in_place(&self) -> bool {
+        false
+    }
+
+    async fn configured_access_mode(
+        &self,
+        read_pool: &sqlx::SqlitePool,
+    ) -> Option<RuntimeAccessMode> {
+        let setting_key = self.access_mode_setting_key()?;
+        let configured = crate::domain::settings::resolve_setting(
+            read_pool,
+            setting_key,
+            None,
+            None,
+            Some(access_mode_wire(&RuntimeAccessMode::Default)),
+        )
+        .await;
+        Some(
+            configured
+                .as_deref()
+                .and_then(parse_access_mode_wire)
+                .unwrap_or(RuntimeAccessMode::Default),
+        )
+    }
+
     /// Wire string the chip lands on for this provider after a session
     /// switches to it (post-`provider.set`). Mirrors `defaultEditModeFor` in
     /// `lib/provider-modes.ts`. Default matches the FE catalog's fallback.
@@ -351,6 +396,7 @@ mod tests {
                 status_message: None,
                 models: vec![],
                 modes: vec![],
+                access_modes: vec![],
                 default_model: None,
             }
         }

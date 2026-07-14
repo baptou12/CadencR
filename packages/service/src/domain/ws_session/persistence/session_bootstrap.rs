@@ -29,15 +29,15 @@ impl WsSessionPersistence {
         model: Option<&str>,
         permission_mode: Option<&str>,
     ) -> Option<i64> {
-        self.find_or_create_session_with_codex_permission_mode(model, permission_mode, None)
+        self.find_or_create_session_with_access_mode(model, permission_mode, None)
             .await
     }
 
-    pub async fn find_or_create_session_with_codex_permission_mode(
+    pub async fn find_or_create_session_with_access_mode(
         &mut self,
         model: Option<&str>,
         permission_mode: Option<&str>,
-        codex_permission_mode: Option<&str>,
+        access_mode: Option<&str>,
     ) -> Option<i64> {
         let existing: Option<(i64,)> = sqlx::query_as(
             "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'session' ORDER BY id DESC LIMIT 1",
@@ -74,7 +74,9 @@ impl WsSessionPersistence {
         .bind(self.feature_id)
         .bind(model)
         .bind(permission_mode)
-        .bind(codex_permission_mode)
+        // `codex_permission_mode` is the legacy SQLite storage name. The
+        // runtime/session contract above this boundary is provider-neutral.
+        .bind(access_mode)
         .bind(&now)
         .execute(&self.write_pool)
         .await;

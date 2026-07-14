@@ -160,7 +160,9 @@ pub struct SessionState {
     pub todos: Option<Vec<serde_json::Value>>,
     #[serde(rename = "permissionMode")]
     pub permission_mode: String,
-    #[serde(rename = "codexPermissionMode")]
+    // The SQLite column retains its historical Codex-specific name, but this
+    // provider-neutral session API exposes the access axis generically.
+    #[serde(rename = "accessMode")]
     pub codex_permission_mode: String,
     #[serde(rename = "pendingPermission")]
     pub pending_permission: Option<serde_json::Value>,

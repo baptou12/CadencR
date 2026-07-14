@@ -5,8 +5,9 @@ use serde_json::Value;
 
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata};
 
+use super::permission_events::permission_raw_event;
 use super::permissions::derive_preview;
-use super::permissions_dispatch::{permission_raw_event, PendingPermissions};
+use super::permissions_dispatch::PendingPermissions;
 
 pub async fn has_pending_permission_for_tool_call(
     pending: &PendingPermissions,

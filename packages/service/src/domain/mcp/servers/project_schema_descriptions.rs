@@ -21,7 +21,7 @@ pub(super) fn tool_description(name: &str) -> &'static str {
 
 pub(super) fn property_description(tool_name: &str, property: &str) -> String {
     match (tool_name, property) {
-        ("project_spawn_session", "provider") => "Canonical provider id: claude_code, codex_cli, or opencode. Common aliases are normalized, but canonical ids are preferred.".into(),
+        ("project_spawn_session", "provider") => "Canonical provider id: claude_code, codex_cli, cursor, or opencode. Common aliases are normalized, but canonical ids are preferred.".into(),
         ("project_spawn_session", "project_id") => "Target project id for the new session (required unless project_path is given). Pass the caller's own project id for the current project, or another registered id from workspace_list_projects.".into(),
         ("project_spawn_session", "project_path") => "Target project root path (alternative to project_id). It must exactly match a registered path from workspace_list_projects; if both selectors are given they must agree.".into(),
         ("project_spawn_session", "model") => model_description(),
@@ -61,5 +61,5 @@ fn model_description() -> String {
     let claude_guidance = provider_alias_metadata("claude_code")
         .map(|metadata| metadata.model_guidance)
         .unwrap_or("Claude Code uses catalog aliases such as opus or sonnet.");
-    format!("Provider-specific model id. {claude_guidance} Codex uses gpt-* ids; OpenCode often uses provider/model ids. Call project_list_agent_providers when unsure.")
+    format!("Provider-specific model id. {claude_guidance} Codex uses gpt-* ids; Cursor uses `agent models` ids; OpenCode often uses provider/model ids. Call project_list_agent_providers when unsure.")
 }

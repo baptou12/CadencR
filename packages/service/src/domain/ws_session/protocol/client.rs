@@ -125,7 +125,7 @@ pub struct ModeSetPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct CodexPermissionModeSetPayload {
+pub struct AccessModeSetPayload {
     pub session_id: String,
     pub mode: String,
 }

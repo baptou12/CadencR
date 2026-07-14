@@ -24,6 +24,7 @@ static ADAPTERS: &[(&str, &dyn AgentRuntimeAdapter)] = &[
         &super::claude_code::CLAUDE_CODE_ADAPTER,
     ),
     (super::codex::PROVIDER_ID, &super::codex::CODEX_ADAPTER),
+    (super::cursor::PROVIDER_ID, &super::cursor::CURSOR_ADAPTER),
     (
         super::opencode::PROVIDER_ID,
         &super::opencode::OPENCODE_ADAPTER,
@@ -244,11 +245,12 @@ mod tests {
     }
 
     #[test]
-    fn runtime_adapter_registry_has_claude_opencode_and_codex() {
+    fn runtime_adapter_registry_has_all_first_class_providers() {
         assert!(runtime_adapter("claude_code").is_some());
         assert!(runtime_adapter("opencode").is_some());
         let codex = runtime_adapter("codex_cli").expect("codex adapter");
         assert!(codex.session_branching().is_some());
+        assert!(runtime_adapter("cursor").is_some());
         assert!(runtime_adapter("unknown").is_none());
     }
 

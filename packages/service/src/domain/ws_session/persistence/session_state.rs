@@ -85,7 +85,7 @@ impl WsSessionPersistence {
         }
     }
 
-    pub async fn update_codex_permission_mode_static(
+    pub async fn update_access_mode_static(
         pool: &SqlitePool,
         session_id: i64,
         mode: &str,

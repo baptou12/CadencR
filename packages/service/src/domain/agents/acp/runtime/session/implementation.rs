@@ -4,6 +4,7 @@
 //! choices (model id mapping, permission decisions, tool name aliases) to
 //! `AcpProviderHooks`.
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -17,15 +18,15 @@ use tokio::task::JoinHandle;
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus, RuntimeMessageRx,
-    RuntimePermissionMode, RuntimePermissionResponse,
+    RuntimePermissionMode, RuntimePermissionResponse, RuntimePermissionResponseKind,
 };
 
-use super::super::config_options::{set_config_option_model, set_config_option_thinking_effort};
+use super::super::config_options::{
+    set_config_option_model_value, set_config_option_thinking_effort,
+};
 use super::super::events_stream_blocks::EventIndexer;
 use super::super::mode_switch::set_session_mode;
-use super::super::permissions::{
-    acp_permission_response_payload, reject_all_pending, take_pending, PendingPermissions,
-};
+use super::super::permissions::{reject_all_pending, take_pending, PendingPermissions};
 use super::super::prompt_receipts::PendingPromptReceipts;
 use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
 use super::super::provider_hooks::{AcpProviderHooks, PermissionFallbackOutcome};
@@ -84,6 +85,11 @@ pub struct AcpRuntimeSession {
     pub(in crate::domain::agents::acp::runtime) replay_suppression: Arc<AtomicBool>,
     /// Client prompt ids waiting for provider-side receipt confirmation.
     pub(in crate::domain::agents::acp::runtime) pending_prompt_receipts: Arc<PendingPromptReceipts>,
+    /// Provider-requested prompts that must start only after the current ACP
+    /// turn has returned. Stored in the runtime rather than the frontend so a
+    /// browser reconnect cannot lose an approved continuation.
+    pub(in crate::domain::agents::acp::runtime) pending_followups:
+        Arc<RwLock<VecDeque<(String, Value)>>>,
     /// Serialises prompt turns so a second `stream_input` waits for the
     /// in-flight turn (request + post-response drain) to finish before
     /// sending its own `session/prompt` (W4).
@@ -103,6 +109,26 @@ impl AcpRuntimeSession {
     }
 
     async fn prompt_input(
+        &self,
+        content: Value,
+        client_message_id: Option<String>,
+        finalize_response: bool,
+    ) -> Result<(), RuntimeError> {
+        self.prompt_input_once(content, client_message_id, finalize_response)
+            .await?;
+        if finalize_response {
+            loop {
+                let followup = self.pending_followups.write().await.pop_front();
+                let Some((_, followup)) = followup else {
+                    break;
+                };
+                self.prompt_input_once(followup, None, true).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn prompt_input_once(
         &self,
         content: Value,
         client_message_id: Option<String>,
@@ -267,13 +293,15 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // ride-along on the next `session/prompt` if the agent rejects the
         // method (older `opencode acp` builds).
         let session_id = self.require_session_id().await?;
-        set_config_option_model(
+        let config_value = self.hooks.model_config_value(model);
+        set_config_option_model_value(
             &self.client,
             &session_id,
             &self.current_model,
             &self.supports_set_config_option,
             self.hooks.model_config_id(),
             model,
+            &config_value,
         )
         .await
     }
@@ -326,16 +354,27 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             self.session_permissions
                 .record(key, response.decision)
                 .await;
-            let payload = acp_permission_response_payload(
-                response.decision,
-                response.option_id.as_deref(),
-                response.feedback.as_deref(),
-            );
-            return self
+            let resolution =
+                self.hooks
+                    .resolve_server_request(&pending.method, &pending.params, &response);
+            if let Some(followup) = resolution.followup {
+                self.pending_followups
+                    .write()
+                    .await
+                    .push_back((response.request_id.clone(), followup));
+            }
+            let result = self
                 .client
-                .respond_server_request(pending.server_id, payload)
+                .respond_server_request(pending.server_id, resolution.response)
                 .await
                 .map_err(|e| RuntimeError::new(format!("respond_permission write failed: {e}")));
+            if result.is_err() {
+                self.pending_followups
+                    .write()
+                    .await
+                    .retain(|(request_id, _)| request_id != &response.request_id);
+            }
+            return result;
         }
         let request_id = response.request_id.clone();
         let decision = response.decision;
@@ -354,6 +393,10 @@ impl AgentRuntimeSession for AcpRuntimeSession {
                 Ok(())
             }
         }
+    }
+
+    fn permission_response_kind(&self, request_id: &str) -> RuntimePermissionResponseKind {
+        self.hooks.permission_response_kind(request_id)
     }
 
     fn pid(&self) -> Option<u32> {

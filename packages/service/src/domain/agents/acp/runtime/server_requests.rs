@@ -25,7 +25,7 @@ use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamSt
 use super::event_loop_state::sync_session_state_from_update;
 use super::events::session_update_to_events;
 use super::events_stream_blocks::EventIndexer;
-use super::events_tool_call_input::is_empty_value;
+use super::events_tool_call_metadata::is_empty_value;
 use super::fs::{handle_read_text_file, handle_write_text_file};
 use super::permissions::{
     derive_preview, dispatch_permission_request_with_cache, has_pending_permission_for_tool_call,
@@ -34,6 +34,7 @@ use super::permissions::{
 };
 use super::prompt_receipts::PendingPromptReceipts;
 use super::provider_hooks::AcpProviderHooks;
+use super::server_request_extensions::{handle_extension_notification, handle_extension_request};
 use super::server_request_response::{
     describe_exit, fs_outcome_from, respond_or_reject, terminal_id_param,
 };
@@ -179,8 +180,8 @@ async fn handle_notification(
                 let _ = tx.send(Ok(event)).await;
             }
         }
-        AcpNotification::Extension { method, .. } => {
-            tracing::debug!(method, "unhandled ACP notification");
+        AcpNotification::Extension { method, params } => {
+            handle_extension_notification(method, params, tx, config).await;
         }
     }
 }
@@ -287,6 +288,9 @@ async fn handle_server_request(
             respond_or_reject(client, id, fs_outcome_from(result)).await;
         }
         other => {
+            if handle_extension_request(client, &request, tx, config).await {
+                return;
+            }
             tracing::warn!(method = other, "unhandled ACP server request");
             if let Err(error) = client
                 .reject_server_request(id, -32601, "method not found")
@@ -323,6 +327,7 @@ async fn handle_permission_request(
     let session_id = config.session_id.read().await.clone();
     if let Err(error) = dispatch_permission_request_with_cache(
         client,
+        config.hooks.as_ref(),
         &config.pending_permissions,
         &config.session_permissions,
         session_id,

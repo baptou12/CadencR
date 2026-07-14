@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 const SET_CONFIG_OPTION_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(test)]
 pub async fn set_config_option_model(
     client: &AcpClient,
     session_id: &str,
@@ -14,6 +15,26 @@ pub async fn set_config_option_model(
     supports_flag: &Arc<AtomicBool>,
     config_id: Option<&str>,
     new_model: &str,
+) -> Result<(), RuntimeError> {
+    set_config_option_model_value(
+        client,
+        session_id,
+        current_model,
+        supports_flag,
+        config_id,
+        new_model,
+        new_model,
+    )
+    .await
+}
+pub async fn set_config_option_model_value(
+    client: &AcpClient,
+    session_id: &str,
+    current_model: &Arc<RwLock<Option<String>>>,
+    supports_flag: &Arc<AtomicBool>,
+    config_id: Option<&str>,
+    new_model: &str,
+    config_value: &str,
 ) -> Result<(), RuntimeError> {
     let Some(config_id) = config_id else {
         set_local_config_value(current_model, Some(new_model)).await;
@@ -25,6 +46,7 @@ pub async fn set_config_option_model(
         current_model,
         supports_flag,
         config_id,
+        Some(config_value),
         Some(new_model),
     )
     .await
@@ -48,6 +70,7 @@ pub async fn set_config_option_thinking_effort(
         supports_flag,
         config_id,
         new_effort,
+        new_effort,
     )
     .await
 }
@@ -57,13 +80,14 @@ async fn set_config_option(
     current: &Arc<RwLock<Option<String>>>,
     supports_flag: &Arc<AtomicBool>,
     config_id: &str,
-    new_value: Option<&str>,
+    wire_value: Option<&str>,
+    stored_value: Option<&str>,
 ) -> Result<(), RuntimeError> {
-    if value_is_already_current(current, new_value).await {
+    if value_is_already_current(current, stored_value).await {
         return Ok(());
     }
-    send_set_config_option(client, session_id, supports_flag, config_id, new_value).await?;
-    *current.write().await = new_value.map(ToOwned::to_owned);
+    send_set_config_option(client, session_id, supports_flag, config_id, wire_value).await?;
+    *current.write().await = stored_value.map(ToOwned::to_owned);
     Ok(())
 }
 async fn send_set_config_option(
@@ -77,7 +101,10 @@ async fn send_set_config_option(
     let params = json!({
         "sessionId": session_id,
         "configId": config_id,
-        "type": "string",
+        // Omit the discriminator for v1 compatibility. ACP defines a missing
+        // `type` as an id/select value; current Cursor rejects both explicit
+        // `string` and `id` discriminators even though it advertises the
+        // standard model select option.
         "value": value_payload,
     });
     match request_optional_method(
@@ -114,7 +141,9 @@ async fn set_local_config_value(current: &Arc<RwLock<Option<String>>>, new_value
 }
 #[cfg(test)]
 mod tests {
-    use super::{set_config_option_model, set_config_option_thinking_effort};
+    use super::{
+        set_config_option_model, set_config_option_model_value, set_config_option_thinking_effort,
+    };
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
     use serde_json::{json, Value};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -199,7 +228,7 @@ mod tests {
             "must NOT nest under a configOption envelope (OpenCode rejects it)"
         );
         assert_eq!(params["configId"], "model");
-        assert_eq!(params["type"], "string");
+        assert!(params.get("type").is_none());
         assert_eq!(params["value"], "openai/gpt-5.4");
         let id = parsed["id"].clone();
         reply_ok(&mut agent_stdout, id, json!({})).await;
@@ -215,13 +244,14 @@ mod tests {
             let current_model = Arc::clone(&current_model);
             let supports = Arc::clone(&supports);
             async move {
-                set_config_option_model(
+                set_config_option_model_value(
                     &client,
                     "s-1",
                     &current_model,
                     &supports,
                     Some("model"),
                     "new-model",
+                    "new-model[fast=true]",
                 )
                 .await
             }
@@ -230,8 +260,8 @@ mod tests {
         assert_eq!(parsed["method"], "session/set_config_option");
         assert_eq!(parsed["params"]["sessionId"], "s-1");
         assert_eq!(parsed["params"]["configId"], "model");
-        assert_eq!(parsed["params"]["type"], "string");
-        assert_eq!(parsed["params"]["value"], "new-model");
+        assert!(parsed["params"].get("type").is_none());
+        assert_eq!(parsed["params"]["value"], "new-model[fast=true]");
         let id = parsed["id"].clone();
         reply_ok(&mut agent_stdout, id, json!({})).await;
         task.await.unwrap().unwrap();
@@ -347,7 +377,7 @@ mod tests {
         });
         let parsed = read_one_request(&mut agent_stdin).await;
         assert_eq!(parsed["params"]["configId"], "effort");
-        assert_eq!(parsed["params"]["type"], "string");
+        assert!(parsed["params"].get("type").is_none());
         assert_eq!(parsed["params"]["value"], "high");
         let id = parsed["id"].clone();
         reply_ok(&mut agent_stdout, id, json!({})).await;

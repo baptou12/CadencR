@@ -4,7 +4,7 @@
 
 use crate::domain::agents::adapter::{RuntimeError, RuntimeSpawnConfig};
 
-use super::config_options::{set_config_option_model, set_config_option_thinking_effort};
+use super::config_options::{set_config_option_model_value, set_config_option_thinking_effort};
 use super::lifecycle::NegotiatedSession;
 use super::session::AcpRuntimeSession;
 
@@ -18,13 +18,15 @@ pub(super) async fn apply_initial_model(
     let Some(model) = config.model.as_deref() else {
         return Ok(());
     };
-    set_config_option_model(
+    let config_value = session.hooks.model_config_value(model);
+    set_config_option_model_value(
         &session.client,
         &negotiated.session_id,
         &session.current_model,
         &session.supports_set_config_option,
         session.hooks.model_config_id(),
         model,
+        &config_value,
     )
     .await
 }
@@ -151,7 +153,7 @@ mod tests {
         assert_eq!(req["method"], "session/set_config_option");
         assert_eq!(req["params"]["sessionId"], "s-1");
         assert_eq!(req["params"]["configId"], "model");
-        assert_eq!(req["params"]["type"], "string");
+        assert!(req["params"].get("type").is_none());
         assert_eq!(req["params"]["value"], "openai/gpt-5.4");
         let id = req["id"].clone();
         let mut frame =
@@ -192,7 +194,7 @@ mod tests {
         let req: Value = serde_json::from_str(line.trim()).unwrap();
         // OpenCode discriminates on `configId === "effort"` (not "thinkingEffort").
         assert_eq!(req["params"]["configId"], "effort");
-        assert_eq!(req["params"]["type"], "string");
+        assert!(req["params"].get("type").is_none());
         assert_eq!(req["params"]["value"], "high");
         let id = req["id"].clone();
         let mut frame =
@@ -290,7 +292,7 @@ mod tests {
             stdin.read_line(&mut line).await.unwrap();
             let req: Value = serde_json::from_str(line.trim()).unwrap();
             assert_eq!(req["method"], "session/set_config_option");
-            assert_eq!(req["params"]["type"], "string");
+            assert!(req["params"].get("type").is_none());
             let cid = req["params"]["configId"].as_str().unwrap().to_owned();
             assert!(seen.insert(cid.clone()), "duplicate configId on the wire");
             let id = req["id"].clone();

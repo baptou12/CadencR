@@ -65,6 +65,7 @@ pub async fn negotiate_session(
         .map_err(|e| RuntimeError::new(format!("ACP initialize failed: {e}")))?;
     let init_value = serde_json::to_value(init_result)
         .map_err(|e| RuntimeError::new(format!("ACP initialize response invalid: {e}")))?;
+    hooks.authenticate(client, &init_value).await?;
     let capabilities = parse_agent_capabilities(&init_value);
 
     let resume_id = config.resume_session_id.as_deref();
@@ -94,7 +95,8 @@ pub async fn negotiate_session(
         .available_mcp_servers(&config.cwd, mcp_status_list(config.mcp_servers.as_ref()))
         .await;
     if let Some(resume_id) = resume_id {
-        let current_mode = load_session(client, resume_id, &config.cwd, &mcp_servers).await?;
+        let current_mode =
+            load_session(client, resume_id, &config.cwd, &mcp_servers, hooks).await?;
         return Ok(NegotiatedSession {
             session_id: resume_id.to_string(),
             model: model_id,
@@ -103,7 +105,8 @@ pub async fn negotiate_session(
             current_mode,
         });
     }
-    let (session_id, current_mode) = start_new_session(client, &config.cwd, &mcp_servers).await?;
+    let (session_id, current_mode) =
+        start_new_session(client, &config.cwd, &mcp_servers, hooks).await?;
 
     Ok(NegotiatedSession {
         session_id,
@@ -119,6 +122,7 @@ async fn load_session(
     session_id: &str,
     cwd: &Path,
     mcp_servers: &Value,
+    hooks: &dyn AcpProviderHooks,
 ) -> Result<Option<String>, RuntimeError> {
     let request = LoadSessionRequest::new(session_id.to_string(), cwd.to_path_buf()).mcp_servers(
         serde_json::from_value::<Vec<McpServer>>(mcp_servers.clone())
@@ -128,6 +132,7 @@ async fn load_session(
         .send_request_typed(request, SESSION_SETUP_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/load failed: {e}")))?;
+    hooks.observe_session_config_options(result.config_options.as_deref().unwrap_or_default());
     Ok(result
         .modes
         .as_ref()
@@ -163,6 +168,7 @@ async fn start_new_session(
     client: &AcpClient,
     cwd: &Path,
     mcp_servers: &Value,
+    hooks: &dyn AcpProviderHooks,
 ) -> Result<(String, Option<String>), RuntimeError> {
     let request = NewSessionRequest::new(cwd.to_path_buf()).mcp_servers(
         serde_json::from_value::<Vec<McpServer>>(mcp_servers.clone())
@@ -172,6 +178,7 @@ async fn start_new_session(
         .send_request_typed(request, SESSION_SETUP_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/new failed: {e}")))?;
+    hooks.observe_session_config_options(result.config_options.as_deref().unwrap_or_default());
     let current_mode = result
         .modes
         .as_ref()

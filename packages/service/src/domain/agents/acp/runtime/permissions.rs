@@ -6,11 +6,8 @@
 //! reject_once | reject_always`. The client answers with
 //! `{ outcome: "selected", optionId } | { outcome: "cancelled" }`.
 //!
-//! Cadencr's UI renders three default options (AllowOnce / AllowFuture /
-//! Deny) keyed by `RuntimePermissionDecision`. We map decisions to ACP
-//! `optionId`s discovered in the request, falling back to canonical
-//! "allow_once"/"allow_always"/"reject_once" strings when the agent didn't
-//! advertise an explicit id.
+//! Cadencr maps UI decisions to advertised ACP `optionId`s, with canonical
+//! fallbacks when the agent omits explicit ids.
 
 use agent_client_protocol::schema::v1::{AgentRequest, RequestPermissionRequest};
 use serde_json::Value;
@@ -20,11 +17,13 @@ use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
 
+use super::events_tool_call_metadata::enrich_tool_input;
+pub use super::permission_events::permission_raw_event;
 #[cfg(test)]
 pub use super::permissions_dispatch::dispatch_permission_request;
 pub use super::permissions_dispatch::{
-    dispatch_permission_request_with_cache, permission_raw_event, reject_all_pending, take_pending,
-    PendingPermissions,
+    dispatch_permission_request_for_method, dispatch_permission_request_with_cache,
+    reject_all_pending, take_pending, PendingPermissions,
 };
 pub use super::permissions_refresh::{
     has_pending_permission_for_tool_call, refreshed_permission_event_for_tool_input,
@@ -36,12 +35,7 @@ mod options;
 
 pub(super) use options::{default_options, derive_preview, permission_option};
 
-/// Convert an ACP `session/request_permission` server-request payload into a
-/// Cadencr `RuntimePermissionRequest`.
-///
-/// Returns `None` if the params are malformed (no `toolCall`); callers
-/// should respond to the server-request with a JSON-RPC error in that case
-/// rather than silently dropping it.
+/// Convert an ACP `session/request_permission` payload into a runtime request.
 pub fn permission_request_from_acp(
     request_id: &str,
     params: &Value,
@@ -52,7 +46,7 @@ pub fn permission_request_from_acp(
         raw_tool_use_id(tool_call),
         raw_tool_name(tool_call),
         raw_title(tool_call),
-        raw_tool_input(tool_call),
+        enrich_tool_input(tool_call, raw_tool_input(tool_call)),
         raw_options(params),
     ))
 }
@@ -189,6 +183,7 @@ mod tests {
                     "toolName": "Bash",
                     "toolInput": { "command": "ls" },
                     "title": "Run a shell command",
+                    "locations": [{ "path": "/repo/package.json" }],
                 },
                 "options": [
                     { "optionId": "y1", "name": "Allow once", "kind": "allow_once" },
@@ -203,6 +198,8 @@ mod tests {
         assert_eq!(req.tool_name, "Bash");
         assert_eq!(req.preview.as_deref(), Some("ls"));
         assert_eq!(req.description.as_deref(), Some("Run a shell command"));
+        assert_eq!(req.tool_input["description"], "Run a shell command");
+        assert_eq!(req.tool_input["path"], "/repo/package.json");
         assert_eq!(req.options.len(), 3);
         assert_eq!(
             req.options[0].decision,

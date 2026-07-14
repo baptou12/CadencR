@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_access_change_marks_active_runtime_for_respawn() {
+    fn provider_access_change_marks_active_runtime_for_respawn() {
         let mut handle = pending_handle();
         handle.runtime_provider = crate::domain::agents::codex::PROVIDER_ID.to_string();
         handle.desired_access_mode =

@@ -25,15 +25,16 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex as StdMutex, OnceLock};
+use std::sync::{Mutex as StdMutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 
 use super::acp::spawn_headless_acp;
 use crate::domain::agents::acp::incoming::AcpNotification;
 use crate::domain::agents::acp::runtime::events::parse_available_commands;
+use crate::domain::agents::acp::runtime::slash_command_snapshots::SlashCommandSnapshots;
 use crate::domain::agents::acp::{AcpClient, AcpEvent};
 use crate::domain::agents::adapter::{RuntimeError, RuntimeSlashCommand};
 
@@ -45,11 +46,10 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(8);
 const PROBE_LOG_PREFIX: &str = "opencode ACP /command probe";
 
-static SNAPSHOTS: OnceLock<RwLock<HashMap<String, Arc<Vec<RuntimeSlashCommand>>>>> =
-    OnceLock::new();
+static SNAPSHOTS: OnceLock<SlashCommandSnapshots> = OnceLock::new();
 
-fn snapshots() -> &'static RwLock<HashMap<String, Arc<Vec<RuntimeSlashCommand>>>> {
-    SNAPSHOTS.get_or_init(|| RwLock::new(HashMap::new()))
+fn snapshots() -> &'static SlashCommandSnapshots {
+    SNAPSHOTS.get_or_init(SlashCommandSnapshots::default)
 }
 
 /// Replace the snapshot for `cwd` with the latest ACP-advertised list.
@@ -62,10 +62,7 @@ pub(in crate::domain::agents::opencode) async fn record_snapshot(
     cwd: &str,
     commands: Vec<RuntimeSlashCommand>,
 ) {
-    snapshots()
-        .write()
-        .await
-        .insert(cwd.to_string(), Arc::new(commands));
+    snapshots().record(cwd, commands).await;
 }
 
 /// Read the latest snapshot for `cwd`. Returns an empty list when no
@@ -73,13 +70,12 @@ pub(in crate::domain::agents::opencode) async fn record_snapshot(
 pub(in crate::domain::agents::opencode) async fn runtime_slash_commands(
     cwd: &str,
 ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
-    let snapshot = snapshots().read().await.get(cwd).cloned();
-    Ok(snapshot.map(|arc| (*arc).clone()).unwrap_or_default())
+    Ok(snapshots().get(cwd).await)
 }
 
 #[cfg(test)]
 pub(in crate::domain::agents::opencode) async fn reset_for_test() {
-    snapshots().write().await.clear();
+    snapshots().clear().await;
     if let Some(map) = INFLIGHT.get() {
         if let Ok(mut guard) = map.lock() {
             guard.clear();
