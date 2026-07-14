@@ -2,12 +2,15 @@ import { memo, lazy, Suspense, useMemo, useRef, useState, type ReactElement } fr
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { Components } from "react-markdown";
 import { Loader2Icon } from "lucide-react";
 import { createLowlight, common } from "lowlight";
 import ini from "highlight.js/lib/languages/ini";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cn } from "@/lib/utils";
+import { MarkdownImg } from "@/components/markdown-image";
 import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { useLinkRouting, type LinkRouting } from "@/components/links/LinkRoutingContext";
@@ -269,6 +272,9 @@ function buildComponents(
     },
     pre: ({ children }) => <>{children}</>,
     a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
+    img: ({ src, alt, title, width, height }) => (
+      <MarkdownImg src={src} alt={alt} title={title} width={width} height={height} />
+    ),
     table: ({ children }) => (
       <div className="my-2 overflow-x-auto">
         <table className="min-w-full border-collapse text-xs">{children}</table>
@@ -312,6 +318,23 @@ function markdownUrlTransform(url: string): string {
   return parseConversationReferenceHref(url) === null ? defaultUrlTransform(url) : url;
 }
 
+/**
+ * Sanitization schema for raw HTML embedded in markdown. Agent output (which
+ * repo or web content can influence via prompt injection) and repo-sourced
+ * markdown are untrusted, so we render HTML through GitHub's default schema —
+ * it drops `<script>`, event handlers, and dangerous URL schemes before they
+ * reach the Electron renderer. We only widen it to keep our internal
+ * `cadencr-conversation:` link scheme, which the default `href` allowlist would
+ * otherwise strip.
+ */
+const sanitizeSchema: typeof defaultSchema = {
+  ...defaultSchema,
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), "cadencr-conversation"],
+  },
+};
+
 export const Markdown = memo(function Markdown({ content, className, cacheKey }: MarkdownProps) {
   const { sendToTerminal } = useCodeBlockActions();
   // A set `cacheKey` marks a stable (non-streaming) block; only then do we
@@ -327,9 +350,13 @@ export const Markdown = memo(function Markdown({ content, className, cacheKey }:
   );
 
   const tree = useMemo<ReactElement>(() => {
+    // Raw HTML always contains `<`, so skip the (expensive) rehype-raw parse5
+    // re-parse + sanitize walk for plain-prose content — the streaming hot path.
+    const hasHtml = content.includes("<");
     const build = (): ReactElement => (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={hasHtml ? [rehypeRaw, [rehypeSanitize, sanitizeSchema]] : []}
         components={components}
         urlTransform={markdownUrlTransform}
       >

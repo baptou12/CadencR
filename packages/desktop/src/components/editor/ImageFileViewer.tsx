@@ -17,10 +17,11 @@ import { useQuery } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
-import { customInstance } from "@/api/client";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatBytes } from "@/lib/diff-thresholds";
 import { getFileName } from "@/lib/file-language";
+import { readImageBlob, readImageBlobQueryKey } from "@/lib/read-image-blob";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
 import { CheckerboardBackdrop } from "./CheckerboardBackdrop";
 
 interface ImageFileViewerProps {
@@ -44,21 +45,6 @@ interface View {
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 16;
 const PINCH_SENSITIVITY = 0.01;
-
-function readImageBlob(
-  projectId: number,
-  featureId: number,
-  filePath: string,
-  signal?: AbortSignal,
-): Promise<Blob> {
-  return customInstance<Blob>({
-    url: "/api/editor/read-image",
-    method: "GET",
-    params: { project_id: projectId, feature_id: featureId, file_path: filePath },
-    responseType: "blob",
-    signal,
-  });
-}
 
 /** Fit + center, never upscaling — the convention image viewers use. */
 function computeFitView(image: ImageDimensions, container: DOMRect): View {
@@ -90,7 +76,6 @@ function clampView(view: View, image: ImageDimensions, container: DOMRect): View
 }
 
 function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewerProps) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
   const [decodeError, setDecodeError] = useState<string | null>(null);
@@ -105,35 +90,21 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
   const rectRef = useRef<DOMRect | null>(null);
 
   const imageQuery = useQuery({
-    queryKey: [
-      "/api/editor/read-image",
-      { project_id: projectId, feature_id: featureId, file_path: filePath },
-    ],
+    queryKey: readImageBlobQueryKey(projectId, featureId, filePath),
     queryFn: ({ signal }) => readImageBlob(projectId, featureId, filePath, signal),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const objectUrl = useObjectUrl(imageQuery.data);
 
+  // Reset the per-image dimensions/zoom state whenever a new blob arrives.
   useEffect(() => {
     const blob = imageQuery.data;
-    let revokedUrl: string | null = null;
-    setObjectUrl(null);
     setDimensions(null);
     setDecodeError(null);
     setUserView(null);
     setFitView(null);
-    if (!blob) {
-      setFileSize(null);
-      return;
-    }
-    setFileSize(blob.size);
-    const url = URL.createObjectURL(blob);
-    revokedUrl = url;
-    setObjectUrl(url);
-
-    return () => {
-      if (revokedUrl) URL.revokeObjectURL(revokedUrl);
-    };
+    setFileSize(blob ? blob.size : null);
   }, [imageQuery.data]);
 
   useEffect(() => {

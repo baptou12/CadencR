@@ -10,23 +10,34 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { PreviewKind } from "@/lib/file-language";
 import { Markdown } from "@/components/Markdown";
+import { MarkdownImageProvider } from "@/components/markdown-image";
 import { CheckerboardBackdrop } from "./CheckerboardBackdrop";
+import { PreviewImageProvider, PreviewMarkdownImage } from "./PreviewMarkdownImage";
 
 interface EditorPreviewSurfaceProps {
   kind: PreviewKind;
   content: string;
-  /** Stable key used by the Markdown renderer's cache. */
+  /** Path of the previewed file, relative to the project root. Doubles as the
+   * Markdown renderer's cache key and the base for resolving local images. */
   filePath: string;
+  projectId: number;
+  featureId: number;
 }
 
 export const EditorPreviewSurface = memo(function EditorPreviewSurface({
   kind,
   content,
   filePath,
+  projectId,
+  featureId,
 }: EditorPreviewSurfaceProps) {
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const htmlDocument = useMemo(() => buildHtmlPreviewDocument(content), [content]);
   const svgDocument = useMemo(() => buildSvgPreviewDocument(content), [content]);
+  const imageContext = useMemo(() => {
+    const slash = filePath.lastIndexOf("/");
+    return { projectId, featureId, baseDir: slash === -1 ? "" : filePath.slice(0, slash) };
+  }, [filePath, projectId, featureId]);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent<PreviewShortcutMessage>): void {
@@ -55,7 +66,11 @@ export const EditorPreviewSurface = memo(function EditorPreviewSurface({
       return (
         <div className="flex-1 overflow-auto bg-background">
           <div className="max-w-3xl mx-auto px-6 py-4">
-            <Markdown content={content} cacheKey={filePath} />
+            <PreviewImageProvider value={imageContext}>
+              <MarkdownImageProvider value={PreviewMarkdownImage}>
+                <Markdown content={content} cacheKey={filePath} />
+              </MarkdownImageProvider>
+            </PreviewImageProvider>
           </div>
         </div>
       );
