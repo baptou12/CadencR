@@ -348,6 +348,8 @@ export default function CodeMirrorEditor({
             kind={previewKind}
             content={previewContent ?? ""}
             filePath={filePath}
+            projectId={projectId}
+            featureId={featureId}
           />
         </Suspense>
       )}

@@ -19,7 +19,13 @@ describe("EditorPreviewSurface", () => {
     const content = '<svg onload="window.parent.evil = true"><circle cx="4" cy="4" r="4" /></svg>';
 
     const { container } = render(
-      <EditorPreviewSurface kind="svg" content={content} filePath="preview.svg" />,
+      <EditorPreviewSurface
+        kind="svg"
+        content={content}
+        filePath="preview.svg"
+        projectId={1}
+        featureId={1}
+      />,
     );
 
     const iframe = screen.getByTitle("SVG preview");
@@ -31,7 +37,15 @@ describe("EditorPreviewSurface", () => {
   });
 
   it("bridges mod-w from the sandboxed HTML preview to the editor close shortcut", () => {
-    render(<EditorPreviewSurface kind="html" content="<h1>Preview</h1>" filePath="preview.html" />);
+    render(
+      <EditorPreviewSurface
+        kind="html"
+        content="<h1>Preview</h1>"
+        filePath="preview.html"
+        projectId={1}
+        featureId={1}
+      />,
+    );
 
     const iframe = screen.getByTitle("HTML preview");
     const srcDoc = iframe.getAttribute("srcdoc") ?? "";
@@ -42,7 +56,15 @@ describe("EditorPreviewSurface", () => {
   });
 
   it("bridges mod-w from the sandboxed SVG preview to the editor close shortcut", () => {
-    render(<EditorPreviewSurface kind="svg" content="<svg />" filePath="preview.svg" />);
+    render(
+      <EditorPreviewSurface
+        kind="svg"
+        content="<svg />"
+        filePath="preview.svg"
+        projectId={1}
+        featureId={1}
+      />,
+    );
 
     const srcDoc = getSrcDoc();
 
@@ -52,7 +74,15 @@ describe("EditorPreviewSurface", () => {
   });
 
   it("adds cursor-anchored wheel zoom support to the sandboxed SVG preview", () => {
-    render(<EditorPreviewSurface kind="svg" content="<svg />" filePath="preview.svg" />);
+    render(
+      <EditorPreviewSurface
+        kind="svg"
+        content="<svg />"
+        filePath="preview.svg"
+        projectId={1}
+        featureId={1}
+      />,
+    );
 
     const srcDoc = getSrcDoc();
 
