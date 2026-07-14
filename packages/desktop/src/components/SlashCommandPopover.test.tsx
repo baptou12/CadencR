@@ -17,6 +17,13 @@ const commands = [
   },
 ];
 
+const cadencrCommand = {
+  name: "cadencr:review",
+  description: "Review this worktree",
+  kind: "cadencr" as const,
+  argumentHint: "[focus]",
+};
+
 describe("SlashCommandPopover", () => {
   it("renders children", () => {
     render(
@@ -49,7 +56,7 @@ describe("SlashCommandPopover", () => {
   });
 
   it("shows commands when open", () => {
-    render(
+    const { container } = render(
       <SlashCommandPopover
         open={true}
         items={commands}
@@ -62,6 +69,7 @@ describe("SlashCommandPopover", () => {
     );
     expect(screen.getByText("/commit")).toBeInTheDocument();
     expect(screen.getByText("/plan")).toBeInTheDocument();
+    expect(container.querySelector(".glass-surface")).toHaveClass("py-0");
   });
 
   it("does not render command kind badges", () => {
@@ -99,6 +107,36 @@ describe("SlashCommandPopover", () => {
       "text-accent-foreground/80",
     );
     expect(screen.getByText("Create a plan").parentElement).toHaveClass("text-muted-foreground");
+  });
+
+  it("uses subtle idle and consistent hover and selected colors for Cadencr commands", () => {
+    const renderPopover = (selectedIndex: number) => (
+      <SlashCommandPopover
+        open={true}
+        items={[commands[0], cadencrCommand]}
+        selectedIndex={selectedIndex}
+        onSelect={vi.fn()}
+        isLoading={false}
+      >
+        <input />
+      </SlashCommandPopover>
+    );
+    const { rerender } = render(renderPopover(0));
+
+    const cadencrRow = screen.getByRole("button", { name: /cadencr:review/i });
+    expect(cadencrRow).toHaveClass(
+      "bg-primary/[0.08]",
+      "text-popover-foreground",
+      "hover:bg-primary/20",
+    );
+
+    rerender(renderPopover(1));
+
+    expect(cadencrRow).toHaveClass("bg-primary/20", "text-popover-foreground");
+    expect(screen.getByText("Review this worktree").parentElement).toHaveClass(
+      "text-popover-foreground/80",
+    );
+    expect(screen.getByText("[focus]")).toHaveClass("text-popover-foreground/70");
   });
 
   it("renders skill trigger prefix when provided", () => {

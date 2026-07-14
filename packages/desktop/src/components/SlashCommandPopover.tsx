@@ -38,6 +38,10 @@ const SlashCommandItem = memo(function SlashCommandItem({
   onSelect,
 }: SlashCommandItemProps) {
   const isCadencr = item.kind === "cadencr";
+  const selectedDescriptionColor = isCadencr
+    ? "text-popover-foreground/80"
+    : "text-accent-foreground/80";
+  const selectedHintColor = isCadencr ? "text-popover-foreground/70" : "text-accent-foreground/70";
   return (
     <button
       type="button"
@@ -47,15 +51,17 @@ const SlashCommandItem = memo(function SlashCommandItem({
       className={cn(
         "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm",
         selected
-          ? "bg-accent text-accent-foreground"
+          ? isCadencr
+            ? "bg-primary/20 text-popover-foreground"
+            : "bg-accent text-accent-foreground"
           : isCadencr
             ? // Cadencr virtual skills get a persistent brand-tinted background,
-              // pitched clearly above the plain hover state so they stand apart.
-              "bg-primary/[0.12] text-popover-foreground hover:bg-primary/20"
+              // with a stronger hover step so pointer and keyboard states remain clear.
+              "bg-primary/[0.08] text-popover-foreground hover:bg-primary/20"
             : "text-popover-foreground hover:bg-muted",
         // `disabled` only ever applies to a Cadencr skill, so hold the brand tint
         // static instead of reacting to hover.
-        disabled && "cursor-not-allowed opacity-50 hover:bg-primary/[0.12]",
+        disabled && "cursor-not-allowed opacity-50 hover:bg-primary/[0.08]",
       )}
       onMouseDown={(e) => {
         e.preventDefault(); // prevent textarea blur
@@ -86,7 +92,7 @@ const SlashCommandItem = memo(function SlashCommandItem({
             pxPerSec={24}
             className={cn(
               "min-w-0 flex-1 text-xs",
-              selected ? "text-accent-foreground/80" : "text-muted-foreground",
+              selected ? selectedDescriptionColor : "text-muted-foreground",
             )}
           />
         )}
@@ -95,7 +101,7 @@ const SlashCommandItem = memo(function SlashCommandItem({
         <span
           className={cn(
             "shrink-0 text-xs italic",
-            selected ? "text-accent-foreground/70" : "text-muted-foreground/60",
+            selected ? selectedHintColor : "text-muted-foreground/60",
           )}
         >
           {item.argumentHint}
@@ -130,7 +136,7 @@ export function SlashCommandPopover({
       {open && (
         <div
           ref={listRef}
-          className="glass-surface absolute bottom-full left-0 right-0 z-50 mb-1 max-h-[300px] overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-lg"
+          className="glass-surface absolute bottom-full left-0 right-0 z-50 mb-1 max-h-[300px] overflow-y-auto rounded-md border border-border bg-popover py-0 shadow-lg"
         >
           {isLoading ? (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
