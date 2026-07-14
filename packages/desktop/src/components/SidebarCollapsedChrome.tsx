@@ -5,6 +5,8 @@ import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
+import { cn } from "@/lib/utils";
 
 export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): ReactElement {
   const isMobile = useIsMobile();
@@ -27,9 +29,16 @@ export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): 
   }
   return (
     <>
-      {/* `mt-2` keeps the logo clear of the macOS traffic-light buttons,
-          which sit at ~y=12 inside `titleBarStyle: "hiddenInset"`. */}
-      <div className="group/logo -ml-2 mt-2 flex shrink-0 items-center gap-0.5">
+      {/* With the sidebar collapsed this chrome sits at the window's left
+          edge, where the macOS traffic-light buttons live (they end ~x=64
+          inside `titleBarStyle: "hiddenInset"`) — `ml-12` moves it clear of
+          them. No margin needed where there are no window controls. */}
+      <div
+        className={cn(
+          "group/logo flex shrink-0 items-center gap-0.5",
+          HAS_MAC_WINDOW_CONTROLS ? "ml-12" : "-ml-2",
+        )}
+      >
         <Button
           variant="ghost"
           size="icon"
