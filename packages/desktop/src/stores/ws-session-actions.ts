@@ -120,15 +120,23 @@ export function applyPlanChangesRequest(
 export { applyPersistedState } from "./ws-session-persisted-actions";
 
 /**
- * Load older messages for a session from the server. Returns the number of
- * blocks that were prepended. The store also tracks the rendered display-row
- * delta so Virtuoso can preserve scroll position via `firstItemIndex`.
+ * Upper bound of `before` pages fetched per load gesture while no new display
+ * row appears. Under summary/compact display an agent-heavy page can collapse
+ * entirely into an existing recap row, so a single page often renders nothing.
  */
-export async function loadOlderSessionMessages(
+const MAX_OLDER_PAGES_PER_LOAD = 10;
+
+interface OlderPageResult {
+  addedBlocks: number;
+  addedDisplayRows: number;
+  hasMore: boolean;
+}
+
+async function loadOlderSessionPage(
   ctx: StoreAccessors,
   sessionId: string,
   displayMode?: DisplayRowMode,
-): Promise<number> {
+): Promise<OlderPageResult | null> {
   const session = ctx.get().sessions[sessionId];
   if (
     !session ||
@@ -137,7 +145,7 @@ export async function loadOlderSessionMessages(
     !session.featureId ||
     !session.sessionDbId
   )
-    return 0;
+    return null;
 
   const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
   const data = await getFeatureAgentState(session.featureId, {
@@ -148,30 +156,54 @@ export async function loadOlderSessionMessages(
   const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);
   if (!serverSession) {
     ctx.set(updateSession(ctx.get(), sessionId, { hasMore: false }));
-    return 0;
+    return null;
   }
 
   const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
   const currentSession = ctx.get().sessions[sessionId];
-  if (!currentSession) return 0;
+  if (!currentSession) return null;
   const mergedBlocks = mergeCanonicalBlocks(currentSession.blocks, olderBlocks);
   const addedBlocks = mergedBlocks.length - currentSession.blocks.length;
   // Use the actual growth in rendered rows, not the older chunk's rows in
   // isolation — under summary/compact mode a segment can span the chunk
   // boundary, so the net delta is what keeps `firstItemIndex` aligned.
-  const prependedDisplayRows =
+  const addedDisplayRows =
     countRenderableDisplayRows(mergedBlocks, displayMode) -
     countRenderableDisplayRows(currentSession.blocks, displayMode);
+  const hasMore = serverSession.hasMore ?? false;
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...blocksPatchWithDerived(currentSession.streamingState, mergedBlocks),
-      historyPrependDisplayOffset:
-        currentSession.historyPrependDisplayOffset + prependedDisplayRows,
-      hasMore: serverSession.hasMore ?? false,
+      historyPrependDisplayOffset: currentSession.historyPrependDisplayOffset + addedDisplayRows,
+      hasMore,
       oldestMessageId: serverSession.oldestMessageId ?? null,
     }),
   );
-  return addedBlocks;
+  return { addedBlocks, addedDisplayRows, hasMore };
+}
+
+/**
+ * Load older messages for a session from the server. Returns the number of
+ * blocks that were prepended. The store also tracks the rendered display-row
+ * delta so Virtuoso can preserve scroll position via `firstItemIndex`.
+ *
+ * Fetches pages (bounded by `MAX_OLDER_PAGES_PER_LOAD`) until one adds a
+ * visible row or history runs out, so a collapsing page never reads as a
+ * dead scroll-up.
+ */
+export async function loadOlderSessionMessages(
+  ctx: StoreAccessors,
+  sessionId: string,
+  displayMode?: DisplayRowMode,
+): Promise<number> {
+  let totalAddedBlocks = 0;
+  for (let page = 0; page < MAX_OLDER_PAGES_PER_LOAD; page += 1) {
+    const result = await loadOlderSessionPage(ctx, sessionId, displayMode);
+    if (!result) break;
+    totalAddedBlocks += result.addedBlocks;
+    if (result.addedDisplayRows > 0 || !result.hasMore) break;
+  }
+  return totalAddedBlocks;
 }
 
 /** Format question answers into a user-visible markdown string. */

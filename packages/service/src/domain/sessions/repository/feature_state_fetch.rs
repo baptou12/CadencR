@@ -144,6 +144,11 @@ async fn finish_paginated_session(
         merged.append(&mut rows);
         rows = merged;
     }
+    // The anchor and missing-parent rows are fetched out-of-band and land
+    // ahead of the page window; blocks must be emitted in ascending id order
+    // or the transcript renders scrambled (user prompt after its own turn).
+    // `id` is a unique PK, so an unstable sort is both correct and cheaper.
+    rows.sort_unstable_by_key(|message| message.id);
     result.has_more.insert(session_id, has_more);
     result.messages.insert(session_id, rows);
     Ok(())
@@ -295,7 +300,7 @@ mod tests {
     use serde_json::json;
 
     use super::super::test_support::{insert_message, insert_session, setup_test_db};
-    use super::{fetch_latest_todos, todo_fetch_session_ids};
+    use super::{fetch_full_messages, fetch_latest_todos, todo_fetch_session_ids};
 
     #[test]
     fn todo_fetch_session_ids_skips_full_fetches_for_before_pagination() {
@@ -309,6 +314,66 @@ mod tests {
         let ids = todo_fetch_session_ids(&[2, 1], true, &HashMap::new(), &HashMap::new());
 
         assert_eq!(ids, vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn limited_fetch_keeps_rows_in_ascending_id_order() {
+        let pool = setup_test_db().await;
+        let session_id = insert_session(&pool, 1, "running").await;
+
+        // First user prompt (becomes the out-of-band anchor once the limited
+        // window excludes it) plus a dangling tool_call whose result lands
+        // inside the window (fetched as a missing parent).
+        insert_message(
+            &pool,
+            session_id,
+            "user_message",
+            "first prompt",
+            None,
+            None,
+            None,
+        )
+        .await;
+        insert_message(
+            &pool,
+            session_id,
+            "tool_call",
+            "{}",
+            Some("Bash"),
+            Some("tu-1"),
+            None,
+        )
+        .await;
+        for i in 0..6 {
+            let content = format!("t{i}");
+            insert_message(&pool, session_id, "text", &content, None, None, None).await;
+        }
+        insert_message(
+            &pool,
+            session_id,
+            "tool_result",
+            "done",
+            None,
+            Some("tu-1"),
+            None,
+        )
+        .await;
+
+        let result = fetch_full_messages(&pool, &[session_id], Some(3), &HashMap::new())
+            .await
+            .unwrap();
+
+        let rows = result.messages.get(&session_id).unwrap();
+        let ids: Vec<i64> = rows.iter().map(|m| m.id).collect();
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "rows must be in ascending id order");
+        assert_eq!(
+            rows.first().map(|m| m.message_type.as_str()),
+            Some("user_message"),
+            "the anchor user prompt must come first"
+        );
+        assert!(result.has_more.get(&session_id).copied().unwrap_or(false));
     }
 
     #[tokio::test]
