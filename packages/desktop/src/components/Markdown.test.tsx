@@ -89,6 +89,36 @@ describe("Markdown", () => {
     expect(screen.getByText("some output")).toBeInTheDocument();
   });
 
+  it("renders inline raw HTML", () => {
+    render(<Markdown content={"Press <kbd>Ctrl</kbd> to continue"} />);
+    const kbd = document.querySelector("kbd");
+    expect(kbd).toBeInTheDocument();
+    expect(kbd?.textContent).toBe("Ctrl");
+  });
+
+  it("renders block-level raw HTML", () => {
+    render(<Markdown content={"<details><summary>More</summary><span>Hidden</span></details>"} />);
+    expect(document.querySelector("details")).toBeInTheDocument();
+    expect(screen.getByText("More")).toBeInTheDocument();
+    expect(screen.getByText("Hidden")).toBeInTheDocument();
+  });
+
+  it("strips dangerous HTML (script tags and event handlers)", () => {
+    render(
+      <Markdown
+        content={'<img src="x" onerror="alert(1)" alt="pic"><script>alert(2)</script>Safe'}
+      />,
+    );
+    expect(document.querySelector("script")).not.toBeInTheDocument();
+    expect(document.querySelector("img")?.getAttribute("onerror")).toBeNull();
+    expect(screen.getByText("Safe")).toBeInTheDocument();
+  });
+
+  it("strips javascript: URLs from raw HTML links", () => {
+    render(<Markdown content={'<a href="javascript:alert(1)">click me</a>'} />);
+    expect(screen.getByText("click me")).not.toHaveAttribute("href", "javascript:alert(1)");
+  });
+
   it("applies custom className", () => {
     const { container } = render(<Markdown content="text" className="custom-class" />);
     expect(container.firstChild).toHaveClass("custom-class");
