@@ -88,6 +88,14 @@ const DOC_PAGES: DocPage[] = [
     section: "Features",
   },
   {
+    slug: "mcp",
+    title: "MCP & orchestration",
+    navLabel: "MCP & Orchestration",
+    description:
+      "Let agents search workspace history, coordinate project sessions, and use CadencR orchestration commands.",
+    section: "Features",
+  },
+  {
     slug: "custom-actions",
     title: "Custom actions",
     navLabel: "Custom Actions",

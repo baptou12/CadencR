@@ -1,0 +1,181 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "MCP & orchestration"
+description: "Use CadencR's workspace and project MCP tools to search session history, coordinate agents, and run provider-neutral orchestration commands."
+---
+
+import DocCallout from "@/components/docs/DocCallout.astro";
+
+CadencR can attach its own [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers to an agent session. They give the agent structured access to work that CadencR already knows about: projects, conversations, worktrees, related sessions, and permission gates.
+
+You normally **ask for an outcome in plain language**. The agent chooses and calls the tools; you do not need to write MCP JSON yourself.
+
+## The three CadencR MCP servers
+
+| Server              | Scope                                                                               | What it enables                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `cadencr-workspace` | Every project registered in this CadencR workspace                                  | Read-only discovery across projects, session search, conversation reads, activity, and session relationships                 |
+| `cadencr-project`   | The current project, except that new sessions may target another registered project | Read and compare sessions, inspect worktrees, spawn or message agents, and answer linked child gates                         |
+| `cadencr-browser`   | Browser tabs belonging to the current feature                                       | Open, inspect, screenshot, and interact with pages; see the [Browser tool reference](../browser/#browser-mcp-tool-reference) |
+
+Enable or disable each server in **Settings → MCP**. Changes apply on the next agent turn. The session info popover shows which MCP servers the provider reported as connected.
+
+<DocCallout title="Project and workspace are a pair" variant="tip">
+  Workspace MCP is how an agent discovers registered project IDs and prior work across projects.
+  Project MCP is how it acts on the current project's sessions or spawns a session in a selected
+  project. CadencR's orchestration commands require both.
+</DocCallout>
+
+## Example case: continue an authentication fix without duplicating work
+
+Imagine a login callback is failing again. You remember solving something similar, but not which project or session contained the answer.
+
+Start with a prompt that gives the agent permission to reuse history before editing:
+
+```text
+Search my CadencR workspace for earlier sessions about OAuth callback state mismatches.
+Summarize the most relevant prior fix, identify which project and files it touched,
+then check this project's recent sessions so we do not duplicate active work.
+Do not edit or spawn anything yet.
+```
+
+The agent can use `workspace_read_sessions` to find candidates, `workspace_read_session` to read the best match, and `project_list_sessions` or `project_find_related_sessions` to check the current project.
+
+When you are ready to delegate the implementation:
+
+```text
+Use the prior OAuth fix as context and spawn one implementation session in this project.
+Give it a fresh worktree from main, a self-contained brief, and ask it to return its first result.
+Before spawning, list available providers and choose a strong coding model.
+```
+
+That flow typically uses `workspace_list_projects`, `project_list_agent_providers`, and `project_spawn_session` with `branch.mode: "new_worktree"` and `await_result: true`.
+
+## Prompt recipes
+
+### Find and reuse prior work
+
+```text
+Search all CadencR projects for sessions mentioning "invoice PDF rounding".
+Show the five best matches with project, session, provider, date, and a short snippet.
+Read the most relevant session and summarize the decision that was made.
+```
+
+### Compare two attempts
+
+```text
+Compare sessions 1842 and 1869 in this project. Include their status, model,
+worktree branch, dirty files, and the main difference in their proposed solution.
+Do not modify either worktree.
+```
+
+### Fan out independent checks
+
+```text
+Create three isolated sessions from main: one for frontend tests, one for Rust tests,
+and one for a docs audit. Use a separate worktree for each, link them to this session,
+and return each session's first result. Do not let the children edit overlapping files.
+```
+
+### Check on delegated work
+
+```text
+Show the session tree related to this conversation. For every linked child, report
+whether it is working, idle, finished, or waiting for input. If one is blocked,
+show the pending gate but do not answer it.
+```
+
+## Workspace MCP tool reference
+
+Workspace tools are read-only and include project, feature, session, provider, and model provenance where applicable.
+
+| Tool                        | What it does                                                                                                                         | Important inputs                                                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workspace_list_projects`   | Lists up to 200 registered projects with their IDs, names, paths, and creation dates. Use it before a cross-project search or spawn. | None                                                                                                                                                       |
+| `workspace_read_session`    | Reads one session and its messages with project metadata. Supports text, role, message-type, and message-ID filters.                 | Required `session_id`; optional `query`, `roles`, `message_types`, `after_message_id`, `before_message_id`, `include_metadata`, `limit`                    |
+| `workspace_read_sessions`   | Full-text searches messages across projects and returns matching session snippets with provenance.                                   | Optional `query`, `project_ids`, `roles`, `message_types`, `providers`, `models`, `statuses`, `tool_names`, date range, `cursor`, `snippet_chars`, `limit` |
+| `workspace_session_graph`   | Reads recorded `spawned`, `messaged`, `referenced`, and `handoff` links plus metadata for the connected session nodes.               | Optional anchor `session_id` and `limit`                                                                                                                   |
+| `workspace_recent_activity` | Returns the newest messages across projects with short snippets and their project, feature, session, provider, model, and status.    | Optional `limit` and `snippet_chars`                                                                                                                       |
+
+### Workspace search tips
+
+- Start with `workspace_read_sessions`; read a whole conversation only after a result looks relevant.
+- Filter by `project_ids`, provider, model, status, dates, or `tool_names` when a broad text query is noisy.
+- Use the returned cursor instead of asking for an unbounded result set.
+- Ask for `include_metadata` when message provenance matters, such as a prompt forwarded by another session.
+
+## Project MCP tool reference
+
+Most project tools are scoped to sessions in the caller's current project. This prevents an agent from accidentally reading or messaging an unrelated project just because it knows a session ID. `project_spawn_session` is the exception: it can deliberately target any project returned by `workspace_list_projects`.
+
+### Discover and read
+
+| Tool                            | What it does                                                                                                                                                | Important inputs                                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `project_list_sessions`         | Lists recent sessions in the current project, including feature, provider, model, status, branch, and worktree data. Use it before spawning duplicate work. | Optional `limit` and pagination `cursor`                                                                                                  |
+| `project_read_session`          | Reads one current-project session with search, pagination, role filters, and optional provenance or full tool payloads.                                     | Required `session_id`; optional `query`, `roles`, `message_types`, message-ID bounds, `include_tool_details`, `include_metadata`, `limit` |
+| `project_read_session_tail`     | Returns messages after a cursor in ascending order, useful for checking only what changed since the last read.                                              | Required `session_id`; optional `after_message_id`, `limit`, `include_tool_details`, `include_metadata`                                   |
+| `project_get_session_status`    | Reports live status when available and falls back to persisted status for one current-project session.                                                      | Required `session_id`                                                                                                                     |
+| `project_get_worktree_status`   | Inspects worktree path, branch, and dirty-file ownership for one session, or the relevant current-project sessions when no ID is supplied.                  | Optional `session_id`                                                                                                                     |
+| `project_find_related_sessions` | Full-text searches current-project history before an agent edits or spawns related work.                                                                    | Required `query`; optional `limit` and `snippet_chars`                                                                                    |
+| `project_compare_sessions`      | Compares two sessions' metadata and worktree state side by side.                                                                                            | Required `left_session_id` and `right_session_id`                                                                                         |
+| `project_list_agent_providers`  | Lists canonical provider IDs, available models, supported thinking levels, and defaults accepted by spawning.                                               | None                                                                                                                                      |
+
+### Coordinate and delegate
+
+| Tool                           | What it does                                                                                                                                                                                              | Important inputs                                                                                                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project_link_sessions`        | Records an explicit relationship from the current session to another current-project session.                                                                                                             | Required `target_session_id`; optional `link_type` (`spawned`, `messaged`, `referenced`, or `handoff`) and `note`                                                    |
+| `project_spawn_session`        | Creates a session in a registered target project, optionally sends its first prompt, selects provider/model/thinking, creates or reuses a worktree, links it to the caller, and waits for its first turn. | Required `title` plus `project_id` or exact `project_path`; optional `initial_message`, provider/model settings, `branch`, `link_to_current_session`, `await_result` |
+| `project_send_session_message` | Sends a provenance-tracked user message to another current-project session, immediately or through its busy queue. It can optionally return the target's next turn as a `<cadencr-reply>`.                | Required `target_session_id` and `message`; optional `delivery`, `reply`, `message_uuid`, `source_note`, `link_to_current_session`                                   |
+| `project_list_pending_gates`   | Recovers the current permission, plan, or question gate for a linked child. Live `<cadencr-gate>` notifications already contain the full payload, so use this mainly for recovery.                        | Required `session_id`                                                                                                                                                |
+| `project_respond_gate`         | Answers a linked child's pending permission, plan, or question using the exact request data from the live gate.                                                                                           | Required `session_id`, `request_id`, and typed `decision` payload                                                                                                    |
+
+### Worktree modes for `project_spawn_session`
+
+| Mode                 | Use it when                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `none`               | The child only needs a conversation and should not create or attach a branch/worktree.                                         |
+| `new_project_branch` | Work should use a new branch in the project's main checkout.                                                                   |
+| `new_worktree`       | Independent implementation should be isolated from the caller and other agents. This is the safest default for parallel edits. |
+| `reuse_worktree`     | A reviewer, rescue agent, or successor must see the caller's exact branch and uncommitted files.                               |
+
+<DocCallout title="Awaited replies and live gates" variant="note">
+  Set `await_result: true` on a spawn, or `reply: "on_turn_end"` on a sent message, when
+  the parent should receive the target's result as a `<cadencr-reply>`. A linked child can also
+  notify the parent with a `<cadencr-gate>` containing everything needed to answer its pending
+  permission, plan, or question.
+</DocCallout>
+
+## CadencR orchestration commands
+
+CadencR adds five provider-neutral commands to the prompt menu. They are virtual skills: CadencR expands them into a structured orchestration prompt at send time, so they work consistently across supported providers without installing command files into your repository.
+
+Invoke them with `/` or `$`; for example, `/cadencr:review unstaged` and `$cadencr:review unstaged` are equivalent. The `/` form appears in CadencR's slash-command picker. Both Project MCP and Workspace MCP must be enabled.
+
+| Command               | What it does                                                                                                                                                       | Example                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `cadencr:review`      | Spawns a read-only reviewer on the current worktree and relays prioritized findings. The default scope is uncommitted changes; pass `branch` for the whole branch. | `/cadencr:review unstaged`                                    |
+| `cadencr:rescue`      | Sends a self-contained summary of a stuck task to a different model or provider, then returns one concrete unblock step and an alternative.                        | `$cadencr:rescue focus on the failing OAuth callback test`    |
+| `cadencr:status`      | Builds a read-only tree of related sessions, live statuses, and pending gates.                                                                                     | `/cadencr:status session 1842`                                |
+| `cadencr:parallelize` | Turns independent subtasks into concurrent sessions, each in an isolated worktree, and consolidates their returned results.                                        | `/cadencr:parallelize frontend tests; Rust tests; docs audit` |
+| `cadencr:handoff`     | Creates or messages a successor with a self-contained brief and records an explicit handoff relationship.                                                          | `$cadencr:handoff continue in a fresh Codex session`          |
+
+These are different from provider-native commands such as `/compact`, and from project skills such as `/qa`, `$qa`, `/finish-job`, or `$finish-job`. Native commands and project skills come from the active provider and repository; `cadencr:*` commands are supplied by CadencR itself and specifically orchestrate CadencR sessions.
+
+## Safety and good prompting
+
+- Say **read-only**, **do not spawn**, or **do not answer gates** when you only want an investigation.
+- Ask the agent to check `project_list_sessions` or `project_find_related_sessions` before delegating work.
+- Use `new_worktree` for parallel implementation and `reuse_worktree` only when another session must see the same uncommitted files.
+- Give spawned sessions a self-contained `initial_message`; they should not depend on the parent's hidden conversation history.
+- Prefer live `<cadencr-gate>` and `<cadencr-reply>` notifications over polling.
+- Name an exact provider/model only after checking `project_list_agent_providers`; installed catalogs can change.
+
+## Related docs
+
+- [Browser](../browser/) — Browser MCP prompts, permissions, and all browser tools
+- [Prompt](../prompting/) — slash commands, attachments, and per-message controls
+- [Settings](../settings/) — enable the Browser, Project, and Workspace MCP servers
+- [Worktrees](../worktrees/) — how isolated branches and worktrees keep delegated edits safe
+- [Session view](../session-view/) — follow tool calls, replies, gates, and ongoing agent work
