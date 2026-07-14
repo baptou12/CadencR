@@ -50,39 +50,25 @@ You keep the agents you already use. CadencR gives you the surface to supervise 
 | A separate window to check the app | A real Chromium pane your agent can drive to QA its own change. |
 | Guessing what changed | A review-first flow built around diffs, commit previews, and human checkpoints. |
 
-## One window, every surface
+## Features
 
-### Agent cockpit
-
-A unified grid of every agent session across your projects. Filter with a small query language — `/last:5m`, `/project:`, `/sort:` — pin the sessions that matter, and navigate the rest by keyboard. Live status rings show who's running, idle, waiting, or errored before you open anything.
-
-### A readable stream
-
-CadencR reinterprets raw agent output as it arrives: tool calls collapse into pills (Bash, Grep, Read, Edit, Thinking — click to expand), file writes render as themed inline diffs with `+/-` gutters, each message is tagged with the model that produced it, and a context meter tracks the window filling. Same agent, same commands, orders of magnitude more legible.
-
-### Git, where you can see it
-
-Agents land commits — they don't edit in place. Review the staged diff and the pending message *before* anything ships, browse a commit graph across sessions and branches, and commit (`⌘⇧K`), push (`⌘⇧U`), or open a compare/PR (`⌘⇧O`) without a terminal detour.
-
-### A real editor, not a viewer
-
-A CodeMirror editor with LSP navigation — go-to-definition, references, symbols, diagnostics, and rename wherever a language server is available — plus file and content search, split panes, Git gutter markers, blame, Markdown preview, and a read-only large-file mode so opening a huge file never freezes the app.
-
-### A real terminal, next to the agent
-
-One `xterm.js` PTY per session, rooted at that session's worktree, for the things the agent shouldn't do — ssh, dev servers, ad-hoc scripts. Split the pane freely; a warning flags if the shell drifts out of the worktree.
-
-### An embedded browser your agent can drive
-
-A real Chromium pane with tabs scoped per feature. Point it at your dev server and watch changes land — or let the agent drive it over MCP: it opens the page it just changed, clicks through the flow, screenshots, and reads the console and failed network requests *before* telling you it's done.
+| Feature | What you get |
+| --- | --- |
+| **Agent** | Readable, steerable agent sessions. Raw output is rendered as collapsible tool-call pills (Bash, Grep, Read, Edit, Thinking), inline `+/-` diffs, per-message model tags, and a context meter — plus plan approvals, tool-permission cards, and multiple-choice questions as keyboard checkpoints, in-conversation search (`⌘F`), and scheduled prompts. |
+| **Orchestrate — Project & Workspace MCP** | Loop-engineering built in: CadencR's own MCP servers let an agent inspect activity, list projects, compare session history, and **message or spawn sibling sessions** in the current project (Project MCP), and search conversation history across every project (Workspace MCP). Agents that coordinate agents. |
+| **Browser — with Browser MCP** | A real embedded Chromium pane with per-feature tabs, normal/private cookie modes, and page comments you send to the agent. Over the `cadencr-browser` MCP the agent opens pages, clicks, fills, screenshots, waits for selectors, and reads the console and failed network requests — agent-driven QA before it says "done". |
+| **Git tab** | Review changed files (uncommitted or vs. the target branch) with themed diffs, commit previews before anything lands, and a **commit graph** across sessions × branches with links to the online commit. Commit (`⌘⇧K`), push (`⌘⇧U`), or open a compare/PR (`⌘⇧O`) from the header. |
+| **Editor tab** | A real CodeMirror editor, not a viewer: LSP go-to-definition, references, symbols, diagnostics, and rename; file and content search, split panes and tabs, Git-gutter markers, blame, Markdown preview, multi-cursor, and a read-only large-file mode. |
+| **Sidebar** | One rail for every project and feature. A global **Pinned** section above the project list keeps hot sessions reachable across projects, activity indicators flag busy features, ordering stays stable, and archived features remain searchable. |
+| **Unified agent list** | Every session at once in a live grid. Filter by name, task, or feature, adjust row density, pin (`⌘⇧P`), and keyboard-navigate — with live status rings so you can read, steer, and review many agents without switching tabs. |
 
 ## Built for how agents actually work
 
 - **Run agents in parallel.** Start several features, fixes, or investigations at once. Each session works on its own branch in its own Git worktree, so one agent can run tests while another explores a bug or prepares a refactor — no fighting over the same checkout.
+- **A real terminal, next to the agent.** One `xterm.js` PTY per session, rooted at that session's worktree, for the things the agent shouldn't do — ssh, dev servers, ad-hoc scripts. Split the pane freely; a warning flags if the shell drifts out of the worktree.
 - **Approvals & permissions.** Plan approvals, tool-permission cards showing the exact command, and multi-choice questions become explicit keyboard checkpoints. Per-provider permission modes — from ask-every-time to auto-accept edits to opt-in bypass/full-access — cycle with `Shift+Tab`.
 - **Custom actions.** Attach reusable shell commands to a project — lint, deploy, seed a database — with `${VARIABLE}` placeholders. Run them on demand from the `+` menu or on a fixed schedule against any feature's worktree.
 - **Steer from a second screen.** Pair a phone, tablet, or second computer by QR code or link and drive the same sessions, terminals, and editor from a browser. Local-first (agents and state stay on your machine), works over your LAN or Tailscale, installs as a PWA, and can send Web Push notifications.
-- **Agents that orchestrate agents.** CadencR ships its own MCP servers — Browser, Project, and Workspace — so an agent can inspect the running browser, compare and spawn sibling sessions in the project, and search conversation history across your whole workspace.
 - **Works with the agents you run.** CadencR supports Claude Code, OpenCode, and Codex, surfacing each through the same shared workflows instead of hardcoded, per-provider assumptions — so switching between them doesn't mean relearning the app.
 
 ## Install
