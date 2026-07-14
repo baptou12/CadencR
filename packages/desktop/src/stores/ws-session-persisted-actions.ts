@@ -8,7 +8,7 @@ import {
 } from "./ws-message-processing";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parsePermissionPayload } from "./ws-envelope-payload";
-import { trimTailPromptTurnBoundary } from "./ws-pending-prompts";
+import { movePendingPromptBlocksToTail, trimTailPromptTurnBoundary } from "./ws-pending-prompts";
 import { type PersistedStatePayload, type SessionEntry, updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
@@ -189,13 +189,14 @@ export function applyPersistedState(
     return;
   }
 
-  const todos = parseTodosFromBlocks(enrichedBlocks);
+  const orderedBlocks = movePendingPromptBlocksToTail(enrichedBlocks);
+  const todos = parseTodosFromBlocks(orderedBlocks);
   const session = ctx.getSession(sessionId);
 
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...sessionMetaPatch,
-      ...blocksPatchWithDerived(session.streamingState, enrichedBlocks),
+      ...blocksPatchWithDerived(session.streamingState, orderedBlocks),
       ...(todos ? { todos } : {}),
     }),
   );

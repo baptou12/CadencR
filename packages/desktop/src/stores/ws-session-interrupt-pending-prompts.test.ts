@@ -168,7 +168,7 @@ describe("interrupt pending steering prompts", () => {
     expect(block?.promptDeliveryState).toBe("received_agent");
   });
 
-  it("reconciles a missed receipt from turn completion without leaving the prompt at the tail", async () => {
+  it("reconciles a missed receipt at the prompt's current replay boundary", async () => {
     const ws = await connectInitializedReceiptSession();
     const store = useWsSessionStore.getState();
 
@@ -207,7 +207,10 @@ describe("interrupt pending steering prompts", () => {
     const userIndex = blocks.findIndex((block) => block.messageDbId === 42);
     const laterAgentIndex = blocks.findIndex((block) => block.id === "msg-43");
     expect(userIndex).toBeGreaterThanOrEqual(0);
-    expect(userIndex).toBeLessThan(laterAgentIndex);
+    // A delayed terminal receipt changes state in place. Moving the bubble
+    // back to its early persistence slot would create the same transcript jump
+    // as acknowledging it before the provider replayed it.
+    expect(userIndex).toBeGreaterThan(laterAgentIndex);
     expect(blocks[userIndex].promptDeliveryState).toBe("received_agent");
   });
 

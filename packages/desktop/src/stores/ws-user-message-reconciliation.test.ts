@@ -93,6 +93,15 @@ describe("canonical user-message reconciliation", () => {
     expect(merged.map((item) => item.id)).toEqual(["msg-41", "msg-42", "msg-43"]);
   });
 
+  it("keeps pending canonical messages behind later persisted blocks", () => {
+    const merged = upsertCanonicalUserMessage(
+      [block("msg-41"), block("msg-43")],
+      message({ messageId: 42, promptDeliveryState: "pending_agent" }),
+    );
+
+    expect(merged.map((item) => item.id)).toEqual(["msg-41", "msg-43", "msg-42"]);
+  });
+
   it("orders and deduplicates a recovered batch in one merge", () => {
     const recovered = canonicalUserMessageBlock(message({ messageId: 42 }));
     const merged = mergeCanonicalBlocks(

@@ -135,6 +135,7 @@ impl WsSessionPersistence {
         &self,
         text: &str,
         message_uuid: uuid::Uuid,
+        delivery_state: Option<&str>,
     ) -> Result<
         crate::domain::sessions::user_messages::PersistedUserMessage,
         crate::domain::sessions::user_messages::PersistUserMessageError,
@@ -149,7 +150,7 @@ impl WsSessionPersistence {
                 session_id,
                 content: text,
                 message_uuid,
-                delivery_state: Some("pending_agent"),
+                delivery_state,
             },
         )
         .await?;

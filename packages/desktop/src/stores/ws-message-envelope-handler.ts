@@ -17,6 +17,7 @@ import {
   buildMessagePatch,
 } from "./ws-message-processing";
 import { trackStreamSeq } from "./ws-session-resync";
+import { pendingPromptTailStartIndex } from "./ws-pending-prompts";
 import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
@@ -116,10 +117,16 @@ function processMessageBlocks(
   if (allMutations.length > 0) {
     const rootVersionBefore = state.rootBlocksVersion;
     const toolResultVersionBefore = state.toolResultMapVersion;
-    const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
+    const newBlocks = applyMutations(
+      currentSession.blocks,
+      allMutations,
+      state,
+      pendingPromptTailStartIndex(currentSession.blocks),
+    );
     Object.assign(patch, buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested }));
-    // applyMutations maintains the derived state on `streamState` in O(1) per
-    // mutation; snapshot fresh refs only for the structures it actually touched.
+    // applyMutations maintains derived state incrementally (reindexing only the
+    // pending suffix for a root append); snapshot fresh refs only for the
+    // structures it actually touched.
     // A pure text/tool-call delta never appends a tool_result, so the O(M)
     // toolResultMap clone is skipped — its ref stays stable and tool blocks
     // don't needlessly re-render.

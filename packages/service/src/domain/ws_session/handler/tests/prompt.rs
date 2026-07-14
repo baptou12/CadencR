@@ -281,7 +281,7 @@ async fn test_prompt_send_steers_turn_owned_by_another_connection_without_spawni
         .await;
 
     // Connection B (the host): a Pending handle for the SAME db session id.
-    let (tx_b, _rx_b) = mpsc::unbounded_channel();
+    let (tx_b, mut rx_b) = mpsc::unbounded_channel();
     let host_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
     {
         let mut handle = make_active_handle(feature_id, None);
@@ -308,6 +308,30 @@ async fn test_prompt_send_steers_turn_owned_by_another_connection_without_spawni
         .expect("host prompt should stream into the existing runtime")
         .unwrap();
     assert_eq!(streamed, serde_json::json!("continue from the host"));
+
+    // Transport acceptance is not an agent receipt. The canonical message
+    // must stay pending until the runtime emits its provider receipt (user
+    // replay / next response), even though stream_input already returned Ok.
+    tokio::task::yield_now().await;
+    while let Ok(message) = rx_b.try_recv() {
+        let Message::Text(raw) = message else {
+            continue;
+        };
+        let event: WsEnvelope = serde_json::from_str(&raw).unwrap();
+        assert_ne!(
+            event.action, "prompt_received",
+            "stream_input success must not acknowledge the prompt before a runtime receipt"
+        );
+    }
+    let delivery_state: Option<String> = sqlx::query_scalar(
+        "SELECT delivery_state FROM agent_messages WHERE session_id = ? AND message_uuid = ?",
+    )
+    .bind(db_id)
+    .bind("eea8648c-6786-4f20-ae17-56c6878a08ff")
+    .fetch_one(&app_state.write_pool)
+    .await
+    .unwrap();
+    assert_eq!(delivery_state.as_deref(), Some("pending_agent"));
 
     // The host's own handle was never converted to Active — no second agent.
     let sessions = host_sessions.lock().await;

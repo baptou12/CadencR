@@ -120,10 +120,12 @@ export function applyMutations(
   prevBlocks: AgentBlockData[],
   allMutations: BlockMutation[],
   streamState: StreamingState,
+  rootAppendIndex = prevBlocks.length,
 ): AgentBlockData[] {
   const dirtyParents = new Set<string>();
   const rootAppends: AgentBlockData[] = [];
   const rootUpdates: InternalRootMutation[] = [];
+  const boundedRootAppendIndex = Math.max(0, Math.min(rootAppendIndex, prevBlocks.length));
 
   for (const mut of allMutations) {
     if (mut.action === "append") {
@@ -153,7 +155,7 @@ export function applyMutations(
         }
       }
       rootAppends.push(mut.block);
-      recordRootAppend(streamState, mut.block);
+      recordRootAppend(streamState, mut.block, boundedRootAppendIndex + rootAppends.length - 1);
     } else {
       rootUpdates.push(mut);
     }
@@ -168,7 +170,11 @@ export function applyMutations(
     }
   }
 
-  const result = [...prevBlocks, ...rootAppends];
+  const result = [
+    ...prevBlocks.slice(0, boundedRootAppendIndex),
+    ...rootAppends,
+    ...prevBlocks.slice(boundedRootAppendIndex),
+  ];
 
   for (const mut of rootUpdates) {
     if (mut.action === "replace_parent" || mut.action === "replace_block") {
@@ -299,9 +305,9 @@ function recordDerivedBlock(streamState: StreamingState, block: AgentBlockData):
  * recompute them at every blocks-mutation site outside the streaming path.
  *
  * Internally rebuilds the derived state on `streamState` (O(N)). Hot streaming
- * goes through `applyMutations`, which maintains the same fields in O(1) per
- * mutation; this helper is for the cold paths (persisted load, plan
- * approval, error blocks) where O(N) is fine because they are not per-chunk.
+ * goes through `applyMutations`, which updates only affected blocks (and, for
+ * an inserted root, the shifted suffix); this helper is for cold paths where
+ * O(N) is fine because they are not per-chunk.
  */
 export function blocksPatchWithDerived(
   streamState: StreamingState,
@@ -319,9 +325,16 @@ export function blocksPatchWithDerived(
   };
 }
 
-function recordRootAppend(streamState: StreamingState, block: AgentBlockData): void {
-  streamState.rootBlockPosById.set(block.id, streamState.rootBlocks.length);
-  streamState.rootBlocks.push(block);
+function recordRootAppend(
+  streamState: StreamingState,
+  block: AgentBlockData,
+  requestedIndex: number,
+): void {
+  const insertionIndex = Math.min(requestedIndex, streamState.rootBlocks.length);
+  streamState.rootBlocks.splice(insertionIndex, 0, block);
+  for (let index = insertionIndex; index < streamState.rootBlocks.length; index += 1) {
+    streamState.rootBlockPosById.set(streamState.rootBlocks[index].id, index);
+  }
   streamState.rootBlocksVersion += 1;
   recordDerivedBlock(streamState, block);
 }

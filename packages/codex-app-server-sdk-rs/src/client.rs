@@ -189,17 +189,17 @@ impl CodexAppServerClient {
         thread_id: &str,
         turn_id: &str,
         input: &[Value],
+        client_user_message_id: Option<&str>,
     ) -> Result<(), SdkError> {
-        self.request(
-            "turn/steer",
-            json!({
-                "threadId": thread_id,
-                "expectedTurnId": turn_id,
-                "input": input,
-            }),
-        )
-        .await
-        .map(|_| ())
+        let mut params = json!({
+            "threadId": thread_id,
+            "expectedTurnId": turn_id,
+            "input": input,
+        });
+        if let Some(client_user_message_id) = client_user_message_id {
+            params["clientUserMessageId"] = Value::String(client_user_message_id.to_string());
+        }
+        self.request("turn/steer", params).await.map(|_| ())
     }
 
     pub async fn turn_interrupt(&self, thread_id: &str, turn_id: &str) -> Result<(), SdkError> {

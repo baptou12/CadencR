@@ -64,14 +64,17 @@ while IFS= read -r line; do
     *'"method":"turn/start"'*)
       echo '{"id":4,"result":{"turn":{"id":"turn_mock"}}}'
       ;;
+    *'"method":"turn/steer"'*'"clientUserMessageId":"client-message-1"'*)
+      echo '{"id":5,"result":{"turnId":"turn_mock"}}'
+      ;;
     *'"method":"thread/fork"'*)
-      echo '{"id":5,"result":{"thread":{"id":"thread_fork","turns":[{"id":"turn_1","status":"completed","items":[{"type":"userMessage","id":"user_1","content":[{"type":"text","text":"first"}]}]},{"id":"turn_2","status":"completed","items":[{"type":"userMessage","id":"user_2","content":[{"type":"text","text":"second"}]}]}]}}}'
+      echo '{"id":6,"result":{"thread":{"id":"thread_fork","turns":[{"id":"turn_1","status":"completed","items":[{"type":"userMessage","id":"user_1","content":[{"type":"text","text":"first"}]}]},{"id":"turn_2","status":"completed","items":[{"type":"userMessage","id":"user_2","content":[{"type":"text","text":"second"}]}]}]}}}'
       ;;
     *'"method":"thread/rollback"'*)
-      echo '{"id":6,"result":{"thread":{"id":"thread_fork","turns":[{"id":"turn_1","status":"completed","items":[{"type":"userMessage","id":"user_1","content":[{"type":"text","text":"first"}]}]}]}}}'
+      echo '{"id":7,"result":{"thread":{"id":"thread_fork","turns":[{"id":"turn_1","status":"completed","items":[{"type":"userMessage","id":"user_1","content":[{"type":"text","text":"first"}]}]}]}}}'
       ;;
     *'"method":"thread/read"'*)
-      echo '{"id":7,"result":{"thread":{"id":"thread_fork","turns":[{"id":"turn_1","status":"completed","items":[{"type":"userMessage","id":"user_1","content":[{"type":"text","text":"first"}]}]}]}}}'
+      echo '{"id":8,"result":{"thread":{"id":"thread_fork","turns":[{"id":"turn_1","status":"completed","items":[{"type":"userMessage","id":"user_1","content":[{"type":"text","text":"first"}]}]}]}}}'
       ;;
   esac
 done
@@ -123,6 +126,15 @@ async fn mock_app_server_lifecycle_supports_handshake_model_list_and_requests() 
             .id,
         "turn_mock"
     );
+    client
+        .turn_steer(
+            "thread_mock",
+            "turn_mock",
+            &[serde_json::json!({ "type": "text", "text": "steer" })],
+            Some("client-message-1"),
+        )
+        .await
+        .unwrap();
     let forked = client
         .thread_fork("thread_mock", std::path::Path::new("/tmp"))
         .await

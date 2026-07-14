@@ -1,5 +1,6 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { normalizeMessageUuid } from "@/lib/message-uuid";
+import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 
 export { normalizeMessageUuid } from "@/lib/message-uuid";
 
@@ -48,14 +49,16 @@ export function upsertCanonicalUserMessage(
 ): AgentBlockData[] {
   const incoming = canonicalUserMessageBlock(message);
   const existingIndex = blocks.findIndex((block) => sameMessageIdentity(block, incoming));
-  if (existingIndex === -1) return insertByDatabaseOrder(blocks, incoming);
+  if (existingIndex === -1) {
+    return movePendingPromptBlocksToTail(insertByDatabaseOrder(blocks, incoming));
+  }
 
   const existing = blocks[existingIndex];
   const merged = mergeCanonicalUserBlock(existing, incoming);
-  if (canonicalBlocksEqual(existing, merged)) return blocks;
+  if (canonicalBlocksEqual(existing, merged)) return movePendingPromptBlocksToTail(blocks);
   const next = [...blocks];
   next[existingIndex] = merged;
-  return next;
+  return movePendingPromptBlocksToTail(next);
 }
 
 /** Merge REST/reconnect/pagination blocks into live state without duplicate rows. */
@@ -85,11 +88,13 @@ export function mergeCanonicalBlocks(
     working[matchIndex] = nextBlock;
     registerIdentity(indexes, nextBlock, matchIndex);
   }
-  if (!changed) return existing;
+  if (!changed) return movePendingPromptBlocksToTail(existing);
   const additions = working.slice(existing.length);
-  return additions.length === 0
-    ? working
-    : mergeAdditionsByDatabaseOrder(working.slice(0, existing.length), additions);
+  const merged =
+    additions.length === 0
+      ? working
+      : mergeAdditionsByDatabaseOrder(working.slice(0, existing.length), additions);
+  return movePendingPromptBlocksToTail(merged);
 }
 
 export function sameMessageIdentity(left: AgentBlockData, right: AgentBlockData): boolean {

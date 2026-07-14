@@ -5,6 +5,8 @@ import {
   markPromptDeliveryFailed,
   markPromptReceived,
   markPromptsReceived,
+  movePendingPromptBlocksToTail,
+  pendingPromptTailStartIndex,
   trimTailPromptTurnBoundary,
 } from "./ws-pending-prompts";
 
@@ -31,6 +33,28 @@ function block(
 }
 
 describe("pending prompt delivery ordering", () => {
+  it("keeps pending steering prompts after stream blocks that arrive before replay", () => {
+    const reordered = movePendingPromptBlocksToTail([
+      block("assistant-1"),
+      block("user-1", "user_message", MESSAGE_UUID_1),
+      block("compact-divider", "compact_divider"),
+    ]);
+
+    expect(reordered.map((item) => item.id)).toEqual(["assistant-1", "compact-divider", "user-1"]);
+    expect(reordered.at(-1)?.promptDeliveryState).toBe("pending_agent");
+  });
+
+  it("keeps canonical pending order stable when prompts are already tail-pinned", () => {
+    const blocks = [
+      block("assistant-1"),
+      block("user-1", "user_message", MESSAGE_UUID_1),
+      block("user-2", "user_message", MESSAGE_UUID_2),
+    ];
+
+    expect(movePendingPromptBlocksToTail(blocks)).toBe(blocks);
+    expect(pendingPromptTailStartIndex(blocks)).toBe(1);
+  });
+
   it("delivery receipts never reorder the persisted transcript", () => {
     const received = markPromptReceived(
       [

@@ -12,7 +12,7 @@ use super::content::{
     build_content_value_for_provider, build_persist_content, payload_attachments,
 };
 use super::errors::persist_pause_and_send_session_error;
-use super::prompt_receipt::{clear_pending_prompt_receipt, confirm_prompt_delivery};
+use super::prompt_receipt::clear_pending_prompt_receipt;
 use super::prompt_status::{
     mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
@@ -47,6 +47,7 @@ pub(super) async fn handle_followup_prompt(
     let dispatch_claim = persistence
         .dispatch_claim()
         .map(|(message_id, token)| (message_id, token.to_string()));
+    let receipt_message_uuid = persistence.tracked_message_uuid(&payload);
     mark_agent_running(
         &context.write_pool,
         &context.session_status_tx,
@@ -64,10 +65,12 @@ pub(super) async fn handle_followup_prompt(
 
     info!(context.db_session_id, "follow-up prompt");
     if context.internal_replay {
-        return stream_followup_prompt(context, payload, dispatch_claim).await;
+        return stream_followup_prompt(context, payload, dispatch_claim, receipt_message_uuid)
+            .await;
     }
     tokio::spawn(async move {
-        let _ = stream_followup_prompt(context, payload, dispatch_claim).await;
+        let _ =
+            stream_followup_prompt(context, payload, dispatch_claim, receipt_message_uuid).await;
     });
     Ok(())
 }
@@ -104,6 +107,7 @@ async fn stream_followup_prompt(
     context: FollowupPromptContext,
     payload: PromptSendPayload,
     dispatch_claim: Option<(i64, String)>,
+    receipt_message_uuid: Option<String>,
 ) -> Result<(), String> {
     let attachments = payload_attachments(&payload);
     // Expand a virtual `/cadencr:*` skill invoked mid-conversation, same as the
@@ -111,7 +115,6 @@ async fn stream_followup_prompt(
     let prompt_text = crate::domain::agents::orchestration_skills::expand_prompt(&payload.text);
     let content =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
-    let receipt_message_uuid = payload.message_uuid.clone();
     let query_guard = context.query.read().await;
     let stream_result = query_guard
         .stream_input_with_client_message_id(content, receipt_message_uuid.clone())
@@ -161,17 +164,6 @@ async fn stream_followup_prompt(
         {
             error!(context.db_session_id, error = %error, "failed to persist prompt dispatch success");
         }
-    }
-    if let Some(message_uuid) = receipt_message_uuid {
-        let _ = confirm_prompt_delivery(
-            &context.write_pool,
-            &context.ws_feature_senders,
-            &context.sender,
-            context.feature_id,
-            context.db_session_id,
-            &message_uuid,
-        )
-        .await;
     }
     Ok(())
 }
