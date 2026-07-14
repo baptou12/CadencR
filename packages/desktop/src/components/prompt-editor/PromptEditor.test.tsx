@@ -3,6 +3,31 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, act, fireEvent } from "@/test-utils";
 import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
 
+vi.mock("@/hooks/useDebouncedValue", () => ({
+  useDebouncedValue: <T,>(value: T): T => value,
+}));
+
+vi.mock("@/api/generated", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/generated")>();
+  return {
+    ...actual,
+    useListConversationReferences: vi.fn(() => ({
+      data: [
+        {
+          feature_id: 42,
+          feature_title: "Authentication work",
+          project_name: "Cadencr",
+          feature_status: "active",
+        },
+      ],
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    })),
+  };
+});
+
 describe("PromptEditor", () => {
   it("renders with placeholder text", () => {
     render(<PromptEditor placeholder="Type here..." />);
@@ -175,5 +200,37 @@ describe("PromptEditor", () => {
 
     // Slash commands (/) only trigger at the very start of the prompt.
     expect(screen.queryByText("/superpowers:brainstorming")).not.toBeInTheDocument();
+  });
+
+  it("selects a conversation with @@ and serializes its stable feature reference", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} mentionFeatureId={7} />);
+
+    await act(async () => {
+      ref.current!.setText("Compare @@auth");
+    });
+    await act(async () => {
+      fireEvent.mouseDown(await screen.findByText("Authentication work"));
+    });
+
+    expect(ref.current!.getText()).toBe(
+      "Compare [@@Cadencr / Authentication work](cadencr-conversation:feature/42) ",
+    );
+    expect(
+      screen.getByRole("textbox").querySelector('[data-conversation-feature-id="42"]'),
+    ).not.toBeNull();
+  });
+
+  it("restores serialized conversation references as editor tokens", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} />);
+    await act(async () => {
+      ref.current!.setText(
+        "Read [@@Cadencr / Authentication work](cadencr-conversation:feature/42)",
+      );
+    });
+    expect(
+      screen.getByRole("textbox").querySelector('[data-conversation-feature-id="42"]'),
+    ).not.toBeNull();
   });
 });

@@ -5,6 +5,24 @@ import {
   type LexicalEditor,
   type LexicalNode,
 } from "lexical";
+import { parseConversationReferences } from "./conversation-reference";
+import { $createConversationReferenceNode } from "./nodes/ConversationReferenceNode";
+
+function appendLineContent(paragraph: ReturnType<typeof $createParagraphNode>, line: string): void {
+  const references = parseConversationReferences(line);
+  if (references.length === 0) {
+    if (line.length > 0) paragraph.append($createTextNode(line));
+    return;
+  }
+  let offset = 0;
+  for (const reference of references) {
+    if (reference.start > offset)
+      paragraph.append($createTextNode(line.slice(offset, reference.start)));
+    paragraph.append($createConversationReferenceNode(reference.featureId, reference.label));
+    offset = reference.end;
+  }
+  if (offset < line.length) paragraph.append($createTextNode(line.slice(offset)));
+}
 
 function writeEditorText(text: string, moveSelection = true): void {
   const root = $getRoot();
@@ -13,9 +31,7 @@ function writeEditorText(text: string, moveSelection = true): void {
   const lines = text.split("\n");
   for (const line of lines) {
     const paragraph = $createParagraphNode();
-    if (line.length > 0) {
-      paragraph.append($createTextNode(line));
-    }
+    appendLineContent(paragraph, line);
     root.append(paragraph);
   }
 

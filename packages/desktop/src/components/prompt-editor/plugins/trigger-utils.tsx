@@ -36,7 +36,7 @@ export function getTriggerMatch(
   if (idx === -1) return null;
   if (idx > 0 && !/\s/.test(text[idx - 1])) return null;
 
-  const query = text.slice(idx + 1);
+  const query = text.slice(idx + triggerChar.length);
   if (query.includes(" ")) return null;
 
   return { query, triggerOffset: idx };
@@ -64,7 +64,7 @@ export function replaceTriggerWithNode(
     const match = getTriggerMatch(node, anchor.offset, triggerChar);
     if (!match) return;
 
-    const triggerEnd = match.triggerOffset + 1 + match.query.length;
+    const triggerEnd = match.triggerOffset + triggerChar.length + match.query.length;
     const newNode = createNode(value);
 
     const splitPoints = [match.triggerOffset, triggerEnd].filter(
@@ -99,7 +99,7 @@ interface TriggerHookState {
   isOpen: boolean;
   close: () => void;
   handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>, text: string) => void;
-  filteredItems: { [key: string]: unknown }[];
+  filteredItems: readonly unknown[];
   selectedIndex: number;
 }
 
@@ -107,12 +107,12 @@ interface TriggerHookState {
  * Registers the 5 keyboard commands (ArrowUp, ArrowDown, Enter, Tab, Escape)
  * on the editor while the popover is open.
  */
-export function usePopoverKeyboardCommands(
+export function usePopoverKeyboardCommands<T>(
   editor: LexicalEditor,
   isOpen: boolean,
   hookRef: RefObject<TriggerHookState>,
-  getSelectedValue: () => string | undefined,
-  onSelect: (value: string) => void,
+  getSelectedValue: () => T | undefined,
+  onSelect: (value: T) => void,
 ): void {
   useEffect(() => {
     if (!isOpen) return;
@@ -190,7 +190,11 @@ export function useCursorRect(): [DOMRect | null, () => void] {
     const domSelection = window.getSelection();
     if (!domSelection || domSelection.rangeCount === 0) return;
     const range = domSelection.getRangeAt(0);
-    setCursorRect(range.getBoundingClientRect());
+    const rect =
+      typeof range.getBoundingClientRect === "function"
+        ? range.getBoundingClientRect()
+        : document.documentElement.getBoundingClientRect();
+    setCursorRect(rect);
   }, []);
 
   return [cursorRect, updateCursorRect];

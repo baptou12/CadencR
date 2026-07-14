@@ -46,4 +46,15 @@ describe("getTriggerMatch", () => {
     const result = getTriggerMatch(fakeTextNode("@"), 1, "@");
     expect(result).toEqual({ query: "", triggerOffset: 0 });
   });
+
+  it("supports multi-character triggers", () => {
+    expect(getTriggerMatch(fakeTextNode("compare @@auth"), 14, "@@")).toEqual({
+      query: "auth",
+      triggerOffset: 8,
+    });
+    expect(getTriggerMatch(fakeTextNode("@@"), 2, "@@")).toEqual({
+      query: "",
+      triggerOffset: 0,
+    });
+  });
 });

@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
 
+use crate::domain::features::models::FeatureStatus;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UserMessageDeliveryState {
@@ -46,6 +48,14 @@ pub struct AgentSessionRow {
     pub context_window: Option<i64>,
     pub was_compacted: i64,
     pub draft_prompt: Option<String>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow, ToSchema)]
+pub struct ConversationReferenceCandidate {
+    pub feature_id: i64,
+    pub feature_title: String,
+    pub project_name: String,
+    pub feature_status: FeatureStatus,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

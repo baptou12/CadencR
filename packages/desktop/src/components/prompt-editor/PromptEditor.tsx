@@ -15,6 +15,8 @@ import { SlashCommandNode } from "./nodes/SlashCommandNode";
 import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
 import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
 import { ImagePastePlugin } from "./plugins/ImagePastePlugin";
+import { ConversationReferencePlugin } from "./plugins/ConversationReferencePlugin";
+import { ConversationReferenceNode } from "./nodes/ConversationReferenceNode";
 import { getEditorText, initializeEditorText, setEditorText } from "./editor-utils";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 
@@ -156,6 +158,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         <HistoryPlugin />
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
         <MentionPlugin projectId={mentionProjectId} featureId={mentionFeatureId} />
+        <ConversationReferencePlugin currentFeatureId={mentionFeatureId} />
         <SlashCommandPlugin
           commands={slashCommands}
           isLoading={slashCommandsLoading}
@@ -193,7 +196,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
       () => ({
         namespace: "PromptEditor",
         theme: { paragraph: "m-0 leading-[22px]" },
-        nodes: [MentionNode, SlashCommandNode],
+        nodes: [MentionNode, SlashCommandNode, ConversationReferenceNode],
         onError(error: Error) {
           toast.error(`Editor error: ${error.message}`);
         },

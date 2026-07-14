@@ -3,6 +3,7 @@ mod bridge_user_message;
 mod content;
 mod control_dispatch;
 mod control_dispatch_payload;
+mod conversation_references;
 mod errors;
 mod mcp_servers;
 mod prompt_checkpoint;

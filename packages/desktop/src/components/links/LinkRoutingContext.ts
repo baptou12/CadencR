@@ -11,6 +11,8 @@ import { createContext, useContext } from "react";
 export interface LinkRouting {
   /** Open `url` using the domain policy (internal vs. default browser). */
   activate: (url: string) => void;
+  /** Navigate to a referenced Cadencr conversation. */
+  activateConversation: (featureId: number) => Promise<void>;
   /**
    * Tell the main process which link (if any) the pointer is over, so its
    * native context menu can offer the Cadencr-vs-default open choices scoped

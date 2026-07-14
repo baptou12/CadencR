@@ -169,6 +169,7 @@ use crate::domain::ws_session::protocol as ws_protocol;
         diff_comments_routes::unmark_diff_viewed_handler,
         diff_comments_routes::clear_all_diff_viewed_handler,
         sessions_routes::get_sessions_handler,
+        sessions_routes::list_conversation_references_handler,
         sessions_routes::get_feature_agent_state_handler,
         sessions_routes::get_unified_agents_handler,
         sessions_routes::get_draft_handler,

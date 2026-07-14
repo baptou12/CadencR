@@ -7,6 +7,16 @@ use base64::Engine;
 use crate::domain::agents::{codex, opencode};
 use crate::domain::ws_session::protocol::PromptSendPayload;
 
+use super::conversation_references::ResolvedConversationReference;
+
+pub(crate) fn expand_prompt_for_provider<'a>(
+    text: &'a str,
+    conversation_references: &[ResolvedConversationReference],
+) -> std::borrow::Cow<'a, str> {
+    let command_expanded = crate::domain::agents::orchestration_skills::expand_prompt(text);
+    super::conversation_references::append_instructions(command_expanded, conversation_references)
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct PromptAttachmentView<'a> {
     base64: &'a str,

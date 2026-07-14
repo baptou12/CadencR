@@ -1,5 +1,11 @@
 import { useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { getGetFeatureQueryOptions } from "@/api/generated";
+import { navigateToFeatureIdOrHome } from "@/components/project-feature-navigation";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useBrowserDefaultMode } from "@/lib/browser-settings";
 import { useInternalDomains } from "@/hooks/useInternalDomains";
 import { openLink } from "@/lib/link-routing";
@@ -16,12 +22,15 @@ interface LinkRoutingProviderProps {
  * feature. Reads the domain policy and default cookie mode once, then exposes
  * stable callbacks (so cached markdown subtrees never re-render):
  *  - `activate` opens a link on Cmd/Ctrl+Click using the domain policy.
+ *  - `activateConversation` resolves and navigates to an internal conversation.
  *  - `setHoverLink` keeps the native context menu informed of the link the
  *    pointer is over, scoped to this feature.
  */
 export function LinkRoutingProvider({ scopeId, children }: LinkRoutingProviderProps): ReactElement {
   const domains = useInternalDomains();
   const { mode } = useBrowserDefaultMode();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Read latest policy via refs so the context callbacks stay referentially
   // stable regardless of setting/mode changes.
@@ -31,6 +40,10 @@ export function LinkRoutingProvider({ scopeId, children }: LinkRoutingProviderPr
   modeRef.current = mode;
   const scopeRef = useRef(scopeId);
   scopeRef.current = scopeId;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
   // Avoid spamming the main process with identical hover updates.
   const lastHoverRef = useRef<string | null>(null);
 
@@ -43,6 +56,16 @@ export function LinkRoutingProvider({ scopeId, children }: LinkRoutingProviderPr
           cookieMode: modeRef.current,
           domains: domainsRef.current,
         });
+      },
+      activateConversation: async (featureId) => {
+        try {
+          const feature = await queryClientRef.current.fetchQuery(
+            getGetFeatureQueryOptions(featureId),
+          );
+          navigateToFeatureIdOrHome(navigateRef.current, feature.project_id, feature.id);
+        } catch (error) {
+          toast.error(apiErrorMessage(error, "Could not open conversation"));
+        }
       },
       setHoverLink: (url) => {
         if (lastHoverRef.current === url) return;
