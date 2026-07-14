@@ -210,8 +210,8 @@ export function createModeSet(sessionId: string, mode: string): WsEnvelope {
   return createEnvelope("session", "mode.set", { session_id: sessionId, mode });
 }
 
-export function createCodexPermissionModeSet(sessionId: string, mode: string): WsEnvelope {
-  return createEnvelope("session", "codex_permission_mode.set", {
+export function createAccessModeSet(sessionId: string, mode: string): WsEnvelope {
+  return createEnvelope("session", "access_mode.set", {
     session_id: sessionId,
     mode,
   });

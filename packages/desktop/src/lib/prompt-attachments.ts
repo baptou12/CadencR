@@ -71,6 +71,7 @@ export function getAttachmentKindForProvider(
   const normalized = normalizeAttachmentMime(fileName, mimeType);
   if (isImageMime(normalized)) return "image";
   if (provider === PROVIDER_IDS.CODEX_CLI) return isPdfMime(normalized) ? "document" : null;
+  if (provider === PROVIDER_IDS.CURSOR) return null;
   if (provider === PROVIDER_IDS.OPENCODE) return opencodeKind(normalized);
   return claudeKind(normalized);
 }
@@ -79,6 +80,7 @@ export function attachmentAcceptForProvider(providerId: string | undefined): str
   const provider = providerId ?? PROVIDER_IDS.CODEX_CLI;
   const base = [...IMAGE_MIME_TYPES];
   if (provider === PROVIDER_IDS.CODEX_CLI) return [...base, ...PDF_MIME_TYPES].join(",");
+  if (provider === PROVIDER_IDS.CURSOR) return base.join(",");
   if (provider === PROVIDER_IDS.OPENCODE) {
     return [
       ...base,
@@ -97,6 +99,9 @@ export function unsupportedAttachmentDescription(providerId: string | undefined)
   }
   if (providerId === PROVIDER_IDS.CLAUDE_CODE) {
     return "Claude accepts images, PDFs, and text-like files such as TXT, CSV, Markdown, and JSON.";
+  }
+  if (providerId === PROVIDER_IDS.CURSOR) {
+    return "Cursor ACP accepts image attachments.";
   }
   return "Codex accepts images and PDFs.";
 }

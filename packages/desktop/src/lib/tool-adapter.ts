@@ -34,11 +34,14 @@ export function extractBashOutput(toolArgs?: string): string | undefined {
   const args = parseToolArgsObject(toolArgs);
   if (!args) return undefined;
   if (typeof args.aggregatedOutput === "string") return args.aggregatedOutput;
+  const directStreams = combineOutputStreams(args.stdout, args.stderr);
+  if (directStreams !== undefined) return directStreams;
   const output = args.output;
   if (typeof output === "string") return output;
   if (output && typeof output === "object") {
     const structured = output as Record<string, unknown>;
-    if (typeof structured.stdout === "string") return structured.stdout;
+    const nestedStreams = combineOutputStreams(structured.stdout, structured.stderr);
+    if (nestedStreams !== undefined) return nestedStreams;
     if (typeof structured.output === "string") return structured.output;
   }
   for (const key of LEGACY_OPENCODE_OUTPUT_KEYS) {
@@ -46,6 +49,15 @@ export function extractBashOutput(toolArgs?: string): string | undefined {
     if (typeof legacyOutput === "string") return legacyOutput;
   }
   return undefined;
+}
+
+function combineOutputStreams(stdout: unknown, stderr: unknown): string | undefined {
+  const out = typeof stdout === "string" ? stdout : undefined;
+  const err = typeof stderr === "string" ? stderr : undefined;
+  if (out === undefined && err === undefined) return undefined;
+  if (!out) return err ?? "";
+  if (!err) return out;
+  return out.endsWith("\n") ? `${out}${err}` : `${out}\n${err}`;
 }
 
 export function extractBashResultOutput(content: string): string | undefined {

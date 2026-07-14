@@ -14,7 +14,7 @@ import { upsertCanonicalUserMessage } from "./ws-user-message-reconciliation";
 import { buildClearedGatePatch } from "./ws-gate-state";
 import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
 import { normalizeContextWindow } from "@/types/agent";
-import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
+import { parseAccessMode } from "@/types/access-mode";
 import type { SessionEntry } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
@@ -72,8 +72,9 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
   }
   if (p.model) updates.currentModelId = p.model;
   if (p.profile) updates.currentProfile = p.profile;
-  if (p.codex_permission_mode) {
-    updates.codexPermissionMode = parseCodexPermissionMode(p.codex_permission_mode);
+  const accessMode = p.access_mode ?? p.codex_permission_mode;
+  if (accessMode) {
+    updates.accessMode = parseAccessMode(accessMode);
   }
   updates.currentThinkingEffort = p.thinking_effort;
   if (p.input_tokens != null || p.output_tokens != null) {

@@ -26,17 +26,17 @@ type ToolParser = (args: Record<string, unknown>) => ToolSummary;
 const toolParsers: Record<string, ToolParser> = {
   Task: (args) => ({
     label: "Running subtask",
-    detail: stringArg(args, "description"),
+    detail: descriptionDetail(args) ?? stringArg(args, "prompt"),
   }),
 
   Agent: (args) => ({
     label: "Running subtask",
-    detail: stringArg(args, "description"),
+    detail: descriptionDetail(args) ?? stringArg(args, "prompt"),
   }),
 
   Bash: (args) => ({
     label: "Running command",
-    detail: extractBashCommandFromArgs(args),
+    detail: extractBashCommandFromArgs(args) ?? descriptionDetail(args),
   }),
 
   exec_command: (args) => ({
@@ -49,63 +49,84 @@ const toolParsers: Record<string, ToolParser> = {
     detail: writeStdinDetail(args),
   }),
 
-  Glob: (args) => {
-    const pattern = typeof args.pattern === "string" ? args.pattern : undefined;
-    const path = typeof args.path === "string" ? args.path : undefined;
-    const parts = [pattern, path].filter(Boolean);
-    return {
-      label: "Finding files",
-      detail: parts.length > 0 ? parts.join(" in ") : undefined,
-    };
-  },
+  Glob: (args) => ({
+    label: "Finding files",
+    detail: globDetail(args),
+  }),
 
-  Grep: (args) => {
-    const pattern = typeof args.pattern === "string" ? args.pattern : undefined;
-    const type = typeof args.type === "string" ? args.type : undefined;
-    const path = typeof args.path === "string" ? args.path : undefined;
-    const parts: string[] = [];
-    if (pattern) parts.push(pattern);
-    if (type) parts.push(`(${type})`);
-    if (path) parts.push(`in ${path}`);
-    return {
-      label: "Searching code",
-      detail: parts.length > 0 ? parts.join(" ") : undefined,
-    };
-  },
+  Grep: (args) => ({
+    label: "Searching code",
+    detail: searchDetail(args),
+  }),
+
+  Search: (args) => ({
+    label: "Searching code",
+    detail: searchDetail(args),
+  }),
 
   Read: (args) => ({
     label: "Reading file",
-    detail: stringArg(args, "file_path", "filePath", "path"),
+    detail: fileDetail(args),
   }),
 
   LS: (args) => ({
     label: "Listing files",
-    detail: stringArg(args, "path", "directory", "dir"),
+    detail: stringArg(args, "path", "directory", "dir") ?? descriptionDetail(args),
   }),
 
   Write: (args) => ({
     label: "Writing file",
-    detail: stringArg(args, "file_path", "filePath", "path"),
+    detail: fileDetail(args),
   }),
 
   Edit: (args) => ({
     label: "Editing file",
-    detail: stringArg(args, "file_path", "filePath", "path"),
+    detail: fileDetail(args),
   }),
 
   ApplyPatch: (args) => ({
     label: "Applying patch",
-    detail: extractApplyPatchPrimaryPath(args),
+    detail: extractApplyPatchPrimaryPath(args) ?? descriptionDetail(args),
+  }),
+
+  Delete: (args) => ({
+    label: "Deleting file",
+    detail: fileDetail(args),
+  }),
+
+  Move: (args) => ({
+    label: "Moving file",
+    detail: moveDetail(args),
+  }),
+
+  Think: (args) => ({
+    label: "Thinking",
+    detail: descriptionDetail(args),
+  }),
+
+  Fetch: (args) => ({
+    label: "Fetching resource",
+    detail: stringArg(args, "url", "uri") ?? fileDetail(args),
+  }),
+
+  SwitchMode: (args) => ({
+    label: "Switching mode",
+    detail: stringArg(args, "targetModeId", "target_mode_id", "mode") ?? descriptionDetail(args),
   }),
 
   WebSearch: (args) => ({
     label: "Searching web",
-    detail: stringArg(args, "query"),
+    detail: stringArg(args, "query") ?? descriptionDetail(args),
   }),
 
   WebFetch: (args) => ({
     label: "Fetching page",
-    detail: stringArg(args, "url"),
+    detail: stringArg(args, "url") ?? descriptionDetail(args),
+  }),
+
+  GenerateImage: (args) => ({
+    label: "Generating image",
+    detail: stringArg(args, "filePath", "file_path") ?? descriptionDetail(args),
   }),
 
   Skill: (args) => ({
@@ -122,6 +143,40 @@ const toolParsers: Record<string, ToolParser> = {
     label: "Plan ready for review",
   }),
 };
+
+function descriptionDetail(args: Record<string, unknown>): string | undefined {
+  return stringArg(args, "description", "title", "summary");
+}
+
+function fileDetail(args: Record<string, unknown>): string | undefined {
+  return stringArg(args, "file_path", "filePath", "path") ?? descriptionDetail(args);
+}
+
+function globDetail(args: Record<string, unknown>): string | undefined {
+  const pattern = stringArg(args, "pattern", "glob", "query") ?? descriptionDetail(args);
+  const path = stringArg(args, "path", "directory", "dir");
+  if (pattern && path && pattern !== path) return `${pattern} in ${path}`;
+  return pattern ?? path;
+}
+
+function searchDetail(args: Record<string, unknown>): string | undefined {
+  const query =
+    stringArg(args, "pattern", "query", "searchTerm", "search_term") ?? descriptionDetail(args);
+  const type = stringArg(args, "type");
+  const path = stringArg(args, "path", "directory", "dir");
+  const parts: string[] = [];
+  if (query) parts.push(query);
+  if (type) parts.push(`(${type})`);
+  if (path && path !== query) parts.push(`in ${path}`);
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+function moveDetail(args: Record<string, unknown>): string | undefined {
+  const source = stringArg(args, "source", "from", "oldPath", "old_path");
+  const destination = stringArg(args, "destination", "to", "newPath", "new_path");
+  if (source && destination) return `${source} → ${destination}`;
+  return source ?? destination ?? fileDetail(args);
+}
 
 function writeStdinDetail(args: Record<string, unknown>): string | undefined {
   const sessionId = sessionIdDetail(args);
@@ -146,12 +201,22 @@ function sessionIdDetail(args: Record<string, unknown>): string | undefined {
  * Returns undefined if the tool is not recognized.
  */
 export function parseToolCall(toolName: string, toolArgs?: string): ToolSummary | undefined {
-  const parser = toolParsers[normalizeToolName(toolName)];
-  if (!parser) return undefined;
-
+  const canonicalToolName = normalizeToolName(toolName);
   const args = parseToolArgsObject(toolArgs) ?? {};
+  const parser = toolParsers[canonicalToolName];
+  if (!parser) {
+    const detail = genericDetail(args);
+    return detail ? { label: `Running ${canonicalToolName}`, detail } : undefined;
+  }
 
   return parser(args);
+}
+
+function genericDetail(args: Record<string, unknown>): string | undefined {
+  return (
+    descriptionDetail(args) ??
+    stringArg(args, "file_path", "filePath", "path", "url", "uri", "query", "pattern")
+  );
 }
 
 /**

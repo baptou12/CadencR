@@ -44,6 +44,11 @@ export function buildResumeCommand({
         command: withCd(`codex resume ${quote(sessionId)}`, cwd),
         supported: true,
       };
+    case PROVIDER_IDS.CURSOR:
+      return {
+        command: withCd(`agent --resume ${quote(sessionId)}`, cwd),
+        supported: true,
+      };
     default:
       return {
         command: "",

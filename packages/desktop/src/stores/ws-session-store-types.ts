@@ -7,7 +7,7 @@ import type {
   SessionConfig,
   WsEnvelope,
 } from "@/lib/ws-envelope";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import type { AccessMode } from "@/types/access-mode";
 import type {
   PermissionMode,
   PersistedStatePayload,
@@ -91,7 +91,7 @@ export interface WsSessionStore {
   setThinkingEffort: (sessionId: string, thinkingEffort?: string) => void;
   setProfile: (sessionId: string, profile: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
-  setCodexPermissionMode: (sessionId: string, mode: CodexPermissionMode) => void;
+  setAccessMode: (sessionId: string, mode: AccessMode) => void;
   approvePlan: (sessionId: string) => void;
   requestPlanChanges: (sessionId: string, feedback: string) => void;
   closeGate: (sessionId: string, reason: GateCloseReason) => void;

@@ -1,6 +1,6 @@
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { useScopedShortcut } from "@/hooks/useShortcut";
-import type { AgentQuestion } from "./types";
+import { agentQuestionOptionValue, type AgentQuestion } from "./types";
 
 interface UseAgentQuestionShortcutsParams {
   open: boolean;
@@ -56,7 +56,7 @@ export function useAgentQuestionShortcuts({
       if (digit > currentQuestion.options.length) return;
       e.preventDefault();
       const option = currentQuestion.options[digit - 1];
-      handleOptionToggle(option.label);
+      handleOptionToggle(agentQuestionOptionValue(option));
       flashHighlight(digit - 1);
     },
     "agent",

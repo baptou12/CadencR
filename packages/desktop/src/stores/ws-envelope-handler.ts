@@ -20,7 +20,7 @@ import { truncateBlocksAtMessage } from "./ws-session-branch";
 import { handleWorktreeEvent } from "./ws-worktree-handler";
 import { useGitStatusStore } from "./useGitStatusStore";
 import { isRecord } from "./ws-message-processing";
-import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
+import { parseAccessMode } from "@/types/access-mode";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 import { findProviderMode } from "@/lib/provider-modes";
@@ -150,7 +150,8 @@ const SESSION_ACTION_HANDLERS: Record<SessionActionName, SessionActionHandler> =
   [SESSION_ACTION.permissionRequest]: handlePermissionRequest,
   [SESSION_ACTION.error]: handleError,
   [SESSION_ACTION.compacting]: handleCompacting,
-  [SESSION_ACTION.codexPermissionModeChanged]: handleCodexPermissionModeChanged,
+  [SESSION_ACTION.accessModeChanged]: handleAccessModeChanged,
+  [SESSION_ACTION.legacyCodexPermissionModeChanged]: handleAccessModeChanged,
   [SESSION_ACTION.modeChanged]: handleModeChanged,
   [SESSION_ACTION.providerSetOk]: handleProviderSetOk,
   [SESSION_ACTION.modelSetOk]: handleModelSetOk,
@@ -216,16 +217,12 @@ function handleRuntimeSessionId(ctx: StoreAccessors, sessionId: string, payload:
   }
 }
 
-function handleCodexPermissionModeChanged(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handleAccessModeChanged(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseModePayload(payload);
   if (p?.mode) {
     ctx.set(
       updateSession(ctx.get(), sessionId, {
-        codexPermissionMode: parseCodexPermissionMode(p.mode),
+        accessMode: parseAccessMode(p.mode),
       }),
     );
   }
@@ -247,14 +244,17 @@ function handleModeChanged(ctx: StoreAccessors, sessionId: string, payload: unkn
 function handleProviderSetOk(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseProviderPayload(payload);
   if (!p?.provider) return;
+  const accessMode = p.access_mode ?? p.codex_permission_mode;
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       currentProviderId: p.provider,
       runtimeProvider: p.provider,
       mcpServers: null,
       supportsPromptReceipts: p.supports_prompt_receipts ?? false,
-      ...(p.codex_permission_mode
-        ? { codexPermissionMode: parseCodexPermissionMode(p.codex_permission_mode) }
+      ...(accessMode
+        ? {
+            accessMode: parseAccessMode(accessMode),
+          }
         : {}),
     }),
   );

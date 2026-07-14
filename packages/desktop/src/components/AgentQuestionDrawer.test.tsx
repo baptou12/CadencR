@@ -107,6 +107,23 @@ describe("AgentQuestionDrawer", () => {
     expect(onSubmit).toHaveBeenCalledWith([["Option A", "Option B"]]);
   });
 
+  it("submits provider option ids when labels are duplicated", async () => {
+    const user = userEvent.setup();
+    const question: AgentQuestion = {
+      question: "Choose",
+      options: [
+        { id: "first", label: "Same" },
+        { id: "second", label: "Same" },
+      ],
+    };
+    render(<AgentQuestionDrawer questions={[question]} onSubmit={onSubmit} open />);
+
+    await user.click(screen.getAllByRole("button", { name: /Same/i })[1]);
+    await user.click(screen.getByRole("button", { name: /Submit/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith([["second"]]);
+  });
+
   it("shows Other option button", () => {
     render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
     const buttons = screen.getAllByRole("button");
@@ -392,6 +409,14 @@ describe("parseAskUserQuestions", () => {
       options: [{ label: "A", preview: "diagram" }],
     });
     expect(result[0].options?.[0].preview).toBe("diagram");
+  });
+
+  it("preserves provider option ids", () => {
+    const result = parseAskUserQuestions({
+      question: "Pick one",
+      options: [{ id: "option-1", label: "A" }],
+    });
+    expect(result[0].options?.[0].id).toBe("option-1");
   });
 
   it("defaults multiSelect to false", () => {

@@ -13,7 +13,7 @@ function session(overrides: Partial<SessionState> = {}): SessionState {
     maxMessageId: 0,
     outputTokens: 0,
     permissionMode: "acceptEdits",
-    codexPermissionMode: "default",
+    accessMode: "default",
     resumable: false,
     sessionDbId: 1,
     status: "idle",

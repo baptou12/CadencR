@@ -118,10 +118,36 @@ const CODEX_MODES: ProviderMode[] = [
   },
 ];
 
+const CURSOR_MODES: ProviderMode[] = [
+  {
+    id: "default",
+    label: "Default",
+    icon: Hammer,
+    chipClass:
+      "bg-[var(--chip-blue-bg)]/15 text-[var(--chip-blue-fg)] hover:bg-[var(--chip-blue-bg)]/25",
+    description: "Cursor's default mode with full coding tools.",
+  },
+  {
+    id: "plan",
+    label: "Plan",
+    icon: ClipboardList,
+    chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
+    description: "Cursor read-only planning mode.",
+  },
+  {
+    id: "ask",
+    label: "Ask",
+    icon: Bot,
+    chipClass: "bg-[var(--acc-green)]/15 text-[var(--acc-green)] hover:bg-[var(--acc-green)]/25",
+    description: "Cursor read-only Q&A mode without edits or command execution.",
+  },
+];
+
 export const PROVIDER_MODES: Record<ProviderId, ProviderMode[]> = {
   [PROVIDER_IDS.CLAUDE_CODE]: CLAUDE_CODE_MODES,
   [PROVIDER_IDS.OPENCODE]: OPENCODE_MODES,
   [PROVIDER_IDS.CODEX_CLI]: CODEX_MODES,
+  [PROVIDER_IDS.CURSOR]: CURSOR_MODES,
 };
 
 /**
@@ -135,10 +161,34 @@ export function getProviderModes(
 ): ProviderMode[] {
   if (providerId && providerId in PROVIDER_MODES) {
     const modes = PROVIDER_MODES[providerId as ProviderId];
+    if (providerId === PROVIDER_IDS.CURSOR && catalogModes.length > 0) {
+      return catalogModes.map((mode) => cursorCatalogMode(mode, modes));
+    }
     if (providerId !== PROVIDER_IDS.OPENCODE || catalogModes.length === 0) return modes;
     return [...modes, ...catalogModes.map(opencodeCatalogMode)];
   }
   return [];
+}
+
+function cursorCatalogMode(
+  mode: RuntimeProviderModeOption,
+  styledModes: readonly ProviderMode[],
+): ProviderMode {
+  const styledMode = styledModes.find((candidate) => candidate.id === mode.id);
+  if (styledMode) {
+    return {
+      ...styledMode,
+      label: mode.label,
+      description: mode.description ?? styledMode.description,
+    };
+  }
+  return {
+    id: mode.id,
+    label: mode.label,
+    icon: Bot,
+    chipClass: "bg-[var(--acc-cyan)]/15 text-[var(--acc-cyan)] hover:bg-[var(--acc-cyan)]/25",
+    description: mode.description ?? `Use Cursor's ${mode.label} mode.`,
+  };
 }
 
 function opencodeCatalogMode(mode: RuntimeProviderModeOption): ProviderMode {
@@ -176,7 +226,19 @@ export function findProviderMode(
   modeId: PermissionMode,
   catalogModes: readonly RuntimeProviderModeOption[] = [],
 ): ProviderMode | null {
-  return getProviderModes(providerId, catalogModes).find((m) => m.id === modeId) ?? null;
+  const normalizedModeId = normalizeProviderModeId(providerId, modeId);
+  return getProviderModes(providerId, catalogModes).find((m) => m.id === normalizedModeId) ?? null;
+}
+
+function normalizeProviderModeId(
+  providerId: string | null | undefined,
+  modeId: PermissionMode,
+): PermissionMode {
+  // Cursor sessions created before the ACP mode catalog was exposed persisted
+  // the shared edit-mode alias. Keep those sessions cycling from Default
+  // without requiring a data migration.
+  if (providerId === PROVIDER_IDS.CURSOR && modeId === "acceptEdits") return "default";
+  return modeId;
 }
 
 /**
@@ -206,7 +268,8 @@ export function nextProviderMode(
 ): PermissionMode {
   const visible = getVisibleModes(providerId, enabledOptInIds, catalogModes);
   if (visible.length < 2) return current;
-  const idx = visible.findIndex((m) => m.id === current);
+  const normalizedCurrent = normalizeProviderModeId(providerId, current);
+  const idx = visible.findIndex((m) => m.id === normalizedCurrent);
   if (idx === -1) return visible[0].id;
   return visible[(idx + 1) % visible.length].id;
 }

@@ -31,7 +31,7 @@ import { useSessionStatus } from "@/stores/session-status-selectors";
 import { liveStatusFromLifecycle } from "@/lib/agent-status";
 import { AGENT_STATE_INITIAL_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
 import type { DisplayRowMode } from "@/components/agentStreamDisplay";
-import { parseCodexPermissionMode, type CodexPermissionMode } from "@/types/codex-permission-mode";
+import { parseAccessMode, type AccessMode } from "@/types/access-mode";
 import { parsePermissionMode } from "@/types/permission-mode";
 import type { McpServerStatus, SessionEntry } from "@/stores/ws-session-types";
 
@@ -72,9 +72,9 @@ export interface UseWebSocketSessionReturn {
   loadOlderMessages: (displayMode?: DisplayRowMode) => Promise<number>;
 
   permissionMode: PermissionMode;
-  codexPermissionMode: CodexPermissionMode;
+  accessMode: AccessMode;
   setPermissionMode: (mode: PermissionMode) => void;
-  setCodexPermissionMode: (mode: CodexPermissionMode) => void;
+  setAccessMode: (mode: AccessMode) => void;
   pendingPlanApproval: PendingPlanApproval | null;
   approvePlan: () => void;
   requestPlanChanges: (feedback: string) => void;
@@ -127,7 +127,7 @@ type SessionActions = Pick<
   | "setThinkingEffort"
   | "setProfile"
   | "setPermissionMode"
-  | "setCodexPermissionMode"
+  | "setAccessMode"
   | "approvePlan"
   | "requestPlanChanges"
   | "closeGate"
@@ -224,7 +224,7 @@ function usePersistedSessionLoader(
       currentModelId: lastSession.model ?? undefined,
       currentProfile: lastSession.profile ?? undefined,
       permissionMode: parsePermissionMode(lastSession.permissionMode) ?? undefined,
-      codexPermissionMode: parseCodexPermissionMode(lastSession.codexPermissionMode),
+      accessMode: parseAccessMode(lastSession.accessMode),
       runtimeProvider: lastSession.runtimeProvider ?? undefined,
       runtimeSessionId: lastSession.runtimeSessionId ?? undefined,
       pendingPermission: lastSession.pendingPermission,
@@ -267,8 +267,7 @@ function useSessionActions(sessionId: string): SessionActions {
         s.setThinkingEffort(sessionId, thinkingEffort),
       setProfile: (profile: string): void => s.setProfile(sessionId, profile),
       setPermissionMode: (mode: PermissionMode): void => s.setPermissionMode(sessionId, mode),
-      setCodexPermissionMode: (mode: CodexPermissionMode): void =>
-        s.setCodexPermissionMode(sessionId, mode),
+      setAccessMode: (mode: AccessMode): void => s.setAccessMode(sessionId, mode),
       approvePlan: (): void => s.approvePlan(sessionId),
       requestPlanChanges: (feedback: string): void => s.requestPlanChanges(sessionId, feedback),
       closeGate: (reason: GateCloseReason): void => s.closeGate(sessionId, reason),
@@ -315,7 +314,7 @@ function useSessionSnapshot(
           (session.pendingPermission?.requestId ?? session.pendingRequestId),
       pendingQuestions: session?.pendingQuestions ?? [],
       permissionMode: session?.permissionMode ?? "acceptEdits",
-      codexPermissionMode: session?.codexPermissionMode ?? "default",
+      accessMode: session?.accessMode ?? "default",
       pendingPlanApproval: session?.pendingPlanApproval ?? null,
       contextUsage: session?.contextUsage ?? null,
       currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,

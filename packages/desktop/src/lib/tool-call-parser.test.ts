@@ -16,6 +16,21 @@ describe("parseToolCall", () => {
     expect(result).toEqual({ label: "Reading file", detail: "src/main.ts" });
   });
 
+  it("parses ACP Read metadata with a location path", () => {
+    const result = parseToolCall(
+      "Read",
+      JSON.stringify({
+        description: "Read the Cursor adapter",
+        path: "/repo/packages/service/src/domain/agents/cursor/adapter.rs",
+        locations: [{ path: "/repo/packages/service/src/domain/agents/cursor/adapter.rs" }],
+      }),
+    );
+    expect(result).toEqual({
+      label: "Reading file",
+      detail: "/repo/packages/service/src/domain/agents/cursor/adapter.rs",
+    });
+  });
+
   it("parses LS tool with path", () => {
     const result = parseToolCall("LS", JSON.stringify({ path: "src" }));
     expect(result).toEqual({ label: "Listing files", detail: "src" });
@@ -109,6 +124,61 @@ describe("parseToolCall", () => {
       JSON.stringify({ pattern: "foo", type: "ts", path: "src/" }),
     );
     expect(result).toEqual({ label: "Searching code", detail: "foo (ts) in src/" });
+  });
+
+  it("parses canonical ACP Search with its pattern and path", () => {
+    const result = parseToolCall(
+      "Search",
+      JSON.stringify({ pattern: "normalize_tool_input", path: "packages/service/src" }),
+    );
+    expect(result).toEqual({
+      label: "Searching code",
+      detail: "normalize_tool_input in packages/service/src",
+    });
+  });
+
+  it("falls back to the ACP title-derived description for Search", () => {
+    const result = parseToolCall(
+      "Search",
+      JSON.stringify({ description: "Find adapter tests", path: "packages/service" }),
+    );
+    expect(result).toEqual({
+      label: "Searching code",
+      detail: "Find adapter tests in packages/service",
+    });
+  });
+
+  it.each([
+    ["Delete", { path: "src/old.ts" }, { label: "Deleting file", detail: "src/old.ts" }],
+    [
+      "Move",
+      { source: "src/old.ts", destination: "src/new.ts" },
+      { label: "Moving file", detail: "src/old.ts → src/new.ts" },
+    ],
+    [
+      "Think",
+      { description: "Check edge cases" },
+      { label: "Thinking", detail: "Check edge cases" },
+    ],
+    [
+      "Fetch",
+      { url: "https://example.com/spec" },
+      { label: "Fetching resource", detail: "https://example.com/spec" },
+    ],
+    ["SwitchMode", { targetModeId: "plan" }, { label: "Switching mode", detail: "plan" }],
+    [
+      "GenerateImage",
+      { description: "Architecture diagram", filePath: "/tmp/diagram.png" },
+      { label: "Generating image", detail: "/tmp/diagram.png" },
+    ],
+  ])("parses canonical ACP %s tools", (toolName, args, expected) => {
+    expect(parseToolCall(toolName, JSON.stringify(args))).toEqual(expected);
+  });
+
+  it("uses standard ACP descriptions for otherwise unknown tools", () => {
+    expect(
+      parseToolCall("CustomCursorTool", JSON.stringify({ description: "Inspect workspace" })),
+    ).toEqual({ label: "Running CustomCursorTool", detail: "Inspect workspace" });
   });
 
   it("parses WebSearch tool", () => {

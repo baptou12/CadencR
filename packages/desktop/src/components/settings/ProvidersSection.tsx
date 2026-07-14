@@ -3,7 +3,7 @@ import { ProviderIcon } from "@/lib/provider-icons";
 import { getProviderMetadata, PROVIDER_IDS, type ProviderId } from "@/lib/providers";
 import { CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY } from "@/shared/permission-mode-settings";
 import { BinaryDiscoverySection } from "./BinaryDiscoverySection";
-import { CodexPermissionModeSetting } from "./CodexPermissionModeSetting";
+import { ProviderAccessModeSetting } from "./ProviderAccessModeSetting";
 import { CustomModelsSection } from "./CustomModelsSection";
 import { DangerousModeToggle } from "./DangerousModeToggle";
 import { ProfilesSection } from "./ProfilesSection";
@@ -15,6 +15,7 @@ const PROVIDER_TABS: ProviderId[] = [
   PROVIDER_IDS.CLAUDE_CODE,
   PROVIDER_IDS.OPENCODE,
   PROVIDER_IDS.CODEX_CLI,
+  PROVIDER_IDS.CURSOR,
 ];
 
 export function ProvidersSection(): React.JSX.Element {
@@ -42,6 +43,9 @@ export function ProvidersSection(): React.JSX.Element {
           </TabsContent>
           <TabsContent value={PROVIDER_IDS.CODEX_CLI}>
             <CodexProviderPanel />
+          </TabsContent>
+          <TabsContent value={PROVIDER_IDS.CURSOR}>
+            <CursorProviderPanel />
           </TabsContent>
         </Tabs>
       </SettingsCard>
@@ -131,7 +135,29 @@ function CodexProviderPanel(): React.JSX.Element {
         />
       </SettingsSubsection>
       <SettingsSubsection>
-        <CodexPermissionModeSetting />
+        <ProviderAccessModeSetting providerId={PROVIDER_IDS.CODEX_CLI} />
+      </SettingsSubsection>
+    </>
+  );
+}
+
+function CursorProviderPanel(): React.JSX.Element {
+  return (
+    <>
+      <SettingsSubsection>
+        <BinaryDiscoverySection
+          discoveryKey="cursor"
+          description={
+            <>
+              Every Cursor <strong>agent</strong> CLI install Cadencr found on disk. The selected
+              binary is spawned as <strong>agent acp</strong>; override via onboarding or the{" "}
+              <strong>cursor_cli_path</strong> workspace setting.
+            </>
+          }
+        />
+      </SettingsSubsection>
+      <SettingsSubsection>
+        <ProviderAccessModeSetting providerId={PROVIDER_IDS.CURSOR} />
       </SettingsSubsection>
     </>
   );

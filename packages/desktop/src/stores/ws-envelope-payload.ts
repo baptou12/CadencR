@@ -120,6 +120,7 @@ export function parseInitializedPayload(payload: unknown): {
   thinking_effort?: string;
   profile?: string;
   codex_permission_mode?: string;
+  access_mode?: string;
   input_tokens?: number;
   output_tokens?: number;
   context_window?: number;
@@ -137,6 +138,7 @@ export function parseInitializedPayload(payload: unknown): {
     thinking_effort: optionalString(record, "thinking_effort"),
     profile: optionalString(record, "profile"),
     codex_permission_mode: optionalString(record, "codex_permission_mode"),
+    access_mode: optionalString(record, "access_mode"),
     input_tokens: optionalNumber(record, "input_tokens"),
     output_tokens: optionalNumber(record, "output_tokens"),
     context_window: optionalNumber(record, "context_window"),
@@ -167,6 +169,7 @@ export function parseProviderPayload(payload: unknown): {
   provider?: string;
   supports_prompt_receipts?: boolean;
   codex_permission_mode?: string;
+  access_mode?: string;
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
@@ -174,6 +177,7 @@ export function parseProviderPayload(payload: unknown): {
     provider: optionalString(record, "provider"),
     supports_prompt_receipts: optionalBoolean(record, "supports_prompt_receipts"),
     codex_permission_mode: optionalString(record, "codex_permission_mode"),
+    access_mode: optionalString(record, "access_mode"),
   };
 }
 

@@ -61,6 +61,20 @@ describe("extractBashOutput", () => {
     );
   });
 
+  it("extracts Cursor top-level stdout and stderr", () => {
+    expect(
+      extractBashOutput(
+        JSON.stringify({ exitCode: 0, stdout: "lint passed\n", stderr: "$ pnpm lint\n" }),
+      ),
+    ).toBe("lint passed\n$ pnpm lint\n");
+  });
+
+  it("shows Cursor stderr when stdout is empty", () => {
+    expect(
+      extractBashOutput(JSON.stringify({ exitCode: 0, stdout: "", stderr: "$ tsc --noEmit\n" })),
+    ).toBe("$ tsc --noEmit\n");
+  });
+
   it("extracts legacy persisted OpenCode output fields", () => {
     expect(
       extractBashOutput(

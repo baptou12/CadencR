@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { AgentQuestion, AgentQuestionAnswers } from "./types";
+import { agentQuestionOptionValue, type AgentQuestion, type AgentQuestionAnswers } from "./types";
 
 interface UseAgentQuestionFormParams {
   questions: AgentQuestion[];
@@ -279,8 +279,11 @@ export function useAgentQuestionForm({
   const isLastQuestion = currentIndex >= questions.length - 1;
   const hasOptions = !!(currentQuestion?.options && currentQuestion.options.length > 0);
   const selectedPreview = hasOptions
-    ? currentQuestion!.options!.filter((o) => selectedOptions.has(o.label) && o.preview).at(-1)
-        ?.preview
+    ? currentQuestion!
+        .options!.filter(
+          (option) => selectedOptions.has(agentQuestionOptionValue(option)) && option.preview,
+        )
+        .at(-1)?.preview
     : undefined;
 
   return {

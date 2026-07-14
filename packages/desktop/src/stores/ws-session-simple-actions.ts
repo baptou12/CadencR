@@ -1,6 +1,6 @@
 import type { DisplayRowMode } from "@/components/agentStreamDisplay";
 import {
-  createCodexPermissionModeSet,
+  createAccessModeSet,
   createCommandsGet,
   createDestroy,
   createEffortSet,
@@ -20,7 +20,7 @@ import {
 import { clearReconnect, unregisterReconnector } from "@/lib/ws-reconnect";
 import { DEFAULT_PROMPT_COMMAND_POLICY } from "@/lib/prompt-command-policy";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import type { AccessMode } from "@/types/access-mode";
 import {
   applyApprovePlan,
   applyPersistedState,
@@ -54,7 +54,7 @@ type SimpleSessionActions = Pick<
   | "setThinkingEffort"
   | "setProfile"
   | "setPermissionMode"
-  | "setCodexPermissionMode"
+  | "setAccessMode"
   | "approvePlan"
   | "requestPlanChanges"
   | "closeGate"
@@ -191,13 +191,13 @@ function createConfigurationActions(deps: SimpleSessionActionDeps) {
       set(updateSession(get(), sessionId, { permissionMode: mode }));
     },
 
-    setCodexPermissionMode(sessionId: string, mode: CodexPermissionMode) {
+    setAccessMode(sessionId: string, mode: AccessMode) {
       const session = getSession(sessionId);
       if (session.serverSessionId) {
-        sendRaw(sessionId, createCodexPermissionModeSet(session.serverSessionId, mode));
+        sendRaw(sessionId, createAccessModeSet(session.serverSessionId, mode));
         return;
       }
-      set(updateSession(get(), sessionId, { codexPermissionMode: mode }));
+      set(updateSession(get(), sessionId, { accessMode: mode }));
     },
   };
 }

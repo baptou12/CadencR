@@ -1,5 +1,6 @@
 /** A single selectable option within an AskUserQuestion question */
 export interface AgentQuestionOption {
+  id?: string;
   label: string;
   description?: string;
   preview?: string;
@@ -16,3 +17,7 @@ export interface AgentQuestion {
 }
 
 export type AgentQuestionAnswers = string[][];
+
+export function agentQuestionOptionValue(option: AgentQuestionOption): string {
+  return option.id ?? option.label;
+}
