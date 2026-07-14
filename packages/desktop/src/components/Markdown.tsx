@@ -1,15 +1,17 @@
-import { memo, lazy, Suspense, useMemo, useRef, type ReactElement } from "react";
+import { memo, lazy, Suspense, useMemo, useRef, useState, type ReactElement } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
+import { Loader2Icon } from "lucide-react";
 import { createLowlight, common } from "lowlight";
 import ini from "highlight.js/lib/languages/ini";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cn } from "@/lib/utils";
 import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
-import { useLinkRouting } from "@/components/links/LinkRoutingContext";
+import { useLinkRouting, type LinkRouting } from "@/components/links/LinkRoutingContext";
+import { parseConversationReferenceHref } from "@/components/prompt-editor/conversation-reference";
 import "./dracula-highlight.css";
 
 const LINK_CLASS =
@@ -30,6 +32,14 @@ function MarkdownLink({
   children: React.ReactNode;
 }): ReactElement {
   const routing = useLinkRouting();
+  const conversationFeatureId = href ? parseConversationReferenceHref(href) : null;
+  if (href && conversationFeatureId !== null) {
+    return (
+      <ConversationReferenceLink featureId={conversationFeatureId} href={href} routing={routing}>
+        {children}
+      </ConversationReferenceLink>
+    );
+  }
   if (!routing || !href) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
@@ -50,6 +60,41 @@ function MarkdownLink({
       onMouseLeave={() => routing.setHoverLink(null)}
     >
       {children}
+    </a>
+  );
+}
+
+function ConversationReferenceLink({
+  featureId,
+  href,
+  routing,
+  children,
+}: {
+  featureId: number;
+  href: string;
+  routing: LinkRouting | null;
+  children: React.ReactNode;
+}): ReactElement {
+  const [isOpening, setIsOpening] = useState(false);
+  return (
+    <a
+      href={href}
+      aria-busy={isOpening}
+      className="rounded-sm font-semibold text-[var(--chip-fuchsia-fg)] underline decoration-[var(--chip-fuchsia-fg)]/50 underline-offset-2 hover:bg-[var(--chip-fuchsia-bg)]/15 hover:decoration-[var(--chip-fuchsia-fg)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+      onClick={(event) => {
+        event.preventDefault();
+        if (!routing || isOpening) return;
+        setIsOpening(true);
+        void routing.activateConversation(featureId).finally(() => setIsOpening(false));
+      }}
+    >
+      {children}
+      {isOpening && (
+        <Loader2Icon
+          className="ml-1 inline size-3 animate-spin"
+          aria-label="Opening conversation"
+        />
+      )}
     </a>
   );
 }
@@ -263,6 +308,10 @@ function preprocessContent(raw: string): string {
   return raw.replace(/---PLAN_START---|---PLAN_END---/g, "\n---\n");
 }
 
+function markdownUrlTransform(url: string): string {
+  return parseConversationReferenceHref(url) === null ? defaultUrlTransform(url) : url;
+}
+
 export const Markdown = memo(function Markdown({ content, className, cacheKey }: MarkdownProps) {
   const { sendToTerminal } = useCodeBlockActions();
   // A set `cacheKey` marks a stable (non-streaming) block; only then do we
@@ -279,7 +328,11 @@ export const Markdown = memo(function Markdown({ content, className, cacheKey }:
 
   const tree = useMemo<ReactElement>(() => {
     const build = (): ReactElement => (
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={components}
+        urlTransform={markdownUrlTransform}
+      >
         {preprocessContent(content)}
       </ReactMarkdown>
     );

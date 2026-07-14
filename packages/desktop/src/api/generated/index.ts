@@ -392,6 +392,13 @@ export interface ContentSearchResponse {
   truncated: boolean;
 }
 
+export interface ConversationReferenceCandidate {
+  feature_id: number;
+  feature_status: FeatureStatus;
+  feature_title: string;
+  project_name: string;
+}
+
 export type CreateCustomActionRequestIconData = string | null;
 
 export type CreateCustomActionRequestProjectId = number | null;
@@ -2791,6 +2798,12 @@ catalog `root_markers` to look for when no concrete `lsp_id` is given.
 the renderer is about to start. Falls back to the language default.
  */
   lsp_id?: string | null;
+};
+
+export type ListConversationReferencesParams = {
+  current_feature_id: number;
+  query?: string | null;
+  limit?: number | null;
 };
 
 export type KillTerminalSessionsParams = {
@@ -11740,6 +11753,71 @@ export const useRemoteSetTunnelHost = <TError = ErrorType<unknown>, TContext = u
 
   return useMutation(mutationOptions);
 };
+
+export const listConversationReferences = (
+  params: ListConversationReferencesParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ConversationReferenceCandidate[]>({
+    url: `/api/sessions/conversation-references`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getListConversationReferencesQueryKey = (
+  params?: ListConversationReferencesParams,
+) => {
+  return [`/api/sessions/conversation-references`, ...(params ? [params] : [])] as const;
+};
+
+export const getListConversationReferencesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listConversationReferences>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListConversationReferencesParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listConversationReferences>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListConversationReferencesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversationReferences>>> = ({
+    signal,
+  }) => listConversationReferences(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listConversationReferences>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListConversationReferencesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listConversationReferences>>
+>;
+export type ListConversationReferencesQueryError = ErrorType<unknown>;
+
+export function useListConversationReferences<
+  TData = Awaited<ReturnType<typeof listConversationReferences>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListConversationReferencesParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listConversationReferences>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListConversationReferencesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getMessageFullContent = (messageId: number, signal?: AbortSignal) => {
   return customInstance<MessageFullContentResponse>({

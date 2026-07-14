@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use super::super::{ActiveTurnRegistry, SdkSessions, WsSender};
 use super::content::{
-    build_content_value_for_provider, build_persist_content, payload_attachments,
+    build_content_value_for_provider, build_persist_content, expand_prompt_for_provider,
+    payload_attachments,
 };
 use super::errors::persist_pause_and_send_session_error;
 use super::prompt_receipt::clear_pending_prompt_receipt;
@@ -48,6 +49,31 @@ pub(super) async fn handle_followup_prompt(
         .dispatch_claim()
         .map(|(message_id, token)| (message_id, token.to_string()));
     let receipt_message_uuid = persistence.tracked_message_uuid(&payload);
+    let conversation_references = match super::conversation_references::resolve(
+        &context.write_pool,
+        context.feature_id,
+        &payload.text,
+        !context.internal_replay,
+    )
+    .await
+    {
+        Ok(references) => references,
+        Err(error) => {
+            mark_followup_dispatch_failed(&context, dispatch_claim.as_ref(), &error).await;
+            if let Some(message_uuid) = receipt_message_uuid {
+                let _ = clear_pending_prompt_receipt(
+                    &context.write_pool,
+                    &context.ws_feature_senders,
+                    &context.sender,
+                    context.feature_id,
+                    context.db_session_id,
+                    message_uuid,
+                )
+                .await;
+            }
+            return Err(error);
+        }
+    };
     mark_agent_running(
         &context.write_pool,
         &context.session_status_tx,
@@ -65,12 +91,24 @@ pub(super) async fn handle_followup_prompt(
 
     info!(context.db_session_id, "follow-up prompt");
     if context.internal_replay {
-        return stream_followup_prompt(context, payload, dispatch_claim, receipt_message_uuid)
-            .await;
+        return stream_followup_prompt(
+            context,
+            payload,
+            dispatch_claim,
+            receipt_message_uuid,
+            conversation_references,
+        )
+        .await;
     }
     tokio::spawn(async move {
-        let _ =
-            stream_followup_prompt(context, payload, dispatch_claim, receipt_message_uuid).await;
+        let _ = stream_followup_prompt(
+            context,
+            payload,
+            dispatch_claim,
+            receipt_message_uuid,
+            conversation_references,
+        )
+        .await;
     });
     Ok(())
 }
@@ -108,11 +146,12 @@ async fn stream_followup_prompt(
     payload: PromptSendPayload,
     dispatch_claim: Option<(i64, String)>,
     receipt_message_uuid: Option<String>,
+    conversation_references: Vec<super::conversation_references::ResolvedConversationReference>,
 ) -> Result<(), String> {
     let attachments = payload_attachments(&payload);
-    // Expand a virtual `/cadencr:*` skill invoked mid-conversation, same as the
-    // initial-prompt path. The persisted user message keeps the short token.
-    let prompt_text = crate::domain::agents::orchestration_skills::expand_prompt(&payload.text);
+    // Expand Cadencr prompt directives only for the provider. The persisted
+    // user message keeps the concise command and conversation-reference tokens.
+    let prompt_text = expand_prompt_for_provider(&payload.text, &conversation_references);
     let content =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
     let query_guard = context.query.read().await;

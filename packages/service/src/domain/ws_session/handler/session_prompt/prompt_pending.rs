@@ -4,7 +4,8 @@ mod runtime_registration;
 use super::super::{SdkSessions, SessionConfig, WsSender};
 use super::bridge::{PermissionResponse, WsBridgeCanUseTool};
 use super::content::{
-    build_content_value_for_provider, build_persist_content, payload_attachments,
+    build_content_value_for_provider, build_persist_content, expand_prompt_for_provider,
+    payload_attachments,
 };
 use super::errors::persist_pause_and_send_session_error;
 use super::prompt_receipt::confirm_prompt_delivery;
@@ -48,6 +49,26 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
         .dispatch_claim()
         .map(|(message_id, token)| (message_id, token.to_string()));
     let receipt_message_uuid = persistence.tracked_message_uuid(&context.payload);
+    let conversation_references = match super::conversation_references::resolve(
+        &context.app_state.read_pool,
+        context.feature_id,
+        &context.payload.text,
+        !context.internal_replay,
+    )
+    .await
+    {
+        Ok(references) => references,
+        Err(error) => {
+            delivery_lifecycle::fail_pending_receipt(
+                &context,
+                receipt_message_uuid.as_deref(),
+                dispatch_claim.as_ref(),
+                &error,
+            )
+            .await;
+            return Err(error);
+        }
+    };
     let Some(adapter) = resolve_adapter_or_report(&context).await else {
         delivery_lifecycle::fail_pending_receipt(
             &context,
@@ -104,6 +125,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
         auto_name_handled,
         receipt_message_uuid,
         dispatch_claim,
+        conversation_references,
     )
     .await
 }
@@ -284,6 +306,7 @@ async fn spawn_runtime(
     auto_name_handled: bool,
     receipt_message_uuid: Option<String>,
     dispatch_claim: Option<(i64, String)>,
+    conversation_references: Vec<super::conversation_references::ResolvedConversationReference>,
 ) -> Result<(), String> {
     info!(
         context.db_session_id,
@@ -297,9 +320,9 @@ async fn spawn_runtime(
         "spawning runtime query"
     );
     let attachments = payload_attachments(&context.payload);
-    // Expand virtual skills for the agent while keeping the short token persisted.
-    let prompt_text =
-        crate::domain::agents::orchestration_skills::expand_prompt(&context.payload.text);
+    // Expand Cadencr prompt directives only for the provider while keeping the
+    // concise command and conversation-reference tokens persisted.
+    let prompt_text = expand_prompt_for_provider(&context.payload.text, &conversation_references);
     let content_value =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
     let options = std::mem::take(&mut context.options);

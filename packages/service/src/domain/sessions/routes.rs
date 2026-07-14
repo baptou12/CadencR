@@ -29,6 +29,31 @@ pub struct UnifiedAgentsParams {
     pub message_limit: Option<i64>,
 }
 
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct ConversationReferenceParams {
+    pub current_feature_id: i64,
+    pub query: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[utoipa::path(get, path = "/api/sessions/conversation-references",
+    params(ConversationReferenceParams),
+    responses((status = 200, body = Vec<ConversationReferenceCandidate>)))]
+pub async fn list_conversation_references_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ConversationReferenceParams>,
+) -> Result<Json<Vec<ConversationReferenceCandidate>>, AppError> {
+    Ok(Json(
+        repository::list_conversation_references(
+            &state.read_pool,
+            params.current_feature_id,
+            params.query.as_deref(),
+            params.limit,
+        )
+        .await?,
+    ))
+}
+
 #[utoipa::path(get, path = "/api/features/{feature_id}/sessions",
     params(("feature_id" = i64, Path,)),
     responses((status = 200, body = Vec<AgentSessionRow>)))]
@@ -180,6 +205,10 @@ pub fn sessions_router() -> Router<AppState> {
             get(get_feature_agent_state_handler),
         )
         .route("/api/agents/unified", get(get_unified_agents_handler))
+        .route(
+            "/api/sessions/conversation-references",
+            get(list_conversation_references_handler),
+        )
         .route(
             "/api/sessions/{session_id}/draft",
             get(get_draft_handler).put(save_draft_handler),

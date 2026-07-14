@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
+import { LinkRoutingContext, type LinkRouting } from "./links/LinkRoutingContext";
 import { Markdown } from "./Markdown";
 
 describe("Markdown", () => {
@@ -28,6 +29,32 @@ describe("Markdown", () => {
     const link = screen.getByRole("link", { name: "Click here" });
     expect(link).toHaveAttribute("href", "https://example.com");
     expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("opens a serialized conversation reference when its full label is clicked", async () => {
+    const activateConversation = vi.fn(async () => undefined);
+    const routing: LinkRouting = {
+      activate: vi.fn(),
+      activateConversation,
+      setHoverLink: vi.fn(),
+    };
+    const { user } = render(
+      <LinkRoutingContext.Provider value={routing}>
+        <Markdown content="Read [@@Cadencr / Prompt references](cadencr-conversation:feature/42)" />
+      </LinkRoutingContext.Provider>,
+    );
+
+    const link = screen.getByRole("link", { name: "@@Cadencr / Prompt references" });
+    expect(link).toHaveAttribute("href", "cadencr-conversation:feature/42");
+    await user.click(link);
+    expect(activateConversation).toHaveBeenCalledWith(42);
+  });
+
+  it("keeps serialized conversation references literal inside code", () => {
+    const reference = "[@@Cadencr / Work](cadencr-conversation:feature/42)";
+    render(<Markdown content={`\`${reference}\`\n\n\`\`\`text\n${reference}\n\`\`\``} />);
+    expect(screen.queryByRole("link", { name: "@@Cadencr / Work" })).not.toBeInTheDocument();
+    expect(screen.getAllByText(reference)).toHaveLength(2);
   });
 
   it("renders unordered list", () => {
