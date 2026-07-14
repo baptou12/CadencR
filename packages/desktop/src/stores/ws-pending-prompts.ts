@@ -6,6 +6,33 @@ export interface TailPromptTurnBoundary {
   shouldTrim: boolean;
 }
 
+/**
+ * Keep provider-unacknowledged steering prompts after every streamed block.
+ * Their canonical DB row is persisted at send time, but their transcript slot
+ * is not final until the provider replays them into the agent turn.
+ */
+export function movePendingPromptBlocksToTail(blocks: AgentBlockData[]): AgentBlockData[] {
+  const firstPending = blocks.findIndex(isPendingPromptBlock);
+  if (firstPending === -1 || pendingBlocksAlreadyAtTail(blocks, firstPending)) {
+    return blocks;
+  }
+  const stable: AgentBlockData[] = [];
+  const pending: AgentBlockData[] = [];
+  for (const block of blocks) {
+    (isPendingPromptBlock(block) ? pending : stable).push(block);
+  }
+  return [...stable, ...pending];
+}
+
+/** Return the insertion point immediately before an already-canonical pending suffix. */
+export function pendingPromptTailStartIndex(blocks: AgentBlockData[]): number {
+  let index = blocks.length;
+  while (index > 0 && isPendingPromptBlock(blocks[index - 1])) {
+    index -= 1;
+  }
+  return index;
+}
+
 export function markPromptReceived(
   blocks: AgentBlockData[],
   messageUuid: string,
@@ -108,4 +135,11 @@ function lastPromptDeliveryBlockIndex(blocks: AgentBlockData[]): number {
     return isPromptDeliveryBlock(block) ? index : -1;
   }
   return -1;
+}
+
+function pendingBlocksAlreadyAtTail(blocks: AgentBlockData[], firstPending: number): boolean {
+  for (let index = firstPending; index < blocks.length; index += 1) {
+    if (!isPendingPromptBlock(blocks[index])) return false;
+  }
+  return true;
 }

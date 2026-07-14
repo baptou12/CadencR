@@ -47,6 +47,9 @@ impl PromptPersistenceOutcome {
     }
 
     pub fn tracked_message_uuid(&self, payload: &PromptSendPayload) -> Option<String> {
+        if !payload.track_prompt_receipt {
+            return None;
+        }
         match self {
             Self::Replay => payload.message_uuid.clone(),
             Self::Dispatch { message, .. } | Self::Dispatched(message) => {
@@ -90,7 +93,11 @@ pub(super) async fn persist_and_publish_prompt(
         content,
         message_uuid,
         origin: None,
-        mode: CanonicalUserMessageMode::DispatchPrompt,
+        mode: if payload.track_prompt_receipt {
+            CanonicalUserMessageMode::DispatchTrackedPrompt
+        } else {
+            CanonicalUserMessageMode::DispatchPrompt
+        },
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -178,11 +185,16 @@ async fn resolve_dispatched_pending_state(
 pub(crate) enum CanonicalUserMessageMode {
     PersistOnly,
     DispatchPrompt,
+    DispatchTrackedPrompt,
 }
 
 impl CanonicalUserMessageMode {
-    fn pending_agent_receipt(self) -> bool {
-        matches!(self, Self::DispatchPrompt)
+    fn dispatch_prompt(self) -> bool {
+        !matches!(self, Self::PersistOnly)
+    }
+
+    fn delivery_state(self) -> Option<&'static str> {
+        matches!(self, Self::DispatchTrackedPrompt).then_some("pending_agent")
     }
 }
 
@@ -206,19 +218,20 @@ pub(crate) async fn persist_and_publish_user_message(
         request.feature_id,
         Some(request.session_id),
     );
-    let message = if matches!(request.mode, CanonicalUserMessageMode::DispatchPrompt) {
+    let message = if request.mode.dispatch_prompt() {
         persistence
-            .persist_prompt_user_message(request.content, request.message_uuid)
+            .persist_prompt_user_message(
+                request.content,
+                request.message_uuid,
+                request.mode.delivery_state(),
+            )
             .await?
     } else {
         persistence
             .persist_user_message_with_delivery(
                 request.content,
                 request.message_uuid,
-                request
-                    .mode
-                    .pending_agent_receipt()
-                    .then_some("pending_agent"),
+                request.mode.delivery_state(),
             )
             .await?
     };
@@ -228,7 +241,7 @@ pub(crate) async fn persist_and_publish_user_message(
         request.feature_id,
         &message,
         request.origin,
-        request.mode.pending_agent_receipt(),
+        request.mode.delivery_state().is_some(),
     )
     .await;
     Ok(CanonicalUserMessageOutcome { message, delivery })
@@ -546,12 +559,14 @@ mod tests {
         let event: serde_json::Value = serde_json::from_str(&raw).unwrap();
         let event_uuid = event["payload"]["message_uuid"].as_str().unwrap();
         assert!(uuid::Uuid::parse_str(event_uuid).is_ok());
-        let stored_uuid: String =
-            sqlx::query_scalar("SELECT message_uuid FROM agent_messages WHERE id = ?")
+        assert!(event["payload"]["prompt_delivery_state"].is_null());
+        let (stored_uuid, delivery_state): (String, Option<String>) =
+            sqlx::query_as("SELECT message_uuid, delivery_state FROM agent_messages WHERE id = ?")
                 .bind(outcome.message_id().unwrap())
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         assert_eq!(stored_uuid, event_uuid);
+        assert_eq!(delivery_state, None);
     }
 }

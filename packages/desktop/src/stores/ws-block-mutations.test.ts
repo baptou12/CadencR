@@ -242,6 +242,41 @@ describe("applyMutations", () => {
     expect(streamState.toolResultMap.get("tu-1")).toBe(resultBlock);
   });
 
+  it("inserts root appends before a pending prompt suffix without rebuilding stream state", () => {
+    const streamState = createStreamingState();
+    const assistant: AgentBlockData = { id: "assistant", type: "text", content: "working" };
+    const pending: AgentBlockData = {
+      id: "pending",
+      type: "user_message",
+      content: "steer",
+      promptDeliveryState: "pending_agent",
+    };
+    applyMutations([], [{ action: "append", block: assistant }], streamState);
+    applyMutations([assistant], [{ action: "append", block: pending }], streamState);
+
+    const divider: AgentBlockData = {
+      id: "compact-divider",
+      type: "compact_divider",
+      content: "",
+    };
+    const result = applyMutations(
+      [assistant, pending],
+      [{ action: "append", block: divider }],
+      streamState,
+      1,
+    );
+
+    expect(result.map((block) => block.id)).toEqual(["assistant", "compact-divider", "pending"]);
+    expect(streamState.rootBlocks.map((block) => block.id)).toEqual([
+      "assistant",
+      "compact-divider",
+      "pending",
+    ]);
+    expect(streamState.rootBlockPosById.get("assistant")).toBe(0);
+    expect(streamState.rootBlockPosById.get("compact-divider")).toBe(1);
+    expect(streamState.rootBlockPosById.get("pending")).toBe(2);
+  });
+
   it("does not push child appends into rootBlocks but bumps the parent ref", () => {
     const streamState = createStreamingState();
     const parent: AgentBlockData = {

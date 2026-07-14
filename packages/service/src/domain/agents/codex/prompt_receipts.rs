@@ -35,11 +35,22 @@ impl PendingPromptReceipts {
         if method != "item/completed" || !is_root_user_message_item(params, root_thread_id) {
             return None;
         }
-        self.client_message_ids
+        let client_id = params
+            .get("item")
+            .and_then(|item| item.get("clientId"))
+            .and_then(Value::as_str);
+        let mut pending = self
+            .client_message_ids
             .lock()
-            .expect("PendingPromptReceipts poisoned")
-            .pop_front()
-            .map(RuntimeEvent::prompt_received_event)
+            .expect("PendingPromptReceipts poisoned");
+        let received_id = match client_id {
+            Some(client_id) => pending
+                .iter()
+                .position(|id| id == client_id)
+                .and_then(|index| pending.remove(index)),
+            None => pending.pop_front(),
+        };
+        received_id.map(RuntimeEvent::prompt_received_event)
     }
 
     pub(super) fn discard(&self, client_message_id: &str) {
@@ -169,6 +180,56 @@ mod tests {
             Some("client-1".to_string())
         );
         assert!(receipts.front().is_none());
+    }
+
+    #[test]
+    fn completed_user_message_uses_echoed_client_id() {
+        let receipts = PendingPromptReceipts::default();
+        receipts.enqueue("client-1".to_string());
+        receipts.enqueue("client-2".to_string());
+        let params = json!({
+            "threadId": "thread-root",
+            "turnId": "turn-1",
+            "item": {
+                "type": "userMessage",
+                "id": "user-message-2",
+                "clientId": "client-2",
+                "content": [{ "type": "text", "text": "second steer" }]
+            }
+        });
+
+        let event =
+            receipts.acknowledge_completed_user_message("item/completed", &params, "thread-root");
+
+        assert_eq!(
+            event.and_then(|event| event
+                .prompt_received_client_message_id()
+                .map(ToOwned::to_owned)),
+            Some("client-2".to_string())
+        );
+        assert_eq!(receipts.front().as_deref(), Some("client-1"));
+    }
+
+    #[test]
+    fn unknown_echoed_client_id_does_not_consume_pending_receipt() {
+        let receipts = PendingPromptReceipts::default();
+        receipts.enqueue("client-1".to_string());
+        let params = json!({
+            "threadId": "thread-root",
+            "turnId": "turn-1",
+            "item": {
+                "type": "userMessage",
+                "id": "unrelated-user-message",
+                "clientId": "untracked-client",
+                "content": [{ "type": "text", "text": "unrelated" }]
+            }
+        });
+
+        let event =
+            receipts.acknowledge_completed_user_message("item/completed", &params, "thread-root");
+
+        assert!(event.is_none());
+        assert_eq!(receipts.front().as_deref(), Some("client-1"));
     }
 
     #[test]

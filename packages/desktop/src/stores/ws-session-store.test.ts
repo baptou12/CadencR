@@ -422,6 +422,81 @@ describe("ws-session-store", () => {
     expect(userBlock?.promptDeliveryState).toBe("received_agent");
   });
 
+  it("keeps a steering prompt pending after a compact divider until provider replay", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: {
+        session_id: "srv-1",
+        provider: "claude_code",
+        supports_prompt_receipts: true,
+      },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "compacting" }] },
+          },
+        ],
+      },
+    });
+
+    store.sendPrompt("s1", "steer after compaction");
+    const sent = JSON.parse(ws.sent.at(-1) ?? "{}");
+    simulateCanonicalUserMessage(
+      ws,
+      "steer after compaction",
+      sent.payload.message_uuid,
+      "pending_agent",
+    );
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "system",
+            subtype: "compact_boundary",
+            uuid: "compact-1",
+            session_id: "srv-1",
+            compact_metadata: { trigger: "manual" },
+          },
+        ],
+      },
+    });
+
+    let session = useWsSessionStore.getState().sessions.s1;
+    let pendingIndex = session.blocks.findIndex(
+      (block) => block.messageUuid === sent.payload.message_uuid,
+    );
+    const dividerIndex = session.blocks.findIndex((block) => block.type === "compact_divider");
+    expect(pendingIndex).toBeGreaterThan(dividerIndex);
+    expect(session.blocks[pendingIndex].promptDeliveryState).toBe("pending_agent");
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "prompt_received",
+      payload: { message_uuid: sent.payload.message_uuid, delivery_state: "received_agent" },
+    });
+
+    session = useWsSessionStore.getState().sessions.s1;
+    pendingIndex = session.blocks.findIndex(
+      (block) => block.messageUuid === sent.payload.message_uuid,
+    );
+    expect(session.blocks[pendingIndex].promptDeliveryState).toBe("received_agent");
+    expect(pendingIndex).toBeGreaterThan(
+      session.blocks.findIndex((block) => block.type === "compact_divider"),
+    );
+  });
+
   it("keeps a terminal-unknown steering prompt and accepts a late receipt", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
@@ -498,7 +573,9 @@ describe("ws-session-store", () => {
       phase: "terminal",
       reason: "completed",
     });
-    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(true);
+    // The unresolved prompt remains the tail boundary; do not insert a stale
+    // timer below it and then make both rows jump when replay resumes.
+    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(false);
 
     store.sendPrompt("s1", "resume please");
     const resumedPrompt = JSON.parse(ws.sent[ws.sent.length - 1]);
@@ -534,7 +611,7 @@ describe("ws-session-store", () => {
     });
     expect(userBlocks[1]).toMatchObject({ content: "resume please" });
     expect(userBlocks[1].promptDeliveryState).toBeUndefined();
-    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(true);
+    expect(session.blocks.some((block) => block.type === "turn_summary")).toBe(false);
 
     ws.simulateMessage({
       domain: "session",

@@ -1,10 +1,12 @@
+mod input;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient, SdkError};
+use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient};
 use serde_json::Value;
 use tempfile::TempPath;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
@@ -19,11 +21,10 @@ use super::permissions::PendingCodexRequest;
 use super::prompt_receipts::PendingPromptReceipts;
 use super::responses::response_value;
 use super::session_permissions::{
-    is_plan_approval_request_id, permission_kind_for_request_id, plan_approval_prompt, take_pending,
+    is_plan_approval_request_id, permission_kind_for_request_id, take_pending,
 };
 use super::timeouts::with_probe_timeout;
 use super::turn_start::turn_start_params;
-use super::turn_steer_recovery::{steer_failure_recovery, SteerFailureRecovery};
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus,
     RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionResponse,
@@ -100,15 +101,19 @@ impl CodexSession {
 
     pub(super) async fn start_initial_turn(&self, content: Value) -> Result<(), RuntimeError> {
         let input = self.convert_input(content).await?;
-        self.start_turn(input).await
+        self.start_turn(input, None).await
     }
 
-    async fn start_turn(&self, input: Vec<Value>) -> Result<(), RuntimeError> {
+    async fn start_turn(
+        &self,
+        input: Vec<Value>,
+        client_message_id: Option<&str>,
+    ) -> Result<(), RuntimeError> {
         let model = self.model.read().await.clone();
         let effort = self.effort.read().await.clone();
         let permission_mode = self.permission_mode.read().await.clone();
         let access_mode = self.access_mode.read().await.clone();
-        let params = turn_start_params(
+        let mut params = turn_start_params(
             &self.thread_id,
             input,
             &self.cwd,
@@ -117,6 +122,9 @@ impl CodexSession {
             model,
             effort,
         );
+        if let Some(client_message_id) = client_message_id {
+            params["clientUserMessageId"] = Value::String(client_message_id.to_string());
+        }
         let turn = self.client.turn_start(params).await?;
         *self.active_turn_id.write().await = Some(turn.id.clone());
         *self.last_root_turn_id.write().await = Some(turn.id);
@@ -195,8 +203,8 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {
-        let input = self.convert_input(content).await?;
-        self.stream_converted_input(input).await
+        self.stream_input_with_client_message_id(content, None)
+            .await
     }
 
     async fn stream_input_with_client_message_id(
@@ -209,7 +217,13 @@ impl AgentRuntimeSession for CodexSession {
                 .enqueue(client_message_id.clone());
         }
 
-        let result = self.stream_input(content).await;
+        let result = match self.convert_input(content).await {
+            Ok(input) => {
+                self.stream_converted_input(input, client_message_id.as_deref())
+                    .await
+            }
+            Err(error) => Err(error),
+        };
         if result.is_err() {
             if let Some(client_message_id) = client_message_id.as_deref() {
                 self.pending_prompt_receipts.discard(client_message_id);
@@ -310,77 +324,6 @@ fn error_receiver(message: &'static str) -> RuntimeMessageRx {
     let (tx, rx) = mpsc::channel(1);
     let _ = tx.try_send(Err(RuntimeError::new(message)));
     rx
-}
-
-impl CodexSession {
-    async fn stream_converted_input(&self, input: Vec<Value>) -> Result<(), RuntimeError> {
-        let mut recovered_steer_failure = false;
-        loop {
-            let Some(turn_id) = self.active_turn_id.read().await.clone() else {
-                return self.start_turn(input).await;
-            };
-
-            let result = self
-                .client
-                .turn_steer(&self.thread_id, &turn_id, &input)
-                .await;
-            let Err(error) = result else {
-                return Ok(());
-            };
-            if recovered_steer_failure {
-                return Err(RuntimeError::from(error));
-            }
-            if self.recover_steer_failure(&turn_id, &error).await {
-                recovered_steer_failure = true;
-                continue;
-            }
-            return Err(RuntimeError::from(error));
-        }
-    }
-
-    async fn recover_steer_failure(&self, attempted_turn_id: &str, error: &SdkError) -> bool {
-        let Some(recovery) = steer_failure_recovery(error) else {
-            return false;
-        };
-        let mut active_turn_id = self.active_turn_id.write().await;
-        if active_turn_id.as_deref() != Some(attempted_turn_id) {
-            warn!(
-                thread_id = %self.thread_id,
-                attempted_turn_id = %attempted_turn_id,
-                "Codex turn/steer stale failure ignored because active turn changed"
-            );
-            return true;
-        }
-        match recovery {
-            SteerFailureRecovery::StartNewTurn => {
-                warn!(
-                    thread_id = %self.thread_id,
-                    turn_id = %attempted_turn_id,
-                    "Codex turn/steer found no active turn; starting a new turn"
-                );
-                *active_turn_id = None;
-                true
-            }
-            SteerFailureRecovery::RetryWithTurn(found_turn_id) => {
-                warn!(
-                    thread_id = %self.thread_id,
-                    attempted_turn_id = %attempted_turn_id,
-                    found_turn_id = %found_turn_id,
-                    "Codex turn/steer active turn mismatch; retrying with server turn"
-                );
-                *active_turn_id = Some(found_turn_id);
-                true
-            }
-        }
-    }
-
-    async fn respond_plan_approval(
-        &self,
-        response: RuntimePermissionResponse,
-    ) -> Result<(), RuntimeError> {
-        let prompt = plan_approval_prompt(response.decision, response.feedback);
-        self.stream_input(serde_json::Value::String(prompt)).await
-    }
 }
 
 fn spawn_local_forwarder(
