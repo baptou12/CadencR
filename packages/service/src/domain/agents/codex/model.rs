@@ -7,13 +7,6 @@ pub type CodexAccessMode = RuntimeAccessMode;
 pub const ACCESS_MODE_SETTING_KEY: &str = "codex_permission_mode";
 pub const DEFAULT_ACCESS_MODE_WIRE: &str = "default";
 
-pub fn accepts_model(model: &str) -> bool {
-    let trimmed = model.trim();
-    // Codex owns only bare OpenAI-style model ids. Slash-qualified refs
-    // (`provider/model`) stay available to OpenCode via adapter order.
-    !trimmed.contains('/') && (trimmed.starts_with("gpt-") || trimmed.starts_with("codex-"))
-}
-
 pub fn parse_access_mode(mode: Option<&str>) -> RuntimeAccessMode {
     mode.and_then(parse_access_mode_wire)
         .unwrap_or(RuntimeAccessMode::Default)

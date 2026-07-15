@@ -153,9 +153,9 @@ function createConfigurationActions(deps: SimpleSessionActionDeps) {
       sendRaw(sessionId, createProviderSet(session.serverSessionId, providerId));
     },
 
-    setModel(sessionId: string, modelId: string) {
+    setModel(sessionId: string, modelId: string, providerId: string) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createModelSet(session.serverSessionId, modelId));
+      sendRaw(sessionId, createModelSet(session.serverSessionId, modelId, providerId));
     },
 
     setThinkingEffort(sessionId: string, thinkingEffort?: string) {

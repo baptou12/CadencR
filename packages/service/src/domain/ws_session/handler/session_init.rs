@@ -1,4 +1,3 @@
-use super::super::permissions;
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
 use super::{
@@ -6,7 +5,7 @@ use super::{
     thinking_effort, QueryState, SdkHandle, SdkSessions, SessionConfig, WsSender,
 };
 use crate::app_state::AppState;
-use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
+use crate::domain::agents::adapter::RuntimeSpawnConfig;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{resolve_effective_provider, runtime_adapter};
 use crate::domain::settings;
@@ -143,12 +142,19 @@ pub(super) async fn handle_init(
     let stored_model = row.as_ref().and_then(|r| r.model.clone());
     let effective_model = stored_model.clone().or(payload.model.clone());
     let stored_thinking_effort = row.as_ref().and_then(|r| r.thinking_effort.clone());
-    let effective_provider = resolve_effective_provider(
-        runtime_provider
-            .or(payload.provider.clone())
-            .unwrap_or(configured_provider),
-        effective_model.as_deref(),
-    );
+    let selected_provider = runtime_provider.or(payload.provider.clone());
+    let effective_provider = match selected_provider {
+        Some(provider) => provider,
+        None => {
+            resolve_effective_provider(
+                &app_state.read_pool,
+                Some(std::path::Path::new(&cwd)),
+                configured_provider,
+                effective_model.as_deref(),
+            )
+            .await
+        }
+    };
 
     let (effective_thinking_effort, cleared_unsupported_effort) = session_init_effort::resolve(
         app_state,
@@ -182,7 +188,7 @@ pub(super) async fn handle_init(
         return;
     };
 
-    if let Err(error) = thinking_effort::persist_runtime_provider(
+    if let Err(error) = WsSessionPersistence::update_runtime_provider_static(
         &app_state.write_pool,
         db_session_id,
         &effective_provider,
@@ -245,45 +251,16 @@ pub(super) async fn handle_init(
         &configured_codex_access_mode,
     );
     runtime_config.system_prompt = payload.system_prompt.clone();
-    let mut effective_profile: Option<String> = None;
-    if effective_provider == crate::domain::agents::claude_code::PROVIDER_ID {
-        let allow_bypass = super::claude_access::bypass_permissions_enabled(
-            &app_state.read_pool,
-            Some(feature_id),
-            Some(project_id),
-        );
-        let profile = super::session_profile::resolve_initial_claude_profile(
-            app_state,
-            db_session_id,
-            row.as_ref().and_then(|session| session.profile.as_deref()),
-        );
-        let ((profile_name, profile_env), allow_bypass_permissions) =
-            tokio::join!(profile, allow_bypass);
-        effective_profile = Some(profile_name);
-        runtime_config.env = profile_env;
-        runtime_config.allow_bypass_permissions = allow_bypass_permissions;
-        // `bypassPermissions` is the agent-equivalent of running as root, so it
-        // is gated behind the `claude_bypass_permissions_enabled` capability —
-        // the Settings "dangerous mode" toggle, which carries its own
-        // confirmation dialog and is what the live `session.mode.set` path also
-        // checks. When a session asks for bypass without that capability (a
-        // stale mode replayed by the frontend's `reinitOnReconnect`, or a
-        // prompt-injected client) we downgrade to the provider default rather
-        // than reject: spawning `--permission-mode bypassPermissions` without
-        // `--allow-dangerously-skip-permissions` makes the CLI refuse to start,
-        // which would otherwise brick the session in a reconnect loop.
-        if !allow_bypass_permissions
-            && runtime_config.permission_mode == Some(RuntimePermissionMode::BypassPermissions)
-        {
-            tracing::warn!(
-                db_session_id,
-                feature_id,
-                "bypassPermissions requested without claude_bypass_permissions_enabled; \
-                 downgrading to provider default"
-            );
-            runtime_config.permission_mode = Some(default_permission_mode(&effective_provider));
-        }
-    }
+    let effective_profile = super::session_runtime_config::apply_claude_settings(
+        app_state,
+        project_id,
+        feature_id,
+        db_session_id,
+        &effective_provider,
+        row.as_ref().and_then(|session| session.profile.as_deref()),
+        &mut runtime_config,
+    )
+    .await;
 
     info!(
         db_session_id,
@@ -294,18 +271,7 @@ pub(super) async fn handle_init(
     let desired_permission_mode = runtime_config.permission_mode.clone();
     let desired_access_mode = runtime_config.access_mode.clone();
     let desired_thinking_effort = runtime_config.thinking_effort.clone();
-    let canonical_cwd = permissions::canonicalize_worktree(&runtime_config.cwd);
-    let config = SessionConfig {
-        cwd: runtime_config.cwd.clone(),
-        canonical_cwd,
-        permission_mode: runtime_config.permission_mode.clone(),
-        access_mode: runtime_config.access_mode.clone(),
-        thinking_effort: runtime_config.thinking_effort.clone(),
-        system_prompt: runtime_config.system_prompt.clone(),
-        allow_bypass_permissions: runtime_config.allow_bypass_permissions,
-        claude_profile: effective_profile.clone(),
-        env: runtime_config.env.clone(),
-    };
+    let config = SessionConfig::from_runtime(&runtime_config, effective_profile.clone());
     let handle = SdkHandle {
         state: QueryState::Pending(runtime_config),
         feature_id,

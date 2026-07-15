@@ -235,10 +235,6 @@ impl AgentRuntimeAdapter for CodexAdapter {
         permissions::parse_permission_request(raw)
     }
 
-    fn accepts_model(&self, model: &str) -> bool {
-        self::model::accepts_model(model)
-    }
-
     fn catalog_entry(&self) -> ProviderCatalogEntry {
         unavailable_catalog("Codex availability has not been checked yet")
     }
@@ -370,14 +366,6 @@ mod tests {
             ])
         );
         assert_eq!(entry.default_effort_level.as_deref(), Some("low"));
-    }
-
-    #[test]
-    fn accepts_bare_codex_and_gpt_models() {
-        let adapter = CodexAdapter;
-        assert!(adapter.accepts_model("gpt-5.4"));
-        assert!(adapter.accepts_model("codex-mini"));
-        assert!(!adapter.accepts_model("openai/gpt-5.4"));
     }
 
     #[test]

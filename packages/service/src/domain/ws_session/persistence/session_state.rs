@@ -98,6 +98,25 @@ impl WsSessionPersistence {
         Ok(())
     }
 
+    pub async fn update_runtime_provider_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        runtime_provider: &str,
+        clear_thinking_effort: bool,
+    ) -> Result<(), sqlx::Error> {
+        let sql = if clear_thinking_effort {
+            "UPDATE agent_sessions SET runtime_provider = ?, thinking_effort = NULL WHERE id = ?"
+        } else {
+            "UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?"
+        };
+        sqlx::query(sql)
+            .bind(runtime_provider)
+            .bind(session_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Persist (or clear) the conversation-level thinking effort. The per-model
     /// workspace default is updated separately by the caller — this function
     /// only owns the row column. Pass `None` to set NULL (the default cascades

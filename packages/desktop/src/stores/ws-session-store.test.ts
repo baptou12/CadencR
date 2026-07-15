@@ -1350,7 +1350,7 @@ describe("ws-session-store", () => {
     expect(useWsSessionStore.getState().sessions["s1"].currentProviderId).toBe("claude_code");
   });
 
-  it("setModel waits for model.set.ok before mutating local state", async () => {
+  it("setModel sends catalog ownership and waits for model.set.ok", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -1364,8 +1364,14 @@ describe("ws-session-store", () => {
     useWsSessionStore.setState((state) =>
       updateSession(state, "s1", { currentModelId: "opus[1m]" }),
     );
-    store.setModel("s1", "haiku");
+    store.setModel("s1", "haiku", "claude_code");
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+    const request = JSON.parse(ws.sent.at(-1) ?? "{}");
+    expect(request.payload).toMatchObject({
+      session_id: "srv-1",
+      model: "haiku",
+      provider: "claude_code",
+    });
 
     ws.simulateMessage({
       domain: "session",

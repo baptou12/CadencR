@@ -35,6 +35,7 @@ mod session_init_resume;
 mod session_init_worktree;
 mod session_profile;
 pub(crate) mod session_prompt;
+mod session_runtime_config;
 mod thinking_effort;
 mod types;
 

@@ -1,23 +1,14 @@
-use std::sync::Arc;
-
 use axum::extract::ws::Message;
 use tokio::sync::mpsc;
 
 use crate::app_state::AppState;
-use crate::domain::agents::adapter::RuntimeSpawnConfig;
-use crate::domain::agents::resolve_effective_provider;
-use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-use crate::domain::settings;
 use crate::domain::workflow::worktree;
-use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::persistence::{SessionRow, WsSessionPersistence};
 use crate::domain::ws_session::protocol::PromptSendPayload;
 use crate::error::AppError;
 
-use super::super::{
-    default_permission_mode, parse_permission_mode, QueryState, SdkHandle, SdkSessions,
-    SessionConfig, WsSender,
-};
+use super::super::{QueryState, SdkSessions, WsSender};
+use super::control_dispatch_config::build_pending_handle;
 use super::control_dispatch_payload::replay_payload;
 use super::prompt_followup::{handle_followup_prompt, FollowupPromptContext};
 use super::prompt_pending::{handle_pending_prompt, PendingPromptContext};
@@ -118,8 +109,10 @@ async fn ensure_control_pending_handle(
     session_id: i64,
 ) -> Result<(), AppError> {
     let row = require_session_row(&app_state.read_pool, feature_id, session_id).await?;
-    let (project_id, cwd) = project_context(&app_state.read_pool, feature_id).await?;
-    let handle = build_pending_handle(app_state, project_id, cwd, row).await?;
+    let project_id = worktree::get_project_id_for_feature(&app_state.read_pool, feature_id)
+        .await
+        .map_err(AppError::Internal)?;
+    let handle = build_pending_handle(app_state, project_id, row).await?;
     app_state
         .mcp_control_sessions
         .lock()
@@ -207,133 +200,6 @@ async fn require_session_row(
         ));
     }
     Ok(row)
-}
-
-async fn project_context(
-    pool: &sqlx::SqlitePool,
-    feature_id: i64,
-) -> Result<(i64, String), AppError> {
-    Ok(sqlx::query_as(
-        "SELECT projects.id, projects.path
-         FROM features
-         JOIN projects ON projects.id = features.project_id
-         WHERE features.id = ?",
-    )
-    .bind(feature_id)
-    .fetch_one(pool)
-    .await?)
-}
-
-async fn build_pending_handle(
-    app_state: &AppState,
-    project_id: i64,
-    cwd: String,
-    row: SessionRow,
-) -> Result<SdkHandle, AppError> {
-    let provider = effective_provider(app_state, project_id, &row).await;
-    let options = runtime_options(app_state, project_id, &cwd, &provider, &row).await?;
-    let config = session_config(&options);
-    Ok(SdkHandle {
-        state: QueryState::Pending(options),
-        feature_id: row.feature_id,
-        runtime_provider: provider,
-        desired_model: row.model.clone(),
-        spawned_model: None,
-        desired_permission_mode: config.permission_mode.clone(),
-        spawned_permission_mode: None,
-        desired_access_mode: config.access_mode.clone(),
-        spawned_access_mode: None,
-        desired_thinking_effort: row.thinking_effort.clone(),
-        spawned_thinking_effort: None,
-        desired_claude_profile: None,
-        spawned_claude_profile: None,
-        runtime_control_endpoint: None,
-        resume_session_id: row.runtime_session_id.clone(),
-        config,
-        manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        manual_compact_spawn_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    })
-}
-
-async fn effective_provider(app_state: &AppState, project_id: i64, row: &SessionRow) -> String {
-    let configured = settings::resolve_setting(
-        &app_state.read_pool,
-        &crate::domain::agents::runtime::runtime_setting_key("session"),
-        Some(row.feature_id),
-        Some(project_id),
-        Some(DEFAULT_PROVIDER),
-    )
-    .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
-    resolve_effective_provider(
-        row.runtime_provider.clone().unwrap_or(configured),
-        row.model.as_deref(),
-    )
-}
-
-async fn runtime_options(
-    app_state: &AppState,
-    project_id: i64,
-    project_cwd: &str,
-    provider: &str,
-    row: &SessionRow,
-) -> Result<RuntimeSpawnConfig, AppError> {
-    let mut options = RuntimeSpawnConfig::default();
-    options.cwd = runtime_cwd(app_state, row.feature_id, project_cwd).await?;
-    options.model = row.model.clone();
-    options.thinking_effort = row.thinking_effort.clone();
-    options.permission_mode = Some(
-        row.permission_mode
-            .as_deref()
-            .map(parse_permission_mode)
-            .unwrap_or_else(|| default_permission_mode(provider)),
-    );
-    let configured_codex =
-        super::super::codex_access::configured_access_mode(&app_state.read_pool).await;
-    let codex_mode = row
-        .codex_permission_mode
-        .as_deref()
-        .unwrap_or(configured_codex.as_str());
-    options.access_mode = super::super::codex_access::runtime_access_mode(
-        provider,
-        Some(codex_mode),
-        &configured_codex,
-    );
-    if provider == crate::domain::agents::claude_code::PROVIDER_ID {
-        options.allow_bypass_permissions = super::super::claude_access::bypass_permissions_enabled(
-            &app_state.read_pool,
-            Some(row.feature_id),
-            Some(project_id),
-        )
-        .await;
-    }
-    options.resume_session_id = row.runtime_session_id.clone();
-    Ok(options)
-}
-
-async fn runtime_cwd(
-    app_state: &AppState,
-    feature_id: i64,
-    project_cwd: &str,
-) -> Result<std::path::PathBuf, AppError> {
-    worktree::resolve_live_worktree(&app_state.read_pool, feature_id, project_cwd)
-        .await
-        .map(|path| std::path::PathBuf::from(path.unwrap_or_else(|| project_cwd.to_string())))
-        .map_err(AppError::Internal)
-}
-
-fn session_config(options: &RuntimeSpawnConfig) -> SessionConfig {
-    SessionConfig {
-        cwd: options.cwd.clone(),
-        canonical_cwd: permissions::canonicalize_worktree(&options.cwd),
-        permission_mode: options.permission_mode.clone(),
-        access_mode: options.access_mode.clone(),
-        thinking_effort: options.thinking_effort.clone(),
-        system_prompt: options.system_prompt.clone(),
-        allow_bypass_permissions: options.allow_bypass_permissions,
-        claude_profile: None,
-        env: options.env.clone(),
-    }
 }
 
 async fn control_use_worktree(pool: &sqlx::SqlitePool, feature_id: i64) -> Option<bool> {

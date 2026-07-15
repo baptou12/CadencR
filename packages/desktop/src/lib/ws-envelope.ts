@@ -191,10 +191,11 @@ export function createGateClose(
   });
 }
 
-export function createModelSet(sessionId: string, model: string): WsEnvelope {
+export function createModelSet(sessionId: string, model: string, provider: string): WsEnvelope {
   return createEnvelope("session", "model.set", {
     session_id: sessionId,
     model,
+    provider,
   });
 }
 

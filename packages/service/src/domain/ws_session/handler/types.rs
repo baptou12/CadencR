@@ -45,6 +45,27 @@ pub(super) struct SessionConfig {
     pub(super) env: Option<std::collections::HashMap<String, String>>,
 }
 
+impl SessionConfig {
+    pub(super) fn from_runtime(
+        runtime: &RuntimeSpawnConfig,
+        claude_profile: Option<String>,
+    ) -> Self {
+        Self {
+            cwd: runtime.cwd.clone(),
+            canonical_cwd: crate::domain::ws_session::permissions::canonicalize_worktree(
+                &runtime.cwd,
+            ),
+            permission_mode: runtime.permission_mode.clone(),
+            access_mode: runtime.access_mode.clone(),
+            thinking_effort: runtime.thinking_effort.clone(),
+            system_prompt: runtime.system_prompt.clone(),
+            allow_bypass_permissions: runtime.allow_bypass_permissions,
+            claude_profile,
+            env: runtime.env.clone(),
+        }
+    }
+}
+
 /// Handle for a running SDK session, stored per-connection.
 /// Keyed by `i64` (agent_sessions.id). DB is the source of truth for session
 /// config; memory holds only live process state and ephemeral tracking.

@@ -23,8 +23,7 @@ const OPENCODE_MODEL_PROVIDER_PREFIXES: &[&str] = &[
     "xai",
 ];
 
-/// Provider-scoped model refs like `openai/gpt-5.4` are routed through OpenCode.
-/// Plain Claude Code model ids stay on the default runtime.
+/// Parse provider-scoped model refs understood by OpenCode.
 pub fn parse_opencode_model_ref(model: &str) -> Option<(&str, &str)> {
     let trimmed = model.trim();
     let Some((provider_id, model_id)) = trimmed.split_once('/') else {
@@ -35,27 +34,26 @@ pub fn parse_opencode_model_ref(model: &str) -> Option<(&str, &str)> {
         .then_some((provider_id, model_id))
 }
 
-pub fn is_opencode_model_ref(model: &str) -> bool {
-    parse_opencode_model_ref(model).is_some()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::is_opencode_model_ref;
+    use super::parse_opencode_model_ref;
 
     #[test]
     fn detects_provider_scoped_opencode_models() {
-        assert!(is_opencode_model_ref("openai/gpt-5.4"));
-        assert!(is_opencode_model_ref("anthropic/claude-sonnet-4-5"));
-        assert!(is_opencode_model_ref("github-copilot/claude-opus-4.6"));
-        assert!(is_opencode_model_ref("default/default"));
+        assert_eq!(
+            parse_opencode_model_ref("openai/gpt-5.4"),
+            Some(("openai", "gpt-5.4"))
+        );
+        assert!(parse_opencode_model_ref("anthropic/claude-sonnet-4-5").is_some());
+        assert!(parse_opencode_model_ref("github-copilot/claude-opus-4.6").is_some());
+        assert!(parse_opencode_model_ref("default/default").is_some());
     }
 
     #[test]
     fn rejects_plain_and_unknown_model_refs() {
-        assert!(!is_opencode_model_ref("opus"));
-        assert!(!is_opencode_model_ref("claude-opus-4-6"));
-        assert!(!is_opencode_model_ref("folder/model"));
-        assert!(!is_opencode_model_ref("openai/"));
+        assert!(parse_opencode_model_ref("opus").is_none());
+        assert!(parse_opencode_model_ref("claude-opus-4-6").is_none());
+        assert!(parse_opencode_model_ref("folder/model").is_none());
+        assert!(parse_opencode_model_ref("openai/").is_none());
     }
 }

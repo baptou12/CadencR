@@ -87,7 +87,7 @@ export interface WsSessionStore {
   compactSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
   setProvider: (sessionId: string, providerId: string) => void;
-  setModel: (sessionId: string, modelId: string) => void;
+  setModel: (sessionId: string, modelId: string, providerId: string) => void;
   setThinkingEffort: (sessionId: string, thinkingEffort?: string) => void;
   setProfile: (sessionId: string, profile: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;

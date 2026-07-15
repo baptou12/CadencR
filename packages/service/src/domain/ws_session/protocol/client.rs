@@ -113,6 +113,9 @@ pub struct ProviderSetPayload {
 pub struct ModelSetPayload {
     pub session_id: String,
     pub model: String,
+    /// Provider owning the selected catalog entry; optional for older clients.
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

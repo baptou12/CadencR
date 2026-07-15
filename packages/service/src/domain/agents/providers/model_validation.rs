@@ -170,32 +170,33 @@ pub async fn resolve_model_or_error(
     provider_id: &str,
     model_id: &str,
 ) -> Result<(String, ModelCatalogEntry), ProviderModelValidationError> {
+    resolve_model_or_error_for_profile(read_pool, cwd, provider_id, model_id, None).await
+}
+
+/// Validate a provider/model pair against the catalog for the session's
+/// provider-specific profile. Generic callers pass no profile through
+/// [`resolve_model_or_error`].
+pub async fn resolve_model_or_error_for_profile(
+    read_pool: &SqlitePool,
+    cwd: Option<&Path>,
+    provider_id: &str,
+    model_id: &str,
+    profile: Option<&str>,
+) -> Result<(String, ModelCatalogEntry), ProviderModelValidationError> {
     let provider_id = canonical_provider_or_error(provider_id)?;
     let adapter = runtime_adapter(&provider_id).expect("canonical provider has adapter");
-    let catalog = provider_catalog_entry_live_for_settings(read_pool, cwd, None, adapter).await;
-
-    // Canonicalize against the live catalog when it is populated, but degrade to
-    // the adapter's static catalog when the live probe is unavailable (e.g. the
-    // CLI is not installed). Otherwise a family alias like `opus` cannot be
-    // resolved to a concrete id and validation rejects a perfectly valid model.
     let static_catalog = adapter.catalog_entry();
-    let canonicalize_source = if catalog.models.is_empty() {
-        &static_catalog.models
-    } else {
-        &catalog.models
-    };
-    let canonical_model = adapter.canonicalize_model_id(model_id, canonicalize_source);
+    let catalog = provider_catalog_entry_live_for_settings(read_pool, cwd, profile, adapter).await;
+    let known_models =
+        super::merge_extra_models(static_catalog.models.clone(), catalog.models.clone());
 
-    if let Some(catalog_entry) = catalog
-        .models
+    // Live/profile-aware entries replace static metadata on id collision while
+    // static entries remain the fallback when a provider probe is unavailable.
+    let canonical_model = adapter.canonicalize_model_id(model_id, &known_models);
+
+    if let Some(catalog_entry) = known_models
         .iter()
         .find(|model| model.id == canonical_model)
-        .or_else(|| {
-            static_catalog
-                .models
-                .iter()
-                .find(|model| model.id == canonical_model)
-        })
         .cloned()
     {
         return Ok((canonical_model, catalog_entry));
