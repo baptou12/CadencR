@@ -30,6 +30,7 @@ import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
+import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const { setCollapsed } = useSidebarCollapsed();
@@ -231,31 +232,36 @@ function InactiveShortcutHint(): ReactElement {
 }
 
 function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement {
+  // Reserve a dedicated strip for the macOS traffic-light buttons (they sit
+  // at ~y=12 inside `titleBarStyle: "hiddenInset"`) so the lockup below can
+  // never overlap them. Browsers and other platforms have no window controls
+  // here, so they skip the strip.
   return (
-    <div className="titlebar-drag group relative h-16">
-      {/* `pt-3` keeps the logo clear of the macOS traffic-light buttons,
-          which sit at ~y=12 inside `titleBarStyle: "hiddenInset"`. */}
-      <div className="absolute inset-x-0 bottom-0 top-3 flex items-center justify-center">
-        <CadencrLogo className="size-11 mr-2 shrink-0 -translate-y-px" />
-        <span className="font-brand text-2xl font-extrabold uppercase tracking-widest leading-none">
+    <div
+      className={cn("titlebar-drag group flex flex-col", HAS_MAC_WINDOW_CONTROLS ? "h-18" : "h-16")}
+    >
+      {HAS_MAC_WINDOW_CONTROLS && <div className="h-8 shrink-0" />}
+      <div className="relative flex flex-1 items-center justify-center">
+        <CadencrLogo className="mr-2 size-9 shrink-0 -translate-y-px" />
+        <span className="font-brand text-xl font-extrabold uppercase tracking-widest leading-none">
           Cadencr
         </span>
         <AppEnvironmentBadge
-          className="ml-2 self-start mt-2"
+          className="ml-2 -translate-y-2"
           kind={import.meta.env.DEV ? "dev" : "beta"}
         />
-      </div>
-      <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          title="Collapse sidebar (⌘B)"
-          onClick={onCollapse}
-        >
-          <PanelLeftClose className="size-4" />
-          <span className="sr-only">Collapse sidebar</span>
-        </Button>
+        <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            title="Collapse sidebar (⌘B)"
+            onClick={onCollapse}
+          >
+            <PanelLeftClose className="size-4" />
+            <span className="sr-only">Collapse sidebar</span>
+          </Button>
+        </div>
       </div>
     </div>
   );
