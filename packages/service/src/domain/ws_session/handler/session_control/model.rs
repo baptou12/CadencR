@@ -5,22 +5,16 @@ use super::super::super::protocol::*;
 use super::super::helpers::{parse_session_id, send_error};
 use super::super::types::{QueryState, SdkHandle, SdkSessions, WsSender};
 use super::effort::{apply_effort_change, send_effort_set_ok, EffortChangeError};
-use super::session_has_messages;
 use crate::app_state::AppState;
-use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-use crate::domain::agents::{adapter_for_model, runtime_adapter};
+use crate::domain::agents::providers::{
+    canonical_provider_or_error, resolve_model_or_error_for_profile,
+};
+use crate::domain::agents::runtime_adapter;
 
-fn provider_for_model(current_provider: &str, model: &str) -> String {
-    adapter_for_model(model)
-        .map(|(provider_id, _)| provider_id)
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| {
-            if current_provider != DEFAULT_PROVIDER && !model.contains('/') {
-                return DEFAULT_PROVIDER.to_string();
-            }
-
-            current_provider.to_string()
-        })
+struct ModelSetSnapshot {
+    runtime_provider: String,
+    cwd: std::path::PathBuf,
+    claude_profile: Option<String>,
 }
 
 /// Handle session.model.set: change the model and persist to DB.
@@ -34,24 +28,23 @@ pub(crate) async fn handle_model_set(
         return;
     };
 
-    let has_messages = match session_has_messages(&app_state.read_pool, db_session_id).await {
-        Ok(value) => value,
-        Err(error) => {
-            error!(db_session_id, %error, "failed to verify session history before model change");
-            send_error(
-                sender,
-                &envelope.id,
-                "DB_ERROR",
-                "Failed to verify session history",
-            );
-            return;
-        }
-    };
-
     // Reach the map that owns the live runtime, not just this viewer.
     let effective_sessions =
         super::resolve_owner_sessions(sdk_sessions, app_state, db_session_id).await;
     let sdk_sessions = &effective_sessions;
+
+    let Some((snapshot, model)) = validate_model_set(
+        sdk_sessions,
+        app_state,
+        sender,
+        &envelope.id,
+        db_session_id,
+        &payload,
+    )
+    .await
+    else {
+        return;
+    };
 
     let mut sessions = sdk_sessions.lock().await;
     let Some(handle) = sessions.get_mut(&db_session_id) else {
@@ -63,26 +56,32 @@ pub(crate) async fn handle_model_set(
         );
         return;
     };
-    let feature_id = handle.feature_id;
-
-    let target_provider = provider_for_model(&handle.runtime_provider, &payload.model);
-    if has_messages && handle.runtime_provider != target_provider {
+    if handle.runtime_provider != snapshot.runtime_provider {
         send_error(
             sender,
             &envelope.id,
-            "PROVIDER_LOCKED",
-            "Start a new session to switch providers",
+            "PROVIDER_CHANGED",
+            "Provider changed while validating the model; retry the selection",
         );
         return;
     }
-
+    if handle.desired_claude_profile != snapshot.claude_profile {
+        send_error(
+            sender,
+            &envelope.id,
+            "PROFILE_CHANGED",
+            "Profile changed while validating the model; retry the selection",
+        );
+        return;
+    }
+    let feature_id = handle.feature_id;
     let should_clear_effort = super::super::thinking_effort::should_clear_for_model(
-        &target_provider,
-        &payload.model,
+        &snapshot.runtime_provider,
+        &model,
         handle.desired_thinking_effort.as_deref(),
     );
     if let Err(error) =
-        apply_model_to_handle(handle, db_session_id, &target_provider, &payload.model).await
+        apply_model_to_handle(handle, db_session_id, &snapshot.runtime_provider, &model).await
     {
         error!(db_session_id, %error, "failed to set model on active query");
         send_error(sender, &envelope.id, "SDK_ERROR", &error);
@@ -92,11 +91,11 @@ pub(crate) async fn handle_model_set(
     let runtime_provider = handle.runtime_provider.clone();
     drop(sessions);
 
-    let seeded_window = seed_context_window(&payload.model, &runtime_provider).await;
+    let seeded_window = seed_context_window(&model, &runtime_provider).await;
     persist_model_selection(
         app_state,
         db_session_id,
-        &payload.model,
+        &model,
         &runtime_provider,
         seeded_window,
     )
@@ -114,7 +113,7 @@ pub(crate) async fn handle_model_set(
         sender,
         &envelope.id,
         feature_id,
-        payload.model,
+        model,
         seeded_window,
     )
     .await;
@@ -122,6 +121,84 @@ pub(crate) async fn handle_model_set(
     if should_clear_effort {
         send_effort_set_ok(app_state, sender, &envelope.id, feature_id, None).await;
     }
+}
+
+async fn validate_model_set(
+    sessions: &SdkSessions,
+    app_state: &AppState,
+    sender: &WsSender,
+    envelope_id: &str,
+    db_session_id: i64,
+    payload: &ModelSetPayload,
+) -> Option<(ModelSetSnapshot, String)> {
+    let snapshot = {
+        let sessions = sessions.lock().await;
+        let Some(handle) = sessions.get(&db_session_id) else {
+            send_error(
+                sender,
+                envelope_id,
+                "SESSION_NOT_FOUND",
+                "Session not found",
+            );
+            return None;
+        };
+        ModelSetSnapshot {
+            runtime_provider: handle.runtime_provider.clone(),
+            cwd: handle.config.cwd.clone(),
+            claude_profile: handle.desired_claude_profile.clone(),
+        }
+    };
+    if !validate_requested_provider(payload, &snapshot.runtime_provider, sender, envelope_id) {
+        return None;
+    }
+    match resolve_model_or_error_for_profile(
+        &app_state.read_pool,
+        Some(&snapshot.cwd),
+        &snapshot.runtime_provider,
+        &payload.model,
+        snapshot.claude_profile.as_deref(),
+    )
+    .await
+    {
+        Ok((model, _)) => Some((snapshot, model)),
+        Err(error) => {
+            send_error(
+                sender,
+                envelope_id,
+                "MODEL_PROVIDER_MISMATCH",
+                &error.to_string(),
+            );
+            None
+        }
+    }
+}
+
+fn validate_requested_provider(
+    payload: &ModelSetPayload,
+    runtime_provider: &str,
+    sender: &WsSender,
+    envelope_id: &str,
+) -> bool {
+    let Some(requested_provider) = payload.provider.as_deref() else {
+        return true;
+    };
+    let requested_provider = match canonical_provider_or_error(requested_provider) {
+        Ok(provider) => provider,
+        Err(error) => {
+            send_error(sender, envelope_id, "INVALID_PROVIDER", &error.to_string());
+            return false;
+        }
+    };
+    if requested_provider == runtime_provider {
+        return true;
+    }
+    send_error(
+        sender,
+        envelope_id,
+        "PROVIDER_MISMATCH",
+        "Selected model provider does not match the active session provider",
+    );
+    false
 }
 
 fn parse_model_set_request(
@@ -236,10 +313,7 @@ async fn seed_context_window(model: &str, runtime_provider: &str) -> Option<u64>
     // Token counts are NOT reset: the conversation history has not changed,
     // only the model has. The first `result` from the new model will stamp
     // fresh token totals.
-    let target_adapter = adapter_for_model(model)
-        .map(|(_, a)| a)
-        .or_else(|| runtime_adapter(runtime_provider));
-    match target_adapter {
+    match runtime_adapter(runtime_provider) {
         Some(adapter) => adapter.context_window_for_model(model).await,
         None => None,
     }

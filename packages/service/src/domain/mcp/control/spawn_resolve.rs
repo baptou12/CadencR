@@ -33,7 +33,6 @@ pub(super) struct SpawnBranch {
 
 #[derive(Debug, Clone)]
 pub(super) struct SpawnRuntimeSelection {
-    pub(super) provider: Option<String>,
     pub(super) model: Option<String>,
     pub(super) thinking_level: Option<String>,
     pub(super) effective_provider: String,
@@ -191,7 +190,6 @@ pub(super) async fn resolve_spawn_runtime(
     )
     .await?;
     Ok(SpawnRuntimeSelection {
-        provider,
         model,
         thinking_level,
         effective_provider,
@@ -235,7 +233,13 @@ async fn effective_spawn_provider(
     )
     .await
     .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
-    resolve_effective_provider(configured, body.model.as_deref())
+    resolve_effective_provider(
+        &state.read_pool,
+        Some(std::path::Path::new(&target_project.path)),
+        configured,
+        body.model.as_deref(),
+    )
+    .await
 }
 
 fn canonical_codex_permission_mode(raw_mode: &str) -> Result<String, AppError> {

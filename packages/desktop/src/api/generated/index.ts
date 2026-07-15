@@ -1222,8 +1222,15 @@ export interface ModelSetOkPayload {
   model: string;
 }
 
+/**
+ * Provider owning the selected catalog entry; optional for older clients.
+ */
+export type ModelSetPayloadProvider = string | null;
+
 export interface ModelSetPayload {
   model: string;
+  /** Provider owning the selected catalog entry; optional for older clients. */
+  provider?: ModelSetPayloadProvider;
   session_id: string;
 }
 

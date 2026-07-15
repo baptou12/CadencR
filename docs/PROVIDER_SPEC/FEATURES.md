@@ -209,10 +209,10 @@ The user can switch models mid-session. The adapter MUST:
   context-window calculations.
 - Not retroactively rewrite previous turns.
 
-Model ids are bare provider-native ids (e.g. `claude-sonnet-4-7`,
-`gpt-5.5`). Each provider declares which ids it owns via `accepts_model`
-so the adapter router can pick the right adapter when the user selects a
-model.
+Model ids are provider-native ids (e.g. `claude-sonnet-4-7`, `gpt-5.5`).
+The selected provider owns the runtime adapter. Current selections persist the
+provider and model together; legacy model-only selections may fall back to
+exact catalog ownership, never model-family or prefix matching.
 
 ## 10. Permissions: yes / no / always / session
 

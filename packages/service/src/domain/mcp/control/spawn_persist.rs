@@ -23,7 +23,10 @@ pub(super) async fn insert_spawned_session(
          RETURNING id",
     )
     .bind(feature_id)
-    .bind(runtime.provider.as_deref())
+    // Persist the resolved owner even when the request omitted `provider`.
+    // Headless/control dispatch must not need to rediscover ownership before
+    // it can inject provider-specific runtime configuration.
+    .bind(&runtime.effective_provider)
     .bind(runtime.model.as_deref())
     .bind(runtime.thinking_level.as_deref())
     .bind(trimmed_optional(body.permission_mode.as_deref()))
@@ -161,6 +164,53 @@ mod tests {
             wait,
             (777, 888, message_id, "spawn".into(), "pending".into())
         );
+    }
+
+    #[tokio::test]
+    async fn spawned_session_persists_effective_provider_when_request_omits_it() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&MigrationContext {
+            pool: &pool,
+            db_path: None,
+            app_version: None,
+        })
+        .await
+        .unwrap();
+        seed_sessions(&pool).await;
+        let state = AppState::with_pool(pool.clone());
+        let body = SpawnSessionRequest {
+            source_feature_id: 42,
+            source_session_id: 777,
+            title: Some("Child".into()),
+            initial_message: None,
+            branch: None,
+            provider: None,
+            model: Some("gpt-5.6-sol".into()),
+            thinking_level: None,
+            permission_mode: None,
+            codex_permission_mode: None,
+            source_note: None,
+            link_to_current_session: None,
+            await_result: None,
+            target_project_id: Some(7),
+            target_project_path: None,
+        };
+        let runtime = SpawnRuntimeSelection {
+            model: body.model.clone(),
+            thinking_level: None,
+            effective_provider: "claude_code".into(),
+        };
+
+        let session_id = insert_spawned_session(&state, 43, &body, &runtime, None)
+            .await
+            .unwrap();
+        let stored: String =
+            sqlx::query_scalar("SELECT runtime_provider FROM agent_sessions WHERE id = ?")
+                .bind(session_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored, "claude_code");
     }
 
     async fn seed_sessions(pool: &sqlx::SqlitePool) {

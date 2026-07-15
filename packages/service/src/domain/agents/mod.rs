@@ -15,6 +15,6 @@ pub mod runtime;
 
 pub use discovery::apply_binary_overrides_from_settings;
 pub use providers::{
-    adapter_for_model, resolve_effective_provider, runtime_adapter, runtime_session_finished,
+    resolve_effective_provider, runtime_adapter, runtime_session_finished,
     shutdown_runtime_servers, spawn_runtime_startup_warmups,
 };

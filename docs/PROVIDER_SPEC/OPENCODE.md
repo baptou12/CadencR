@@ -265,8 +265,9 @@ on `current_model == new_model` and never reached the wire. Decoupling
 makes the short-circuit fire only when the agent has *actually* been
 told.
 
-`accepts_model` uses `is_opencode_model_ref` which requires a
-`provider/model` shape — bare ids will not be routed to OpenCode.
+Provider selection is explicit for current clients. Legacy model-only
+selections are resolved from exact provider catalog ownership; shared routing
+does not infer OpenCode (or any other provider) from model-id spelling.
 
 ### 10. Permissions: yes / no / always / session
 

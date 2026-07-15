@@ -3,6 +3,113 @@
 use super::support::*;
 
 #[tokio::test]
+async fn claude_custom_gpt_model_keeps_provider_and_profile_env() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+    sqlx::query(
+        "CREATE TABLE claude_code_custom_models (\
+            id INTEGER PRIMARY KEY, model_id TEXT NOT NULL UNIQUE, label TEXT NOT NULL, \
+            description TEXT, supports_effort BOOLEAN, supported_effort_levels_json TEXT, \
+            default_effort_level TEXT, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP\
+        )",
+    )
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+    crate::domain::agents::claude_code::custom_models::upsert_custom_model(
+        &app_state.write_pool,
+        "gpt-5.6-sol",
+        "GPT-5.6 (CLIProxyAPI)",
+        None,
+        crate::domain::agents::claude_code::custom_models::CustomModelEffort::default(),
+    )
+    .await
+    .unwrap();
+    let profile_env = HashMap::from([
+        (
+            "ANTHROPIC_BASE_URL".to_string(),
+            "http://localhost:8317".to_string(),
+        ),
+        (
+            "ANTHROPIC_AUTH_TOKEN".to_string(),
+            "proxy-token".to_string(),
+        ),
+    ]);
+    crate::domain::agents::claude_code::profiles::upsert_profile("routing-proxy", &profile_env)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_sessions \
+         (feature_id, agent_type, status, model, profile) \
+         VALUES (1, 'session', 'paused', 'gpt-5.6-sol', 'routing-proxy')",
+    )
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+
+    let session_id = init_session_with_payload(
+        &tx,
+        &mut rx,
+        &sdk_sessions,
+        &app_state,
+        SessionInitPayload {
+            provider: None,
+            model: None,
+            thinking_effort: None,
+            permission_mode: None,
+            system_prompt: None,
+            cwd: Some("/tmp/test".to_string()),
+            feature_id: Some(1),
+        },
+    )
+    .await;
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&session_id.parse::<i64>().unwrap()).unwrap();
+    assert_eq!(handle.runtime_provider, "claude_code");
+    assert_eq!(
+        handle.desired_claude_profile.as_deref(),
+        Some("routing-proxy")
+    );
+    assert_eq!(handle.config.env.as_ref(), Some(&profile_env));
+    drop(sessions);
+    crate::domain::agents::claude_code::profiles::delete_profile("routing-proxy")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn explicitly_selected_codex_keeps_same_bare_gpt_model() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+
+    let session_id = init_session_with_payload(
+        &tx,
+        &mut rx,
+        &sdk_sessions,
+        &app_state,
+        SessionInitPayload {
+            provider: Some("codex_cli".to_string()),
+            model: Some("gpt-5.6-sol".to_string()),
+            thinking_effort: None,
+            permission_mode: None,
+            system_prompt: None,
+            cwd: Some("/tmp/test".to_string()),
+            feature_id: Some(1),
+        },
+    )
+    .await;
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&session_id.parse::<i64>().unwrap()).unwrap();
+    assert_eq!(handle.runtime_provider, "codex_cli");
+    assert_eq!(handle.desired_model.as_deref(), Some("gpt-5.6-sol"));
+    assert!(handle.config.env.is_none());
+}
+
+#[tokio::test]
 async fn init_reuses_existing_session_profile_instead_of_global_profile() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));

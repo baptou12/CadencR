@@ -63,10 +63,6 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         })
     }
 
-    fn accepts_model(&self, model: &str) -> bool {
-        crate::domain::agents::model_refs::is_opencode_model_ref(model)
-    }
-
     fn catalog_entry(&self) -> crate::domain::agents::runtime::ProviderCatalogEntry {
         super::providers::opencode::catalog_entry()
     }

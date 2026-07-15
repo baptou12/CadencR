@@ -1,4 +1,4 @@
-use crate::domain::agents::{adapter_for_model, runtime_adapter};
+use crate::domain::agents::runtime_adapter;
 
 pub(super) fn should_clear_for_model(
     runtime_provider: &str,
@@ -9,9 +9,7 @@ pub(super) fn should_clear_for_model(
         return false;
     };
 
-    adapter_for_model(model_id)
-        .map(|(_, adapter)| adapter)
-        .or_else(|| runtime_adapter(runtime_provider))
+    runtime_adapter(runtime_provider)
         .and_then(|adapter| adapter.supports_thinking_effort_level(model_id, effort))
         == Some(false)
 }
@@ -30,23 +28,4 @@ pub(super) fn filter_for_model(
     }
 
     (None, true)
-}
-
-pub(super) async fn persist_runtime_provider(
-    pool: &sqlx::SqlitePool,
-    db_session_id: i64,
-    runtime_provider: &str,
-    clear_thinking_effort: bool,
-) -> Result<(), sqlx::Error> {
-    let sql = if clear_thinking_effort {
-        "UPDATE agent_sessions SET runtime_provider = ?, thinking_effort = NULL WHERE id = ?"
-    } else {
-        "UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?"
-    };
-    sqlx::query(sql)
-        .bind(runtime_provider)
-        .bind(db_session_id)
-        .execute(pool)
-        .await?;
-    Ok(())
 }

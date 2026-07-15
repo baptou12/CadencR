@@ -30,12 +30,6 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         None
     }
 
-    /// Returns true if this adapter should handle the given model string.
-    /// Used for automatic provider routing when the user selects a model.
-    fn accepts_model(&self, _model: &str) -> bool {
-        false
-    }
-
     /// Resolve a resume session ID from the DB-stored runtime_session_id.
     /// The default accepts any string. Override to apply validation (e.g. UUID-only).
     fn resolve_resume_session_id(&self, runtime_session_id: Option<&str>) -> Option<String> {
@@ -43,6 +37,10 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     }
 
     /// Static catalog entry (available immediately at startup).
+    ///
+    /// Model entries are owned by this adapter. Shared legacy resolution uses
+    /// exact catalog membership rather than inferring ownership from model-id
+    /// spelling.
     fn catalog_entry(&self) -> super::super::runtime::ProviderCatalogEntry;
 
     /// Canonicalize a requested model id against this provider's catalog.

@@ -89,7 +89,7 @@ export interface UseWebSocketSessionReturn {
   runtimeSessionId: string;
   mcpServers: McpServerStatus[] | null;
   hasFileChanges: boolean;
-  setModel: (modelId: string) => void;
+  setModel: (modelId: string, providerId: string) => void;
   setThinkingEffort: (thinkingEffort?: string) => void;
   setProfile: (profile: string) => void;
   setProvider: (providerId: string) => void;
@@ -261,7 +261,8 @@ function useSessionActions(sessionId: string): SessionActions {
       compactSession: (): void => s.compactSession(sessionId),
       initSession: (config: SessionConfig): void => s.initSession(sessionId, config),
       setProvider: (providerId: string): void => s.setProvider(sessionId, providerId),
-      setModel: (modelId: string): void => s.setModel(sessionId, modelId),
+      setModel: (modelId: string, providerId: string): void =>
+        s.setModel(sessionId, modelId, providerId),
       setThinkingEffort: (thinkingEffort?: string): void =>
         s.setThinkingEffort(sessionId, thinkingEffort),
       setProfile: (profile: string): void => s.setProfile(sessionId, profile),

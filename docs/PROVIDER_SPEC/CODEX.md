@@ -22,7 +22,7 @@ unidirectional notifications for streaming events
 | 6 | Sub-agents | ✅ | Both raw `spawn_agent` function_call and `collabAgentToolCall { tool: "spawnAgent" }`; `SubagentRegistry` stamps `parent_tool_use_id` on every child event. |
 | 7 | Todo | ✅ | `turn/plan/updated` mapped to `TodoWrite` with status normalized to snake_case; index reused for in-place updates. |
 | 8 | Thinking level changes | ✅ | `effort` parameter on every `turn/start`; also surfaced via `collaborationMode.settings.reasoning_effort`. Stored in `CodexSession.effort`. |
-| 9 | Model selection changes | ✅ | `model` parameter on every `turn/start`. `accepts_model` filters to bare `gpt-*` / `codex-*` ids. |
+| 9 | Model selection changes | ✅ | `model` parameter on every `turn/start`; provider selection and Codex catalog ownership determine the adapter. |
 | 10 | Permissions: yes / no / always / session | ✅ | ServerRequest bridged to `permission_bridge`; decisions map to `accept` / `acceptForSession` / `decline` / `cancel`. `AllowFuture` available where the request advertises it (Bash, ApplyPatch, NetworkAccess, MCP elicitation). |
 | 11 | MCP | ✅ | Servers passed in `thread/start.config.mcp_servers`; tool names normalized to `mcp__<server>__<tool>`. Status from `mcp_server_status_list`. Cadencr-managed servers receive `CADENCR_MCP_APPROVAL_MODE`. |
 | 12 | Plan approval | ✅ | `item/completed` for type `Plan` synthesizes an `ExitPlanMode` `ToolUse` plus a `PlanApproval` permission request. |
@@ -194,15 +194,9 @@ next `turn/start` call sends it. There is no mid-turn change.
 `turn/start.params.model` carries the model on every turn; held in
 `CodexSession.model: Arc<RwLock<Option<String>>>`.
 
-`codex/model.rs::accepts_model` declares which model ids belong to
-this adapter:
-
-```rust
-!trimmed.contains('/') && (trimmed.starts_with("gpt-") || trimmed.starts_with("codex-"))
-```
-
-Slash-qualified ids (`anthropic/sonnet`, …) stay available to
-OpenCode by adapter-router order.
+The selected `codex_cli` provider owns the adapter. Legacy model-only
+selections use exact provider catalog ownership; Codex is never inferred from
+`gpt-` or `codex-` prefixes in shared routing.
 
 ### 10. Permissions: yes / no / always / session
 

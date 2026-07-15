@@ -1,16 +1,20 @@
 mod model_validation;
 pub(crate) mod opencode;
+mod ownership;
 
 use sqlx::SqlitePool;
 use std::path::Path;
+use std::time::Duration;
 
 use super::adapter::AgentRuntimeAdapter;
 use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, ProviderStatus, DEFAULT_PROVIDER};
 
+const LEGACY_OWNERSHIP_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub use model_validation::{
     canonical_provider_or_error, model_supports_thinking_level, provider_alias_metadata,
-    provider_aliases, provider_model_catalog_entry, resolve_model_or_error, valid_provider_ids,
-    validate_thinking_level_or_error,
+    provider_aliases, provider_model_catalog_entry, resolve_model_or_error,
+    resolve_model_or_error_for_profile, valid_provider_ids, validate_thinking_level_or_error,
 };
 
 /// All registered runtime adapters. Add new providers here.
@@ -33,35 +37,66 @@ pub fn runtime_adapter(provider_id: &str) -> Option<&'static dyn AgentRuntimeAda
         .map(|(_, adapter)| *adapter)
 }
 
-/// Find the adapter that claims a given model string (for auto-routing).
-pub fn adapter_for_model(model: &str) -> Option<(&'static str, &'static dyn AgentRuntimeAdapter)> {
-    ADAPTERS
-        .iter()
-        .find(|(_, adapter)| adapter.accepts_model(model))
-        .map(|(id, adapter)| (*id, *adapter))
-}
-
-/// Resolve the effective provider for a (configured_provider, model) pair.
+/// Resolve a legacy model-only selection from provider-owned catalog entries.
 ///
-/// Users commonly change *just* the model — e.g. at project level they pick
-/// `openai/gpt-5.4` — without touching the provider setting, which stays at
-/// the default. When that happens, route to the adapter that owns the model
-/// so the agent actually spawns on the right backend. Explicit non-default
-/// provider choices are always preserved.
-pub fn resolve_effective_provider(provider_id: String, model: Option<&str>) -> String {
-    if provider_id == DEFAULT_PROVIDER {
-        if let Some(model) = model {
-            if let Some((adapter_id, _)) = adapter_for_model(model) {
-                return adapter_id.to_string();
-            }
+/// Modern callers persist or send the provider alongside the model. This
+/// fallback exists for older selections that only stored a model. The selected
+/// provider wins whenever its catalog owns the model; otherwise a unique
+/// catalog owner may adopt it. Model spelling never participates in routing.
+pub async fn resolve_effective_provider(
+    read_pool: &SqlitePool,
+    cwd: Option<&Path>,
+    provider_id: String,
+    model: Option<&str>,
+) -> String {
+    // A non-default configured provider is an explicit user selection. The
+    // legacy ownership fallback only exists for historical model-only rows
+    // whose provider remained at the original default.
+    if provider_id != DEFAULT_PROVIDER {
+        return provider_id;
+    }
+    let Some(model) = model else {
+        return provider_id;
+    };
+    if let Some(adapter) = runtime_adapter(&provider_id) {
+        if adapter
+            .catalog_entry()
+            .models
+            .iter()
+            .any(|entry| entry.id == model)
+        {
+            return provider_id;
+        }
+        if adapter
+            .extra_models(read_pool)
+            .await
+            .iter()
+            .any(|entry| entry.id == model)
+        {
+            return provider_id;
         }
     }
-    provider_id
+    let catalogs = match tokio::time::timeout(
+        LEGACY_OWNERSHIP_TIMEOUT,
+        provider_catalog_entries_live_for_cwd(read_pool, cwd, None),
+    )
+    .await
+    {
+        Ok(catalogs) => catalogs,
+        Err(_) => {
+            tracing::warn!(
+                model,
+                "legacy model ownership lookup timed out; preserving provider"
+            );
+            return provider_id;
+        }
+    };
+    ownership::resolve_catalog_provider(provider_id, model, &catalogs)
 }
 
 /// Merge user-contributed `extra_models` into an adapter's model list. User
 /// entries win on id collision so descriptions and labels can be overridden.
-fn merge_extra_models(
+pub(super) fn merge_extra_models(
     mut base: Vec<ModelCatalogEntry>,
     extra: Vec<ModelCatalogEntry>,
 ) -> Vec<ModelCatalogEntry> {
@@ -122,9 +157,6 @@ pub(super) async fn provider_catalog_entry_live_for_settings(
     let mut entry = adapter
         .catalog_entry_live_for_settings(read_pool, cwd, profile)
         .await;
-    if entry.status != ProviderStatus::Available {
-        return entry;
-    }
     let extra = adapter.extra_models(read_pool).await;
     if !extra.is_empty() {
         entry.models = merge_extra_models(entry.models, extra);
@@ -188,8 +220,8 @@ pub async fn runtime_session_finished_text(
 #[cfg(test)]
 mod tests {
     use super::{
-        adapter_for_model, merge_extra_models, notify_worktree_created_for_all_providers,
-        resolve_effective_provider, runtime_adapter, ADAPTERS,
+        merge_extra_models, notify_worktree_created_for_all_providers, resolve_effective_provider,
+        runtime_adapter, ADAPTERS,
     };
     use crate::domain::agents::runtime::ModelCatalogEntry;
 
@@ -221,30 +253,6 @@ mod tests {
     }
 
     #[test]
-    fn adapter_for_model_routes_opencode_refs() {
-        let (id, _) = adapter_for_model("openai/gpt-5.4").expect("should find opencode adapter");
-        assert_eq!(id, "opencode");
-    }
-
-    #[test]
-    fn adapter_for_model_routes_github_copilot_refs_to_opencode() {
-        let (id, _) = adapter_for_model("github-copilot/claude-opus-4.6")
-            .expect("should find opencode adapter");
-        assert_eq!(id, "opencode");
-    }
-
-    #[test]
-    fn adapter_for_model_routes_bare_gpt_models_to_codex() {
-        let (id, _) = adapter_for_model("gpt-5.4").expect("should find codex adapter");
-        assert_eq!(id, "codex_cli");
-    }
-
-    #[test]
-    fn adapter_for_model_returns_none_for_plain_claude_models() {
-        assert!(adapter_for_model("claude-opus-4-6").is_none());
-    }
-
-    #[test]
     fn all_adapters_have_catalog_entries() {
         for (id, adapter) in ADAPTERS {
             let entry = adapter.catalog_entry();
@@ -252,38 +260,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn resolve_effective_provider_reroutes_default_when_model_belongs_to_other_adapter() {
-        let routed = resolve_effective_provider("claude_code".to_string(), Some("openai/gpt-5.4"));
-        assert_eq!(routed, "opencode");
-    }
-
-    #[test]
-    fn resolve_effective_provider_reroutes_default_for_github_copilot_models() {
-        let routed = resolve_effective_provider(
-            "claude_code".to_string(),
-            Some("github-copilot/claude-opus-4.6"),
-        );
-        assert_eq!(routed, "opencode");
-    }
-
-    #[test]
-    fn resolve_effective_provider_preserves_default_for_native_claude_model() {
-        let routed = resolve_effective_provider("claude_code".to_string(), Some("claude-opus-4-6"));
-        assert_eq!(routed, "claude_code");
-    }
-
-    #[test]
-    fn resolve_effective_provider_preserves_explicit_non_default_provider() {
-        // User explicitly chose opencode — don't rewrite even if the model looks claude-ish
-        let routed = resolve_effective_provider("opencode".to_string(), Some("claude-opus-4-6"));
-        assert_eq!(routed, "opencode");
-    }
-
-    #[test]
-    fn resolve_effective_provider_without_model_is_passthrough() {
-        let routed = resolve_effective_provider("claude_code".to_string(), None);
-        assert_eq!(routed, "claude_code");
+    #[tokio::test]
+    async fn explicit_non_default_provider_never_enters_legacy_catalog_routing() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let provider =
+            resolve_effective_provider(&pool, None, "opencode".to_string(), Some("opus")).await;
+        assert_eq!(provider, "opencode");
     }
 
     #[tokio::test]
