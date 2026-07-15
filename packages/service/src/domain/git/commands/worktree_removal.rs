@@ -14,6 +14,21 @@ use super::worktree_health::get_worktree_info;
 static REMOVAL_ID: AtomicU64 = AtomicU64::new(0);
 const CLEANUP_ATTEMPTS: usize = 3;
 
+pub async fn require_registered_worktree(
+    repo_path: &Path,
+    requested_path: &Path,
+) -> Result<(), AppError> {
+    if get_worktree_info(repo_path, requested_path)
+        .await?
+        .is_some()
+    {
+        return Ok(());
+    }
+    Err(AppError::BadRequest(
+        "Worktree is not registered for the selected project".into(),
+    ))
+}
+
 /// Remove a Git worktree. Safe mode preserves Git's dirty-worktree refusal but
 /// finishes cleanup if Git detaches metadata before hitting the common
 /// directory-not-empty race. Force mode also removes already-unregistered
@@ -73,9 +88,35 @@ async fn resolve_removal_root(path: &Path) -> PathBuf {
 
 fn managed_worktree_root(path: &Path) -> Option<PathBuf> {
     let root = default_worktrees_root().ok()?;
-    let canonical_root = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
-    let comparable = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    managed_child_root(&canonical_root, &comparable).or_else(|| managed_child_root(&root, path))
+    managed_worktree_root_under(&root, path)
+}
+
+fn managed_worktree_root_under(root: &Path, path: &Path) -> Option<PathBuf> {
+    let canonical_root = std::fs::canonicalize(root).ok()?;
+    let relative = path
+        .strip_prefix(root)
+        .or_else(|_| path.strip_prefix(&canonical_root))
+        .ok()?;
+    let candidate = managed_child_root(&canonical_root, &canonical_root.join(relative))?;
+
+    match std::fs::canonicalize(&candidate) {
+        Ok(canonical_candidate) if canonical_candidate == candidate => Some(candidate),
+        Ok(_) => None,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            validate_missing_candidate_parent(&candidate)
+        }
+        Err(_) => None,
+    }
+}
+
+fn validate_missing_candidate_parent(candidate: &Path) -> Option<PathBuf> {
+    let parent = candidate.parent()?;
+    match std::fs::canonicalize(parent) {
+        Ok(canonical_parent) if canonical_parent == parent => Some(candidate.to_path_buf()),
+        Ok(_) => None,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some(candidate.to_path_buf()),
+        Err(_) => None,
+    }
 }
 
 fn managed_child_root(root: &Path, path: &Path) -> Option<PathBuf> {
@@ -162,7 +203,7 @@ mod tests {
 
     async fn repository_with_commit(root: &Path) -> PathBuf {
         let repo = root.join("repo");
-        std::fs::create_dir(&repo).unwrap();
+        std::fs::create_dir_all(&repo).unwrap();
         for args in [
             &["init"][..],
             &["config", "user.email", "test@example.com"],
@@ -232,5 +273,75 @@ mod tests {
             managed_child_root(root, &root.join("../outside/worktree")),
             None
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn managed_root_rejects_symlinked_project_that_escapes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        let outside = dir.path().join("outside");
+        let victim = outside.join("victim");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&victim).unwrap();
+        std::fs::write(victim.join("keep.txt"), "keep").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("project")).unwrap();
+
+        assert_eq!(
+            managed_worktree_root_under(&root, &root.join("project/victim")),
+            None
+        );
+        assert_eq!(
+            managed_worktree_root_under(&root, &root.join("project/victim/missing")),
+            None
+        );
+        assert_eq!(
+            std::fs::read_to_string(victim.join("keep.txt")).unwrap(),
+            "keep"
+        );
+    }
+
+    #[test]
+    fn managed_root_keeps_missing_in_root_cleanup_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        std::fs::create_dir_all(&root).unwrap();
+        let missing = root.join("project/missing");
+        let canonical_missing = std::fs::canonicalize(&root)
+            .unwrap()
+            .join("project/missing");
+
+        assert_eq!(
+            managed_worktree_root_under(&root, &missing),
+            Some(canonical_missing)
+        );
+    }
+
+    #[tokio::test]
+    async fn registration_check_rejects_another_repository_worktree() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_a = repository_with_commit(&dir.path().join("a")).await;
+        let repo_b = repository_with_commit(&dir.path().join("b")).await;
+        let worktree = dir.path().join("repo-b-worktree");
+        crate::shared::git_cli::run_git(
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature/owned-by-b",
+                worktree.to_str().unwrap(),
+            ],
+            &repo_b,
+        )
+        .await
+        .unwrap();
+
+        assert!(require_registered_worktree(&repo_a, &worktree)
+            .await
+            .is_err());
+        require_registered_worktree(&repo_b, &worktree)
+            .await
+            .unwrap();
+        assert!(worktree.join("README.md").exists());
     }
 }

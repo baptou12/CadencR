@@ -61,6 +61,45 @@ pub(super) fn normalize_git_path(path: &str) -> String {
         .to_string()
 }
 
+pub(super) async fn ensure_feature_belongs_to_project(
+    pool: &sqlx::SqlitePool,
+    feature_id: i64,
+    project_id: i64,
+) -> Result<(), AppError> {
+    match repository::get_feature_type_and_project(pool, feature_id).await? {
+        Some((actual_project_id, _)) if actual_project_id == project_id => Ok(()),
+        Some(_) => Err(AppError::BadRequest(format!(
+            "Feature {feature_id} does not belong to project {project_id}"
+        ))),
+        None => Err(AppError::NotFound(format!(
+            "Feature not found: {feature_id}"
+        ))),
+    }
+}
+
+pub(super) fn dirty_worktree_response() -> crate::domain::git::models::SuccessResponse {
+    crate::domain::git::models::SuccessResponse {
+        success: false,
+        error: Some("Worktree has uncommitted or untracked changes".into()),
+        blocked_reason: Some("dirty_worktree".into()),
+    }
+}
+
+pub(super) fn error_response(err: AppError) -> crate::domain::git::models::SuccessResponse {
+    crate::domain::git::models::SuccessResponse {
+        success: false,
+        error: Some(err.to_string()),
+        blocked_reason: None,
+    }
+}
+
+pub(super) fn is_dirty_worktree_remove_error(err: &AppError) -> bool {
+    let message = err.to_string();
+    message.contains("contains modified or untracked files")
+        || message.contains("has local modifications")
+        || message.contains("use --force")
+}
+
 /// Resolve the live git directory for a feature. A stale worktree setting can
 /// point at a deleted directory or at residual files left after Git detached
 /// the worktree; both cases fall back to the project path.
@@ -133,5 +172,31 @@ pub(super) mod test_support {
         .await
         .unwrap();
         pool
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn feature_project_guard_rejects_mismatched_project() {
+        let pool = test_support::setup_diff_refs_schema().await;
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 7, 'feature')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        ensure_feature_belongs_to_project(&pool, 1, 7)
+            .await
+            .unwrap();
+        assert!(matches!(
+            ensure_feature_belongs_to_project(&pool, 1, 8).await,
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            ensure_feature_belongs_to_project(&pool, 999, 7).await,
+            Err(AppError::NotFound(_))
+        ));
     }
 }

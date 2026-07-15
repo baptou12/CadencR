@@ -47,4 +47,4 @@ pub use worktree_ops::{
     create_worktree, has_uncommitted_changes, list_local_branches, list_worktree_branches,
     list_worktrees,
 };
-pub use worktree_removal::remove_worktree;
+pub use worktree_removal::{remove_worktree, require_registered_worktree};

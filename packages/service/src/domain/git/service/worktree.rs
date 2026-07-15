@@ -11,14 +11,17 @@ use crate::domain::git::worktree_context::{
 use crate::error::AppError;
 
 use super::{
-    migrate_provider_config_for_context, normalize_git_path, SETTING_WORKTREE_BRANCH,
-    SETTING_WORKTREE_PATH,
+    dirty_worktree_response, ensure_feature_belongs_to_project, error_response,
+    is_dirty_worktree_remove_error, migrate_provider_config_for_context, normalize_git_path,
+    SETTING_WORKTREE_BRANCH, SETTING_WORKTREE_PATH,
 };
 
 pub async fn get_worktree_info(
     state: &AppState,
     params: WorktreeInfoParams,
 ) -> Result<Option<WorktreeInfo>, AppError> {
+    ensure_feature_belongs_to_project(&state.read_pool, params.feature_id, params.project_id)
+        .await?;
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
     let wt_path =
         repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH)
@@ -34,6 +37,7 @@ pub async fn create_worktree(
     state: &AppState,
     body: CreateWorktreeBody,
 ) -> Result<CreateWorktreeResponse, AppError> {
+    ensure_feature_belongs_to_project(&state.read_pool, body.feature_id, body.project_id).await?;
     let project_path = repository::get_project_path(&state.read_pool, body.project_id).await?;
     let project_name = repository::get_project_name(&state.read_pool, body.project_id).await?;
     let prefix = repository::get_branch_prefix(&state.read_pool, body.project_id).await?;
@@ -72,6 +76,8 @@ pub async fn remove_worktree(
     state: &AppState,
     params: RemoveWorktreeParams,
 ) -> Result<SuccessResponse, AppError> {
+    ensure_feature_belongs_to_project(&state.read_pool, params.feature_id, params.project_id)
+        .await?;
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
     let wt_path =
         repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH)
@@ -101,6 +107,8 @@ pub async fn delete_worktree(
     state: &AppState,
     params: DeleteWorktreeParams,
 ) -> Result<SuccessResponse, AppError> {
+    ensure_feature_belongs_to_project(&state.read_pool, params.feature_id, params.project_id)
+        .await?;
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
     let wt_path =
         repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH)
@@ -138,6 +146,7 @@ pub async fn retry_worktree_setup(
     state: &AppState,
     body: RetryWorktreeBody,
 ) -> Result<SuccessResponse, AppError> {
+    ensure_feature_belongs_to_project(&state.read_pool, body.feature_id, body.project_id).await?;
     let project_path = repository::get_project_path(&state.read_pool, body.project_id).await?;
     let project_name = repository::get_project_name(&state.read_pool, body.project_id).await?;
 
@@ -317,6 +326,14 @@ pub async fn remove_orphan_worktree(
     if is_default_worktree_path(&project_path, &body.worktree_path) {
         return Ok(default_worktree_blocked());
     }
+    if let Err(error) = commands::require_registered_worktree(
+        Path::new(&project_path),
+        Path::new(&body.worktree_path),
+    )
+    .await
+    {
+        return Ok(error_response(error));
+    }
     match commands::remove_worktree(
         Path::new(&project_path),
         Path::new(&body.worktree_path),
@@ -367,27 +384,4 @@ async fn create_and_migrate_worktree(
     .map_err(AppError::Internal)?;
     migrate_provider_config_for_context(&context).await?;
     Ok((context, branch))
-}
-
-pub(super) fn dirty_worktree_response() -> SuccessResponse {
-    SuccessResponse {
-        success: false,
-        error: Some("Worktree has uncommitted or untracked changes".into()),
-        blocked_reason: Some("dirty_worktree".into()),
-    }
-}
-
-pub(super) fn error_response(err: AppError) -> SuccessResponse {
-    SuccessResponse {
-        success: false,
-        error: Some(err.to_string()),
-        blocked_reason: None,
-    }
-}
-
-pub(super) fn is_dirty_worktree_remove_error(err: &AppError) -> bool {
-    let message = err.to_string();
-    message.contains("contains modified or untracked files")
-        || message.contains("has local modifications")
-        || message.contains("use --force")
 }
