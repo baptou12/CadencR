@@ -21,9 +21,10 @@ Follow these steps exactly:
    `project_list_agent_providers` if the requested provider/model needs to be
    resolved.
 4. Transfer the brief to the target:
-   - Normally call `project_spawn_session` with `project_id`, an appropriate
-     `title`, the selected `provider` / `model`, `link_to_current_session: true`,
-     `source_note: "cadencr:handoff"`, and the handoff brief as `initial_message`.
+   - For a new target, first call `project_spawn_session` with `project_id`, an
+     appropriate `title`, the selected `provider` / `model`,
+     `link_to_current_session: true`, `source_note: "cadencr:handoff"`, and the
+     handoff brief as `initial_message`.
    - Use `branch`: `{ "mode": "reuse_worktree", "reuse_branch": "<current branch>" }`
      when the successor should continue the exact same work, including
      uncommitted changes. Use `{ "mode": "new_worktree", "base": "<current branch
@@ -32,12 +33,14 @@ Follow these steps exactly:
      `project_send_session_message` and `reply: "on_turn_end"`.
    - Set `await_result: true` only when the caller wants the successor's first
      result returned as a `<cadencr-reply>`; otherwise do not wait.
-5. Ensure the relationship is recorded as a handoff. The spawn link records the
-   spawned relationship; also call `project_link_sessions` with
-   `target_session_id: <the spawned or existing target session id>`,
-   `link_type: "handoff"`, and `note: "cadencr:handoff"`. The tool uses the
-   current session as the source, so gate escalation and sidebar nesting treat
-   the target as its handoff successor.
+5. Ensure the relationship is recorded as a handoff. Only after
+   `project_spawn_session` succeeds, read the new session id from its response
+   and call `project_link_sessions` with that exact id as `target_session_id`,
+   `link_type: "handoff"`, and `note: "cadencr:handoff"`. For an existing target,
+   link its id after the message succeeds. The tool uses the current session as
+   the source, so gate escalation and sidebar nesting treat the target as its
+   handoff successor. A new-session handoff is not successful until both the
+   spawn call and this explicit handoff-link call succeed.
 6. Report the target session id and feature/title to the user, noting whether it
    was newly spawned or already existed. If you awaited a result, relay the
    `<cadencr-reply>` when it arrives.

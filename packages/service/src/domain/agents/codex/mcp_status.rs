@@ -16,30 +16,38 @@ pub(super) async fn mcp_server_statuses(
     startup_events: &mut broadcast::Receiver<AppServerEvent>,
     expected_names: &[String],
 ) -> Vec<RuntimeMcpServerStatus> {
-    let listed = match with_probe_timeout(
+    let (listed, startup_pending) = match with_probe_timeout(
         "Codex mcpServerStatus/list",
         client.available_mcp_servers(),
     )
     .await
     {
-        Ok(response) => parse_mcp_server_statuses(&response, expected_names),
+        Ok(response) => {
+            let startup_pending = startup_pending_expected_names(&response, expected_names);
+            (
+                parse_mcp_server_statuses(&response, expected_names),
+                startup_pending,
+            )
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to read Codex MCP server statuses");
-            expected_names
-                .iter()
-                .map(|name| RuntimeMcpServerStatus {
-                    name: name.clone(),
-                    status: "unknown".to_string(),
-                })
-                .collect()
+            (
+                expected_names
+                    .iter()
+                    .map(|name| RuntimeMcpServerStatus {
+                        name: name.clone(),
+                        status: "unknown".to_string(),
+                    })
+                    .collect(),
+                expected_names.to_vec(),
+            )
         }
     };
-    let unresolved = unresolved_expected_names(&listed, expected_names);
-    if expected_names.is_empty() || unresolved.is_empty() {
+    if expected_names.is_empty() || startup_pending.is_empty() {
         return listed;
     }
 
-    let startup_statuses = wait_for_startup_statuses(startup_events, &unresolved).await;
+    let startup_statuses = wait_for_startup_statuses(startup_events, &startup_pending).await;
     merge_startup_statuses(listed, &startup_statuses)
 }
 
@@ -55,7 +63,9 @@ async fn wait_for_startup_statuses(
                     if method == "mcpServer/startupStatus/updated" =>
                 {
                     if let Some((name, status)) = startup_status(&params) {
-                        statuses.insert(name, status);
+                        if expected_names.contains(&name) {
+                            statuses.insert(name, status);
+                        }
                     }
                 }
                 Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
@@ -85,16 +95,22 @@ fn startup_statuses_are_terminal(
     })
 }
 
-fn unresolved_expected_names(
-    statuses: &[RuntimeMcpServerStatus],
+fn startup_pending_expected_names(
+    response: &[CodexMcpServerStatus],
     expected_names: &[String],
 ) -> Vec<String> {
     expected_names
         .iter()
         .filter(|name| {
-            !statuses
+            response
                 .iter()
-                .any(|status| status.name == **name && status.status == "connected")
+                .find(|status| status.name == **name)
+                .is_none_or(|status| {
+                    let health = McpServerHealth::from(status);
+                    health.auth_ok
+                        && health.tools.is_empty()
+                        && !cadencr_mcp_required_tools(name).is_empty()
+                })
         })
         .cloned()
         .collect()
@@ -170,7 +186,7 @@ impl McpServerHealth {
         if self.auth_ok
             && cadencr_mcp_required_tools(&self.name)
                 .iter()
-                .all(|tool| self.tools.contains(tool))
+                .all(|tool| self.tools.contains(*tool))
         {
             "connected".to_string()
         } else {
@@ -181,7 +197,9 @@ impl McpServerHealth {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge_startup_statuses, parse_mcp_server_statuses};
+    use super::{
+        merge_startup_statuses, parse_mcp_server_statuses, startup_pending_expected_names,
+    };
     use codex_app_server_sdk_rs::CodexMcpServerStatus;
     use std::collections::HashMap;
 
@@ -262,5 +280,52 @@ mod tests {
         );
 
         assert_eq!(statuses[0].status, "connected");
+    }
+
+    #[test]
+    fn project_mcp_is_unavailable_when_spawn_or_link_is_missing() {
+        let expected = vec!["cadencr-project".to_string()];
+        let missing_spawn = parse_mcp_server_statuses(
+            &[status(
+                "cadencr-project",
+                Some("unsupported"),
+                &["project_link_sessions"],
+            )],
+            &expected,
+        );
+        let complete = parse_mcp_server_statuses(
+            &[status(
+                "cadencr-project",
+                Some("unsupported"),
+                &["project_spawn_session", "project_link_sessions"],
+            )],
+            &expected,
+        );
+        let missing_link = parse_mcp_server_statuses(
+            &[status(
+                "cadencr-project",
+                Some("unsupported"),
+                &["project_spawn_session"],
+            )],
+            &expected,
+        );
+
+        assert_eq!(missing_spawn[0].status, "unavailable");
+        assert_eq!(missing_link[0].status, "unavailable");
+        assert_eq!(complete[0].status, "connected");
+    }
+
+    #[test]
+    fn startup_wait_skips_listed_servers_with_partial_tool_catalogs() {
+        let expected = vec!["cadencr-project".to_string()];
+        let partial = [status(
+            "cadencr-project",
+            Some("unsupported"),
+            &["project_link_sessions"],
+        )];
+        let empty = [status("cadencr-project", Some("unsupported"), &[])];
+
+        assert!(startup_pending_expected_names(&partial, &expected).is_empty());
+        assert_eq!(startup_pending_expected_names(&empty, &expected), expected);
     }
 }
