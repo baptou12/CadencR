@@ -2693,6 +2693,8 @@ export type GetChangedFilesParams = {
 
 export type GetCommitGraphParams = {
   feature_id: number;
+  branch?: string;
+  branch_is_local?: boolean;
   skip?: number;
   limit?: number;
 };

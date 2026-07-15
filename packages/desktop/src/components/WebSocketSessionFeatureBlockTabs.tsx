@@ -188,7 +188,7 @@ function useTerminalTab(args: UseSessionTabsArgs): FeatureTabDef {
 }
 
 function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
-  const { featureId, data, sendFromGitTab } = args;
+  const { featureId, projectId, data, sendFromGitTab } = args;
   const gitReady = args.tabReady.git;
   // The live session controls replace `sendFromGitTab` throughout streaming.
   // Keep the tab prop stable while always dispatching through the latest one;
@@ -208,6 +208,7 @@ function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
       content: gitReady ? (
         <FeatureGitTab
           featureId={featureId}
+          projectId={projectId}
           diffMode="worktree"
           onSendComments={handleSendComments}
         />
@@ -215,7 +216,7 @@ function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
         <DeferredTabContent label="Git" />
       ),
     }),
-    [data.gitBranch, featureId, gitReady, handleSendComments],
+    [data.gitBranch, featureId, gitReady, handleSendComments, projectId],
   );
 }
 

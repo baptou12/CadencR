@@ -11,6 +11,7 @@ use std::path::Path;
 
 use crate::domain::git::models::CommitGraphEntry;
 use crate::error::AppError;
+use crate::shared::git_cli::guard_positionals;
 
 use super::log::get_unpushed_shas;
 use super::util::run_git_quiet;
@@ -119,10 +120,9 @@ pub async fn get_commit_graph(
         &skip_arg,
         &max_arg,
     ];
-    for tip in tips {
-        args.push(tip.as_str());
-    }
-
+    let tip_refs: Vec<&str> = tips.iter().map(String::as_str).collect();
+    guard_positionals(&tip_refs)?;
+    args.extend(tip_refs);
     let stdout = run_git_quiet(&args, repo_path).await;
     let mut commits = parse_graph_log(&stdout);
 
@@ -276,5 +276,21 @@ mod tests {
         // Pagination: a 2-row page leaves more behind.
         let page = get_commit_graph(path, &tips, 0, 2).await.unwrap();
         assert_eq!(page.len(), 2);
+
+        // A single selected tip is a dedicated branch graph: commits that
+        // exist only on the other branch must not leak into it.
+        let feature_only = get_commit_graph(path, &["feature/x".to_string()], 0, 50)
+            .await
+            .unwrap();
+        assert!(feature_only.iter().any(|c| c.message == "feat"));
+        assert!(!feature_only.iter().any(|c| c.message == "main work"));
+    }
+
+    #[tokio::test]
+    async fn get_commit_graph_rejects_flag_prefixed_tips() {
+        let error = get_commit_graph(Path::new("."), &["--all".to_string()], 0, 50)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::BadRequest(_)));
     }
 }

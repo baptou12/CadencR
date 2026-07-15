@@ -86,7 +86,7 @@ pub async fn get_commit_log_handler(
     Ok(Json(service::get_commit_log(&state, params).await?))
 }
 
-#[utoipa::path(get, path = "/api/git/commit-graph", params(("feature_id" = i64, Query,), ("skip" = Option<i64>, Query,), ("limit" = Option<i64>, Query,)), responses((status = 200, body = CommitGraphResponse)))]
+#[utoipa::path(get, path = "/api/git/commit-graph", params(("feature_id" = i64, Query,), ("branch" = Option<String>, Query,), ("branch_is_local" = Option<bool>, Query,), ("skip" = Option<i64>, Query,), ("limit" = Option<i64>, Query,)), responses((status = 200, body = CommitGraphResponse)))]
 pub async fn get_commit_graph_handler(
     State(state): State<AppState>,
     Query(params): Query<GetCommitGraphParams>,

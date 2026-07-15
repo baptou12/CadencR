@@ -45,7 +45,7 @@ const SETTING_TARGET_BRANCH: &str = "target_branch";
 
 /// True when `refs/heads/<branch>` resolves in `repo`. Shared by the merge
 /// and checkout flows so the predicate stays in one place.
-pub(super) async fn local_branch_exists(repo: &Path, branch: &str) -> bool {
+pub(crate) async fn local_branch_exists(repo: &Path, branch: &str) -> bool {
     let refname = format!("refs/heads/{branch}");
     run_git_safe_refs(&["show-ref"], &["--verify", "--quiet"], &[&refname], repo)
         .await
@@ -53,7 +53,7 @@ pub(super) async fn local_branch_exists(repo: &Path, branch: &str) -> bool {
 }
 
 /// True when `refs/remotes/<branch>` resolves in `repo` (e.g. `origin/main`).
-pub(super) async fn remote_branch_exists(repo: &Path, branch: &str) -> bool {
+pub(crate) async fn remote_branch_exists(repo: &Path, branch: &str) -> bool {
     let refname = format!("refs/remotes/{branch}");
     run_git_safe_refs(&["show-ref"], &["--verify", "--quiet"], &[&refname], repo)
         .await

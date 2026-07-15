@@ -16,7 +16,7 @@
  *     the rendered list so the caller can wire `onKeyDown` onto whichever
  *     element actually captures focus (auto-focused input vs. popover).
  */
-import { useCallback, useMemo, type ReactElement, type ReactNode } from "react";
+import { useCallback, useMemo, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { Virtuoso } from "react-virtuoso";
 
 import { type BranchInfo } from "@/api/generated";
@@ -40,7 +40,7 @@ interface UseBranchListOptions {
   onPick: (branch: BranchInfo) => void;
   renderRow: (ctx: BranchListRowContext) => ReactNode;
   /** Pixel height of the scroll viewport. Defaults to 320. */
-  height?: number;
+  height?: CSSProperties["height"];
   /** Rendered when filtering removes every branch. */
   emptyState?: ReactNode;
 }

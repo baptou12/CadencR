@@ -1,7 +1,11 @@
 import { act, renderHook } from "@/test-utils";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { GitStatusSnapshot } from "@/api/generated";
-import { selectGitTargetBranch, useGitStatusStore } from "./useGitStatusStore";
+import {
+  selectGitCurrentBranch,
+  selectGitTargetBranch,
+  useGitStatusStore,
+} from "./useGitStatusStore";
 
 function snap(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot {
   return {
@@ -106,5 +110,14 @@ describe("selectGitTargetBranch", () => {
 
     expect(result.current).toBe("develop");
     expect(renderCount).toBe(1);
+  });
+});
+
+describe("selectGitCurrentBranch", () => {
+  it("returns only the checked-out branch used by branch-aware Git views", () => {
+    useGitStatusStore.getState().setStatus(snap({ current_branch: "feature/branches" }));
+
+    expect(selectGitCurrentBranch(1)(useGitStatusStore.getState())).toBe("feature/branches");
+    expect(selectGitCurrentBranch(2)(useGitStatusStore.getState())).toBeUndefined();
   });
 });
