@@ -96,6 +96,12 @@ pub struct GetCommitLogParams {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct GetCommitGraphParams {
     pub feature_id: i64,
+    /// Optional branch ref for a dedicated single-branch graph. When absent,
+    /// the graph keeps its default HEAD + target-branch comparison scope.
+    pub branch: Option<String>,
+    /// Namespace discriminator for `branch`; required whenever `branch` is
+    /// present so identically named local and remote refs stay unambiguous.
+    pub branch_is_local: Option<bool>,
     #[serde(default)]
     pub skip: i64,
     #[serde(default = "default_graph_limit")]

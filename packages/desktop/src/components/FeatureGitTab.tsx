@@ -8,6 +8,7 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DiffViewer } from "./diff/DiffViewer";
 import { GitGraphView } from "./diff/GitGraphView";
+import { GitBranchesView } from "./diff/GitBranchesView";
 import { StashesView } from "./diff/StashesView";
 import { GitTabToggle, type GitViewMode } from "./diff/GitTabToggle";
 import { NumStat } from "@/components/NumStat";
@@ -28,6 +29,7 @@ const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
 
 interface FeatureGitTabProps {
   featureId: number;
+  projectId: number;
   diffMode?: "worktree" | "branch";
   hotkeysEnabled?: boolean;
   /** Sends formatted comments to the current ws-session agent. */
@@ -35,11 +37,14 @@ interface FeatureGitTabProps {
 }
 
 function isGitViewMode(v: string | undefined): v is GitViewMode {
-  return v === "uncommitted" || v === "vs-target" || v === "graph" || v === "stashes";
+  return (
+    v === "uncommitted" || v === "vs-target" || v === "graph" || v === "branches" || v === "stashes"
+  );
 }
 
 export const FeatureGitTab = memo(function FeatureGitTab({
   featureId,
+  projectId,
   diffMode = "worktree",
   hotkeysEnabled = true,
   onSendComments,
@@ -122,11 +127,12 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   // "uncommitted" hits the working-tree path on the server (alias of the legacy
   // "worktree" mode); "vs-target" pins the diff to the resolved target branch.
   const isGraph = viewMode === "graph";
+  const isBranches = viewMode === "branches";
   const isStashes = viewMode === "stashes";
   // The graph and stashes views carry their own per-row stats and drive their
   // own list body — they don't use the shared diff toolbar, file-list collapse,
   // or diff-wide stats query.
-  const isListView = isGraph || isStashes;
+  const isListView = isGraph || isBranches || isStashes;
   const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
   const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
   // Stats are byte-identical for "worktree" and "uncommitted" on the backend, so
@@ -211,6 +217,12 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       <div className="min-h-0 flex-1 overflow-hidden">
         {isGraph ? (
           <GitGraphView featureId={featureId} />
+        ) : isBranches ? (
+          <GitBranchesView
+            key={`${projectId}:${featureId}`}
+            featureId={featureId}
+            projectId={projectId}
+          />
         ) : isStashes ? (
           <StashesView featureId={featureId} />
         ) : (

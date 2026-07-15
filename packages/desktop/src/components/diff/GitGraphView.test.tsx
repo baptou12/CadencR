@@ -3,11 +3,11 @@
 // production crash (issue #88). The real library stores the `components` prop
 // in internal state and later reads `components.EmptyPlaceholder`; passing
 // `components={undefined}` overwrites its default `{}` and throws.
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 
 vi.unmock("react-virtuoso");
 
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import { GitGraphView } from "./GitGraphView";
 import type { CommitGraphResponse } from "@/api/generated";
 
@@ -57,6 +57,10 @@ vi.mock("./DiffViewer", () => ({
 import { useGetCommitGraph } from "@/api/generated";
 
 describe("GitGraphView", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("renders the commit graph when there are no more pages (has_more: false)", () => {
     mockGraph(false);
     // Without the fix this throws:
@@ -69,5 +73,32 @@ describe("GitGraphView", () => {
   it("renders the commit graph when more pages are available (has_more: true)", () => {
     mockGraph(true);
     expect(() => render(<GitGraphView featureId={1} />)).not.toThrow();
+  });
+
+  it("requests and labels a dedicated branch graph with a path back", () => {
+    mockGraph(false);
+    const onBack = vi.fn();
+    render(
+      <GitGraphView
+        featureId={1}
+        branch={{ name: "origin/release", is_local: false }}
+        onBackToBranches={onBack}
+      />,
+    );
+
+    expect(useGetCommitGraph).toHaveBeenCalledWith(
+      {
+        feature_id: 1,
+        branch: "origin/release",
+        branch_is_local: false,
+        skip: 0,
+        limit: 50,
+      },
+      { query: { keepPreviousData: true } },
+    );
+    expect(screen.getByText("origin/release")).toBeInTheDocument();
+    expect(screen.queryByText("main")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Branches" }));
+    expect(onBack).toHaveBeenCalledOnce();
   });
 });

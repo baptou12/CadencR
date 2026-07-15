@@ -1,5 +1,6 @@
-//! Service layer for the Git-tab graph view. Builds the set of tips to log
-//! (`HEAD` plus the *local* target branch) and pages the commit graph.
+//! Service layer for the Git-tab graph views. The default graph logs `HEAD`
+//! plus the local target branch; the Branches sub-tab can instead request one
+//! dedicated local or remote-tracking branch ref.
 
 use std::path::Path;
 
@@ -21,29 +22,20 @@ use super::{resolve_feature_git_path, SETTING_WORKTREE_BRANCH};
 /// chosen yet a local `main` exists, we log against `main`. Picks already
 /// pointing at a local branch pass through unchanged.
 async fn prefer_local_target(repo: &Path, target: &str) -> String {
-    if local_branch_exists(repo, target).await {
+    if crate::domain::git::workflow_service::local_branch_exists(repo, target).await {
         return target.to_string();
     }
     // `<remote>/<name>` → try the bare `<name>` against the local branches.
     if let Ok(remotes) = run_git_background(&["remote"], repo).await {
         for remote in remotes.lines().map(str::trim).filter(|r| !r.is_empty()) {
             if let Some(local) = target.strip_prefix(&format!("{remote}/")) {
-                if local_branch_exists(repo, local).await {
+                if crate::domain::git::workflow_service::local_branch_exists(repo, local).await {
                     return local.to_string();
                 }
             }
         }
     }
     target.to_string()
-}
-
-async fn local_branch_exists(repo: &Path, name: &str) -> bool {
-    run_git_background(
-        &["rev-parse", "--verify", &format!("refs/heads/{name}")],
-        repo,
-    )
-    .await
-    .is_ok()
 }
 
 pub async fn get_commit_graph(
@@ -56,35 +48,13 @@ pub async fn get_commit_graph(
     };
     let path = Path::new(&git_path);
 
-    let branch_setting = repository::get_feature_setting(
-        &state.read_pool,
-        params.feature_id,
-        SETTING_WORKTREE_BRANCH,
-    )
-    .await?;
-    let current_branch = match branch_setting {
-        Some(b) => Some(b),
-        None => commands::get_current_branch(path).await?,
-    };
-
-    // Same resolution as the status snapshot / commit-log so every Git-tab
-    // surface compares against the same base, then mapped to its local branch.
-    let resolved =
-        crate::domain::git::workflow_service::resolve_target_branch(state, params.feature_id, path)
-            .await
-            .unwrap_or_else(|_| "main".to_string());
-    let local_target = prefer_local_target(path, &resolved).await;
-
-    // Tips: always HEAD; add the target when it's a distinct branch so the
-    // graph shows both lines and their divergence point. Skip it when we're
-    // sitting on the target (nothing extra to show) or it doesn't resolve.
-    let mut tips = vec!["HEAD".to_string()];
-    let on_target = current_branch.as_deref() == Some(local_target.as_str());
-    let target_for_view = if !on_target && local_branch_exists(path, &local_target).await {
-        tips.push(local_target.clone());
-        Some(local_target)
+    let selected_branch =
+        validate_selected_branch(params.branch.as_deref(), params.branch_is_local)?;
+    let (tips, current_branch, target_for_view) = if let Some(branch) = selected_branch {
+        let branch_ref = resolve_branch_ref(path, &branch).await?;
+        (vec![branch_ref], None, None)
     } else {
-        None
+        default_graph_scope(state, params.feature_id, path).await?
     };
 
     // Fetch one extra row to detect whether more commits exist past this page.
@@ -101,6 +71,87 @@ pub async fn get_commit_graph(
         current_branch,
         target_branch: target_for_view,
     })
+}
+
+#[derive(Debug, PartialEq)]
+struct SelectedBranch {
+    name: String,
+    is_local: bool,
+}
+
+fn validate_selected_branch(
+    branch: Option<&str>,
+    branch_is_local: Option<bool>,
+) -> Result<Option<SelectedBranch>, AppError> {
+    let (branch, is_local) = match (branch, branch_is_local) {
+        (None, None) => return Ok(None),
+        (Some(branch), Some(is_local)) => (branch, is_local),
+        _ => {
+            return Err(AppError::BadRequest(
+                "branch and branch_is_local must be provided together".into(),
+            ))
+        }
+    };
+    let branch = branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::BadRequest("branch must not be blank".into()));
+    }
+    Ok(Some(SelectedBranch {
+        name: branch.to_string(),
+        is_local,
+    }))
+}
+
+async fn resolve_branch_ref(path: &Path, branch: &SelectedBranch) -> Result<String, AppError> {
+    let exists = if branch.is_local {
+        crate::domain::git::workflow_service::local_branch_exists(path, &branch.name).await
+    } else {
+        crate::domain::git::workflow_service::remote_branch_exists(path, &branch.name).await
+    };
+    if !exists {
+        return Err(AppError::BadRequest(format!(
+            "branch does not exist: {}",
+            branch.name
+        )));
+    }
+    let prefix = if branch.is_local {
+        "refs/heads"
+    } else {
+        "refs/remotes"
+    };
+    Ok(format!("{prefix}/{}", branch.name))
+}
+
+async fn default_graph_scope(
+    state: &AppState,
+    feature_id: i64,
+    path: &Path,
+) -> Result<(Vec<String>, Option<String>, Option<String>), AppError> {
+    let branch_setting =
+        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_BRANCH)
+            .await?;
+    let current_branch = match branch_setting {
+        Some(branch) => Some(branch),
+        None => commands::get_current_branch(path).await?,
+    };
+
+    let resolved =
+        crate::domain::git::workflow_service::resolve_target_branch(state, feature_id, path)
+            .await
+            .unwrap_or_else(|_| "main".to_string());
+    let local_target = prefer_local_target(path, &resolved).await;
+
+    let mut tips = vec!["HEAD".to_string()];
+    let on_target = current_branch.as_deref() == Some(local_target.as_str());
+    let target_for_view = if !on_target
+        && crate::domain::git::workflow_service::local_branch_exists(path, &local_target).await
+    {
+        tips.push(local_target.clone());
+        Some(local_target)
+    } else {
+        None
+    };
+    Ok((tips, current_branch, target_for_view))
 }
 
 /// Resolve the browser URL for a single commit on the feature's remote, so the
@@ -145,5 +196,99 @@ fn empty_graph() -> CommitGraphResponse {
         has_more: false,
         current_branch: None,
         target_branch: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_branch_is_trimmed() {
+        assert_eq!(
+            validate_selected_branch(Some("  origin/feature/x  "), Some(false)).unwrap(),
+            Some(SelectedBranch {
+                name: "origin/feature/x".to_string(),
+                is_local: false,
+            })
+        );
+    }
+
+    #[test]
+    fn selected_branch_requires_a_non_blank_name_and_kind() {
+        assert!(matches!(
+            validate_selected_branch(Some("   "), Some(true)),
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            validate_selected_branch(Some("main"), None),
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            validate_selected_branch(None, Some(true)),
+            Err(AppError::BadRequest(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn branch_ref_resolution_accepts_only_local_or_remote_branches() {
+        use crate::shared::git_cli::run_git;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path();
+        run_git(&["init", "-q", "-b", "main"], path).await.unwrap();
+        run_git(&["config", "user.email", "test@example.com"], path)
+            .await
+            .unwrap();
+        run_git(&["config", "user.name", "Test"], path)
+            .await
+            .unwrap();
+        run_git(&["config", "commit.gpgsign", "false"], path)
+            .await
+            .unwrap();
+        run_git(&["commit", "--allow-empty", "-q", "-m", "base"], path)
+            .await
+            .unwrap();
+        run_git(&["branch", "origin/main"], path).await.unwrap();
+        run_git(&["update-ref", "refs/remotes/origin/main", "HEAD"], path)
+            .await
+            .unwrap();
+        run_git(&["tag", "release"], path).await.unwrap();
+
+        assert_eq!(
+            resolve_branch_ref(
+                path,
+                &SelectedBranch {
+                    name: "origin/main".into(),
+                    is_local: true,
+                }
+            )
+            .await
+            .unwrap(),
+            "refs/heads/origin/main"
+        );
+        assert_eq!(
+            resolve_branch_ref(
+                path,
+                &SelectedBranch {
+                    name: "origin/main".into(),
+                    is_local: false,
+                }
+            )
+            .await
+            .unwrap(),
+            "refs/remotes/origin/main"
+        );
+        assert!(matches!(
+            resolve_branch_ref(
+                path,
+                &SelectedBranch {
+                    name: "release".into(),
+                    is_local: true,
+                }
+            )
+            .await,
+            Err(AppError::BadRequest(_))
+        ));
     }
 }

@@ -148,6 +148,13 @@ export function selectGitTargetBranch(
   return (state) => (featureId == null ? undefined : state.byFeature[featureId]?.target_branch);
 }
 
+/** Narrow selector for the checked-out branch shown in branch-aware Git views. */
+export function selectGitCurrentBranch(
+  featureId: number | null | undefined,
+): (state: GitStatusState) => string | undefined {
+  return (state) => (featureId == null ? undefined : state.byFeature[featureId]?.current_branch);
+}
+
 /** Narrow selector: latest error for one feature (cleared on next success). */
 export function selectGitStatusError(
   featureId: number | null | undefined,
