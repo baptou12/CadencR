@@ -85,6 +85,7 @@ export function RootOverlays({
         feature={archiveConfirmAction?.feature}
         projectId={activeProjectId ?? 0}
         hasLiveWorktree={cleanupAvailability.hasLiveWorktree}
+        hasResidualWorktreeDirectory={cleanupAvailability.hasResidualWorktreeDirectory}
         showWorktreeRemoval={cleanupAvailability.showWorktreeRemoval}
         showBranchRemoval={cleanupAvailability.showBranchRemoval}
         onOpenChange={(open) => {

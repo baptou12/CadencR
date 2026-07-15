@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from "react";
 import { toast } from "sonner";
 import {
   useDeleteFeatureBranch,
@@ -30,6 +38,7 @@ interface ArchiveFeatureDialogProps {
   feature: Feature | undefined;
   projectId: number;
   hasLiveWorktree: boolean;
+  hasResidualWorktreeDirectory: boolean;
   showWorktreeRemoval: boolean;
   showBranchRemoval: boolean;
   onOpenChange: (open: boolean) => void;
@@ -41,6 +50,7 @@ export function ArchiveFeatureDialog({
   feature,
   projectId,
   hasLiveWorktree,
+  hasResidualWorktreeDirectory,
   showWorktreeRemoval,
   showBranchRemoval,
   onOpenChange,
@@ -56,10 +66,10 @@ export function ArchiveFeatureDialog({
     feature,
     projectId,
     hasLiveWorktree,
+    hasResidualWorktreeDirectory,
     showWorktreeRemoval,
     showBranchRemoval,
   });
-
   const confirm = (): void => {
     if (!feature) return;
     if (!lockConfirm()) return;
@@ -79,7 +89,6 @@ export function ArchiveFeatureDialog({
           featureId,
           removeWorktree: cleanupState.removeWorktree,
           removeBranch: cleanupState.removeBranch,
-          hasLiveWorktree,
           forceBranchDelete: cleanupState.forceBranchDelete,
           forceWorktreeDelete: cleanupState.forceWorktreeDelete,
           deleteWorktree: deleteWorktree.mutateAsync,
@@ -98,32 +107,14 @@ export function ArchiveFeatureDialog({
     enabled: !cleanupState.isCheckingBranch && !cleanupState.isCheckingWorktree && !isConfirming,
     onSubmit: confirm,
   });
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
         className="sm:max-w-md"
-        onKeyDown={(event) => {
-          if (event.key.toLowerCase() === "w") {
-            event.preventDefault();
-            cleanupState.toggleWorktree();
-          } else if (event.key.toLowerCase() === "b") {
-            event.preventDefault();
-            cleanupState.toggleBranch();
-          } else if (event.key.toLowerCase() === "t") {
-            event.preventDefault();
-            killState.toggleKillTerminals();
-          }
-        }}
+        onKeyDown={(event) => handleCleanupShortcut(event, cleanupState, killState)}
       >
-        <DialogHeader>
-          <DialogTitle>Archive session?</DialogTitle>
-          <DialogDescription>
-            Archive now, optionally cleaning up the related Git worktree or branch in the
-            background.
-          </DialogDescription>
-        </DialogHeader>
+        <ArchiveDialogHeader />
 
         <div className="space-y-3">
           {killState.liveTerminalCount > 0 && (
@@ -133,7 +124,11 @@ export function ArchiveFeatureDialog({
               onToggle={killState.toggleKillTerminals}
             />
           )}
-          <ArchiveCleanupOptions {...cleanupState} hasLiveWorktree={hasLiveWorktree} />
+          <ArchiveCleanupOptions
+            {...cleanupState}
+            hasLiveWorktree={hasLiveWorktree}
+            hasResidualWorktreeDirectory={hasResidualWorktreeDirectory}
+          />
         </div>
 
         <ArchiveDialogFooter
@@ -148,6 +143,33 @@ export function ArchiveFeatureDialog({
     </Dialog>
   );
 }
+
+function ArchiveDialogHeader(): ReactElement {
+  return (
+    <DialogHeader>
+      <DialogTitle>Archive session?</DialogTitle>
+      <DialogDescription>
+        Archive now, optionally cleaning up the related Git worktree or branch in the background.
+      </DialogDescription>
+    </DialogHeader>
+  );
+}
+
+function handleCleanupShortcut(
+  event: KeyboardEvent,
+  cleanupState: ReturnType<typeof useArchiveCleanupState>,
+  killState: ReturnType<typeof useKillTerminalsState>,
+): void {
+  const action = {
+    w: cleanupState.toggleWorktree,
+    b: cleanupState.toggleBranch,
+    t: killState.toggleKillTerminals,
+  }[event.key.toLowerCase()];
+  if (!action) return;
+  event.preventDefault();
+  action();
+}
+
 interface ArchiveDialogFooterProps {
   disabled: boolean;
   forceDelete: boolean;
@@ -178,31 +200,46 @@ async function cleanupFeature(args: {
   featureId: number;
   removeWorktree: boolean;
   removeBranch: boolean;
-  hasLiveWorktree: boolean;
   forceBranchDelete: boolean;
   forceWorktreeDelete: boolean;
   deleteWorktree: ReturnType<typeof useDeleteWorktree>["mutateAsync"];
   deleteBranch: ReturnType<typeof useDeleteFeatureBranch>["mutateAsync"];
 }): Promise<void> {
-  if (args.removeWorktree && args.hasLiveWorktree) {
-    const result = await args.deleteWorktree({
-      params: {
-        project_id: args.projectId,
-        feature_id: args.featureId,
-        force: args.forceWorktreeDelete,
-      },
-    });
-    if (!result.success) throw new Error(result.error ?? "Failed to remove worktree");
+  const errors: string[] = [];
+  const completed: string[] = [];
+  if (args.removeWorktree) {
+    try {
+      const result = await args.deleteWorktree({
+        params: {
+          project_id: args.projectId,
+          feature_id: args.featureId,
+          force: args.forceWorktreeDelete,
+        },
+      });
+      if (result.success) completed.push("worktree removal");
+      else errors.push(result.error ?? "Failed to remove worktree");
+    } catch (error) {
+      errors.push(apiErrorMessage(error, "Failed to remove worktree"));
+    }
   }
   if (args.removeBranch) {
-    const result = await args.deleteBranch({
-      params: {
-        project_id: args.projectId,
-        feature_id: args.featureId,
-        force: args.forceBranchDelete,
-      },
-    });
-    if (!result.success) throw new Error(result.error ?? "Failed to delete branch");
+    try {
+      const result = await args.deleteBranch({
+        params: {
+          project_id: args.projectId,
+          feature_id: args.featureId,
+          force: args.forceBranchDelete,
+        },
+      });
+      if (result.success) completed.push("branch deletion");
+      else errors.push(result.error ?? "Failed to delete branch");
+    } catch (error) {
+      errors.push(apiErrorMessage(error, "Failed to delete branch"));
+    }
+  }
+  if (errors.length > 0) {
+    const partialSuccess = completed.length > 0 ? `; ${completed.join(" and ")} succeeded` : "";
+    throw new Error(`${errors.join("; ")}${partialSuccess}`);
   }
 }
 

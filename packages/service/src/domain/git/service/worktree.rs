@@ -245,26 +245,50 @@ pub async fn list_feature_worktrees(
 ) -> Result<Vec<FeatureWorktreeInfo>, AppError> {
     let rows =
         repository::list_feature_worktree_settings(&state.read_pool, params.project_id).await?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
     let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
-    let default_branch = if rows.iter().any(|row| row.worktree_branch.is_some()) {
-        Some(workflow_service::resolve_default_branch(Path::new(&project_path)).await?)
+    let has_recorded_branch = rows.iter().any(|row| row.worktree_branch.is_some());
+    let registered_worktrees = commands::list_worktrees(Path::new(&project_path)).await?;
+    let (default_branch, local_branches) = if has_recorded_branch {
+        let (default_branch, local_branches) = tokio::try_join!(
+            workflow_service::resolve_default_branch(Path::new(&project_path)),
+            commands::list_local_branches(Path::new(&project_path)),
+        )?;
+        (Some(default_branch), local_branches)
     } else {
-        None
+        (None, std::collections::HashSet::new())
     };
 
-    // Probe disk presence concurrently — otherwise we'd serialize one syscall
-    // per feature inside a hot async handler.
-    let liveness = futures::future::join_all(
-        rows.iter()
-            .map(|r| async { tokio::fs::metadata(&r.worktree_path).await.is_ok() }),
-    )
-    .await;
+    let health = futures::future::try_join_all(rows.iter().map(|row| async {
+        let path = Path::new(&row.worktree_path);
+        let directory_exists = match tokio::fs::metadata(path).await {
+            Ok(metadata) => metadata.is_dir(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                return Err(AppError::Internal(format!(
+                    "Failed to inspect worktree path: {error}"
+                )))
+            }
+        };
+        let live = directory_exists
+            && registered_worktrees
+                .iter()
+                .any(|worktree| commands::worktree_path_matches(worktree, path));
+        Ok((directory_exists, live))
+    }))
+    .await?;
 
     Ok(rows
         .into_iter()
-        .zip(liveness)
-        .map(|(r, live)| {
+        .zip(health)
+        .map(|(r, (directory_exists, live))| {
             let is_main_worktree = is_default_worktree_path(&project_path, &r.worktree_path);
+            let branch_exists = r
+                .worktree_branch
+                .as_ref()
+                .map(|branch| local_branches.contains(branch));
             FeatureWorktreeInfo {
                 feature_id: r.feature_id,
                 worktree_path: r.worktree_path,
@@ -277,6 +301,8 @@ pub async fn list_feature_worktrees(
                     }),
                 is_main_worktree,
                 worktree_branch: r.worktree_branch,
+                directory_exists,
+                branch_exists,
                 live,
             }
         })

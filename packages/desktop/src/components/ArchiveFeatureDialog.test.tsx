@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useState, type ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
-import { render, screen } from "@/test-utils";
+import { render, screen, waitFor } from "@/test-utils";
 import { ArchiveFeatureDialog } from "./ArchiveFeatureDialog";
 import type { Feature, GitStatusSnapshot } from "@/api/generated";
 
@@ -32,7 +32,10 @@ vi.mock("@/api/generated", () => ({
 
 vi.mock("sonner", () => ({
   toast: {
-    promise: vi.fn((promise: Promise<unknown>) => promise),
+    promise: vi.fn((promise: Promise<unknown>) => {
+      void promise.catch(() => undefined);
+      return promise;
+    }),
     error: vi.fn(),
   },
 }));
@@ -76,6 +79,7 @@ function dirtyStatus(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnaps
 function renderDialog(
   overrides: {
     hasLiveWorktree?: boolean;
+    hasResidualWorktreeDirectory?: boolean;
     showWorktreeRemoval?: boolean;
     showBranchRemoval?: boolean;
   } = {},
@@ -88,6 +92,7 @@ function renderDialog(
       feature={feature}
       projectId={1}
       hasLiveWorktree={overrides.hasLiveWorktree ?? false}
+      hasResidualWorktreeDirectory={overrides.hasResidualWorktreeDirectory ?? false}
       showWorktreeRemoval={overrides.showWorktreeRemoval ?? true}
       showBranchRemoval={overrides.showBranchRemoval ?? true}
       onOpenChange={onOpenChange}
@@ -147,6 +152,7 @@ describe("ArchiveFeatureDialog", () => {
           feature={dialogFeature}
           projectId={1}
           hasLiveWorktree={false}
+          hasResidualWorktreeDirectory={false}
           showWorktreeRemoval
           showBranchRemoval
           onOpenChange={vi.fn()}
@@ -210,6 +216,42 @@ describe("ArchiveFeatureDialog", () => {
     expect(mockDeleteWorktree).toHaveBeenCalledWith({
       params: { project_id: 1, feature_id: 1, force: true },
     });
+  });
+
+  it("force-removes residual files from an invalid worktree folder", async () => {
+    const user = userEvent.setup();
+    renderDialog({ hasResidualWorktreeDirectory: true });
+
+    await user.click(screen.getByText("Remove worktree"));
+
+    expect(screen.getByText(/Git no longer recognizes this worktree/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /archive/i }));
+    expect(mockDeleteWorktree).toHaveBeenCalledWith({
+      params: { project_id: 1, feature_id: 1, force: true },
+    });
+  });
+
+  it("removes stale worktree metadata before deleting its branch", async () => {
+    const user = userEvent.setup();
+    renderDialog({ hasLiveWorktree: false });
+
+    await user.click(screen.getByText("Remove branch"));
+
+    expect(screen.getByRole("checkbox", { name: /remove worktree/i })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: /archive/i }));
+    await waitFor(() => expect(mockDeleteWorktree).toHaveBeenCalledTimes(1));
+    expect(mockDeleteBranch).toHaveBeenCalledTimes(1);
+  });
+
+  it("still attempts branch deletion when worktree cleanup reports an error", async () => {
+    mockDeleteWorktree.mockResolvedValue({ success: false, error: "directory not empty" });
+    const user = userEvent.setup();
+    renderDialog({ hasLiveWorktree: true });
+
+    await user.click(screen.getByText("Remove branch"));
+    await user.click(screen.getByRole("button", { name: /archive/i }));
+
+    await waitFor(() => expect(mockDeleteBranch).toHaveBeenCalledTimes(1));
   });
 
   it("does not allow branch removal when a no-worktree session is on the target branch", async () => {

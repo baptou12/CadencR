@@ -1,20 +1,21 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ChevronRightIcon,
   CheckCircle2Icon,
   Loader2Icon,
   AlertCircleIcon,
-  GitBranchIcon,
+  AlertTriangleIcon,
   RefreshCwIcon,
 } from "lucide-react";
 import { useGetFeatureSettings } from "@/api/generated";
 import { settingsArrayToMap } from "@/api/settings";
 import type { WorktreeStatus } from "@/types/workflow";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CopyButton } from "@/components/CopyButton";
 import { BashBlock } from "@/components/BashBlock";
-import { cn } from "@/lib/utils";
+import { useFeatureWorktreeInfo } from "@/hooks/useFeatureWorktreePath";
+import {
+  WorktreeSetupHeader,
+  type WorktreeSetupDisplayStatus,
+} from "@/components/WorktreeSetupHeader";
 
 type SetupStep = "naming" | "named" | "creating" | "created" | "setup" | "done" | "error";
 
@@ -99,16 +100,11 @@ interface SetupStepItem {
   showLog?: boolean;
 }
 
-interface WorktreeSetupHeaderProps {
-  branch: string;
-  isDone: boolean;
-  isError: boolean;
-  isOpen: boolean;
-  isRunning: boolean;
-  onToggle: () => void;
-}
-
 interface WorktreeSetupDetailsProps {
+  branch: string;
+  branchExists: boolean | null;
+  healthError: unknown;
+  isMissing: boolean;
   steps: SetupStepItem[];
   log: string;
   isError: boolean;
@@ -175,7 +171,7 @@ function buildSetupSteps(step: SetupStep, branch: string): SetupStepItem[] {
 
 export function WorktreeSetupSection({
   featureId,
-  projectId: _projectId,
+  projectId,
   wsWorktreeStatus,
   wsWorktreeBranch,
   wsWorktreeSetupOutput,
@@ -199,6 +195,22 @@ export function WorktreeSetupSection({
   const isDone = step === "done";
   const isError = step === "error";
   const isRunning = !!step && !isDone && !isError;
+  const health = useFeatureWorktreeInfo(featureId, projectId, isDone);
+  const isMissing = Boolean(
+    isDone && health.worktree && !health.worktree.is_main_worktree && !health.worktree.live,
+  );
+  const branchExists = health.worktree?.branch_exists ?? null;
+  const displayStatus: WorktreeSetupDisplayStatus = isMissing
+    ? "removed"
+    : health.error != null
+      ? "health-error"
+      : health.isLoading && isDone
+        ? "checking"
+        : isDone
+          ? "ready"
+          : isRunning
+            ? "running"
+            : "setup-error";
   const [isOpen, toggleOpen] = useWorktreeSetupDisclosure(featureId, useWsMode, step);
   const wsSetupLog = useMemo(
     () => (isOpen && hasWsSetupOutput ? (wsWorktreeSetupOutput ?? []).join("\n") : ""),
@@ -216,15 +228,18 @@ export function WorktreeSetupSection({
     <div className="flex flex-col bg-background" data-worktree-setup>
       <WorktreeSetupHeader
         branch={branch}
-        isDone={isDone}
-        isError={isError}
+        branchExists={branchExists}
+        status={displayStatus}
         isOpen={isOpen}
-        isRunning={isRunning}
         onToggle={toggleOpen}
       />
       {isOpen && (
         <WorktreeSetupDetails
           steps={steps}
+          branch={branch}
+          branchExists={branchExists}
+          healthError={health.error}
+          isMissing={isMissing}
           log={log}
           isError={isError}
           setupError={setupError}
@@ -235,93 +250,11 @@ export function WorktreeSetupSection({
   );
 }
 
-function WorktreeSetupHeader({
-  branch,
-  isDone,
-  isError,
-  isOpen,
-  isRunning,
-  onToggle,
-}: WorktreeSetupHeaderProps): ReactElement {
-  return (
-    <div
-      className="flex min-w-0 cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-muted/70 md:px-6"
-      onClick={onToggle}
-    >
-      <ChevronRightIcon
-        className={cn(
-          "size-3.5 shrink-0 text-foreground/40 transition-transform duration-200",
-          isOpen && "rotate-90",
-        )}
-      />
-      <GitBranchIcon className="size-3.5 shrink-0" />
-      <span className="shrink-0 text-xs font-medium">Worktree Setup</span>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        {branch && <WorktreeBranchChip branch={branch} />}
-        <WorktreeSetupBadge isDone={isDone} isError={isError} isRunning={isRunning} />
-      </div>
-    </div>
-  );
-}
-
-function WorktreeBranchChip({ branch }: { branch: string }): ReactElement {
-  return (
-    <div className="flex min-w-0 items-center gap-1.5">
-      <span className="truncate text-xs font-mono text-muted-foreground">{branch}</span>
-      <CopyButton
-        text={branch}
-        label="Copy branch name"
-        copiedLabel="Copied branch name"
-        idleClassName="text-muted-foreground opacity-70"
-        iconClassName="size-3"
-        className="shrink-0 hover:text-foreground"
-      />
-    </div>
-  );
-}
-
-function WorktreeSetupBadge({
-  isDone,
-  isError,
-  isRunning,
-}: {
-  isDone: boolean;
-  isError: boolean;
-  isRunning: boolean;
-}): ReactElement {
-  return (
-    <Badge
-      variant="secondary"
-      className={cn(
-        "shrink-0 gap-1 text-[10px] px-1.5 py-0",
-        isDone && "bg-green-500/15 text-green-400",
-        isRunning && "bg-blue-500/15 text-blue-400",
-        isError && "bg-red-500/15 text-red-400",
-      )}
-    >
-      {isDone && (
-        <>
-          <CheckCircle2Icon className="size-2.5" />
-          ready
-        </>
-      )}
-      {isRunning && (
-        <>
-          <Loader2Icon className="size-2.5 animate-spin" />
-          running
-        </>
-      )}
-      {isError && (
-        <>
-          <AlertCircleIcon className="size-2.5" />
-          error
-        </>
-      )}
-    </Badge>
-  );
-}
-
 function WorktreeSetupDetails({
+  branch,
+  branchExists,
+  healthError,
+  isMissing,
   steps,
   log,
   isError,
@@ -330,10 +263,41 @@ function WorktreeSetupDetails({
 }: WorktreeSetupDetailsProps): ReactElement {
   return (
     <div className="space-y-1.5 border-t border-border/50 px-3 py-2 md:px-6">
+      {isMissing && <MissingWorktreeWarning branch={branch} branchExists={branchExists} />}
+      {healthError != null && (
+        <div className="flex gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+          <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+          <span>Could not verify whether the worktree and branch still exist.</span>
+        </div>
+      )}
       {steps.map((step, index) => (
         <WorktreeSetupStep key={step.label} index={index} log={log} step={step} />
       ))}
       {isError && <WorktreeSetupRetry setupError={setupError} onRetrySetup={onRetrySetup} />}
+    </div>
+  );
+}
+
+function MissingWorktreeWarning({
+  branch,
+  branchExists,
+}: {
+  branch: string;
+  branchExists: boolean | null;
+}): ReactElement {
+  const branchStatus =
+    branchExists === true
+      ? `The branch ${branch || "recorded for this session"} still exists.`
+      : branchExists === false
+        ? `The branch ${branch || "recorded for this session"} was also removed.`
+        : "The branch status could not be determined.";
+  return (
+    <div className="flex gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+      <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        This worktree was removed from the machine. {branchStatus} Cadencr is using the project
+        folder instead.
+      </span>
     </div>
   );
 }

@@ -20,6 +20,7 @@ interface ArchiveCleanupOptionsProps {
   targetBranch: string;
   forceBranchDelete: boolean;
   forceWorktreeDelete: boolean;
+  hasResidualWorktreeDirectory: boolean;
   isCheckingWorktree: boolean;
   isCheckingBranch: boolean;
   gitStatusError: unknown;
@@ -91,7 +92,13 @@ function ArchiveCleanupMessages(props: ArchiveCleanupOptionsProps): ReactElement
           <span className="font-mono">{props.targetBranch}</span>. Confirming will force-delete it.
         </DangerMessage>
       )}
-      {props.forceWorktreeDelete && (
+      {props.forceWorktreeDelete && props.hasResidualWorktreeDirectory && (
+        <DangerMessage>
+          Git no longer recognizes this worktree, but files remain in its folder. Confirming will
+          permanently delete those residual files.
+        </DangerMessage>
+      )}
+      {props.forceWorktreeDelete && !props.hasResidualWorktreeDirectory && (
         <DangerMessage>
           This worktree has uncommitted or untracked files. Confirming will force-remove it, so you
           will permanently lose local changes in that worktree.

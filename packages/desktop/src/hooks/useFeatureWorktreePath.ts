@@ -1,18 +1,48 @@
 import { useMemo } from "react";
-import { useGetFeatureSettings } from "@/api/generated";
+import { useListFeatureWorktrees, type FeatureWorktreeInfo } from "@/api/generated";
+
+interface FeatureWorktreeState {
+  worktree: FeatureWorktreeInfo | undefined;
+  isResolved: boolean;
+  isLoading: boolean;
+  error: unknown;
+}
 
 /**
  * Worktree path for a feature, or `null` when the feature works directly in
- * the project root. Backed by the `worktree_path` entry in the feature's
- * settings — the `feature.updated` WS event invalidates this query when a
- * worktree is created or removed, so the value stays reactive without extra
- * wiring.
- *
- * Two-or-more call sites pattern: kept here so callers don't re-do the
- * `settings.find(...).value` lookup (and don't need to mock the generated
- * client in their tests).
+ * the project root. Backed by the project worktree-health endpoint so a
+ * leftover directory that Git no longer recognizes is never returned as a
+ * usable worktree.
  */
-export function useFeatureWorktreePath(featureId: number): string | null {
-  const { data } = useGetFeatureSettings(featureId);
-  return useMemo(() => data?.find((s) => s.key === "worktree_path")?.value ?? null, [data]);
+export function useFeatureWorktreeInfo(
+  featureId: number,
+  projectId: number,
+  enabled = true,
+): FeatureWorktreeState {
+  const query = useListFeatureWorktrees(
+    { project_id: projectId },
+    { query: { enabled, refetchOnMount: "always" } },
+  );
+  const worktree = useMemo(
+    () => query.data?.find((item) => item.feature_id === featureId),
+    [featureId, query.data],
+  );
+  return useMemo(
+    () => ({
+      worktree,
+      isResolved: query.data != null,
+      isLoading: query.isLoading,
+      error: query.error ?? null,
+    }),
+    [query.data, query.error, query.isLoading, worktree],
+  );
+}
+
+export function useFeatureWorktreePath(
+  featureId: number,
+  projectId: number,
+): string | null | undefined {
+  const { worktree, isResolved } = useFeatureWorktreeInfo(featureId, projectId);
+  if (!isResolved) return undefined;
+  return worktree?.live ? worktree.worktree_path : null;
 }

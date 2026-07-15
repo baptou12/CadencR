@@ -185,6 +185,7 @@ export type BranchDeleteCheckResponseCurrentBranch = string | null;
 
 export interface BranchDeleteCheckResponse {
   branch: string;
+  branch_exists: boolean;
   current_branch?: BranchDeleteCheckResponseCurrentBranch;
   default_branch: string;
   is_default_branch: boolean;
@@ -762,17 +763,27 @@ export const FeatureStatus = {
   archived: "archived",
 } as const;
 
+/**
+ * Whether the recorded local feature branch still exists.
+ */
+export type FeatureWorktreeInfoBranchExists = boolean | null;
+
 export type FeatureWorktreeInfoWorktreeBranch = string | null;
 
 /**
  * Per-feature worktree metadata sourced from `feature_settings`.
 Includes features whose worktree directory has been deleted; callers can
-check `live` to know whether the directory still exists on disk.
+distinguish a live Git worktree from residual files left on disk.
  */
 export interface FeatureWorktreeInfo {
+  /** Whether the recorded local feature branch still exists. */
+  branch_exists?: FeatureWorktreeInfoBranchExists;
+  /** Whether anything still exists at the recorded worktree path. */
+  directory_exists: boolean;
   feature_id: number;
   is_default_branch: boolean;
   is_main_worktree: boolean;
+  /** Whether the path is a usable Git working tree, not merely a directory. */
   live: boolean;
   worktree_branch?: FeatureWorktreeInfoWorktreeBranch;
   worktree_path: string;

@@ -283,6 +283,17 @@ pub(crate) async fn make_test_app_state() -> AppState {
     .unwrap();
 
     sqlx::query(
+        r#"CREATE TABLE projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL
+            )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
         r#"CREATE TABLE features (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL DEFAULT 1,
@@ -293,6 +304,11 @@ pub(crate) async fn make_test_app_state() -> AppState {
     .execute(&pool)
     .await
     .unwrap();
+
+    sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'Test Project', '/tmp/test')")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Insert default features for tests that reference feature_id = 1 or 2.
     sqlx::query(

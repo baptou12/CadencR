@@ -35,18 +35,20 @@ pub async fn resolve_feature_editor_root(
     project_id: i64,
     feature_id: Option<i64>,
 ) -> Result<PathBuf, AppError> {
+    let project_root = resolve_project_root(pool, project_id).await?;
     if let Some(fid) = feature_id {
+        let project_path = project_root.to_string_lossy();
         if let Some(path) =
-            crate::domain::workflow::worktree::get_setting(pool, fid, "worktree_path").await
+            crate::domain::workflow::worktree::resolve_live_worktree(pool, fid, &project_path)
+                .await
+                .map_err(AppError::Internal)?
         {
-            if std::path::Path::new(&path).is_dir() {
-                return std::fs::canonicalize(&path).map_err(|e| {
-                    AppError::BadRequest(format!("cannot resolve feature {fid} worktree root: {e}"))
-                });
-            }
+            return std::fs::canonicalize(&path).map_err(|e| {
+                AppError::BadRequest(format!("cannot resolve feature {fid} worktree root: {e}"))
+            });
         }
     }
-    resolve_project_root(pool, project_id).await
+    Ok(project_root)
 }
 
 pub async fn create_project(

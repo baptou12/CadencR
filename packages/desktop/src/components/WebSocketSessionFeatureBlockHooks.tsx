@@ -17,6 +17,7 @@ import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTa
 import type { WorktreeStatus } from "@/types/workflow";
 import type { SessionControls } from "@/components/WebSocketSessionControls";
 import { PROVIDER_IDS } from "@/lib/providers";
+import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 export { useSessionControls } from "@/components/WebSocketSessionControls";
 
 /** The Claude profile to attach to an outgoing prompt, or undefined for non-Claude providers. */
@@ -64,6 +65,7 @@ export function useSessionFeatureData(
     query: { enabled: projectLookupEnabled },
   });
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
+  const worktreePath = useFeatureWorktreePath(featureId, projectId);
   useGitStatusSubscription(gitMetadataEnabled ? featureId : null);
   const { data: initialGitStatus } = useGetGitStatus(
     { feature_id: featureId },
@@ -90,7 +92,10 @@ export function useSessionFeatureData(
   const gitBranch =
     liveWorktreeBranch ?? featureSettings.worktree_branch ?? branchData?.branch ?? undefined;
   const defaultBranch = branchData?.branch ?? undefined;
-  const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
+  const effectiveCwd =
+    worktreePath === undefined
+      ? (session?.worktreePath ?? featureSettings.worktree_path ?? cwd)
+      : (worktreePath ?? projectPath ?? cwd);
   const worktreeStatus =
     session?.worktreeStatus && session.worktreeStatus !== "idle"
       ? session.worktreeStatus

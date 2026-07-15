@@ -1,17 +1,32 @@
 //! `git worktree list/add/remove` orchestration plus the porcelain parsers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::domain::git::models::WorktreeInfo;
 use crate::error::AppError;
-use crate::shared::git_cli::{run_git, run_git_background, run_git_safe, run_git_safe_refs};
+use crate::shared::git_cli::{run_git, run_git_background, run_git_safe_refs};
 use crate::shared::worktree_paths::compute_worktree_path;
 
 /// List all worktrees for a repository.
 pub async fn list_worktrees(repo_path: &Path) -> Result<Vec<WorktreeInfo>, AppError> {
     let stdout = run_git(&["worktree", "list", "--porcelain"], repo_path).await?;
     Ok(parse_worktree_list(&stdout))
+}
+
+/// List local branch short names with one read-only Git call.
+pub async fn list_local_branches(repo_path: &Path) -> Result<HashSet<String>, AppError> {
+    let output = run_git_background(
+        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+        repo_path,
+    )
+    .await?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(String::from)
+        .collect())
 }
 
 fn parse_worktree_list(output: &str) -> Vec<WorktreeInfo> {
@@ -76,23 +91,6 @@ fn parse_worktree_list(output: &str) -> Vec<WorktreeInfo> {
     }
 
     worktrees
-}
-
-/// Get info for a specific worktree by path.
-pub async fn get_worktree_info(
-    repo_path: &Path,
-    worktree_path: &Path,
-) -> Result<Option<WorktreeInfo>, AppError> {
-    let all = list_worktrees(repo_path).await?;
-    // Canonicalize to handle macOS symlinks (/var -> /private/var)
-    let canonical =
-        std::fs::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
-    let wt_str = canonical.to_string_lossy();
-    Ok(all.into_iter().find(|w| {
-        let w_canonical =
-            std::fs::canonicalize(&w.path).unwrap_or_else(|_| std::path::PathBuf::from(&w.path));
-        w_canonical.to_string_lossy() == wt_str.as_ref()
-    }))
 }
 
 /// Create a git worktree with a new branch.
@@ -171,19 +169,6 @@ pub async fn create_worktree(
     Ok((worktree_str, branch_name.to_string()))
 }
 
-/// Remove a git worktree. Safe removal refuses dirty worktrees; force removal
-/// passes Git's `--force` escape hatch for explicit user-confirmed cleanup.
-pub async fn remove_worktree(
-    repo_path: &Path,
-    worktree_path: &Path,
-    force: bool,
-) -> Result<(), AppError> {
-    let wt_str = worktree_path.to_string_lossy().to_string();
-    let flags: &[&str] = if force { &["--force"] } else { &[] };
-    run_git_safe(&["worktree", "remove"], flags, &[&wt_str], repo_path).await?;
-    Ok(())
-}
-
 /// Parse `git worktree list --porcelain` and return a map of
 /// `branch_name → worktree_path`. Bare-repo blocks (no `branch` line, or
 /// `bare`) are skipped. The `refs/heads/` prefix is stripped from the
@@ -255,6 +240,20 @@ mod tests {
         assert_eq!(worktrees[1].head, "def456");
     }
 
+    #[tokio::test]
+    async fn lists_local_branch_names() {
+        let repo = tempfile::tempdir().unwrap();
+        crate::shared::git_cli::run_git(&["init"], repo.path())
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(&["branch", "feature/one"], repo.path())
+            .await
+            .unwrap_err();
+        // An unborn repository has no refs. The command still succeeds and
+        // should return an empty set rather than a phantom branch.
+        assert!(list_local_branches(repo.path()).await.unwrap().is_empty());
+    }
+
     #[test]
     fn test_parse_worktree_list_bare() {
         let output = "worktree /home/user/repo.git\nHEAD abc123\nbare\n\n";
@@ -321,51 +320,5 @@ detached
         let worktrees = parse_worktree_list(output);
         assert_eq!(worktrees.len(), 1);
         assert_eq!(worktrees[0].branch, "(detached)");
-    }
-
-    #[tokio::test]
-    async fn remove_worktree_requires_force_for_dirty_tree() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = dir.path().join("repo");
-        let wt = dir.path().join("wt");
-        std::fs::create_dir(&repo).unwrap();
-        crate::shared::git_cli::run_git(&["init"], &repo)
-            .await
-            .unwrap();
-        crate::shared::git_cli::run_git(&["config", "user.email", "test@example.com"], &repo)
-            .await
-            .unwrap();
-        crate::shared::git_cli::run_git(&["config", "user.name", "Test"], &repo)
-            .await
-            .unwrap();
-        crate::shared::git_cli::run_git(&["config", "commit.gpgsign", "false"], &repo)
-            .await
-            .unwrap();
-        std::fs::write(repo.join("README.md"), "hello").unwrap();
-        crate::shared::git_cli::run_git(&["add", "README.md"], &repo)
-            .await
-            .unwrap();
-        crate::shared::git_cli::run_git(&["commit", "-m", "init"], &repo)
-            .await
-            .unwrap();
-        crate::shared::git_cli::run_git(
-            &[
-                "worktree",
-                "add",
-                "-b",
-                "feature/dirty",
-                wt.to_str().unwrap(),
-            ],
-            &repo,
-        )
-        .await
-        .unwrap();
-        std::fs::write(wt.join("dirty.txt"), "dirty").unwrap();
-
-        let safe = remove_worktree(&repo, &wt, false).await;
-        assert!(safe.is_err());
-
-        remove_worktree(&repo, &wt, true).await.unwrap();
-        assert!(!wt.exists());
     }
 }

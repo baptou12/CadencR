@@ -17,7 +17,9 @@ use std::path::PathBuf;
 use sqlx::SqlitePool;
 
 use super::envelope::send_envelope;
-use super::get_setting;
+use super::{
+    get_project_directory, get_project_id_for_feature, get_setting, resolve_live_worktree,
+};
 use crate::domain::workflow::ws_sender::WsSender;
 
 /// Re-emit the feature's persisted worktree state to `sender`, reusing the exact
@@ -29,11 +31,12 @@ pub async fn replay_persisted_state(
     read_pool: &SqlitePool,
     feature_id: i64,
     sender: &WsSender,
-) -> Option<PathBuf> {
-    let path = get_setting(read_pool, feature_id, "worktree_path").await?;
-    if path.is_empty() || tokio::fs::metadata(&path).await.is_err() {
-        return None;
-    }
+) -> Result<Option<PathBuf>, String> {
+    let project_id = get_project_id_for_feature(read_pool, feature_id).await?;
+    let project_path = get_project_directory(read_pool, project_id).await?;
+    let Some(path) = resolve_live_worktree(read_pool, feature_id, &project_path).await? else {
+        return Ok(None);
+    };
     let branch = get_setting(read_pool, feature_id, "worktree_branch").await;
     send_envelope(
         sender,
@@ -51,7 +54,7 @@ pub async fn replay_persisted_state(
         "setup_running" => replay_setup_running(read_pool, feature_id, sender).await,
         _ => {}
     }
-    Some(PathBuf::from(path))
+    Ok(Some(PathBuf::from(path)))
 }
 
 async fn replay_ready(read_pool: &SqlitePool, feature_id: i64, sender: &WsSender) {
@@ -113,7 +116,7 @@ mod tests {
     use sqlx::SqlitePool;
     use tokio::sync::mpsc;
 
-    async fn test_pool() -> SqlitePool {
+    async fn test_pool(project_path: &str) -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         sqlx::query(
             "CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, \
@@ -122,7 +125,32 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, path TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO projects (id, path) VALUES (1, ?)")
+            .bind(project_path)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id) VALUES (1, 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
         pool
+    }
+
+    async fn git_project() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        crate::shared::git_cli::run_git(&["init"], dir.path())
+            .await
+            .unwrap();
+        dir
     }
 
     fn actions(rx: &mut mpsc::UnboundedReceiver<Message>) -> Vec<String> {
@@ -136,16 +164,19 @@ mod tests {
 
     #[tokio::test]
     async fn no_worktree_emits_nothing_and_returns_none() {
-        let pool = test_pool().await;
+        let pool = test_pool("/project").await;
         let (tx, mut rx) = mpsc::unbounded_channel();
-        assert!(replay_persisted_state(&pool, 1, &tx).await.is_none());
+        assert!(replay_persisted_state(&pool, 1, &tx)
+            .await
+            .unwrap()
+            .is_none());
         assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]
     async fn ready_worktree_replays_created_output_and_ready() {
-        let pool = test_pool().await;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = git_project().await;
+        let pool = test_pool(&dir.path().to_string_lossy()).await;
         let path = dir.path().to_string_lossy().to_string();
         set_setting(&pool, 1, "worktree_path", &path).await.unwrap();
         set_setting(&pool, 1, "worktree_branch", "feat/x")
@@ -159,7 +190,10 @@ mod tests {
             .unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel();
 
-        assert!(replay_persisted_state(&pool, 1, &tx).await.is_some());
+        assert!(replay_persisted_state(&pool, 1, &tx)
+            .await
+            .unwrap()
+            .is_some());
 
         assert_eq!(
             actions(&mut rx),
@@ -174,7 +208,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_worktree_dir_is_skipped() {
-        let pool = test_pool().await;
+        let pool = test_pool("/project").await;
         set_setting(&pool, 1, "worktree_path", "/no/such/path-xyz")
             .await
             .unwrap();
@@ -184,14 +218,36 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
 
         // A path that no longer exists on disk must not surface a phantom worktree.
-        assert!(replay_persisted_state(&pool, 1, &tx).await.is_none());
+        assert!(replay_persisted_state(&pool, 1, &tx)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn leftover_non_git_worktree_dir_is_skipped() {
+        let project = git_project().await;
+        let pool = test_pool(&project.path().to_string_lossy()).await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_string_lossy().to_string();
+        set_setting(&pool, 1, "worktree_path", &path).await.unwrap();
+        set_setting(&pool, 1, "worktree_setup_step", "ready")
+            .await
+            .unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        assert!(replay_persisted_state(&pool, 1, &tx)
+            .await
+            .unwrap()
+            .is_none());
         assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]
     async fn setup_running_replays_running_then_persisted_log_lines() {
-        let pool = test_pool().await;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = git_project().await;
+        let pool = test_pool(&dir.path().to_string_lossy()).await;
         let path = dir.path().to_string_lossy().to_string();
         set_setting(&pool, 1, "worktree_path", &path).await.unwrap();
         set_setting(&pool, 1, "worktree_setup_step", "setup_running")
@@ -200,7 +256,10 @@ mod tests {
         // No `worktree_setup_log` persisted yet — the common mid-run case.
         let (tx, mut rx) = mpsc::unbounded_channel();
 
-        assert!(replay_persisted_state(&pool, 1, &tx).await.is_some());
+        assert!(replay_persisted_state(&pool, 1, &tx)
+            .await
+            .unwrap()
+            .is_some());
 
         assert_eq!(
             actions(&mut rx),
@@ -211,8 +270,8 @@ mod tests {
 
     #[tokio::test]
     async fn setup_error_replays_error_with_output() {
-        let pool = test_pool().await;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = git_project().await;
+        let pool = test_pool(&dir.path().to_string_lossy()).await;
         let path = dir.path().to_string_lossy().to_string();
         set_setting(&pool, 1, "worktree_path", &path).await.unwrap();
         set_setting(&pool, 1, "worktree_setup_step", "setup_error")
@@ -223,7 +282,10 @@ mod tests {
             .unwrap();
         let (tx, mut rx) = mpsc::unbounded_channel();
 
-        assert!(replay_persisted_state(&pool, 1, &tx).await.is_some());
+        assert!(replay_persisted_state(&pool, 1, &tx)
+            .await
+            .unwrap()
+            .is_some());
 
         assert_eq!(
             actions(&mut rx),

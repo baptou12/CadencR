@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crate::app_state::AppState;
-use crate::domain::git::repository;
 use crate::domain::git::worktree_context::WorktreeContext;
+use crate::domain::git::{commands, repository};
 use crate::error::AppError;
 
 mod blame;
@@ -61,29 +61,30 @@ pub(super) fn normalize_git_path(path: &str) -> String {
         .to_string()
 }
 
-/// Resolve the git directory for a feature.
-/// Uses worktree_path if available, otherwise project path.
+/// Resolve the live git directory for a feature. A stale worktree setting can
+/// point at a deleted directory or at residual files left after Git detached
+/// the worktree; both cases fall back to the project path.
 pub async fn resolve_feature_git_path(
     state: &AppState,
     feature_id: i64,
 ) -> Result<Option<String>, AppError> {
-    // Check worktree path first (applies to all feature types)
+    let Some((project_id, _)) =
+        repository::get_feature_type_and_project(&state.read_pool, feature_id).await?
+    else {
+        return Ok(None);
+    };
+    let project_path = match repository::get_project_path(&state.read_pool, project_id).await {
+        Ok(path) => path,
+        Err(_) => return Ok(None),
+    };
     let wt = repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH)
         .await?;
     if let Some(path) = wt {
-        return Ok(Some(path));
+        if commands::is_live_worktree(Path::new(&project_path), Path::new(&path)).await? {
+            return Ok(Some(path));
+        }
     }
-
-    // Fall back to project path
-    let row = repository::get_feature_type_and_project(&state.read_pool, feature_id).await?;
-    let project_id = match row {
-        Some((pid, _)) => pid,
-        None => return Ok(None),
-    };
-    match repository::get_project_path(&state.read_pool, project_id).await {
-        Ok(p) => Ok(Some(p)),
-        Err(_) => Ok(None),
-    }
+    Ok(Some(project_path))
 }
 
 /// Helper to get project path + worktree branch for merge/conflict/delete operations.

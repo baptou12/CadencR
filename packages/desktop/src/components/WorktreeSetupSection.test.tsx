@@ -1,13 +1,30 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { act, render, screen, waitFor } from "@/test-utils";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
 
-const { mockGetSettings } = vi.hoisted(() => ({
+const { mockGetSettings, mockListWorktrees } = vi.hoisted(() => ({
   mockGetSettings: vi.fn<() => { data: unknown }>(() => ({ data: null })),
+  mockListWorktrees: vi.fn(() => ({
+    data: [
+      {
+        feature_id: 1,
+        worktree_path: "/repo/worktree",
+        worktree_branch: "feature/test",
+        is_default_branch: false,
+        is_main_worktree: false,
+        directory_exists: true,
+        branch_exists: true,
+        live: true,
+      },
+    ],
+    isLoading: false,
+    error: null,
+  })),
 }));
 
 vi.mock("@/api/generated", () => ({
   useGetFeatureSettings: mockGetSettings,
+  useListFeatureWorktrees: mockListWorktrees,
 }));
 
 function settingsArray(obj: Record<string, string>) {
@@ -15,6 +32,25 @@ function settingsArray(obj: Record<string, string>) {
 }
 
 describe("WorktreeSetupSection", () => {
+  beforeEach(() => {
+    mockListWorktrees.mockReturnValue({
+      data: [
+        {
+          feature_id: 1,
+          worktree_path: "/repo/worktree",
+          worktree_branch: "feature/test",
+          is_default_branch: false,
+          is_main_worktree: false,
+          directory_exists: true,
+          branch_exists: true,
+          live: true,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+  });
+
   it("renders nothing when no step is set", () => {
     mockGetSettings.mockReturnValue({ data: null });
     const { container } = render(<WorktreeSetupSection featureId={1} projectId={1} />);
@@ -45,6 +81,74 @@ describe("WorktreeSetupSection", () => {
     });
     render(<WorktreeSetupSection featureId={1} projectId={1} />);
     expect(screen.getByText("ready")).toBeInTheDocument();
+  });
+
+  it("keeps removed-worktree details collapsed until the setup row is opened", async () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "done",
+        worktree_branch: "feature/test",
+      }),
+    });
+    mockListWorktrees.mockReturnValue({
+      data: [
+        {
+          feature_id: 1,
+          worktree_path: "/repo/missing",
+          worktree_branch: "feature/test",
+          is_default_branch: false,
+          is_main_worktree: false,
+          directory_exists: false,
+          branch_exists: true,
+          live: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+
+    expect(screen.getByText("removed")).toBeInTheDocument();
+    expect(screen.getByText("Folder removed; branch still exists")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Cadencr is using the project folder instead/i),
+    ).not.toBeInTheDocument();
+
+    await act(async () => screen.getByText("Worktree Setup").click());
+
+    expect(screen.getByText(/Cadencr is using the project folder instead/i)).toBeInTheDocument();
+  });
+
+  it("reports details when both the worktree folder and branch were removed", async () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({ worktree_setup_step: "done", worktree_branch: "feature/test" }),
+    });
+    mockListWorktrees.mockReturnValue({
+      data: [
+        {
+          feature_id: 1,
+          worktree_path: "/repo/missing",
+          worktree_branch: "feature/test",
+          is_default_branch: false,
+          is_main_worktree: false,
+          directory_exists: false,
+          branch_exists: false,
+          live: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+
+    expect(screen.getByText("Folder and branch removed")).toBeInTheDocument();
+    expect(screen.queryByText(/was also removed/i)).not.toBeInTheDocument();
+
+    await act(async () => screen.getByText("Worktree Setup").click());
+
+    expect(screen.getByText(/was also removed/i)).toBeInTheDocument();
   });
 
   it("shows error badge when step is error", () => {

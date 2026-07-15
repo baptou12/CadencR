@@ -264,6 +264,7 @@ vi.mock("@/api/generated", () => ({
   useGetProjectSettings: vi.fn(() => ({ data: [] })),
   useGetGitStatus: vi.fn(() => ({ data: undefined })),
   useListProjects: vi.fn(() => ({ data: [{ id: 1, name: "Test Project", path: "/test/path" }] })),
+  useListFeatureWorktrees: vi.fn(() => ({ data: [], isLoading: false, error: null })),
   useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "false" } })),
   useSetWorkspaceSetting: vi.fn(() => ({
     mutateAsync: mocks.mockSetWorkspaceSettingMutateAsync,

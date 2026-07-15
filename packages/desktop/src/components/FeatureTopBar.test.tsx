@@ -53,6 +53,7 @@ vi.mock("@/api/generated", () => ({
     refetch: vi.fn(),
   })),
   useGetBranch: vi.fn(() => ({ data: { branch: "main" } })),
+  useListFeatureWorktrees: vi.fn(() => ({ data: [], isLoading: false, error: null })),
   useGetFileBlobShas: vi.fn(() => ({ data: [] })),
   // GitActionButton + BranchChip dependencies — feature/git-workflow-overhaul.
   usePush: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),

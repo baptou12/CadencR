@@ -19,6 +19,7 @@ interface ArchiveCleanupStateArgs {
   feature: Feature | undefined;
   projectId: number;
   hasLiveWorktree: boolean;
+  hasResidualWorktreeDirectory: boolean;
   showWorktreeRemoval: boolean;
   showBranchRemoval: boolean;
 }
@@ -62,11 +63,12 @@ export function useArchiveCleanupState(args: ArchiveCleanupStateArgs): ArchiveCl
   });
   const isCheckingWorktree = removeWorktree && args.hasLiveWorktree && gitStatus.isLoading;
   const forceWorktreeDelete =
-    removeWorktree && args.hasLiveWorktree && isDirtyGitStatus(gitStatus.data);
+    removeWorktree &&
+    (args.hasResidualWorktreeDirectory ||
+      (args.hasLiveWorktree && isDirtyGitStatus(gitStatus.data)));
 
   const controls = useCleanupSelectionControls({
     open: args.open,
-    hasLiveWorktree: args.hasLiveWorktree,
     showWorktreeRemoval: args.showWorktreeRemoval,
     showBranchRemoval: args.showBranchRemoval,
     branchRemovalDisabled: branchSafety.branchRemovalDisabled,
@@ -115,7 +117,6 @@ export function useArchiveCleanupState(args: ArchiveCleanupStateArgs): ArchiveCl
       branchSafety.branchName,
       branchSafety.targetBranch,
       branchSafety.forceBranchDelete,
-      branchCheck.data,
       branchCheck.isError,
       branchCheck.error,
       branchCheck.isLoading,
@@ -211,7 +212,6 @@ function getBranchCleanupSafety(args: BranchCleanupSafetyArgs): BranchCleanupSaf
 
 interface CleanupSelectionControlArgs {
   open: boolean;
-  hasLiveWorktree: boolean;
   showWorktreeRemoval: boolean;
   showBranchRemoval: boolean;
   branchRemovalDisabled: boolean;
@@ -228,7 +228,6 @@ interface CleanupSelectionControls {
 
 function useCleanupSelectionControls({
   open,
-  hasLiveWorktree,
   showWorktreeRemoval,
   showBranchRemoval,
   branchRemovalDisabled,
@@ -250,23 +249,23 @@ function useCleanupSelectionControls({
 
   const toggleWorktree = useCallback((): void => {
     if (!showWorktreeRemoval) return;
-    if (removeWorktree && removeBranch && hasLiveWorktree) return;
+    if (removeWorktree && removeBranch) return;
     setRemoveWorktree((value) => !value);
-  }, [hasLiveWorktree, removeBranch, removeWorktree, setRemoveWorktree, showWorktreeRemoval]);
+  }, [removeBranch, removeWorktree, setRemoveWorktree, showWorktreeRemoval]);
 
   const toggleBranch = useCallback((): void => {
     if (!showBranchRemoval || branchRemovalDisabled) return;
     setRemoveBranch((value) => {
       const next = !value;
-      if (next && hasLiveWorktree) setRemoveWorktree(true);
+      if (next && showWorktreeRemoval) setRemoveWorktree(true);
       return next;
     });
   }, [
     branchRemovalDisabled,
-    hasLiveWorktree,
     setRemoveBranch,
     setRemoveWorktree,
     showBranchRemoval,
+    showWorktreeRemoval,
   ]);
 
   return useMemo(() => ({ toggleWorktree, toggleBranch }), [toggleWorktree, toggleBranch]);

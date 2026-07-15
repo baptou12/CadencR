@@ -119,7 +119,7 @@ async fn ensure_control_pending_handle(
 ) -> Result<(), AppError> {
     let row = require_session_row(&app_state.read_pool, feature_id, session_id).await?;
     let (project_id, cwd) = project_context(&app_state.read_pool, feature_id).await?;
-    let handle = build_pending_handle(app_state, project_id, cwd, row).await;
+    let handle = build_pending_handle(app_state, project_id, cwd, row).await?;
     app_state
         .mcp_control_sessions
         .lock()
@@ -229,11 +229,11 @@ async fn build_pending_handle(
     project_id: i64,
     cwd: String,
     row: SessionRow,
-) -> SdkHandle {
+) -> Result<SdkHandle, AppError> {
     let provider = effective_provider(app_state, project_id, &row).await;
-    let options = runtime_options(app_state, project_id, &cwd, &provider, &row).await;
+    let options = runtime_options(app_state, project_id, &cwd, &provider, &row).await?;
     let config = session_config(&options);
-    SdkHandle {
+    Ok(SdkHandle {
         state: QueryState::Pending(options),
         feature_id: row.feature_id,
         runtime_provider: provider,
@@ -252,7 +252,7 @@ async fn build_pending_handle(
         config,
         manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         manual_compact_spawn_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    }
+    })
 }
 
 async fn effective_provider(app_state: &AppState, project_id: i64, row: &SessionRow) -> String {
@@ -277,9 +277,9 @@ async fn runtime_options(
     project_cwd: &str,
     provider: &str,
     row: &SessionRow,
-) -> RuntimeSpawnConfig {
+) -> Result<RuntimeSpawnConfig, AppError> {
     let mut options = RuntimeSpawnConfig::default();
-    options.cwd = runtime_cwd(app_state, row.feature_id, project_cwd).await;
+    options.cwd = runtime_cwd(app_state, row.feature_id, project_cwd).await?;
     options.model = row.model.clone();
     options.thinking_effort = row.thinking_effort.clone();
     options.permission_mode = Some(
@@ -308,18 +308,18 @@ async fn runtime_options(
         .await;
     }
     options.resume_session_id = row.runtime_session_id.clone();
-    options
+    Ok(options)
 }
 
 async fn runtime_cwd(
     app_state: &AppState,
     feature_id: i64,
     project_cwd: &str,
-) -> std::path::PathBuf {
-    match worktree::get_setting(&app_state.read_pool, feature_id, "worktree_path").await {
-        Some(path) if std::path::Path::new(&path).exists() => std::path::PathBuf::from(path),
-        _ => std::path::PathBuf::from(project_cwd),
-    }
+) -> Result<std::path::PathBuf, AppError> {
+    worktree::resolve_live_worktree(&app_state.read_pool, feature_id, project_cwd)
+        .await
+        .map(|path| std::path::PathBuf::from(path.unwrap_or_else(|| project_cwd.to_string())))
+        .map_err(AppError::Internal)
 }
 
 fn session_config(options: &RuntimeSpawnConfig) -> SessionConfig {
