@@ -1,7 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ClipboardCopyIcon } from "lucide-react";
+import { ClipboardCopyIcon, FileTextIcon, MailIcon, MessageSquareIcon } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
+import { rangeToEmailHtml } from "@/lib/email-export";
+import { copyAs, type ExportFormat } from "@/lib/markdown-export";
+import {
+  captureSelectionSnapshot,
+  selectionSnapshotToMarkdown,
+  type SelectionSnapshot,
+} from "@/lib/selection-to-markdown";
 import { cn } from "@/lib/utils";
 import { ContextMenuActionButton } from "@/components/ContextMenuActionItem";
 
@@ -13,11 +20,13 @@ interface MenuPosition {
   x: number;
   y: number;
   text: string;
+  richSelection?: SelectionSnapshot;
 }
 
 /**
- * App-wide fallback context menu offering "Copy" when the user right-clicks
- * on a non-empty text selection, anywhere no more specific menu handles it.
+ * App-wide fallback context menu for a non-empty text selection anywhere no
+ * more specific menu handles it. Surfaces marked with `data-rich-copy` also
+ * receive the rich Markdown, Slack, and email export actions.
  *
  * Design notes — this MUST NOT wrap the app in a Radix `ContextMenu` /
  * `ContextMenuTrigger`. Doing so puts a `data-slot="context-menu-trigger"`
@@ -53,7 +62,11 @@ export default function UniversalContextMenu({ children }: UniversalContextMenuP
       if (!text.trim()) return;
 
       e.preventDefault();
-      setMenu({ x: e.clientX, y: e.clientY, text });
+      const richSelection =
+        sel && target?.closest("[data-rich-copy='true']")
+          ? captureSelectionSnapshot(sel)
+          : undefined;
+      setMenu({ x: e.clientX, y: e.clientY, text, richSelection });
     }
 
     document.addEventListener("contextmenu", onContextMenu);
@@ -80,35 +93,68 @@ export default function UniversalContextMenu({ children }: UniversalContextMenuP
     };
   }, [menu]);
 
-  async function handleCopy(): Promise<void> {
+  async function handleCopy(format: ExportFormat): Promise<void> {
     if (!menu) return;
-    await copyToClipboard(menu.text, "Copied");
+    if (format === "plain") await copyToClipboard(menu.text, "Copied");
+    else if (menu.richSelection) {
+      const markdown = selectionSnapshotToMarkdown(menu.richSelection);
+      const emailHtml =
+        format === "email"
+          ? menu.richSelection.ranges.map((range) => rangeToEmailHtml(range)).join("")
+          : undefined;
+      await copyAs(format, markdown, emailHtml);
+    }
     setMenu(null);
   }
 
   return (
     <>
       {children}
-      {menu &&
-        createPortal(
-          <div
-            role="menu"
-            className={cn(
-              "bg-popover text-popover-foreground fixed z-50 min-w-[8rem] rounded-md border p-1 shadow-md",
-            )}
-            style={{ top: menu.y, left: menu.x }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <ContextMenuActionButton
-              icon={ClipboardCopyIcon}
-              shortcutKeys={["mod", "c"]}
-              onSelect={() => void handleCopy()}
-            >
-              Copy
-            </ContextMenuActionButton>
-          </div>,
-          document.body,
-        )}
+      <SelectionMenu menu={menu} onCopy={(format) => void handleCopy(format)} />
     </>
+  );
+}
+
+function SelectionMenu({
+  menu,
+  onCopy,
+}: {
+  menu: MenuPosition | null;
+  onCopy: (format: ExportFormat) => void;
+}): ReactNode {
+  if (!menu) return null;
+  return createPortal(
+    <div
+      role="menu"
+      data-slot="context-menu-content"
+      className={cn(
+        "bg-popover text-popover-foreground fixed z-50 min-w-[8rem] rounded-md border p-1 shadow-md",
+      )}
+      style={{ top: menu.y, left: menu.x }}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <ContextMenuActionButton
+        icon={ClipboardCopyIcon}
+        shortcutKeys={["mod", "c"]}
+        onSelect={() => onCopy("plain")}
+      >
+        Copy
+      </ContextMenuActionButton>
+      {menu.richSelection && (
+        <>
+          <div className="bg-border -mx-1 my-1 h-px" role="separator" />
+          <ContextMenuActionButton icon={FileTextIcon} onSelect={() => onCopy("markdown")}>
+            Copy as Markdown
+          </ContextMenuActionButton>
+          <ContextMenuActionButton icon={MessageSquareIcon} onSelect={() => onCopy("slack")}>
+            Copy for Slack
+          </ContextMenuActionButton>
+          <ContextMenuActionButton icon={MailIcon} onSelect={() => onCopy("email")}>
+            Copy for email
+          </ContextMenuActionButton>
+        </>
+      )}
+    </div>,
+    document.body,
   );
 }

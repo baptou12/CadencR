@@ -284,7 +284,7 @@ export const AgentStream = memo(function AgentStream({
   }
 
   return (
-    <div className="relative h-full">
+    <div className="relative h-full" data-rich-copy="true">
       {isLoadingOlder && <LoadingOlderOverlay />}
       {searchEnabled && (
         <ConversationSearch

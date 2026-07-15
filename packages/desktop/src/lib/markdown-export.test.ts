@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { toPlainText, toSlackMrkdwn } from "./markdown-export";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { copyAs, toPlainText, toSlackMrkdwn } from "./markdown-export";
+
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+
+vi.mock("sonner", () => ({ toast }));
 
 describe("toPlainText", () => {
   it("strips headings", () => {
@@ -75,5 +79,37 @@ describe("toSlackMrkdwn", () => {
   it("preserves fenced and inline code", () => {
     expect(toSlackMrkdwn("```ts\nx\n```")).toBe("```ts\nx\n```");
     expect(toSlackMrkdwn("see `code` here")).toBe("see `code` here");
+  });
+});
+
+describe("copyAs email", () => {
+  const write = vi.fn(async (_items: ClipboardItem[]): Promise<void> => undefined);
+
+  beforeEach(() => {
+    write.mockClear();
+    toast.success.mockClear();
+    toast.error.mockClear();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { write },
+    });
+    vi.stubGlobal(
+      "ClipboardItem",
+      class ClipboardItem {
+        constructor(readonly data: Record<string, Blob>) {}
+      },
+    );
+  });
+
+  it("writes HTML and plain-text clipboard representations together", async () => {
+    await copyAs("email", "# Heading", "<h1>Heading</h1>");
+
+    expect(write).toHaveBeenCalledTimes(1);
+    const items = write.mock.calls[0]?.[0];
+    const item = items?.[0] as unknown as { data: Record<string, Blob> };
+    expect(Object.keys(item.data)).toEqual(["text/html", "text/plain"]);
+    expect(item.data["text/html"]?.type).toBe("text/html");
+    expect(item.data["text/plain"]?.type).toBe("text/plain");
+    expect(toast.success).toHaveBeenCalledWith("Copied for email");
   });
 });

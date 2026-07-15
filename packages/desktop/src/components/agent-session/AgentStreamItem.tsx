@@ -137,6 +137,13 @@ export const AgentStreamItem = memo(function AgentStreamItem({
       />
     </div>
   );
-  if (isSessionReply) return item;
-  return <AgentStreamContextMenu block={block}>{item}</AgentStreamContextMenu>;
+  return (
+    <AgentStreamContextMenu
+      block={block}
+      copyContent={sessionReply?.body}
+      branchingEnabled={!isSessionReply}
+    >
+      {item}
+    </AgentStreamContextMenu>
+  );
 });

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fragmentToMarkdown } from "./selection-to-markdown";
+import {
+  captureSelectionSnapshot,
+  fragmentToMarkdown,
+  selectionSnapshotToMarkdown,
+} from "./selection-to-markdown";
 
 /** Build a `DocumentFragment` from an HTML string (mirrors `range.cloneContents`). */
 function fragment(html: string): DocumentFragment {
@@ -66,5 +70,23 @@ describe("fragmentToMarkdown", () => {
     // produces a fragment without the enclosing <ul>; the walker should
     // still mark each <li> with `- `.
     expect(fragmentToMarkdown(fragment("<li>one</li><li>two</li>"))).toBe("- one\n- two");
+  });
+});
+
+describe("selection snapshots", () => {
+  it("preserves ranges and derives Markdown after the live selection is cleared", () => {
+    const heading = document.createElement("h2");
+    heading.textContent = "Deferred heading";
+    document.body.append(heading);
+    const range = document.createRange();
+    range.selectNode(heading);
+    const selection = window.getSelection();
+    selection?.addRange(range);
+
+    const snapshot = captureSelectionSnapshot(selection!);
+    selection?.removeAllRanges();
+
+    expect(selectionSnapshotToMarkdown(snapshot)).toBe("## Deferred heading");
+    heading.remove();
   });
 });
