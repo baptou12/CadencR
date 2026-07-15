@@ -153,7 +153,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           data-nav-type="feature"
           data-nav-id={String(feature.id)}
           data-nav-project-id={String(projectId)}
-          className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none transition-colors hover:bg-sidebar-accent ${
+          className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-0.5 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none transition-colors hover:bg-sidebar-accent ${
             isActive ? "bg-sidebar-accent" : ""
           } ${isArchived ? "opacity-50" : ""}`}
           onClick={(e) => {
@@ -173,7 +173,9 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           <SidebarShortcutBadge ref={badgeRef} />
           {hierarchyControl}
 
-          {/* Live status icon driven by the per-session backend store. */}
+          {/* Live status icon driven by the per-session backend store. The
+              column keeps its width even when empty so the title never shifts
+              as the agent's status changes. */}
           <div className="flex shrink-0 w-3.5 items-center justify-center">
             {liveStatus === "agent" && <BotIcon className="size-3.5 text-blue-500 animate-pulse" />}
             {liveStatus === "question" && (
