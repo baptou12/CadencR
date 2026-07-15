@@ -29,6 +29,11 @@ interface WalkContext {
   orderedCounter: number[];
 }
 
+export interface SelectionSnapshot {
+  ranges: Range[];
+  text: string;
+}
+
 function newContext(): WalkContext {
   return { listStack: [], orderedCounter: [] };
 }
@@ -47,6 +52,22 @@ export function fragmentToMarkdown(fragment: DocumentFragment): string {
   return walkChildren(fragment, ctx)
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** Snapshot a live selection before a context menu can collapse it. */
+export function captureSelectionSnapshot(selection: Selection): SelectionSnapshot {
+  const ranges: Range[] = [];
+  for (let index = 0; index < selection.rangeCount; index++) {
+    ranges.push(selection.getRangeAt(index).cloneRange());
+  }
+  return { ranges, text: selection.toString() };
+}
+
+/** Rebuild Markdown lazily from a previously captured selection. */
+export function selectionSnapshotToMarkdown(selection: SelectionSnapshot): string {
+  let markdown = "";
+  for (const range of selection.ranges) markdown += fragmentToMarkdown(range.cloneContents());
+  return markdown || selection.text;
 }
 
 /** Walk every child node of `parent`, concatenating their markdown output. */

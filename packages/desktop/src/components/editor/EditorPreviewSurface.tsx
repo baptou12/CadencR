@@ -64,7 +64,7 @@ export const EditorPreviewSurface = memo(function EditorPreviewSurface({
   switch (kind) {
     case "markdown":
       return (
-        <div className="flex-1 overflow-auto bg-background">
+        <div className="flex-1 overflow-auto bg-background" data-rich-copy="true">
           <div className="max-w-3xl mx-auto px-6 py-4">
             <PreviewImageProvider value={imageContext}>
               <MarkdownImageProvider value={PreviewMarkdownImage}>

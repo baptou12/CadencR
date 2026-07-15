@@ -15,6 +15,21 @@ function getSrcDoc(): string {
 }
 
 describe("EditorPreviewSurface", () => {
+  it("enables rich copy for Markdown previews", () => {
+    const { container } = render(
+      <EditorPreviewSurface
+        kind="markdown"
+        content="# Preview"
+        filePath="preview.md"
+        projectId={1}
+        featureId={1}
+      />,
+    );
+
+    expect(screen.getByTestId("markdown-preview")).toHaveTextContent("# Preview");
+    expect(container.querySelector("[data-rich-copy='true']")).toBeInTheDocument();
+  });
+
   it("renders SVG content inside a sandboxed iframe", () => {
     const content = '<svg onload="window.parent.evil = true"><circle cx="4" cy="4" r="4" /></svg>';
 

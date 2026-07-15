@@ -2,7 +2,7 @@ import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
 
 /** Supported clipboard export formats for markdown sources. */
-export type ExportFormat = "markdown" | "plain" | "slack";
+export type ExportFormat = "email" | "markdown" | "plain" | "slack";
 
 /**
  * Strip markdown syntax to produce plain text suitable for non-markdown
@@ -98,11 +98,20 @@ export function toSlackMrkdwn(md: string): string {
 /**
  * Convert markdown source to the requested format and write to the system
  * clipboard. On success shows a sonner toast; on failure surfaces the error
- * (per `error-handling.md` rule). Always writes plain text — Slack
- * specifically expects plain mrkdwn (`*bold*`, `\n- item`, …) on paste.
+ * (per `error-handling.md` rule). Email writes both HTML and plain-text MIME
+ * representations; the other formats deliberately remain plain text.
  */
-export async function copyAs(format: ExportFormat, source: string): Promise<void> {
+export async function copyAs(
+  format: ExportFormat,
+  source: string,
+  emailHtml?: string,
+): Promise<void> {
   try {
+    if (format === "email") {
+      await writeEmailClipboard(source, emailHtml);
+      toast.success(formatLabel(format));
+      return;
+    }
     const payload =
       format === "plain"
         ? toPlainText(source)
@@ -125,8 +134,19 @@ export async function copyAs(format: ExportFormat, source: string): Promise<void
   }
 }
 
+async function writeEmailClipboard(source: string, html: string | undefined): Promise<void> {
+  if (!html) throw new Error("No rich HTML was available for the selection");
+  const item = new ClipboardItem({
+    "text/html": new Blob([html], { type: "text/html" }),
+    "text/plain": new Blob([toPlainText(source)], { type: "text/plain" }),
+  });
+  await navigator.clipboard.write([item]);
+}
+
 function formatLabel(format: ExportFormat): string {
   switch (format) {
+    case "email":
+      return "Copied for email";
     case "markdown":
       return "Copied as Markdown";
     case "slack":
