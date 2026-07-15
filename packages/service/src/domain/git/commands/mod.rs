@@ -27,7 +27,9 @@ mod pty_spawn;
 mod stash;
 mod untracked;
 mod util;
+mod worktree_health;
 mod worktree_ops;
+mod worktree_removal;
 
 pub use blob_shas::get_file_blob_shas;
 pub use branch_name::build_branch_name;
@@ -40,7 +42,9 @@ pub use merge::{get_current_branch, get_original_branch};
 pub use merge_ops::{check_merge_conflicts, delete_branch, is_branch_merged, parse_conflict_files};
 pub use pty::{commit_streaming, push_streaming};
 pub use stash::list_stashes;
+pub use worktree_health::{get_worktree_info, is_live_worktree, worktree_path_matches};
 pub use worktree_ops::{
-    create_worktree, get_worktree_info, has_uncommitted_changes, list_worktree_branches,
-    list_worktrees, remove_worktree,
+    create_worktree, has_uncommitted_changes, list_local_branches, list_worktree_branches,
+    list_worktrees,
 };
+pub use worktree_removal::remove_worktree;

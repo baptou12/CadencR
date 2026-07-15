@@ -209,15 +209,17 @@ pub(super) async fn handle_init(
 
     // Build SDK options — prefer the model stored in the DB (last used) over the frontend settings model
     let mut runtime_config = RuntimeSpawnConfig::default();
-    // If the feature has a worktree, use its path as cwd (critical for --resume)
-    let effective_cwd =
-        match worktree::get_setting(&app_state.read_pool, feature_id, "worktree_path").await {
-            Some(wt_path) if std::path::Path::new(&wt_path).exists() => {
-                info!(feature_id, worktree_path = %wt_path, "using worktree path as cwd");
-                wt_path
-            }
-            _ => cwd,
-        };
+    let effective_cwd = match worktree::resolve_feature_cwd(&app_state.read_pool, feature_id).await
+    {
+        Ok(path) => path,
+        Err(error) => {
+            send_error(sender, &envelope.id, "WORKTREE_CHECK_FAILED", &error);
+            return;
+        }
+    };
+    if effective_cwd != cwd {
+        info!(feature_id, runtime_cwd = %effective_cwd, "resolved runtime cwd from feature state");
+    }
     runtime_config.cwd = std::path::PathBuf::from(&effective_cwd);
     if let Some(ref model) = effective_model {
         runtime_config.model = Some(model.clone());
@@ -361,5 +363,9 @@ pub(super) async fn handle_init(
     session_init_restore::restore_pending_or_idle(app_state, sender, db_session_id, feature_id)
         .await;
 
-    super::session_init_worktree::restore_worktree_state(app_state, sender, feature_id).await;
+    if let Err(error) =
+        super::session_init_worktree::restore_worktree_state(app_state, sender, feature_id).await
+    {
+        send_error(sender, &envelope.id, "WORKTREE_CHECK_FAILED", &error);
+    }
 }

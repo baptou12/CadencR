@@ -358,6 +358,7 @@ export function ProjectFeatures({
         feature={confirmFeature}
         projectId={projectId}
         hasLiveWorktree={cleanupAvailability.hasLiveWorktree}
+        hasResidualWorktreeDirectory={cleanupAvailability.hasResidualWorktreeDirectory}
         showWorktreeRemoval={cleanupAvailability.showWorktreeRemoval}
         showBranchRemoval={cleanupAvailability.showBranchRemoval}
         onOpenChange={(open) => {

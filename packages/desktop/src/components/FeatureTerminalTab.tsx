@@ -53,13 +53,13 @@ export const FeatureTerminalTab = memo(
     // Compute the cwd a freshly-spawned terminal *would* end up in, given the
     // current feature settings: the worktree if one was created, otherwise the
     // project root.
-    const worktreePath = useFeatureWorktreePath(featureId);
+    const worktreePath = useFeatureWorktreePath(featureId, projectId);
     const projectsQuery = useListProjects();
     const projectPath = useMemo(
       () => projectsQuery.data?.find((p) => p.id === projectId)?.path ?? null,
       [projectsQuery.data, projectId],
     );
-    const expectedCwd = worktreePath ?? projectPath;
+    const expectedCwd = worktreePath === undefined ? null : (worktreePath ?? projectPath);
 
     // Guards the one-shot async hydration below so StrictMode's double-invoke
     // (and overlapping visibility/focus effects) can't fire two backend

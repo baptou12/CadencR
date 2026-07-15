@@ -255,7 +255,7 @@ const FeatureEditorTab = memo(
     // itself once a file is opened from the tree.
     const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
 
-    const isWorktree = useFeatureWorktreePath(featureId) !== null;
+    const isWorktree = Boolean(useFeatureWorktreePath(featureId, projectId));
 
     const sidebar = useMemo(
       () => (

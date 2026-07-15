@@ -36,13 +36,34 @@ pub async fn get_project_directory(pool: &SqlitePool, project_id: i64) -> Result
 /// checkpoint resolves cwd, so checkpoints and rewind/fork behave the same with
 /// or without a worktree.
 pub async fn resolve_feature_cwd(pool: &SqlitePool, feature_id: i64) -> Result<String, String> {
-    if let Some(path) = get_setting(pool, feature_id, "worktree_path").await {
-        if !path.trim().is_empty() {
-            return Ok(path);
-        }
-    }
     let project_id = get_project_id_for_feature(pool, feature_id).await?;
-    get_project_directory(pool, project_id).await
+    let project_path = get_project_directory(pool, project_id).await?;
+    Ok(resolve_live_worktree(pool, feature_id, &project_path)
+        .await?
+        .unwrap_or(project_path))
+}
+
+/// Resolve the recorded worktree only when it still exists and is registered
+/// by the owning project repository. Verification failures are surfaced rather
+/// than silently routing work into a different directory.
+pub async fn resolve_live_worktree(
+    pool: &SqlitePool,
+    feature_id: i64,
+    project_path: &str,
+) -> Result<Option<String>, String> {
+    let Some(path) = get_setting(pool, feature_id, "worktree_path").await else {
+        return Ok(None);
+    };
+    if path.trim().is_empty() {
+        return Ok(None);
+    }
+    crate::domain::git::commands::is_live_worktree(
+        std::path::Path::new(project_path),
+        std::path::Path::new(&path),
+    )
+    .await
+    .map(|live| live.then_some(path))
+    .map_err(|error| format!("Failed to verify feature worktree: {error}"))
 }
 
 pub async fn get_setting(pool: &SqlitePool, feature_id: i64, key: &str) -> Option<String> {
@@ -174,16 +195,58 @@ mod tests {
         pool
     }
 
+    async fn linked_worktree() -> (tempfile::TempDir, String, String) {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        let worktree = root.path().join("worktree");
+        std::fs::create_dir(&repo).unwrap();
+        for args in [
+            &["init"][..],
+            &["config", "user.email", "test@example.com"],
+            &["config", "user.name", "Test"],
+            &["config", "commit.gpgsign", "false"],
+        ] {
+            crate::shared::git_cli::run_git(args, &repo).await.unwrap();
+        }
+        std::fs::write(repo.join("README.md"), "test").unwrap();
+        crate::shared::git_cli::run_git(&["add", "README.md"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(&["commit", "-m", "init"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature/test",
+                worktree.to_str().unwrap(),
+            ],
+            &repo,
+        )
+        .await
+        .unwrap();
+        (
+            root,
+            repo.to_string_lossy().into_owned(),
+            worktree.to_string_lossy().into_owned(),
+        )
+    }
+
     #[tokio::test]
     async fn resolve_feature_cwd_prefers_the_worktree_path() {
         let pool = make_cwd_pool().await;
-        set_setting(&pool, 1, "worktree_path", "/Users/x/.cadencr/worktrees/wt")
+        let (_root, repo, worktree) = linked_worktree().await;
+        sqlx::query("UPDATE projects SET path = ? WHERE id = 6")
+            .bind(repo)
+            .execute(&pool)
             .await
             .unwrap();
-        assert_eq!(
-            resolve_feature_cwd(&pool, 1).await.unwrap(),
-            "/Users/x/.cadencr/worktrees/wt"
-        );
+        set_setting(&pool, 1, "worktree_path", &worktree)
+            .await
+            .unwrap();
+        assert_eq!(resolve_feature_cwd(&pool, 1).await.unwrap(), worktree);
     }
 
     #[tokio::test]
@@ -205,5 +268,30 @@ mod tests {
             resolve_feature_cwd(&pool, 1).await.unwrap(),
             "/Users/x/proj"
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_feature_cwd_rejects_a_leftover_non_git_directory() {
+        let pool = make_cwd_pool().await;
+        let project = tempfile::tempdir().unwrap();
+        crate::shared::git_cli::run_git(&["init"], project.path())
+            .await
+            .unwrap();
+        let project_path = project.path().to_string_lossy().into_owned();
+        sqlx::query("UPDATE projects SET path = ? WHERE id = 6")
+            .bind(&project_path)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let leftover = tempfile::tempdir().unwrap();
+        set_setting(
+            &pool,
+            1,
+            "worktree_path",
+            &leftover.path().to_string_lossy(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolve_feature_cwd(&pool, 1).await.unwrap(), project_path);
     }
 }

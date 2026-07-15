@@ -103,7 +103,18 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
             return reported_failure(internal_replay, "branch setup failed");
         }
     };
-    reresolve_worktree_and_resume(&mut context).await;
+    if let Err(error) = reresolve_worktree_and_resume(&mut context).await {
+        delivery_lifecycle::fail_pending_receipt(
+            &context,
+            receipt_message_uuid.as_deref(),
+            dispatch_claim.as_ref(),
+            &error,
+        )
+        .await;
+        let internal_replay = context.internal_replay;
+        report_branch_setup_error(context, error).await;
+        return reported_failure(internal_replay, "worktree verification failed");
+    }
     super::prompt_checkpoint::capture_pre_turn_pending(&context, persistence.message_id()).await;
     attach_permission_bridge(&mut context);
     if let Err(error) = super::prompt_pending_mcp::attach_cadencr_mcp(&mut context).await {
@@ -144,21 +155,15 @@ fn reported_failure(internal_replay: bool, message: &str) -> Result<(), String> 
 /// both from the DB — the source of truth — so a follow-up from any device
 /// always resumes the SAME provider session in the SAME worktree instead of
 /// starting a fresh agent in the project root.
-async fn reresolve_worktree_and_resume(context: &mut PendingPromptContext) {
-    if let Some(path) = worktree::get_setting(
-        &context.app_state.read_pool,
-        context.feature_id,
-        "worktree_path",
-    )
-    .await
-    {
-        let cwd = std::path::PathBuf::from(&path);
-        if !path.is_empty() && context.options.cwd != cwd && cwd.exists() {
-            info!(context.db_session_id, worktree_path = %path, "re-resolved worktree cwd from DB before spawn");
-            context.config.canonical_cwd = permissions::canonicalize_worktree(&cwd);
-            context.config.cwd = cwd.clone();
-            context.options.cwd = cwd;
-        }
+async fn reresolve_worktree_and_resume(context: &mut PendingPromptContext) -> Result<(), String> {
+    let path =
+        worktree::resolve_feature_cwd(&context.app_state.read_pool, context.feature_id).await?;
+    let cwd = std::path::PathBuf::from(&path);
+    if context.options.cwd != cwd {
+        info!(context.db_session_id, runtime_cwd = %path, "re-resolved runtime cwd from DB before spawn");
+        context.config.canonical_cwd = permissions::canonicalize_worktree(&cwd);
+        context.config.cwd = cwd.clone();
+        context.options.cwd = cwd;
     }
     if let Some(sid) = refresh_resume_session_id_from_db(
         &mut context.options,
@@ -170,6 +175,7 @@ async fn reresolve_worktree_and_resume(context: &mut PendingPromptContext) {
     {
         info!(context.db_session_id, runtime_session_id = %sid, "re-resolved resume id from DB before spawn");
     }
+    Ok(())
 }
 async fn persist_initial_user_message(
     context: &PendingPromptContext,

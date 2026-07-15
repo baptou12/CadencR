@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 
 use crate::domain::git::repository::get_project_path;
-use crate::domain::workflow::worktree::get_setting;
+use crate::domain::workflow::worktree::resolve_live_worktree;
 use crate::error::AppError;
 
 /// Resolve the working directory for a terminal: feature worktree if set and
@@ -11,12 +11,11 @@ pub async fn resolve_cwd(
     feature_id: i64,
     project_id: i64,
 ) -> Result<String, AppError> {
-    if let Some(path) = get_setting(pool, feature_id, "worktree_path").await {
-        if std::path::Path::new(&path).exists() {
-            return Ok(path);
-        }
-    }
-    get_project_path(pool, project_id).await
+    let project_path = get_project_path(pool, project_id).await?;
+    resolve_live_worktree(pool, feature_id, &project_path)
+        .await
+        .map(|worktree| worktree.unwrap_or(project_path))
+        .map_err(AppError::Internal)
 }
 
 /// Same as [`resolve_cwd`] but honours `requested_cwd` when it matches the
@@ -30,23 +29,17 @@ pub async fn resolve_pty_cwd(
     project_id: i64,
     requested_cwd: Option<&str>,
 ) -> Result<String, AppError> {
-    let Some(req) = requested_cwd.filter(|s| !s.is_empty()) else {
+    let Some(req) = requested_cwd.filter(|path| !path.is_empty()) else {
         return resolve_cwd(pool, feature_id, project_id).await;
     };
-    if !std::path::Path::new(req).exists() {
-        return resolve_cwd(pool, feature_id, project_id).await;
-    }
-    if get_setting(pool, feature_id, "worktree_path")
+    let project_path = get_project_path(pool, project_id).await?;
+    let worktree_path = resolve_live_worktree(pool, feature_id, &project_path)
         .await
-        .as_deref()
-        == Some(req)
-    {
+        .map_err(AppError::Internal)?;
+    if req == project_path || worktree_path.as_deref() == Some(req) {
         return Ok(req.to_string());
     }
-    if get_project_path(pool, project_id).await.ok().as_deref() == Some(req) {
-        return Ok(req.to_string());
-    }
-    resolve_cwd(pool, feature_id, project_id).await
+    Ok(worktree_path.unwrap_or(project_path))
 }
 
 #[cfg(test)]
@@ -77,11 +70,51 @@ mod tests {
         std::env::temp_dir().to_string_lossy().into_owned()
     }
 
+    async fn linked_worktree() -> (tempfile::TempDir, String, String) {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        let worktree = root.path().join("worktree");
+        std::fs::create_dir(&repo).unwrap();
+        for args in [
+            &["init"][..],
+            &["config", "user.email", "test@example.com"],
+            &["config", "user.name", "Test"],
+            &["config", "commit.gpgsign", "false"],
+        ] {
+            crate::shared::git_cli::run_git(args, &repo).await.unwrap();
+        }
+        std::fs::write(repo.join("README.md"), "test").unwrap();
+        crate::shared::git_cli::run_git(&["add", "README.md"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(&["commit", "-m", "init"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature/test",
+                worktree.to_str().unwrap(),
+            ],
+            &repo,
+        )
+        .await
+        .unwrap();
+        (
+            root,
+            repo.to_string_lossy().into_owned(),
+            worktree.to_string_lossy().into_owned(),
+        )
+    }
+
     #[tokio::test]
     async fn resolve_pty_cwd_honours_requested_when_it_matches_worktree() {
         let pool = setup_db().await;
-        let cwd = temp_dir();
-        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/nope')")
+        let (_root, project, cwd) = linked_worktree().await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', ?)")
+            .bind(project)
             .execute(&pool)
             .await
             .unwrap();
@@ -95,6 +128,35 @@ mod tests {
 
         let resolved = resolve_pty_cwd(&pool, 1, 1, Some(&cwd)).await.unwrap();
         assert_eq!(resolved, cwd);
+    }
+
+    #[tokio::test]
+    async fn resolve_pty_cwd_rejects_a_leftover_non_git_worktree_directory() {
+        let pool = setup_db().await;
+        let project = tempfile::tempdir().unwrap();
+        crate::shared::git_cli::run_git(&["init"], project.path())
+            .await
+            .unwrap();
+        let leftover = tempfile::tempdir().unwrap();
+        let project_path = project.path().to_string_lossy().into_owned();
+        let leftover_path = leftover.path().to_string_lossy().into_owned();
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', ?)")
+            .bind(&project_path)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'worktree_path', ?)",
+        )
+        .bind(&leftover_path)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let resolved = resolve_pty_cwd(&pool, 1, 1, Some(&leftover_path))
+            .await
+            .unwrap();
+        assert_eq!(resolved, project_path);
     }
 
     #[tokio::test]

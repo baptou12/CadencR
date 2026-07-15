@@ -66,6 +66,16 @@ pub async fn delete_feature_branch(
 ) -> Result<SuccessResponse, AppError> {
     let (project_path, branch) =
         get_project_and_branch(state, params.project_id, params.feature_id).await?;
+    if !commands::list_local_branches(Path::new(&project_path))
+        .await?
+        .contains(&branch)
+    {
+        return Ok(SuccessResponse {
+            success: true,
+            error: None,
+            blocked_reason: None,
+        });
+    }
     let has_separate_worktree =
         feature_has_separate_worktree(state, &project_path, params.feature_id).await?;
     if !has_separate_worktree {
@@ -147,10 +157,18 @@ pub async fn check_branch_delete(
         resolve_merge_conflict_repo_and_target(state, params.feature_id, project_path).await?;
     let default_branch = workflow_service::resolve_default_branch(Path::new(&repo_path)).await?;
     let is_default_branch = workflow_service::same_branch_identity(&branch, &default_branch);
-    let merged = commands::is_branch_merged(Path::new(&repo_path), &branch, &target_branch).await?;
+    let branch_exists = commands::list_local_branches(Path::new(&repo_path))
+        .await?
+        .contains(&branch);
+    let merged = if branch_exists {
+        commands::is_branch_merged(Path::new(&repo_path), &branch, &target_branch).await?
+    } else {
+        true
+    };
     let current_branch = commands::get_current_branch(Path::new(&repo_path)).await?;
     Ok(BranchDeleteCheckResponse {
         branch,
+        branch_exists,
         current_branch,
         target_branch,
         default_branch,
@@ -170,7 +188,11 @@ async fn feature_has_separate_worktree(
     else {
         return Ok(false);
     };
-    Ok(normalize_git_path(&worktree_path) != normalize_git_path(project_path))
+    Ok(
+        normalize_git_path(&worktree_path) != normalize_git_path(project_path)
+            && commands::is_live_worktree(Path::new(project_path), Path::new(&worktree_path))
+                .await?,
+    )
 }
 
 fn branch_delete_blocked(reason: &str, error: impl Into<String>) -> SuccessResponse {
@@ -199,7 +221,7 @@ pub async fn has_uncommitted_changes(
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_support::setup_diff_refs_schema;
+    use super::super::{test_support::setup_diff_refs_schema, SETTING_WORKTREE_BRANCH};
     use super::*;
 
     #[tokio::test]
@@ -220,5 +242,40 @@ mod tests {
                 .unwrap();
         assert_eq!(repo_path, "/tmp/project");
         assert_eq!(target, "develop");
+    }
+
+    #[tokio::test]
+    async fn deleting_an_already_absent_branch_is_successful() {
+        let repo = tempfile::tempdir().unwrap();
+        run_git_capture(&["init"], &[], &[], repo.path())
+            .await
+            .unwrap();
+        let pool = setup_diff_refs_schema().await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'project', ?)")
+            .bind(repo.path().to_string_lossy().as_ref())
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, SETTING_WORKTREE_BRANCH, "feature/removed")
+            .await
+            .unwrap();
+
+        let result = delete_feature_branch(
+            &AppState::with_pool(pool),
+            DeleteFeatureBranchParams {
+                project_id: 1,
+                feature_id: 1,
+                force: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(result.success);
+        assert!(result.error.is_none());
     }
 }

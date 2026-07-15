@@ -115,6 +115,8 @@ describe("RootOverlays", () => {
           worktree_branch: "main",
           is_default_branch: true,
           is_main_worktree: true,
+          directory_exists: true,
+          branch_exists: true,
         } satisfies FeatureWorktreeInfo,
       ],
     });

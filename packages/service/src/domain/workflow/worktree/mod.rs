@@ -27,7 +27,7 @@ mod setup_process;
 
 pub use db::{
     get_project_directory, get_project_id_for_feature, get_setting, resolve_feature_cwd,
-    set_setting,
+    resolve_live_worktree, set_setting,
 };
 pub use replay::replay_persisted_state;
 pub use reuse::attach_to_existing_branch;
@@ -71,7 +71,7 @@ pub async fn ensure_worktree(
         return ensure_skip(read_pool, feature_id, project_id, ws_sender).await;
     }
 
-    if let Some(existing) = replay_persisted_state(read_pool, feature_id, ws_sender).await {
+    if let Some(existing) = replay_persisted_state(read_pool, feature_id, ws_sender).await? {
         return Ok(existing);
     }
 

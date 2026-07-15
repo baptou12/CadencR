@@ -103,7 +103,7 @@ pub struct ProjectWorktreeInfo {
 
 /// Per-feature worktree metadata sourced from `feature_settings`.
 /// Includes features whose worktree directory has been deleted; callers can
-/// check `live` to know whether the directory still exists on disk.
+/// distinguish a live Git worktree from residual files left on disk.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FeatureWorktreeInfo {
     pub feature_id: i64,
@@ -111,6 +111,11 @@ pub struct FeatureWorktreeInfo {
     pub worktree_branch: Option<String>,
     pub is_default_branch: bool,
     pub is_main_worktree: bool,
+    /// Whether anything still exists at the recorded worktree path.
+    pub directory_exists: bool,
+    /// Whether the recorded local feature branch still exists.
+    pub branch_exists: Option<bool>,
+    /// Whether the path is a usable Git working tree, not merely a directory.
     pub live: bool,
 }
 
@@ -163,6 +168,7 @@ pub struct CreateWorktreeResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct BranchDeleteCheckResponse {
     pub branch: String,
+    pub branch_exists: bool,
     pub current_branch: Option<String>,
     pub target_branch: String,
     pub default_branch: String,

@@ -48,10 +48,9 @@ pub(super) fn push_subscriber_dedup(
     subscribers.push(Subscriber { feature_id, sender });
 }
 
-/// Resolve `(canonical_worktree_path, target_branch)` for a feature. Falls
-/// back to the raw configured path when canonicalize fails (path doesn't
-/// exist yet or was deleted) — `compute_status_or_empty` will then return a
-/// degraded snapshot instead of erroring out.
+/// Resolve `(canonical_git_path, target_branch)` for a feature. The shared Git
+/// path resolver rejects stale worktree settings and falls back to the project
+/// root before this function canonicalizes the result.
 pub(super) async fn resolve_paths(
     state: &AppState,
     feature_id: i64,
