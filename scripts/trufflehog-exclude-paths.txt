@@ -1,1 +1,2 @@
 ^packages/desktop/src/lib/safe-url\.test\.ts$
+^packages/desktop/src/lib/email-export\.test\.ts$

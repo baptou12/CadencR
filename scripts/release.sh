@@ -116,6 +116,7 @@ run_trufflehog() {
     git
     --since-commit
     "$previous_hash"
+    --skip-additional-refs
     --fail
   )
 
