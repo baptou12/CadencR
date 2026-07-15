@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.7.1 - 2026-07-15
+
+Previous release: v0.7.0 - 2026-07-14
+
+### ✨ Added
+
+- [**Desktop**] Added a searchable Branches view to the Git tab for local and remote branches, with current-branch and attached-worktree context, branch-scoped commit graphs, and commit diffs that can be inspected without checking out the branch.
+- [**Desktop**] Added persistent editor language modes that can be selected for one file or every file with the same extension, keeping syntax highlighting and language tooling aligned when automatic detection is not enough.
+- [**Desktop**] Added rich copy actions across conversations and rendered previews, including plain text, Markdown, Slack mrkdwn, and email-safe formatted HTML for either a selection or a complete message block.
+
+### 🔧 Changed
+
+- [**Desktop**] Made dense workspace navigation easier to scan with tighter nested-conversation spacing and a bounded, searchable, virtualized MCP server list in Session Info.
+
+### 🐛 Fixed
+
+- [**Backend**] Fixed stale or partially removed worktrees leaving conversations stuck on phantom setup state by distinguishing live registrations from residual folders, recovering safely when worktrees or branches are already gone, and reporting partial archive-cleanup failures without discarding successful cleanup steps.
+- [**Backend**] Fixed Cadencr orchestration skills failing with some MCP clients by advertising a client-compatible spawn schema, requiring the actual spawn and link capabilities before reporting the project server ready, and making handoff linking explicit after a successful spawn.
+- [**Desktop**] Fixed provider command syntax in the prompt composer so Claude slash commands can appear mid-prompt, Codex skill references use `$`, and OpenCode slash commands remain anchored to the prompt start.
+- [**Desktop**] Fixed the Cadencr brand header overlapping macOS window controls in both expanded and collapsed sidebar layouts without adding unused space in browser or non-macOS sessions.
+
 ## v0.7.0 - 2026-07-14
 
 Previous release: v0.6.7 - 2026-07-09
