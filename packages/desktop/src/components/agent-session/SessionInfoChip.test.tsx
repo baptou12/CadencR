@@ -70,6 +70,68 @@ describe("SessionInfoChip", () => {
     expect(screen.getByText("MCPs not reported yet")).toBeInTheDocument();
   });
 
+  it("bounds the popover and virtualizes a long MCP server list", async () => {
+    const user = userEvent.setup();
+    const mcpServers = Array.from({ length: 30 }, (_, index) => ({
+      name: `server-${index}`,
+      status: "connected",
+    }));
+
+    render(
+      <SessionInfoMcpServersProvider mcpServers={mcpServers}>
+        <SessionInfoChip
+          runtimeProvider={PROVIDER_IDS.CODEX_CLI}
+          runtimeSessionId="thread-123"
+          projectPath="/tmp/project"
+          isRunning={false}
+          onPause={vi.fn()}
+          chipClass="chip"
+        />
+      </SessionInfoMcpServersProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /session info/i }));
+
+    const popover = document.querySelector('[data-slot="popover-content"]');
+    expect(popover).toHaveClass(
+      "max-h-[min(70vh,var(--radix-popover-content-available-height))]",
+      "overflow-hidden",
+    );
+    const serverList = screen.getByRole("list", { name: "MCP servers" });
+    expect(serverList).toHaveClass("max-h-40", "overflow-hidden");
+    expect(serverList).toHaveStyle({ height: "160px" });
+    expect(serverList.firstElementChild).toHaveClass("h-full", "overscroll-contain");
+    expect(screen.getByText("server-29")).toBeInTheDocument();
+  });
+
+  it("filters MCP servers by name", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SessionInfoMcpServersProvider
+        mcpServers={[
+          { name: "cadencr-browser", status: "connected" },
+          { name: "filesystem", status: "connected" },
+        ]}
+      >
+        <SessionInfoChip
+          runtimeProvider={PROVIDER_IDS.CODEX_CLI}
+          runtimeSessionId="thread-123"
+          projectPath="/tmp/project"
+          isRunning={false}
+          onPause={vi.fn()}
+          chipClass="chip"
+        />
+      </SessionInfoMcpServersProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /session info/i }));
+    await user.type(screen.getByRole("textbox", { name: "Search MCP servers" }), "FILESYSTEM");
+
+    expect(screen.getByText("filesystem")).toBeInTheDocument();
+    expect(screen.queryByText("cadencr-browser")).not.toBeInTheDocument();
+  });
+
   it("renders an editable Claude profile combobox in the info popover", async () => {
     Element.prototype.hasPointerCapture = vi.fn(() => false);
     Element.prototype.setPointerCapture = vi.fn();

@@ -17,6 +17,7 @@ import { DEFAULT_CLAUDE_PROFILE_NAME, type ClaudeCodeProfile } from "@/api/agent
 import { cn } from "@/lib/utils";
 import type { McpServerStatus } from "@/stores/ws-session-types";
 import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
+import { McpServersRow } from "./McpServersRow";
 import { SyncFromCliRow } from "./SyncFromCliRow";
 
 interface SessionInfoChipProps {
@@ -111,7 +112,11 @@ export function SessionInfoChip({
           Info
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" side="top" className="w-80 space-y-3">
+      <PopoverContent
+        align="end"
+        side="top"
+        className="flex max-h-[min(70vh,var(--radix-popover-content-available-height))] min-h-0 w-80 flex-col gap-3 overflow-hidden"
+      >
         <SessionInfoContent
           runtimeProvider={runtimeProvider}
           runtimeSessionId={runtimeSessionId}
@@ -174,29 +179,31 @@ function SessionInfoContent({
     <>
       <ProviderRow providerId={runtimeProvider} providerLabel={providerMeta?.label} />
       <McpServersRow servers={mcpServers} />
-      {runtimeProvider === PROVIDER_IDS.CLAUDE_CODE && (
-        <ProfileRow
-          profile={claudeProfile}
-          profiles={claudeProfiles}
-          isLoading={claudeProfilesLoading}
-          isError={claudeProfilesError}
-          onProfileChange={onClaudeProfileChange}
+      <div className="shrink-0 space-y-3">
+        {runtimeProvider === PROVIDER_IDS.CLAUDE_CODE && (
+          <ProfileRow
+            profile={claudeProfile}
+            profiles={claudeProfiles}
+            isLoading={claudeProfilesLoading}
+            isError={claudeProfilesError}
+            onProfileChange={onClaudeProfileChange}
+          />
+        )}
+        <SessionIdRow
+          runtimeSessionId={runtimeSessionId}
+          copied={copiedField === "id"}
+          onCopy={onCopySessionId}
         />
-      )}
-      <SessionIdRow
-        runtimeSessionId={runtimeSessionId}
-        copied={copiedField === "id"}
-        onCopy={onCopySessionId}
-      />
-      <LaunchCommandRow
-        copied={copiedField === "command"}
-        supported={resumeSupported}
-        isRunning={isRunning}
-        onCopy={onCopyLaunchCommand}
-      />
-      {featureId != null && wsSessionId && (
-        <SyncFromCliRow featureId={featureId} wsSessionId={wsSessionId} isRunning={isRunning} />
-      )}
+        <LaunchCommandRow
+          copied={copiedField === "command"}
+          supported={resumeSupported}
+          isRunning={isRunning}
+          onCopy={onCopyLaunchCommand}
+        />
+        {featureId != null && wsSessionId && (
+          <SyncFromCliRow featureId={featureId} wsSessionId={wsSessionId} isRunning={isRunning} />
+        )}
+      </div>
     </>
   );
 }
@@ -274,7 +281,7 @@ interface ProviderRowProps {
 function ProviderRow({ providerId, providerLabel }: ProviderRowProps): ReactElement | null {
   if (!providerId) return null;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
       <ProviderIcon
         providerId={providerId}
         alt={providerLabel ?? providerId}
@@ -283,61 +290,6 @@ function ProviderRow({ providerId, providerLabel }: ProviderRowProps): ReactElem
       <span className="text-xs font-medium">{providerLabel ?? providerId}</span>
     </div>
   );
-}
-
-interface McpServersRowProps {
-  servers: McpServerStatus[] | null;
-}
-
-function McpServersRow({ servers }: McpServersRowProps): ReactElement {
-  return (
-    <div className="space-y-1.5">
-      <div className="text-[11px] font-medium text-muted-foreground">MCP servers</div>
-      {servers === null && (
-        <p className="text-[11px] text-muted-foreground">MCPs not reported yet</p>
-      )}
-      {servers !== null && servers.length === 0 && (
-        <p className="text-[11px] text-muted-foreground">No MCP servers reported</p>
-      )}
-      {servers !== null && servers.length > 0 && (
-        <div className="space-y-1">
-          {servers.map((server) => (
-            <McpServerRow key={server.name} server={server} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function McpServerRow({ server }: { server: McpServerStatus }): ReactElement {
-  return (
-    <div className="flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1">
-      <span className="truncate font-mono text-[11px]">{server.name}</span>
-      <span
-        className={cn(
-          "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize",
-          mcpStatusClass(server.status),
-        )}
-      >
-        {server.status}
-      </span>
-    </div>
-  );
-}
-
-function mcpStatusClass(status: string): string {
-  switch (status.toLowerCase()) {
-    case "connected":
-    case "ready":
-      return "bg-[color:var(--acc-green)]/15 text-[color:var(--acc-green)]";
-    case "unavailable":
-    case "failed":
-    case "error":
-      return "bg-destructive/15 text-destructive";
-    default:
-      return "bg-muted text-muted-foreground";
-  }
 }
 
 function ProfileRow({
