@@ -4,6 +4,7 @@ import CodeIcon from "@/components/icons/CodeIcon.astro";
 import Wrap from "@/components/ui/Wrap.astro";
 import Button from "@/components/ui/Button.astro";
 import { DISPLAY_VERSION } from "@/lib/downloads";
+import { getCollection, type CollectionEntry } from "astro:content";
 import heroImage from "@/assets/hero.png";
 
 const base = import.meta.env.BASE_URL;
@@ -13,6 +14,14 @@ const brewCommand = "brew install --cask merkr-software/cadencr/cadencr";
 // Eyebrow segments — rendered as a centered, dot-separated mono strip.
 // (License lives in the trust strip below, so it's not repeated here.)
 const eyebrow = ["Desktop IDE", "macOS", DISPLAY_VERSION];
+
+// Newest news post, if any — surfaced as an announcement pill above the
+// headline. Sorted newest-first, matching the News index page, so the latest
+// article always shows up here automatically.
+type NewsEntry = CollectionEntry<"news">;
+const [latestNews] = (await getCollection("news")).sort(
+  (a: NewsEntry, b: NewsEntry) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
 ---
 <section class="hero relative isolate overflow-hidden pt-16 pb-24 sm:pt-20">
   <!-- Ambient backdrop: aurora glow + faded grid, purely decorative. -->
@@ -21,6 +30,26 @@ const eyebrow = ["Desktop IDE", "macOS", DISPLAY_VERSION];
 
   <Wrap class="relative">
     <div class="mx-auto flex max-w-[780px] flex-col items-center text-center">
+      {
+        latestNews && (
+          <a
+            href={`${base}news/${latestNews.id}/`}
+            class="hero-rise hero-news group mb-6 inline-flex max-w-full items-center gap-2.5 rounded-full border border-primary/40 bg-primary/10 py-1.5 pl-1.5 pr-3.5 text-[13px] font-medium text-foreground shadow-sm shadow-primary/20 transition-colors hover:border-primary/70 hover:bg-primary/15"
+          >
+            <span class="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-white">
+              New
+            </span>
+            <span class="truncate">{latestNews.data.title}</span>
+            <span
+              class="text-primary transition-transform group-hover:translate-x-0.5"
+              aria-hidden="true"
+            >
+              →
+            </span>
+          </a>
+        )
+      }
+
       <p class="hero-rise hero-eyebrow flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 font-mono text-[11px] font-medium uppercase tracking-[0.13em] text-muted-foreground">
         <span class="hero-dot"></span>
         {
@@ -290,6 +319,24 @@ const eyebrow = ["Desktop IDE", "macOS", DISPLAY_VERSION];
     color: var(--color-destructive);
   }
 
+  /* Gently pulsing glow so the news pill catches the eye without shouting.
+     `a.hero-news` outranks the plain `.hero-rise` rule defined further down, so
+     the entrance + pulse both apply. */
+  a.hero-news {
+    animation:
+      hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both,
+      hero-news-pulse 3.2s ease-in-out 1s infinite;
+  }
+  @keyframes hero-news-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-primary) 22%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 5px color-mix(in oklch, var(--color-primary) 0%, transparent);
+    }
+  }
+
   /* Staggered entrance. */
   .hero-rise {
     animation: hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -323,7 +370,8 @@ const eyebrow = ["Desktop IDE", "macOS", DISPLAY_VERSION];
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .hero-rise {
+    .hero-rise,
+    a.hero-news {
       animation: none;
     }
     /* Hold the feature words bright instead of sweeping them. */
