@@ -127,6 +127,11 @@ Then start the app:
 pnpm dev
 ```
 
+If you create Git worktrees through an automated setup hook, add
+`pnpm dev:precompile` after `pnpm install`. It builds the Rust targets used by
+`pnpm dev` without starting the app, so the first launch in that worktree does
+not pay the cold Cargo build cost.
+
 ## Development
 
 ```bash
@@ -138,9 +143,10 @@ pnpm --filter @cadencr/desktop ts-check # TypeScript checks
 pnpm --filter @cadencr/desktop knip     # unused export detection
 ```
 
-Rust build artifacts are isolated in each checkout's `target/`, where Cargo's
-incremental compilation accelerates repeated work. Run `pnpm rust:storage` to
-inspect disk use, or see
+Rust build artifacts are isolated in each checkout's `target/`. Development
+profiles omit debug information and incremental state to keep each worktree's
+disk footprint bounded; application logs are unaffected. Run
+`pnpm rust:storage` to inspect disk use, or see
 [CONTRIBUTING.md](./CONTRIBUTING.md#rust-build-storage) for cleanup commands.
 
 ## How it works

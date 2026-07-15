@@ -50,14 +50,24 @@ pnpm rust -- test -p cadencr-service shared::migrate
 pnpm rust -- check -p opencode-sdk-rs
 ```
 
-The default test profile omits debug information and incremental state to keep
-the many integration test binaries small. Development builds keep Cargo
-incremental compilation enabled. For a debugger-oriented test run with line
-tables, use:
+The default development and test profiles omit debug information and
+incremental state to keep every worktree's Cargo target small. This does not
+disable application logs. For a debugger-oriented test run with line tables,
+use:
 
 ```bash
 pnpm rust -- test --profile test-debug -p cadencr-service <test-name>
 ```
+
+Precompile the Rust targets used by `pnpm dev` without starting the app:
+
+```bash
+pnpm dev:precompile
+```
+
+For Cadencr-managed worktrees, put this command after `pnpm install` in the
+project's worktree setup commands. The setup runs in the new worktree, so its
+local `target/` is warm before the first `pnpm dev`.
 
 Inspect and clean storage with dry-run-first commands:
 
