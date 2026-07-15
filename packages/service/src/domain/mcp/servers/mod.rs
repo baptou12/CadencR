@@ -50,9 +50,14 @@ impl std::str::FromStr for AgentType {
 }
 
 /// Names of tools that the agent must expose for the MCP server to be
-/// considered healthy.
-pub fn cadencr_mcp_required_tools(_server_name: &str) -> Vec<String> {
-    Vec::new()
+/// considered healthy. Check the orchestration-critical tools so a client
+/// cannot report a partially loaded server as connected.
+pub fn cadencr_mcp_required_tools(server_name: &str) -> &'static [&'static str] {
+    match server_name {
+        "cadencr-project" => &["project_spawn_session", "project_link_sessions"],
+        "cadencr-workspace" => &["workspace_list_projects"],
+        _ => &[],
+    }
 }
 
 /// Whether the named server runs any tool that requires the elicitation
@@ -112,10 +117,18 @@ mod tests {
     }
 
     #[test]
-    fn required_tools_are_empty_for_cadencr_browser() {
+    fn required_tools_match_each_cadencr_server_contract() {
         assert_eq!(
             cadencr_mcp_required_tools("cadencr-browser"),
-            Vec::<String>::new()
+            &[] as &[&str]
+        );
+        assert_eq!(
+            cadencr_mcp_required_tools("cadencr-project"),
+            &["project_spawn_session", "project_link_sessions"]
+        );
+        assert_eq!(
+            cadencr_mcp_required_tools("cadencr-workspace"),
+            &["workspace_list_projects"]
         );
     }
 

@@ -17,7 +17,6 @@ const PROJECT_TOOL_NAMES: [&str; 13] = [
     "project_list_pending_gates",
     "project_respond_gate",
 ];
-
 pub(super) fn tools() -> Vec<Tool> {
     PROJECT_TOOL_NAMES
         .into_iter()
@@ -65,7 +64,6 @@ fn tool_description(name: &str) -> &'static str {
         _ => "Coordinate CadencR sessions in the current project.",
     }
 }
-
 fn tool_schema(name: &str) -> Value {
     let schema = match name {
         "project_list_sessions" => json!({
@@ -177,6 +175,7 @@ fn paginated_session_schema(include_query: bool) -> Value {
 fn spawn_session_schema() -> Value {
     json!({
         "type": "object",
+        "description": tool_description("project_spawn_session"),
         "properties": {
             "title": { "type": "string" }, "initial_message": { "type": "string" },
             "project_id": { "type": "number" }, "project_path": { "type": "string" },
@@ -192,8 +191,7 @@ fn spawn_session_schema() -> Value {
             "link_to_current_session": { "type": "boolean" },
             "await_result": { "type": "boolean", "default": false }
         },
-        "required": ["title"],
-        "anyOf": [{ "required": ["project_id"] }, { "required": ["project_path"] }]
+        "required": ["title"]
     })
 }
 fn document_schema(tool_name: &str, mut schema: Value) -> Value {
@@ -250,7 +248,7 @@ fn property_description(tool_name: &str, property: &str) -> String {
         (_, "link_type") => "Relationship type to record between source and target sessions.".into(),
         (_, "note" | "source_note") => "Short provenance note explaining why this relationship or action exists.".into(),
         (_, "title") => "Title for the newly created session/conversation.".into(),
-        (_, "initial_message") => "Initial user message sent to the spawned session after creation.".into(),
+        (_, "initial_message") => "Initial user message sent to the spawned session after creation. Pass it as structured tool argument data; if an execution wrapper requires source code, serialize the complete tool arguments safely instead of interpolating this message into source code.".into(),
         (_, "permission_mode") => "Legacy/generic permission mode to persist for the spawned session.".into(),
         (_, "codex_permission_mode") => "Codex access mode, for codex_cli sessions: default, autoReview, or fullAccess.".into(),
         (_, "branch") => "Worktree/branch creation options for the spawned session.".into(),
@@ -283,7 +281,6 @@ mod tests {
             "string"
         );
     }
-
     #[test]
     fn project_tool_schemas_document_every_input() {
         for tool in tools() {
@@ -300,7 +297,6 @@ mod tests {
             }
         }
     }
-
     #[test]
     fn project_spawn_session_schema_exposes_cross_project_targeting() {
         let tools = tools();
@@ -312,15 +308,24 @@ mod tests {
 
         assert_eq!(schema["properties"]["project_id"]["type"], "number");
         assert_eq!(schema["properties"]["project_path"]["type"], "string");
-        // A target project is mandatory: either project_id or project_path.
-        assert_eq!(schema["anyOf"][0]["required"][0], "project_id");
-        assert_eq!(schema["anyOf"][1]["required"][0], "project_path");
+        // Keep the advertised schema flat so MCP clients generate concrete
+        // arguments instead of an opaque union. The control endpoint still
+        // enforces that one target selector is present.
+        assert!(schema.get("anyOf").is_none());
+        assert_eq!(schema["required"][0], "title");
+        assert!(schema["description"]
+            .as_str()
+            .unwrap()
+            .contains("project_id or project_path"));
         assert!(schema["properties"]["project_id"]["description"]
             .as_str()
             .unwrap()
             .contains("workspace_list_projects"));
+        assert!(schema["properties"]["initial_message"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("instead of interpolating this message into source code"));
     }
-
     #[test]
     fn project_spawn_schema_guides_provider_and_model_values() {
         let tools = tools();
@@ -347,15 +352,12 @@ mod tests {
         assert!(thinking_description.contains("target provider/model pair"));
         assert!(thinking_description.contains("default_thinking_level"));
     }
-
     #[test]
     fn project_provider_discovery_tool_is_advertised() {
-        let tools = tools();
-        assert!(tools
+        assert!(tools()
             .iter()
             .any(|tool| tool.name == "project_list_agent_providers"));
     }
-
     #[test]
     fn project_read_search_link_and_compare_schemas_keep_expected_inputs() {
         let tools = tools();
@@ -370,12 +372,10 @@ mod tests {
             list["properties"]["cursor"]["properties"]["before_started_at"]["type"],
             "string"
         );
-
         let search = schema_for("project_find_related_sessions");
         assert_eq!(search["properties"]["query"]["type"], "string");
         assert_eq!(search["properties"]["snippet_chars"]["type"], "number");
         assert_eq!(search["required"][0], "query");
-
         let tail = schema_for("project_read_session_tail");
         assert_eq!(tail["properties"]["session_id"]["type"], "number");
         assert_eq!(tail["properties"]["after_message_id"]["type"], "number");
@@ -384,12 +384,10 @@ mod tests {
             "boolean"
         );
         assert_eq!(tail["required"][0], "session_id");
-
         let link = schema_for("project_link_sessions");
         assert_eq!(link["properties"]["target_session_id"]["type"], "number");
         assert_eq!(link["properties"]["link_type"]["enum"][2], "referenced");
         assert_eq!(link["required"][0], "target_session_id");
-
         let worktree = schema_for("project_get_worktree_status");
         assert_eq!(worktree["properties"]["session_id"]["type"], "number");
 

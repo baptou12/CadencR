@@ -16,6 +16,9 @@ use std::borrow::Cow;
 /// Prefix that namespaces every virtual skill, e.g. `cadencr:review`.
 pub const ORCHESTRATION_SKILL_PREFIX: &str = "cadencr:";
 
+/// Shared boundary prepended to every expanded workflow.
+const PORTABLE_WORKFLOW_BOUNDARY: &str = include_str!("prompts/workflow_boundary.md");
+
 /// One virtual orchestration skill, surfaced as `/cadencr:<name>`.
 pub struct OrchestrationSkill {
     /// Bare skill name; the surfaced command is `cadencr:<name>`.
@@ -38,7 +41,10 @@ impl OrchestrationSkill {
     /// slash-command convention); with no arguments the placeholder collapses
     /// to empty.
     fn expand(&self, args: &str) -> String {
-        self.body.replace("$ARGUMENTS", args.trim())
+        format!(
+            "{PORTABLE_WORKFLOW_BOUNDARY}\n\n{}",
+            self.body.replace("$ARGUMENTS", args.trim())
+        )
     }
 }
 
@@ -98,7 +104,7 @@ pub const ORCHESTRATION_SKILLS: &[OrchestrationSkill] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::{expand_prompt, ORCHESTRATION_SKILLS};
+    use super::{expand_prompt, ORCHESTRATION_SKILLS, PORTABLE_WORKFLOW_BOUNDARY};
 
     fn skill_body(name: &str) -> &'static str {
         ORCHESTRATION_SKILLS
@@ -111,10 +117,16 @@ mod tests {
     #[test]
     fn expand_prompt_expands_namespaced_invocation_across_prefixes() {
         // With no arguments the `$ARGUMENTS` placeholder collapses to empty.
-        let expected = skill_body("status").replace("$ARGUMENTS", "");
+        let expected = format!(
+            "{PORTABLE_WORKFLOW_BOUNDARY}\n\n{}",
+            skill_body("status").replace("$ARGUMENTS", "")
+        );
         for token in ["cadencr:status", "/cadencr:status", "$cadencr:status"] {
             let expanded = expand_prompt(token);
             assert_eq!(expanded, expected, "prefix {token}");
+            assert!(expanded.starts_with("## CadencR workflow boundary"));
+            assert!(expanded.contains("This virtual skill is self-contained"));
+            assert!(expanded.contains("Do not search the filesystem for CadencR's installation"));
         }
     }
 
@@ -127,9 +139,26 @@ mod tests {
         ] {
             let invocation = format!("/cadencr:{name} {arguments}");
             let expanded = expand_prompt(&invocation);
-            let expected = skill_body(name).replace("$ARGUMENTS", arguments);
+            let expected = format!(
+                "{PORTABLE_WORKFLOW_BOUNDARY}\n\n{}",
+                skill_body(name).replace("$ARGUMENTS", arguments)
+            );
             assert_eq!(expanded, expected, "skill {name}");
         }
+    }
+
+    #[test]
+    fn handoff_requires_spawn_before_explicit_handoff_link() {
+        let expanded = expand_prompt("/cadencr:handoff use another model");
+        let spawn = expanded
+            .find("first call `project_spawn_session`")
+            .expect("spawn instruction");
+        let link = expanded
+            .find("call `project_link_sessions`")
+            .expect("handoff link instruction");
+
+        assert!(spawn < link);
+        assert!(expanded.contains("not successful until both"));
     }
 
     #[test]
