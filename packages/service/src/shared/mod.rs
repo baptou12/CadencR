@@ -8,6 +8,7 @@ pub mod login_env;
 pub mod migrate;
 pub mod slug;
 pub mod ssh_env;
+pub mod terminal_shell;
 #[cfg(test)]
 pub mod test_env;
 pub mod user_shell;

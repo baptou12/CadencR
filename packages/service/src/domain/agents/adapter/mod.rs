@@ -6,6 +6,7 @@ mod event;
 mod event_types;
 mod permission;
 mod session;
+mod user_shell;
 
 pub use adapter_trait::AgentRuntimeAdapter;
 pub use branching::{BranchContext, BranchError, BranchResult, SessionBranching};
@@ -30,3 +31,4 @@ pub use permission::{
 pub use session::{
     AgentRuntimeSession, RuntimeMessageRx, RuntimeSessionHandle, RuntimeToolPermissionHandler,
 };
+pub use user_shell::RuntimeUserShellStrategy;

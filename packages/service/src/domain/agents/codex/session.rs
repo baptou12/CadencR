@@ -232,6 +232,13 @@ impl AgentRuntimeSession for CodexSession {
         result
     }
 
+    async fn run_user_shell_command(&self, command: &str) -> Result<(), RuntimeError> {
+        self.client
+            .thread_shell_command(&self.thread_id, command)
+            .await
+            .map_err(RuntimeError::from)
+    }
+
     async fn interrupt(&self) -> Result<(), RuntimeError> {
         // Live turn: surface RPC failures so the UI shows Stop failed.
         if let Some(turn_id) = self.active_turn_id.read().await.clone() {

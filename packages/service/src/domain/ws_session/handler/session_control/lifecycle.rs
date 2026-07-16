@@ -38,6 +38,10 @@ pub(crate) async fn handle_interrupt(
         }
     };
 
+    if app_state.user_shell_runs.cancel(db_session_id).await {
+        return;
+    }
+
     // The live turn may be owned by another connection (e.g. the host stopping a
     // conversation started on a remote device). Resolve the owning map so the
     // interrupt reaches the running CLI rather than failing with NOT_FOUND. The

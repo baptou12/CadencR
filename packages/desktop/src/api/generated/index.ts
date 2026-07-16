@@ -1490,6 +1490,7 @@ export const PromptCommandPlacementPayload = {
 export interface PromptCommandPolicyPayload {
   skill_reference_trigger: SkillReferenceTriggerPayload;
   slash_command_placement: PromptCommandPlacementPayload;
+  user_shell?: boolean;
 }
 
 export type PromptReceiptState = (typeof PromptReceiptState)[keyof typeof PromptReceiptState];

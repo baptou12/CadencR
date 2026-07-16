@@ -16,6 +16,17 @@ pub(crate) async fn handle_prompt_send(
     let Some(prepared) = prepare_prompt(&envelope, sender, sdk_sessions, app_state).await else {
         return;
     };
+    if super::user_shell::maybe_handle_user_shell_prompt(
+        &envelope,
+        sender,
+        sdk_sessions,
+        app_state,
+        &prepared,
+    )
+    .await
+    {
+        return;
+    }
     let Some(payload) = dispatch_local_phase(
         &envelope,
         sender,

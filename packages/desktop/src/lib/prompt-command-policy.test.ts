@@ -11,6 +11,7 @@ describe("prompt command policy", () => {
     const anywhere: PromptCommandPolicy = {
       slashCommandPlacement: "anywhere",
       skillReferenceTrigger: "slash",
+      userShell: true,
     };
 
     expect(promptCommandTriggers(anywhere)).toEqual([
@@ -30,6 +31,7 @@ describe("prompt command policy", () => {
     const policy: PromptCommandPolicy = {
       slashCommandPlacement: "prompt_start",
       skillReferenceTrigger: "dollar",
+      userShell: true,
     };
 
     expect(promptCommandTriggers(policy)).toEqual([

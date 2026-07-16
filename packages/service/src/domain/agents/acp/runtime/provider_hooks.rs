@@ -89,6 +89,20 @@ pub trait AcpProviderHooks: Send + Sync {
         None
     }
 
+    /// Provider-native user shell dispatch for ACP-backed runtimes. Generic
+    /// ACP has no such method; adapters that advertise native support must
+    /// bridge to a provider-specific side channel here.
+    async fn run_user_shell_command(
+        &self,
+        _session_id: &str,
+        _agent: &str,
+        _command: &str,
+    ) -> Result<(), RuntimeError> {
+        Err(RuntimeError::new(
+            "provider-native user shell commands are not supported by these ACP hooks",
+        ))
+    }
+
     /// Prompt text used for manual compaction, when the provider supports it.
     fn compact_prompt(&self) -> Option<&'static str> {
         None

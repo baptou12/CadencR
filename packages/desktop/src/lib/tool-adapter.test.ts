@@ -4,6 +4,7 @@ import {
   extractBashCommand,
   extractTaskOutput,
   isToolCallRunning,
+  isToolCallError,
   extractInlineDiffPreview,
   extractInlineDiffPreviews,
   isFileChangeTool,
@@ -125,6 +126,13 @@ describe("isToolCallRunning", () => {
 
   it("reads legacy persisted OpenCode status fields", () => {
     expect(isToolCallRunning(JSON.stringify({ __opencode_status: "completed" }))).toBe(false);
+  });
+});
+
+describe("isToolCallError", () => {
+  it("recognizes a failed Cadencr-managed Bash payload", () => {
+    expect(isToolCallError(JSON.stringify({ status: "failed" }))).toBe(true);
+    expect(isToolCallError(JSON.stringify({ status: "completed" }))).toBe(false);
   });
 });
 

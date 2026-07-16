@@ -31,6 +31,10 @@ mod stream_reader_task_error;
 mod stream_reader_task_event;
 mod stream_reader_turn_state;
 mod user_message_delivery;
+mod user_shell;
+mod user_shell_context;
+mod user_shell_local;
+mod user_shell_payload;
 
 pub(crate) use bridge::PermissionResponse;
 pub(crate) use bridge::WsBridgeCanUseTool;

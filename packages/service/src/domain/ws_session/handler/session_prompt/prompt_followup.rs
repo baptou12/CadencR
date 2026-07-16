@@ -17,6 +17,7 @@ use super::prompt_receipt::clear_pending_prompt_receipt;
 use super::prompt_status::{
     mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
+use super::user_shell_context::claim_pending_user_shell_context;
 
 pub(super) struct FollowupPromptContext {
     pub query: RuntimeSessionHandle,
@@ -148,10 +149,57 @@ async fn stream_followup_prompt(
     receipt_message_uuid: Option<String>,
     conversation_references: Vec<super::conversation_references::ResolvedConversationReference>,
 ) -> Result<(), String> {
+    let shell_delivery_id = payload
+        .message_uuid
+        .as_deref()
+        .unwrap_or(&context.envelope_id);
+    let shell_context = match claim_pending_user_shell_context(
+        &context.write_pool,
+        context.db_session_id,
+        shell_delivery_id,
+    )
+    .await
+    {
+        Ok(shell_context) => shell_context,
+        Err(message) => {
+            mark_followup_dispatch_failed(&context, dispatch_claim.as_ref(), &message).await;
+            persist_pause_and_send_session_error(
+                &context.write_pool,
+                &context.session_status_tx,
+                &context.sender,
+                &context.envelope_id,
+                context.feature_id,
+                context.db_session_id,
+                "USER_SHELL_CONTEXT_ERROR",
+                &message,
+            )
+            .await;
+            return Err(message);
+        }
+    };
     let attachments = payload_attachments(&payload);
     // Expand Cadencr prompt directives only for the provider. The persisted
     // user message keeps the concise command and conversation-reference tokens.
     let prompt_text = expand_prompt_for_provider(&payload.text, &conversation_references);
+    let prompt_text = match shell_context.append_to_prompt(prompt_text) {
+        Ok(prompt) => prompt,
+        Err(message) => {
+            let _ = shell_context.release(&context.write_pool).await;
+            mark_followup_dispatch_failed(&context, dispatch_claim.as_ref(), &message).await;
+            persist_pause_and_send_session_error(
+                &context.write_pool,
+                &context.session_status_tx,
+                &context.sender,
+                &context.envelope_id,
+                context.feature_id,
+                context.db_session_id,
+                "USER_SHELL_CONTEXT_ERROR",
+                &message,
+            )
+            .await;
+            return Err(message);
+        }
+    };
     let content =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
     let query_guard = context.query.read().await;
@@ -162,6 +210,9 @@ async fn stream_followup_prompt(
 
     if let Err(error) = stream_result {
         let message = error.to_string();
+        if let Err(release_error) = shell_context.release(&context.write_pool).await {
+            error!(context.db_session_id, error = %release_error, "failed to release user shell context claim");
+        }
         mark_followup_dispatch_failed(&context, dispatch_claim.as_ref(), &message).await;
         error!(context.db_session_id, error = %message, "stream_input failed");
         if let Some(message_uuid) = receipt_message_uuid {
@@ -193,7 +244,17 @@ async fn stream_followup_prompt(
         )
         .await;
         return Err(message);
-    } else if let Some((message_id, token)) = dispatch_claim {
+    }
+    if let Err(error) = shell_context.mark_delivered(&context.write_pool).await {
+        error!(context.db_session_id, %error, "failed to mark user shell context delivered");
+        super::super::send_error(
+            &context.sender,
+            &context.envelope_id,
+            "USER_SHELL_CONTEXT_STATE_ERROR",
+            &error,
+        );
+    }
+    if let Some((message_id, token)) = dispatch_claim {
         if let Err(error) = crate::domain::sessions::message_dispatch::mark_succeeded(
             &context.write_pool,
             message_id,

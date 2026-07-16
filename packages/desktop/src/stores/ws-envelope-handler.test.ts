@@ -334,6 +334,7 @@ describe("handleEnvelope commands.list", () => {
         prompt_command_policy: {
           slash_command_placement: "prompt_start",
           skill_reference_trigger: "dollar",
+          user_shell: true,
         },
         commands: [
           { name: "review", description: "Review code", kind: "command" },
@@ -352,6 +353,7 @@ describe("handleEnvelope commands.list", () => {
     expect(ctx.getSession("s1").promptCommandPolicy).toEqual({
       slashCommandPlacement: "prompt_start",
       skillReferenceTrigger: "dollar",
+      userShell: true,
     });
   });
 });

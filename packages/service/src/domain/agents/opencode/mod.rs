@@ -17,6 +17,7 @@ use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
     RuntimePermissionRequest, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
     RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSpawnConfig,
+    RuntimeUserShellStrategy,
 };
 
 pub struct OpenCodeAdapter;
@@ -31,10 +32,15 @@ fn normalize_resume_session_id(session_id: &str) -> Option<String> {
 
 #[async_trait]
 impl AgentRuntimeAdapter for OpenCodeAdapter {
+    fn user_shell_strategy(&self) -> RuntimeUserShellStrategy {
+        RuntimeUserShellStrategy::ProviderNative
+    }
+
     fn prompt_command_policy(&self) -> RuntimePromptCommandPolicy {
         RuntimePromptCommandPolicy {
             slash_command_placement: RuntimePromptCommandPlacement::PromptStart,
             skill_reference_trigger: RuntimeSkillReferenceTrigger::Slash,
+            user_shell: true,
         }
     }
 
@@ -194,7 +200,15 @@ mod tests {
     use serde_json::json;
 
     use super::OpenCodeAdapter;
-    use crate::domain::agents::adapter::AgentRuntimeAdapter;
+    use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeUserShellStrategy};
+
+    #[test]
+    fn delegates_user_shell_to_opencode() {
+        assert_eq!(
+            OpenCodeAdapter.user_shell_strategy(),
+            RuntimeUserShellStrategy::ProviderNative
+        );
+    }
 
     #[test]
     fn acp_reuses_non_empty_resume_session_ids() {

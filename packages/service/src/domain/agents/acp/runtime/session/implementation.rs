@@ -217,6 +217,14 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         self.prompt_input(content, client_message_id, false).await
     }
 
+    async fn run_user_shell_command(&self, command: &str) -> Result<(), RuntimeError> {
+        let session_id = self.require_session_id().await?;
+        let agent = self.current_mode.read().await.clone();
+        self.hooks
+            .run_user_shell_command(&session_id, &agent, command)
+            .await
+    }
+
     async fn interrupt(&self) -> Result<(), RuntimeError> {
         let session_id = self.require_session_id().await?;
         reject_all_pending(&self.client, &self.pending_permissions).await;

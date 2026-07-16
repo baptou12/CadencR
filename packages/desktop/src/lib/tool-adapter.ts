@@ -140,6 +140,11 @@ export function isToolCallRunning(toolArgs?: string): boolean {
   return status === "pending" || status === "running" || status === "active";
 }
 
+export function isToolCallError(toolArgs?: string): boolean {
+  const status = extractToolStatus(toolArgs);
+  return status === "failed" || status === "error";
+}
+
 export function extractInlineDiffPreview(
   toolName: string,
   toolArgs?: string,

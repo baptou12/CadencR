@@ -73,6 +73,7 @@ use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
     RuntimePermissionRequest, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
     RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSpawnConfig,
+    RuntimeUserShellStrategy,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
@@ -220,10 +221,15 @@ async fn start_thread(
 
 #[async_trait]
 impl AgentRuntimeAdapter for CodexAdapter {
+    fn user_shell_strategy(&self) -> RuntimeUserShellStrategy {
+        RuntimeUserShellStrategy::ProviderNative
+    }
+
     fn prompt_command_policy(&self) -> RuntimePromptCommandPolicy {
         RuntimePromptCommandPolicy {
             slash_command_placement: RuntimePromptCommandPlacement::PromptStart,
             skill_reference_trigger: RuntimeSkillReferenceTrigger::Dollar,
+            user_shell: true,
         }
     }
 
@@ -334,7 +340,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
 #[cfg(test)]
 mod tests {
     use super::{app_server_spawn_options, model_entry, CodexAdapter};
-    use crate::domain::agents::adapter::AgentRuntimeAdapter;
+    use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeUserShellStrategy};
     use codex_app_server_sdk_rs::CodexModel;
 
     #[test]
@@ -372,6 +378,14 @@ mod tests {
     fn advertises_prompt_receipts_for_steering_messages() {
         let adapter = CodexAdapter;
         assert!(adapter.supports_prompt_receipts());
+    }
+
+    #[test]
+    fn delegates_user_shell_to_codex() {
+        assert_eq!(
+            CodexAdapter.user_shell_strategy(),
+            RuntimeUserShellStrategy::ProviderNative
+        );
     }
 
     #[test]

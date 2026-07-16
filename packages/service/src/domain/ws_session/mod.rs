@@ -6,3 +6,4 @@ pub mod protocol;
 pub mod question_answers;
 pub mod sender_registry;
 pub mod slash_commands;
+pub mod user_shell_runs;

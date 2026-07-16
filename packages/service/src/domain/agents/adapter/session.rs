@@ -48,6 +48,13 @@ pub trait AgentRuntimeSession: Send + Sync {
         let _ = client_message_id;
         self.stream_input(content).await
     }
+    /// Dispatch a provider-native user shell command. Shared orchestration only
+    /// calls this when the adapter advertises `ProviderNative`.
+    async fn run_user_shell_command(&self, _command: &str) -> Result<(), RuntimeError> {
+        Err(RuntimeError::new(
+            "provider-native user shell commands are not supported by this runtime",
+        ))
+    }
     async fn interrupt(&self) -> Result<(), RuntimeError>;
     async fn compact(&self) -> Result<(), RuntimeError> {
         Err(RuntimeError::new(

@@ -8,6 +8,7 @@ import {
   extractBashResultOutput,
   isFileChangeTool,
   isToolCallRunning,
+  isToolCallError,
 } from "@/lib/tool-adapter";
 import { ToolCallBlock } from "@/components/AgentToolCallBlock";
 import { Markdown } from "@/components/Markdown";
@@ -226,6 +227,7 @@ function ToolCallContent({
   }
   if (block.toolName === "Bash") {
     const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
+    const outputBlock = result ?? block;
     const resultOutput = result ? extractBashResultOutput(result.content) : undefined;
     const rawCommand = extractBashCommand(block.toolArgs);
     return (
@@ -233,9 +235,9 @@ function ToolCallContent({
         command={rawCommand ? toRelativePath(rawCommand, basePath) : rawCommand}
         content={resultOutput ?? extractBashOutput(block.toolArgs)}
         running={!result && isToolCallRunning(block.toolArgs)}
-        isError={result?.isError}
-        messageId={result ? (messageDbIdFromBlockId(result.id) ?? undefined) : undefined}
-        truncatedContent={result?.truncatedContent === true}
+        isError={result?.isError ?? isToolCallError(block.toolArgs)}
+        messageId={messageDbIdFromBlockId(outputBlock.id) ?? undefined}
+        truncatedContent={outputBlock.truncatedContent === true}
         expanded={controlledExpanded}
         onExpandedChange={onExpandedChange}
       />

@@ -21,6 +21,7 @@ use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
 use crate::domain::ws_session::handler::{new_sdk_sessions, ActiveTurnRegistry};
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
+use crate::domain::ws_session::user_shell_runs::UserShellRunRegistry;
 use crate::remote::{RemoteConfig, RemoteController};
 
 pub const BROWSER_BRIDGE_URL_ENV: &str = "CADENCR_BROWSER_BRIDGE_URL";
@@ -139,6 +140,8 @@ pub struct AppState {
     /// remote client answer a permission/question/plan against the host's live
     /// query, and carries the server-stamped turn start for synced timers.
     pub active_turns: Arc<ActiveTurnRegistry>,
+    /// In-flight Cadencr-managed `!` commands, keyed by agent session.
+    pub user_shell_runs: Arc<UserShellRunRegistry>,
     /// Process-global pending gate registry. Both human WebSocket responses and
     /// MCP parent responses atomically claim the same entry, so first answer wins.
     pub pending_gates: Arc<GateRegistry>,
@@ -244,6 +247,7 @@ impl AppState {
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),
+            user_shell_runs: Arc::new(UserShellRunRegistry::new()),
             pending_gates: Arc::new(GateRegistry::new()),
             mcp_control_sessions: new_sdk_sessions(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
@@ -297,6 +301,7 @@ impl AppState {
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),
+            user_shell_runs: Arc::new(UserShellRunRegistry::new()),
             pending_gates: Arc::new(GateRegistry::new()),
             mcp_control_sessions: new_sdk_sessions(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
