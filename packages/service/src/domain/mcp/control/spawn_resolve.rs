@@ -9,7 +9,7 @@ use crate::domain::agents::codex::{
 };
 use crate::domain::agents::providers::{
     canonical_provider_or_error, provider_model_catalog_entry, resolve_effective_provider,
-    resolve_model_or_error,
+    resolve_model_or_error_for_profile, runtime_adapter,
 };
 use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
 use crate::domain::settings;
@@ -36,6 +36,7 @@ pub(super) struct SpawnRuntimeSelection {
     pub(super) model: Option<String>,
     pub(super) thinking_level: Option<String>,
     pub(super) effective_provider: String,
+    pub(super) profile: Option<String>,
 }
 
 pub(super) fn branch_worktree_settings(
@@ -159,13 +160,16 @@ pub(super) async fn resolve_spawn_runtime(
                 .map_err(|error| AppError::BadRequest(error.to_string()))?
         }
     };
+    let profile = runtime_adapter(&effective_provider)
+        .and_then(|adapter| adapter.profile_name_for_new_session());
     let (model, model_entry) = match trimmed_optional(body.model.as_deref()) {
         Some(model) => {
-            let (model, catalog_entry) = resolve_model_or_error(
+            let (model, catalog_entry) = resolve_model_or_error_for_profile(
                 &state.read_pool,
                 Some(std::path::Path::new(&target_project.path)),
                 &effective_provider,
                 &model,
+                profile.as_deref(),
             )
             .await
             .map_err(|error| AppError::BadRequest(error.to_string()))?;
@@ -177,6 +181,7 @@ pub(super) async fn resolve_spawn_runtime(
                 Some(std::path::Path::new(&target_project.path)),
                 &effective_provider,
                 None,
+                profile.as_deref(),
             )
             .await;
             (None, entry)
@@ -193,6 +198,7 @@ pub(super) async fn resolve_spawn_runtime(
         model,
         thinking_level,
         effective_provider,
+        profile,
     })
 }
 

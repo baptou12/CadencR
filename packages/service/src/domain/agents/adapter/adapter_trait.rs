@@ -121,6 +121,17 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         self.default_model_id().await
     }
 
+    /// Configured profile to pin on a newly-created session for this provider.
+    ///
+    /// The profile name is persisted before the runtime is dispatched so a
+    /// headless spawn and a concurrently connecting UI reconstruct the same
+    /// provider configuration. `None` means the provider has no profile
+    /// concept; profile-aware providers may return their reserved built-in
+    /// profile name (for example `"default"`).
+    fn profile_name_for_new_session(&self) -> Option<String> {
+        None
+    }
+
     /// Provider-known context window for a given model id, if the provider
     /// can answer synchronously (e.g. opencode exposes this via its server).
     /// Defaults to `None` — callers must fall back to another source
@@ -361,6 +372,7 @@ mod tests {
             .parse_permission_request(&json!({"type": "none"}))
             .is_none());
         assert!(!adapter.supports_prompt_receipts());
+        assert_eq!(adapter.profile_name_for_new_session(), None);
         assert_eq!(
             adapter.user_shell_strategy(),
             RuntimeUserShellStrategy::Unsupported
