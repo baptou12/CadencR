@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.2 - 2026-07-17
+
+Previous release: v0.7.1 - 2026-07-15
+
+### ✨ Added
+
+- [**Desktop**] Added leading-`!` shell commands to the prompt composer for Claude, Codex, and OpenCode sessions, with a dedicated shell mode, streamed and persisted output, worktree-aware local execution where needed, provider-native execution when supported, cancellation and restart recovery, and command results carried into subsequent conversation context.
+- [**Backend**] Added push-based agent orchestration so spawned or messaged sessions can deliver permission, plan, and question gates plus completed results directly into the parent’s active turn, with explicit queue and reject modes, interruption-safe follow-ups, and durable delivery claims and UUIDs that recover replies across interruptions and restarts without duplicating stored messages.
+
+### 🐛 Fixed
+
+- [**provider:claude**] Fixed custom Claude proxy models and MCP-spawned sessions being routed or validated against the wrong provider or profile when a model ID resembled another provider’s naming scheme; selected provider ownership, exact catalog ownership, and the chosen Claude profile now stay aligned through model selection, spawn, and runtime reconstruction.
+
 ## v0.7.1 - 2026-07-15
 
 Previous release: v0.7.0 - 2026-07-14
