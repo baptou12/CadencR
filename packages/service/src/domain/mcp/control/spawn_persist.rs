@@ -18,8 +18,8 @@ pub(super) async fn insert_spawned_session(
     let now = chrono::Utc::now().to_rfc3339();
     Ok(sqlx::query_scalar(
         "INSERT INTO agent_sessions
-         (feature_id, agent_type, status, runtime_provider, model, thinking_effort, permission_mode, codex_permission_mode, started_at)
-         VALUES (?, 'session', 'paused', ?, ?, ?, ?, COALESCE(?, 'default'), ?)
+         (feature_id, agent_type, status, runtime_provider, model, profile, thinking_effort, permission_mode, codex_permission_mode, started_at)
+         VALUES (?, 'session', 'paused', ?, ?, ?, ?, ?, COALESCE(?, 'default'), ?)
          RETURNING id",
     )
     .bind(feature_id)
@@ -28,6 +28,7 @@ pub(super) async fn insert_spawned_session(
     // it can inject provider-specific runtime configuration.
     .bind(&runtime.effective_provider)
     .bind(runtime.model.as_deref())
+    .bind(runtime.profile.as_deref())
     .bind(runtime.thinking_level.as_deref())
     .bind(trimmed_optional(body.permission_mode.as_deref()))
     .bind(codex_permission_mode)
@@ -168,7 +169,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawned_session_persists_effective_provider_when_request_omits_it() {
+    async fn spawned_session_persists_effective_provider_and_profile() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&MigrationContext {
             pool: &pool,
@@ -191,6 +192,7 @@ mod tests {
             permission_mode: None,
             codex_permission_mode: None,
             source_note: None,
+            follow: None,
             link_to_current_session: None,
             await_result: None,
             target_project_id: Some(7),
@@ -200,18 +202,19 @@ mod tests {
             model: body.model.clone(),
             thinking_level: None,
             effective_provider: "claude_code".into(),
+            profile: Some("bedrock".into()),
         };
 
         let session_id = insert_spawned_session(&state, 43, &body, &runtime, None)
             .await
             .unwrap();
-        let stored: String =
-            sqlx::query_scalar("SELECT runtime_provider FROM agent_sessions WHERE id = ?")
+        let stored: (String, Option<String>) =
+            sqlx::query_as("SELECT runtime_provider, profile FROM agent_sessions WHERE id = ?")
                 .bind(session_id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(stored, "claude_code");
+        assert_eq!(stored, ("claude_code".into(), Some("bedrock".into())));
     }
 
     async fn seed_sessions(pool: &sqlx::SqlitePool) {

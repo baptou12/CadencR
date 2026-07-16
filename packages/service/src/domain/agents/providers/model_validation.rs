@@ -164,18 +164,8 @@ pub fn canonical_provider_or_error(
     })
 }
 
-pub async fn resolve_model_or_error(
-    read_pool: &SqlitePool,
-    cwd: Option<&Path>,
-    provider_id: &str,
-    model_id: &str,
-) -> Result<(String, ModelCatalogEntry), ProviderModelValidationError> {
-    resolve_model_or_error_for_profile(read_pool, cwd, provider_id, model_id, None).await
-}
-
 /// Validate a provider/model pair against the catalog for the session's
-/// provider-specific profile. Generic callers pass no profile through
-/// [`resolve_model_or_error`].
+/// provider-specific profile.
 pub async fn resolve_model_or_error_for_profile(
     read_pool: &SqlitePool,
     cwd: Option<&Path>,
@@ -244,18 +234,19 @@ pub fn model_supports_thinking_level(
     }
 }
 
-/// Resolve one model's live capability metadata, falling back to the adapter's
-/// static catalog when the CLI probe is unavailable. With no model id, selects
-/// the provider's advertised default model.
+/// Resolve one model's profile-aware live capability metadata, falling back to
+/// the adapter's static catalog when the CLI probe is unavailable. With no
+/// model id, selects the provider's advertised default model.
 pub async fn provider_model_catalog_entry(
     read_pool: &SqlitePool,
     cwd: Option<&Path>,
     provider_id: &str,
     model_id: Option<&str>,
+    profile: Option<&str>,
 ) -> Option<ModelCatalogEntry> {
     let adapter = runtime_adapter(provider_id)?;
     let live_catalog =
-        provider_catalog_entry_live_for_settings(read_pool, cwd, None, adapter).await;
+        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, adapter).await;
     let selected_model = model_id.or(live_catalog.default_model.as_deref());
     if let Some(model) = selected_model.and_then(|selected_model| {
         live_catalog

@@ -13,8 +13,8 @@ const LEGACY_OWNERSHIP_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub use model_validation::{
     canonical_provider_or_error, model_supports_thinking_level, provider_alias_metadata,
-    provider_aliases, provider_model_catalog_entry, resolve_model_or_error,
-    resolve_model_or_error_for_profile, valid_provider_ids, validate_thinking_level_or_error,
+    provider_aliases, provider_model_catalog_entry, resolve_model_or_error_for_profile,
+    valid_provider_ids, validate_thinking_level_or_error,
 };
 
 /// All registered runtime adapters. Add new providers here.

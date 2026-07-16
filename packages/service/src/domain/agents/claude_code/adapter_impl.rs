@@ -201,6 +201,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         ClaudeCodeAdapter::default_model_id_with_env(self, profile_env).await
     }
 
+    fn profile_name_for_new_session(&self) -> Option<String> {
+        Some(super::profiles::get_active_profile_name())
+    }
+
     async fn extra_models(&self, read_pool: &sqlx::SqlitePool) -> Vec<ModelCatalogEntry> {
         match custom_models::list_custom_models(read_pool).await {
             Ok(models) => models,
