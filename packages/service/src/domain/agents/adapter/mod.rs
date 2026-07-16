@@ -27,6 +27,9 @@ pub use permission::{
     RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSlashCommandKind,
     RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
+#[cfg(test)]
+pub(crate) use session::test_support::DummySession;
 pub use session::{
-    AgentRuntimeSession, RuntimeMessageRx, RuntimeSessionHandle, RuntimeToolPermissionHandler,
+    AgentRuntimeSession, RuntimeMessageRx, RuntimeSessionHandle, RuntimeSessionWeakHandle,
+    RuntimeToolPermissionHandler,
 };

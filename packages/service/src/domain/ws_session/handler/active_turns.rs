@@ -21,6 +21,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::Mutex;
 
+use crate::domain::agents::adapter::{RuntimeSessionHandle, RuntimeSessionWeakHandle};
+
 use super::types::{SdkHandle, SdkSessions};
 
 /// Inner of [`SdkSessions`] (`Arc<Mutex<HashMap<i64, SdkHandle>>>`) — the
@@ -34,6 +36,20 @@ struct ActiveTurn {
     owner: Weak<SdkSessionsInner>,
     /// Server wall-clock (epoch ms) when the current turn started.
     started_at_ms: i64,
+    /// Monotonic logical-turn generation. A stop can race with a new prompt;
+    /// the generation lets the old turn finish without marking the newer turn
+    /// idle.
+    generation: u64,
+    /// Generation explicitly interrupted by the user. Provider runtimes may
+    /// report that normal control action as an error result or a closed stream;
+    /// the stream reader consumes this marker and treats it as benign.
+    interrupted_turn: Option<InterruptedTurn>,
+}
+
+#[derive(Clone)]
+struct InterruptedTurn {
+    generation: u64,
+    runtime: RuntimeSessionWeakHandle,
 }
 
 /// Maps `agent_sessions.id` → the connection that owns its live turn.
@@ -58,13 +74,89 @@ impl ActiveTurnRegistry {
         started_at_ms: i64,
     ) {
         let mut turns = self.turns.lock().await;
+        let (generation, interrupted_turn) = turns
+            .get(&db_session_id)
+            .map(|turn| {
+                (
+                    turn.generation.saturating_add(1),
+                    turn.interrupted_turn.clone(),
+                )
+            })
+            .unwrap_or((1, None));
         turns.insert(
             db_session_id,
             ActiveTurn {
                 owner: Arc::downgrade(owner),
                 started_at_ms,
+                generation,
+                interrupted_turn,
             },
         );
+    }
+
+    /// Mark the current logical turn as intentionally interrupted. Returns its
+    /// generation so the caller can clear the exact marker if the control
+    /// request itself fails.
+    pub(crate) async fn request_interruption(
+        &self,
+        db_session_id: i64,
+        runtime: &RuntimeSessionHandle,
+    ) -> Option<u64> {
+        let mut turns = self.turns.lock().await;
+        let turn = turns.get_mut(&db_session_id)?;
+        turn.interrupted_turn = Some(InterruptedTurn {
+            generation: turn.generation,
+            runtime: Arc::downgrade(runtime),
+        });
+        Some(turn.generation)
+    }
+
+    /// Consume the one-shot interruption marker only from the stream reader
+    /// that owns the interrupted runtime. A replacement reader must never
+    /// consume the older runtime's marker.
+    pub(crate) async fn take_interruption(
+        &self,
+        db_session_id: i64,
+        runtime: &RuntimeSessionWeakHandle,
+    ) -> Option<u64> {
+        let mut turns = self.turns.lock().await;
+        let turn = turns.get_mut(&db_session_id)?;
+        let interrupted = turn.interrupted_turn.as_ref()?;
+        if !Weak::ptr_eq(&interrupted.runtime, runtime) {
+            return None;
+        }
+        turn.interrupted_turn.take().map(|turn| turn.generation)
+    }
+
+    /// Clear a marker only when it still belongs to the failed control request.
+    pub(crate) async fn clear_interruption(
+        &self,
+        db_session_id: i64,
+        generation: u64,
+        runtime: &RuntimeSessionHandle,
+    ) -> bool {
+        let mut turns = self.turns.lock().await;
+        let Some(turn) = turns.get_mut(&db_session_id) else {
+            return false;
+        };
+        let Some(interrupted) = turn.interrupted_turn.as_ref() else {
+            return false;
+        };
+        let runtime = Arc::downgrade(runtime);
+        if interrupted.generation == generation && Weak::ptr_eq(&interrupted.runtime, &runtime) {
+            turn.interrupted_turn = None;
+            return true;
+        }
+        false
+    }
+
+    /// Whether `generation` still identifies the newest prompt for a session.
+    pub(crate) async fn is_current_generation(&self, db_session_id: i64, generation: u64) -> bool {
+        self.turns
+            .lock()
+            .await
+            .get(&db_session_id)
+            .is_some_and(|turn| turn.generation == generation)
     }
 
     /// The server-stamped start time for a session's live turn, if its owner
@@ -135,6 +227,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn interruption_survives_a_racing_new_turn_but_stays_scoped_to_the_old_one() {
+        let reg = ActiveTurnRegistry::new();
+        let owner = empty_sessions();
+        let runtime = runtime_session();
+        reg.begin_turn(42, &owner, 1_000).await;
+        let interrupted = reg.request_interruption(42, &runtime).await.unwrap();
+
+        reg.begin_turn(42, &owner, 2_000).await;
+
+        assert_eq!(
+            reg.take_interruption(42, &Arc::downgrade(&runtime)).await,
+            Some(interrupted)
+        );
+        assert!(!reg.is_current_generation(42, interrupted).await);
+    }
+
+    #[tokio::test]
+    async fn replacement_runtime_cannot_consume_an_older_interruption() {
+        let reg = ActiveTurnRegistry::new();
+        let owner = empty_sessions();
+        let interrupted_runtime = runtime_session();
+        let replacement_runtime = runtime_session();
+        reg.begin_turn(42, &owner, 1_000).await;
+        let interrupted = reg
+            .request_interruption(42, &interrupted_runtime)
+            .await
+            .unwrap();
+        reg.begin_turn(42, &owner, 2_000).await;
+
+        assert_eq!(
+            reg.take_interruption(42, &Arc::downgrade(&replacement_runtime))
+                .await,
+            None
+        );
+        assert_eq!(
+            reg.take_interruption(42, &Arc::downgrade(&interrupted_runtime))
+                .await,
+            Some(interrupted)
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_interrupt_clears_only_its_own_marker() {
+        let reg = ActiveTurnRegistry::new();
+        let owner = empty_sessions();
+        let runtime = runtime_session();
+        reg.begin_turn(42, &owner, 1_000).await;
+        let interrupted = reg.request_interruption(42, &runtime).await.unwrap();
+
+        assert!(reg.clear_interruption(42, interrupted, &runtime).await);
+
+        assert_eq!(
+            reg.take_interruption(42, &Arc::downgrade(&runtime)).await,
+            None
+        );
+    }
+
+    #[tokio::test]
     async fn dropped_owner_makes_entry_inert() {
         let reg = ActiveTurnRegistry::new();
         let owner = empty_sessions();
@@ -157,5 +307,11 @@ mod tests {
 
         assert!(reg.owner_sessions(1).await.is_none());
         assert!(reg.owner_sessions(2).await.is_some());
+    }
+
+    fn runtime_session() -> RuntimeSessionHandle {
+        Arc::new(tokio::sync::RwLock::new(Box::new(
+            crate::domain::agents::adapter::DummySession,
+        )))
     }
 }

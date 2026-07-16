@@ -1,0 +1,3 @@
+CREATE INDEX idx_agent_session_reply_waits_active_delivery_claim
+ON agent_session_reply_waits(delivery_claim_token)
+WHERE delivery_claim_token IS NOT NULL;

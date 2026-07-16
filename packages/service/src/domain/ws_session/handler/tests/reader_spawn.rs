@@ -16,10 +16,71 @@ pub(super) fn spawn_test_stream_reader(
     sdk_sessions: SdkSessions,
     runtime_provider: &str,
 ) {
+    spawn_test_stream_reader_with_cleanup(
+        app_state,
+        db_session_id,
+        feature_id,
+        msg_rx,
+        ws_tx,
+        sdk_sessions,
+        runtime_provider,
+        false,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn spawn_test_stream_reader_with_cleanup(
+    app_state: &AppState,
+    db_session_id: i64,
+    feature_id: i64,
+    msg_rx: RuntimeMessageRx,
+    ws_tx: WsSender,
+    sdk_sessions: SdkSessions,
+    runtime_provider: &str,
+    cleanup_session_on_end: bool,
+) {
+    let runtime_session_handle = {
+        let sessions = sdk_sessions
+            .try_lock()
+            .expect("test stream reader spawn must not hold the session-map lock");
+        sessions
+            .get(&db_session_id)
+            .and_then(|handle| match &handle.state {
+                QueryState::Active { query, .. } => Some(Some(Arc::downgrade(query))),
+                QueryState::Pending(_) => None,
+            })
+            .unwrap_or(None)
+    };
+    spawn_test_stream_reader_for_runtime(
+        app_state,
+        db_session_id,
+        feature_id,
+        msg_rx,
+        runtime_session_handle,
+        ws_tx,
+        sdk_sessions,
+        runtime_provider,
+        cleanup_session_on_end,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn spawn_test_stream_reader_for_runtime(
+    app_state: &AppState,
+    db_session_id: i64,
+    feature_id: i64,
+    msg_rx: RuntimeMessageRx,
+    runtime_session_handle: Option<RuntimeSessionWeakHandle>,
+    ws_tx: WsSender,
+    sdk_sessions: SdkSessions,
+    runtime_provider: &str,
+    cleanup_session_on_end: bool,
+) {
     session_prompt::spawn_stream_reader(
         db_session_id,
         feature_id,
         msg_rx,
+        runtime_session_handle,
         ws_tx,
         app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
@@ -29,6 +90,6 @@ pub(super) fn spawn_test_stream_reader(
         None,
         None,
         app_state.clone(),
-        false,
+        cleanup_session_on_end,
     );
 }

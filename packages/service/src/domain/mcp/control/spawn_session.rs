@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, ToolAudit};
 use super::scope::resolve_session_scope;
+use super::spawn_follow::{SpawnFollowOptions, SpawnFollowResponse};
 use super::spawn_persist::{insert_initial_message, insert_spawn_link, insert_spawned_session};
 use super::spawn_resolve::{
     branch_worktree_settings, codex_permission_mode_for_spawn, resolve_spawn_runtime,
@@ -28,11 +29,10 @@ pub(super) struct SpawnSessionRequest {
     pub(super) permission_mode: Option<String>,
     pub(super) codex_permission_mode: Option<String>,
     pub(super) source_note: Option<String>,
+    pub(super) follow: Option<SpawnFollowOptions>,
     pub(super) link_to_current_session: Option<bool>,
     pub(super) await_result: Option<bool>,
-    /// Optional target project to spawn into a project other than the caller's.
     pub(super) target_project_id: Option<i64>,
-    /// Optional target project root path (alternative to `target_project_id`).
     pub(super) target_project_path: Option<String>,
 }
 
@@ -44,16 +44,12 @@ pub(super) struct SpawnSessionResponse {
     session_id: i64,
     #[serde(rename = "messageId", skip_serializing_if = "Option::is_none")]
     message_id: Option<i64>,
-    /// The resolved target project the session was created in.
     project: TargetProject,
-    /// True when the session landed in a different project than the caller.
     #[serde(rename = "crossProject")]
     cross_project: bool,
-    /// Present when the conversation was created but sending the initial message
-    /// failed. The target session already exists — do NOT spawn again; retry by
-    /// messaging the returned `sessionId`.
     #[serde(rename = "dispatchError", skip_serializing_if = "Option::is_none")]
     dispatch_error: Option<String>,
+    follow: SpawnFollowResponse,
 }
 
 pub(super) async fn spawn_session_handler(
@@ -125,7 +121,7 @@ async fn spawn_into_target(
     body: &SpawnSessionRequest,
     started_at: std::time::Instant,
 ) -> Result<SpawnSessionResponse, AppError> {
-    validate_await_result(body)?;
+    validate_follow_result(body)?;
     let (worktree_mode, reuse_branch, base_branch) =
         branch_worktree_settings(body.branch.as_ref())?;
     let runtime = resolve_spawn_runtime(state, source, target_project, body).await?;
@@ -165,7 +161,7 @@ async fn spawn_into_target(
     // messaging the existing session.
     let mut dispatch_error =
         dispatch_initial_message(state, created.id, session_id, body, message_id).await?;
-    if body.await_result.unwrap_or(false) {
+    if body.follows_completion() {
         if let Some(error) = dispatch_error.clone() {
             if let Err(reply_error) =
                 super::reply_wait::deliver_failed(state, session_id, &error).await
@@ -183,6 +179,7 @@ async fn spawn_into_target(
         project: target_project.clone(),
         cross_project: target_project.id != source.project_id,
         dispatch_error: dispatch_error.clone(),
+        follow: SpawnFollowResponse::from_request(body),
     };
     record_tool_audit(
         &state.write_pool,
@@ -221,7 +218,7 @@ async fn persist_and_announce_spawn(
     body: &SpawnSessionRequest,
 ) -> Result<Option<i64>, AppError> {
     let initial_message = insert_initial_message(state, source, session_id, body).await?;
-    if body.link_to_current_session.unwrap_or(true) {
+    if body.follows_gates() {
         insert_spawn_link(
             state,
             source.session_id,
@@ -252,12 +249,12 @@ async fn persist_and_announce_spawn(
     Ok(Some(message_id))
 }
 
-fn validate_await_result(body: &SpawnSessionRequest) -> Result<(), AppError> {
-    if body.await_result.unwrap_or(false)
+fn validate_follow_result(body: &SpawnSessionRequest) -> Result<(), AppError> {
+    if body.follows_completion()
         && super::trimmed_optional(body.initial_message.as_deref()).is_none()
     {
         return Err(AppError::BadRequest(
-            "await_result=true requires initial_message".to_string(),
+            "follow.completion=true (or await_result=true) requires initial_message".to_string(),
         ));
     }
     Ok(())
@@ -273,7 +270,7 @@ async fn dispatch_initial_message(
     let Some(initial_message) = super::trimmed_optional(body.initial_message.as_deref()) else {
         return Ok(None);
     };
-    if body.await_result.unwrap_or(false) {
+    if body.follows_completion() {
         let message_id = message_id.expect("await_result requires a persisted message");
         super::reply_wait::arm(&state.write_pool, session_id, message_id).await?;
     }
@@ -351,6 +348,8 @@ mod tests {
             feature_title: "Source feature".to_string(),
             project_id: 7,
             status: "active".to_string(),
+            pending_permission: None,
+            pending_questions: None,
         }
     }
 

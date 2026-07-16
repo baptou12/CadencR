@@ -27,9 +27,8 @@ Follow these steps exactly:
    - `branch`: `{ "mode": "reuse_worktree", "reuse_branch": "<current branch from
      step 1>" }` so the reviewer sees the exact same working tree, including
      uncommitted changes.
-   - `await_result`: `true` — you will receive the reviewer's turn result back as a
-     `<cadencr-reply>` message.
-   - `link_to_current_session`: `true`.
+   - `follow`: `{ "gates": true, "completion": true }` — gates and the
+     reviewer's result will steer this turn automatically.
    - `source_note`: `"cadencr:review"`.
    - `initial_message`: a self-contained instruction telling the reviewer to:
      read the diff for the requested scope from the working tree, act strictly
@@ -38,8 +37,9 @@ Follow these steps exactly:
      severity (blocker / warning / nit), file:line, a one-sentence problem
      statement, and a concrete fix — plus an explicit "no issues found" if the code
      is clean.
-4. When the `<cadencr-reply>` arrives, present the reviewer's findings to the user
-   verbatim in a clean, prioritized summary (most severe first). Attribute them to
-   the reviewer model. Do not act on the findings yourself unless the user asks.
+4. When the pushed `<cadencr-reply>` arrives, present the reviewer's findings to
+   the user verbatim in a clean, prioritized summary (most severe first).
+   Attribute them to the reviewer model. Do not act on the findings yourself
+   unless the user asks.
 
 If any tool call fails, report the failure and stop — do not silently continue.

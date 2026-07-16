@@ -48,6 +48,9 @@ async fn message_uuid_migration_preserves_legacy_rows_and_enforces_session_uniqu
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE TABLE agent_session_reply_waits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT
+        );
         INSERT INTO agent_sessions (id, feature_id) VALUES (1, 10), (2, 20);
         INSERT INTO agent_messages (id, session_id, role, content, message_type)
             VALUES (7, 1, 'user', 'legacy', 'user_message');

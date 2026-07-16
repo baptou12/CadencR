@@ -53,7 +53,7 @@ pub(super) async fn insert_initial_message(
         },
     )
     .await?;
-    if body.await_result.unwrap_or(false) {
+    if body.follows_completion() {
         super::reply_wait::insert_pending(
             &mut tx,
             source.session_id,
@@ -137,6 +137,7 @@ mod tests {
             permission_mode: None,
             codex_permission_mode: None,
             source_note: None,
+            follow: None,
             link_to_current_session: None,
             await_result: Some(true),
             target_project_id: Some(7),

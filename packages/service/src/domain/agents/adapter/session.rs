@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -14,6 +14,7 @@ use super::permission::{
 
 pub type RuntimeMessageRx = mpsc::Receiver<Result<RuntimeEvent, RuntimeError>>;
 pub type RuntimeSessionHandle = Arc<RwLock<Box<dyn AgentRuntimeSession>>>;
+pub type RuntimeSessionWeakHandle = Weak<RwLock<Box<dyn AgentRuntimeSession>>>;
 
 #[async_trait]
 pub trait RuntimeToolPermissionHandler: Send + Sync {

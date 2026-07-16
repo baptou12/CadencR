@@ -22,6 +22,7 @@ async fn migration_preserves_existing_custom_models_with_unknown_effort() {
          CREATE TABLE scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER \
          NOT NULL, text TEXT NOT NULL, scheduled_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT \
          'pending'); \
+         CREATE TABLE agent_session_reply_waits (id INTEGER PRIMARY KEY AUTOINCREMENT); \
          INSERT INTO claude_code_custom_models (model_id, label, description) \
          VALUES ('legacy-proxy', 'Legacy proxy', 'keep me')",
     )

@@ -309,13 +309,49 @@ async fn project_send_message_audits_invalid_delivery_without_persisting() {
 }
 
 #[tokio::test]
-async fn project_send_message_rejects_targets_awaiting_user_resolution() {
+async fn project_send_message_steers_targets_awaiting_user_resolution() {
     for target_status in ["awaiting_permission", "awaiting_question"] {
         let pool = seeded_control_pool().await;
         seed_send_target_session(&pool, target_status).await;
         let app = control_router().with_state(AppState::with_pool(pool.clone()));
 
-        let response = app.oneshot(send_message_request("send_now")).await.unwrap();
+        let response = app
+            .oneshot(send_message_request("steer_current_turn"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let message: (String, String) = sqlx::query_as(
+            "SELECT content, delivery_state FROM agent_messages WHERE session_id = 888",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            message,
+            ("Please validate delivery.".into(), "delivery_failed".into())
+        );
+        let queue_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM agent_session_message_queue WHERE target_session_id = 888",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(queue_count, 0);
+    }
+}
+
+#[tokio::test]
+async fn project_send_message_can_explicitly_reject_active_targets() {
+    for target_status in ["running", "awaiting_permission", "awaiting_question"] {
+        let pool = seeded_control_pool().await;
+        seed_send_target_session(&pool, target_status).await;
+        let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+        let response = app
+            .oneshot(send_message_request("reject_if_active"))
+            .await
+            .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let message_count: i64 =

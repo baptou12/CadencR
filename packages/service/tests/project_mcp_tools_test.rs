@@ -17,7 +17,7 @@ async fn test_ctx() -> Arc<McpContext> {
         CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')));
         CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')));
         CREATE TABLE feature_settings (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL);
-        CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL, agent_type TEXT, runtime_provider TEXT, model TEXT, status TEXT NOT NULL DEFAULT 'paused', started_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL, agent_type TEXT, runtime_provider TEXT, model TEXT, status TEXT NOT NULL DEFAULT 'paused', pending_permission TEXT, pending_questions TEXT, started_at TEXT NOT NULL DEFAULT (datetime('now')));
         CREATE TABLE agent_messages (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, role TEXT NOT NULL, message_type TEXT, content TEXT, tool_name TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
         CREATE TABLE agent_message_origins (message_id INTEGER PRIMARY KEY, origin_kind TEXT NOT NULL, source_session_id INTEGER, source_feature_id INTEGER, source_project_id INTEGER, source_message_id INTEGER, note TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
         CREATE TABLE agent_session_message_queue (id INTEGER PRIMARY KEY, target_session_id INTEGER NOT NULL, source_session_id INTEGER, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT (datetime('now')), delivered_at TEXT, error TEXT);
@@ -376,6 +376,9 @@ async fn project_get_session_status_returns_status_for_current_project_session()
     assert_eq!(body["session_id"], 1000);
     assert_eq!(body["status"], "running");
     assert_eq!(body["project_id"], 10);
+    assert_eq!(body["lifecycle"], "open");
+    assert_eq!(body["turn_state"], "working");
+    assert_eq!(body["delivery_mode"], "reactive_push");
 }
 
 #[tokio::test]
@@ -393,4 +396,29 @@ async fn project_get_session_status_includes_pending_queue_count() {
     assert_eq!(body["status"], "running");
     assert_eq!(body["pending_queue_count"], 1);
     assert_eq!(body["has_pending_queue"], true);
+}
+
+#[tokio::test]
+async fn project_get_session_status_reports_pending_gate_as_turn_state() {
+    let ctx = test_ctx().await;
+    sqlx::query(
+        "UPDATE agent_sessions
+         SET status = 'paused', pending_permission = '{\"request_id\":\"gate-1\"}'
+         WHERE id = 1000",
+    )
+    .execute(&ctx.write_pool)
+    .await
+    .unwrap();
+
+    let result = run_project_tool(
+        "project_get_session_status",
+        json!({"session_id": 1000}),
+        ctx,
+    )
+    .await;
+    let body: serde_json::Value = serde_json::from_str(&result_text(result)).expect("tool JSON");
+
+    assert_eq!(body["status"], "paused");
+    assert_eq!(body["lifecycle"], "open");
+    assert_eq!(body["turn_state"], "awaiting_permission");
 }

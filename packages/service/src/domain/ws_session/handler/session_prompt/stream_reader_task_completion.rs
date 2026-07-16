@@ -44,9 +44,10 @@ impl StreamReaderTask {
         runtime_event: &RuntimeEvent,
         persisted_message: Option<PersistedMessageRef>,
         current_model: Option<&str>,
+        interrupted_generation: Option<u64>,
     ) -> Option<WsEnvelope> {
         if runtime_event.is_result() {
-            return self.result_envelope(state).await;
+            return self.result_envelope(state, interrupted_generation).await;
         }
         let mut block =
             raw_event_with_agent_message_id(runtime_event.raw_json(), persisted_message);
@@ -73,7 +74,11 @@ impl StreamReaderTask {
         ))
     }
 
-    async fn result_envelope(&self, state: &mut StreamReaderState) -> Option<WsEnvelope> {
+    async fn result_envelope(
+        &self,
+        state: &mut StreamReaderState,
+        interrupted_generation: Option<u64>,
+    ) -> Option<WsEnvelope> {
         state.turn_state.mark_result();
 
         // Issue #58: a `run_in_background` Agent/Task can still be alive after
@@ -90,9 +95,12 @@ impl StreamReaderTask {
         // and the CLI's auto-resume would otherwise start a brand-new turn,
         // resetting elapsed time to 0s. The resume turn's final `Result` arrives
         // with the set empty and ends the turn normally below.
-        if !state.live_background_agents.is_empty() {
+        if interrupted_generation.is_none() && !state.live_background_agents.is_empty() {
             WsSessionPersistence::mark_running_static(&self.write_pool, self.db_session_id).await;
             return None;
+        }
+        if let Some(generation) = interrupted_generation {
+            return self.interrupted_result_envelope(state, generation).await;
         }
 
         WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
@@ -124,6 +132,52 @@ impl StreamReaderTask {
             "ended",
             serde_json::to_value(SessionEndedPayload {
                 reason: "turn_complete".into(),
+                received_prompt_message_uuids: std::mem::take(
+                    &mut state.received_prompt_message_uuids,
+                ),
+            })
+            .unwrap(),
+        ))
+    }
+
+    async fn interrupted_result_envelope(
+        &self,
+        state: &mut StreamReaderState,
+        interrupted_generation: u64,
+    ) -> Option<WsEnvelope> {
+        if !self
+            .app_state
+            .active_turns
+            .is_current_generation(self.db_session_id, interrupted_generation)
+            .await
+        {
+            info!(
+                self.db_session_id,
+                interrupted_generation,
+                "superseded interrupted turn ended without changing the current turn"
+            );
+            return None;
+        }
+        WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
+        let has_pending_user_input =
+            WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
+                .await
+                .is_some_and(|row| row.has_pending_user_input());
+        if !has_pending_user_input {
+            WsSessionPersistence::broadcast_session_status(
+                &self.session_status_tx,
+                self.db_session_id,
+                self.feature_id,
+                AgentStatus::Idle,
+                None,
+            );
+            state.turn_state.record_signal_status(AgentStatus::Idle);
+        }
+        Some(WsEnvelope::new(
+            "session",
+            "ended",
+            serde_json::to_value(SessionEndedPayload {
+                reason: "turn_interrupted".into(),
                 received_prompt_message_uuids: std::mem::take(
                     &mut state.received_prompt_message_uuids,
                 ),
@@ -261,6 +315,29 @@ impl StreamReaderTask {
         let receipts = std::mem::take(&mut state.received_prompt_message_uuids);
         self.surface_session_error("AGENT_STOPPED", message, receipts)
             .await;
+    }
+
+    /// End an intentionally interrupted turn without an error bubble,
+    /// diagnostics dump, or failed parent reply. If a newer prompt has already
+    /// started, its generation remains running; otherwise the stopped child
+    /// becomes idle and can be resumed by the next message.
+    pub(super) async fn handle_interrupted_end(
+        &self,
+        state: &mut StreamReaderState,
+        interrupted_generation: u64,
+    ) {
+        info!(
+            self.db_session_id,
+            interrupted_generation, "agent turn stopped intentionally"
+        );
+        if let Some(end_env) = self
+            .interrupted_result_envelope(state, interrupted_generation)
+            .await
+        {
+            let _ = self
+                .send_and_mirror(Message::Text(String::from(end_env).into()))
+                .await;
+        }
     }
 
     pub(super) async fn send_stream_closed(&self, state: &mut StreamReaderState) {

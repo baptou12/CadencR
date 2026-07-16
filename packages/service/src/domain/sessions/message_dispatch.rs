@@ -135,6 +135,39 @@ pub async fn recover_orphaned_claims(pool: &sqlx::SqlitePool) -> anyhow::Result<
     .execute(&mut *tx)
     .await?
     .rows_affected();
+    recovered += sqlx::query(
+        "UPDATE agent_session_reply_waits
+         SET status = CASE
+                 WHEN EXISTS (
+                     SELECT 1 FROM agent_messages m
+                     WHERE m.session_id = agent_session_reply_waits.requester_session_id
+                       AND m.message_uuid = agent_session_reply_waits.delivery_message_uuid
+                       AND m.delivery_state = 'received_agent'
+                       AND m.content LIKE '<cadencr-reply%status=\"failed\"%'
+                 ) THEN 'failed'
+                 WHEN EXISTS (
+                     SELECT 1 FROM agent_messages m
+                     WHERE m.session_id = agent_session_reply_waits.requester_session_id
+                       AND m.message_uuid = agent_session_reply_waits.delivery_message_uuid
+                       AND m.delivery_state = 'received_agent'
+                 ) THEN 'delivered'
+                 ELSE 'armed'
+             END,
+             error = CASE
+                 WHEN EXISTS (
+                     SELECT 1 FROM agent_messages m
+                     WHERE m.session_id = agent_session_reply_waits.requester_session_id
+                       AND m.message_uuid = agent_session_reply_waits.delivery_message_uuid
+                       AND m.delivery_state = 'received_agent'
+                 ) THEN NULL
+                 ELSE 'service restarted during reply delivery; retry remains armed'
+             END,
+             delivery_claim_token = NULL, delivery_started_at = NULL
+         WHERE delivery_claim_token IS NOT NULL",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
     sqlx::query(
         "UPDATE agent_messages SET delivery_state = 'delivery_unknown'
          WHERE delivery_state = 'pending_agent' AND id IN (
@@ -160,7 +193,7 @@ mod tests {
             .unwrap();
         seed(&pool).await;
 
-        assert_eq!(recover_orphaned_claims(&pool).await.unwrap(), 3);
+        assert_eq!(recover_orphaned_claims(&pool).await.unwrap(), 5);
         assert_eq!(
             claim(&pool, 1).await.unwrap(),
             DispatchClaim::Claimed {
@@ -178,6 +211,29 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(state, "delivery_unknown");
+        let reply_wait: (String, Option<String>, String) = sqlx::query_as(
+            "SELECT status, delivery_claim_token, error
+             FROM agent_session_reply_waits WHERE id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            reply_wait,
+            (
+                "armed".into(),
+                None,
+                "service restarted during reply delivery; retry remains armed".into()
+            )
+        );
+        let delivered_wait: (String, Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT status, delivery_claim_token, error
+             FROM agent_session_reply_waits WHERE id = 2",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(delivered_wait, ("delivered".into(), None, None));
     }
 
     async fn seed(pool: &sqlx::SqlitePool) {
@@ -187,9 +243,10 @@ mod tests {
             .unwrap();
         sqlx::query("INSERT INTO features (id,project_id,title,status,type) VALUES (1,1,'f','active','ws-session')").execute(pool).await.unwrap();
         sqlx::query("INSERT INTO agent_sessions (id,feature_id,agent_type,status) VALUES (1,1,'session','paused')").execute(pool).await.unwrap();
-        sqlx::query("INSERT INTO agent_messages (id,session_id,role,content,message_type,message_uuid,delivery_state) VALUES (1,1,'user','x','user_message','00000000-0000-0000-0000-000000000001','pending_agent')").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO agent_messages (id,session_id,role,content,message_type,message_uuid,delivery_state) VALUES (1,1,'user','x','user_message','00000000-0000-0000-0000-000000000001','pending_agent'), (2,1,'user','<cadencr-reply status=\"completed\">ok</cadencr-reply>','user_message','00000000-0000-0000-0000-000000000002','received_agent')").execute(pool).await.unwrap();
         sqlx::query("INSERT INTO agent_message_dispatches (message_id,status,claim_token) VALUES (1,'dispatching','a')").execute(pool).await.unwrap();
         sqlx::query("INSERT INTO agent_session_message_queue (target_session_id,content,status,claim_token) VALUES (1,'q','delivering','b')").execute(pool).await.unwrap();
         sqlx::query("INSERT INTO scheduled_messages (feature_id,text,scheduled_at,status,claim_token) VALUES (1,'s',datetime('now'),'dispatching','c')").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO agent_session_reply_waits (id,requester_session_id,responder_session_id,kind,status,delivery_claim_token,delivery_started_at,delivery_message_uuid) VALUES (1,1,1,'message','armed','d',datetime('now'),'00000000-0000-0000-0000-000000000001'), (2,1,1,'message','armed','e',datetime('now'),'00000000-0000-0000-0000-000000000002')").execute(pool).await.unwrap();
     }
 }

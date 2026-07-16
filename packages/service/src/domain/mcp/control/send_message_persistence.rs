@@ -289,6 +289,8 @@ mod tests {
             feature_title: String::new(),
             project_id: 7,
             status: status.to_string(),
+            pending_permission: None,
+            pending_questions: None,
         }
     }
 }

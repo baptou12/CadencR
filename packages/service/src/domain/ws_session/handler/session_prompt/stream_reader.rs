@@ -1,5 +1,5 @@
 use crate::app_state::AppState;
-use crate::domain::agents::adapter::RuntimeMessageRx;
+use crate::domain::agents::adapter::{RuntimeMessageRx, RuntimeSessionWeakHandle};
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
@@ -12,6 +12,7 @@ pub(crate) fn spawn_stream_reader(
     db_session_id: i64,
     feature_id: i64,
     message_rx: RuntimeMessageRx,
+    runtime_session_handle: Option<RuntimeSessionWeakHandle>,
     sender: WsSender,
     feature_senders: WsFeatureSenderRegistry,
     write_pool: sqlx::SqlitePool,
@@ -27,6 +28,7 @@ pub(crate) fn spawn_stream_reader(
         db_session_id,
         feature_id,
         message_rx,
+        runtime_session_handle,
         sender,
         feature_senders,
         write_pool,

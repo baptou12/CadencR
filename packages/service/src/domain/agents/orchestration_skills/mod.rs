@@ -127,6 +127,8 @@ mod tests {
             assert!(expanded.starts_with("## CadencR workflow boundary"));
             assert!(expanded.contains("This virtual skill is self-contained"));
             assert!(expanded.contains("Do not search the filesystem for CadencR's installation"));
+            assert!(expanded.contains("Inter-agent messages steer an active target turn"));
+            assert!(expanded.contains("Do **not** poll"));
         }
     }
 

@@ -28,14 +28,13 @@ Follow these steps exactly:
      `project_list_agent_providers` if a requested target must be resolved.
    - `branch`: `{ "mode": "new_worktree", "base": "<current branch or main>" }`
      so concurrent edits cannot collide.
-   - `await_result`: `true`.
-   - `link_to_current_session`: `true`.
+   - `follow`: `{ "gates": true, "completion": true }`.
    - `source_note`: `"cadencr:parallelize"`.
    - `initial_message`: a self-contained instruction describing **only** that
      sub-task, its goal, relevant context and constraints, and the result the
      child should return. Do not make the child depend on this conversation's
      back-scroll or on another child.
-4. Each child's turn result returns as a `<cadencr-reply>`. As replies arrive,
+4. As each child's pushed `<cadencr-reply>` arrives,
    collect them and present one consolidated summary keyed by sub-task. Include
    each child's outcome and worktree/branch when available, and clearly flag any
    failed sub-task.

@@ -23,7 +23,8 @@ Follow these steps exactly:
 4. Transfer the brief to the target:
    - For a new target, first call `project_spawn_session` with `project_id`, an
      appropriate `title`, the selected `provider` / `model`,
-     `link_to_current_session: true`, `source_note: "cadencr:handoff"`, and the
+     `follow: { "gates": true, "completion": false }`,
+     `source_note: "cadencr:handoff"`, and the
      handoff brief as `initial_message`.
    - Use `branch`: `{ "mode": "reuse_worktree", "reuse_branch": "<current branch>" }`
      when the successor should continue the exact same work, including
@@ -31,8 +32,8 @@ Follow these steps exactly:
      or main>" }` only when the user wants an isolated clean worktree.
    - If the target is an existing session instead, send the brief with
      `project_send_session_message` and `reply: "on_turn_end"`.
-   - Set `await_result: true` only when the caller wants the successor's first
-     result returned as a `<cadencr-reply>`; otherwise do not wait.
+   - Set `follow.completion: true` only when the caller wants the successor's
+     first result pushed as a `<cadencr-reply>`; otherwise keep it false.
 5. Ensure the relationship is recorded as a handoff. Only after
    `project_spawn_session` succeeds, read the new session id from its response
    and call `project_link_sessions` with that exact id as `target_session_id`,
@@ -43,7 +44,7 @@ Follow these steps exactly:
    spawn call and this explicit handoff-link call succeed.
 6. Report the target session id and feature/title to the user, noting whether it
    was newly spawned or already existed. If you awaited a result, relay the
-   `<cadencr-reply>` when it arrives.
+   pushed `<cadencr-reply>` when it arrives.
 
 If any tool call fails, report which call failed and stop — do not silently
 continue.

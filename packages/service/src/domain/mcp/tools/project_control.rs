@@ -219,6 +219,7 @@ pub async fn spawn_session_with_client(
                 "permission_mode": optional_string(args, "permission_mode"),
                 "codex_permission_mode": optional_string(args, "codex_permission_mode"),
                 "source_note": optional_string(args, "source_note"),
+                "follow": args.get("follow").cloned(),
                 "link_to_current_session": optional_bool(args, "link_to_current_session"),
                 "await_result": optional_bool(args, "await_result"),
                 "target_project_id": optional_i64(args, "project_id"),
@@ -333,6 +334,7 @@ mod tests {
         assert_eq!(request["message"], "Please verify provenance.");
         assert_eq!(request["message_uuid"], message_uuid);
         assert_eq!(request["source_note"], "delegated by project MCP");
+        assert!(request["delivery"].is_null());
     }
 
     #[tokio::test]
@@ -436,6 +438,7 @@ mod tests {
                 "thinking_level": "high",
                 "permission_mode": "default",
                 "codex_permission_mode": "auto_review",
+                "follow": { "gates": true, "completion": true },
                 "source_note": "delegated by project MCP"
             }),
             &ctx,
@@ -455,6 +458,7 @@ mod tests {
         );
         assert_eq!(request["branch"]["mode"], "none");
         assert_eq!(request["thinking_level"], "high");
+        assert_eq!(request["follow"]["completion"], true);
         assert!(request["target_project_id"].is_null());
         assert!(request["target_project_path"].is_null());
     }
