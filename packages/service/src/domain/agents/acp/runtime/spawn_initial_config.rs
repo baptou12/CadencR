@@ -4,7 +4,8 @@
 
 use crate::domain::agents::adapter::{RuntimeError, RuntimeSpawnConfig};
 
-use super::config_options::{set_config_option_model_value, set_config_option_thinking_effort};
+use super::apply_model_config::apply_model_config;
+use super::config_options::set_config_option_thinking_effort;
 use super::lifecycle::NegotiatedSession;
 use super::session::AcpRuntimeSession;
 
@@ -18,21 +19,21 @@ pub(super) async fn apply_initial_model(
     let Some(model) = config.model.as_deref() else {
         return Ok(());
     };
-    let config_value = session.hooks.model_config_value(model);
-    set_config_option_model_value(
+    apply_model_config(
         &session.client,
         &negotiated.session_id,
         &session.current_model,
+        &session.current_effort,
         &session.supports_set_config_option,
-        session.hooks.model_config_id(),
+        session.hooks.as_ref(),
         model,
-        &config_value,
     )
     .await
 }
 
 /// No-op when `config.thinking_effort` is `None`. Same fallback rules as
-/// `apply_initial_model`.
+/// `apply_initial_model`. Skips when the catalog model id already encodes
+/// effort that `apply_initial_model` will push as a companion option.
 pub(super) async fn apply_initial_thinking_effort(
     session: &AcpRuntimeSession,
     negotiated: &NegotiatedSession,
@@ -41,6 +42,13 @@ pub(super) async fn apply_initial_thinking_effort(
     let Some(effort) = config.thinking_effort.as_deref() else {
         return Ok(());
     };
+    if config
+        .model
+        .as_deref()
+        .is_some_and(|model| session.hooks.model_encodes_thinking_effort(model))
+    {
+        return Ok(());
+    }
     set_config_option_thinking_effort(
         &session.client,
         &negotiated.session_id,
@@ -82,8 +90,8 @@ mod tests {
         fn model_config_id(&self) -> Option<&'static str> {
             Some("model")
         }
-        fn thinking_effort_config_id(&self) -> Option<&'static str> {
-            Some("effort")
+        fn thinking_effort_config_id(&self) -> Option<String> {
+            Some("effort".to_string())
         }
     }
 

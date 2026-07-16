@@ -19,6 +19,8 @@ use tokio::sync::RwLock;
 
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata};
 
+use super::thought_level::is_thought_level_config_name;
+
 /// Build the `RuntimeEvent` for a `config_option_update` notification.
 ///
 /// We intentionally surface a `RuntimeEventKind::Other` rather than inventing
@@ -45,22 +47,20 @@ pub async fn mirror_config_option_update(
         .and_then(Value::as_str)
         .unwrap_or("");
     let value = option.and_then(|o| o.get("value"));
-    match name {
-        "model" => {
-            let next = value.and_then(Value::as_str).map(ToOwned::to_owned);
-            write_if_changed(current_model, next).await;
-        }
-        "thinkingEffort" => {
-            let next = match value {
-                Some(Value::Null) | None => None,
-                Some(v) => v.as_str().map(ToOwned::to_owned),
-            };
-            write_if_changed(current_effort, next).await;
-        }
-        other => {
-            tracing::debug!(option = other, "ignoring unknown config_option_update");
-        }
+    if name == "model" {
+        let next = value.and_then(Value::as_str).map(ToOwned::to_owned);
+        write_if_changed(current_model, next).await;
+        return;
     }
+    if is_thought_level_config_name(name) {
+        let next = match value {
+            Some(Value::Null) | None => None,
+            Some(v) => v.as_str().map(ToOwned::to_owned),
+        };
+        write_if_changed(current_effort, next).await;
+        return;
+    }
+    tracing::debug!(option = name, "ignoring unknown config_option_update");
 }
 
 /// Take the writer lock only when the new value differs. Hot-path

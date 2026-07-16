@@ -8,6 +8,8 @@ use crate::domain::agents::adapter::{
 
 use super::{assistant_tool_event_with_id, gate_options, tool_call_id};
 
+const FREEFORM_OPTION_ID: &str = "__freeform_other__";
+
 pub(super) fn request(
     request_id: &str,
     params: &Value,
@@ -40,9 +42,18 @@ pub(super) fn request(
 
 pub(super) fn response(params: &Value, response: &RuntimePermissionResponse) -> Value {
     if matches!(response.decision, RuntimePermissionDecision::Deny) {
+        // Cursor's docs mention `cancelled`; interactive Reject maps to
+        // `skipped` with an optional reason so Composer can continue.
+        let outcome = if response.feedback.as_deref().is_some_and(|feedback| {
+            feedback.eq_ignore_ascii_case("cancelled") || feedback.eq_ignore_ascii_case("cancel")
+        }) {
+            "cancelled"
+        } else {
+            "skipped"
+        };
         return json!({
             "outcome": {
-                "outcome": "skipped",
+                "outcome": outcome,
                 "reason": response.feedback.as_deref().unwrap_or("Question skipped by user"),
             }
         });
@@ -89,43 +100,79 @@ fn question_input(question: &Value) -> Value {
 }
 
 fn selected_answers(params: &Value, updated_input: &Value) -> Vec<Value> {
-    if let Some(structured) = updated_input
-        .get("structured_answers")
-        .and_then(Value::as_array)
-    {
-        return structured.iter().filter_map(structured_answer).collect();
-    }
     let answers = updated_input.get("answers").and_then(Value::as_object);
+    let structured = updated_input
+        .get("structured_answers")
+        .and_then(Value::as_array);
     params
         .get("questions")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .map(|question| answer_for_question(question, answers))
+        .enumerate()
+        .map(|(index, question)| {
+            answer_for_question(
+                question,
+                answers,
+                structured.and_then(|items| items.get(index)),
+            )
+        })
         .collect()
-}
-
-fn structured_answer(answer: &Value) -> Option<Value> {
-    Some(json!({
-        "questionId": answer.get("questionId")?.as_str()?,
-        "selectedOptionIds": answer.get("selectedOptionIds")?.as_array()?,
-    }))
 }
 
 fn answer_for_question(
     question: &Value,
     answers: Option<&serde_json::Map<String, Value>>,
+    structured: Option<&Value>,
 ) -> Value {
     let prompt = question.get("prompt").and_then(Value::as_str).unwrap_or("");
-    let selected = answers
+    let question_id = question.get("id").and_then(Value::as_str).unwrap_or(prompt);
+    let structured_ids = structured
+        .and_then(|answer| answer.get("selectedOptionIds"))
+        .and_then(Value::as_array)
+        .map(|ids| {
+            ids.iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let selected = if !structured_ids.is_empty() {
+        structured_ids
+    } else {
+        answers
+            .and_then(|answers| answers.get(prompt))
+            .and_then(Value::as_str)
+            .map(|answer| selected_option_ids(question, answer))
+            .unwrap_or_default()
+    };
+    let free_text = answers
         .and_then(|answers| answers.get(prompt))
         .and_then(Value::as_str)
-        .map(|answer| selected_option_ids(question, answer))
-        .unwrap_or_default();
-    json!({
-        "questionId": question.get("id").and_then(Value::as_str).unwrap_or(prompt),
+        .filter(|answer| {
+            selected.is_empty()
+                || option_id_for_label(
+                    question
+                        .get("options")
+                        .and_then(Value::as_array)
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                    answer,
+                )
+                .is_none()
+        });
+    let mut payload = json!({
+        "questionId": question_id,
         "selectedOptionIds": selected,
-    })
+    });
+    // Preserve free-text / "Other" answers when Cursor's freeform option is used.
+    if let Some(free_text) = free_text {
+        payload["freeformText"] = json!(free_text);
+        if selected.is_empty() {
+            payload["selectedOptionIds"] = json!([FREEFORM_OPTION_ID]);
+        }
+    }
+    payload
 }
 
 fn selected_option_ids(question: &Value, answer: &str) -> Vec<String> {
@@ -201,6 +248,39 @@ mod tests {
         assert_eq!(
             payload["outcome"]["answers"][0]["selectedOptionIds"],
             json!(["plan"])
+        );
+    }
+
+    #[test]
+    fn empty_structured_answers_fall_back_to_free_text() {
+        let params = json!({
+            "questions": [{
+                "id": "q1",
+                "prompt": "Anything else?",
+                "options": [{ "id": "yes", "label": "Yes" }]
+            }]
+        });
+        let answer = RuntimePermissionResponse {
+            request_id: "request-1".to_string(),
+            decision: RuntimePermissionDecision::AllowOnce,
+            option_id: None,
+            feedback: None,
+            updated_input: Some(json!({
+                "answers": { "Anything else?": "custom note" },
+                "structured_answers": [{
+                    "questionId": "q1",
+                    "selectedOptionIds": []
+                }]
+            })),
+        };
+        let payload = response(&params, &answer);
+        assert_eq!(
+            payload["outcome"]["answers"][0]["selectedOptionIds"],
+            json!(["__freeform_other__"])
+        );
+        assert_eq!(
+            payload["outcome"]["answers"][0]["freeformText"],
+            "custom note"
         );
     }
 }

@@ -28,9 +28,9 @@ agent login
 | 5   | Edits / Writes / Patch                   | ✅     | Cursor names normalize to `Write`, `Edit`, and `ApplyPatch`; `path`, `fileText`, `oldText`, and `newText` normalize to Cadencr's canonical input keys.                                                                                                                                                                                |
 | 6   | Sub-agents                               | 🟡     | Composer's `Task: Subagent task` call renders immediately as a canonical `Agent` block; `cursor/task` completion metadata enriches that same block with prompt/type/model/agent details. Cursor does not expose a live child event stream or final child text in this extension.                                                      |
 | 7   | Todo                                     | ✅     | `cursor/update_todos` maps to `TodoWrite`; stable `toolCallId`s are retained and statuses normalize to the canonical runtime shape.                                                                                                                                                                                                   |
-| 8   | Thinking level changes                   | ❌     | Cursor currently exposes reasoning levels as distinct model ids, not a stable independent ACP thought-level selector. The catalog therefore does not advertise Cadencr effort controls.                                                                                                                                               |
+| 8   | Thinking level changes                   | 🟡     | Cadencr advertises `clientCapabilities._meta.parameterizedModelPicker`, which unlocks Cursor's separate `fast` / thought-level (`effort` / `reasoning`) config options. Cold catalog still lists variant model ids; the adapter maps those onto base model + companion config updates. Live effort chips remain catalog-gated (`supports_effort: false`) until per-model levels are published. |
 | 9   | Model selection changes                  | ✅     | Account-scoped models come from `agent models`; changes use the opaque select values advertised by live `session/new` / `session/load` config options. Cursor's `composer-2.5-fast` catalog id maps to the advertised `composer-2.5[fast=true]` value.                                                                                  |
-| 10  | Permissions: yes / no / always / session | ✅     | Standard `session/request_permission` options map through the shared bridge. The independent access-mode axis supports Default, Full Access, and Auto Review through Cursor's official CLI flags. The adapter can render `cursor/ask_question` if Cursor sends it, but current Composer sessions do not advertise a question tool.     |
+| 10  | Permissions: yes / no / always / session | ✅     | Standard `session/request_permission` options map through the shared bridge. The independent access-mode axis supports Default, Full Access, and Auto Review through Cursor's official CLI flags. `cursor/ask_question` is bridged to Cadencr's question drawer; Composer may still omit emitting it for a given turn.               |
 | 11  | MCP                                      | 🟡     | Runtime MCP servers are passed through ACP and merged into `.cursor/mcp.json` without replacing user servers. Status remains `unknown`; team-dashboard MCP and hot swap are not available.                                                                                                                                            |
 | 12  | Plan approval                            | ✅     | `cursor/create_plan` synthesizes `ExitPlanMode`, opens Cadencr's plan gate, returns Cursor's accepted/rejected response schema, waits for the planning turn to end, then sends Cursor the execution follow-up in `agent` mode.                                                                                                                                                                       |
 | 13  | Context usage                            | ❌     | Cursor ACP does not currently expose authoritative per-turn token occupancy/context-window data; the adapter deliberately does not guess.                                                                                                                                                                                             |
@@ -44,7 +44,7 @@ Legend: ✅ implemented · 🟡 partial · ❌ missing.
 
 | Method                  | Direction        | Cadencr projection                                                                                |
 | ----------------------- | ---------------- | ------------------------------------------------------------------------------------------------- |
-| `cursor/ask_question`   | Blocking request | `AskUserQuestion` tool + question drawer; response becomes `answered`, `skipped`, or `cancelled`. |
+| `cursor/ask_question`   | Blocking request | `AskUserQuestion` tool + question drawer; response becomes `answered`, `skipped`, or `cancelled` (explicit cancel feedback). Free-text / Other answers are preserved. |
 | `cursor/create_plan`    | Blocking request | `ExitPlanMode` tool + `PlanApproval` permission gate.                                             |
 | `cursor/update_todos`   | Non-blocking request or notification | `TodoWrite` tool with normalized statuses; requests receive an empty success response.              |
 | `cursor/task`           | Non-blocking request or notification | `Agent` tool containing sub-agent metadata; requests receive an empty success response.             |
@@ -133,7 +133,7 @@ folding unsafe execution into `RuntimePermissionMode`:
 | ------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Default`           | `agent --sandbox enabled acp`               | Sandboxed execution with Cursor's configured approval rules (normally `approvalMode: allowlist`).                                                                                                     |
 | `FullAccess`        | `agent --force --sandbox disabled acp`      | `approvalMode: unrestricted`; Run Everything with the sandbox disabled unless explicitly denied.                                                                                                      |
-| `AutoReview`        | `agent --auto-review --sandbox enabled acp` | Sandboxed execution. Until Cursor ACP honors the flag, the adapter preflights ordinary shell allowlist misses after Cursor's parser and safety-policy checks; explicit protection requests still ask. |
+| `AutoReview`        | `agent --auto-review --sandbox enabled acp` | Sandboxed execution. Until Cursor ACP honors the flag, the adapter preflights ordinary shell allowlist misses after Cursor's parser and safety-policy checks; MCP/non-shell gates remain interactive. |
 
 Cursor ACP currently advertises only `mode` and `model` as session config
 options, so approval mode cannot be changed through
@@ -175,10 +175,12 @@ servers into the project file:
 3. `cursor/task` is completion metadata, not a child-session stream. Nested
    live sub-agent rendering cannot be reconstructed without more upstream
    events.
-4. Cursor reasoning variants are catalog models. Treating their suffixes as a
-   separate Cadencr effort control would be a guess, so the adapter does not.
-5. Current Composer sessions do not expose a callable question tool. The
-   `cursor/ask_question` bridge remains implemented for sessions where Cursor
-   itself emits that request, but a prompt cannot force an unavailable tool.
+4. Cadencr advertises `parameterizedModelPicker` so Cursor exposes clean model
+   ids plus `fast` / thought-level companions. Cold `agent models` catalog ids
+   still encode variants (`*-fast`, `*-high`); the adapter decomposes those into
+   base model + companion `session/set_config_option` updates. A first-class
+   Cadencr effort chip still waits on per-model `supports_effort` catalog data.
+5. The `cursor/ask_question` bridge is implemented. Composer may simply not emit
+   the extension for a given turn; a prompt cannot force an unavailable tool.
 6. Read/Search starts currently omit ACP `locations` and raw arguments, so the
    required title is the only trustworthy tool description available.

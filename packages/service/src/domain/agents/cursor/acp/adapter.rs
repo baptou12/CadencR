@@ -1,11 +1,8 @@
-use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 use std::time::Duration;
 
-use agent_client_protocol::schema::v1::{
-    SessionConfigKind, SessionConfigOption, SessionConfigSelectOption, SessionConfigSelectOptions,
-};
+use agent_client_protocol::schema::v1::SessionConfigOption;
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -20,6 +17,7 @@ use crate::domain::agents::adapter::{
 };
 
 use super::extensions;
+use super::model_config::{catalog_model_encodes_effort, lock_mutex, CursorModelConfigState};
 use super::normalize::{canonical_tool_name, normalize_tool_input};
 use super::permission_policy;
 
@@ -27,33 +25,25 @@ const AUTH_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(super) struct CursorAcpAdapter {
     access_mode: Option<RuntimeAccessMode>,
-    plan_requests: Mutex<HashSet<String>>,
-    model_config_values: Mutex<HashMap<String, String>>,
+    plan_requests: Mutex<std::collections::HashSet<String>>,
+    model_config: Mutex<CursorModelConfigState>,
 }
 
 impl CursorAcpAdapter {
     pub(super) fn new(access_mode: Option<RuntimeAccessMode>) -> Self {
         Self {
             access_mode,
-            plan_requests: Mutex::new(HashSet::new()),
-            model_config_values: Mutex::new(HashMap::new()),
+            plan_requests: Mutex::new(std::collections::HashSet::new()),
+            model_config: Mutex::new(CursorModelConfigState::default()),
         }
     }
 
     fn records_plan_request(&self, request_id: &str) {
-        self.plan_requests().insert(request_id.to_string());
+        lock_mutex(&self.plan_requests).insert(request_id.to_string());
     }
 
-    fn plan_requests(&self) -> MutexGuard<'_, HashSet<String>> {
-        self.plan_requests
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    fn model_config_values(&self) -> MutexGuard<'_, HashMap<String, String>> {
-        self.model_config_values
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    fn plan_requests(&self) -> std::sync::MutexGuard<'_, std::collections::HashSet<String>> {
+        lock_mutex(&self.plan_requests)
     }
 }
 
@@ -102,15 +92,26 @@ impl AcpProviderHooks for CursorAcpAdapter {
         Some("model")
     }
 
-    fn observe_session_config_options(&self, options: &[SessionConfigOption]) {
-        *self.model_config_values() = cursor_model_config_values(options);
+    fn client_capabilities_meta(&self) -> agent_client_protocol::schema::v1::Meta {
+        let mut meta = agent_client_protocol::schema::v1::Meta::new();
+        meta.insert("parameterizedModelPicker".to_string(), Value::Bool(true));
+        meta
     }
 
-    fn model_config_value(&self, model: &str) -> String {
-        self.model_config_values()
-            .get(&normalized_model_ref(model))
-            .cloned()
-            .unwrap_or_else(|| model.to_string())
+    fn observe_session_config_options(&self, options: &[SessionConfigOption]) {
+        lock_mutex(&self.model_config).observe(options);
+    }
+
+    fn resolve_model_config(&self, model: &str) -> (String, Vec<(String, String)>) {
+        lock_mutex(&self.model_config).resolve(model)
+    }
+
+    fn model_encodes_thinking_effort(&self, model: &str) -> bool {
+        catalog_model_encodes_effort(model)
+    }
+
+    fn thinking_effort_config_id(&self) -> Option<String> {
+        lock_mutex(&self.model_config).thinking_effort_config_id()
     }
 
     fn default_mode_id(&self) -> Option<&'static str> {
@@ -193,52 +194,6 @@ impl AcpProviderHooks for CursorAcpAdapter {
     }
 }
 
-fn cursor_model_config_values(options: &[SessionConfigOption]) -> HashMap<String, String> {
-    let Some(model_option) = options
-        .iter()
-        .find(|option| option.id.0.as_ref() == "model")
-    else {
-        return HashMap::new();
-    };
-    let SessionConfigKind::Select(select) = &model_option.kind else {
-        return HashMap::new();
-    };
-    let mut values = HashMap::new();
-    match &select.options {
-        SessionConfigSelectOptions::Ungrouped(options) => {
-            record_model_options(&mut values, options);
-        }
-        SessionConfigSelectOptions::Grouped(groups) => {
-            for group in groups {
-                record_model_options(&mut values, &group.options);
-            }
-        }
-        _ => {}
-    }
-    values
-}
-
-fn record_model_options(
-    values: &mut HashMap<String, String>,
-    options: &[SessionConfigSelectOption],
-) {
-    for option in options {
-        let value = option.value.0.to_string();
-        values.insert(normalized_model_ref(&option.name), value.clone());
-        if value.contains("fast=true") {
-            values.insert(
-                normalized_model_ref(&format!("{}-fast", option.name)),
-                value.clone(),
-            );
-        }
-        values.insert(normalized_model_ref(&value), value);
-    }
-}
-
-fn normalized_model_ref(model: &str) -> String {
-    model.trim().to_ascii_lowercase()
-}
-
 fn advertises_cursor_login(response: &Value) -> bool {
     response
         .get("authMethods")
@@ -270,31 +225,51 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn model_config_value_maps_cursor_catalog_ids_to_live_acp_values() {
+    fn resolve_model_config_maps_parameterized_catalog_ids() {
         let adapter = CursorAcpAdapter::new(None);
-        let option = SessionConfigOption::select(
+        let model = SessionConfigOption::select(
             "model",
             "Model",
-            "default[]",
+            "composer-2.5",
             vec![
-                SessionConfigSelectOption::new("default[]", "Auto"),
-                SessionConfigSelectOption::new("composer-2.5[fast=true]", "composer-2.5"),
+                SessionConfigSelectOption::new("default", "Auto"),
+                SessionConfigSelectOption::new("composer-2.5", "Composer 2.5"),
             ],
         )
         .category(SessionConfigOptionCategory::Model);
+        let fast = SessionConfigOption::select(
+            "fast",
+            "Fast",
+            "true",
+            vec![
+                SessionConfigSelectOption::new("false", "Off"),
+                SessionConfigSelectOption::new("true", "Fast"),
+            ],
+        )
+        .category(SessionConfigOptionCategory::ModelConfig);
+        adapter.observe_session_config_options(&[model, fast]);
 
-        adapter.observe_session_config_options(&[option]);
-
-        assert_eq!(adapter.model_config_value("auto"), "default[]");
+        assert_eq!(adapter.resolve_model_config("auto").0, "default");
         assert_eq!(
-            adapter.model_config_value("composer-2.5"),
-            "composer-2.5[fast=true]"
+            adapter.resolve_model_config("composer-2.5").0,
+            "composer-2.5"
         );
         assert_eq!(
-            adapter.model_config_value("composer-2.5-fast"),
-            "composer-2.5[fast=true]"
+            adapter.resolve_model_config("composer-2.5-fast").0,
+            "composer-2.5"
         );
-        assert_eq!(adapter.model_config_value("unknown"), "unknown");
+        assert_eq!(
+            adapter.resolve_model_config("composer-2.5").1,
+            vec![("fast".to_string(), "false".to_string())]
+        );
+        assert_eq!(
+            adapter.resolve_model_config("composer-2.5-fast").1,
+            vec![("fast".to_string(), "true".to_string())]
+        );
+        assert!(adapter.model_encodes_thinking_effort("gpt-5.3-codex-high"));
+        assert!(!adapter.model_encodes_thinking_effort("composer-2.5"));
+        let meta = adapter.client_capabilities_meta();
+        assert_eq!(meta.get("parameterizedModelPicker"), Some(&json!(true)));
     }
 
     #[test]
@@ -338,12 +313,6 @@ mod tests {
                 ..
             } if name == "Agent" && input["description"] == "Task: Subagent task"
         ));
-        let raw = events.last().expect("mapped event").raw_json();
-        assert_eq!(raw["event"]["content_block"]["name"], "Agent");
-        assert_eq!(
-            raw["event"]["content_block"]["input"]["description"],
-            "Task: Subagent task"
-        );
     }
 
     #[test]

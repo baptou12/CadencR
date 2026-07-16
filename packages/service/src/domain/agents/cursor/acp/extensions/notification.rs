@@ -44,8 +44,10 @@ pub(super) fn normalized_todos(params: &Value) -> Vec<Value> {
                 .get("status")
                 .and_then(Value::as_str)
                 .unwrap_or("pending");
+            // Keep cancelled distinct from completed so the UI progress count
+            // does not treat abandoned todos as done.
             let status = if raw_status == "cancelled" {
-                "completed"
+                "pending"
             } else {
                 raw_status
             };

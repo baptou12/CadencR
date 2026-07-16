@@ -136,7 +136,7 @@ fn access_mode_catalog() -> Vec<ProviderModeCatalogEntry> {
             id: "autoReview".to_string(),
             label: "Auto Review".to_string(),
             description: Some(
-                "Allowlisted and sandboxable calls run directly. Cursor's classifier reviews other Shell, MCP, and Fetch calls and asks only when needed."
+                "Sandbox stays enabled. Allowlisted shell calls run directly; ordinary shell allowlist misses are preflight-approved. MCP and other non-shell gates still ask for approval."
                     .to_string(),
             ),
         },
@@ -168,8 +168,9 @@ fn model_entry(id: &str, label: &str) -> ModelCatalogEntry {
         id: id.to_string(),
         label: label.to_string(),
         description: None,
-        // Cursor exposes reasoning variants as distinct model ids rather than
-        // a stable, independent ACP thought-level selector.
+        // Cold `agent models` still lists effort/fast as distinct model ids.
+        // Live ACP thought-level companions are applied from those ids; the
+        // Cadencr effort chip stays off until the catalog publishes levels.
         supports_effort: Some(false),
         supported_effort_levels: None,
         default_effort_level: None,

@@ -91,8 +91,8 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
     fn model_config_id(&self) -> Option<&'static str> {
         Some("model")
     }
-    fn thinking_effort_config_id(&self) -> Option<&'static str> {
-        Some("effort")
+    fn thinking_effort_config_id(&self) -> Option<String> {
+        Some("effort".to_string())
     }
     fn default_mode_id(&self) -> Option<&'static str> {
         Some("build")

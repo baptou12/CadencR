@@ -21,9 +21,8 @@ use crate::domain::agents::adapter::{
     RuntimePermissionMode, RuntimePermissionResponse, RuntimePermissionResponseKind,
 };
 
-use super::super::config_options::{
-    set_config_option_model_value, set_config_option_thinking_effort,
-};
+use super::super::apply_model_config::apply_model_config;
+use super::super::config_options::set_config_option_thinking_effort;
 use super::super::events_stream_blocks::EventIndexer;
 use super::super::mode_switch::set_session_mode;
 use super::super::permissions::{reject_all_pending, take_pending, PendingPermissions};
@@ -293,15 +292,14 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // ride-along on the next `session/prompt` if the agent rejects the
         // method (older `opencode acp` builds).
         let session_id = self.require_session_id().await?;
-        let config_value = self.hooks.model_config_value(model);
-        set_config_option_model_value(
+        apply_model_config(
             &self.client,
             &session_id,
             &self.current_model,
+            &self.current_effort,
             &self.supports_set_config_option,
-            self.hooks.model_config_id(),
+            self.hooks.as_ref(),
             model,
-            &config_value,
         )
         .await
     }

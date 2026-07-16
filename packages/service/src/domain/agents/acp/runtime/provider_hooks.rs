@@ -1,8 +1,4 @@
 //! Provider-specific extension points for the ACP runtime.
-//!
-//! Concrete adapters implement this trait to plug provider-specific
-//! normalization and policy decisions into the otherwise provider-neutral
-//! runtime.
 
 use std::path::Path;
 
@@ -103,24 +99,44 @@ pub trait AcpProviderHooks: Send + Sync {
     /// Map a Cadencr permission mode onto the provider's mode id.
     fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<String>;
 
+    /// Extra `_meta` on initialize `clientCapabilities` (Cursor: parameterizedModelPicker).
+    fn client_capabilities_meta(&self) -> agent_client_protocol::schema::v1::Meta {
+        agent_client_protocol::schema::v1::Meta::new()
+    }
+
     /// Provider config id for model changes over `session/set_config_option`.
     fn model_config_id(&self) -> Option<&'static str> {
         None
     }
 
-    /// Observe the live session configuration advertised during ACP setup.
-    /// Adapters may retain provider-specific aliases needed to encode later
-    /// `session/set_config_option` requests.
+    /// Observe live session config options (retain aliases for later set_config_option).
     fn observe_session_config_options(&self, _options: &[SessionConfigOption]) {}
 
-    /// Translate Cadencr's catalog model id into the provider's live ACP
-    /// configuration value. Most providers use the same value on both sides.
+    /// Translate Cadencr catalog model id into the provider's live ACP wire value.
     fn model_config_value(&self, model: &str) -> String {
         model.to_string()
     }
 
-    /// Provider config id for thinking-effort changes over `session/set_config_option`.
-    fn thinking_effort_config_id(&self) -> Option<&'static str> {
+    /// Extra set_config_option pairs after the model value (Cursor fast / thought-level).
+    fn model_config_companions(&self, _model: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    /// Wire model value + companions in one provider-local pass.
+    fn resolve_model_config(&self, model: &str) -> (String, Vec<(String, String)>) {
+        (
+            self.model_config_value(model),
+            self.model_config_companions(model),
+        )
+    }
+
+    /// Catalog model already encodes effort applied via companions; skip spawn effort RPC.
+    fn model_encodes_thinking_effort(&self, _model: &str) -> bool {
+        false
+    }
+
+    /// Provider config id for thinking-effort over `session/set_config_option`.
+    fn thinking_effort_config_id(&self) -> Option<String> {
         None
     }
 

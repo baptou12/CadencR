@@ -1,4 +1,4 @@
-use super::capability_probe::{request_optional_method, ProbeResult};
+use super::capability_probe::{request_optional_method_value, ProbeResult};
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::RuntimeError;
 use serde_json::{json, Value};
@@ -26,7 +26,9 @@ pub async fn set_config_option_model(
         new_model,
     )
     .await
+    .map(|_| ())
 }
+
 pub async fn set_config_option_model_value(
     client: &AcpClient,
     session_id: &str,
@@ -35,10 +37,10 @@ pub async fn set_config_option_model_value(
     config_id: Option<&str>,
     new_model: &str,
     config_value: &str,
-) -> Result<(), RuntimeError> {
+) -> Result<Option<Value>, RuntimeError> {
     let Some(config_id) = config_id else {
         set_local_config_value(current_model, Some(new_model)).await;
-        return Ok(());
+        return Ok(None);
     };
     set_config_option(
         client,
@@ -51,12 +53,13 @@ pub async fn set_config_option_model_value(
     )
     .await
 }
+
 pub async fn set_config_option_thinking_effort(
     client: &AcpClient,
     session_id: &str,
     current_effort: &Arc<RwLock<Option<String>>>,
     supports_flag: &Arc<AtomicBool>,
-    config_id: Option<&str>,
+    config_id: Option<String>,
     new_effort: Option<&str>,
 ) -> Result<(), RuntimeError> {
     let Some(config_id) = config_id else {
@@ -68,11 +71,12 @@ pub async fn set_config_option_thinking_effort(
         session_id,
         current_effort,
         supports_flag,
-        config_id,
+        &config_id,
         new_effort,
         new_effort,
     )
     .await
+    .map(|_| ())
 }
 async fn set_config_option(
     client: &AcpClient,
@@ -82,32 +86,30 @@ async fn set_config_option(
     config_id: &str,
     wire_value: Option<&str>,
     stored_value: Option<&str>,
-) -> Result<(), RuntimeError> {
+) -> Result<Option<Value>, RuntimeError> {
     if value_is_already_current(current, stored_value).await {
-        return Ok(());
+        return Ok(None);
     }
-    send_set_config_option(client, session_id, supports_flag, config_id, wire_value).await?;
+    let result =
+        send_set_config_option(client, session_id, supports_flag, config_id, wire_value).await?;
     *current.write().await = stored_value.map(ToOwned::to_owned);
-    Ok(())
+    Ok(result)
 }
-async fn send_set_config_option(
+pub(super) async fn send_set_config_option(
     client: &AcpClient,
     session_id: &str,
     supports_flag: &Arc<AtomicBool>,
     config_id: &str,
     value: Option<&str>,
-) -> Result<(), RuntimeError> {
+) -> Result<Option<Value>, RuntimeError> {
     let value_payload = value.map_or(Value::Null, |v| Value::String(v.to_string()));
     let params = json!({
         "sessionId": session_id,
         "configId": config_id,
-        // Omit the discriminator for v1 compatibility. ACP defines a missing
-        // `type` as an id/select value; current Cursor rejects both explicit
-        // `string` and `id` discriminators even though it advertises the
-        // standard model select option.
+        // Omit type discriminator for v1/Cursor compatibility.
         "value": value_payload,
     });
-    match request_optional_method(
+    match request_optional_method_value(
         client,
         "session/set_config_option",
         params,
@@ -116,14 +118,15 @@ async fn send_set_config_option(
     )
     .await?
     {
-        ProbeResult::Supported | ProbeResult::AlreadyUnsupported => Ok(()),
-        ProbeResult::NewlyUnsupported => {
+        (ProbeResult::Supported, result) => Ok(result),
+        (ProbeResult::AlreadyUnsupported, _) => Ok(None),
+        (ProbeResult::NewlyUnsupported, _) => {
             tracing::warn!(
                 config_id,
                 "ACP agent does not support session/set_config_option; \
                  falling back to legacy ride-along on session/prompt"
             );
-            Ok(())
+            Ok(None)
         }
     }
 }
@@ -343,7 +346,7 @@ mod tests {
             "s-1",
             &current_effort,
             &supports,
-            Some("effort"),
+            Some("effort".to_string()),
             Some("high"),
         )
         .await
@@ -369,7 +372,7 @@ mod tests {
                     "s-1",
                     &current_effort,
                     &supports,
-                    Some("effort"),
+                    Some("effort".to_string()),
                     Some("high"),
                 )
                 .await

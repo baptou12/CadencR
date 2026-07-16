@@ -47,7 +47,9 @@ pub(super) fn request(
 pub(super) fn response(response: &RuntimePermissionResponse) -> Value {
     if matches!(
         response.decision,
-        RuntimePermissionDecision::AllowOnce | RuntimePermissionDecision::AllowFuture
+        RuntimePermissionDecision::AllowOnce
+            | RuntimePermissionDecision::AllowFuture
+            | RuntimePermissionDecision::AllowForSession
     ) {
         return json!({ "outcome": { "outcome": "accepted" } });
     }
