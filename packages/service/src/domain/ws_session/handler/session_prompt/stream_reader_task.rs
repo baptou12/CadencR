@@ -5,7 +5,9 @@ use tokio::time::Instant;
 use tracing::{debug, info};
 
 use crate::app_state::AppState;
-use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeMessageRx};
+use crate::domain::agents::adapter::{
+    RuntimeError, RuntimeEvent, RuntimeMessageRx, RuntimeSessionWeakHandle,
+};
 use crate::domain::agents::{runtime_adapter, runtime_session_finished};
 use crate::domain::runtime_stream::RuntimeUsageState;
 use crate::domain::session_status::{AgentStatus, SessionStatusBroadcaster};
@@ -25,6 +27,10 @@ pub(super) struct StreamReaderTask {
     pub db_session_id: i64,
     pub feature_id: i64,
     pub message_rx: RuntimeMessageRx,
+    /// Exact runtime instance whose receiver this task owns. Used during
+    /// teardown so an older interrupted reader cannot replace a newly resumed
+    /// runtime's `Active` handle with `Pending`.
+    pub runtime_session_handle: Option<RuntimeSessionWeakHandle>,
     pub sender: WsSender,
     /// Other devices viewing the same feature; every owner-bound stream message
     /// is mirrored to them via [`StreamReaderTask::send_and_mirror`].
@@ -145,18 +151,17 @@ impl StreamReaderTask {
                 ReaderAction::Continue => continue,
                 ReaderAction::Break => break,
                 ReaderAction::Closed => {
-                    if self.stream_close_was_unexpected(&state).await {
-                        self.handle_unexpected_stop(&mut state).await;
-                    } else {
-                        self.send_stream_closed(&mut state).await;
-                    }
+                    self.handle_reader_closed(&mut state).await;
                     break;
                 }
                 ReaderAction::Error(error) => {
-                    self.handle_stream_error(&mut state, error).await;
+                    self.handle_reader_error(&mut state, error).await;
                     break;
                 }
                 ReaderAction::Event(runtime_event) => {
+                    if self.discard_superseded_event().await {
+                        break;
+                    }
                     self.handle_runtime_event(
                         &mut state,
                         runtime_adapter,
@@ -168,10 +173,13 @@ impl StreamReaderTask {
             }
         }
 
-        transition_active_to_pending_on_stream_end(&self.sdk_sessions, self.db_session_id).await;
-        if self.cleanup_session_on_end {
-            self.sdk_sessions.lock().await.remove(&self.db_session_id);
-        }
+        transition_active_to_pending_on_stream_end(
+            &self.sdk_sessions,
+            self.db_session_id,
+            self.runtime_session_handle.as_ref(),
+            self.cleanup_session_on_end,
+        )
+        .await;
     }
 
     async fn initial_context_window(&self) -> Option<u64> {
@@ -239,7 +247,7 @@ impl StreamReaderTask {
     /// `running` first, so stopping a conversation on purpose never raises a
     /// spurious error.
     /// Mirrors the `turn_running` guard in [`should_close_orphaned`].
-    async fn stream_close_was_unexpected(&self, state: &StreamReaderState) -> bool {
+    pub(super) async fn stream_close_was_unexpected(&self, state: &StreamReaderState) -> bool {
         if !stream_reader_stop::stream_close_needs_running_status(
             state.turn_state.is_between_turns(),
             !state.live_background_agents.is_empty(),

@@ -32,6 +32,11 @@ impl StreamReaderTask {
     ) {
         state.last_runtime_activity = tokio::time::Instant::now();
         state.diagnostics.record(runtime_event.raw_json());
+        let interrupted_generation = if runtime_event.is_result() {
+            self.take_interruption().await
+        } else {
+            None
+        };
         self.forward_compaction_state(state, &runtime_event).await;
         track_background_agents(&mut state.live_background_agents, &runtime_event);
 
@@ -72,12 +77,13 @@ impl StreamReaderTask {
         // A turn-ending error result is surfaced but must NOT short-circuit —
         // the result still has to flow through the turn-complete path below.
         // Suppressed when an error already surfaced this turn (issue #78).
-        if self
-            .surface_result_error(
-                state.turn_state.has_error_surfaced_this_turn(),
-                &runtime_event,
-            )
-            .await
+        if interrupted_generation.is_none()
+            && self
+                .surface_result_error(
+                    state.turn_state.has_error_surfaced_this_turn(),
+                    &runtime_event,
+                )
+                .await
         {
             state.turn_state.mark_error_surfaced();
         }
@@ -86,8 +92,14 @@ impl StreamReaderTask {
             return;
         }
 
-        self.persist_and_forward_event(state, runtime_adapter, persistence, &runtime_event)
-            .await;
+        self.persist_and_forward_event(
+            state,
+            runtime_adapter,
+            persistence,
+            &runtime_event,
+            interrupted_generation,
+        )
+        .await;
     }
 
     async fn handle_permission_request(
@@ -254,6 +266,7 @@ impl StreamReaderTask {
         runtime_adapter: Option<&'static dyn AgentRuntimeAdapter>,
         persistence: &mut WsSessionPersistence,
         runtime_event: &RuntimeEvent,
+        interrupted_generation: Option<u64>,
     ) {
         let usage_update = state
             .usage_state
@@ -288,7 +301,13 @@ impl StreamReaderTask {
         }
 
         let envelope = self
-            .runtime_event_envelope(state, runtime_event, persisted_message, current_model)
+            .runtime_event_envelope(
+                state,
+                runtime_event,
+                persisted_message,
+                current_model,
+                interrupted_generation,
+            )
             .await;
         // The event is already persisted and mirrored to any other connected
         // device, so a gone owner socket is fine — keep streaming. A `None`
@@ -301,16 +320,18 @@ impl StreamReaderTask {
                 .await;
         }
         if runtime_event.is_result() && state.live_background_agents.is_empty() {
-            if let Err(error) = crate::domain::mcp::control::reply_wait::deliver_completed(
-                &self.app_state,
-                self.db_session_id,
-            )
-            .await
-            {
-                error!(self.db_session_id, error = %error, "failed to deliver MCP session reply");
+            if interrupted_generation.is_none() {
+                if let Err(error) = crate::domain::mcp::control::reply_wait::deliver_completed(
+                    &self.app_state,
+                    self.db_session_id,
+                )
+                .await
+                {
+                    error!(self.db_session_id, error = %error, "failed to deliver MCP session reply");
+                }
+                self.drain_queued_message_after_result().await;
+                let _ = self.refresh_mcp_servers_after_turn().await;
             }
-            let _ = self.refresh_mcp_servers_after_turn().await;
-            self.drain_queued_message_after_result().await;
         }
     }
 

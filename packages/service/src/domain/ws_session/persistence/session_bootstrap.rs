@@ -49,7 +49,10 @@ impl WsSessionPersistence {
 
         if let Some((id,)) = existing {
             if let Err(e) = sqlx::query(
-                "UPDATE agent_sessions SET status = 'paused', permission_mode = COALESCE(?, permission_mode) WHERE id = ?",
+                "UPDATE agent_sessions
+                 SET status = CASE WHEN status = 'running' THEN status ELSE 'paused' END,
+                     permission_mode = COALESCE(?, permission_mode)
+                 WHERE id = ?",
             )
             .bind(permission_mode)
             .bind(id)
@@ -283,23 +286,43 @@ mod session_bootstrap_tests {
         let pool = setup_test_db().await;
         let mut p1 = WsSessionPersistence::new(pool.clone(), 1);
         let id1 = p1.find_or_create_session(Some("sonnet"), None).await.unwrap();
-
+        WsSessionPersistence::mark_completed_static(&pool, id1).await;
         let mut p2 = WsSessionPersistence::new(pool.clone(), 1);
         let id2 = p2
             .find_or_create_session(Some("opus"), Some("plan"))
             .await
             .unwrap();
-
         assert_eq!(id1, id2);
+        let row: (String, String, String) = sqlx::query_as(
+            "SELECT model, permission_mode, status FROM agent_sessions WHERE id = ?",
+        )
+        .bind(id2)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "sonnet");
+        assert_eq!(row.1, "plan");
+        assert_eq!(row.2, "paused");
+    }
 
-        let row: (String, String) =
-            sqlx::query_as("SELECT model, permission_mode FROM agent_sessions WHERE id = ?")
-                .bind(id2)
+    #[tokio::test]
+    async fn test_reusing_session_preserves_running_status() {
+        let pool = setup_test_db().await;
+        let mut first = WsSessionPersistence::new(pool.clone(), 1);
+        let session_id = first.find_or_create_session(None, None).await.unwrap();
+        WsSessionPersistence::mark_running_static(&pool, session_id).await;
+        let mut second = WsSessionPersistence::new(pool.clone(), 1);
+        second
+            .find_or_create_session(None, Some("plan"))
+            .await
+            .unwrap();
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM agent_sessions WHERE id = ?")
+                .bind(session_id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(row.0, "sonnet");
-        assert_eq!(row.1, "plan");
+        assert_eq!(status, "running");
     }
 
     #[tokio::test]
@@ -361,7 +384,6 @@ mod session_bootstrap_tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-
         let p = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(id.0));
         p.persist_user_message("hello from with_session_id", uuid::Uuid::new_v4())
             .await

@@ -102,12 +102,18 @@ pub fn mcp_server_name(agent_type: AgentType) -> String {
 
 fn server_info(name: &str) -> ServerInfo {
     let caps = ServerCapabilities::builder().enable_tools().build();
-    ServerInfo::new(caps).with_server_info(Implementation::new(name, "1.0.0"))
+    let info = ServerInfo::new(caps).with_server_info(Implementation::new(name, "1.0.0"));
+    if name == "cadencr-project" {
+        return info.with_instructions(
+            "CadencR project orchestration is reactive. Inter-agent messages, gates, and awaited replies steer active turns by default. After spawning with follow or requesting a reply, wait for automatically delivered <cadencr-gate> and <cadencr-reply> events; do not poll session tails, status, or pending gates. Queueing is opt-in through delivery=next_turn only.",
+        );
+    }
+    info
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{cadencr_mcp_required_tools, mcp_server_name, AgentType};
+    use super::{cadencr_mcp_required_tools, mcp_server_name, server_info, AgentType};
 
     #[test]
     fn mcp_server_name_uses_current_cadencr_prefix() {
@@ -135,5 +141,13 @@ mod tests {
     #[test]
     fn required_tools_rejects_legacy_prefix() {
         assert!(cadencr_mcp_required_tools("legacy-session").is_empty());
+    }
+
+    #[test]
+    fn project_server_instructions_define_reactive_delivery() {
+        let instructions = server_info("cadencr-project").instructions.unwrap();
+        assert!(instructions.contains("steer active turns by default"));
+        assert!(instructions.contains("do not poll"));
+        assert!(instructions.contains("delivery=next_turn"));
     }
 }

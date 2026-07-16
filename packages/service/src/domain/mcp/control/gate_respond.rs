@@ -6,7 +6,6 @@ use tracing::error;
 use super::audit::{elapsed_ms, record_tool_audit, ToolAudit};
 use super::gate_notify::linked_parent;
 use super::gate_policy::{authorize_decision, GateDecision};
-use super::message_queue::persist_and_broadcast_generated_user_message;
 use super::scope::{resolve_session_scope, SessionScope};
 use crate::app_state::AppState;
 use crate::domain::ws_session::protocol::{PermissionRespondPayload, WsEnvelope};
@@ -93,14 +92,6 @@ async fn finish_response(
     started_at: std::time::Instant,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut warnings = Vec::new();
-    if response.is_ok() {
-        if let Err(cause) = persist_visible_decision(&state, &source, &target, &request).await {
-            error!(session_id = target.session_id, error = %cause, "failed to persist visible gate decision");
-            warnings.push(format!(
-                "gate resolved, but transcript visibility failed: {cause}"
-            ));
-        }
-    }
     let primary_error = response.as_ref().err().map(ToString::to_string);
     let audit_error = primary_error
         .clone()
@@ -191,28 +182,6 @@ fn response_result(response: Message) -> Result<(), AppError> {
     ))
 }
 
-async fn persist_visible_decision(
-    state: &AppState,
-    source: &SessionScope,
-    target: &SessionScope,
-    request: &RespondGateRequest,
-) -> Result<(), AppError> {
-    let text = format!(
-        "Gate `{}` was answered programmatically by session #{} (linked parent). Decision: {:?}.",
-        request.request_id, source.session_id, request.decision
-    );
-    persist_and_broadcast_generated_user_message(
-        state,
-        source,
-        target.session_id,
-        target.feature_id,
-        &text,
-        "programmatic gate decision by linked parent",
-    )
-    .await
-    .map(|_| ())
-}
-
 async fn audit_response(
     state: &AppState,
     source: &SessionScope,
@@ -239,4 +208,69 @@ async fn audit_response(
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::mcp::control::gate_policy::PermissionAction;
+    use crate::shared::migrate::{run_migrations, MigrationContext};
+
+    #[tokio::test]
+    async fn successful_permission_response_does_not_create_a_user_message() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        run_migrations(&MigrationContext::pool_only(&pool))
+            .await
+            .unwrap();
+        sqlx::raw_sql(
+            "INSERT INTO projects (id, name, path) VALUES (7, 'P', '/tmp/p');
+             INSERT INTO features (id, project_id, title, status, type)
+             VALUES (42, 7, 'Parent', 'active', 'ws-session'),
+                    (43, 7, 'Child', 'active', 'ws-session');
+             INSERT INTO agent_sessions (id, feature_id, agent_type, status)
+             VALUES (777, 42, 'session', 'running'),
+                    (888, 43, 'session', 'running');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let state = AppState::with_pool(pool.clone());
+        let source = resolve_session_scope(&pool, 777).await.unwrap();
+        let target = resolve_session_scope(&pool, 888).await.unwrap();
+        let request = RespondGateRequest {
+            source_session_id: 777,
+            session_id: 888,
+            request_id: "permission-1".into(),
+            decision: GateDecision::Permission {
+                action: PermissionAction::AllowOnce,
+                message: None,
+            },
+        };
+
+        let _ = finish_response(
+            state,
+            source,
+            target,
+            request,
+            Ok(()),
+            std::time::Instant::now(),
+        )
+        .await
+        .unwrap();
+
+        let user_messages: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_messages WHERE session_id = 888")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(user_messages, 0);
+        let audit_rows: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mcp_tool_audit_log
+             WHERE tool_name = 'project_respond_gate' AND status = 'ok'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit_rows, 1);
+    }
 }

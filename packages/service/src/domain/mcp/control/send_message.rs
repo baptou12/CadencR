@@ -8,14 +8,15 @@ mod send_audit;
 
 use self::persistence::{insert_message_link, persist_immediate_message, ImmediateMessageRequest};
 use self::send_audit::{audit_send_message, audit_send_message_error};
+use super::generated_message::dispatch_generated_prompt;
 use super::message_queue::enqueue_message;
 use super::scope::resolve_session_scope;
+use super::send_message_modes::{delivery_mode, reply_mode, DeliveryMode, ReplyMode};
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::sessions::message_dispatch::{self, DispatchClaim};
 use crate::domain::sessions::models::AgentMessageOrigin;
 use crate::domain::sessions::user_messages::PersistedUserMessage;
-use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt_with_message_uuid;
 use crate::domain::ws_session::handler::session_prompt::publish_user_message;
 use crate::error::AppError;
 
@@ -44,6 +45,7 @@ pub(super) struct SendMessageResponse {
     target_session_id: i64,
     #[serde(rename = "messageUuid")]
     message_uuid: String,
+    delivery: &'static str,
 }
 
 pub(super) async fn send_message_handler(
@@ -80,20 +82,13 @@ pub(super) async fn send_message_handler(
         }
     };
     let reply = reply_mode(body.reply.as_deref())?;
-    if requires_user_resolution(&target.status) {
-        let message = format!(
-            "target session is awaiting user resolution: {}",
-            target.status
-        );
-        audit_send_message_error(&state, &source, &target, &message, started_at).await?;
-        return Err(AppError::BadRequest(message));
-    }
-    if target.status == "running" && delivery == DeliveryMode::RejectIfBusy {
+    let target_is_active = target.is_active();
+    if target_is_active && delivery == DeliveryMode::RejectIfActive {
         let message = "target session is busy".to_string();
         audit_send_message_error(&state, &source, &target, &message, started_at).await?;
         return Err(AppError::BadRequest(message));
     }
-    if target.status == "running" && delivery == DeliveryMode::QueueIfBusy {
+    if target_is_active && delivery == DeliveryMode::NextTurn {
         return queue_busy_message(QueueBusyRequest {
             state: &state,
             source: &source,
@@ -143,6 +138,11 @@ pub(super) async fn send_message_handler(
         queue_id: None,
         target_session_id: target.session_id,
         message_uuid: message_uuid.to_string(),
+        delivery: if target_is_active {
+            "steered_current_turn"
+        } else {
+            "started_turn"
+        },
     };
     audit_send_message(&state, &source, &target, &response, started_at).await?;
     Ok(Json(response))
@@ -164,7 +164,7 @@ async fn queue_busy_message(
 ) -> Result<Json<SendMessageResponse>, AppError> {
     if request.reply == ReplyMode::OnTurnEnd {
         return Err(AppError::BadRequest(
-            "reply=on_turn_end is not yet supported with delivery=queue_if_busy".to_string(),
+            "reply=on_turn_end is not yet supported with delivery=next_turn".to_string(),
         ));
     }
     let queued = enqueue_message(
@@ -189,6 +189,7 @@ async fn queue_busy_message(
         queue_id: Some(queued.id),
         target_session_id: request.target.session_id,
         message_uuid: request.message_uuid.to_string(),
+        delivery: "queued_next_turn",
     };
     audit_send_message(
         request.state,
@@ -230,13 +231,12 @@ async fn dispatch_immediate_message(
     if reply == ReplyMode::OnTurnEnd {
         super::reply_wait::arm(&state.write_pool, target.session_id, message_id).await?;
     }
-    if let Err(error) = dispatch_control_prompt_with_message_uuid(
+    if let Err(error) = dispatch_generated_prompt(
         state,
         target.feature_id,
         target.session_id,
         message,
-        true,
-        Some(message_uuid),
+        message_uuid,
     )
     .await
     {
@@ -322,46 +322,4 @@ async fn ensure_send_budget(
         )));
     }
     Ok(())
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DeliveryMode {
-    SendNow,
-    QueueIfBusy,
-    RejectIfBusy,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ReplyMode {
-    None,
-    OnTurnEnd,
-}
-
-fn reply_mode(value: Option<&str>) -> Result<ReplyMode, AppError> {
-    match value.unwrap_or("none") {
-        "none" => Ok(ReplyMode::None),
-        "on_turn_end" => Ok(ReplyMode::OnTurnEnd),
-        other => Err(AppError::BadRequest(format!(
-            "unsupported reply mode '{other}'"
-        ))),
-    }
-}
-
-fn delivery_mode(value: Option<&str>) -> Result<DeliveryMode, String> {
-    match value.unwrap_or("send_now") {
-        "send_now" => Ok(DeliveryMode::SendNow),
-        "queue_if_busy" => Ok(DeliveryMode::QueueIfBusy),
-        "reject_if_busy" => Ok(DeliveryMode::RejectIfBusy),
-        other => Err(format!("unsupported delivery mode '{other}'")),
-    }
-}
-
-pub(super) fn requires_user_resolution(status: &str) -> bool {
-    matches!(
-        status,
-        "awaiting_permission"
-            | "awaiting_question"
-            | "waiting_for_permission"
-            | "waiting_for_question"
-    )
 }

@@ -29,6 +29,7 @@ pub(super) use tokio::sync::{mpsc, Mutex, RwLock};
 pub(super) use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeEventKind,
     RuntimeMcpServerStatus, RuntimeMessageRx, RuntimePermissionMode, RuntimeSessionHandle,
+    RuntimeSessionWeakHandle,
 };
 pub(super) use crate::domain::agents::claude_code::ClaudeCodeSession;
 pub(super) use claude_agent_sdk_rs::{Query, SdkError};
@@ -36,7 +37,10 @@ pub(super) use serde_json::Value;
 
 // Re-exported so the `use super::support::*` glob keeps reaching it; the body
 // lives in its own module to keep this file under the size limit.
-pub(super) use super::reader_spawn::spawn_test_stream_reader;
+pub(super) use super::reader_spawn::{
+    spawn_test_stream_reader, spawn_test_stream_reader_for_runtime,
+    spawn_test_stream_reader_with_cleanup,
+};
 
 pub(crate) struct InPlaceEffortSession {
     message_rx: Option<RuntimeMessageRx>,

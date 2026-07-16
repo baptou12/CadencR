@@ -1,32 +1,27 @@
-use super::message_queue::{enqueue_message, persist_and_broadcast_generated_user_message};
+use super::generated_message::{
+    dispatch_generated_prompt, persist_and_broadcast_generated_user_message,
+};
 use super::scope::SessionScope;
-use super::send_message::requires_user_resolution;
 use crate::app_state::AppState;
-use crate::domain::ws_session::handler::session_prompt::dispatch_control_prompt;
 use crate::error::AppError;
 
 const REPLY_DELIVERY_NOTE: &str = "automatic reply from agent session turn";
 const GATE_DELIVERY_NOTE: &str = "automatic gate notification from linked child session";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RunningDelivery {
-    Queue,
-    Steer,
-}
 
 pub(super) async fn deliver_reply(
     state: &AppState,
     responder: &SessionScope,
     requester: &SessionScope,
     envelope: &str,
+    message_uuid: uuid::Uuid,
 ) -> Result<(), AppError> {
     deliver(
         state,
         responder,
         requester,
         envelope,
-        RunningDelivery::Queue,
         REPLY_DELIVERY_NOTE,
+        message_uuid,
     )
     .await
 }
@@ -42,8 +37,8 @@ pub(super) async fn deliver_gate(
         child,
         parent,
         envelope,
-        RunningDelivery::Steer,
         GATE_DELIVERY_NOTE,
+        uuid::Uuid::new_v4(),
     )
     .await
 }
@@ -53,8 +48,8 @@ async fn deliver(
     responder: &SessionScope,
     requester: &SessionScope,
     envelope: &str,
-    running_delivery: RunningDelivery,
     delivery_note: &str,
+    message_uuid: uuid::Uuid,
 ) -> Result<(), AppError> {
     let persisted = persist_and_broadcast_generated_user_message(
         state,
@@ -63,53 +58,18 @@ async fn deliver(
         requester.feature_id,
         envelope,
         delivery_note,
+        message_uuid,
     )
     .await?;
-    if should_queue(&requester.status, running_delivery) {
-        let message_uuid = uuid::Uuid::parse_str(&persisted.message_uuid).map_err(|_| {
-            AppError::Internal("persisted user message returned an invalid UUID".to_string())
-        })?;
-        enqueue_message(
-            &state.write_pool,
-            requester.session_id,
-            None,
-            envelope,
-            message_uuid,
-        )
-        .await?;
-        return Ok(());
-    }
-    dispatch_control_prompt(
+    let message_uuid = uuid::Uuid::parse_str(&persisted.message_uuid).map_err(|_| {
+        AppError::Internal("persisted user message returned an invalid UUID".to_string())
+    })?;
+    dispatch_generated_prompt(
         state,
         requester.feature_id,
         requester.session_id,
         envelope,
-        true,
+        message_uuid,
     )
     .await
-}
-
-fn should_queue(status: &str, running_delivery: RunningDelivery) -> bool {
-    requires_user_resolution(status)
-        || (status == "running" && running_delivery == RunningDelivery::Queue)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn replies_queue_while_requester_is_running() {
-        assert!(should_queue("running", RunningDelivery::Queue));
-    }
-
-    #[test]
-    fn gates_steer_while_parent_is_running() {
-        assert!(!should_queue("running", RunningDelivery::Steer));
-    }
-
-    #[test]
-    fn gates_queue_while_parent_has_its_own_gate() {
-        assert!(should_queue("awaiting_question", RunningDelivery::Steer));
-    }
 }

@@ -103,7 +103,7 @@ mod tests {
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
     #[tokio::test]
-    async fn linked_child_gate_is_enqueued_when_parent_has_its_own_gate() {
+    async fn linked_child_gate_is_steered_even_when_parent_has_its_own_gate() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&MigrationContext {
             pool: &pool,
@@ -130,10 +130,19 @@ mod tests {
             )
             .await;
 
-        notify_linked_parent(&state, 22, &payload).await.unwrap();
+        let error = notify_linked_parent(&state, 22, &payload)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("runtime adapter unavailable"));
 
-        let content: String = sqlx::query_scalar(
-            "SELECT content FROM agent_session_message_queue WHERE target_session_id = 11",
+        let (content, delivery_state): (String, Option<String>) = sqlx::query_as(
+            "SELECT content, delivery_state FROM agent_messages WHERE session_id = 11",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let queued: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM agent_session_message_queue WHERE target_session_id = 11",
         )
         .fetch_one(&pool)
         .await
@@ -141,6 +150,8 @@ mod tests {
         assert!(content.contains("<cadencr-gate"));
         assert!(content.contains("request-id=\"req-42\""));
         assert!(content.contains("Allow once"));
+        assert_eq!(delivery_state.as_deref(), Some("delivery_failed"));
+        assert_eq!(queued, 0);
     }
 
     async fn seed(pool: &sqlx::SqlitePool) {

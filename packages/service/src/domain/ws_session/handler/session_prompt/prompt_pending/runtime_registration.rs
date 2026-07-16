@@ -65,7 +65,7 @@ pub(super) async fn register_runtime(
     );
     active_session::insert_active_session(
         &context,
-        query_arc,
+        query_arc.clone(),
         permission_tx,
         runtime_control_endpoint,
     )
@@ -74,6 +74,7 @@ pub(super) async fn register_runtime(
         context.db_session_id,
         context.feature_id,
         message_rx,
+        Some(Arc::downgrade(&query_arc)),
         context.sender,
         context.app_state.ws_feature_senders.clone(),
         context.app_state.write_pool.clone(),

@@ -16,6 +16,8 @@ mod mcp_orchestration_migration_tests;
 #[cfg(test)]
 mod message_uuid_migration_tests;
 #[cfg(test)]
+mod reply_wait_claim_migration_tests;
+#[cfg(test)]
 mod rewind_fork_migration_tests;
 mod seed;
 mod support;

@@ -108,6 +108,7 @@ pub(super) async fn spawn_pending_runtime_for_compact(
         db_session_id,
         spawn.feature_id,
         message_rx,
+        Some(std::sync::Arc::downgrade(&query)),
         sender.clone(),
         app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),

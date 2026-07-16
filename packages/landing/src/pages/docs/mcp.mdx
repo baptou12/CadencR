@@ -49,7 +49,32 @@ Give it a fresh worktree from main, a self-contained brief, and ask it to return
 Before spawning, list available providers and choose a strong coding model.
 ```
 
-That flow typically uses `workspace_list_projects`, `project_list_agent_providers`, and `project_spawn_session` with `branch.mode: "new_worktree"` and `await_result: true`.
+That flow typically uses `workspace_list_projects`, `project_list_agent_providers`, and `project_spawn_session` with `branch.mode: "new_worktree"` and `follow: { gates: true, completion: true }`.
+
+## Reactive agent-to-agent delivery
+
+CadencR orchestration is push-based. An agent should spawn or message another
+session once, then wait for CadencR to steer relevant events into its current
+turn. It should not tail or poll the child.
+
+| Event                               | Default delivery                                             | Explicit alternative                                          |
+| ----------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------- |
+| Agent message                       | Steer the active target turn immediately                     | `delivery: "next_turn"` queues it until the current turn ends |
+| Child permission, plan, or question | Push `<cadencr-gate>` to a parent using `follow.gates: true` | Set `follow.gates: false` to opt out                          |
+| Child turn result                   | Push `<cadencr-reply>` using `follow.completion: true`       | Set `follow.completion: false` when no result is needed       |
+| Messaged session result             | Push `<cadencr-reply>` using `reply: "on_turn_end"`          | Keep `reply: "none"` when no result is needed                 |
+
+Stopping a child is normal interactive control, not a failed result. CadencR
+does not emit an error or a failed `<cadencr-reply>` for that interruption. A
+requested completion follow remains armed, so you can steer new instructions to
+the same child and receive its next completed result normally.
+
+<DocCallout title="Do not babysit by polling" variant="warning">
+  After enabling follow or requesting a reply, do not loop on `project_read_session_tail`,
+  `project_get_session_status`, or `project_list_pending_gates`. CadencR automatically triggers the
+  parent when a gate or result arrives. The read tools are only for an explicit status request,
+  recovery after a missed event, or debugging stale state.
+</DocCallout>
 
 ## Prompt recipes
 
@@ -114,8 +139,8 @@ Most project tools are scoped to sessions in the caller's current project. This 
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `project_list_sessions`         | Lists recent sessions in the current project, including feature, provider, model, status, branch, and worktree data. Use it before spawning duplicate work. | Optional `limit` and pagination `cursor`                                                                                                  |
 | `project_read_session`          | Reads one current-project session with search, pagination, role filters, and optional provenance or full tool payloads.                                     | Required `session_id`; optional `query`, `roles`, `message_types`, message-ID bounds, `include_tool_details`, `include_metadata`, `limit` |
-| `project_read_session_tail`     | Returns messages after a cursor in ascending order, useful for checking only what changed since the last read.                                              | Required `session_id`; optional `after_message_id`, `limit`, `include_tool_details`, `include_metadata`                                   |
-| `project_get_session_status`    | Reports live status when available and falls back to persisted status for one current-project session.                                                      | Required `session_id`                                                                                                                     |
+| `project_read_session_tail`     | Recovery/debug read after a cursor. Do not use it to wait for a followed child.                                                                             | Required `session_id`; optional `after_message_id`, `limit`, `include_tool_details`, `include_metadata`                                   |
+| `project_get_session_status`    | Returns a canonical persisted lifecycle/turn snapshot for explicit status checks or recovery. Do not poll it.                                               | Required `session_id`                                                                                                                     |
 | `project_get_worktree_status`   | Inspects worktree path, branch, and dirty-file ownership for one session, or the relevant current-project sessions when no ID is supplied.                  | Optional `session_id`                                                                                                                     |
 | `project_find_related_sessions` | Full-text searches current-project history before an agent edits or spawns related work.                                                                    | Required `query`; optional `limit` and `snippet_chars`                                                                                    |
 | `project_compare_sessions`      | Compares two sessions' metadata and worktree state side by side.                                                                                            | Required `left_session_id` and `right_session_id`                                                                                         |
@@ -123,13 +148,13 @@ Most project tools are scoped to sessions in the caller's current project. This 
 
 ### Coordinate and delegate
 
-| Tool                           | What it does                                                                                                                                                                                              | Important inputs                                                                                                                                                     |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `project_link_sessions`        | Records an explicit relationship from the current session to another current-project session.                                                                                                             | Required `target_session_id`; optional `link_type` (`spawned`, `messaged`, `referenced`, or `handoff`) and `note`                                                    |
-| `project_spawn_session`        | Creates a session in a registered target project, optionally sends its first prompt, selects provider/model/thinking, creates or reuses a worktree, links it to the caller, and waits for its first turn. | Required `title` plus `project_id` or exact `project_path`; optional `initial_message`, provider/model settings, `branch`, `link_to_current_session`, `await_result` |
-| `project_send_session_message` | Sends a provenance-tracked user message to another current-project session, immediately or through its busy queue. It can optionally return the target's next turn as a `<cadencr-reply>`.                | Required `target_session_id` and `message`; optional `delivery`, `reply`, `message_uuid`, `source_note`, `link_to_current_session`                                   |
-| `project_list_pending_gates`   | Recovers the current permission, plan, or question gate for a linked child. Live `<cadencr-gate>` notifications already contain the full payload, so use this mainly for recovery.                        | Required `session_id`                                                                                                                                                |
-| `project_respond_gate`         | Answers a linked child's pending permission, plan, or question using the exact request data from the live gate.                                                                                           | Required `session_id`, `request_id`, and typed `decision` payload                                                                                                    |
+| Tool                           | What it does                                                                                                                                                                       | Important inputs                                                                                                                                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project_link_sessions`        | Records an explicit relationship from the current session to another current-project session.                                                                                      | Required `target_session_id`; optional `link_type` (`spawned`, `messaged`, `referenced`, or `handoff`) and `note`                                                                                        |
+| `project_spawn_session`        | Creates a session in a registered target project and can reactively push its gates and first result to the parent.                                                                 | Required `title` plus `project_id` or exact `project_path`; optional `initial_message`, provider/model settings, `branch`, `follow`; legacy `link_to_current_session` and `await_result` remain accepted |
+| `project_send_session_message` | Sends a provenance-tracked message that steers the target's active turn by default. It can explicitly queue for the next turn or push the target result back.                      | Required `target_session_id` and `message`; optional `delivery` (`steer_current_turn`, `next_turn`, `reject_if_active`), `reply`, `message_uuid`, `source_note`, `link_to_current_session`               |
+| `project_list_pending_gates`   | Recovers the current permission, plan, or question gate for a linked child. Live `<cadencr-gate>` notifications already contain the full payload, so use this mainly for recovery. | Required `session_id`                                                                                                                                                                                    |
+| `project_respond_gate`         | Answers a linked child's pending permission, plan, or question using the exact request data from the live gate.                                                                    | Required `session_id`, `request_id`, and typed `decision` payload                                                                                                                                        |
 
 ### Worktree modes for `project_spawn_session`
 
@@ -140,11 +165,11 @@ Most project tools are scoped to sessions in the caller's current project. This 
 | `new_worktree`       | Independent implementation should be isolated from the caller and other agents. This is the safest default for parallel edits. |
 | `reuse_worktree`     | A reviewer, rescue agent, or successor must see the caller's exact branch and uncommitted files.                               |
 
-<DocCallout title="Awaited replies and live gates" variant="note">
-  Set `await_result: true` on a spawn, or `reply: "on_turn_end"` on a sent message, when
-  the parent should receive the target's result as a `<cadencr-reply>`. A linked child can also
-  notify the parent with a `<cadencr-gate>` containing everything needed to answer its pending
-  permission, plan, or question.
+<DocCallout title="Followed replies and live gates" variant="note">
+  Use `follow: { gates: true, completion: true }` when the parent should receive
+  both live `<cadencr-gate>` requests and the child's first `<cadencr-reply>`.
+  Both events steer the parent automatically. For an existing session, use
+  `reply: "on_turn_end"` to push its next result back.
 </DocCallout>
 
 ## CadencR orchestration commands
@@ -169,7 +194,7 @@ These are different from provider-native commands such as `/compact`, and from p
 - Ask the agent to check `project_list_sessions` or `project_find_related_sessions` before delegating work.
 - Use `new_worktree` for parallel implementation and `reuse_worktree` only when another session must see the same uncommitted files.
 - Give spawned sessions a self-contained `initial_message`; they should not depend on the parent's hidden conversation history.
-- Prefer live `<cadencr-gate>` and `<cadencr-reply>` notifications over polling.
+- Treat live `<cadencr-gate>` and `<cadencr-reply>` delivery as the normal path; polling is recovery-only.
 - Name an exact provider/model only after checking `project_list_agent_providers`; installed catalogs can change.
 
 ## Related docs

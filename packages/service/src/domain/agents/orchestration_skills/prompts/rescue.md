@@ -23,8 +23,7 @@ Follow these steps exactly:
      A fresh vendor's model is ideal — that is where the new perspective comes from.
    - `branch`: `{ "mode": "reuse_worktree", "reuse_branch": "<current branch>" }`
      (get it via `git branch --show-current`) so the helper sees the same tree.
-   - `await_result`: `true`.
-   - `link_to_current_session`: `true`.
+   - `follow`: `{ "gates": true, "completion": true }`.
    - `source_note`: `"cadencr:rescue"`.
    - `initial_message`: the situation summary from step 1, ending with an explicit
      request: "You are a fresh pair of eyes on a stuck task. Diagnose the blocker
@@ -32,8 +31,8 @@ Follow these steps exactly:
 4. After spawning, also record the relationship with `project_link_sessions`
    (`link_type: "handoff"`, `note: "cadencr:rescue"`) so the graph shows this was a
    handoff.
-5. When the `<cadencr-reply>` arrives, relay the fresh model's suggestion to the
-   user clearly, attributed to that model, and ask whether they want you to act on
-   it.
+5. When the pushed `<cadencr-reply>` arrives, relay the fresh model's suggestion
+   to the user clearly, attributed to that model, and ask whether they want you
+   to act on it.
 
 If any tool call fails, report the failure and stop — do not silently continue.
