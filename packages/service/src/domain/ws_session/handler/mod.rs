@@ -40,6 +40,7 @@ mod thinking_effort;
 mod types;
 
 pub use connection::ws_handler;
+pub use session_prompt::user_shell_recovery::recover_user_shell_context;
 
 // Public type for crate-wide use (referenced via `handler::SdkHandle`).
 pub(crate) use session_control::handle_permission_respond;

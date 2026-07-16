@@ -36,6 +36,7 @@ mod user_shell;
 mod user_shell_context;
 mod user_shell_local;
 mod user_shell_payload;
+pub(super) mod user_shell_recovery;
 
 pub(crate) use bridge::PermissionResponse;
 pub(crate) use bridge::WsBridgeCanUseTool;

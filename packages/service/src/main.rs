@@ -127,6 +127,16 @@ async fn main() -> anyhow::Result<()> {
                 &write_pool,
             )
             .await;
+            let recovered_shell_context =
+                domain::ws_session::handler::recover_user_shell_context(&write_pool)
+                    .await
+                    .map_err(anyhow::Error::msg)?;
+            if recovered_shell_context > 0 {
+                info!(
+                    recovered_shell_context,
+                    "recovered interrupted user shell context"
+                );
+            }
             let recovered =
                 domain::sessions::message_dispatch::recover_orphaned_claims(&write_pool).await?;
             if recovered > 0 {

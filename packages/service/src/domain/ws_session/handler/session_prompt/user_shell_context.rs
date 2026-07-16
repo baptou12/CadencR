@@ -30,8 +30,9 @@ struct ShellContextRecord<'a> {
     output_truncated: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct PendingUserShellContext {
+    session_id: i64,
     delivery_id: String,
     records: Vec<PendingShellRecord>,
 }
@@ -91,10 +92,17 @@ impl PendingUserShellContext {
                      json_set(content, '$.__cadencr_user_shell.context_state', ?),
                      '$.__cadencr_user_shell.delivery_id'
                  )
-                 WHERE json_extract(content, '$.__cadencr_user_shell.context_state') = ?
+                 WHERE session_id = ?
+                   AND message_type = 'tool_call'
+                   AND tool_name = 'Bash'
+                   AND json_valid(content)
+                   AND json_extract(content, '$.__cadencr_user_shell.strategy') = ?
+                   AND json_extract(content, '$.__cadencr_user_shell.context_state') = ?
                    AND json_extract(content, '$.__cadencr_user_shell.delivery_id') = ?",
             )
             .bind(state.as_str())
+            .bind(self.session_id)
+            .bind(ManagedShellStrategy::CadencrManaged.as_str())
             .bind(ShellContextState::Claimed.as_str())
             .bind(&self.delivery_id)
             .execute(pool)
@@ -103,10 +111,17 @@ impl PendingUserShellContext {
             sqlx::query(
                 "UPDATE agent_messages
                  SET content = json_set(content, '$.__cadencr_user_shell.context_state', ?)
-                 WHERE json_extract(content, '$.__cadencr_user_shell.context_state') = ?
+                 WHERE session_id = ?
+                   AND message_type = 'tool_call'
+                   AND tool_name = 'Bash'
+                   AND json_valid(content)
+                   AND json_extract(content, '$.__cadencr_user_shell.strategy') = ?
+                   AND json_extract(content, '$.__cadencr_user_shell.context_state') = ?
                    AND json_extract(content, '$.__cadencr_user_shell.delivery_id') = ?",
             )
             .bind(state.as_str())
+            .bind(self.session_id)
+            .bind(ManagedShellStrategy::CadencrManaged.as_str())
             .bind(ShellContextState::Claimed.as_str())
             .bind(&self.delivery_id)
             .execute(pool)
@@ -191,6 +206,7 @@ pub(super) async fn claim_pending_user_shell_context(
         .await
         .map_err(|error| format!("Failed to commit user shell context claim: {error}"))?;
     Ok(PendingUserShellContext {
+        session_id,
         delivery_id: delivery_id.to_string(),
         records,
     })
@@ -222,15 +238,32 @@ mod tests {
         pool
     }
 
-    async fn insert_completed(pool: &SqlitePool) {
+    async fn insert_completed_for(pool: &SqlitePool, id: i64, session_id: i64) {
         let mut payload = ManagedShellPayload::running("pwd", "/tmp/project");
         payload.append_output("/tmp/project\n");
         payload.finish(Some(0), None);
-        sqlx::query("INSERT INTO agent_messages VALUES (7, 42, 'tool_call', 'Bash', ?)")
+        sqlx::query("INSERT INTO agent_messages VALUES (?, ?, 'tool_call', 'Bash', ?)")
+            .bind(id)
+            .bind(session_id)
             .bind(serde_json::to_string(&payload).unwrap())
             .execute(pool)
             .await
             .unwrap();
+    }
+
+    async fn insert_completed(pool: &SqlitePool) {
+        insert_completed_for(pool, 7, 42).await;
+    }
+
+    async fn context_state(pool: &SqlitePool, id: i64) -> String {
+        sqlx::query_scalar(
+            "SELECT json_extract(content, '$.__cadencr_user_shell.context_state')
+             FROM agent_messages WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
     }
 
     #[tokio::test]
@@ -267,5 +300,23 @@ mod tests {
             .await
             .unwrap();
         assert!(!second.is_empty());
+    }
+
+    #[tokio::test]
+    async fn finalizing_a_claim_is_scoped_to_its_session() {
+        let pool = test_pool().await;
+        insert_completed_for(&pool, 7, 42).await;
+        insert_completed_for(&pool, 8, 43).await;
+        let first = claim_pending_user_shell_context(&pool, 42, "shared-delivery")
+            .await
+            .unwrap();
+        let _second = claim_pending_user_shell_context(&pool, 43, "shared-delivery")
+            .await
+            .unwrap();
+
+        first.mark_delivered(&pool).await.unwrap();
+
+        assert_eq!(context_state(&pool, 7).await, "delivered");
+        assert_eq!(context_state(&pool, 8).await, "claimed");
     }
 }

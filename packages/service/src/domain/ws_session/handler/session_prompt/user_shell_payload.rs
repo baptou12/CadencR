@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 const MAX_RETAINED_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_CONTEXT_OUTPUT_BYTES: usize = 12 * 1024;
 const OUTPUT_TRUNCATION_MARKER: &str = "[... earlier shell output truncated ...]\n";
+const RESTART_INTERRUPTION_MESSAGE: &str = "Shell command interrupted because Cadencr restarted.";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -129,6 +130,35 @@ impl ManagedShellPayload {
         );
         (output, true)
     }
+
+    pub fn claimed_delivery_id(&self) -> Option<&str> {
+        if self.metadata.context_state != ShellContextState::Claimed {
+            return None;
+        }
+        self.metadata.delivery_id.as_deref()
+    }
+
+    pub fn recover_after_restart(&mut self, claimed_delivery_received: bool) -> bool {
+        if self.status == ManagedShellStatus::Running {
+            self.finish(None, Some(RESTART_INTERRUPTION_MESSAGE));
+            self.reset_context_claim();
+            return true;
+        }
+        if self.metadata.context_state != ShellContextState::Claimed {
+            return false;
+        }
+        if claimed_delivery_received {
+            self.metadata.context_state = ShellContextState::Delivered;
+        } else {
+            self.reset_context_claim();
+        }
+        true
+    }
+
+    fn reset_context_claim(&mut self) {
+        self.metadata.context_state = ShellContextState::Pending;
+        self.metadata.delivery_id = None;
+    }
 }
 
 const fn is_false(value: &bool) -> bool {
@@ -167,5 +197,19 @@ mod tests {
 
         assert_eq!(payload.status, ManagedShellStatus::Failed);
         assert_eq!(payload.output, "before\nspawn failed");
+    }
+
+    #[test]
+    fn restart_recovery_fails_running_commands_with_bounded_output() {
+        let mut payload = ManagedShellPayload::running("yes", "/tmp");
+        payload.append_output(&"x".repeat(MAX_RETAINED_OUTPUT_BYTES));
+
+        assert!(payload.recover_after_restart(false));
+
+        assert_eq!(payload.status, ManagedShellStatus::Failed);
+        assert!(payload.output.contains(RESTART_INTERRUPTION_MESSAGE));
+        assert!(payload.output.len() <= MAX_RETAINED_OUTPUT_BYTES);
+        assert_eq!(payload.metadata.context_state, ShellContextState::Pending);
+        assert_eq!(payload.metadata.delivery_id, None);
     }
 }
