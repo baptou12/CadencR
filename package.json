@@ -12,7 +12,7 @@
     "build:agents-md": "node scripts/build-agents-md.mjs",
     "test": "node scripts/cargo-env.mjs turbo run test && node --test scripts/*.test.mjs",
     "lint": "node scripts/cargo-env.mjs turbo run lint",
-    "test:release-scripts": "env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh && env -u BASH_ENV bash scripts/desktop-release-workflow.test.sh",
+    "test:release-scripts": "env -u BASH_ENV bash scripts/release-notes.test.sh && env -u BASH_ENV bash scripts/update-homebrew-cask.test.sh && env -u BASH_ENV bash scripts/desktop-release-workflow.test.sh",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
     "start": "node scripts/dev.mjs --filter=@cadencr/desktop",

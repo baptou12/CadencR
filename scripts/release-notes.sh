@@ -10,6 +10,13 @@ fail() {
   exit 1
 }
 
+validate_output() {
+  local output="$1"
+  if [ -e "$output" ] && [ "$output" -ef CHANGELOG.md ]; then
+    fail "refusing to overwrite source CHANGELOG.md; choose a different output file"
+  fi
+}
+
 extract_release_notes() {
   local tag="$1"
   local output="$2"
@@ -60,6 +67,7 @@ main() {
   [ -f CHANGELOG.md ] || fail "CHANGELOG.md is missing"
 
   if [ "$#" -eq 2 ]; then
+    validate_output "$2"
     extract_release_notes "$tag" "$2"
   else
     local tmp
