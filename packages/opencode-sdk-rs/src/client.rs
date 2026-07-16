@@ -1,11 +1,10 @@
 //! Minimal REST client for the OpenCode subprocess's embedded HTTP backend.
 //!
-//! Every `opencode acp --hostname --port` subprocess Cadencr spawns also
-//! serves an HTTP backend on the same port. The ACP wire silently drops
-//! sub-agent (`Task` / `Agent`) child-session events and permission
-//! prompts (upstream issue sst/opencode#6573), so the
-//! `upstream_workaround::subagent_listener` polls this backend for them:
+//! Every `opencode acp --hostname --port` subprocess also serves an HTTP
+//! backend on the same port. Cadencr uses this side channel for native
+//! capabilities absent from ACP and for data the ACP wire drops:
 //!
+//! - `shell_command` — OpenCode's native user-shell route.
 //! - `list_children_in_directory` — discover sub-agent child sessions.
 //! - `list_messages` — tail each child's cumulative message snapshot,
 //!   and pull root-session context-token totals (`opencode acp` only
@@ -13,10 +12,10 @@
 //! - `list_permissions` / `reply_permission` — surface and answer
 //!   sub-agent permission prompts that never reach the ACP wire.
 //!
-//! Surface is intentionally tiny. New methods get added only when a new
-//! workaround needs them. This is **not** a general-purpose OpenCode HTTP
-//! client; the legacy long-lived-server transport that used to live here
-//! has been retired.
+//! This is intentionally not a general-purpose OpenCode HTTP client; the
+//! legacy long-lived-server transport that used to live here is retired.
+
+mod shell;
 
 use std::path::Path;
 

@@ -7,14 +7,17 @@ import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
 const SLASH_ANYWHERE_POLICY: PromptCommandPolicy = {
   slashCommandPlacement: "anywhere",
   skillReferenceTrigger: "slash",
+  userShell: true,
 };
 const SLASH_AT_START_POLICY: PromptCommandPolicy = {
   slashCommandPlacement: "prompt_start",
   skillReferenceTrigger: "slash",
+  userShell: true,
 };
 const DOLLAR_SKILLS_POLICY: PromptCommandPolicy = {
   slashCommandPlacement: "prompt_start",
   skillReferenceTrigger: "dollar",
+  userShell: true,
 };
 
 vi.mock("@/hooks/useDebouncedValue", () => ({
@@ -91,6 +94,107 @@ describe("PromptEditor", () => {
     });
 
     expect(ref.current!.getText()).toBe("");
+  });
+
+  it("hides a leading bang while preserving shell command serialization", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} promptCommandPolicy={SLASH_AT_START_POLICY} />);
+
+    await act(async () => {
+      ref.current!.setText("!printf shell-ok");
+    });
+
+    const prefix = screen.getByRole("textbox").querySelector('[data-shell-command-prefix="true"]');
+    expect(prefix).not.toBeNull();
+    expect(prefix).toHaveClass("w-0", "text-transparent");
+    expect(ref.current!.getText()).toBe("!printf shell-ok");
+  });
+
+  it("clears shell mode without clearing the command", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    const onChange = vi.fn();
+    render(
+      <PromptEditor ref={ref} onChange={onChange} promptCommandPolicy={SLASH_AT_START_POLICY} />,
+    );
+
+    await act(async () => {
+      ref.current!.setText("!git status --short");
+    });
+    await act(async () => {
+      ref.current!.clearShellCommandMode();
+    });
+
+    expect(ref.current!.getText()).toBe("git status --short");
+    expect(
+      screen.getByRole("textbox").querySelector('[data-shell-command-prefix="true"]'),
+    ).toBeNull();
+    expect(onChange).toHaveBeenLastCalledWith("git status --short");
+  });
+
+  it("shows a shell-specific placeholder for a bare bang", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} promptCommandPolicy={SLASH_AT_START_POLICY} />);
+
+    await act(async () => {
+      ref.current!.setText("!");
+    });
+
+    expect(screen.getByText("Type a shell command…")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveClass("text-transparent", "caret-primary");
+    expect(ref.current!.getText()).toBe("!");
+
+    await act(async () => {
+      ref.current!.clearShellCommandMode();
+    });
+    expect(ref.current!.getText()).toBe("");
+    expect(screen.queryByText("Type a shell command…")).not.toBeInTheDocument();
+  });
+
+  it("leaves bangs outside the first character as ordinary prompt text", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} />);
+
+    await act(async () => {
+      ref.current!.setText("explain !important");
+    });
+
+    expect(ref.current!.getText()).toBe("explain !important");
+    expect(
+      screen.getByRole("textbox").querySelector('[data-shell-command-prefix="true"]'),
+    ).toBeNull();
+  });
+
+  it("leaves a leading bang visible when user shell commands are unsupported", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} />);
+
+    await act(async () => {
+      ref.current!.setText("!printf ordinary-text");
+    });
+
+    expect(ref.current!.getText()).toBe("!printf ordinary-text");
+    expect(
+      screen.getByRole("textbox").querySelector('[data-shell-command-prefix="true"]'),
+    ).toBeNull();
+  });
+
+  it("restores the visible bang when switching to an unsupported provider", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    const { rerender } = render(
+      <PromptEditor ref={ref} promptCommandPolicy={SLASH_AT_START_POLICY} />,
+    );
+    await act(async () => {
+      ref.current!.setText("!printf ordinary-text");
+    });
+
+    await act(async () => {
+      rerender(<PromptEditor ref={ref} />);
+    });
+
+    expect(ref.current!.getText()).toBe("!printf ordinary-text");
+    expect(
+      screen.getByRole("textbox").querySelector('[data-shell-command-prefix="true"]'),
+    ).toBeNull();
   });
 
   it("preserves multiline text as separate paragraphs", async () => {

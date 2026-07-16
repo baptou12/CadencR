@@ -8,6 +8,12 @@ import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
 const DOLLAR_SKILLS_POLICY: PromptCommandPolicy = {
   slashCommandPlacement: "prompt_start",
   skillReferenceTrigger: "dollar",
+  userShell: true,
+};
+const SHELL_POLICY: PromptCommandPolicy = {
+  slashCommandPlacement: "prompt_start",
+  skillReferenceTrigger: "slash",
+  userShell: true,
 };
 
 const isMobileMock = vi.fn(() => false);
@@ -115,10 +121,21 @@ vi.mock("./prompt-editor/PromptEditor", () => {
       clear: () => void;
       setText: (text: string) => void;
       getText: () => string;
+      clearShellCommandMode: () => void;
     }>,
   ) {
-    const [value, setValue] = useState(initialText ?? "");
+    const [value, setValue] = useState(
+      initialText?.startsWith("!") ? initialText.slice(1) : (initialText ?? ""),
+    );
+    const [shellMode, setShellMode] = useState(initialText?.startsWith("!") ?? false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const replaceText = (text: string): void => {
+      const nextShellMode = text.startsWith("!");
+      setShellMode(nextShellMode);
+      setValue(nextShellMode ? text.slice(1) : text);
+      onChange?.(text);
+    };
 
     useImperativeHandle(
       ref,
@@ -126,15 +143,17 @@ vi.mock("./prompt-editor/PromptEditor", () => {
         focus: () => textareaRef.current?.focus(),
         clear: () => {
           setValue("");
+          setShellMode(false);
           onChange?.("");
         },
-        setText: (text: string) => {
-          setValue(text);
-          onChange?.(text);
+        setText: replaceText,
+        getText: () => (shellMode ? `!${value}` : value),
+        clearShellCommandMode: () => {
+          setShellMode(false);
+          onChange?.(value);
         },
-        getText: () => value,
       }),
-      [onChange, value],
+      [onChange, shellMode, value],
     );
 
     return (
@@ -142,8 +161,13 @@ vi.mock("./prompt-editor/PromptEditor", () => {
         ref={textareaRef}
         value={value}
         onChange={(event) => {
-          setValue(event.target.value);
-          onChange?.(event.target.value);
+          const nextValue = event.target.value;
+          if (!shellMode && nextValue.startsWith("!")) {
+            replaceText(nextValue);
+            return;
+          }
+          setValue(nextValue);
+          onChange?.(shellMode ? `!${nextValue}` : nextValue);
         }}
         placeholder={placeholder}
         disabled={disabled}
@@ -170,7 +194,7 @@ describe("AgentPromptBar", () => {
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("does not advertise dollar skills for slash-native providers", () => {
+  it("does not advertise unsupported shell commands or dollar skills", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
     expect(screen.getByRole("textbox")).toHaveAttribute(
@@ -191,8 +215,91 @@ describe("AgentPromptBar", () => {
 
     expect(screen.getByRole("textbox")).toHaveAttribute(
       "placeholder",
-      "Send a message… (@ files, @@ conversations, / commands, $ skills)",
+      "Send a message… (@ files, @@ conversations, / commands, $ skills, ! shell)",
     );
+  });
+
+  it("enters a removable shell mode while preserving the serialized bang", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="idle"
+        promptCommandPolicy={SHELL_POLICY}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "!printf shell-ok" } });
+
+    const surface = container.querySelector('[data-shell-command-mode="true"]');
+    expect(surface).not.toBeNull();
+    // The mode surfaces through the minimal leading prompt marker, not a
+    // heavy tint/glow on the whole bar.
+    expect(screen.getByLabelText("Exit shell command mode")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("printf shell-ok");
+    expect(screen.getByLabelText("Attach files")).toBeDisabled();
+    expect(screen.getByLabelText("Send message")).toBeEnabled();
+
+    await user.click(screen.getByLabelText("Send message"));
+    expect(onSend).toHaveBeenCalledWith("!printf shell-ok", undefined);
+  });
+
+  it("exits shell mode without clearing the command text", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="idle"
+        promptCommandPolicy={SHELL_POLICY}
+      />,
+    );
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "!git status" } });
+
+    await user.click(screen.getByLabelText("Exit shell command mode"));
+
+    expect(container.querySelector('[data-shell-command-mode="true"]')).toBeNull();
+    expect(screen.getByRole("textbox")).toHaveValue("git status");
+    await user.click(screen.getByLabelText("Send message"));
+    expect(onSend).toHaveBeenCalledWith("git status", undefined);
+  });
+
+  it("does not send an empty shell command", () => {
+    render(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="idle"
+        promptCommandPolicy={SHELL_POLICY}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "!" } });
+
+    expect(screen.getByLabelText("Exit shell command mode")).toBeInTheDocument();
+    expect(screen.getByLabelText("Send message")).toBeDisabled();
+  });
+
+  it("uses the ordinary send action instead of split actions in shell mode", async () => {
+    const splitAction = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="idle"
+        promptCommandPolicy={SHELL_POLICY}
+        splitSendActions={[{ label: "Send to child", icon: null, onClick: splitAction }]}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "!printf direct");
+
+    expect(screen.queryByRole("button", { name: "Send to child" })).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText("Send message"));
+    expect(onSend).toHaveBeenCalledWith("!printf direct", undefined);
+    expect(splitAction).not.toHaveBeenCalled();
   });
 
   it("shows buttons when idle", () => {

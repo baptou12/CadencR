@@ -7,11 +7,13 @@ export type SkillReferenceTrigger = "slash" | "dollar";
 export interface PromptCommandPolicy {
   slashCommandPlacement: PromptCommandPlacement;
   skillReferenceTrigger: SkillReferenceTrigger;
+  userShell: boolean;
 }
 
 export interface PromptCommandPolicyPayload {
   slash_command_placement: PromptCommandPlacement;
   skill_reference_trigger: SkillReferenceTrigger;
+  user_shell?: boolean;
 }
 
 export interface PromptCommandTriggerPolicy {
@@ -23,6 +25,7 @@ export interface PromptCommandTriggerPolicy {
 export const DEFAULT_PROMPT_COMMAND_POLICY: PromptCommandPolicy = {
   slashCommandPlacement: "prompt_start",
   skillReferenceTrigger: "slash",
+  userShell: false,
 };
 
 const ALL_COMMAND_KINDS = ["command", "skill", "cadencr"] as const;
@@ -64,5 +67,6 @@ export function promptCommandPolicyFromPayload(
   return {
     slashCommandPlacement: payload.slash_command_placement,
     skillReferenceTrigger: payload.skill_reference_trigger,
+    userShell: payload.user_shell ?? false,
   };
 }

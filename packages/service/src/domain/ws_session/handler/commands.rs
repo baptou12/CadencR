@@ -33,6 +33,7 @@ impl From<RuntimePromptCommandPolicy> for PromptCommandPolicyPayload {
                 RuntimeSkillReferenceTrigger::Slash => SkillReferenceTriggerPayload::Slash,
                 RuntimeSkillReferenceTrigger::Dollar => SkillReferenceTriggerPayload::Dollar,
             },
+            user_shell: policy.user_shell,
         }
     }
 }
@@ -260,6 +261,7 @@ mod tests {
             payload.prompt_command_policy.skill_reference_trigger,
             SkillReferenceTriggerPayload::Slash
         );
+        assert!(payload.prompt_command_policy.user_shell);
     }
 
     #[tokio::test]
@@ -295,6 +297,7 @@ mod tests {
             payload.prompt_command_policy.skill_reference_trigger,
             SkillReferenceTriggerPayload::Dollar
         );
+        assert!(payload.prompt_command_policy.user_shell);
     }
 
     #[test]

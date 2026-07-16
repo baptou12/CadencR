@@ -56,6 +56,19 @@ impl OpenCodeAcpAdapter {
 }
 #[async_trait]
 impl AcpProviderHooks for OpenCodeAcpAdapter {
+    async fn run_user_shell_command(
+        &self,
+        session_id: &str,
+        agent: &str,
+        command: &str,
+    ) -> Result<(), RuntimeError> {
+        self.http
+            .shell_command(session_id, agent, command, Some(&self.cwd))
+            .await
+            .map(|_| ())
+            .map_err(|error| RuntimeError::new(format!("OpenCode shell command failed: {error}")))
+    }
+
     fn normalize_tool_name(&self, raw: &str) -> String {
         let canonical = canonical_cadencr_tool_name(&canonical_acp_tool_name(raw));
         self.mcp_tool_names

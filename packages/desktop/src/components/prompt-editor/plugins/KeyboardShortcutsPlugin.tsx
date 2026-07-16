@@ -14,6 +14,7 @@ interface KeyboardShortcutsPluginProps {
   onEnterSend?: () => boolean;
   onArrowUp?: () => string | null;
   onArrowDown?: () => string | null;
+  shellCommandsEnabled: boolean;
 }
 
 function hasDomSiblingInDirection(
@@ -71,6 +72,7 @@ export function KeyboardShortcutsPlugin({
   onEnterSend,
   onArrowUp,
   onArrowDown,
+  shellCommandsEnabled,
 }: KeyboardShortcutsPluginProps) {
   const [editor] = useLexicalComposerContext();
   // On phones the soft keyboard has no Shift+Enter, so plain Enter must insert
@@ -105,7 +107,7 @@ export function KeyboardShortcutsPlugin({
           const result = callback();
           event?.preventDefault();
           if (result === null) return true;
-          setEditorText(editor, result);
+          setEditorText(editor, result, true, shellCommandsEnabled);
           return true;
         },
         COMMAND_PRIORITY_NORMAL,
@@ -120,7 +122,7 @@ export function KeyboardShortcutsPlugin({
       unregisterUp();
       unregisterDown();
     };
-  }, [editor, isMobile, onEnterSend, onArrowUp, onArrowDown]);
+  }, [editor, isMobile, onEnterSend, onArrowUp, onArrowDown, shellCommandsEnabled]);
 
   return null;
 }

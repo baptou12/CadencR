@@ -23,7 +23,6 @@ mod new_branch;
 mod replay;
 mod reuse;
 mod setup;
-mod setup_process;
 
 pub use db::{
     get_project_directory, get_project_id_for_feature, get_setting, resolve_feature_cwd,

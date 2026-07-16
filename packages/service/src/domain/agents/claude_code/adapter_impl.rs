@@ -15,16 +15,21 @@ use super::{ClaudeCodeAdapter, CLAUDE_CODE_ADAPTER};
 use crate::domain::agents::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimePermissionMode,
     RuntimePromptCommandPlacement, RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger,
-    RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeSpawnConfig,
+    RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeSpawnConfig, RuntimeUserShellStrategy,
 };
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 #[async_trait]
 impl AgentRuntimeAdapter for ClaudeCodeAdapter {
+    fn user_shell_strategy(&self) -> RuntimeUserShellStrategy {
+        RuntimeUserShellStrategy::CadencrManaged
+    }
+
     fn prompt_command_policy(&self) -> RuntimePromptCommandPolicy {
         RuntimePromptCommandPolicy {
             slash_command_placement: RuntimePromptCommandPlacement::Anywhere,
             skill_reference_trigger: RuntimeSkillReferenceTrigger::Slash,
+            user_shell: true,
         }
     }
 
@@ -323,13 +328,21 @@ mod tests {
     use super::super::test_support::new_test_adapter;
     use crate::domain::agents::adapter::{
         AgentRuntimeAdapter, RuntimePromptCommandPlacement, RuntimeSkillReferenceTrigger,
-        RuntimeSlashCommand, RuntimeSlashCommandKind,
+        RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeUserShellStrategy,
     };
 
     #[test]
     fn adapter_advertises_prompt_receipts() {
         let adapter = new_test_adapter();
         assert!(adapter.supports_prompt_receipts());
+    }
+
+    #[test]
+    fn delegates_user_shell_to_cadencr() {
+        assert_eq!(
+            new_test_adapter().user_shell_strategy(),
+            RuntimeUserShellStrategy::CadencrManaged
+        );
     }
 
     #[test]
@@ -343,6 +356,7 @@ mod tests {
             policy.skill_reference_trigger,
             RuntimeSkillReferenceTrigger::Slash
         );
+        assert!(policy.user_shell);
     }
 
     #[test]

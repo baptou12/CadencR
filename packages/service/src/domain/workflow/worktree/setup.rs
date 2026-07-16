@@ -151,7 +151,7 @@ async fn run_resolved_setup_commands(
     let log_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
 
     let script = build_setup_script(&commands);
-    let (output_tx, mut output_rx) = super::setup_process::setup_output_channel();
+    let (output_tx, mut output_rx) = crate::shared::terminal_shell::terminal_output_channel();
     let output_log = Arc::clone(&log_lines);
     let output_ws = ws_sender.clone();
     let output_task = tokio::spawn(async move {
@@ -160,12 +160,29 @@ async fn run_resolved_setup_commands(
         }
     });
 
-    let result =
-        super::setup_process::run_terminal_setup_script(&script, &worktree_path, output_tx).await;
+    let result = crate::shared::terminal_shell::run_terminal_shell_script(
+        &script,
+        &worktree_path,
+        output_tx,
+    )
+    .await;
     let _ = output_task.await;
-    if let Err(error) = result {
-        report_setup_error(write_pool, feature_id, &log_lines, ws_sender, &error).await;
-        return;
+    match result {
+        Ok(exit) if exit.success() => {}
+        Ok(exit) => {
+            let error = format!(
+                "Setup script exited with status {} (cwd: {}, PATH: {})",
+                exit.exit_code,
+                worktree_path.display(),
+                std::env::var("PATH").unwrap_or_else(|_| "<unset>".to_string())
+            );
+            report_setup_error(write_pool, feature_id, &log_lines, ws_sender, &error).await;
+            return;
+        }
+        Err(error) => {
+            report_setup_error(write_pool, feature_id, &log_lines, ws_sender, &error).await;
+            return;
+        }
     }
 
     // 6. Success — persist log and mark ready

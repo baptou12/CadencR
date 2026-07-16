@@ -50,6 +50,8 @@ pub enum SkillReferenceTriggerPayload {
 pub struct PromptCommandPolicyPayload {
     pub slash_command_placement: PromptCommandPlacementPayload,
     pub skill_reference_trigger: SkillReferenceTriggerPayload,
+    #[serde(default)]
+    pub user_shell: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -12,6 +12,7 @@ use super::permission::{
     RuntimeSlashCommand,
 };
 use super::session::AgentRuntimeSession;
+use super::user_shell::RuntimeUserShellStrategy;
 
 #[async_trait]
 pub trait AgentRuntimeAdapter: Send + Sync {
@@ -198,6 +199,14 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         RuntimePromptCommandPolicy::default()
     }
 
+    /// Programmatic handling for a leading-`!` user shell command.
+    ///
+    /// Defaults to unsupported so future providers cannot accidentally execute
+    /// commands without making an explicit adapter-level policy choice.
+    fn user_shell_strategy(&self) -> RuntimeUserShellStrategy {
+        RuntimeUserShellStrategy::Unsupported
+    }
+
     /// Whether `refresh_runtime_slash_commands` performs a real
     /// re-resolve (vs. a no-op default). The WS `commands.get` handler
     /// reads this to decide whether to advertise `refreshing: true`
@@ -318,6 +327,7 @@ mod tests {
     use super::super::error::RuntimeError;
     use super::super::session::test_support::DummySession;
     use super::super::session::AgentRuntimeSession;
+    use super::super::user_shell::RuntimeUserShellStrategy;
     use super::AgentRuntimeAdapter;
 
     struct DummyAdapter;
@@ -353,6 +363,10 @@ mod tests {
             .parse_permission_request(&json!({"type": "none"}))
             .is_none());
         assert!(!adapter.supports_prompt_receipts());
+        assert_eq!(
+            adapter.user_shell_strategy(),
+            RuntimeUserShellStrategy::Unsupported
+        );
 
         let spawned = adapter
             .spawn(serde_json::Value::Null, RuntimeSpawnConfig::default())

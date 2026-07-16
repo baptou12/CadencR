@@ -70,4 +70,43 @@ impl CodexAppServerClient {
             .await
             .map(|_| ())
     }
+
+    /// Run a user-authored shell command through Codex's native user-shell
+    /// route. Codex owns execution, transcript events, and context insertion.
+    pub async fn thread_shell_command(
+        &self,
+        thread_id: &str,
+        command: &str,
+    ) -> Result<(), SdkError> {
+        self.request(
+            "thread/shellCommand",
+            thread_shell_command_params(thread_id, command),
+        )
+        .await
+        .map(|_| ())
+    }
+}
+
+fn thread_shell_command_params(thread_id: &str, command: &str) -> Value {
+    json!({
+        "threadId": thread_id,
+        "command": command,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::thread_shell_command_params;
+    use serde_json::json;
+
+    #[test]
+    fn shell_command_uses_v2_schema_fields() {
+        assert_eq!(
+            thread_shell_command_params("thread-1", "printf hello | cat"),
+            json!({
+                "threadId": "thread-1",
+                "command": "printf hello | cat",
+            })
+        );
+    }
 }

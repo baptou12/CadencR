@@ -65,6 +65,9 @@ pub enum RuntimeSkillReferenceTrigger {
 pub struct RuntimePromptCommandPolicy {
     pub slash_command_placement: RuntimePromptCommandPlacement,
     pub skill_reference_trigger: RuntimeSkillReferenceTrigger,
+    /// Whether a leading `!` is a supported user-shell command trigger.
+    /// Shared clients consume this capability without identifying providers.
+    pub user_shell: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

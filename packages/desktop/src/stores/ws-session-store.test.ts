@@ -3445,6 +3445,7 @@ describe("ws-session-store", () => {
           promptCommandPolicy: {
             slashCommandPlacement: "prompt_start",
             skillReferenceTrigger: "dollar",
+            userShell: true,
           },
           slashCommandsLoading: false,
           slashCommandsKey: "claude_code::/repo",
@@ -3464,6 +3465,7 @@ describe("ws-session-store", () => {
       expect(useWsSessionStore.getState().sessions["s1"].promptCommandPolicy).toEqual({
         slashCommandPlacement: "prompt_start",
         skillReferenceTrigger: "slash",
+        userShell: false,
       });
     });
 

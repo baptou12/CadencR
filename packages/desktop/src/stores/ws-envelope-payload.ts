@@ -73,6 +73,7 @@ function parsePromptCommandPolicy(
   return {
     slash_command_placement: placement,
     skill_reference_trigger: skillTrigger,
+    user_shell: optionalBoolean(policy, "user_shell") ?? false,
   };
 }
 

@@ -7,6 +7,7 @@ import { AgentPromptPendingIndicator } from "./AgentPromptPendingIndicator";
 import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
 import { PromptBarActions } from "./PromptBarActions";
 import { SplitSendActions } from "./SplitSendActions";
+import { ShellCommandModeMarker } from "./ShellCommandModeMarker";
 import { PromptEditor } from "./prompt-editor/PromptEditor";
 import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
@@ -71,14 +72,17 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     const editorRef = useRef<PromptEditorHandle>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const isMobile = useIsMobile();
-    const promptCommandHint = supportsDollarSkillReferences(promptCommandPolicy)
-      ? "/ commands, $ skills"
-      : "/ commands";
+    const promptCommandHint = [
+      "/ commands",
+      supportsDollarSkillReferences(promptCommandPolicy) ? "$ skills" : undefined,
+      promptCommandPolicy.userShell ? "! shell" : undefined,
+    ]
+      .filter((hint): hint is string => !!hint)
+      .join(", ");
     const [text, setText] = useState("");
+    const isShellCommandMode = promptCommandPolicy.userShell && text.startsWith("!");
     const textRef = useRef(text);
     textRef.current = text;
-    const disabledRef = useRef(disabled);
-    disabledRef.current = disabled;
     const navigatingHistoryRef = useRef(false);
     const restoringDraftRef = useRef(false);
     // Set once the user types in or sends from this feature; reset on feature
@@ -177,25 +181,22 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       getAttachments,
       interactedRef,
     });
-    const canSend =
-      (text.trim().length > 0 || attachments.length > 0) &&
-      !disabled &&
-      !sending &&
-      !permissionDeferred;
+    const hasSendableContent = isShellCommandMode
+      ? text.slice(1).trim().length > 0 && attachments.length === 0
+      : text.trim().length > 0 || attachments.length > 0;
+    const canSend = hasSendableContent && !disabled && !sending && !permissionDeferred;
     const handleSend = useCallback(() => {
-      if (permissionDeferred) return;
+      if (!canSend) return;
       const trimmed = textRef.current.trim();
-      if (!trimmed && attachments.length === 0) return;
       void runSend(onSend, trimmed);
-    }, [attachments, onSend, permissionDeferred, runSend]);
+    }, [canSend, onSend, runSend]);
     const handleSplitAction = useCallback(
       (action: SplitSendAction) => {
-        if (permissionDeferred) return;
+        if (!canSend) return;
         const trimmed = textRef.current.trim();
-        if (!trimmed && attachments.length === 0) return;
         void runSend(action.onClick, trimmed);
       },
-      [attachments, permissionDeferred, runSend],
+      [canSend, runSend],
     );
     const scheduleControl = usePromptScheduleControl({
       onSchedule,
@@ -209,17 +210,17 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       interactedRef,
     });
     const handleEnterSend = useCallback(() => {
-      if (permissionDeferred) return true;
-      const trimmed = textRef.current.trim();
-      const hasContent = trimmed.length > 0 || attachments.length > 0;
-      if (!hasContent || disabledRef.current || sending) return true;
-      if (splitSendActions && splitSendActions.length > 0) {
+      if (!canSend) return true;
+      if (!isShellCommandMode && splitSendActions && splitSendActions.length > 0) {
         handleSplitAction(splitSendActions[0]);
       } else {
         handleSend();
       }
       return true;
-    }, [attachments, sending, splitSendActions, permissionDeferred, handleSplitAction, handleSend]);
+    }, [canSend, isShellCommandMode, splitSendActions, handleSplitAction, handleSend]);
+    const clearShellCommandMode = useCallback(() => {
+      editorRef.current?.clearShellCommandMode();
+    }, []);
     const handleEditorChange = useCallback(
       (newText: string) => {
         setText(newText);
@@ -330,9 +331,11 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
             />
           )}
           <div
-            className="glass-surface flex items-center gap-1.5 rounded-lg bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
+            data-shell-command-mode={isShellCommandMode || undefined}
+            className="glass-surface flex items-center gap-1.5 rounded-lg border border-transparent bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
             onClick={handlePromptSurfaceClick}
           >
+            {isShellCommandMode && <ShellCommandModeMarker onClear={clearShellCommandMode} />}
             <PromptEditor
               ref={editorRef}
               onChange={handleEditorChange}
@@ -356,17 +359,17 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
             <PromptBarActions
               onAddFiles={addFiles}
               providerId={providerId}
-              inputsDisabled={!!disabled || sending}
+              inputsDisabled={!!disabled || sending || isShellCommandMode}
               isRunning={isRunning}
               onStop={onStop}
               onSend={handleSend}
               canSend={canSend}
               sending={sending}
-              showSendButton={!splitSendActions && (!isRunning || isMobile)}
-              schedule={scheduleControl}
+              showSendButton={(isShellCommandMode || !splitSendActions) && (!isRunning || isMobile)}
+              schedule={isShellCommandMode ? undefined : scheduleControl}
             />
           </div>
-          {splitSendActions && !isRunning && (
+          {splitSendActions && !isRunning && !isShellCommandMode && (
             <SplitSendActions
               actions={splitSendActions}
               disabled={!canSend}

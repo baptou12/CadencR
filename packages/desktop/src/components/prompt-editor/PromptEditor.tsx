@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -6,7 +6,14 @@ import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { $createParagraphNode, $getRoot, type EditorState, type LexicalEditor } from "lexical";
+import {
+  $createParagraphNode,
+  $getRoot,
+  $isElementNode,
+  $isTextNode,
+  type EditorState,
+  type LexicalEditor,
+} from "lexical";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { MentionNode } from "./nodes/MentionNode";
@@ -17,6 +24,8 @@ import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
 import { ImagePastePlugin } from "./plugins/ImagePastePlugin";
 import { ConversationReferencePlugin } from "./plugins/ConversationReferencePlugin";
 import { ConversationReferenceNode } from "./nodes/ConversationReferenceNode";
+import { $isShellCommandPrefixNode, ShellCommandPrefixNode } from "./nodes/ShellCommandPrefixNode";
+import { ShellCommandPlugin, type ShellCommandEditorState } from "./plugins/ShellCommandPlugin";
 import { getEditorText, initializeEditorText, setEditorText } from "./editor-utils";
 import type { SlashCommand } from "@/lib/slash-command";
 import {
@@ -31,6 +40,8 @@ export interface PromptEditorHandle {
   /** Set text. `moveSelection: false` populates without focusing the editor. */
   setText: (text: string, moveSelection?: boolean) => void;
   getText: () => string;
+  /** Exit shell mode while preserving the command text. */
+  clearShellCommandMode: () => void;
 }
 
 interface PromptEditorProps {
@@ -64,6 +75,79 @@ function EditorRefPlugin({
   const [editor] = useLexicalComposerContext();
   editorRef.current = editor;
   return null;
+}
+
+function removeShellCommandPrefix(): void {
+  const root = $getRoot();
+  const firstParagraph = root.getFirstChild();
+  const firstNode = $isElementNode(firstParagraph) ? firstParagraph.getFirstChild() : null;
+  if ($isShellCommandPrefixNode(firstNode)) {
+    firstNode.remove();
+  } else if ($isTextNode(firstNode) && firstNode.getTextContent().startsWith("!")) {
+    firstNode.setTextContent(firstNode.getTextContent().slice(1));
+  } else {
+    return;
+  }
+  root.selectEnd();
+}
+
+function usePromptEditorHandle(
+  ref: React.ForwardedRef<PromptEditorHandle>,
+  editorRef: React.MutableRefObject<LexicalEditor | null>,
+  shellCommandsEnabled: boolean,
+): void {
+  useImperativeHandle(ref, () => ({
+    focus() {
+      editorRef.current?.focus();
+    },
+    clear() {
+      editorRef.current?.update(() => {
+        const root = $getRoot();
+        root.clear();
+        root.append($createParagraphNode());
+      });
+    },
+    setText(text: string, moveSelection = true) {
+      if (editorRef.current) {
+        setEditorText(editorRef.current, text, moveSelection, shellCommandsEnabled);
+      }
+    },
+    getText() {
+      let text = "";
+      editorRef.current?.getEditorState().read(() => {
+        text = getEditorText();
+      });
+      return text;
+    },
+    clearShellCommandMode() {
+      editorRef.current?.update(removeShellCommandPrefix);
+    },
+  }));
+}
+
+function ShellCommandPlaceholder() {
+  return (
+    <div className="pointer-events-none absolute top-0 right-0 left-0 truncate font-mono text-sm leading-[22px] text-muted-foreground select-none max-[767px]:text-base">
+      Type a shell command…
+    </div>
+  );
+}
+
+function editableClassName(
+  shell: ShellCommandEditorState,
+  disabled: boolean | undefined,
+  className: string | undefined,
+): string {
+  return cn(
+    "w-full min-w-0 outline-none",
+    shell.active && "font-mono",
+    // Bare `!` stays a real (transparent) text node so Lexical keeps a caret
+    // target, but pull it left by one character so the caret (and the hidden `!`)
+    // rest at the line start beside the placeholder rather than one character in.
+    shell.empty && "text-transparent caret-primary [&_[data-lexical-text]]:-ml-[1ch]",
+    disabled && "pointer-events-none opacity-50",
+    className,
+  );
 }
 
 // NOTE: We intentionally do NOT ship a JS-driven autoresize plugin here.
@@ -105,29 +189,11 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
     ref,
   ) {
     const editorRef = useRef<LexicalEditor | null>(null);
-
-    useImperativeHandle(ref, () => ({
-      focus() {
-        editorRef.current?.focus();
-      },
-      clear() {
-        editorRef.current?.update(() => {
-          const root = $getRoot();
-          root.clear();
-          root.append($createParagraphNode());
-        });
-      },
-      setText(text: string, moveSelection = true) {
-        if (editorRef.current) setEditorText(editorRef.current, text, moveSelection);
-      },
-      getText() {
-        let text = "";
-        editorRef.current?.getEditorState().read(() => {
-          text = getEditorText();
-        });
-        return text;
-      },
-    }));
+    const [shellCommandState, setShellCommandState] = useState<ShellCommandEditorState>({
+      active: false,
+      empty: false,
+    });
+    usePromptEditorHandle(ref, editorRef, promptCommandPolicy.userShell);
 
     const handleChange = useCallback(
       (_editorState: EditorState, editor: LexicalEditor) => {
@@ -145,43 +211,51 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         <PlainTextPlugin
           contentEditable={
             <ContentEditable
-              className={cn(
-                "w-full min-w-0 outline-none",
-                disabled && "pointer-events-none opacity-50",
-                className,
-              )}
+              className={editableClassName(shellCommandState, disabled, className)}
+              // Shell commands are not prose — suppress the red spellcheck squiggle.
+              spellCheck={!shellCommandState.active}
               aria-disabled={disabled}
             />
           }
           placeholder={
             placeholder ? (
-              <div className="text-muted-foreground pointer-events-none absolute top-0 right-0 left-0 truncate select-none text-sm leading-[22px]">
+              <div className="text-muted-foreground pointer-events-none absolute top-0 right-0 left-0 truncate select-none text-sm leading-[22px] max-[767px]:text-base">
                 {placeholder}
               </div>
             ) : null
           }
           ErrorBoundary={LexicalErrorBoundary}
         />
+        {shellCommandState.empty && <ShellCommandPlaceholder />}
         <HistoryPlugin />
+        <ShellCommandPlugin
+          enabled={promptCommandPolicy.userShell}
+          onStateChange={setShellCommandState}
+        />
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
-        <MentionPlugin projectId={mentionProjectId} featureId={mentionFeatureId} />
-        <ConversationReferencePlugin currentFeatureId={mentionFeatureId} />
-        {promptCommandTriggers(promptCommandPolicy).map((trigger) => (
-          <SlashCommandPlugin
-            key={`${trigger.triggerChar}:${trigger.commandKindsAtPromptStart.join(",")}:${trigger.commandKindsMidPrompt.join(",")}`}
-            commands={slashCommands}
-            isLoading={slashCommandsLoading}
-            commandKindsAtPromptStart={trigger.commandKindsAtPromptStart}
-            commandKindsMidPrompt={trigger.commandKindsMidPrompt}
-            triggerChar={trigger.triggerChar}
-          />
-        ))}
+        {!shellCommandState.active && (
+          <>
+            <MentionPlugin projectId={mentionProjectId} featureId={mentionFeatureId} />
+            <ConversationReferencePlugin currentFeatureId={mentionFeatureId} />
+            {promptCommandTriggers(promptCommandPolicy).map((trigger) => (
+              <SlashCommandPlugin
+                key={`${trigger.triggerChar}:${trigger.commandKindsAtPromptStart.join(",")}:${trigger.commandKindsMidPrompt.join(",")}`}
+                commands={slashCommands}
+                isLoading={slashCommandsLoading}
+                commandKindsAtPromptStart={trigger.commandKindsAtPromptStart}
+                commandKindsMidPrompt={trigger.commandKindsMidPrompt}
+                triggerChar={trigger.triggerChar}
+              />
+            ))}
+          </>
+        )}
         <KeyboardShortcutsPlugin
           onEnterSend={onEnterSend}
           onArrowUp={onArrowUp}
           onArrowDown={onArrowDown}
+          shellCommandsEnabled={promptCommandPolicy.userShell}
         />
-        <ImagePastePlugin onPasteImages={onPasteImages} />
+        {!shellCommandState.active && <ImagePastePlugin onPasteImages={onPasteImages} />}
       </>
     );
   },
@@ -197,17 +271,20 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
     // no-op — callers use `setText()` via the imperative handle to update the
     // editor at runtime (e.g. draft restore, history navigation).
     const initialTextRef = useRef(props.initialText);
+    const initialShellCommandsEnabledRef = useRef(
+      props.promptCommandPolicy?.userShell ?? DEFAULT_PROMPT_COMMAND_POLICY.userShell,
+    );
     const initialConfig = useMemo(
       () => ({
         namespace: "PromptEditor",
         theme: { paragraph: "m-0 leading-[22px]" },
-        nodes: [MentionNode, SlashCommandNode, ConversationReferenceNode],
+        nodes: [MentionNode, SlashCommandNode, ConversationReferenceNode, ShellCommandPrefixNode],
         onError(error: Error) {
           toast.error(`Editor error: ${error.message}`);
         },
         editorState: initialTextRef.current
           ? () => {
-              initializeEditorText(initialTextRef.current!);
+              initializeEditorText(initialTextRef.current!, initialShellCommandsEnabledRef.current);
             }
           : undefined,
       }),

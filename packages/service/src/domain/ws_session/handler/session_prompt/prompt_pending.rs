@@ -1,7 +1,7 @@
 mod active_session;
 mod delivery_lifecycle;
 mod runtime_registration;
-use super::super::{SdkSessions, SessionConfig, WsSender};
+use super::super::{send_error, SdkSessions, SessionConfig, WsSender};
 use super::bridge::{PermissionResponse, WsBridgeCanUseTool};
 use super::content::{
     build_content_value_for_provider, build_persist_content, expand_prompt_for_provider,
@@ -14,6 +14,7 @@ use super::prompt_status::{
     mark_agent_running, persist_and_publish_prompt, PromptPersistenceOutcome,
 };
 use super::prompt_worktree::prepare_branch_provisioning;
+use super::user_shell_context::{claim_pending_user_shell_context, PendingUserShellContext};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeSpawnConfig};
 use crate::domain::agents::runtime_adapter;
@@ -130,6 +131,41 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
         return reported_failure(internal_replay, "failed to attach MCP servers");
     }
     validate_resume_id(adapter, &mut context);
+    let shell_delivery_id = context
+        .payload
+        .message_uuid
+        .as_deref()
+        .unwrap_or(&context.envelope_id);
+    let user_shell_context = match claim_pending_user_shell_context(
+        &context.app_state.write_pool,
+        context.db_session_id,
+        shell_delivery_id,
+    )
+    .await
+    {
+        Ok(shell_context) => shell_context,
+        Err(error) => {
+            delivery_lifecycle::fail_pending_receipt(
+                &context,
+                receipt_message_uuid.as_deref(),
+                dispatch_claim.as_ref(),
+                &error,
+            )
+            .await;
+            persist_pause_and_send_session_error(
+                &context.app_state.write_pool,
+                &context.app_state.session_status_tx,
+                &context.sender,
+                &context.envelope_id,
+                context.feature_id,
+                context.db_session_id,
+                "USER_SHELL_CONTEXT_ERROR",
+                &error,
+            )
+            .await;
+            return reported_failure(context.internal_replay, &error);
+        }
+    };
     spawn_runtime(
         context,
         adapter,
@@ -137,6 +173,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
         receipt_message_uuid,
         dispatch_claim,
         conversation_references,
+        user_shell_context,
     )
     .await
 }
@@ -313,6 +350,7 @@ async fn spawn_runtime(
     receipt_message_uuid: Option<String>,
     dispatch_claim: Option<(i64, String)>,
     conversation_references: Vec<super::conversation_references::ResolvedConversationReference>,
+    user_shell_context: PendingUserShellContext,
 ) -> Result<(), String> {
     info!(
         context.db_session_id,
@@ -329,11 +367,50 @@ async fn spawn_runtime(
     // Expand Cadencr prompt directives only for the provider while keeping the
     // concise command and conversation-reference tokens persisted.
     let prompt_text = expand_prompt_for_provider(&context.payload.text, &conversation_references);
+    let prompt_text = match user_shell_context.append_to_prompt(prompt_text) {
+        Ok(prompt) => prompt,
+        Err(error) => {
+            let _ = user_shell_context
+                .release(&context.app_state.write_pool)
+                .await;
+            delivery_lifecycle::fail_pending_receipt(
+                &context,
+                receipt_message_uuid.as_deref(),
+                dispatch_claim.as_ref(),
+                &error,
+            )
+            .await;
+            persist_pause_and_send_session_error(
+                &context.app_state.write_pool,
+                &context.app_state.session_status_tx,
+                &context.sender,
+                &context.envelope_id,
+                context.feature_id,
+                context.db_session_id,
+                "USER_SHELL_CONTEXT_ERROR",
+                &error,
+            )
+            .await;
+            return reported_failure(context.internal_replay, &error);
+        }
+    };
     let content_value =
         build_content_value_for_provider(&context.provider_id, &prompt_text, &attachments);
     let options = std::mem::take(&mut context.options);
     match adapter.spawn(content_value, options).await {
         Ok(runtime_session) => {
+            if let Err(error) = user_shell_context
+                .mark_delivered(&context.app_state.write_pool)
+                .await
+            {
+                error!(context.db_session_id, %error, "failed to mark user shell context delivered");
+                send_error(
+                    &context.sender,
+                    &context.envelope_id,
+                    "USER_SHELL_CONTEXT_STATE_ERROR",
+                    &error,
+                );
+            }
             delivery_lifecycle::mark_pending_dispatch_succeeded(&context, dispatch_claim.as_ref())
                 .await;
             if let Some(message_uuid) = receipt_message_uuid.as_deref() {
@@ -353,6 +430,12 @@ async fn spawn_runtime(
         }
         Err(error) => {
             let message = error.to_string();
+            if let Err(release_error) = user_shell_context
+                .release(&context.app_state.write_pool)
+                .await
+            {
+                error!(context.db_session_id, error = %release_error, "failed to release user shell context claim");
+            }
             let internal_replay = context.internal_replay;
             delivery_lifecycle::fail_pending_receipt(
                 &context,
