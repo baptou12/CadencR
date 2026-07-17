@@ -80,19 +80,20 @@ impl CursorModelConfigState {
         }
     }
 
-    pub(super) fn resolve(&self, model: &str) -> (String, Vec<(String, String)>) {
+    pub(super) fn model_config_value(&self, model: &str) -> String {
         let parts = parse_catalog_model(model);
-        (
-            self.model_config_value(model, &parts),
-            self.companions(&parts),
-        )
+        self.model_config_value_for_parts(model, &parts)
+    }
+
+    pub(super) fn companions(&self, model: &str) -> Vec<(String, String)> {
+        self.companions_for_parts(&parse_catalog_model(model))
     }
 
     pub(super) fn thinking_effort_config_id(&self) -> Option<String> {
         self.thought_level_config_id.clone()
     }
 
-    fn model_config_value(&self, model: &str, parts: &CatalogModelParts) -> String {
+    fn model_config_value_for_parts(&self, model: &str, parts: &CatalogModelParts) -> String {
         let candidates = [
             normalized_model_ref(&parts.base),
             normalized_model_ref(model),
@@ -109,7 +110,7 @@ impl CursorModelConfigState {
         parts.base.clone()
     }
 
-    fn companions(&self, parts: &CatalogModelParts) -> Vec<(String, String)> {
+    fn companions_for_parts(&self, parts: &CatalogModelParts) -> Vec<(String, String)> {
         let mut companions = Vec::new();
         if self.has_fast_option {
             let fast = parts.fast.unwrap_or(false);
@@ -342,20 +343,26 @@ mod tests {
         .category(SessionConfigOptionCategory::ThoughtLevel);
         state.observe(&[model, fast, effort]);
 
-        assert_eq!(state.resolve("auto").0, "default");
-        assert_eq!(state.resolve("composer-2.5").0, "composer-2.5");
-        assert_eq!(state.resolve("composer-2.5-fast").0, "composer-2.5");
-        assert_eq!(state.resolve("cursor-grok-4.5-high-fast").0, "grok-4.5");
+        assert_eq!(state.model_config_value("auto"), "default");
+        assert_eq!(state.model_config_value("composer-2.5"), "composer-2.5");
         assert_eq!(
-            state.resolve("composer-2.5").1,
+            state.model_config_value("composer-2.5-fast"),
+            "composer-2.5"
+        );
+        assert_eq!(
+            state.model_config_value("cursor-grok-4.5-high-fast"),
+            "grok-4.5"
+        );
+        assert_eq!(
+            state.companions("composer-2.5"),
             vec![("fast".to_string(), "false".to_string())]
         );
         assert_eq!(
-            state.resolve("composer-2.5-fast").1,
+            state.companions("composer-2.5-fast"),
             vec![("fast".to_string(), "true".to_string())]
         );
         assert_eq!(
-            state.resolve("cursor-grok-4.5-high").1,
+            state.companions("cursor-grok-4.5-high"),
             vec![
                 ("fast".to_string(), "false".to_string()),
                 ("effort".to_string(), "high".to_string()),
@@ -378,7 +385,7 @@ mod tests {
         )
         .category(SessionConfigOptionCategory::Model);
         state.observe(&[model]);
-        assert_eq!(state.resolve("composer-2.5").0, "composer-2.5");
+        assert_eq!(state.model_config_value("composer-2.5"), "composer-2.5");
 
         let fast = SessionConfigOption::select(
             "fast",
@@ -391,9 +398,9 @@ mod tests {
         )
         .category(SessionConfigOptionCategory::ModelConfig);
         state.observe(&[fast]);
-        assert_eq!(state.resolve("composer-2.5").0, "composer-2.5");
+        assert_eq!(state.model_config_value("composer-2.5"), "composer-2.5");
         assert_eq!(
-            state.resolve("composer-2.5").1,
+            state.companions("composer-2.5"),
             vec![("fast".to_string(), "false".to_string())]
         );
     }
