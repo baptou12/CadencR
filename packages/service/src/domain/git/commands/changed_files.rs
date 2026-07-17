@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::domain::git::models::{ChangedFile, FileStageState};
+use crate::domain::git::porcelain::{attach_stats, parse_porcelain_v2_entries, PorcelainFileEntry};
 use crate::error::AppError;
-
-use super::util::run_git_quiet;
+use crate::shared::git_cli::run_git_background;
 
 /// Get list of changed files with per-file stats.
 ///
@@ -37,10 +37,10 @@ pub async fn get_changed_files(
 
     let name_status_args = ["diff", "--name-status", diff_arg.as_str()];
     let numstat_args = ["diff", "--numstat", diff_arg.as_str()];
-    let (name_status, numstat) = tokio::join!(
-        run_git_quiet(&name_status_args, worktree_path),
-        run_git_quiet(&numstat_args, worktree_path),
-    );
+    let (name_status, numstat) = tokio::try_join!(
+        run_git_background(&name_status_args, worktree_path),
+        run_git_background(&numstat_args, worktree_path),
+    )?;
 
     let name_status = name_status.trim();
     if name_status.is_empty() {
@@ -74,10 +74,10 @@ async fn get_commit_changed_files(
         sha,
     ];
     let numstat_args = ["diff-tree", "--no-commit-id", "-M", "--numstat", "-r", sha];
-    let (name_status, numstat) = tokio::join!(
-        run_git_quiet(&name_status_args, worktree_path),
-        run_git_quiet(&numstat_args, worktree_path),
-    );
+    let (name_status, numstat) = tokio::try_join!(
+        run_git_background(&name_status_args, worktree_path),
+        run_git_background(&numstat_args, worktree_path),
+    )?;
 
     let name_status = name_status.trim();
     if name_status.is_empty() {
@@ -93,80 +93,43 @@ async fn get_commit_changed_files(
 
 /// Combine staged, unstaged and untracked into a single list of `ChangedFile`.
 async fn get_uncommitted_changed_files(worktree_path: &Path) -> Result<Vec<ChangedFile>, AppError> {
-    let (staged_ns, staged_num, unstaged_ns, unstaged_num, untracked) = tokio::join!(
-        run_git_quiet(&["diff", "--cached", "--name-status"], worktree_path),
-        run_git_quiet(&["diff", "--cached", "--numstat"], worktree_path),
-        run_git_quiet(&["diff", "--name-status"], worktree_path),
-        run_git_quiet(&["diff", "--numstat"], worktree_path),
-        run_git_quiet(
-            &["ls-files", "--others", "--exclude-standard"],
-            worktree_path
-        ),
-    );
-
-    let staged = parse_name_status_with_stats(
-        staged_ns.trim(),
-        &parse_numstat(&staged_num),
-        FileStageState::Staged,
-    );
-    let unstaged = parse_name_status_with_stats(
-        unstaged_ns.trim(),
-        &parse_numstat(&unstaged_num),
-        FileStageState::Unstaged,
-    );
-
-    // Merge: keyed by `file` (post-rename for `R*` / `C*` entries). When the
-    // same path has both staged and unstaged changes we keep one entry,
-    // mark `is_staged = true`, and sum the stats so the UI reports the full
-    // delta the user is about to review.
-    let mut merged: std::collections::BTreeMap<String, ChangedFile> =
-        std::collections::BTreeMap::new();
-    for cf in staged.into_iter().chain(unstaged.into_iter()) {
-        merge_changed_file(&mut merged, cf);
-    }
-
-    let mut out: Vec<ChangedFile> = merged.into_values().collect();
-
-    // Untracked files are synthesized as new-file entries. We don't ask git
-    // for stats here (numstat doesn't cover untracked); leave (0, 0) — the
-    // diff endpoint computes the real line count when the user opens it.
-    for path in untracked.lines().filter(|l| !l.is_empty()) {
-        out.push(ChangedFile {
-            file: path.to_string(),
-            status: "A".to_string(),
-            old_file: None,
-            additions: 0,
-            deletions: 0,
-            is_staged: false,
-            stage_state: FileStageState::Untracked,
-            conflict_kind: None,
-        });
-    }
-
-    Ok(out)
+    Ok(get_uncommitted_entries(worktree_path)
+        .await?
+        .into_iter()
+        .map(|entry| ChangedFile {
+            file: entry.path,
+            status: entry.status_code,
+            old_file: entry.old_path,
+            additions: entry.additions,
+            deletions: entry.deletions,
+            is_staged: entry.stage_state.is_staged(),
+            stage_state: entry.stage_state,
+            conflict_kind: entry.conflict_kind,
+        })
+        .collect())
 }
 
-fn merge_changed_file(out: &mut std::collections::BTreeMap<String, ChangedFile>, cf: ChangedFile) {
-    match out.get_mut(&cf.file) {
-        Some(existing) => {
-            existing.additions += cf.additions;
-            existing.deletions += cf.deletions;
-            existing.is_staged = existing.is_staged || cf.is_staged;
-            existing.stage_state = existing.stage_state.merge(cf.stage_state);
-            // Prefer the more-informative status (rename/copy carry the
-            // old_file). If either side has `R*`/`C*`, keep it.
-            if existing.old_file.is_none() && cf.old_file.is_some() {
-                existing.status = cf.status;
-                existing.old_file = cf.old_file;
-            }
-        }
-        None => {
-            out.insert(cf.file.clone(), cf);
-        }
-    }
+pub(crate) async fn get_uncommitted_entries(
+    worktree_path: &Path,
+) -> Result<Vec<PorcelainFileEntry>, AppError> {
+    let (porcelain, staged_num, unstaged_num) = tokio::try_join!(
+        run_git_background(&["status", "--porcelain=v2", "-z"], worktree_path),
+        run_git_background(&["diff", "--cached", "--numstat", "-z"], worktree_path),
+        run_git_background(&["diff", "--numstat", "-z"], worktree_path),
+    )?;
+    let staged_stats = parse_numstat(&staged_num);
+    let unstaged_stats = parse_numstat(&unstaged_num);
+
+    Ok(parse_porcelain_v2_entries(&porcelain)
+        .into_iter()
+        .map(|entry| attach_stats(entry, &staged_stats, &unstaged_stats))
+        .collect())
 }
 
-pub fn parse_numstat(numstat: &str) -> HashMap<String, (i32, i32)> {
+pub(crate) fn parse_numstat(numstat: &str) -> HashMap<String, (i32, i32)> {
+    if numstat.contains('\0') {
+        return parse_numstat_z(numstat);
+    }
     let mut stat_map: HashMap<String, (i32, i32)> = HashMap::new();
     for line in numstat.trim().lines().filter(|l| !l.is_empty()) {
         let parts: Vec<&str> = line.splitn(3, '\t').collect();
@@ -185,6 +148,41 @@ pub fn parse_numstat(numstat: &str) -> HashMap<String, (i32, i32)> {
         }
     }
     stat_map
+}
+
+fn parse_numstat_z(numstat: &str) -> HashMap<String, (i32, i32)> {
+    let mut stat_map = HashMap::new();
+    let mut records = numstat.split_terminator('\0');
+    while let Some(record) = records.next() {
+        let mut fields = record.splitn(3, '\t');
+        let Some(additions) = fields.next().and_then(parse_numstat_value) else {
+            continue;
+        };
+        let Some(deletions) = fields.next().and_then(parse_numstat_value) else {
+            continue;
+        };
+        let Some(path) = fields.next() else {
+            continue;
+        };
+        let path = if path.is_empty() {
+            let _old_path = records.next();
+            records.next().unwrap_or_default()
+        } else {
+            path
+        };
+        if !path.is_empty() {
+            stat_map.insert(path.to_string(), (additions, deletions));
+        }
+    }
+    stat_map
+}
+
+fn parse_numstat_value(value: &str) -> Option<i32> {
+    if value == "-" {
+        Some(0)
+    } else {
+        value.parse().ok()
+    }
 }
 
 fn parse_name_status_with_stats(
@@ -272,78 +270,133 @@ mod tests {
     }
 
     #[test]
-    fn merge_changed_file_combines_staged_and_unstaged() {
-        let mut out: std::collections::BTreeMap<String, ChangedFile> =
-            std::collections::BTreeMap::new();
-        merge_changed_file(
-            &mut out,
-            ChangedFile {
-                file: "x.rs".into(),
-                status: "M".into(),
-                old_file: None,
-                additions: 2,
-                deletions: 1,
-                is_staged: true,
-                stage_state: FileStageState::Staged,
-                conflict_kind: None,
-            },
-        );
-        merge_changed_file(
-            &mut out,
-            ChangedFile {
-                file: "x.rs".into(),
-                status: "M".into(),
-                old_file: None,
-                additions: 4,
-                deletions: 0,
-                is_staged: false,
-                stage_state: FileStageState::Unstaged,
-                conflict_kind: None,
-            },
-        );
-        assert_eq!(out.len(), 1);
-        let merged = out.get("x.rs").unwrap();
-        assert!(merged.is_staged, "staged side wins the OR");
-        assert_eq!(merged.stage_state, FileStageState::Both);
-        assert_eq!(merged.additions, 6);
-        assert_eq!(merged.deletions, 1);
+    fn parse_numstat_handles_nul_delimited_rename_paths() {
+        let stats = parse_numstat("3\t1\t\0src/old.rs\0src/new.rs\0");
+        assert_eq!(stats.get("src/new.rs"), Some(&(3, 1)));
     }
 
-    #[test]
-    fn merge_changed_file_prefers_rename_metadata() {
-        // If one side recorded the rename and the other didn't, keep the
-        // rename-aware status + old_file.
-        let mut out: std::collections::BTreeMap<String, ChangedFile> =
-            std::collections::BTreeMap::new();
-        merge_changed_file(
-            &mut out,
-            ChangedFile {
-                file: "new.rs".into(),
-                status: "M".into(),
-                old_file: None,
-                additions: 0,
-                deletions: 0,
-                is_staged: false,
-                stage_state: FileStageState::Unstaged,
-                conflict_kind: None,
-            },
+    fn git(repo: &Path, args: &[&str]) {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("HOME", repo)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
         );
-        merge_changed_file(
-            &mut out,
-            ChangedFile {
-                file: "new.rs".into(),
-                status: "R100".into(),
-                old_file: Some("old.rs".into()),
-                additions: 0,
-                deletions: 0,
-                is_staged: true,
-                stage_state: FileStageState::Staged,
-                conflict_kind: None,
-            },
+    }
+
+    fn init(repo: &Path) {
+        for args in [
+            &["init", "-q", "-b", "main"][..],
+            &["config", "user.email", "test@example.com"],
+            &["config", "user.name", "Test"],
+            &["config", "commit.gpgsign", "false"],
+        ] {
+            git(repo, args);
+        }
+        for path in ["staged", "unstaged", "both", "old", "deleted"] {
+            std::fs::write(repo.join(path), b"base\n").unwrap();
+        }
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-q", "-m", "seed"]);
+    }
+
+    fn find<'a>(files: &'a [ChangedFile], path: &str) -> &'a ChangedFile {
+        files.iter().find(|file| file.file == path).unwrap()
+    }
+
+    #[tokio::test]
+    async fn real_worktree_rows_share_canonical_state_and_rename_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path();
+        init(repo);
+        std::fs::write(repo.join("staged"), b"staged\n").unwrap();
+        git(repo, &["add", "staged"]);
+        std::fs::write(repo.join("unstaged"), b"unstaged\n").unwrap();
+        std::fs::write(repo.join("both"), b"index\n").unwrap();
+        git(repo, &["add", "both"]);
+        std::fs::write(repo.join("both"), b"worktree\n").unwrap();
+        git(repo, &["mv", "old", "new"]);
+        std::fs::remove_file(repo.join("deleted")).unwrap();
+        std::fs::write(repo.join("untracked"), b"new\n").unwrap();
+
+        let files = get_uncommitted_changed_files(repo).await.unwrap();
+
+        assert_eq!(find(&files, "staged").stage_state, FileStageState::Staged);
+        assert_eq!(
+            find(&files, "unstaged").stage_state,
+            FileStageState::Unstaged
         );
-        let merged = out.get("new.rs").unwrap();
-        assert_eq!(merged.status, "R100");
-        assert_eq!(merged.old_file.as_deref(), Some("old.rs"));
-        assert!(merged.is_staged);
+        assert_eq!(find(&files, "both").stage_state, FileStageState::Both);
+        assert_eq!(
+            find(&files, "untracked").stage_state,
+            FileStageState::Untracked
+        );
+        assert_eq!(find(&files, "deleted").status, "D");
+        let renamed = find(&files, "new");
+        assert_eq!(renamed.old_file.as_deref(), Some("old"));
+        assert!(renamed.status.starts_with('R'));
+    }
+
+    #[tokio::test]
+    async fn unmerged_path_has_one_row_and_non_duplicated_stats() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path();
+        init(repo);
+        git(repo, &["checkout", "-q", "-b", "other"]);
+        std::fs::write(repo.join("both"), b"other\n").unwrap();
+        git(repo, &["commit", "-qam", "other"]);
+        git(repo, &["checkout", "-q", "main"]);
+        std::fs::write(repo.join("both"), b"main\n").unwrap();
+        git(repo, &["commit", "-qam", "main"]);
+        let merge = std::process::Command::new("git")
+            .args(["merge", "other"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        assert!(!merge.status.success());
+
+        let staged = run_git_background(&["diff", "--cached", "--numstat"], repo)
+            .await
+            .unwrap();
+        let unstaged = run_git_background(&["diff", "--numstat"], repo)
+            .await
+            .unwrap();
+        let staged_stats = parse_numstat(&staged).get("both").copied();
+        let unstaged_stats = parse_numstat(&unstaged).get("both").copied();
+        let expected_stats = staged_stats.or(unstaged_stats).unwrap_or_default();
+        let files = get_uncommitted_changed_files(repo).await.unwrap();
+        let conflicts: Vec<_> = files.iter().filter(|file| file.file == "both").collect();
+
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].stage_state, FileStageState::Conflicted);
+        assert_eq!(conflicts[0].additions, expected_stats.0);
+        assert_eq!(conflicts[0].deletions, expected_stats.1);
+    }
+
+    #[tokio::test]
+    async fn nested_rename_uses_machine_readable_numstat_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path();
+        init(repo);
+        std::fs::create_dir(repo.join("src")).unwrap();
+        std::fs::write(repo.join("src/old.rs"), b"one\ntwo\nthree\n").unwrap();
+        git(repo, &["add", "src/old.rs"]);
+        git(repo, &["commit", "-q", "-m", "nested"]);
+        git(repo, &["mv", "src/old.rs", "src/new.rs"]);
+        std::fs::write(repo.join("src/new.rs"), b"one\ntwo\nthree\nfour\n").unwrap();
+
+        let files = get_uncommitted_changed_files(repo).await.unwrap();
+        let renamed = find(&files, "src/new.rs");
+
+        assert_eq!(renamed.old_file.as_deref(), Some("src/old.rs"));
+        assert_eq!(renamed.additions, 1);
+        assert_eq!(renamed.deletions, 0);
     }
 }

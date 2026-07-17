@@ -74,6 +74,33 @@ pub async fn run_git_background(args: &[&str], cwd: &Path) -> Result<String, App
     run_raw(&prepend_no_optional_locks(args), cwd).await
 }
 
+/// Resolve a ref without optional locks while distinguishing an absent ref
+/// (`rev-parse --verify --quiet` exits 1 with no stderr) from an actual Git or
+/// spawn failure. This avoids silently treating repository errors as normal
+/// unborn/missing-ref state.
+pub async fn git_ref_resolves_background(reference: &str, cwd: &Path) -> Result<bool, AppError> {
+    validate_positionals(&[reference])?;
+    let args = prepend_no_optional_locks(&["rev-parse", "--verify", "--quiet", reference]);
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|e| AppError::GitCommandError(format!("Failed to spawn git: {e}")))?;
+    if output.status.success() {
+        return Ok(true);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if output.status.code() == Some(1) && stderr.trim().is_empty() {
+        return Ok(false);
+    }
+    Err(AppError::GitCommandError(format!(
+        "git {} failed: {}",
+        args.join(" "),
+        sanitize_git_stderr(stderr.trim())
+    )))
+}
+
 /// Build the arg list `["--no-optional-locks", ...args]`. Extracted from
 /// [`run_git_background`] so the prefix injection can be unit-tested
 /// without spinning up a `git` child — the integration race the wrapper
@@ -341,6 +368,26 @@ mod tests {
         // must still be a well-formed top-level git invocation.
         let prefixed = prepend_no_optional_locks(&[]);
         assert_eq!(prefixed, vec!["--no-optional-locks"]);
+    }
+
+    #[tokio::test]
+    async fn ref_probe_distinguishes_missing_ref_from_repository_error() {
+        let repo = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(repo.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(!git_ref_resolves_background("HEAD", repo.path())
+            .await
+            .unwrap());
+
+        let not_repo = tempfile::tempdir().unwrap();
+        let error = git_ref_resolves_background("HEAD", not_repo.path())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::GitCommandError(_)), "{error:?}");
     }
 
     // End-to-end coverage (real git binary, real repo) for the

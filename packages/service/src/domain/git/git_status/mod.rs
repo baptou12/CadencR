@@ -29,10 +29,12 @@ use super::models::GitOperationKind;
 ///   what a first `git push -u origin HEAD` would publish).
 /// - `behind_remote` comes from `branch.ab` and is `0` when no upstream is
 ///   configured (we can't be "behind" something that doesn't exist).
-/// - `ahead_of_target` is `git rev-list --count {target}..HEAD` using the
+/// - `ahead_of_target` is `git rev-list --count {target}..HEAD` and
+///   `behind_target` is `git rev-list --count HEAD..{target}`, using the
 ///   target ref **verbatim** as picked by the user — local `main` and
 ///   remote-tracking `origin/main` are different inputs and produce different
-///   counts on purpose. Returns `0` if the ref doesn't resolve.
+///   counts on purpose. Both are `0` if the ref doesn't resolve, while
+///   `target_resolved` distinguishes that from genuine zero divergence.
 /// - `host` / `compare_url` / `action_label` are populated only when a remote
 ///   exists. The frontend disables the open-PR button when `compare_url` is
 ///   `None`.
@@ -55,7 +57,6 @@ pub struct GitStatusSnapshot {
     pub behind_remote: u32,
     pub ahead_of_target: u32,
     /// Commits reachable from the configured target but not from `HEAD`.
-    /// Phase 1 status computation will populate this frozen contract field.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub behind_target: u32,
     /// Whether the configured target resolved to a commit. This is distinct

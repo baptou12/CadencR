@@ -19,6 +19,8 @@ mod changed_files;
 mod diff;
 mod files;
 mod graph;
+#[allow(dead_code)] // Route integration is owned by the Phase 1 API barrier.
+mod index;
 mod log;
 mod merge;
 mod merge_ops;
@@ -33,10 +35,12 @@ mod worktree_removal;
 
 pub use blob_shas::get_file_blob_shas;
 pub use branch_name::build_branch_name;
-pub use changed_files::{get_changed_files, parse_numstat};
+pub use changed_files::get_changed_files;
+pub(crate) use changed_files::get_uncommitted_entries;
 pub use diff::{get_commit_diff, get_diff, get_file_diff, get_stats};
 pub use files::{get_file_bytes, get_file_content, get_file_content_batch, list_files};
 pub use graph::get_commit_graph;
+pub use index::{reset_file, stage_file};
 pub use log::{get_commit_log, get_recent_commits};
 pub use merge::{get_current_branch, get_original_branch};
 pub use merge_ops::{check_merge_conflicts, delete_branch, is_branch_merged, parse_conflict_files};

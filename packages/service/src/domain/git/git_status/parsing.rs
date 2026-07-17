@@ -3,6 +3,11 @@
 //! contained so the per-line decoding can be unit-tested without spawning
 //! git, and so the parent file stays under the 400-line cap.
 
+use std::collections::HashSet;
+
+use crate::domain::git::models::FileStageState;
+use crate::domain::git::porcelain::{decode_porcelain_v2_record, visit_porcelain_v2_records};
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct ParsedPorcelain {
     pub(super) current_branch: String,
@@ -19,6 +24,7 @@ pub(super) struct ParsedPorcelain {
     pub(super) staged_count: u32,
     pub(super) unstaged_count: u32,
     pub(super) untracked_count: u32,
+    pub(super) conflict_count: u32,
 }
 
 /// Parse `git status --porcelain=v2 -b --ahead-behind` output.
@@ -30,18 +36,19 @@ pub(super) struct ParsedPorcelain {
 pub(super) fn parse_porcelain_v2(output: &str) -> ParsedPorcelain {
     let mut p = ParsedPorcelain::default();
 
-    for line in output.lines() {
-        if let Some(rest) = line.strip_prefix("# branch.head ") {
+    let mut conflicts = HashSet::new();
+    visit_porcelain_v2_records(output, |record, nul_old_path| {
+        if let Some(rest) = record.strip_prefix("# branch.head ") {
             p.current_branch = rest.trim().to_string();
             // A detached HEAD shows up as `(detached)` — keep it verbatim so
             // the UI can display something sensible without inventing a name.
-        } else if line.starts_with("# branch.upstream ") {
+        } else if record.starts_with("# branch.upstream ") {
             // Presence alone is the signal — we don't need the ref name here,
             // only the boolean "is an upstream configured?". The count of
             // unpushed commits in the no-upstream case is computed by
             // `count_unpushed` via `git rev-list --not --remotes`.
             p.has_upstream = true;
-        } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
+        } else if let Some(rest) = record.strip_prefix("# branch.ab ") {
             // Format: `+<ahead> -<behind>`
             let mut parts = rest.split_whitespace();
             if let Some(a) = parts.next() {
@@ -50,34 +57,27 @@ pub(super) fn parse_porcelain_v2(output: &str) -> ParsedPorcelain {
             if let Some(b) = parts.next() {
                 p.behind = b.trim_start_matches('-').parse().unwrap_or(0);
             }
-        } else if line.starts_with("1 ") || line.starts_with("2 ") {
-            count_changed_entry(line, &mut p);
-        } else if line.starts_with("? ") {
-            p.untracked_count += 1;
-        } else if line.starts_with("u ") {
-            // Unmerged entries have both sides "in conflict" — count as both
-            // staged and unstaged so the UI surfaces the file regardless of
-            // which view is active.
-            p.staged_count += 1;
-            p.unstaged_count += 1;
+        } else if let Some(entry) = decode_porcelain_v2_record(record, nul_old_path) {
+            match entry.stage_state {
+                FileStageState::Staged => p.staged_count += 1,
+                FileStageState::Unstaged => p.unstaged_count += 1,
+                FileStageState::Both => {
+                    p.staged_count += 1;
+                    p.unstaged_count += 1;
+                }
+                FileStageState::Untracked => p.untracked_count += 1,
+                FileStageState::Conflicted => {
+                    p.staged_count += 1;
+                    p.unstaged_count += 1;
+                    conflicts.insert(entry.path);
+                }
+                FileStageState::NotApplicable => {}
+            }
         }
-    }
+    });
+    p.conflict_count = u32::try_from(conflicts.len()).unwrap_or(u32::MAX);
 
     p
-}
-
-/// A v2 entry line looks like `1 XY ...` (or `2 XY ...` for renames).
-/// In v2 the unchanged side is `.`, not a space — anything else counts.
-fn count_changed_entry(line: &str, p: &mut ParsedPorcelain) {
-    let mut chars = line.chars().skip(2); // skip `1 ` / `2 `
-    let x = chars.next().unwrap_or('.');
-    let y = chars.next().unwrap_or('.');
-    if x != '.' {
-        p.staged_count += 1;
-    }
-    if y != '.' {
-        p.unstaged_count += 1;
-    }
 }
 
 #[cfg(test)]
@@ -163,10 +163,11 @@ mod tests {
 
     #[test]
     fn parses_unmerged_as_both_staged_and_unstaged() {
-        let out = "# branch.head feat\n# branch.ab +0 -0\nu UU N... 100644 100644 100644 100644 a b c d conflict.rs\n";
+        let out = "# branch.head feat\n# branch.ab +0 -0\nu UU N... 100644 100644 100644 100644 a b c conflict.rs\nu UU N... 100644 100644 100644 100644 a b c conflict.rs\n";
         let p = parse_porcelain_v2(out);
-        assert_eq!(p.staged_count, 1);
-        assert_eq!(p.unstaged_count, 1);
+        assert_eq!(p.staged_count, 2);
+        assert_eq!(p.unstaged_count, 2);
+        assert_eq!(p.conflict_count, 1);
     }
 
     #[test]
