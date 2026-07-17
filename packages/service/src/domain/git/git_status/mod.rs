@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::host::GitHost;
+use super::models::GitOperationKind;
 
 /// One-shot snapshot of the worktree's git state. Field semantics:
 ///
@@ -53,6 +54,20 @@ pub struct GitStatusSnapshot {
     pub ahead_of_remote: u32,
     pub behind_remote: u32,
     pub ahead_of_target: u32,
+    /// Commits reachable from the configured target but not from `HEAD`.
+    /// Phase 1 status computation will populate this frozen contract field.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub behind_target: u32,
+    /// Whether the configured target resolved to a commit. This is distinct
+    /// from a zero divergence count.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub target_resolved: bool,
+    /// Number of unique unmerged paths in the current worktree.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub conflict_count: u32,
+    /// Merge or rebase state retained for conflict recovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<GitOperationKind>,
     pub has_remote: bool,
     pub host: Option<GitHost>,
     pub compare_url: Option<String>,
@@ -69,4 +84,12 @@ pub struct GitStatusSnapshot {
 pub struct SharedFeatureRef {
     pub feature_id: i64,
     pub title: String,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }

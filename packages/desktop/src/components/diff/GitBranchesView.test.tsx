@@ -19,7 +19,7 @@ vi.mock("./GitGraphView", () => ({
   }) => (
     <div>
       <span>
-        Graph for {branch.is_local ? "local" : "remote"} {branch.name}
+        Commits for {branch.is_local ? "local" : "remote"} {branch.name}
       </span>
       <button type="button" onClick={onBackToBranches}>
         Back to branches
@@ -59,7 +59,7 @@ beforeEach(() => {
 });
 
 describe("GitBranchesView", () => {
-  it("lists every branch and opens the selected branch graph", () => {
+  it("lists every branch and opens the selected branch commits", () => {
     render(<GitBranchesView featureId={7} projectId={3} />);
 
     expect(mockUseListBranches).toHaveBeenCalledWith({ project_id: 3 });
@@ -67,15 +67,11 @@ describe("GitBranchesView", () => {
     expect(screen.getByText("current")).toBeInTheDocument();
     expect(screen.getByText("remote")).toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open commit graph for remote origin/main" }),
-    );
-    expect(screen.getByText("Graph for remote origin/main")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open commits for remote origin/main" }));
+    expect(screen.getByText("Commits for remote origin/main")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to branches" }));
-    expect(
-      screen.getByRole("button", { name: "Open commit graph for local main" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open commits for local main" })).toBeInTheDocument();
   });
 
   it("filters the virtualized list by branch name", () => {
@@ -87,10 +83,10 @@ describe("GitBranchesView", () => {
 
     expect(screen.getByText("1 branch")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Open commit graph for local feature/branches" }),
+      screen.queryByRole("button", { name: "Open commits for local feature/branches" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Open commit graph for remote origin/main" }),
+      screen.getByRole("button", { name: "Open commits for remote origin/main" }),
     ).toBeInTheDocument();
   });
 
@@ -107,12 +103,10 @@ describe("GitBranchesView", () => {
     render(<GitBranchesView featureId={7} projectId={3} />);
 
     expect(
-      screen.getByRole("button", { name: "Open commit graph for local origin/main" }),
+      screen.getByRole("button", { name: "Open commits for local origin/main" }),
     ).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open commit graph for remote origin/main" }),
-    );
-    expect(screen.getByText("Graph for remote origin/main")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open commits for remote origin/main" }));
+    expect(screen.getByText("Commits for remote origin/main")).toBeInTheDocument();
   });
 
   it("shows visible loading and error states", () => {

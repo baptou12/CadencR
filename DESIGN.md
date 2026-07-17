@@ -288,11 +288,11 @@ iconography:
 
 ## Brief
 
-**What it is.** Cadencr Desktop is the developer-facing control surface for managing autonomous coding agents across multiple projects and worktrees. It is a single-window, four-pane workspace that lets a human supervise an agent's reasoning (Agent), watch it execute (Terminal), inspect what changed (Git), and verify the result (Editor) — all from one screen, without context-switching.
+**What it is.** Cadencr Desktop is the developer-facing control surface for managing autonomous coding agents across multiple projects and worktrees. It is a single-window, four-pane workspace that lets a human supervise an agent's reasoning (Agent), watch it execute (Terminal), inspect what changed (Git), and verify or make focused corrections to the result (Editor) — all from one screen, without context-switching.
 
 **Who it's for.** Senior individual contributors and tech leads who run multiple parallel agent sessions and need to scrub through reasoning, terminal output, and diffs faster than a chat thread allows. The product assumes the user reads code, knows what a worktree is, and prefers keyboard-driven dense IDEs over chat-style UIs.
 
-**What it is NOT.** It is not a chat app — the agent stream is a transcript artifact, not a conversation surface. It is not a code editor — the Editor pane is a read-side review tool, not a place to write. It is not a generic AI sidebar; it is the primary workspace.
+**What it is NOT.** It is not a chat app — the agent stream is a transcript artifact, not a conversation surface. It is not a general-purpose code authoring IDE: the Editor remains review-first, while permitting focused file edits and conflict resolution when verification reveals work to correct. It is not a generic AI sidebar; it is the primary workspace.
 
 ## Brand identity (validated 2026-07 — "Emerald Reserve")
 
@@ -379,10 +379,11 @@ Three rows: head (file path + +/- stats + Viewed checkbox), body (diff hunks), f
 
 ### EditorPanel (`<window.Panels.EditorPanel/>`)
 
-Two-column grid: 200px file explorer + code area with tab strip and footer. Read-only. Syntax tokens (`tok-kw`, `tok-str`, `tok-type`, `tok-prop`, `tok-comment`, `tok-num`, etc.) map to `--acc-*` accents.
+Review-first two-column grid: 200px file explorer + writable code area with tab strip and footer. The Editor supports focused edits, including resolving Git conflict markers, through the existing save/auto-save and formatting flows. It is not the primary surface for broad code authoring. Syntax tokens (`tok-kw`, `tok-str`, `tok-type`, `tok-prop`, `tok-comment`, `tok-num`, etc.) map to `--acc-*` accents.
 
-- **States:** Explorer item active/dim. Editor tab active.
+- **States:** Explorer item active/dim. Editor tab active. Large files begin behind the existing `Edit anyway` safety gate before becoming writable.
 - **Tokens:** `--code-bg`, `--code-fg`, `--primary` (active explorer item via 28% mix), `--acc-pink`/`--acc-cyan`/`--acc-green`/`--acc-yellow` for syntax.
+- **When to use vs alternative:** Use Editor to inspect agent output, make a bounded correction, or resolve a conflict in the current worktree. Keep broad implementation work in the agent workflow or the user's dedicated external editor so Cadencr's product posture stays review-first.
 
 ### Sidebar (`<window.Sidebar/>`)
 

@@ -88,7 +88,7 @@ export const GitGraphView = memo(function GitGraphView({
       <GitRevisionDiffView
         featureId={featureId}
         revision={openedCommit}
-        backLabel="Graph"
+        backLabel="Commits"
         label={commit?.shortSha ?? openedCommit.slice(0, 7)}
         message={commit?.message}
         onBack={handleCloseCommit}
@@ -199,12 +199,12 @@ const GraphBody = memo(function GraphBody({
   components,
 }: GraphBodyProps): ReactElement {
   if (isLoading && commits.length === 0) {
-    return <GraphMessage variant="loading">Loading commit graph…</GraphMessage>;
+    return <GraphMessage variant="loading">Loading commits…</GraphMessage>;
   }
   if (isError) {
     return (
       <GraphMessage variant="error">
-        {apiErrorMessage(error, "Could not load the commit graph")}
+        {apiErrorMessage(error, "Could not load commits")}
       </GraphMessage>
     );
   }

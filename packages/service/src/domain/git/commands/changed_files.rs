@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::domain::git::models::ChangedFile;
+use crate::domain::git::models::{ChangedFile, FileStageState};
 use crate::error::AppError;
 
 use super::util::run_git_quiet;
@@ -50,7 +50,7 @@ pub async fn get_changed_files(
     Ok(parse_name_status_with_stats(
         name_status,
         &stat_map,
-        /* is_staged */ false,
+        FileStageState::NotApplicable,
     ))
 }
 
@@ -87,7 +87,7 @@ async fn get_commit_changed_files(
     Ok(parse_name_status_with_stats(
         name_status,
         &stat_map,
-        /* is_staged */ false,
+        FileStageState::NotApplicable,
     ))
 }
 
@@ -107,12 +107,12 @@ async fn get_uncommitted_changed_files(worktree_path: &Path) -> Result<Vec<Chang
     let staged = parse_name_status_with_stats(
         staged_ns.trim(),
         &parse_numstat(&staged_num),
-        /* is_staged */ true,
+        FileStageState::Staged,
     );
     let unstaged = parse_name_status_with_stats(
         unstaged_ns.trim(),
         &parse_numstat(&unstaged_num),
-        /* is_staged */ false,
+        FileStageState::Unstaged,
     );
 
     // Merge: keyed by `file` (post-rename for `R*` / `C*` entries). When the
@@ -138,6 +138,8 @@ async fn get_uncommitted_changed_files(worktree_path: &Path) -> Result<Vec<Chang
             additions: 0,
             deletions: 0,
             is_staged: false,
+            stage_state: FileStageState::Untracked,
+            conflict_kind: None,
         });
     }
 
@@ -150,6 +152,7 @@ fn merge_changed_file(out: &mut std::collections::BTreeMap<String, ChangedFile>,
             existing.additions += cf.additions;
             existing.deletions += cf.deletions;
             existing.is_staged = existing.is_staged || cf.is_staged;
+            existing.stage_state = existing.stage_state.merge(cf.stage_state);
             // Prefer the more-informative status (rename/copy carry the
             // old_file). If either side has `R*`/`C*`, keep it.
             if existing.old_file.is_none() && cf.old_file.is_some() {
@@ -187,7 +190,7 @@ pub fn parse_numstat(numstat: &str) -> HashMap<String, (i32, i32)> {
 fn parse_name_status_with_stats(
     name_status: &str,
     stat_map: &HashMap<String, (i32, i32)>,
-    is_staged: bool,
+    stage_state: FileStageState,
 ) -> Vec<ChangedFile> {
     let mut files = vec![];
     for line in name_status.lines().filter(|l| !l.is_empty()) {
@@ -224,7 +227,9 @@ fn parse_name_status_with_stats(
             old_file,
             additions,
             deletions,
-            is_staged,
+            is_staged: stage_state.is_staged(),
+            stage_state,
+            conflict_kind: None,
         });
     }
     files
@@ -238,7 +243,7 @@ mod tests {
     fn parse_name_status_marks_is_staged_flag() {
         let stats: HashMap<String, (i32, i32)> =
             [("a.rs".to_string(), (3, 1))].into_iter().collect();
-        let staged = parse_name_status_with_stats("M\ta.rs\n", &stats, true);
+        let staged = parse_name_status_with_stats("M\ta.rs\n", &stats, FileStageState::Staged);
         assert_eq!(staged.len(), 1);
         assert_eq!(staged[0].file, "a.rs");
         assert_eq!(staged[0].status, "M");
@@ -246,7 +251,7 @@ mod tests {
         assert_eq!(staged[0].additions, 3);
         assert_eq!(staged[0].deletions, 1);
 
-        let unstaged = parse_name_status_with_stats("M\ta.rs\n", &stats, false);
+        let unstaged = parse_name_status_with_stats("M\ta.rs\n", &stats, FileStageState::Unstaged);
         assert!(!unstaged[0].is_staged);
     }
 
@@ -255,7 +260,11 @@ mod tests {
         let stats: HashMap<String, (i32, i32)> = [("old.rs => new.rs".to_string(), (0, 0))]
             .into_iter()
             .collect();
-        let cf = parse_name_status_with_stats("R100\told.rs\tnew.rs\n", &stats, false);
+        let cf = parse_name_status_with_stats(
+            "R100\told.rs\tnew.rs\n",
+            &stats,
+            FileStageState::Unstaged,
+        );
         assert_eq!(cf.len(), 1);
         assert_eq!(cf[0].file, "new.rs");
         assert_eq!(cf[0].old_file.as_deref(), Some("old.rs"));
@@ -275,6 +284,8 @@ mod tests {
                 additions: 2,
                 deletions: 1,
                 is_staged: true,
+                stage_state: FileStageState::Staged,
+                conflict_kind: None,
             },
         );
         merge_changed_file(
@@ -286,11 +297,14 @@ mod tests {
                 additions: 4,
                 deletions: 0,
                 is_staged: false,
+                stage_state: FileStageState::Unstaged,
+                conflict_kind: None,
             },
         );
         assert_eq!(out.len(), 1);
         let merged = out.get("x.rs").unwrap();
         assert!(merged.is_staged, "staged side wins the OR");
+        assert_eq!(merged.stage_state, FileStageState::Both);
         assert_eq!(merged.additions, 6);
         assert_eq!(merged.deletions, 1);
     }
@@ -310,6 +324,8 @@ mod tests {
                 additions: 0,
                 deletions: 0,
                 is_staged: false,
+                stage_state: FileStageState::Unstaged,
+                conflict_kind: None,
             },
         );
         merge_changed_file(
@@ -321,6 +337,8 @@ mod tests {
                 additions: 0,
                 deletions: 0,
                 is_staged: true,
+                stage_state: FileStageState::Staged,
+                conflict_kind: None,
             },
         );
         let merged = out.get("new.rs").unwrap();
