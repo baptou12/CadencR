@@ -39,6 +39,7 @@ pub(crate) fn catalog_entry() -> ProviderCatalogEntry {
             supports_auto_mode: None,
         }],
         modes: Vec::new(),
+        access_modes: Vec::new(),
         default_model: Some(FALLBACK_MODEL_ID.to_string()),
     }
 }
@@ -118,6 +119,7 @@ fn catalog_from_response(
         status_message: None,
         models,
         modes: Vec::new(),
+        access_modes: Vec::new(),
         default_model,
     };
     (catalog, context_windows)

@@ -63,6 +63,16 @@ describe("buildResumeCommand", () => {
     expect(result.command).toBe('cd "/tmp" && codex resume "abc"');
   });
 
+  it("builds Cursor Agent resume command", () => {
+    const result = buildResumeCommand({
+      providerId: PROVIDER_IDS.CURSOR,
+      sessionId: "chat-123",
+      cwd: "/tmp/project",
+    });
+    expect(result.supported).toBe(true);
+    expect(result.command).toBe('cd "/tmp/project" && agent --resume "chat-123"');
+  });
+
   it("marks missing provider as unsupported", () => {
     const result = buildResumeCommand({
       providerId: undefined,

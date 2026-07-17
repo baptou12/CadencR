@@ -62,7 +62,7 @@ export const AgentSession = memo(
       onDelete,
       todos,
       onPermissionModeToggle,
-      onCodexPermissionModeChange,
+      onAccessModeChange,
       agentCatalog: providedAgentCatalog,
       pendingPlanApproval,
       currentProviderId,
@@ -268,7 +268,7 @@ export const AgentSession = memo(
     // should appear above it.
     const hasInlineMeta =
       !!onPermissionModeToggle ||
-      !!onCodexPermissionModeChange ||
+      !!onAccessModeChange ||
       !!onModelChange ||
       showClaudeProfileSelector ||
       !!showReadOnlyModel ||

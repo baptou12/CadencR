@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use crate::domain::agents::acp::runtime::permission_events::parse_permission_options;
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 use crate::domain::permission_bridge::extract_permission_preview;
 
@@ -66,46 +67,8 @@ pub fn parse_permission_request(raw: &Value) -> Option<OpenCodePermissionRequest
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
         preview,
-        options: parse_options(raw.get("options")),
+        options: parse_permission_options(raw.get("options")),
     })
-}
-
-fn parse_options(raw: Option<&Value>) -> Option<Vec<RuntimePermissionOption>> {
-    let options = raw?.as_array()?;
-    let parsed = options
-        .iter()
-        .filter_map(|option| {
-            let decision = match option.get("decision").and_then(Value::as_str)? {
-                "allow_once" => RuntimePermissionDecision::AllowOnce,
-                "allow_for_session" => RuntimePermissionDecision::AllowForSession,
-                "allow_future" => RuntimePermissionDecision::AllowFuture,
-                "deny" => RuntimePermissionDecision::Deny,
-                _ => return None,
-            };
-            Some(RuntimePermissionOption {
-                decision,
-                option_id: option
-                    .get("option_id")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned),
-                label: option
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Option")
-                    .to_string(),
-                description: option
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                collect_feedback: option
-                    .get("collect_feedback")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            })
-        })
-        .collect::<Vec<_>>();
-    (!parsed.is_empty()).then_some(parsed)
 }
 
 #[cfg(test)]

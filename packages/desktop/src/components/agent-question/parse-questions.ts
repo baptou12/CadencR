@@ -13,6 +13,7 @@ function normalizeOptions(raw: unknown): AgentQuestionOption[] | undefined {
     if (typeof item === "object" && item !== null) {
       const obj = item as Record<string, unknown>;
       return {
+        id: typeof obj.id === "string" ? obj.id : undefined,
         label: (obj.label as string) ?? "",
         description: typeof obj.description === "string" ? obj.description : undefined,
         preview: typeof obj.preview === "string" ? obj.preview : undefined,

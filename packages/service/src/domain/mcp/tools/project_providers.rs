@@ -85,6 +85,7 @@ mod tests {
                 supports_auto_mode: None,
             }],
             modes: Vec::new(),
+            access_modes: Vec::new(),
             default_model: Some("gpt-future".to_string()),
         };
 
@@ -105,6 +106,7 @@ mod tests {
             status_message: None,
             models: vec![ModelCatalogEntry::alias("custom-model", "Custom Model")],
             modes: Vec::new(),
+            access_modes: Vec::new(),
             default_model: Some("custom-model".to_string()),
         };
 

@@ -30,6 +30,13 @@ describe("prompt attachment provider support", () => {
     expect(getAttachmentKindForProvider("codex_cli", "data.csv", "text/csv")).toBeNull();
   });
 
+  it("keeps Cursor ACP attachments image-only", () => {
+    expect(getAttachmentKindForProvider("cursor", "diagram.png", "image/png")).toBe("image");
+    expect(getAttachmentKindForProvider("cursor", "brief.pdf", "application/pdf")).toBeNull();
+    expect(attachmentAcceptForProvider("cursor")).toBe("image/png,image/jpeg,image/gif,image/webp");
+    expect(unsupportedAttachmentDescription("cursor")).toContain("Cursor ACP accepts image");
+  });
+
   it("builds provider-specific file picker accept lists and descriptions", () => {
     expect(attachmentAcceptForProvider("codex_cli")).toBe(
       "image/png,image/jpeg,image/gif,image/webp,application/pdf",

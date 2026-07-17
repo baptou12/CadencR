@@ -1,11 +1,13 @@
 import claudeLogo from "../../assets/providers/claude.png";
 import codexLogo from "../../assets/providers/codex.png";
+import cursorLogo from "../../assets/providers/cursor.png";
 import opencodeLogo from "../../assets/providers/opencode.png";
 
 export const PROVIDER_IDS = {
   CLAUDE_CODE: "claude_code",
   OPENCODE: "opencode",
   CODEX_CLI: "codex_cli",
+  CURSOR: "cursor",
 } as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[keyof typeof PROVIDER_IDS];
@@ -23,6 +25,7 @@ const PROVIDER_ICONS: Record<ProviderId, string> = {
   [PROVIDER_IDS.CLAUDE_CODE]: claudeLogo,
   [PROVIDER_IDS.CODEX_CLI]: codexLogo,
   [PROVIDER_IDS.OPENCODE]: opencodeLogo,
+  [PROVIDER_IDS.CURSOR]: cursorLogo,
 };
 
 /** Canonical display names for known providers (Anthropic-recommended branding). */
@@ -30,6 +33,7 @@ const PROVIDER_LABELS: Partial<Record<string, string>> = {
   [PROVIDER_IDS.CLAUDE_CODE]: "Claude",
   [PROVIDER_IDS.OPENCODE]: "OpenCode",
   [PROVIDER_IDS.CODEX_CLI]: "Codex",
+  [PROVIDER_IDS.CURSOR]: "Cursor",
 };
 
 /**

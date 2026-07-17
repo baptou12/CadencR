@@ -322,7 +322,10 @@ async fn pending_permission_is_refreshed_when_opencode_sends_input_after_request
     .await;
     let initial_permission = rx.recv().await.expect("permission event").expect("ok");
     assert_eq!(initial_permission.raw_json()["request_id"], "2");
-    assert_eq!(initial_permission.raw_json()["tool_input"], json!({}));
+    assert_eq!(
+        initial_permission.raw_json()["tool_input"],
+        json!({ "description": "bash" })
+    );
 
     write_agent_request(
         &mut stdout,
@@ -367,4 +370,5 @@ async fn pending_permission_is_refreshed_when_opencode_sends_input_after_request
         raw["preview"],
         "opencode --version 2>/dev/null || which opencode 2>/dev/null"
     );
+    assert_eq!(raw["tool_input"]["description"], "Get OpenCode version");
 }

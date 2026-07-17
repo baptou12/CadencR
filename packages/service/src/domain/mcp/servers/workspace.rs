@@ -149,7 +149,7 @@ fn property_description(tool_name: &str, property: &str) -> String {
         }
         "project_ids" => "Restrict search to these project ids.".into(),
         "providers" => {
-            "Restrict sessions by canonical provider id, e.g. claude_code, codex_cli, opencode."
+            "Restrict sessions by canonical provider id, e.g. claude_code, codex_cli, cursor, opencode."
                 .into()
         }
         "models" => "Restrict sessions by persisted model id.".into(),

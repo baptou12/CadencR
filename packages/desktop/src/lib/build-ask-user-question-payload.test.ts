@@ -43,4 +43,44 @@ describe("buildAskUserQuestionUpdatedInput", () => {
     const result = buildAskUserQuestionUpdatedInput(toolInput, [["a"]]);
     expect(result).toMatchObject({ foo: "bar", nested: { keep: true } });
   });
+
+  it("preserves stable question and option ids when the provider supplies them", () => {
+    const toolInput = {
+      questions: [
+        {
+          id: "q1",
+          question: "Pick values",
+          options: [
+            { id: "a,1", label: "Alpha, one" },
+            { id: "b", label: "Beta" },
+          ],
+        },
+      ],
+    };
+    const result = buildAskUserQuestionUpdatedInput(toolInput, [["a,1", "b"]]);
+    expect(result.answers).toEqual({ "Pick values": "Alpha, one, Beta" });
+    expect(result.structured_answers).toEqual([
+      { questionId: "q1", selectedOptionIds: ["a,1", "b"] },
+    ]);
+  });
+
+  it("keeps duplicate option labels distinct through their ids", () => {
+    const toolInput = {
+      questions: [
+        {
+          id: "q1",
+          question: "Choose",
+          options: [
+            { id: "first", label: "Same" },
+            { id: "second", label: "Same" },
+          ],
+        },
+      ],
+    };
+
+    const result = buildAskUserQuestionUpdatedInput(toolInput, [["second"]]);
+    expect(result.structured_answers).toEqual([
+      { questionId: "q1", selectedOptionIds: ["second"] },
+    ]);
+  });
 });

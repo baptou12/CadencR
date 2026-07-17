@@ -19,6 +19,11 @@ describe("provider-modes catalog", () => {
     ]);
     expect(PROVIDER_MODES[PROVIDER_IDS.OPENCODE].map((m) => m.id)).toEqual(["acceptEdits", "plan"]);
     expect(PROVIDER_MODES[PROVIDER_IDS.CODEX_CLI].map((m) => m.id)).toEqual(["default", "plan"]);
+    expect(PROVIDER_MODES[PROVIDER_IDS.CURSOR].map((m) => m.id)).toEqual([
+      "default",
+      "plan",
+      "ask",
+    ]);
   });
 
   it("exposes Claude bypass as an opt-in permission mode in the normal selector", () => {
@@ -73,6 +78,16 @@ describe("getVisibleModes", () => {
       findProviderMode(PROVIDER_IDS.OPENCODE, "opencodeAgent:documentor", catalogModes)?.label,
     ).toBe("documentor");
   });
+
+  it("uses the Cursor adapter catalog as the available mode set", () => {
+    const catalogModes = [
+      { id: "default" as const, label: "Default" },
+      { id: "ask" as const, label: "Ask", description: "Read-only Q&A." },
+    ];
+    const visible = getVisibleModes(PROVIDER_IDS.CURSOR, [], catalogModes);
+    expect(visible.map((mode) => mode.id)).toEqual(["default", "ask"]);
+    expect(visible[1].description).toBe("Read-only Q&A.");
+  });
 });
 
 describe("nextProviderMode (cycle)", () => {
@@ -115,6 +130,13 @@ describe("nextProviderMode (cycle)", () => {
     expect(nextProviderMode(PROVIDER_IDS.CODEX_CLI, "plan", ["bypassPermissions"])).toBe("default");
   });
 
+  it("Cursor cycle: default → plan → ask → wrap", () => {
+    expect(nextProviderMode(PROVIDER_IDS.CURSOR, "default", [])).toBe("plan");
+    expect(nextProviderMode(PROVIDER_IDS.CURSOR, "acceptEdits", [])).toBe("plan");
+    expect(nextProviderMode(PROVIDER_IDS.CURSOR, "plan", [])).toBe("ask");
+    expect(nextProviderMode(PROVIDER_IDS.CURSOR, "ask", [])).toBe("default");
+  });
+
   it("jumps to the head of the cycle when the current mode isn't in the provider's catalog", () => {
     // OpenCode's catalog is `["acceptEdits", "plan"]`; "auto" is a Claude-only
     // mode. nextProviderMode should not silently drop the call — it should
@@ -128,5 +150,6 @@ describe("defaultEditModeFor", () => {
     expect(defaultEditModeFor(PROVIDER_IDS.CLAUDE_CODE)).toBe("acceptEdits");
     expect(defaultEditModeFor(PROVIDER_IDS.OPENCODE)).toBe("acceptEdits");
     expect(defaultEditModeFor(PROVIDER_IDS.CODEX_CLI)).toBe("default");
+    expect(defaultEditModeFor(PROVIDER_IDS.CURSOR)).toBe("default");
   });
 });

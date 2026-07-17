@@ -90,6 +90,7 @@ pub(super) fn map_permission_mode(
             claude_agent_sdk_rs::PermissionMode::BypassPermissions
         }
         RuntimePermissionMode::Plan => claude_agent_sdk_rs::PermissionMode::Plan,
+        RuntimePermissionMode::Ask => claude_agent_sdk_rs::PermissionMode::Default,
         RuntimePermissionMode::Auto => claude_agent_sdk_rs::PermissionMode::Auto,
         RuntimePermissionMode::DontAsk => claude_agent_sdk_rs::PermissionMode::DontAsk,
         RuntimePermissionMode::OpenCodeAgent(_) => claude_agent_sdk_rs::PermissionMode::Default,

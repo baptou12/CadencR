@@ -99,10 +99,11 @@ function AgentSessionMeta(
       onPermissionModeToggle={session.onPermissionModeToggle}
       enabledOptInModes={session.enabledOptInModes}
       providerModes={session.providerModes}
-      codexPermissionMode={session.codexPermissionMode}
-      codexPermissionDefaultMode={session.codexPermissionDefaultMode}
-      isCodexPermissionModePending={session.isCodexPermissionModePending}
-      onCodexPermissionModeChange={session.onCodexPermissionModeChange}
+      providerAccessModes={session.providerAccessModes}
+      accessMode={session.accessMode}
+      accessModeDefault={session.accessModeDefault}
+      isAccessModePending={session.isAccessModePending}
+      onAccessModeChange={session.onAccessModeChange}
       showWorktreeChip={props.showWorktreeChip}
       worktreeMode={session.worktreeMode}
       onWorktreeModeChange={session.onWorktreeModeChange}

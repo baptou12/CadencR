@@ -12,6 +12,11 @@ fn parse_permission_mode_recognizes_auto() {
 }
 
 #[test]
+fn parse_permission_mode_recognizes_ask() {
+    assert_eq!(parse_permission_mode("ask"), RuntimePermissionMode::Ask);
+}
+
+#[test]
 fn parse_permission_mode_falls_back_to_default_for_unknown() {
     assert_eq!(
         parse_permission_mode("not-a-mode"),
@@ -52,6 +57,10 @@ fn opencode_supports_only_build_and_plan_levels() {
     ));
     assert!(!provider_supports_mode(
         "opencode",
+        &RuntimePermissionMode::Ask
+    ));
+    assert!(!provider_supports_mode(
+        "opencode",
         &RuntimePermissionMode::Auto
     ));
     assert!(!provider_supports_mode(
@@ -76,6 +85,10 @@ fn codex_supports_default_plan_and_full_access() {
     ));
     assert!(!provider_supports_mode(
         "codex_cli",
+        &RuntimePermissionMode::Ask
+    ));
+    assert!(!provider_supports_mode(
+        "codex_cli",
         &RuntimePermissionMode::Auto
     ));
     assert!(!provider_supports_mode(
@@ -92,6 +105,7 @@ fn default_permission_mode_wire_matches_frontend_catalog() {
     assert_eq!(default_permission_mode_wire("claude_code"), "acceptEdits");
     assert_eq!(default_permission_mode_wire("opencode"), "acceptEdits");
     assert_eq!(default_permission_mode_wire("codex_cli"), "default");
+    assert_eq!(default_permission_mode_wire("cursor"), "default");
     assert_eq!(default_permission_mode_wire("__unknown__"), "acceptEdits");
 }
 

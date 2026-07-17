@@ -252,6 +252,7 @@ impl AcpRuntimeSession {
             indexer,
             replay_suppression: Arc::new(AtomicBool::new(false)),
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
+            pending_followups: Arc::new(RwLock::new(std::collections::VecDeque::new())),
             prompt_turn_lock: Arc::new(AsyncMutex::new(())),
             prompt_cancel: PromptCancel::new(),
         }

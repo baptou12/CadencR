@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
+const PROCESS_LIST_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+
 const DEV_COMMAND_PATTERNS = [
   /node_modules\/\.bin\/turbo run dev/,
   /@turbo\/[^/]+\/bin\/turbo run dev/,
@@ -56,6 +58,7 @@ export function parsePsRows(output) {
 export function readProcessRows() {
   const result = spawnSync("ps", ["-Ao", "pid=,ppid=,pgid=,command="], {
     encoding: "utf8",
+    maxBuffer: PROCESS_LIST_MAX_BUFFER_BYTES,
   });
   if (result.error) throw result.error;
   return parsePsRows(result.stdout);

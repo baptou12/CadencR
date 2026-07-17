@@ -2,6 +2,7 @@ export const PERMISSION_MODES = [
   "default",
   "acceptEdits",
   "plan",
+  "ask",
   "auto",
   "bypassPermissions",
   "dontAsk",

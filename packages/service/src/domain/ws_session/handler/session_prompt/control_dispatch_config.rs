@@ -133,15 +133,13 @@ async fn runtime_access_mode(
     provider: &str,
     row: &SessionRow,
 ) -> Option<crate::domain::agents::adapter::RuntimeAccessMode> {
-    if provider != crate::domain::agents::codex::PROVIDER_ID {
-        return None;
-    }
-    let configured = super::super::codex_access::configured_access_mode(&app_state.read_pool).await;
-    let mode = row
-        .codex_permission_mode
-        .as_deref()
-        .unwrap_or(configured.as_str());
-    super::super::codex_access::runtime_access_mode(provider, Some(mode), &configured)
+    let configured =
+        super::super::access::configured_access_mode(provider, &app_state.read_pool).await;
+    super::super::access::runtime_access_mode(
+        provider,
+        row.codex_permission_mode.as_deref(),
+        configured,
+    )
 }
 
 #[cfg(test)]

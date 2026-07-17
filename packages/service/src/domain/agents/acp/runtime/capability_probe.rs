@@ -17,25 +17,25 @@ pub enum ProbeResult {
     NewlyUnsupported,
 }
 
-pub async fn request_optional_method(
+pub async fn request_optional_method_value(
     client: &AcpClient,
     method: &'static str,
     params: Value,
     timeout: Duration,
     supports_flag: &Arc<AtomicBool>,
-) -> Result<ProbeResult, RuntimeError> {
+) -> Result<(ProbeResult, Option<Value>), RuntimeError> {
     if !supports_flag.load(Ordering::Relaxed) {
-        return Ok(ProbeResult::AlreadyUnsupported);
+        return Ok((ProbeResult::AlreadyUnsupported, None));
     }
     match client.request_with_timeout(method, params, timeout).await {
-        Ok(_) => Ok(ProbeResult::Supported),
+        Ok(value) => Ok((ProbeResult::Supported, Some(value))),
         Err(AcpError::Rpc { code: -32601, .. }) => {
             let result = if supports_flag.swap(false, Ordering::Relaxed) {
                 ProbeResult::NewlyUnsupported
             } else {
                 ProbeResult::AlreadyUnsupported
             };
-            Ok(result)
+            Ok((result, None))
         }
         Err(error) => Err(RuntimeError::new(format!("{method} failed: {error}"))),
     }

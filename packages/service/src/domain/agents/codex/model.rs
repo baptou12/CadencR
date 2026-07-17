@@ -7,11 +7,6 @@ pub type CodexAccessMode = RuntimeAccessMode;
 pub const ACCESS_MODE_SETTING_KEY: &str = "codex_permission_mode";
 pub const DEFAULT_ACCESS_MODE_WIRE: &str = "default";
 
-pub fn parse_access_mode(mode: Option<&str>) -> RuntimeAccessMode {
-    mode.and_then(parse_access_mode_wire)
-        .unwrap_or(RuntimeAccessMode::Default)
-}
-
 pub fn parse_access_mode_wire(mode: &str) -> Option<RuntimeAccessMode> {
     match mode {
         "default" => Some(RuntimeAccessMode::Default),

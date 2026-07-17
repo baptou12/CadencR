@@ -12,7 +12,6 @@ import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabDef, FeatureTabs } from "@/components/feature-layout/types";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 import { useCheckoutBranch, useSetFeatureSetting } from "@/api/generated";
-import { PROVIDER_IDS } from "@/lib/providers";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import { claudeProfileForPrompt } from "@/components/WebSocketSessionFeatureBlockHooks";
 import type {
@@ -27,7 +26,7 @@ const BrowserWorkspaceTab = lazy(() =>
     default: module.BrowserWorkspaceTab,
   })),
 );
-const COMPACT_ACTION_PROVIDERS = new Set(["opencode", "codex_cli"]);
+const COMPACT_ACTION_PROVIDERS = new Set(["opencode", "codex_cli", "cursor"]);
 interface UseSessionTabsArgs {
   sessionId: string;
   featureId: number;
@@ -68,7 +67,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
   const { sessionId, featureId, projectId, data, controls, refs, agentVisible, hotkeysEnabled } =
     args;
   const onSend = useAgentSendHandler({ featureId, projectId, data, controls });
-  const isCodex = controls.activeProviderId === PROVIDER_IDS.CODEX_CLI;
+  const hasAccessModes = controls.providerAccessModes.length > 0;
   return useMemo(
     () => ({
       label: "Agent",
@@ -92,7 +91,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
             turnTiming={controls.ws.turnTiming}
             onSend={onSend}
             onStop={controls.ws.interrupt}
-            disabled={isCodex && controls.isCodexPermissionModePending}
+            disabled={hasAccessModes && controls.isAccessModePending}
             pendingPermission={controls.ws.pendingPermission}
             onPermissionDecision={(decision, feedback, optionId) => {
               controls.ws.respondToPermission(
@@ -110,12 +109,11 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
             permissionMode={controls.ws.permissionMode}
             enabledOptInModes={controls.enabledOptInModes}
             providerModes={controls.providerModes}
-            codexPermissionMode={isCodex ? controls.codexPermissionMode : undefined}
-            codexPermissionDefaultMode={isCodex ? controls.codexPermissionDefaultMode : undefined}
-            isCodexPermissionModePending={isCodex ? controls.isCodexPermissionModePending : false}
-            onCodexPermissionModeChange={
-              isCodex ? controls.handleCodexPermissionModeChange : undefined
-            }
+            providerAccessModes={controls.providerAccessModes}
+            accessMode={hasAccessModes ? controls.accessMode : undefined}
+            accessModeDefault={hasAccessModes ? controls.accessModeDefault : undefined}
+            isAccessModePending={hasAccessModes ? controls.isAccessModePending : false}
+            onAccessModeChange={hasAccessModes ? controls.handleAccessModeChange : undefined}
             agentCatalog={controls.agentCatalog}
             onPermissionModeToggle={controls.handlePermissionModeToggle}
             pendingPlanApproval={controls.ws.pendingPlanApproval}
@@ -160,7 +158,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
       data,
       featureId,
       hotkeysEnabled,
-      isCodex,
+      hasAccessModes,
       onSend,
       projectId,
       refs.agent,

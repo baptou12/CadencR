@@ -64,6 +64,8 @@ pub struct ProviderCatalogEntry {
     pub models: Vec<ModelCatalogEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modes: Vec<ProviderModeCatalogEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub access_modes: Vec<ProviderModeCatalogEntry>,
     pub default_model: Option<String>,
 }
 
@@ -80,6 +82,7 @@ impl ProviderCatalogEntry {
             status_message: Some(message.into()),
             models: Vec::new(),
             modes: Vec::new(),
+            access_modes: Vec::new(),
             default_model: None,
         }
     }

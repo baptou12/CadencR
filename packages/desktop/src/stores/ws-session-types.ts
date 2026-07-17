@@ -30,7 +30,7 @@ import { blocksPatchWithDerived } from "./ws-block-mutations";
 import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 import { defaultEditModeFor } from "../lib/provider-modes";
 import type { PermissionMode } from "../types/permission-mode";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import type { AccessMode } from "@/types/access-mode";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 
 export type { PermissionMode };
@@ -55,7 +55,7 @@ export interface PersistedStatePayload {
   currentThinkingEffort?: string;
   currentProfile?: string;
   permissionMode?: PermissionMode;
-  codexPermissionMode?: CodexPermissionMode;
+  accessMode?: AccessMode;
   runtimeProvider?: string | null;
   runtimeSessionId?: string | null;
   pendingPlanApproval?: PendingPlanApproval | null;
@@ -145,7 +145,7 @@ export interface SessionEntry {
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
-  codexPermissionMode: CodexPermissionMode;
+  accessMode: AccessMode;
   currentThinkingEffort?: string;
   currentProfile?: string;
   pendingPlanApproval: PendingPlanApproval | null;
@@ -225,7 +225,7 @@ export function createSessionEntry(): SessionEntry {
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     permissionMode: defaultEditModeFor(DEFAULT_PROVIDER),
-    codexPermissionMode: "default",
+    accessMode: "default",
     currentThinkingEffort: undefined,
     pendingPlanApproval: null,
     compactRequestPending: false,

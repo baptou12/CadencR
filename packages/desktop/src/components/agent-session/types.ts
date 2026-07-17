@@ -15,9 +15,12 @@ import type { SlashCommand } from "@/lib/slash-command";
 import type { PromptCommandPolicy } from "@/lib/prompt-command-policy";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import type { PermissionMode } from "@/types/permission-mode";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import type { AccessMode } from "@/types/access-mode";
 import type { WorktreeMode } from "@/lib/worktree-mode";
-import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
+import type {
+  RuntimeProviderAccessModeOption,
+  RuntimeProviderModeOption,
+} from "@/api/agentRuntime";
 import type { AgentCatalog } from "@/api/agentRuntime";
 import type { ClaudeProfileSelection } from "./useClaudeProfileSelection";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
@@ -105,10 +108,11 @@ export interface AgentSessionProps {
    */
   enabledOptInModes?: PermissionMode[];
   providerModes?: readonly RuntimeProviderModeOption[];
-  codexPermissionMode?: CodexPermissionMode;
-  codexPermissionDefaultMode?: CodexPermissionMode;
-  isCodexPermissionModePending?: boolean;
-  onCodexPermissionModeChange?: (mode: CodexPermissionMode) => void;
+  providerAccessModes?: readonly RuntimeProviderAccessModeOption[];
+  accessMode?: AccessMode;
+  accessModeDefault?: AccessMode;
+  isAccessModePending?: boolean;
+  onAccessModeChange?: (mode: AccessMode) => void;
   /** Optional catalog query supplied by parents that already fetched it. */
   agentCatalog?: { data?: AgentCatalog };
   /** Pending plan approval from ExitPlanMode tool call */

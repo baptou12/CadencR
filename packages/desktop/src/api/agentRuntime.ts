@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { customInstance } from "./client";
 import { AGENT_TYPES, type AgentTypeSetting } from "../shared/models";
+import type { AccessMode } from "@/types/access-mode";
 import type { PermissionMode } from "@/types/permission-mode";
 import type { ModelCatalogEntry, UpsertCustomModelRequest } from "./generated";
 
@@ -15,11 +16,18 @@ export interface RuntimeProviderOption {
   status_message?: string;
   models: RuntimeModelOption[];
   modes?: RuntimeProviderModeOption[];
+  access_modes?: RuntimeProviderAccessModeOption[];
   default_model: string | null;
 }
 
 export interface RuntimeProviderModeOption {
   id: PermissionMode;
+  label: string;
+  description?: string;
+}
+
+export interface RuntimeProviderAccessModeOption {
+  id: AccessMode;
   label: string;
   description?: string;
 }

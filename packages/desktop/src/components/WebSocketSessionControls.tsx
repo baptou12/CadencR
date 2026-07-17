@@ -8,7 +8,11 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
-import { useAgentCatalog, type RuntimeProviderModeOption } from "@/api/agentRuntime";
+import {
+  useAgentCatalog,
+  type RuntimeProviderAccessModeOption,
+  type RuntimeProviderModeOption,
+} from "@/api/agentRuntime";
 import { useGetProjectSettings, useSetProjectSetting } from "@/api/generated";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -27,8 +31,8 @@ import {
 } from "@/lib/worktree-mode";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 import type { PermissionMode } from "@/types/permission-mode";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
-import { useCodexPermissionModeSetting } from "@/hooks/useCodexPermissionModeSetting";
+import type { AccessMode } from "@/types/access-mode";
+import { useAccessModeSetting } from "@/hooks/useAccessModeSetting";
 import {
   EMPTY_PROVIDER_MODES,
   usePermissionModeToggle,
@@ -40,6 +44,7 @@ import {
 } from "@/components/agent-session/useClaudeProfileSelection";
 
 type WsSession = ReturnType<typeof useWebSocketSession>;
+const EMPTY_PROVIDER_ACCESS_MODES: readonly RuntimeProviderAccessModeOption[] = [];
 
 interface WorktreePreferenceControls {
   worktreeMode: WorktreeMode;
@@ -55,18 +60,19 @@ interface RuntimeSelectionControls {
   supportedThinkingEfforts: ReturnType<typeof supportedThinkingEffortLevels>;
   enabledOptInModes: PermissionMode[];
   providerModes: readonly RuntimeProviderModeOption[];
+  providerAccessModes: readonly RuntimeProviderAccessModeOption[];
   resolveModelThinkingEffort: ReturnType<typeof useResolvedModel>["resolveModelThinkingEffort"];
 }
 
-interface CodexAccessControls {
-  codexPermissionMode: CodexPermissionMode;
-  codexPermissionDefaultMode: CodexPermissionMode;
-  isCodexPermissionModePending: boolean;
-  handleCodexPermissionModeChange: (mode: CodexPermissionMode) => void;
+interface AccessControls {
+  accessMode: AccessMode;
+  accessModeDefault: AccessMode;
+  isAccessModePending: boolean;
+  handleAccessModeChange: (mode: AccessMode) => void;
 }
 
 export interface SessionControls
-  extends WorktreePreferenceControls, RuntimeSelectionControls, CodexAccessControls {
+  extends WorktreePreferenceControls, RuntimeSelectionControls, AccessControls {
   ws: WsSession;
   selectedBranch: string | null;
   setSelectedBranch: Dispatch<SetStateAction<string | null>>;
@@ -135,14 +141,16 @@ function useRuntimeSelection(
   const resolvedModelId = resolveModel("session");
   const resolvedThinkingEffort = resolveModelThinkingEffort(resolvedProviderId, resolvedModelId);
   const activeProviderId = activeProviderIdOf(ws, resolvedProviderId);
+  const activeProvider = agentCatalog.data?.providers.find(
+    (provider) => provider.id === activeProviderId,
+  );
   const activeSessionModel = agentCatalog.data?.providers
     .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
     ?.models.find((model) => model.id === (ws.currentModelId || resolvedModelId));
   const supportedThinkingEfforts = supportedThinkingEffortLevels(activeSessionModel);
   const enabledOptInModes = useEnabledOptInModes(activeProviderId);
-  const providerModes =
-    agentCatalog.data?.providers.find((provider) => provider.id === activeProviderId)?.modes ??
-    EMPTY_PROVIDER_MODES;
+  const providerModes = activeProvider?.modes ?? EMPTY_PROVIDER_MODES;
+  const providerAccessModes = activeProvider?.access_modes ?? EMPTY_PROVIDER_ACCESS_MODES;
   return useMemo(
     () => ({
       agentCatalog,
@@ -153,6 +161,7 @@ function useRuntimeSelection(
       supportedThinkingEfforts,
       enabledOptInModes,
       providerModes,
+      providerAccessModes,
       resolveModelThinkingEffort,
     }),
     [
@@ -160,6 +169,7 @@ function useRuntimeSelection(
       agentCatalog,
       enabledOptInModes,
       providerModes,
+      providerAccessModes,
       resolveModelThinkingEffort,
       resolvedModelId,
       resolvedProviderId,
@@ -169,36 +179,29 @@ function useRuntimeSelection(
   );
 }
 
-function useCodexAccessControls(ws: WsSession): CodexAccessControls {
+function useAccessControls(ws: WsSession, providerId: string): AccessControls {
   const {
-    globalCodexPermissionMode,
-    isPending: isCodexPermissionModePending,
-    handleCodexPermissionModeChange: handleGlobalCodexPermissionModeChange,
-  } = useCodexPermissionModeSetting();
+    globalAccessMode,
+    isPending: isAccessModePending,
+    handleAccessModeChange: handleGlobalAccessModeChange,
+  } = useAccessModeSetting(providerId);
   const hasStartedConversation = ws.blocks.length > 0 || ws.runtimeSessionId !== "";
-  const codexPermissionMode = hasStartedConversation
-    ? ws.codexPermissionMode
-    : globalCodexPermissionMode;
-  const handleCodexPermissionModeChange = useCallback(
-    (mode: CodexPermissionMode): void => {
-      ws.setCodexPermissionMode(mode);
-      handleGlobalCodexPermissionModeChange(mode);
+  const accessMode = hasStartedConversation ? ws.accessMode : globalAccessMode;
+  const handleAccessModeChange = useCallback(
+    (mode: AccessMode): void => {
+      if (mode !== accessMode) ws.setAccessMode(mode);
+      if (mode !== globalAccessMode) handleGlobalAccessModeChange(mode);
     },
-    [handleGlobalCodexPermissionModeChange, ws],
+    [accessMode, globalAccessMode, handleGlobalAccessModeChange, ws],
   );
   return useMemo(
     () => ({
-      codexPermissionMode,
-      codexPermissionDefaultMode: globalCodexPermissionMode,
-      isCodexPermissionModePending,
-      handleCodexPermissionModeChange,
+      accessMode,
+      accessModeDefault: globalAccessMode,
+      isAccessModePending,
+      handleAccessModeChange,
     }),
-    [
-      codexPermissionMode,
-      globalCodexPermissionMode,
-      handleCodexPermissionModeChange,
-      isCodexPermissionModePending,
-    ],
+    [accessMode, globalAccessMode, handleAccessModeChange, isAccessModePending],
   );
 }
 
@@ -215,7 +218,6 @@ export function useSessionControls(
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const initializedRef = useRef<string | null>(null);
   const worktree = useWorktreePreference(projectId);
-  const codex = useCodexAccessControls(ws);
   // Resolve the active provider and the Claude profile before the catalog query
   // so a profile chosen in the prompt-area selector scopes the model probe
   // (issue #76: the prompt selector must refresh the model list, like settings).
@@ -236,6 +238,7 @@ export function useSessionControls(
     isClaudeProvider ? claudeProfile.catalogProfile : undefined,
     resolvedProviderId,
   );
+  const codex = useAccessControls(ws, runtime.activeProviderId);
   const handlePermissionModeToggle = usePermissionModeToggle(
     sessionId,
     runtime.activeProviderId,

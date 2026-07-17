@@ -21,11 +21,14 @@ pub const CLAUDE_CLI_PATH_KEY: &str = "claude_cli_path";
 pub const OPENCODE_CLI_PATH_KEY: &str = "opencode_cli_path";
 /// Global settings key for the user-selected `codex` CLI path.
 pub const CODEX_CLI_PATH_KEY: &str = "codex_cli_path";
+/// Global settings key for the user-selected Cursor Agent CLI path.
+pub const CURSOR_CLI_PATH_KEY: &str = "cursor_cli_path";
 
 pub(crate) struct BinaryOverrides {
     pub claude: Option<PathBuf>,
     pub opencode: Option<PathBuf>,
     pub codex: Option<PathBuf>,
+    pub cursor: Option<PathBuf>,
 }
 
 /// Read both per-provider override paths from the global settings table and
@@ -49,20 +52,26 @@ pub async fn apply_binary_overrides_from_settings(read_pool: &SqlitePool) {
         info!(path = %path.display(), "applying codex CLI override from settings");
         codex_app_server_sdk_rs::set_binary_override(Some(path));
     }
+    if let Some(path) = overrides.cursor {
+        info!(path = %path.display(), "applying Cursor Agent CLI override from settings");
+        cursor_agent_sdk_rs::set_binary_override(Some(path));
+    }
 }
 
 /// Single-pass read of both override settings. Used by both startup wiring and
 /// the discovery HTTP handler so we don't hit SQLite four times for two values.
 pub(crate) async fn read_overrides(read_pool: &SqlitePool) -> BinaryOverrides {
-    let (claude, opencode, codex) = tokio::join!(
+    let (claude, opencode, codex, cursor) = tokio::join!(
         read_override_setting(read_pool, CLAUDE_CLI_PATH_KEY),
         read_override_setting(read_pool, OPENCODE_CLI_PATH_KEY),
         read_override_setting(read_pool, CODEX_CLI_PATH_KEY),
+        read_override_setting(read_pool, CURSOR_CLI_PATH_KEY),
     );
     BinaryOverrides {
         claude,
         opencode,
         codex,
+        cursor,
     }
 }
 
@@ -135,10 +144,12 @@ mod tests {
             .await
             .unwrap();
         set(&pool, "codex_cli_path", "/x/codex").await.unwrap();
+        set(&pool, "cursor_cli_path", "/u/agent").await.unwrap();
         let overrides = read_overrides(&pool).await;
         assert_eq!(overrides.claude, Some(PathBuf::from("/c/claude")));
         assert_eq!(overrides.opencode, Some(PathBuf::from("/o/opencode")));
         assert_eq!(overrides.codex, Some(PathBuf::from("/x/codex")));
+        assert_eq!(overrides.cursor, Some(PathBuf::from("/u/agent")));
     }
 
     #[test]

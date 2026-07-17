@@ -160,12 +160,12 @@ export interface AgentSessionRow {
 }
 
 /**
- * Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`).
+ * Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`).
  */
 export type BinaryDiscoveryResponseProviders = { [key: string]: ProviderDiscovery };
 
 export interface BinaryDiscoveryResponse {
-  /** Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`). */
+  /** Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`). */
   providers: BinaryDiscoveryResponseProviders;
 }
 
@@ -1542,6 +1542,7 @@ export type ProviderCatalogEntryDefaultModel = string | null;
 export type ProviderCatalogEntryStatusMessage = string | null;
 
 export interface ProviderCatalogEntry {
+  access_modes?: ProviderModeCatalogEntry[];
   default_model?: ProviderCatalogEntryDefaultModel;
   id: string;
   label: string;
@@ -1574,9 +1575,12 @@ export interface ProviderModeCatalogEntry {
   label: string;
 }
 
+export type ProviderSetOkPayloadAccessMode = string | null;
+
 export type ProviderSetOkPayloadCodexPermissionMode = string | null;
 
 export interface ProviderSetOkPayload {
+  access_mode?: ProviderSetOkPayloadAccessMode;
   codex_permission_mode?: ProviderSetOkPayloadCodexPermissionMode;
   provider: string;
   supports_prompt_receipts: boolean;
@@ -1949,9 +1953,9 @@ export type SessionStateToolCallUpdatesAnyOf = { [key: string]: string };
 export type SessionStateToolCallUpdates = SessionStateToolCallUpdatesAnyOf | null;
 
 export interface SessionState {
+  accessMode: string;
   agentType: string;
   blocks: AgentBlock[];
-  codexPermissionMode: string;
   contextWindow?: SessionStateContextWindow;
   draftPrompt?: SessionStateDraftPrompt;
   hasFileChanges: boolean;
@@ -2499,7 +2503,7 @@ export const WsSessionAction = {
   historyadded: "history.added",
   draftresult: "draft.result",
   draftsaved: "draft.saved",
-  codex_permission_modechanged: "codex_permission_mode.changed",
+  access_modechanged: "access_mode.changed",
   providersetok: "provider.set.ok",
   compactstarted: "compact.started",
   modelsetok: "model.set.ok",

@@ -1,5 +1,7 @@
 use super::events_stream_blocks::EventIndexer;
-use super::events_tool_call_input::is_empty_value;
+use super::events_tool_call_input::derive_input_from_content;
+use super::events_tool_call_metadata::{enrich_tool_input, is_empty_value};
+use super::events_tool_call_name::resolve_tool_name;
 use super::events_tool_call_parent::parent_tool_use_id;
 use super::provider_hooks::AcpProviderHooks;
 use super::stream_events::stream_start_event;
@@ -25,17 +27,13 @@ pub fn map_tool_call_start(
             events: vec![other_event(metadata)],
         };
     };
-    let raw_tool_name = body
-        .get("toolName")
-        .or_else(|| body.get("title"))
-        .and_then(Value::as_str)
-        .unwrap_or("tool");
-    let tool_name = hooks.normalize_tool_name(raw_tool_name);
+    let tool_name = resolve_tool_name(body, hooks);
     let raw = body
         .get("rawInput")
         .filter(|v| !is_empty_value(v))
-        .or_else(|| body.get("toolInput"))
+        .or_else(|| body.get("toolInput").filter(|v| !is_empty_value(v)))
         .cloned()
+        .or_else(|| derive_input_from_content(&tool_name, body))
         .unwrap_or(Value::Null);
     let is_empty_raw = is_empty_value(&raw);
     if tool_name == "TodoWrite" && indexer.has_plan_todowrite_emitted() && is_empty_raw {
@@ -44,7 +42,7 @@ pub fn map_tool_call_start(
     }
     indexer.record_tool_name(tool_call_id, &tool_name);
     hooks.record_tool_call_start(tool_call_id, &tool_name);
-    let input = hooks.normalize_tool_input(&tool_name, raw);
+    let input = enrich_tool_input(body, hooks.normalize_tool_input(&tool_name, raw));
     if !is_empty_value(&input) {
         indexer.record_tool_input(tool_call_id, input.clone());
     }
@@ -133,10 +131,16 @@ mod tests {
         }
     }
     #[test]
-    fn start_emits_content_block_start_with_tool_use() {
+    fn execute_kind_maps_cursor_command_title_to_bash_tool_use() {
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
-            &json!({ "toolCallId": "t-1", "toolName": "Bash", "toolInput": { "command": "ls" } }),
+            &json!({
+                "toolCallId": "t-1",
+                "title": "`pnpm lint`",
+                "kind": "execute",
+                "locations": [{ "path": "/repo/package.json" }],
+                "rawInput": { "command": "pnpm lint" }
+            }),
             &mut idx,
             metadata(),
             &PlainHooks,
@@ -149,7 +153,37 @@ mod tests {
             } => {
                 assert_eq!(id, "t-1");
                 assert_eq!(name, "Bash");
-                assert_eq!(input["command"], "ls");
+                assert_eq!(input["command"], "pnpm lint");
+                assert_eq!(input["description"], "`pnpm lint`");
+                assert_eq!(input["path"], "/repo/package.json");
+            }
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+    #[test]
+    fn read_without_raw_input_preserves_title_and_location() {
+        let mut idx = EventIndexer::default();
+        let result = map_tool_call_start(
+            &json!({
+                "toolCallId": "read-1",
+                "title": "Read the Cursor adapter",
+                "kind": "read",
+                "locations": [{ "path": "/repo/cursor/adapter.rs", "line": 12 }]
+            }),
+            &mut idx,
+            metadata(),
+            &PlainHooks,
+        );
+
+        match result.events[0].stream_event().unwrap() {
+            RuntimeStreamEvent::ContentBlockStart {
+                block: RuntimeContentBlock::ToolUse { name, input, .. },
+                ..
+            } => {
+                assert_eq!(name, "Read");
+                assert_eq!(input["description"], "Read the Cursor adapter");
+                assert_eq!(input["path"], "/repo/cursor/adapter.rs");
+                assert_eq!(input["locations"][0]["line"], 12);
             }
             other => panic!("unexpected variant: {other:?}"),
         }

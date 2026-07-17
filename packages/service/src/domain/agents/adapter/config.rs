@@ -22,6 +22,9 @@ pub enum RuntimePermissionMode {
     AcceptEdits,
     BypassPermissions,
     Plan,
+    /// Provider-neutral read-only Q&A mode. Providers opt in explicitly and
+    /// own the concrete transport mapping.
+    Ask,
     /// Claude Code v2.1.83+ classifier-backed mode. Currently a Claude-only
     /// mode; OpenCode and Codex adapters fall back to their own "everyday"
     /// permission level when this is selected.
@@ -35,6 +38,23 @@ pub enum RuntimeAccessMode {
     Default,
     FullAccess,
     AutoReview,
+}
+
+pub fn parse_access_mode_wire(mode: &str) -> Option<RuntimeAccessMode> {
+    match mode {
+        "default" => Some(RuntimeAccessMode::Default),
+        "fullAccess" => Some(RuntimeAccessMode::FullAccess),
+        "autoReview" => Some(RuntimeAccessMode::AutoReview),
+        _ => None,
+    }
+}
+
+pub fn access_mode_wire(mode: &RuntimeAccessMode) -> &'static str {
+    match mode {
+        RuntimeAccessMode::Default => "default",
+        RuntimeAccessMode::FullAccess => "fullAccess",
+        RuntimeAccessMode::AutoReview => "autoReview",
+    }
 }
 
 #[derive(Debug, Clone)]

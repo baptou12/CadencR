@@ -2,39 +2,47 @@ import { useState } from "react";
 import { CheckIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
-import { CODEX_ACCESS_MODES, getCodexAccessMode } from "./meta-bar-codex-modes";
+import type { AccessMode } from "@/types/access-mode";
+import type { RuntimeProviderAccessModeOption } from "@/api/agentRuntime";
+import { getAccessModeDefinition } from "./meta-bar-codex-modes";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
+import { providerAccessModeConfig } from "@/lib/provider-access-modes";
 
-interface CodexAccessModePopoverProps {
-  mode: CodexPermissionMode;
-  selectedMode?: CodexPermissionMode;
+interface AccessModePopoverProps {
+  mode: AccessMode;
+  selectedMode?: AccessMode;
   isPending?: boolean;
-  onChange: (mode: CodexPermissionMode) => void;
+  onChange: (mode: AccessMode) => void;
+  providerId?: string;
+  options: readonly RuntimeProviderAccessModeOption[];
 }
 
-export function CodexAccessModePopover({
+export function AccessModePopover({
   mode,
   selectedMode = mode,
   isPending = false,
   onChange,
-}: CodexAccessModePopoverProps): React.JSX.Element | null {
+  providerId,
+  options,
+}: AccessModePopoverProps): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
-  const activeMode = getCodexAccessMode(mode);
-  const selectedAccessMode = getCodexAccessMode(selectedMode);
-  if (!activeMode || !selectedAccessMode) return null;
+  const providerConfig = providerAccessModeConfig(providerId);
+  const activeMode = getAccessModeDefinition(mode);
+  const selectedAccessMode = getAccessModeDefinition(selectedMode);
+  if (!activeMode || !selectedAccessMode || !providerConfig) return null;
+  const activeCopy = options.find((option) => option.id === mode);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          title={activeMode.description}
-          aria-label={`Codex access mode: ${activeMode.label}. ${activeMode.description}`}
+          title={activeCopy?.description ?? activeMode.description}
+          aria-label={`${providerConfig.providerLabel} access mode: ${activeCopy?.label ?? activeMode.label}. ${activeCopy?.description ?? activeMode.description}`}
           className={cn(META_BAR_CHIP, activeMode.chipClass)}
         >
           <activeMode.icon className="size-3" />
-          {activeMode.label}
+          {activeCopy?.label ?? activeMode.label}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -44,22 +52,24 @@ export function CodexAccessModePopover({
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <div>
-          <div className="text-sm font-semibold">Codex access mode</div>
+          <div className="text-sm font-semibold">{providerConfig.providerLabel} access mode</div>
           <p className="mt-1 text-muted-foreground">
-            This conversation is using {activeMode.label}. Pick a mode below to update the global
-            default for new Codex conversations. Existing conversations keep their stored access
-            mode.
+            This conversation is using {activeCopy?.label ?? activeMode.label}. Pick a mode below to
+            update the global default for new {providerConfig.providerLabel} conversations. Existing
+            conversations keep their stored access mode.
           </p>
         </div>
         <div className="space-y-1.5">
-          {CODEX_ACCESS_MODES.map((option) => {
-            const selected = option.id === selectedMode;
+          {options.map((copy) => {
+            const option = getAccessModeDefinition(copy.id);
+            if (!option) return null;
+            const selected = copy.id === selectedMode;
             return (
               <button
-                key={option.id}
+                key={copy.id}
                 type="button"
                 onClick={() => {
-                  onChange(option.id);
+                  onChange(copy.id);
                   setOpen(false);
                 }}
                 disabled={isPending}
@@ -73,7 +83,7 @@ export function CodexAccessModePopover({
                 <option.icon className={cn("mt-0.5 size-3.5 shrink-0", option.textClass)} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 font-medium text-foreground">
-                    {option.label}
+                    {copy.label}
                     {selected && (
                       <>
                         <CheckIcon className="size-3 text-[var(--acc-green)]" />
@@ -84,7 +94,7 @@ export function CodexAccessModePopover({
                     )}
                   </span>
                   <span className="mt-0.5 block leading-relaxed text-muted-foreground">
-                    {option.longDescription}
+                    {copy.description ?? option.longDescription}
                   </span>
                 </span>
               </button>

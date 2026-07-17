@@ -691,6 +691,7 @@ dependencies = [
  "claude-agent-sdk-rs",
  "cli-discovery",
  "codex-app-server-sdk-rs",
+ "cursor-agent-sdk-rs",
  "dashmap",
  "dirs",
  "dotenvy",
@@ -1147,6 +1148,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
 dependencies = [
  "cmov",
+]
+
+[[package]]
+name = "cursor-agent-sdk-rs"
+version = "0.1.0"
+dependencies = [
+ "cli-discovery",
+ "once_cell",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

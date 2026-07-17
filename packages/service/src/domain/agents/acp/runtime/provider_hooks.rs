@@ -1,19 +1,18 @@
 //! Provider-specific extension points for the ACP runtime.
-//!
-//! Concrete adapters implement this trait to plug provider-specific
-//! normalization and policy decisions into the otherwise provider-neutral
-//! runtime.
 
 use std::path::Path;
 
+use agent_client_protocol::schema::v1::SessionConfigOption;
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimeMcpServerStatus,
-    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand, RuntimeUsage,
+    RuntimePermissionDecision, RuntimePermissionMode, RuntimePermissionRequest,
+    RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSlashCommand, RuntimeUsage,
 };
 
 use super::events_stream_blocks::EventIndexer;
@@ -36,8 +35,23 @@ pub enum PermissionFallbackOutcome {
     },
 }
 
+/// Provider-normalized blocking extension request, transported through the
+/// same permission bridge as canonical ACP permission requests.
+pub struct AcpExtensionRequest {
+    pub permission: RuntimePermissionRequest,
+    pub events: Vec<RuntimeEvent>,
+}
+
+/// Adapter-owned result for a pending ACP server request. Most requests only
+/// need a response payload; providers whose protocol requires a new prompt
+/// after the current turn may also queue a follow-up here.
+pub struct AcpServerRequestResolution {
+    pub response: Value,
+    pub followup: Option<Value>,
+}
+
 #[cfg(test)]
-struct DefaultFlattenHooks;
+pub(crate) struct DefaultFlattenHooks;
 
 #[cfg(test)]
 #[async_trait]
@@ -55,6 +69,17 @@ impl AcpProviderHooks for DefaultFlattenHooks {
 
 #[async_trait]
 pub trait AcpProviderHooks: Send + Sync {
+    /// Provider-specific authentication immediately after `initialize` and
+    /// before `session/new`/`session/load`. Pre-authenticated agents use the
+    /// no-op default.
+    async fn authenticate(
+        &self,
+        _client: &AcpClient,
+        _initialize_response: &Value,
+    ) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+
     /// Map a raw ACP `toolName` (often lowercase or aliased) onto the
     /// canonical Cadencr Pascal-case tool name.
     fn normalize_tool_name(&self, raw: &str) -> String;
@@ -74,13 +99,44 @@ pub trait AcpProviderHooks: Send + Sync {
     /// Map a Cadencr permission mode onto the provider's mode id.
     fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<String>;
 
+    /// Extra `_meta` on initialize `clientCapabilities` (Cursor: parameterizedModelPicker).
+    fn client_capabilities_meta(&self) -> agent_client_protocol::schema::v1::Meta {
+        agent_client_protocol::schema::v1::Meta::new()
+    }
+
     /// Provider config id for model changes over `session/set_config_option`.
     fn model_config_id(&self) -> Option<&'static str> {
         None
     }
 
-    /// Provider config id for thinking-effort changes over `session/set_config_option`.
-    fn thinking_effort_config_id(&self) -> Option<&'static str> {
+    /// Observe live session config options (retain aliases for later set_config_option).
+    fn observe_session_config_options(&self, _options: &[SessionConfigOption]) {}
+
+    /// Translate Cadencr catalog model id into the provider's live ACP wire value.
+    fn model_config_value(&self, model: &str) -> String {
+        model.to_string()
+    }
+
+    /// Extra set_config_option pairs after the model value (Cursor fast / thought-level).
+    fn model_config_companions(&self, _model: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
+    /// Wire model value + companions in one provider-local pass.
+    fn resolve_model_config(&self, model: &str) -> (String, Vec<(String, String)>) {
+        (
+            self.model_config_value(model),
+            self.model_config_companions(model),
+        )
+    }
+
+    /// Catalog model already encodes effort applied via companions; skip spawn effort RPC.
+    fn model_encodes_thinking_effort(&self, _model: &str) -> bool {
+        false
+    }
+
+    /// Provider config id for thinking-effort over `session/set_config_option`.
+    fn thinking_effort_config_id(&self) -> Option<String> {
         None
     }
 
@@ -113,6 +169,64 @@ pub trait AcpProviderHooks: Send + Sync {
     /// providers may opt in when their response carries context occupancy.
     fn prompt_response_usage(&self, _response: &Value) -> Option<RuntimeUsage> {
         None
+    }
+
+    /// Normalize a blocking provider extension into Cadencr's permission
+    /// bridge. Returning `None` makes the runtime reject the method as unknown.
+    fn extension_request(
+        &self,
+        _request_id: &str,
+        _method: &str,
+        _params: &Value,
+        _metadata: RuntimeEventMetadata,
+    ) -> Option<AcpExtensionRequest> {
+        None
+    }
+
+    /// Map a fire-and-forget provider extension to provider-neutral events.
+    fn extension_notification(
+        &self,
+        _method: &str,
+        _params: &Value,
+        _metadata: RuntimeEventMetadata,
+    ) -> Option<Vec<RuntimeEvent>> {
+        None
+    }
+
+    /// Encode the user's response to a pending server request. Canonical ACP
+    /// permission requests use the default payload; provider extensions may
+    /// translate to their own response schema inside the adapter.
+    fn resolve_server_request(
+        &self,
+        _method: &str,
+        _params: &Value,
+        response: &RuntimePermissionResponse,
+    ) -> AcpServerRequestResolution {
+        AcpServerRequestResolution {
+            response: super::permissions::acp_permission_response_payload(
+                response.decision,
+                response.option_id.as_deref(),
+                response.feedback.as_deref(),
+            ),
+            followup: None,
+        }
+    }
+
+    /// Provider-scoped preflight for canonical ACP permission requests.
+    /// Returning a decision answers the agent immediately without surfacing a
+    /// user prompt. The runtime only applies it when the matching option was
+    /// explicitly offered by the provider.
+    fn automatic_permission_decision(
+        &self,
+        _request: &RuntimePermissionRequest,
+        _params: &Value,
+    ) -> Option<RuntimePermissionDecision> {
+        None
+    }
+
+    /// Classify special blocking requests for shared post-response behavior.
+    fn permission_response_kind(&self, _request_id: &str) -> RuntimePermissionResponseKind {
+        RuntimePermissionResponseKind::Normal
     }
 
     /// Provider opt-in: refine the MCP server statuses negotiated at

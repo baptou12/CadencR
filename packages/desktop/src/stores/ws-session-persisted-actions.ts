@@ -11,7 +11,7 @@ import { parsePermissionPayload } from "./ws-envelope-payload";
 import { movePendingPromptBlocksToTail, trimTailPromptTurnBoundary } from "./ws-pending-prompts";
 import { type PersistedStatePayload, type SessionEntry, updateSession } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
-import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
+import { parseAccessMode } from "@/types/access-mode";
 import { mergeCanonicalBlocks } from "./ws-user-message-reconciliation";
 
 interface DecodedQuestion {
@@ -83,9 +83,7 @@ function buildSessionMetaPatch(options: SessionMetaPatchOptions): Partial<Sessio
     ...(payload.currentModelId ? { currentModelId: payload.currentModelId } : {}),
     ...(payload.currentProfile ? { currentProfile: payload.currentProfile } : {}),
     ...(payload.permissionMode ? { permissionMode: payload.permissionMode } : {}),
-    ...(payload.codexPermissionMode
-      ? { codexPermissionMode: parseCodexPermissionMode(payload.codexPermissionMode) }
-      : {}),
+    ...(payload.accessMode ? { accessMode: parseAccessMode(payload.accessMode) } : {}),
     ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
     ...(payload.runtimeSessionId ? { runtimeSessionId: payload.runtimeSessionId } : {}),
     ...(payload.contextUsage !== undefined ? { contextUsage: payload.contextUsage } : {}),

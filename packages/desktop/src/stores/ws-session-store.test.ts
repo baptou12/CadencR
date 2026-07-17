@@ -662,7 +662,7 @@ describe("ws-session-store", () => {
     expect(session.lifecycle).toEqual({ phase: "idle" });
   });
 
-  it("setCodexPermissionMode sends codex access mode to backend and waits for change event", async () => {
+  it("setAccessMode sends provider access mode and waits for change event", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -673,21 +673,21 @@ describe("ws-session-store", () => {
       payload: { session_id: "srv-1", provider: "codex_cli" },
     });
 
-    store.setCodexPermissionMode("s1", "autoReview");
+    store.setAccessMode("s1", "autoReview");
 
     const sent = ws.sent.map((raw) => JSON.parse(raw));
     expect(sent.at(-1)).toMatchObject({
-      action: "codex_permission_mode.set",
+      action: "access_mode.set",
       payload: { session_id: "srv-1", mode: "autoReview" },
     });
-    expect(useWsSessionStore.getState().sessions["s1"].codexPermissionMode).toBe("default");
+    expect(useWsSessionStore.getState().sessions["s1"].accessMode).toBe("default");
 
     ws.simulateMessage({
       domain: "session",
-      action: "codex_permission_mode.changed",
+      action: "access_mode.changed",
       payload: { mode: "autoReview" },
     });
-    expect(useWsSessionStore.getState().sessions["s1"].codexPermissionMode).toBe("autoReview");
+    expect(useWsSessionStore.getState().sessions["s1"].accessMode).toBe("autoReview");
   });
 
   it("setPermissionMode before initialized defers mode.set until initialized", async () => {
@@ -1209,7 +1209,25 @@ describe("ws-session-store", () => {
     });
 
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.codexPermissionMode).toBe("fullAccess");
+    expect(session.accessMode).toBe("fullAccess");
+  });
+
+  it("session.initialized with Cursor access mode updates the stored access chip", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+
+    getWs().simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: {
+        session_id: "42",
+        provider: "cursor",
+        access_mode: "autoReview",
+      },
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].accessMode).toBe("autoReview");
   });
 
   it("session.initialized with profile updates the stored session profile", async () => {
@@ -1265,7 +1283,7 @@ describe("ws-session-store", () => {
     expect(session.currentProfile).toBe("bedrock");
   });
 
-  it("session.codex_permission_mode.changed updates the stored access chip", async () => {
+  it("session.access_mode.changed updates the stored access chip", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -1273,12 +1291,12 @@ describe("ws-session-store", () => {
     const ws = getWs();
     ws.simulateMessage({
       domain: "session",
-      action: "codex_permission_mode.changed",
+      action: "access_mode.changed",
       payload: { mode: "autoReview" },
     });
 
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.codexPermissionMode).toBe("autoReview");
+    expect(session.accessMode).toBe("autoReview");
   });
 
   it("session.mode.changed accepts Claude bypass as a provider permission mode", async () => {
@@ -2420,6 +2438,34 @@ describe("ws-session-store", () => {
 
       const planBlock = session.blocks.find((b) => b.toolName === "ExitPlanMode");
       expect(planBlock?.planApprovalStatus).toBe("approved");
+    });
+
+    it("leaves live plan execution follow-up to the backend runtime", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      ws.simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: {
+          request_id: "req-plan-1",
+          tool_name: "ExitPlanMode",
+          tool_input: { plan: "## My Plan" },
+        },
+      });
+
+      const sentBeforeApproval = ws.sent.length;
+      useWsSessionStore.getState().approvePlan("s1");
+
+      const sent = ws.sent.slice(sentBeforeApproval).map((message) => JSON.parse(message));
+      expect(sent.map((message) => message.action)).toEqual(["permission.respond"]);
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "ended",
+        payload: { reason: "turn_complete" },
+      });
+      const afterEnded = ws.sent.slice(sentBeforeApproval).map((message) => JSON.parse(message));
+      expect(afterEnded.map((message) => message.action)).toEqual(["permission.respond"]);
     });
 
     it("requestPlanChanges sends permission.respond with deny and feedback", async () => {

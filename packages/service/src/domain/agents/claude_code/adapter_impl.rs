@@ -59,6 +59,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             status_message: None,
             models,
             modes: Vec::new(),
+            access_modes: Vec::new(),
             default_model,
         }
     }
@@ -116,8 +117,12 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     }
 
     fn supports_permission_mode(&self, mode: &RuntimePermissionMode) -> bool {
-        // Claude Code's CLI accepts every built-in variant the SDK exposes.
-        !matches!(mode, RuntimePermissionMode::OpenCodeAgent(_))
+        // Claude Code accepts its SDK permission modes, but not provider-level
+        // collaboration modes such as Cursor Ask or OpenCode custom agents.
+        !matches!(
+            mode,
+            RuntimePermissionMode::Ask | RuntimePermissionMode::OpenCodeAgent(_)
+        )
     }
     // Default edit mode maps to Claude Code's primary edit mode.
 
@@ -319,6 +324,7 @@ fn provider_catalog_entry_from_models(models: Vec<ModelCatalogEntry>) -> Provide
         status_message: None,
         models,
         modes: Vec::new(),
+        access_modes: Vec::new(),
         default_model,
     }
 }

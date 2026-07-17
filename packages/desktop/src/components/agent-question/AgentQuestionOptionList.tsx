@@ -7,7 +7,7 @@ import {
   AGENT_OPTION_CARD_SELECTED,
   AGENT_OPTION_CARD_HIGHLIGHTED,
 } from "@/components/agent-prompt-option-card";
-import type { AgentQuestionOption } from "./types";
+import { agentQuestionOptionValue, type AgentQuestionOption } from "./types";
 
 interface AgentQuestionOptionListProps {
   options: AgentQuestionOption[];
@@ -31,38 +31,41 @@ function AgentQuestionOptionListComponent({
 }: AgentQuestionOptionListProps) {
   return (
     <div className="mb-2 flex flex-col gap-1.5">
-      {options.map((option, optIdx) => (
-        <button
-          key={option.label}
-          type="button"
-          className={cn(
-            AGENT_OPTION_CARD_BASE,
-            selectedOptions.has(option.label)
-              ? AGENT_OPTION_CARD_SELECTED
-              : AGENT_OPTION_CARD_RESTING,
-            highlightedIndex === optIdx && AGENT_OPTION_CARD_HIGHLIGHTED,
-          )}
-          onClick={(e) => {
-            onOptionToggle(option.label);
-            // Blur so subsequent Enter is handled by the global hotkey (validate)
-            // rather than re-triggering this button's click (which would re-toggle).
-            e.currentTarget.blur();
-          }}
-        >
-          <span className="text-sm font-medium text-foreground">
-            <KbdShortcut
-              keys={[String(optIdx + 1)]}
-              variant="square"
-              scope="agent"
-              disabled={freeTextFocused}
-            />
-            {option.label}
-          </span>
-          {option.description && (
-            <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
-          )}
-        </button>
-      ))}
+      {options.map((option, optIdx) => {
+        const value = agentQuestionOptionValue(option);
+        return (
+          <button
+            key={value}
+            type="button"
+            className={cn(
+              AGENT_OPTION_CARD_BASE,
+              selectedOptions.has(value) ? AGENT_OPTION_CARD_SELECTED : AGENT_OPTION_CARD_RESTING,
+              highlightedIndex === optIdx && AGENT_OPTION_CARD_HIGHLIGHTED,
+            )}
+            onClick={(e) => {
+              onOptionToggle(value);
+              // Blur so subsequent Enter is handled by the global hotkey (validate)
+              // rather than re-triggering this button's click (which would re-toggle).
+              e.currentTarget.blur();
+            }}
+          >
+            <span className="text-sm font-medium text-foreground">
+              <KbdShortcut
+                keys={[String(optIdx + 1)]}
+                variant="square"
+                scope="agent"
+                disabled={freeTextFocused}
+              />
+              {option.label}
+            </span>
+            {option.description && (
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {option.description}
+              </span>
+            )}
+          </button>
+        );
+      })}
       {/* "Other" toggle */}
       <button
         type="button"

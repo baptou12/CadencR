@@ -79,20 +79,37 @@ pub(super) async fn handle_init(
         return;
     };
 
+    let configured_provider = settings::resolve_setting(
+        &app_state.read_pool,
+        &crate::domain::agents::runtime::runtime_setting_key("session"),
+        Some(feature_id),
+        Some(project_id),
+        Some(DEFAULT_PROVIDER),
+    )
+    .await
+    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    let initial_provider = payload
+        .provider
+        .clone()
+        .unwrap_or_else(|| configured_provider.clone());
+    let configured_initial_access_mode =
+        super::access::configured_access_mode(&initial_provider, &app_state.read_pool).await;
+    let configured_initial_access_wire = configured_initial_access_mode
+        .as_ref()
+        .map(crate::domain::agents::adapter::access_mode_wire);
+
     // Find or create DB session row
     info!(
         feature_id,
         "handle_init: looking up session in DB for feature_id"
     );
-    let configured_codex_access_mode =
-        super::codex_access::configured_access_mode(&app_state.read_pool).await;
     let mut persistence = WsSessionPersistence::new(app_state.write_pool.clone(), feature_id);
     let pm_str = payload.permission_mode.as_deref();
     let db_session_id = match persistence
-        .find_or_create_session_with_codex_permission_mode(
+        .find_or_create_session_with_access_mode(
             payload.model.as_deref(),
             pm_str,
-            Some(&configured_codex_access_mode),
+            configured_initial_access_wire,
         )
         .await
     {
@@ -130,15 +147,6 @@ pub(super) async fn handle_init(
         );
     }
 
-    let configured_provider = settings::resolve_setting(
-        &app_state.read_pool,
-        &crate::domain::agents::runtime::runtime_setting_key("session"),
-        Some(feature_id),
-        Some(project_id),
-        Some(DEFAULT_PROVIDER),
-    )
-    .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
     let stored_model = row.as_ref().and_then(|r| r.model.clone());
     let effective_model = stored_model.clone().or(payload.model.clone());
     let stored_thinking_effort = row.as_ref().and_then(|r| r.thinking_effort.clone());
@@ -241,15 +249,22 @@ pub(super) async fn handle_init(
             .map(parse_permission_mode)
             .unwrap_or_else(|| default_permission_mode(&effective_provider)),
     );
-    let effective_codex_permission_mode = row
-        .as_ref()
-        .and_then(|session| session.codex_permission_mode.clone())
-        .unwrap_or_else(|| configured_codex_access_mode.clone());
-    runtime_config.access_mode = super::codex_access::runtime_access_mode(
+    let configured_access_mode = if effective_provider == initial_provider {
+        configured_initial_access_mode
+    } else {
+        super::access::configured_access_mode(&effective_provider, &app_state.read_pool).await
+    };
+    runtime_config.access_mode = super::access::runtime_access_mode(
         &effective_provider,
-        Some(&effective_codex_permission_mode),
-        &configured_codex_access_mode,
+        row.as_ref()
+            .and_then(|session| session.codex_permission_mode.as_deref()),
+        configured_access_mode,
     );
+    let effective_access_mode_wire = runtime_config
+        .access_mode
+        .as_ref()
+        .map(crate::domain::agents::adapter::access_mode_wire)
+        .map(ToOwned::to_owned);
     runtime_config.system_prompt = payload.system_prompt.clone();
     let effective_profile = super::session_runtime_config::apply_claude_settings(
         app_state,
@@ -309,10 +324,11 @@ pub(super) async fn handle_init(
             codex_permission_mode: if effective_provider
                 == crate::domain::agents::codex::PROVIDER_ID
             {
-                Some(effective_codex_permission_mode)
+                effective_access_mode_wire.clone()
             } else {
                 None
             },
+            access_mode: effective_access_mode_wire,
             input_tokens: init_input_tokens.map(|v| v as u64),
             output_tokens: init_output_tokens.map(|v| v as u64),
             context_window: init_context_window.map(|v| v as u64),

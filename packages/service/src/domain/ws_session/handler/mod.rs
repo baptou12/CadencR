@@ -15,10 +15,10 @@
 //! They are grouped by responsibility into thematic files under `tests/`
 //! and exercise the public surface this module re-exports.
 
+mod access;
 mod active_turns;
 mod app;
 mod claude_access;
-mod codex_access;
 mod commands;
 mod connection;
 mod dispatch;

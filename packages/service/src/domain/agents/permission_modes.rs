@@ -11,6 +11,7 @@ pub(crate) fn parse_permission_mode(mode: &str) -> RuntimePermissionMode {
         "acceptEdits" => RuntimePermissionMode::AcceptEdits,
         "bypassPermissions" => RuntimePermissionMode::BypassPermissions,
         "plan" => RuntimePermissionMode::Plan,
+        "ask" => RuntimePermissionMode::Ask,
         "auto" => RuntimePermissionMode::Auto,
         "dontAsk" => RuntimePermissionMode::DontAsk,
         _ => RuntimePermissionMode::Default,
@@ -23,6 +24,7 @@ pub(crate) fn permission_mode_wire(mode: &RuntimePermissionMode) -> String {
         RuntimePermissionMode::AcceptEdits => "acceptEdits".to_string(),
         RuntimePermissionMode::BypassPermissions => "bypassPermissions".to_string(),
         RuntimePermissionMode::Plan => "plan".to_string(),
+        RuntimePermissionMode::Ask => "ask".to_string(),
         RuntimePermissionMode::Auto => "auto".to_string(),
         RuntimePermissionMode::DontAsk => "dontAsk".to_string(),
         RuntimePermissionMode::OpenCodeAgent(name) => {
@@ -44,6 +46,13 @@ mod tests {
             RuntimePermissionMode::OpenCodeAgent("documentor".to_string())
         );
         assert_eq!(permission_mode_wire(&mode), "opencodeAgent:documentor");
+    }
+
+    #[test]
+    fn parses_and_serializes_ask_mode() {
+        let mode = parse_permission_mode("ask");
+        assert_eq!(mode, RuntimePermissionMode::Ask);
+        assert_eq!(permission_mode_wire(&mode), "ask");
     }
 }
 

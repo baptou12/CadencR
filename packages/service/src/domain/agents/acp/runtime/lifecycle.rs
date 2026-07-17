@@ -60,11 +60,12 @@ pub async fn negotiate_session(
     hooks: &dyn AcpProviderHooks,
 ) -> Result<NegotiatedSession, RuntimeError> {
     let init_result = client
-        .send_request_typed(initialize_request(client), INIT_TIMEOUT)
+        .send_request_typed(initialize_request(client, hooks), INIT_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP initialize failed: {e}")))?;
     let init_value = serde_json::to_value(init_result)
         .map_err(|e| RuntimeError::new(format!("ACP initialize response invalid: {e}")))?;
+    hooks.authenticate(client, &init_value).await?;
     let capabilities = parse_agent_capabilities(&init_value);
 
     let resume_id = config.resume_session_id.as_deref();
@@ -94,7 +95,8 @@ pub async fn negotiate_session(
         .available_mcp_servers(&config.cwd, mcp_status_list(config.mcp_servers.as_ref()))
         .await;
     if let Some(resume_id) = resume_id {
-        let current_mode = load_session(client, resume_id, &config.cwd, &mcp_servers).await?;
+        let current_mode =
+            load_session(client, resume_id, &config.cwd, &mcp_servers, hooks).await?;
         return Ok(NegotiatedSession {
             session_id: resume_id.to_string(),
             model: model_id,
@@ -103,7 +105,8 @@ pub async fn negotiate_session(
             current_mode,
         });
     }
-    let (session_id, current_mode) = start_new_session(client, &config.cwd, &mcp_servers).await?;
+    let (session_id, current_mode) =
+        start_new_session(client, &config.cwd, &mcp_servers, hooks).await?;
 
     Ok(NegotiatedSession {
         session_id,
@@ -119,6 +122,7 @@ async fn load_session(
     session_id: &str,
     cwd: &Path,
     mcp_servers: &Value,
+    hooks: &dyn AcpProviderHooks,
 ) -> Result<Option<String>, RuntimeError> {
     let request = LoadSessionRequest::new(session_id.to_string(), cwd.to_path_buf()).mcp_servers(
         serde_json::from_value::<Vec<McpServer>>(mcp_servers.clone())
@@ -128,22 +132,28 @@ async fn load_session(
         .send_request_typed(request, SESSION_SETUP_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/load failed: {e}")))?;
+    hooks.observe_session_config_options(result.config_options.as_deref().unwrap_or_default());
     Ok(result
         .modes
         .as_ref()
         .map(|modes| modes.current_mode_id.to_string()))
 }
 
-fn initialize_request(client: &AcpClient) -> InitializeRequest {
+fn initialize_request(client: &AcpClient, hooks: &dyn AcpProviderHooks) -> InitializeRequest {
     let info = client.client_info();
+    let meta = hooks.client_capabilities_meta();
+    let capabilities = ClientCapabilities::new()
+        .fs(FileSystemCapabilities::new()
+            .read_text_file(true)
+            .write_text_file(true))
+        .terminal(true);
+    let capabilities = if meta.is_empty() {
+        capabilities
+    } else {
+        capabilities.meta(meta)
+    };
     InitializeRequest::new(ProtocolVersion::V1)
-        .client_capabilities(
-            ClientCapabilities::new()
-                .fs(FileSystemCapabilities::new()
-                    .read_text_file(true)
-                    .write_text_file(true))
-                .terminal(true),
-        )
+        .client_capabilities(capabilities)
         .client_info(
             Implementation::new(info.name.clone(), info.version.clone())
                 .title(Some(info.title.clone())),
@@ -163,6 +173,7 @@ async fn start_new_session(
     client: &AcpClient,
     cwd: &Path,
     mcp_servers: &Value,
+    hooks: &dyn AcpProviderHooks,
 ) -> Result<(String, Option<String>), RuntimeError> {
     let request = NewSessionRequest::new(cwd.to_path_buf()).mcp_servers(
         serde_json::from_value::<Vec<McpServer>>(mcp_servers.clone())
@@ -172,6 +183,7 @@ async fn start_new_session(
         .send_request_typed(request, SESSION_SETUP_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/new failed: {e}")))?;
+    hooks.observe_session_config_options(result.config_options.as_deref().unwrap_or_default());
     let current_mode = result
         .modes
         .as_ref()
@@ -285,6 +297,10 @@ mod tests {
 
         let init = read_request(&mut stdin).await;
         assert_eq!(init["method"], "initialize");
+        // Generic ACP hooks omit Cursor-only clientCapabilities meta.
+        assert!(
+            init["params"]["clientCapabilities"]["_meta"]["parameterizedModelPicker"].is_null()
+        );
         send_response(
             &mut stdout,
             init["id"].clone(),

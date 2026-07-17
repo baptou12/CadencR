@@ -1,22 +1,11 @@
 use super::events_stream_blocks::EventIndexer;
+use super::events_tool_call_metadata::{
+    enrich_tool_input, has_input_metadata, is_empty_value, merge_tool_input,
+};
 use super::provider_hooks::AcpProviderHooks;
 use super::stream_events::stream_delta_event;
 use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeEvent, RuntimeEventMetadata};
 use serde_json::{json, Value};
-pub(super) fn is_structured_input_tool(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "Write"
-            | "Edit"
-            | "MultiEdit"
-            | "NotebookEdit"
-            | "ApplyPatch"
-            | "Bash"
-            | "Task"
-            | "Agent"
-            | "TodoWrite"
-    )
-}
 pub(super) fn synthesize_input_delta_event(
     tool_call_id: &str,
     index: u64,
@@ -32,14 +21,21 @@ pub(super) fn synthesize_input_delta_event(
         .filter(|v| !is_empty_value(v))
         .or_else(|| body.get("toolInput"))
         .cloned();
-    let derived_input = match raw_input {
-        Some(value) if !is_empty_value(&value) => value,
-        _ if is_structured_input_tool(&tool_name) => derive_input_from_content(&tool_name, body)?,
-        _ => return None,
-    };
+    let derived_input = raw_input
+        .filter(|value| !is_empty_value(value))
+        .or_else(|| derive_input_from_content(&tool_name, body))
+        .unwrap_or(Value::Null);
+    if is_empty_value(&derived_input) && !has_input_metadata(body) {
+        return None;
+    }
     let normalized = hooks.normalize_tool_input(&tool_name, derived_input);
-    indexer.record_tool_input(tool_call_id, normalized.clone());
-    let partial_json = serde_json::to_string(&normalized).ok()?;
+    let merged = merge_tool_input(indexer.tool_input_for(tool_call_id), normalized);
+    let enriched = enrich_tool_input(body, merged);
+    if indexer.tool_input_for(tool_call_id) == Some(&enriched) {
+        return None;
+    }
+    indexer.record_tool_input(tool_call_id, enriched.clone());
+    let partial_json = serde_json::to_string(&enriched).ok()?;
     let event = stream_delta_event(
         metadata.session_id.as_deref().unwrap_or(""),
         index,
@@ -47,14 +43,6 @@ pub(super) fn synthesize_input_delta_event(
         parent_tool_use_id.as_deref(),
     );
     Some(event)
-}
-pub(super) fn is_empty_value(value: &Value) -> bool {
-    match value {
-        Value::Null => true,
-        Value::Object(map) => map.is_empty(),
-        Value::Array(arr) => arr.is_empty(),
-        _ => false,
-    }
 }
 pub(super) fn derive_input_from_content(tool_name: &str, body: &Value) -> Option<Value> {
     if matches!(tool_name, "Task" | "Agent") {
@@ -172,10 +160,7 @@ fn extract_diff_entry(entry: &Value) -> Option<DiffEntry> {
 }
 #[cfg(test)]
 mod tests {
-    use super::{
-        derive_input_from_content, is_empty_value, is_structured_input_tool,
-        synthesize_input_delta_event,
-    };
+    use super::{derive_input_from_content, is_empty_value, synthesize_input_delta_event};
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::adapter::{
@@ -197,13 +182,6 @@ mod tests {
         fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<String> {
             None
         }
-    }
-    #[test]
-    fn is_structured_input_tool_recognises_diff_and_bash_tools() {
-        for name in ["Write", "Edit", "Bash"] {
-            assert!(is_structured_input_tool(name), "{name}");
-        }
-        assert!(!is_structured_input_tool("Read"));
     }
     #[test]
     fn is_empty_value_treats_empty_objects_and_arrays_as_empty() {
@@ -322,7 +300,7 @@ mod tests {
         .is_none());
     }
     #[test]
-    fn synthesize_returns_none_for_non_structured_tools_without_raw_input() {
+    fn synthesize_returns_none_without_input_or_metadata() {
         let mut idx = EventIndexer::default();
         idx.record_tool_name("t-2", "Read");
         let body = json!({ "content": [{ "type": "text", "text": "file" }] });
@@ -341,7 +319,11 @@ mod tests {
     fn synthesize_emits_input_json_delta_from_explicit_tool_input() {
         let mut idx = EventIndexer::default();
         idx.record_tool_name("t-3", "Bash");
-        let body = json!({ "toolInput": { "command": "ls -la" } });
+        let body = json!({
+            "title": "List repository files",
+            "locations": [{ "path": "/repo" }],
+            "toolInput": { "command": "ls -la" }
+        });
         let event = synthesize_input_delta_event(
             "t-3",
             7,
@@ -360,6 +342,8 @@ mod tests {
                 assert_eq!(*index, 7);
                 let parsed: Value = serde_json::from_str(partial_json).unwrap();
                 assert_eq!(parsed["command"], "ls -la");
+                assert_eq!(parsed["description"], "List repository files");
+                assert_eq!(parsed["path"], "/repo");
             }
             other => panic!("unexpected variant: {other:?}"),
         }

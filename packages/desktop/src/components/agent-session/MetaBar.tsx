@@ -11,12 +11,15 @@ import type { TodoItem } from "@/types/agent";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
-import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
+import type { AccessMode } from "@/types/access-mode";
+import type {
+  RuntimeProviderAccessModeOption,
+  RuntimeProviderModeOption,
+} from "@/api/agentRuntime";
 import type { ClaudeCodeProfile } from "@/api/agentRuntime";
 import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
-import { CodexAccessModePopover } from "./CodexAccessModePopover";
+import { AccessModePopover } from "./AccessModePopover";
 import { getDisplayMode } from "./meta-bar-codex-modes";
 import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
 
@@ -35,10 +38,11 @@ export interface MetaBarProps {
    */
   enabledOptInModes?: PermissionMode[];
   providerModes?: readonly RuntimeProviderModeOption[];
-  codexPermissionMode?: CodexPermissionMode;
-  codexPermissionDefaultMode?: CodexPermissionMode;
-  isCodexPermissionModePending?: boolean;
-  onCodexPermissionModeChange?: (mode: CodexPermissionMode) => void;
+  providerAccessModes?: readonly RuntimeProviderAccessModeOption[];
+  accessMode?: AccessMode;
+  accessModeDefault?: AccessMode;
+  isAccessModePending?: boolean;
+  onAccessModeChange?: (mode: AccessMode) => void;
   showWorktreeChip: boolean;
   /**
    * Branch/worktree behavior picker (Branch chip + explicit mode menu). The
@@ -117,10 +121,11 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     onPermissionModeToggle,
     enabledOptInModes,
     providerModes = [],
-    codexPermissionMode,
-    codexPermissionDefaultMode,
-    isCodexPermissionModePending = false,
-    onCodexPermissionModeChange,
+    accessMode,
+    providerAccessModes = [],
+    accessModeDefault,
+    isAccessModePending = false,
+    onAccessModeChange,
     showWorktreeChip,
     worktreeMode,
     onWorktreeModeChange,
@@ -203,11 +208,11 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
   const displayMode = getDisplayMode(activeMode, displayProviderId, permissionMode);
   const isStandalone = variant === "standalone";
   const shouldShowModel = !!onModelChange || showReadOnlyModel;
-  const hasCodexAccessMode = !!codexPermissionMode && !!onCodexPermissionModeChange;
+  const hasAccessMode = !!accessMode && !!onAccessModeChange && providerAccessModes.length > 0;
   const hasProfileSelector =
     showClaudeProfileSelector && !!claudeProfile && !!onClaudeProfileChange;
   const hasTrailingGroup =
-    hasProfileSelector || hasCodexAccessMode || (!secondaryBelow && runtimeSessionId && onPause);
+    hasProfileSelector || hasAccessMode || (!secondaryBelow && runtimeSessionId && onPause);
 
   return (
     <div
@@ -297,13 +302,15 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
             />
           )}
 
-          {/* Codex access chip — separate from collaboration mode; no keyboard shortcut. */}
-          {codexPermissionMode && onCodexPermissionModeChange && (
-            <CodexAccessModePopover
-              mode={codexPermissionMode}
-              selectedMode={codexPermissionDefaultMode}
-              isPending={isCodexPermissionModePending}
-              onChange={onCodexPermissionModeChange}
+          {/* Provider access chip — separate from collaboration mode; no keyboard shortcut. */}
+          {accessMode && onAccessModeChange && providerAccessModes.length > 0 && (
+            <AccessModePopover
+              mode={accessMode}
+              selectedMode={accessModeDefault}
+              isPending={isAccessModePending}
+              onChange={onAccessModeChange}
+              providerId={displayProviderId}
+              options={providerAccessModes}
             />
           )}
 

@@ -3,6 +3,7 @@ pub mod adapter;
 pub mod claude_code;
 pub mod codex;
 pub mod config_migration;
+pub mod cursor;
 pub mod discovery;
 mod mcp_tool_names;
 pub mod model_refs;

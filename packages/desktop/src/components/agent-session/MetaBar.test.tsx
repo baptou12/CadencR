@@ -5,6 +5,37 @@ import { PROVIDER_IDS } from "@/lib/providers";
 import { MetaBar, type MetaBarProps } from "./MetaBar";
 import { MODEL_CATALOG_LOADING_LABEL } from "./useAgentSessionModelState";
 
+const CODEX_ACCESS_MODES = [
+  {
+    id: "default" as const,
+    label: "Default",
+    description: "Runs in the workspace-write sandbox with approval requests routed to you.",
+  },
+  {
+    id: "fullAccess" as const,
+    label: "Full Access",
+    description: "Disables sandboxing and approval prompts.",
+  },
+  {
+    id: "autoReview" as const,
+    label: "Auto Review",
+    description: "Codex can automatically review approval requests.",
+  },
+];
+const CURSOR_ACCESS_MODES = [
+  { id: "default" as const, label: "Default", description: "Uses Cursor approval rules." },
+  {
+    id: "fullAccess" as const,
+    label: "Full Access",
+    description: "Starts Cursor with Run Everything enabled.",
+  },
+  {
+    id: "autoReview" as const,
+    label: "Auto Review",
+    description: "Cursor's classifier reviews other Shell, MCP, and Fetch calls.",
+  },
+];
+
 /**
  * The mode chip is the central UI of the per-provider mode alignment work, so
  * lock its labels, colors, and visibility down with focused render tests.
@@ -13,6 +44,7 @@ import { MODEL_CATALOG_LOADING_LABEL } from "./useAgentSessionModelState";
  * props needed to render and only assert on the mode chip.
  */
 function renderChip(overrides: Partial<MetaBarProps> = {}) {
+  const accessProvider = overrides.runtimeProvider ?? overrides.currentProviderId;
   const baseProps: MetaBarProps = {
     showAutoScrollChip: false,
     autoScrollEnabled: false,
@@ -23,6 +55,8 @@ function renderChip(overrides: Partial<MetaBarProps> = {}) {
     onPermissionModeToggle: vi.fn(),
     permissionMode: "acceptEdits",
     currentProviderId: PROVIDER_IDS.CLAUDE_CODE,
+    providerAccessModes:
+      accessProvider === PROVIDER_IDS.CURSOR ? CURSOR_ACCESS_MODES : CODEX_ACCESS_MODES,
     ...overrides,
   };
   return render(<MetaBar {...baseProps} />);
@@ -130,8 +164,8 @@ describe("MetaBar mode chip", () => {
   it("renders Codex access mode as a separate chip without a shortcut", () => {
     renderChip({
       currentProviderId: PROVIDER_IDS.CODEX_CLI,
-      codexPermissionMode: "autoReview",
-      onCodexPermissionModeChange: vi.fn(),
+      accessMode: "autoReview",
+      onAccessModeChange: vi.fn(),
       runtimeProvider: PROVIDER_IDS.CODEX_CLI,
       runtimeSessionId: "thread-123",
     });
@@ -142,13 +176,30 @@ describe("MetaBar mode chip", () => {
     expect(chip).toHaveAttribute("title", expect.not.stringMatching(/Shift\\+Tab/i));
   });
 
+  it("renders Cursor access mode with Cursor permission semantics", async () => {
+    const user = userEvent.setup();
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CURSOR,
+      accessMode: "autoReview",
+      onAccessModeChange: vi.fn(),
+      runtimeProvider: PROVIDER_IDS.CURSOR,
+      runtimeSessionId: "cursor-chat-123",
+    });
+
+    await user.click(screen.getByRole("button", { name: /Cursor access mode: Auto Review/i }));
+
+    expect(screen.getByText("Cursor access mode")).toBeInTheDocument();
+    expect(screen.getByText(/classifier reviews other Shell, MCP, and Fetch calls/i)).toBeVisible();
+    expect(screen.getByText(/Run Everything enabled/i)).toBeVisible();
+  });
+
   it("opens a Codex access mode popover and selects a mode", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     renderChip({
       currentProviderId: PROVIDER_IDS.CODEX_CLI,
-      codexPermissionMode: "default",
-      onCodexPermissionModeChange: onChange,
+      accessMode: "default",
+      onAccessModeChange: onChange,
       runtimeProvider: PROVIDER_IDS.CODEX_CLI,
       runtimeSessionId: "thread-123",
     });
@@ -169,9 +220,9 @@ describe("MetaBar mode chip", () => {
     const user = userEvent.setup();
     renderChip({
       currentProviderId: PROVIDER_IDS.CODEX_CLI,
-      codexPermissionMode: "default",
-      codexPermissionDefaultMode: "fullAccess",
-      onCodexPermissionModeChange: vi.fn(),
+      accessMode: "default",
+      accessModeDefault: "fullAccess",
+      onAccessModeChange: vi.fn(),
       runtimeProvider: PROVIDER_IDS.CODEX_CLI,
       runtimeSessionId: "thread-123",
     });
@@ -189,8 +240,8 @@ describe("MetaBar mode chip", () => {
     renderChip({
       currentProviderId: PROVIDER_IDS.CODEX_CLI,
       permissionMode: "default",
-      codexPermissionMode: "default",
-      onCodexPermissionModeChange: vi.fn(),
+      accessMode: "default",
+      onAccessModeChange: vi.fn(),
       runtimeProvider: PROVIDER_IDS.CODEX_CLI,
       runtimeSessionId: "thread-123",
       onPause: vi.fn(),

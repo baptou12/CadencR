@@ -2,7 +2,7 @@ import { ClipboardList, ShieldOff, Sparkles, Zap, type LucideIcon } from "lucide
 import { PROVIDER_IDS } from "@/lib/providers";
 import { findProviderMode, type ProviderMode } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
-import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import type { AccessMode } from "@/types/access-mode";
 
 export interface DisplayModeDefinition {
   label: string;
@@ -50,8 +50,8 @@ function codexPlanDisplayMode(
   };
 }
 
-export interface CodexAccessModeDefinition {
-  id: CodexPermissionMode;
+export interface AccessModeDefinition {
+  id: AccessMode;
   label: string;
   description: string;
   longDescription: string;
@@ -60,7 +60,7 @@ export interface CodexAccessModeDefinition {
   icon: LucideIcon;
 }
 
-export const CODEX_ACCESS_MODES: CodexAccessModeDefinition[] = [
+export const ACCESS_MODE_DEFINITIONS: AccessModeDefinition[] = [
   {
     id: "default",
     label: "Default",
@@ -94,9 +94,9 @@ export const CODEX_ACCESS_MODES: CodexAccessModeDefinition[] = [
   },
 ];
 
-export function getCodexAccessMode(
-  mode: CodexPermissionMode | undefined,
-): CodexAccessModeDefinition | null {
+export function getAccessModeDefinition(mode: AccessMode | undefined): AccessModeDefinition | null {
   if (!mode) return null;
-  return CODEX_ACCESS_MODES.find((candidate) => candidate.id === mode) ?? CODEX_ACCESS_MODES[0];
+  return (
+    ACCESS_MODE_DEFINITIONS.find((candidate) => candidate.id === mode) ?? ACCESS_MODE_DEFINITIONS[0]
+  );
 }
