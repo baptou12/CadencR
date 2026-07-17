@@ -12,6 +12,38 @@ pub async fn run_git(args: &[&str], cwd: &Path) -> Result<String, AppError> {
     run_raw(args, cwd).await
 }
 
+/// Spawn a fully caller-controlled Git command and return its output even when
+/// Git exits unsuccessfully. Callers that pass user-controlled values must run
+/// [`guard_positionals`] first.
+pub async fn run_git_output_with_env(
+    args: &[&str],
+    cwd: &Path,
+    env: &[(&str, &str)],
+) -> Result<std::process::Output, AppError> {
+    Command::new("git")
+        .args(args)
+        .envs(env.iter().copied())
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|error| AppError::GitCommandError(format!("Failed to spawn git: {error}")))
+}
+
+/// Convert a captured non-zero Git result into the standard user-facing error
+/// while retaining both output streams when Git split useful context between
+/// them.
+pub fn git_output_error(args: &[&str], output: &std::process::Output) -> AppError {
+    let stderr = scrub_home_prefix(String::from_utf8_lossy(&output.stderr).trim());
+    let stdout = scrub_home_prefix(String::from_utf8_lossy(&output.stdout).trim());
+    let detail = match (stderr.as_str(), stdout.as_str()) {
+        ("", "") => "git exited without an error message".to_string(),
+        ("", stdout) => stdout.to_string(),
+        (stderr, "") => stderr.to_string(),
+        (stderr, stdout) => format!("{stderr} ({stdout})"),
+    };
+    AppError::GitCommandError(format!("git {} failed: {detail}", args.join(" ")))
+}
+
 /// Run a git command with extra environment variables injected for this one
 /// invocation. Used by the checkpoints subsystem to snapshot a worktree with an
 /// **isolated index** (`GIT_INDEX_FILE`) so the user's real `.git/index` is
@@ -25,13 +57,7 @@ pub async fn run_git_with_env(
     cwd: &Path,
     env: &[(&str, &str)],
 ) -> Result<String, AppError> {
-    let output = Command::new("git")
-        .args(args)
-        .envs(env.iter().copied())
-        .current_dir(cwd)
-        .output()
-        .await
-        .map_err(|e| AppError::GitCommandError(format!("Failed to spawn git: {e}")))?;
+    let output = run_git_output_with_env(args, cwd, env).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

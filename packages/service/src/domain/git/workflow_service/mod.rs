@@ -26,6 +26,7 @@ mod push;
 mod status;
 mod streaming;
 mod target_branch;
+mod update_branch;
 
 pub use branches::list_branches;
 pub(crate) use checkout::resolve_ref as resolve_checkout_ref;
@@ -35,6 +36,10 @@ pub use merge::{merge_feature_branch, MergeFeatureBranchBody};
 pub use push::{push, push_input};
 pub use status::{enrich_with_sharing, get_compare_url, get_git_status};
 pub use target_branch::{resolve_target_branch, update_target_branch};
+#[allow(unused_imports)] // Phase 1C API surface; routes land in the integration lane.
+pub use update_branch::{
+    abort_update_branch, continue_update_branch, detect_active_git_operation, update_branch,
+};
 
 use std::path::Path;
 
