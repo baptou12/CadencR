@@ -7,15 +7,89 @@ meta:
   project: Cadencr Desktop
   source_of_truth: Page - Unified agents.html
   secondary_reference: Page - Session.html
-  default_theme: dracula
+  default_theme: cadencr-dark
   default_screen: workspace        # Unified agents page lands on "unified"; Session lands on "workspace"
 
+brand:
+  direction: Emerald Reserve
+  validated: 2026-07
+  dark:
+    ground: "#131416"
+    rail: "#090A0C"
+    raised: "#1A1B1D"
+    foreground: "#EFF0F2"
+    foreground_soft: "#A7A9AD"
+    foreground_muted: "#6E7176"
+    hairline: "#34373A"
+    primary: "#2DB47D"
+  light:
+    ground: "#FAFAFB"
+    rail: "#EFF0F2"
+    raised: "#FFFFFF"
+    foreground: "#222429"
+    foreground_soft: "#60636A"
+    foreground_muted: "#95989F"
+    hairline: "#D7DADD"
+    primary: "#087653"
+  functional:
+    dark: { file_change: "#8BCF67", deletion: "#EC707B", thinking: "#52BFD0", warning: "#E2B64D", generic_tool: "#6D9BEC", syntax: "#DE7CA7" }
+    light: { file_change: "#3D7D14", deletion: "#D12D49", thinking: "#007F9B", warning: "#966C00", generic_tool: "#1D5ED8", syntax: "#B52B70" }
+
 themes:
-  # Three canonical themes. data-theme="..." selects the variant; theme-loader.jsx
-  # maps the data-theme key to the JSON filename via FILE_MAP.
-  #   light   → themes/aurora.json
-  #   dark    → themes/dracula.json
-  #   onedark → themes/one-dark.json
+  # CadencR Dark and Light are the product defaults. Aurora, Dracula, and
+  # One Dark remain supported alternatives and keep their existing palettes.
+
+  cadencr_dark:
+    id: cadencr-dark
+    label: CadencR Dark
+    appearance: dark
+    background: "#131416"
+    surface: "#1A1B1D"
+    surface_sunken: "#08090B"
+    sidebar: "#090A0C"
+    border: "#34373A"
+    text_primary: "#EFF0F2"
+    text_secondary: "#A7A9AD"
+    text_muted: "#6E7176"
+    accent: "#2DB47D"
+    accent_thinking: "#52BFD0"
+    accent_thinking_bg: "#1E272A"
+    thinking_text: "#C1D2D5"
+    success: "#8BCF67"
+    danger: "#EC707B"
+    warning: "#E2B64D"
+    info: "#6D9BEC"
+    syntax: "#DE7CA7"
+    code_bg: "#08090B"
+    code_fg: "#EFF0F2"
+    user_message_bg: "#19231F"
+    user_message_border: "#315447"
+
+  cadencr_light:
+    id: cadencr-light
+    label: CadencR Light
+    appearance: light
+    background: "#FAFAFB"
+    surface: "#FFFFFF"
+    surface_sunken: "#F4F5F7"
+    sidebar: "#EFF0F2"
+    border: "#D7DADD"
+    text_primary: "#222429"
+    text_secondary: "#60636A"
+    text_muted: "#95989F"
+    accent: "#087653"
+    accent_thinking: "#007F9B"
+    accent_thinking_bg: "#F0F7F9"
+    thinking_text: "#2F454B"
+    success: "#3D7D14"
+    danger: "#D12D49"
+    warning: "#966C00"
+    info: "#1D5ED8"
+    syntax: "#B52B70"
+    code_bg: "#F4F5F7"
+    code_fg: "#222429"
+    user_message_bg: "#F1F6F3"
+    user_message_border: "#A9C7BA"
 
   aurora:
     id: aurora
@@ -195,7 +269,7 @@ status:
   ready: success           # green dot in worktree row, agent feat-title dot
   in_progress: warning     # orange — feature row "in progress" pill
   retry: danger            # red — retry counter on prompt action bar
-  thinking: accent_violet  # violet block bg in agent stream
+  thinking: accent_violet  # legacy schema name; resolves to the theme-owned thinking accent
 
 # ─── Iconography ─────────────────────────────────────────────────────────
 iconography:
@@ -218,36 +292,40 @@ iconography:
 
 **What it is NOT.** It is not a chat app — the agent stream is a transcript artifact, not a conversation surface. It is not a code editor — the Editor pane is a read-side review tool, not a place to write. It is not a generic AI sidebar; it is the primary workspace.
 
-## Brand identity (validated 2026-07 — "Violet Night")
+## Brand identity (validated 2026-07 — "Emerald Reserve")
 
-The brand direction was re-validated in July 2026 through the landing redesign (`packages/landing/brand-directions.html`, direction C + logo 03-E). The landing leads; a future desktop default theme follows these handoff tokens. Until that theme ships, the three canonical themes below are unchanged.
+The brand direction was re-validated in July 2026 through the in-product palette exploration in `packages/landing/palette-exploration.html` and Raphael's iterative review. The landing leads and the `cadencr-dark` / `cadencr-light` defaults follow the same handoff tokens. Legacy themes keep their own identities.
 
-- **Logo — "Index Dots".** Twelve ink dots (r1.9) on a r14.5 ring around a solid iris core (r5.5), on a 48 grid. Distilled from the original dotted-ring favicon; two colors only. Favicon / ≤32px raster cut: dots r3, core r7. Core color: iris `#7C68C9` on dark grounds, iris-deep `#5843B8` on light. Dots always take the surrounding ink color (currentColor). The old green/cyan agent arcs are retired.
+- **Logo — "Index Dots".** Twelve ink dots (r1.9) on a r14.5 ring around a solid emerald core (r5.5), on a 48 grid. Distilled from the original dotted-ring favicon; two colors only. Favicon / ≤32px raster cut: dots r3, core r7. Core color: emerald `#2DB47D` on dark grounds, emerald-deep `#087653` on light. Dots always take the surrounding ink color (`currentColor`). The old multi-color agent arcs are retired.
 - **Wordmark.** `CADENCR` in Figtree, weight 800, uppercase, tracked ~0.05em — unchanged (`--font-brand` already renders this).
-- **Handoff palette** for the future default desktop theme: Midnight `#0F0F13` (ground), Ink `#F1F0F4`, Muted `#8F8B99`, Hairline `#2A2831`, Raised `#15141A`, Iris `#7C68C9` (primary), Iris Deep `#5843B8` (primary on light). Near-monochrome chrome, one accent, one loud object per view.
+- **Dark handoff.** Ground `#131416`, darker rail `#090A0C`, Raised `#1A1B1D`, Ink `#EFF0F2`, Soft `#A7A9AD`, Muted `#6E7176`, Hairline `#34373A`, Emerald `#2DB47D` (primary). Neutral surfaces carry no visible green cast; the primary supplies life.
+- **Light handoff.** Ground `#FAFAFB`, darker rail `#EFF0F2`, Raised `#FFFFFF`, Ink `#222429`, Soft `#60636A`, Muted `#95989F`, Hairline `#D7DADD`, Emerald Deep `#087653` (primary). Light-mode functional colors are deliberately deeper and more vibrant than muted pastel tints.
+- **Functional handoff.** Tool colors are semantic and independent of primary: file change `#8BCF67` / `#3D7D14`, deletion `#EC707B` / `#D12D49`, thinking `#52BFD0` / `#007F9B`, warning `#E2B64D` / `#966C00`, generic tool `#6D9BEC` / `#1D5ED8`, syntax `#DE7CA7` / `#B52B70` (dark / light). Bash remains terminal-neutral. Thinking supporting text is `#C1D2D5` / `#2F454B`.
 - **Landing typography** (not a desktop mandate): Schibsted Grotesk for display/body, JetBrains Mono for annotations. Desktop UI stays Inter until the new theme work decides otherwise.
 
 Full spec: `packages/landing/DESIGN.md`.
 
 ## Theme philosophy
 
-Cadencr ships with three canonical themes — **Aurora** (vibrant light), **Dracula** (vibrant dark, the original), and **One Dark** (calm cool-gray dark for long sessions). Three is the floor and the ceiling. We do not ship "high contrast" or "solarized" variants because every additional theme is an additional QA matrix; the three we have cover the three reasons people switch — bright office, low-light room, all-day reading.
+Cadencr ships with two brand defaults — **CadencR Dark** and **CadencR Light** — plus the established **Aurora**, **Dracula**, and **One Dark** alternatives. The brand pair owns first paint and system-follow behavior; alternatives remain opt-in and retain their existing palettes. Every additional theme expands the QA matrix and requires a complete semantic, editor, diff, and xterm palette.
 
-**Composition model.** A theme is a `data-theme="..."` attribute on `<html>` plus a JSON manifest in `themes/`. The CSS in `themes.css` provides every default. The JSON, loaded by `theme-loader.jsx`, overrides individual tokens with `!important`-equivalent specificity (a `.cds-theme-loaded` class on `<html>` raises the selector weight). This means **`themes.css` is the floor; the JSON is the ceiling.** A token missing from the JSON falls through to the CSS default — never null.
+**Composition model.** A theme is a `data-theme="..."` attribute on `<html>` backed by a `ThemeDefinition` in `packages/desktop/src/lib/themes/`. CSS owns the semantic UI contract; the TypeScript definition owns metadata, the picker swatch, the logo cut, and the complete xterm palette. `theme-cadencr.css` binds the brand pair, while the existing legacy theme selectors remain independent. A missing CSS token falls through to the shared default — never null.
 
-**Resolution.** The `data-theme` keys are short, the filenames are descriptive. The mapping lives in `theme-loader.jsx`'s `FILE_MAP`:
+**Resolution.** Theme ids are explicit and provider-neutral. Registration and system-follow resolution live in `src/lib/themes/registry.ts` and `src/lib/themes/system.ts`:
 
 ```
-light   → themes/aurora.json
-dark    → themes/dracula.json
-onedark → themes/one-dark.json
+cadencr-dark  → CadencR Dark (default dark and first paint)
+cadencr-light → CadencR Light (default system-follow light)
+aurora        → Aurora
+dracula       → Dracula
+one-dark      → One Dark
 ```
 
-**Adding a fourth theme.**
-1. Drop `themes/<id>.json` matching the shape of `themes/aurora.json` (sections: `tailwind`, `accents`, `code`, `blocks`, `chips`, `editor`, `diff`, `terminal`, `xterm`).
-2. Add a `data-theme` key → filename entry to `FILE_MAP` in `theme-loader.jsx`.
-3. Add a button to the `ThemeSwitch` component in the relevant HTML file.
-4. **No changes to `themes.css`.** If you find yourself editing `themes.css`, you are doing it wrong.
+**Adding a theme.**
+1. Add a complete typed `ThemeDefinition` under `src/lib/themes/`, including a full xterm palette and stable swatch.
+2. Add the theme's semantic CSS selector without changing another theme's tokens.
+3. Register it in `registry.ts`; the picker is registry-driven and must not hardcode a second list.
+4. Extend registry and scrollbar contract tests, then verify editor, terminal, agent tools, diffs, onboarding, and system-follow behavior in the running app.
 
 ## Layout decision logic
 
@@ -275,7 +353,7 @@ The agent stream. A vertical scroll of mixed content: user bubbles, agent prose,
 
 #### Thinking block (sub-component)
 
-A collapsible card with a violet-tinted background distinct from the surrounding stream. The violet IS the affordance — it tells the user "this is meta-reasoning, not output." Use `accent_violet` and `accent_thinking_bg` from the theme. **Never use `--primary` for a thinking block** even when `--primary` happens to be violet (Dracula): the contract is that thinking has its own slot, separate from primary-action color.
+A collapsible card with a theme-owned thinking tint distinct from the surrounding stream. The dedicated tint is the affordance — it tells the user "this is meta-reasoning, not output." Use `--block-thinking-accent` and `--block-thinking-bg`; in Emerald Reserve these are cyan, with separate supporting text chosen for contrast. **Never use `--primary` for a thinking block:** reasoning has its own semantic slot, separate from primary-action color.
 
 #### MCP tool call
 
@@ -352,13 +430,13 @@ The dot's color is the meaning. Do not introduce a fourth color without register
 ## Iconography & status colors
 
 - **Green dot** = ready (worktree set up, agent connected). Bound to `--status-ip` / `success`.
-- **Violet block bg** = thinking (agent meta-reasoning). Bound to `accent_violet` / `--acc-purple` (Dracula uses `--primary`, but only via the `accent_violet` token, never via raw `--primary`).
+- **Theme-owned thinking tint** = thinking (agent meta-reasoning). Bound to `--block-thinking-accent` / `--block-thinking-bg`, never raw `--primary`.
 - **Red counter** = retry / errors / -diff. Bound to `danger` / `--acc-red`.
 - **Orange chip** = "in progress" / dev-pill. Bound to `warning` / `--acc-orange`.
 - **Cyan path** = file reference. Bound to `info` / `--acc-cyan` (`--ic-file-fg`).
 - **Pink chip** = mention / `@thing`. Bound to `--ic-fg` (`--acc-pink` in Dracula).
 
-**Status colors are reserved.** Do not reuse green for "selected", or red for "delete button hover", or violet for a generic accent badge. If a non-status surface needs a tint, use `--accent` (the muted hover bg) or `--primary` (the brand action color) — never a status hue.
+**Semantic colors are token-owned.** Do not infer meaning from hue alone. Emerald Reserve intentionally uses green for brand primary while file changes use a distinct leaf green; components must consume `--primary`, `--acc-green`, `--acc-red`, and the block tokens by role. A non-semantic surface uses the neutral `--accent` wash, not a copied hex.
 
 ## Don'ts
 
@@ -366,10 +444,10 @@ The dot's color is the meaning. Do not introduce a fourth color without register
 2. **No hardcoded hex in JSX.** Every color in a component file goes through a `var(--...)` lookup. Inline `style={{ color: "#..." }}` is forbidden except for placeholder squares in fixtures (and even those should be CSS classes).
 3. **No purple gradients on white.** Aurora is light but not whimsical. Solid colors only; the only gradients in the system are the `--primary-glow` color-mix effects on focus/hover.
 4. **No new spacing values outside the kit.css scale.** If you need 11px, you actually need 10 or 12. If you need 13px, use 12 or 14. Pick the closest step.
-5. **Thinking blocks always use `accent_violet`, never `accent`.** Even in Dracula where they happen to look similar, the contract is separation: future themes may diverge them.
+5. **Thinking blocks always use the thinking block tokens, never `accent` or `primary`.** The contract is semantic separation even when a legacy theme makes two roles look similar.
 6. **No CSS-in-JS.** All styling lives in `kit.css` and `themes.css`. JSX may reference CSS variables inline (`style={{ background: "var(--acc-green)" }}` is fine for a one-off swatch), but no `styled-components`-style libraries, no inline rule sets larger than ~3 declarations, and no class-name generators.
 7. **No new layout without registering it in all three places** — `config` useMemo, `kit.css` `cds-split` rules, and the `TweakRadio` options. A layout that exists in two of the three is a bug.
-8. **Status colors never used for branding.** Green is "ready". Red is "retry". Orange is "in progress". The brand color is `--primary`. Do not put the logo in green to imply "we're alive."
+8. **Brand and status greens never share a token.** The logo and primary actions use `--primary`; ready and added states use their semantic tokens. Emerald branding must never make a neutral control look successful.
 9. **The `--code-bg` / `--code-fg` surface stays dark even in Aurora.** Markdown code blocks and editor-adjacent code surfaces are intentionally Dracula-like in the light theme — a white code block looks washed-out and breaks the dev-tool convention. The bash tool-call block is the one carve-out: it follows the theme via `--block-bash-*` (see "Bash variant").
 10. **Live terminal (xterm/PTY) never inverts.** Always uses `--code-bg` and stays dark regardless of theme. Future theme JSONs MUST keep `terminal.bg` dark.
 11. **No new screen-level routes without a `data-screen-label`.** Every full-pane screen must set `data-screen-label="NN Title"` (1-indexed) on the `.cds-app` so review comments can pin to it.

@@ -6,23 +6,24 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import sharp from "sharp";
 import { ringDots } from "../src/lib/logo-dots.mjs";
+import { ico } from "./lib/ico.mjs";
 
 const PUB = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
-const MIDNIGHT = "#0f0f13";
-const INK = "#f1f0f4";
-const IRIS = "#7c68c9";
+const GROUND = "#131416";
+const INK = "#eff0f2";
+const EMERALD = "#2db47d";
 
-// Baked mark for rasters + the served favicon: midnight ground, ink dots,
-// iris core (the themeable on-screen version lives in LogoMark.astro).
+// Baked mark for rasters + the served favicon: graphite ground, ink dots,
+// emerald core (the themeable on-screen version lives in LogoMark.astro).
 function mark({ dotR, coreR }) {
   const dots = ringDots()
     .map((d) => `<circle cx="${d.cx}" cy="${d.cy}" r="${dotR}"/>`)
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-  <rect width="48" height="48" fill="${MIDNIGHT}"/>
+  <rect width="48" height="48" fill="${GROUND}"/>
   <g fill="${INK}">${dots}</g>
-  <circle cx="24" cy="24" r="${coreR}" fill="${IRIS}"/>
+  <circle cx="24" cy="24" r="${coreR}" fill="${EMERALD}"/>
 </svg>`;
 }
 
@@ -32,26 +33,6 @@ const standard = Buffer.from(standardSvg);
 const favicon = Buffer.from(faviconSvg);
 
 const png = (svg, size) => sharp(svg, { density: 300 }).resize(size, size).png().toBuffer();
-
-// ICO container with PNG-compressed entries (supported by all modern parsers).
-function ico(entries) {
-  const header = Buffer.alloc(6);
-  header.writeUInt16LE(1, 2); // type: icon
-  header.writeUInt16LE(entries.length, 4);
-  let offset = 6 + 16 * entries.length;
-  const dirs = entries.map(({ size, buf }) => {
-    const d = Buffer.alloc(16);
-    d.writeUInt8(size >= 256 ? 0 : size, 0);
-    d.writeUInt8(size >= 256 ? 0 : size, 1);
-    d.writeUInt16LE(1, 4); // planes
-    d.writeUInt16LE(32, 6); // bit depth
-    d.writeUInt32LE(buf.length, 8);
-    d.writeUInt32LE(offset, 12);
-    offset += buf.length;
-    return d;
-  });
-  return Buffer.concat([header, ...dirs, ...entries.map((e) => e.buf)]);
-}
 
 const jobs = [
   ["favicon-16x16.png", favicon, 16],

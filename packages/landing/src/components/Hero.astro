@@ -23,7 +23,7 @@ const [latestNews] = (await getCollection("news")).sort(
 );
 ---
 <section class="hero relative pt-14 sm:pt-20">
-  <!-- The one iris top-light on the page (Lamplight Rule: ≤7% alpha). -->
+  <!-- The one emerald top-light on the page (Jewel-Light Rule: ≤4% alpha). -->
   <div class="hero-sheen pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px]" aria-hidden="true"></div>
   <Wrap>
     <div class="mx-auto flex max-w-[860px] flex-col items-center text-center">
@@ -207,13 +207,13 @@ const [latestNews] = (await getCollection("news")).sort(
   }
 
   .hero-sheen {
-    background: radial-gradient(58% 46% at 50% 0%, rgb(124 104 201 / 0.07), transparent 72%);
+    background: radial-gradient(58% 46% at 50% 0%, rgb(45 180 125 / 0.04), transparent 72%);
   }
 
-  /* The hero capture is the one object seated with the iris-tinted shadow. */
+  /* The hero capture is the one object seated with an emerald-tinted shadow. */
   .hero-seat,
   .hero-seat:hover {
-    box-shadow: var(--shadow-iris-seat);
+    box-shadow: var(--shadow-emerald-seat);
   }
 
   /* Staggered entrance: one quiet rise-and-settle sequence. */

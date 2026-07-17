@@ -29,7 +29,7 @@ The IDE for the era of agents: CadencR unifies Agent, Git, Browser, Editor, and 
 
 ## Brand Personality
 
-Developer-native, precise, calm-confident. The site speaks like a good README, not a SaaS funnel: concrete feature claims ("per-task Git worktrees with visible, reviewable commits"), monospace micro-labels, real UI captures, keyboard-key glyphs. Dark by default and set like a premium instrument (see DESIGN.md, "Violet Night"): near-monochrome ruled chrome on a midnight ground, one iris accent used like lamplight, and the app's vivid captures as the only color on the page.
+Developer-native, precise, calm-confident. The site speaks like a good README, not a SaaS funnel: concrete feature claims ("per-task Git worktrees with visible, reviewable commits"), monospace micro-labels, real UI captures, keyboard-key glyphs. Dark by default and set like a premium instrument (see `DESIGN.md`, "Emerald Reserve"): near-monochrome ruled chrome on a graphite ground, one jewel emerald used with restraint, and the app's vivid captures as the only multi-hue color on the page.
 
 ## Anti-references
 
@@ -38,7 +38,7 @@ Not a generic AI-startup landing page: no hype superlatives, no fabricated dashb
 ## Design Principles
 
 - The product is the imagery. Real screenshots and recordings of CadencR carry the visual weight; placeholders and stock art are failure states.
-- One brand, site leads. As of July 2026 the landing carries the visual direction ("Violet Night", validated through a 20-direction exploration); the desktop app's future default theme follows its handoff tokens (Midnight, Ink, Hairline, Iris — see root DESIGN.md "Brand identity") so the marketing surface and the product read as one thing. The Index Dots mark and the Figtree 800 CADENCR wordmark are the official logo.
+- One brand, site leads. As of July 2026 the landing carries the visual direction ("Emerald Reserve", validated through an in-product palette exploration and Raphael's iterative review); the desktop defaults follow its handoff tokens (Graphite Ground, Ink, Hairline, Emerald — see root `DESIGN.md`, "Brand identity") so the marketing surface and the product read as one thing. The Index Dots mark and the Figtree 800 `CADENCR` wordmark are the official logo.
 - Show, don't hype. Every claim maps to a demonstrable feature; copy stays concrete and technical.
 - Disambiguation-first SEO. Copy and structured data consistently spell and frame "CadencR" so the entity wins against the "cadence" collision.
 - Works without JavaScript. Content is never gated on script; reveals and motion enhance an already-visible page.

@@ -1,17 +1,18 @@
 ---
 name: CadencR Landing
-description: Marketing site for the CadencR agent IDE — Violet Night, a premium near-monochrome midnight sheet where the product captures glow and one iris accent carries the brand.
+description: Marketing site for the CadencR agent IDE — Emerald Reserve, a premium graphite sheet where the product captures glow and one jewel-green accent carries the brand.
 colors:
-  midnight: "#0F0F13"
-  raised: "#15141A"
-  ink: "#F1F0F4"
-  muted: "#8F8B99"
-  hairline: "#2A2831"
-  slate-fill: "#201F26"
-  hover-wash: "#1B1A21"
-  iris: "#7C68C9"
-  iris-deep: "#5843B8"
-  iris-ink: "#0F0F13"
+  ground: "#131416"
+  rail: "#090A0C"
+  raised: "#1A1B1D"
+  ink: "#EFF0F2"
+  soft: "#A7A9AD"
+  muted: "#6E7176"
+  hairline: "#34373A"
+  hover-wash: "#202124"
+  emerald: "#2DB47D"
+  emerald-deep: "#087653"
+  emerald-ink: "#131416"
   alarm-red: "oklch(0.682 0.206 24.421)"
 typography:
   display:
@@ -68,13 +69,13 @@ spacing:
   section-lg: "80px"
 components:
   button-primary:
-    backgroundColor: "{colors.iris}"
-    textColor: "{colors.iris-ink}"
+    backgroundColor: "{colors.emerald}"
+    textColor: "{colors.emerald-ink}"
     rounded: "{rounded.lg}"
     height: "44px"
     padding: "0 20px"
   button-outline:
-    backgroundColor: "{colors.midnight}"
+    backgroundColor: "{colors.ground}"
     textColor: "{colors.ink}"
     rounded: "{rounded.lg}"
     height: "44px"
@@ -90,57 +91,58 @@ components:
     typography: "{typography.label}"
   logo-mark:
     name: "Index Dots"
-    geometry: "48-grid; twelve r1.9 dots on a r14.5 ring; solid iris core r5.5"
+    geometry: "48-grid; twelve r1.9 dots on a r14.5 ring; solid emerald core r5.5"
     favicon_cut: "dots r3, core r7 (thicker cut for ≤32px raster)"
-    colors: "dots = ink (currentColor); core = iris on dark, iris-deep on light"
+    colors: "dots = ink (currentColor); core = emerald on dark, emerald-deep on light"
 ---
 
 # Design System: CadencR Landing
 
 ## 1. Overview
 
-**Creative North Star: "Violet Night"**
+**Creative North Star: "Emerald Reserve"**
 
-The landing page is a premium midnight sheet. It keeps the engineering-datasheet grammar the site was rebuilt on — one ruled column with continuous rails, numbered `Fig. NN` figures, hairline rules, spec tables, registration ticks — but the voice moved from "machined datasheet" to "quiet luxury instrument": a deeper midnight ground, one aged-iris accent used like lamplight, a single loud CTA per view, and captures seated in deep studio shadows with a faint top-light. Validated 2026-07 against 20 brand directions and two refinement rounds (see `brand-directions.html`, direction C + logo 03-E).
+The landing page is a premium graphite sheet. It keeps the engineering-datasheet grammar the site was rebuilt on — one ruled column with continuous rails, numbered `Fig. NN` figures, hairline rules, spec tables, registration ticks — but the voice is a quiet luxury instrument: a darker rail around a lighter main ground, one jewel emerald used with restraint, a single loud CTA per view, and captures seated in deep studio shadows with a barely visible green top-light. Validated 2026-07 through the in-product palette lab in `palette-exploration.html` and Raphael's iterative review.
 
-The chrome is near-monochrome: midnight ground, warm-white ink, hairlines, and one iris accent. The real app captures — vivid, alive — are the only full-color objects on the page. They light the sheet the way monitors light a dark room.
+The chrome is near-monochrome: graphite ground, near-black rails, cool-white ink, light-gray hairlines, and one emerald accent. The real app captures — vivid, alive — are the only multi-hue objects on the page. They light the sheet the way monitors light a dark room.
 
 The system explicitly rejects the generic AI-startup landing page: no hype superlatives, no fabricated dashboards, no gradient text, no aurora washes, no decorative grids — and no competing accents: each view has exactly one loud object.
 
 **Key Characteristics:**
 - One ruled sheet: continuous side rails (≥768px), hairline rules between sections, everything composed as rows.
-- Numbered figure system: mono `Fig. NN` labels, the only all-caps tier besides the wordmark, with the number in iris.
-- Near-monochrome chrome; the product captures are the only color; one iris accent, one loud CTA per view.
+- Numbered figure system: mono `Fig. NN` labels, the only all-caps tier besides the wordmark, with the number in emerald.
+- Near-monochrome chrome; the product captures are the only multi-hue color; one emerald accent, one loud CTA per view.
 - Schibsted Grotesk for display and body (a cool, tight cut — no width games); JetBrains Mono for the annotation layer; Figtree 800 caps for the wordmark only.
-- The Index Dots mark: twelve ink dots on a ring around a solid iris core — the official logo, everywhere.
+- The Index Dots mark: twelve ink dots on a ring around a solid emerald core — the official logo, everywhere.
 - Motion is one quiet rise-and-settle; content never gates on JavaScript.
 
 ## 2. Colors
 
-A midnight instrument palette: one deep ground, ink, hairlines, one iris. Canonical values are the hexes above (approx. OKLCH: midnight ≈ oklch(0.13 0.012 290), ink ≈ oklch(0.955 0.006 300), iris ≈ oklch(0.60 0.145 293)).
+A graphite instrument palette: near-black rail, slightly lighter main ground, cool ink, light-gray hairlines, one emerald. Canonical values are the hexes above; do not add green tint to neutral surfaces beyond the hero's explicitly bounded top-light.
 
 ### Primary
-- **Iris** (#7C68C9): the single accent, aged toward lamplight rather than neon. Primary buttons, fig-label numbers, spec-list plus ticks, focus rings, the logo core, the accented word in a display line.
-- **Iris Deep** (#5843B8): the iris cut for light grounds only — the logo core on white (press kit, light favicons). Never appears on the midnight page itself.
+- **Emerald** (#2DB47D): the single brand accent, vivid enough to give the neutral instrument life without becoming neon. Primary buttons, fig-label numbers, spec-list plus ticks, focus rings, the logo core, and the accented word in a display line.
+- **Emerald Deep** (#087653): the premium high-contrast cut for light grounds — the logo core on white and the `cadencr-light` primary. It does not replace Emerald on the dark landing page.
 
 ### Neutral
-- **Midnight** (#0F0F13): the only body background. Deep enough that captures glow.
-- **Raised** (#15141A): frames, pills, nav chrome.
-- **Ink** (#F1F0F4): primary text; also the logo's dots.
-- **Muted** (#8F8B99): secondary text, ledes, labels at rest (≥4.5:1 on Midnight).
-- **Slate Fill / Hover Wash** (#201F26 / #1B1A21): muted fills and hover states.
-- **Hairline** (#2A2831): every rule, rail, and border — usually at 62% mix for interior rows.
+- **Ground** (#131416): the body and main-content background. Deep enough that captures glow, but visibly lighter than the rail.
+- **Rail** (#090A0C): navigation and darkest inset chrome. It creates hierarchy without a green cast.
+- **Raised** (#1A1B1D): muted fills and raised surfaces.
+- **Ink** (#EFF0F2): primary text; also the logo's dots.
+- **Soft / Muted** (#A7A9AD / #6E7176): secondary and tertiary text tiers. Use Soft for normal supporting copy and Muted only for metadata that remains nonessential.
+- **Hover Wash** (#202124): neutral interactive hover state.
+- **Hairline** (#34373A): every rule, rail, and border — intentionally light gray rather than hue-tinted.
 
 ### Status
 - **Alarm Red** (oklch(0.682 0.206 24.421)): error semantics only (brew-copy failure). Never decorative.
 - **ANSI set** (Dracula hexes, `--color-drac-*`): reserved exclusively for terminal/app depictions (StreamTerminal fixture, the brew-copy success tick). Never page chrome.
 
 ### Named Rules
-**The Product-Is-The-Color Rule.** Page chrome stays within the neutral ramp plus one iris. The app captures are the only saturated, multi-hue objects. If a decorative element wants color, it is wrong.
+**The Product-Is-The-Color Rule.** Page chrome stays within the neutral ramp plus one emerald. The app captures are the only saturated, multi-hue objects. If a decorative element wants a second color, it is wrong.
 
 **The One-Loud-Object Rule.** Each view gets exactly one accent-filled element (the hero CTA). Secondary CTAs are hairline ghosts. Two competing accent fills is the SaaS tell this redesign exists to avoid.
 
-**The Lamplight Rule.** Glows are near-invisible: the hero may carry one iris-tinted top-light (≤7% alpha, wide radius) and hero-scale captures an iris-tinted shadow (≤22% alpha). Everything else uses the neutral monitor-light (ink-mixed radial at 7%, blurred 48px). Anything louder is prohibited.
+**The Jewel-Light Rule.** Green in backgrounds is exceptional and near-invisible: the hero may carry one emerald top-light (≤4% alpha, wide radius) and hero-scale captures an emerald shadow (≤16% alpha). Everything else uses the neutral monitor-light (ink-mixed radial at 7%, blurred 48px). Anything louder is prohibited.
 
 ## 3. Typography
 
@@ -161,7 +163,7 @@ A midnight instrument palette: one deep ground, ink, hairlines, one iris. Canoni
 - **Wordmark** (Figtree 800, uppercase, 0.05em): `CADENCR`, always next to the Index Dots mark.
 
 ### Named Rules
-**The Fig Rule.** Every kicker is a figure label: mono, uppercase, ≤11px, `Fig. NN` in iris followed by a middot and the title. The only other all-caps text is the wordmark.
+**The Fig Rule.** Every kicker is a figure label: mono, uppercase, ≤11px, `Fig. NN` in emerald followed by a middot and the title. The only other all-caps text is the wordmark.
 
 **The One Family Rule.** No second display face and no width axis. Contrast comes from weight and Ink vs Muted. Figtree appears only in the wordmark.
 
@@ -173,7 +175,7 @@ Structure is drawn, not lifted: hairline rules and rails do all separation. Shad
 - **xs** (`0 1px 1px rgb(0 0 0 / 0.3)`): buttons, small chrome.
 - **md** (`0 10px 28px rgb(0 0 0 / 0.42)`): frames at rest.
 - **lg** (`0 28px 64px rgb(0 0 0 / 0.5)`): hero-scale staging.
-- **iris-seat** (`0 42px 100px -32px rgb(124 104 201 / 0.22)`): the hero capture only — the one iris-tinted shadow on the page.
+- **emerald-seat** (`0 42px 100px -32px rgb(45 180 125 / 0.16)`): the hero capture only — the one emerald-tinted shadow on the page.
 - **contour** (`drop-shadow(0 16px 32px rgb(0 0 0 / 0.34))`): frameless window PNGs.
 - **hover** (`0 18px 44px rgb(0 0 0 / 0.45)`): `.frame:hover`, with an ink-mixed border brighten — no transform.
 
@@ -183,21 +185,21 @@ Structure is drawn, not lifted: hairline rules and rails do all separation. Shad
 ## 5. Components
 
 ### Logo (Index Dots)
-The official mark: twelve r1.9 ink dots on a r14.5 ring around a solid iris core (r5.5), on the 48 grid. Derived from the original dotted-ring favicon, distilled to two colors. `LogoMark.astro` renders it inline from tokens (dots `currentColor`, core `--color-primary`) so it follows the theme. Favicon and ≤32px rasters use the thicker cut (dots r3, core r7). On light grounds the core is Iris Deep (#5843B8). Lockup: mark + `CADENCR` in Figtree 800 caps.
+The official mark: twelve r1.9 ink dots on a r14.5 ring around a solid emerald core (r5.5), on the 48 grid. Derived from the original dotted-ring favicon, distilled to two colors. `LogoMark.astro` renders it inline from tokens (dots `currentColor`, core `--color-primary`) so it follows the theme. Favicon and ≤32px rasters use the thicker cut (dots r3, core r7). On light grounds the core is Emerald Deep (#087653). Lockup: mark + `CADENCR` in Figtree 800 caps.
 
-The ring geometry is defined once in `src/lib/logo-dots.mjs` and shared by both the inline mark and the icon pipeline. `scripts/generate-icons.mjs` (run by hand, uses `sharp`) regenerates every raster — the PNG favicons, `apple-touch-icon`, the manifest icons, `logo.png`, the PNG-entry `favicon.ico`, and the served `favicon.svg` (a baked midnight/ink/iris cut) — from that one source, so the on-screen logo and the icons can never drift.
+The ring geometry is defined once in `src/lib/logo-dots.mjs` and shared by both the inline mark and the icon pipeline. `scripts/generate-icons.mjs` (run by hand, uses `sharp`) regenerates every raster — the PNG favicons, `apple-touch-icon`, the manifest icons, `logo.png`, the PNG-entry `favicon.ico`, and the served `favicon.svg` (a baked ground/ink/emerald cut) — from that one source, so the on-screen logo and the icons can never drift.
 
 ### Sheet
 `.sheet`: max-width 1180px, centered, `border-inline` rails from 768px up. `.rule`: a full-width hairline `border-top` marking every section row. Sections use `py-16 sm:py-20` (64/80px); figures may bleed past the rails deliberately.
 
 ### Buttons
 - **Shape:** 8px radius, 44px tall at lg, 36px at md, 13–14px Schibsted medium.
-- **Primary:** Iris fill, Midnight text; hover dims to 90%. One per view (the One-Loud-Object Rule).
-- **Outline:** Midnight fill, Ink text, Hairline border, xs shadow; hover washes Slate.
-- **Ghost:** transparent, Muted text; hover Slate wash + Ink text.
+- **Primary:** Emerald fill, Ground text; hover dims to 90%. One per view (the One-Loud-Object Rule).
+- **Outline:** Ground fill, Ink text, Hairline border, xs shadow; hover uses the neutral wash.
+- **Ghost:** transparent, Soft text; hover uses the neutral wash + Ink text.
 
 ### Fig label
-`.fig-label`: mono 11px uppercase tracked 0.09em, Muted, with `.fig-no` (the `Fig. NN` or lead word) in iris 600. Used above every section heading and in the hero version strip.
+`.fig-label`: mono 11px uppercase tracked 0.09em, Soft, with `.fig-no` (the `Fig. NN` or lead word) in emerald 600. Used above every section heading and in the hero version strip.
 
 ### Registration marks (signature)
 `.reg-marks` + one `.reg-b` child: four hairline corner ticks in Muted, offset -5px, framing the hero video and the compare slider.
@@ -206,36 +208,36 @@ The ring geometry is defined once in `src/lib/logo-dots.mjs` and shared by both 
 `.frame`: hairline border on Raised, hover brightens border and deepens shadow. Below framed media, `.fig-caption`: mono 11px uppercase with a 12px tick, e.g. `Fig. 00 · live capture, real session`.
 
 ### Spec list
-`.spec-list`: the bullet replacement. Hairline-ruled rows (62% mix), 14px, iris mono `+` tick at left, `strong` in Ink 560. Used for every feature enumeration.
+`.spec-list`: the bullet replacement. Hairline-ruled rows (62% mix), 14px, emerald mono `+` tick at left, `strong` in Ink 560. Used for every feature enumeration.
 
 ### Spec table (compatibility)
-Ruled rows: logo cell (hairline box on Raised), name (15px 600), description (14px Muted), and a mono `NN · supported` tag in iris at the right (hidden on mobile).
+Ruled rows: logo cell (hairline box on Raised), name (15px 600), description (14px Soft), and a mono `NN · supported` tag in emerald at the right (hidden on mobile).
 
 ### Compare slider (signature)
 Range-input-driven before/after in a `.frame` with reg-marks: neutral ink divider + round handle, mono corner labels, keyboard-operable, no-JS degrades to a 50% split.
 
 ### FAQ rows
-Ruled `details` rows: mono `01`-style index, 15px question, hairline-boxed plus toggle that rotates 45° and turns iris when open. Answers are 14px/1.65 Muted, ≤62ch.
+Ruled `details` rows: mono `01`-style index, 15px question, hairline-boxed plus toggle that rotates 45° and turns emerald when open. Answers are 14px/1.65 Soft, ≤62ch.
 
 ### Navigation
-Sticky hairline-bottom bar on Midnight at 90% with blur: Index Dots mark + `CADENCR` wordmark + version chip, links in scroll order (Compatibility, Features, News, Docs), mono GitHub pill, and an **outline** Download button (h-9) — a hairline ghost, not the iris fill, so the hero CTA stays the one loud object (see the One-Loud-Object Rule). A 44px hamburger with `aria-expanded`; a `.skip-link` is the first tab stop.
+Sticky hairline-bottom bar on Ground at 90% with blur: Index Dots mark + `CADENCR` wordmark + version chip, links in scroll order (Compatibility, Features, News, Docs), mono GitHub pill, and an **outline** Download button (h-9) — a hairline ghost, not the emerald fill, so the hero CTA stays the one loud object (see the One-Loud-Object Rule). A 44px hamburger with `aria-expanded`; a `.skip-link` is the first tab stop.
 
 ## 6. Do's and Don'ts
 
 ### Do:
 - **Do** compose every section as a ruled row of the sheet; if a boundary is needed, draw a hairline, never a glow.
 - **Do** ship real captures of CadencR in every media slot, seated with contour shadow and neutral monitor-light (PRODUCT.md: "the product is the imagery").
-- **Do** keep chrome near-monochrome with the single iris accent and exactly one accent-filled CTA per view.
-- **Do** render the logo from tokens via `LogoMark.astro`; use the favicon cut for ≤32px rasters and Iris Deep on light grounds.
+- **Do** keep chrome near-monochrome with the single emerald accent and exactly one accent-filled CTA per view.
+- **Do** render the logo from tokens via `LogoMark.astro`; use the favicon cut for ≤32px rasters and Emerald Deep on light grounds.
 - **Do** give every animation a `prefers-reduced-motion` fallback and keep content visible without JavaScript (`.js`-gated reveals, native `details`).
 - **Do** spell the brand "CadencR" in prose and `CADENCR` in the wordmark; keep entity disambiguation intact (PRODUCT.md: disambiguation-first SEO).
-- **Do** carry this direction into the desktop app's future default theme: Midnight, Ink, Hairline, Iris (the handoff tokens; see root DESIGN.md "Brand identity").
+- **Do** carry this direction into the desktop defaults: Graphite Ground, Ink, Hairline, Emerald, with distinct semantic tool colors (see root `DESIGN.md`, "Brand identity").
 
 ### Don't:
 - **Don't** build "a generic AI-startup landing page: no hype superlatives, no fabricated dashboards" (PRODUCT.md, verbatim).
 - **Don't** use gradient text, side-stripe borders, aurora washes, decorative background grids, or glassmorphism. The 2026-02 redesign removed them; they do not come back.
-- **Don't** fill more than one element per view with iris. The nav Download stays a hairline ghost; the hero CTA is the loud one.
+- **Don't** fill more than one element per view with emerald. The nav Download stays a hairline ghost; the hero CTA is the loud one.
 - **Don't** reintroduce the per-section Dracula accent spectrum in page chrome. ANSI colors live inside terminal/app depictions only.
 - **Don't** let all-caps leave the fig-label + wordmark tiers, or mono leave the annotation layer.
-- **Don't** use a second display face, a width axis, or a light theme. Midnight (#0F0F13) is the only body color.
+- **Don't** use a second display face, a width axis, or a light theme. Ground (#131416) is the only body color.
 - **Don't** animate layout or add entrance choreography beyond the single rise-and-settle; the sheet is calm. One deliberate exception: the StreamTerminal fixture's tiny status text stays intentionally terminal-faithful — its illegibility is the argument.
