@@ -1,0 +1,173 @@
+use std::path::{Path, PathBuf};
+
+use crate::app_state::AppState;
+use crate::domain::git::commands;
+use crate::domain::git::mutation_guard::GitMutationGuardError;
+use crate::domain::git::repository;
+use crate::domain::git::service::SETTING_WORKTREE_PATH;
+use crate::error::AppError;
+use crate::shared::git_cli::{git_output_error, guard_positionals, run_git_output_with_env};
+
+use super::{detect_active_git_operation, operation_name};
+
+pub(super) async fn resolve_feature_worktree(
+    state: &AppState,
+    feature_id: i64,
+) -> Result<PathBuf, AppError> {
+    let (project_id, _) = repository::get_feature_type_and_project(&state.read_pool, feature_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("feature not found: {feature_id}")))?;
+    let project_path = repository::get_project_path(&state.read_pool, project_id).await?;
+    let configured =
+        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH)
+            .await?
+            .filter(|path| !path.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "feature {feature_id} does not have a configured worktree"
+                ))
+            })?;
+    let worktree = PathBuf::from(&configured);
+    if !commands::is_live_worktree(Path::new(&project_path), &worktree).await? {
+        return Err(AppError::NotFound(format!(
+            "feature {feature_id} worktree does not exist or is not registered: {configured}"
+        )));
+    }
+    Ok(worktree)
+}
+
+pub(super) async fn require_no_active_operation(worktree: &Path) -> Result<(), AppError> {
+    if let Some(operation) = detect_active_git_operation(worktree).await? {
+        return Err(AppError::BadRequest(format!(
+            "a {} is already active in this worktree",
+            operation_name(operation)
+        )));
+    }
+    Ok(())
+}
+
+pub(super) async fn attached_head_ref(worktree: &Path) -> Result<String, AppError> {
+    let args = ["symbolic-ref", "--quiet", "HEAD"];
+    let output = run_git_output_with_env(&args, worktree, &[]).await?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+    }
+    if output.stderr.is_empty() {
+        return Err(AppError::BadRequest(
+            "current worktree is in detached HEAD".into(),
+        ));
+    }
+    Err(git_output_error(&args, &output))
+}
+
+pub(super) async fn require_clean_worktree(worktree: &Path) -> Result<(), AppError> {
+    if commands::has_uncommitted_changes(worktree).await? {
+        return Err(AppError::BadRequest(
+            "worktree must be clean, including untracked files".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(super) async fn validate_target(
+    worktree: &Path,
+    current_ref: &str,
+    target: &str,
+) -> Result<(), AppError> {
+    if target.trim().is_empty() || target.starts_with('-') {
+        return Err(AppError::BadRequest("target ref is invalid".into()));
+    }
+    guard_positionals(&[target])?;
+    let commit = format!("{target}^{{commit}}");
+    let verify_args = ["rev-parse", "--verify", commit.as_str()];
+    let verify = run_git_output_with_env(&verify_args, worktree, &[]).await?;
+    if !verify.status.success() {
+        return Err(AppError::BadRequest(format!(
+            "target ref '{target}' does not resolve"
+        )));
+    }
+    let symbolic_args = ["rev-parse", "--symbolic-full-name", target];
+    let symbolic_output = run_git_output_with_env(&symbolic_args, worktree, &[]).await?;
+    if !symbolic_output.status.success() {
+        return Err(git_output_error(&symbolic_args, &symbolic_output));
+    }
+    let symbolic = String::from_utf8_lossy(&symbolic_output.stdout)
+        .trim()
+        .to_string();
+    if symbolic == current_ref {
+        return Err(AppError::BadRequest(format!(
+            "target ref '{target}' is the current branch"
+        )));
+    }
+    Ok(())
+}
+
+pub(super) fn mutation_error(error: GitMutationGuardError) -> AppError {
+    match error {
+        GitMutationGuardError::Busy { .. } => AppError::Conflict(error.to_string()),
+        GitMutationGuardError::InvalidWorktree { .. } => AppError::NotFound(error.to_string()),
+        GitMutationGuardError::RegistryUnavailable => AppError::Internal(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::domain::git::models::{UpdateBranchBody, UpdateBranchStrategy};
+    use crate::domain::git::workflow_service::update_branch::test_support::RepoFixture;
+    use crate::domain::git::workflow_service::update_branch::update_branch;
+
+    async fn assert_rejected(fixture: &RepoFixture, target: &str, needle: &str) {
+        let state = fixture.state(target).await;
+        let error = update_branch(
+            &state,
+            UpdateBranchBody {
+                feature_id: 1,
+                strategy: UpdateBranchStrategy::Rebase,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains(needle), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn rejects_same_branch_and_missing_target() {
+        let same = RepoFixture::new();
+        assert_rejected(&same, "feature/test", "current branch").await;
+
+        let missing = RepoFixture::new();
+        assert_rejected(&missing, "does-not-exist", "does not resolve").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_tracked_and_untracked_dirt() {
+        let tracked = RepoFixture::new();
+        tracked.write_feature("seed.txt", "dirty\n");
+        assert_rejected(&tracked, "main", "must be clean").await;
+
+        let untracked = RepoFixture::new();
+        untracked.write_feature("untracked.txt", "dirty\n");
+        assert_rejected(&untracked, "main", "must be clean").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_detached_head_and_pre_existing_operation() {
+        let detached = RepoFixture::new();
+        detached.git_feature(&["checkout", "--detach"]);
+        assert_rejected(&detached, "main", "detached HEAD").await;
+
+        let active = RepoFixture::new();
+        active.create_conflicting_histories();
+        let output = active.git_output_feature(&["merge", "main"]);
+        assert!(!output.status.success());
+        assert_rejected(&active, "main", "already active").await;
+    }
+
+    #[tokio::test]
+    async fn rejects_a_missing_or_unregistered_feature_worktree() {
+        let fixture = RepoFixture::new();
+        let feature_arg = fixture.feature.to_string_lossy().to_string();
+        fixture.git_project(&["worktree", "remove", "--force", &feature_arg]);
+        assert_rejected(&fixture, "main", "does not exist or is not registered").await;
+    }
+}

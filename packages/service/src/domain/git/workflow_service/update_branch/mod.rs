@@ -1,0 +1,239 @@
+mod operation;
+mod preconditions;
+mod runner;
+
+use crate::app_state::AppState;
+use crate::domain::git::models::{
+    GitOperationKind, GitOperationResponse, UpdateBranchBody, UpdateBranchControlBody,
+};
+use crate::error::AppError;
+
+use self::preconditions::{
+    attached_head_ref, mutation_error, require_clean_worktree, require_no_active_operation,
+    resolve_feature_worktree, validate_target,
+};
+use super::resolve_target_branch;
+
+pub use operation::detect_active_git_operation;
+
+/// Bring the configured target ref into the current feature worktree. Unlike
+/// finish-branch merge, this never checks out or mutates the target worktree.
+#[allow(dead_code)] // Route wiring lands in the integration lane.
+pub async fn update_branch(
+    state: &AppState,
+    body: UpdateBranchBody,
+) -> Result<GitOperationResponse, AppError> {
+    let feature_id = body.feature_id;
+    let worktree = resolve_feature_worktree(state, feature_id).await?;
+    let permit = state
+        .git_mutations
+        .try_acquire(&worktree)
+        .map_err(mutation_error)?;
+    let worktree = permit.worktree_path();
+
+    require_no_active_operation(worktree).await?;
+    let current_ref = attached_head_ref(worktree).await?;
+    require_clean_worktree(worktree).await?;
+    let target = resolve_target_branch(state, feature_id, worktree).await?;
+    validate_target(worktree, &current_ref, &target).await?;
+
+    let result = runner::start(worktree, body.strategy, &target).await;
+    broadcast_after_attempt(state, worktree).await;
+    result
+}
+
+#[allow(dead_code)] // Route wiring lands in the integration lane.
+pub async fn continue_update_branch(
+    state: &AppState,
+    body: UpdateBranchControlBody,
+) -> Result<GitOperationResponse, AppError> {
+    control_operation(state, body.feature_id, ControlAction::Continue).await
+}
+
+#[allow(dead_code)] // Route wiring lands in the integration lane.
+pub async fn abort_update_branch(
+    state: &AppState,
+    body: UpdateBranchControlBody,
+) -> Result<GitOperationResponse, AppError> {
+    control_operation(state, body.feature_id, ControlAction::Abort).await
+}
+
+#[derive(Clone, Copy)]
+enum ControlAction {
+    Continue,
+    Abort,
+}
+
+async fn control_operation(
+    state: &AppState,
+    feature_id: i64,
+    action: ControlAction,
+) -> Result<GitOperationResponse, AppError> {
+    let worktree = resolve_feature_worktree(state, feature_id).await?;
+    let permit = state
+        .git_mutations
+        .try_acquire(&worktree)
+        .map_err(mutation_error)?;
+    let worktree = permit.worktree_path();
+    let operation = detect_active_git_operation(worktree)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("no merge or rebase is active".into()))?;
+
+    let result = match action {
+        ControlAction::Continue => runner::continue_operation(worktree, operation).await,
+        ControlAction::Abort => runner::abort(worktree, operation).await,
+    };
+    broadcast_after_attempt(state, worktree).await;
+    result
+}
+
+async fn broadcast_after_attempt(state: &AppState, worktree: &std::path::Path) {
+    state.git_watcher.nudge(worktree).await;
+    state.git_watcher.recompute_now(worktree, state).await;
+}
+
+fn operation_name(operation: GitOperationKind) -> &'static str {
+    match operation {
+        GitOperationKind::Merge => "merge",
+        GitOperationKind::Rebase => "rebase",
+    }
+}
+
+#[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::git::models::UpdateBranchStrategy;
+    use test_support::RepoFixture;
+
+    fn update_body(strategy: UpdateBranchStrategy) -> UpdateBranchBody {
+        UpdateBranchBody {
+            feature_id: 1,
+            strategy,
+        }
+    }
+
+    #[tokio::test]
+    async fn behind_only_merge_and_rebase_complete_in_the_feature_worktree() {
+        for strategy in [UpdateBranchStrategy::Merge, UpdateBranchStrategy::Rebase] {
+            let fixture = RepoFixture::new();
+            fixture.commit_main_file("target.txt", "target\n", "target");
+            let state = fixture.state("main").await;
+
+            let response = update_branch(&state, update_body(strategy)).await.unwrap();
+
+            assert_eq!(response, GitOperationResponse::Completed);
+            assert_eq!(
+                fixture.rev_parse_feature("HEAD"),
+                fixture.rev_parse_project("main")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn divergent_merge_and_rebase_preserve_both_histories() {
+        for strategy in [UpdateBranchStrategy::Merge, UpdateBranchStrategy::Rebase] {
+            let fixture = RepoFixture::new();
+            fixture.commit_feature_file("feature.txt", "feature\n", "feature");
+            fixture.commit_main_file("target.txt", "target\n", "target");
+            let state = fixture.state("main").await;
+
+            assert_eq!(
+                update_branch(&state, update_body(strategy)).await.unwrap(),
+                GitOperationResponse::Completed
+            );
+            assert!(fixture.feature.join("feature.txt").exists());
+            assert!(fixture.feature.join("target.txt").exists());
+            fixture.assert_feature_ancestor("main");
+        }
+    }
+
+    #[tokio::test]
+    async fn update_never_checks_out_or_mutates_the_target_worktree() {
+        let fixture = RepoFixture::new();
+        fixture.commit_feature_file("feature.txt", "feature\n", "feature");
+        fixture.commit_main_file("target.txt", "target\n", "target");
+        let target_head = fixture.rev_parse_project("HEAD");
+        let state = fixture.state("main").await;
+
+        update_branch(&state, update_body(UpdateBranchStrategy::Merge))
+            .await
+            .unwrap();
+
+        assert_eq!(fixture.rev_parse_project("HEAD"), target_head);
+        assert_eq!(fixture.project_status(), "");
+    }
+
+    #[tokio::test]
+    async fn configured_local_and_remote_tracking_targets_keep_exact_identity() {
+        let remote_fixture = RepoFixture::new();
+        remote_fixture.create_remote_only_tip();
+        let remote_state = remote_fixture.state("origin/main").await;
+        update_branch(&remote_state, update_body(UpdateBranchStrategy::Rebase))
+            .await
+            .unwrap();
+        assert!(remote_fixture.feature.join("remote-only.txt").exists());
+        assert_ne!(
+            remote_fixture.rev_parse_feature("origin/main"),
+            remote_fixture.rev_parse_feature("main")
+        );
+
+        let local_fixture = RepoFixture::new();
+        local_fixture.create_remote_only_tip();
+        let local_state = local_fixture.state("main").await;
+        update_branch(&local_state, update_body(UpdateBranchStrategy::Rebase))
+            .await
+            .unwrap();
+        assert!(!local_fixture.feature.join("remote-only.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn mutation_guard_rejects_a_second_update_for_the_same_worktree() {
+        let fixture = RepoFixture::new();
+        let state = fixture.state("main").await;
+        let _permit = state.git_mutations.try_acquire(&fixture.feature).unwrap();
+
+        let error = update_branch(&state, update_body(UpdateBranchStrategy::Merge))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, AppError::Conflict(_)), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn public_continue_and_abort_follow_the_detected_operation() {
+        let fixture = RepoFixture::new();
+        fixture.create_conflicting_histories();
+        let state = fixture.state("main").await;
+        let response = update_branch(&state, update_body(UpdateBranchStrategy::Merge))
+            .await
+            .unwrap();
+        assert!(matches!(response, GitOperationResponse::Conflicts { .. }));
+        fixture.write_feature("conflict.txt", "resolved\n");
+        fixture.git_feature(&["add", "conflict.txt"]);
+        assert_eq!(
+            continue_update_branch(&state, UpdateBranchControlBody { feature_id: 1 })
+                .await
+                .unwrap(),
+            GitOperationResponse::Completed
+        );
+
+        let abort_fixture = RepoFixture::new();
+        abort_fixture.create_conflicting_histories();
+        let abort_state = abort_fixture.state("main").await;
+        assert!(matches!(
+            update_branch(&abort_state, update_body(UpdateBranchStrategy::Rebase))
+                .await
+                .unwrap(),
+            GitOperationResponse::Conflicts { .. }
+        ));
+        assert_eq!(
+            abort_update_branch(&abort_state, UpdateBranchControlBody { feature_id: 1 })
+                .await
+                .unwrap(),
+            GitOperationResponse::Completed
+        );
+    }
+}
