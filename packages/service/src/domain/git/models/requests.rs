@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 // ---------------------------------------------------------------------------
@@ -132,6 +132,49 @@ pub struct ListStashesParams {
     pub feature_id: i64,
 }
 
+/// Whole-file index mutation. Stage uses `git add -A -- <file_path>`; reset
+/// means unstage only and must never change worktree bytes.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[allow(dead_code)] // Phase 0 contract; index routes are added in a later phase.
+pub struct FileMutationBody {
+    pub feature_id: i64,
+    pub file_path: String,
+}
+
+/// Create a tracked-files-only stash. A non-blank message is passed to Git;
+/// `None` or blank input uses Git's default stash description.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[allow(dead_code)] // Phase 0 contract; stash routes are added in a later phase.
+pub struct StashPushBody {
+    pub feature_id: i64,
+    pub message: Option<String>,
+}
+
+/// Stable selector for apply, pop, and drop. The backend must re-resolve
+/// `ref_name` and reject the mutation if it no longer matches `expected_sha`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[allow(dead_code)] // Phase 0 contract; stash routes are added in a later phase.
+pub struct StashMutationBody {
+    pub feature_id: i64,
+    pub ref_name: String,
+    pub expected_sha: String,
+}
+
+/// Bring the configured target ref into the current feature worktree.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[allow(dead_code)] // Phase 0 contract; update routes are added in a later phase.
+pub struct UpdateBranchBody {
+    pub feature_id: i64,
+    pub strategy: super::UpdateBranchStrategy,
+}
+
+/// Continue or abort the merge/rebase currently active in a feature worktree.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[allow(dead_code)] // Phase 0 contract; update routes are added in a later phase.
+pub struct UpdateBranchControlBody {
+    pub feature_id: i64,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ListFilesParams {
     pub feature_id: i64,
@@ -235,4 +278,44 @@ fn default_commit_limit() -> i64 {
 
 fn default_graph_limit() -> i64 {
     50
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mutation_request_contracts_deserialize_the_frozen_shapes() {
+        let file: FileMutationBody = serde_json::from_value(serde_json::json!({
+            "feature_id": 7,
+            "file_path": "--literal-path"
+        }))
+        .unwrap();
+        assert_eq!(file.feature_id, 7);
+        assert_eq!(file.file_path, "--literal-path");
+
+        let unnamed: StashPushBody =
+            serde_json::from_value(serde_json::json!({ "feature_id": 7 })).unwrap();
+        assert!(unnamed.message.is_none());
+
+        let stash: StashMutationBody = serde_json::from_value(serde_json::json!({
+            "feature_id": 7,
+            "ref_name": "stash@{1}",
+            "expected_sha": "abc123"
+        }))
+        .unwrap();
+        assert_eq!(stash.ref_name, "stash@{1}");
+        assert_eq!(stash.expected_sha, "abc123");
+
+        let update: UpdateBranchBody = serde_json::from_value(serde_json::json!({
+            "feature_id": 7,
+            "strategy": "rebase"
+        }))
+        .unwrap();
+        assert_eq!(update.strategy, super::super::UpdateBranchStrategy::Rebase);
+
+        let control: UpdateBranchControlBody =
+            serde_json::from_value(serde_json::json!({ "feature_id": 7 })).unwrap();
+        assert_eq!(control.feature_id, 7);
+    }
 }

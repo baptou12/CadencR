@@ -8,6 +8,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::models::{ConflictKind, FileStageState};
+
 /// One row per uncommitted file. `status` is one of `"staged"`, `"unstaged"`,
 /// `"untracked"`, or `"both"` (staged + further unstaged change). `change_kind`
 /// is the porcelain v2 letter mapped to a friendly token: `"added"`,
@@ -25,6 +27,12 @@ pub struct UncommittedFile {
     pub additions: i32,
     #[serde(default)]
     pub deletions: i32,
+    /// Typed equivalent of `status`; new consumers should prefer this field.
+    #[serde(default)]
+    pub stage_state: FileStageState,
+    /// Canonical porcelain-v2 unmerged `XY` kind when the row is conflicted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_kind: Option<ConflictKind>,
 }
 
 /// Parse `git status --porcelain=v2` into a list of `UncommittedFile`s.
@@ -38,6 +46,8 @@ pub fn parse_porcelain_v2_files(output: &str) -> Vec<UncommittedFile> {
                 change_kind: "untracked".to_string(),
                 additions: 0,
                 deletions: 0,
+                stage_state: FileStageState::Untracked,
+                conflict_kind: None,
             });
         } else if let Some(rest) = line.strip_prefix("1 ") {
             push_changed_entry(rest, /* renamed */ false, &mut out);
@@ -51,6 +61,8 @@ pub fn parse_porcelain_v2_files(output: &str) -> Vec<UncommittedFile> {
                     change_kind: "modified".to_string(),
                     additions: 0,
                     deletions: 0,
+                    stage_state: FileStageState::Conflicted,
+                    conflict_kind: parse_conflict_kind(rest),
                 });
             }
         }
@@ -61,15 +73,9 @@ pub fn parse_porcelain_v2_files(output: &str) -> Vec<UncommittedFile> {
 /// Map a porcelain v2 XY pair to (status, change_kind). For ordinary `1`/`2`
 /// rows, X is the index side (staged) and Y is the worktree side (unstaged);
 /// in v2 the unchanged side is `.`, not space.
-fn classify_xy(x: char, y: char) -> (String, String) {
+fn classify_xy(x: char, y: char) -> (String, String, FileStageState) {
     let staged = x != '.';
-    let unstaged = y != '.';
-    let status = match (staged, unstaged) {
-        (true, true) => "both",
-        (true, false) => "staged",
-        (false, true) => "unstaged",
-        (false, false) => "unstaged",
-    };
+    let stage_state = FileStageState::from_xy(x, y);
     let kind_letter = if staged { x } else { y };
     let change_kind = match kind_letter {
         'A' => "added",
@@ -78,7 +84,11 @@ fn classify_xy(x: char, y: char) -> (String, String) {
         'R' | 'C' => "renamed",
         _ => "modified",
     };
-    (status.to_string(), change_kind.to_string())
+    (
+        stage_state.legacy_status().to_string(),
+        change_kind.to_string(),
+        stage_state,
+    )
 }
 
 /// Format reference for ordinary changed entries:
@@ -92,7 +102,7 @@ fn push_changed_entry(rest: &str, renamed: bool, out: &mut Vec<UncommittedFile>)
     let mut chars = rest.chars();
     let x = chars.next().unwrap_or('.');
     let y = chars.next().unwrap_or('.');
-    let (status, change_kind) = classify_xy(x, y);
+    let (status, change_kind, stage_state) = classify_xy(x, y);
     let skip = if renamed { 8 } else { 7 };
     let Some(tail) = skip_fields(rest, skip) else {
         return;
@@ -112,6 +122,8 @@ fn push_changed_entry(rest: &str, renamed: bool, out: &mut Vec<UncommittedFile>)
         change_kind,
         additions: 0,
         deletions: 0,
+        stage_state,
+        conflict_kind: None,
     });
 }
 
@@ -136,6 +148,19 @@ fn unmerged_path(rest: &str) -> Option<String> {
         None
     } else {
         Some(path)
+    }
+}
+
+fn parse_conflict_kind(rest: &str) -> Option<ConflictKind> {
+    match rest.get(..2)? {
+        "DD" => Some(ConflictKind::Dd),
+        "AU" => Some(ConflictKind::Au),
+        "UD" => Some(ConflictKind::Ud),
+        "UA" => Some(ConflictKind::Ua),
+        "DU" => Some(ConflictKind::Du),
+        "AA" => Some(ConflictKind::Aa),
+        "UU" => Some(ConflictKind::Uu),
+        _ => None,
     }
 }
 
@@ -211,6 +236,25 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "conflict.rs");
         assert_eq!(files[0].status, "both");
+        assert_eq!(files[0].stage_state, FileStageState::Conflicted);
+        assert_eq!(files[0].conflict_kind, Some(ConflictKind::Uu));
+    }
+
+    #[test]
+    fn parses_every_canonical_conflict_kind() {
+        for (xy, expected) in [
+            ("DD", ConflictKind::Dd),
+            ("AU", ConflictKind::Au),
+            ("UD", ConflictKind::Ud),
+            ("UA", ConflictKind::Ua),
+            ("DU", ConflictKind::Du),
+            ("AA", ConflictKind::Aa),
+            ("UU", ConflictKind::Uu),
+        ] {
+            let out = format!("u {xy} N... 100644 100644 100644 100644 a b c d conflict-{xy}.rs\n");
+            let files = parse_porcelain_v2_files(&out);
+            assert_eq!(files[0].conflict_kind, Some(expected), "XY={xy}");
+        }
     }
 
     // --- Real-git consistency tests ---

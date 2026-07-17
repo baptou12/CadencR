@@ -3,6 +3,7 @@ pub mod file_size;
 pub mod git_status;
 pub mod host;
 pub mod models;
+pub mod mutation_guard;
 pub mod porcelain;
 pub mod push_sessions;
 pub mod repository;

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::{ConflictKind, FileStageState};
+
 // ---------------------------------------------------------------------------
 // Response types
 // ---------------------------------------------------------------------------
@@ -35,6 +37,13 @@ pub struct ChangedFile {
     /// The frontend uses this to render a "staged" badge next to the file.
     #[serde(default)]
     pub is_staged: bool,
+    /// Typed index/worktree state. `is_staged` remains during the frontend
+    /// migration but new consumers should use this field.
+    #[serde(default)]
+    pub stage_state: FileStageState,
+    /// Present only for an unmerged working-tree row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_kind: Option<ConflictKind>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -120,6 +129,8 @@ mod tests {
             additions: 5,
             deletions: 3,
             is_staged: false,
+            stage_state: FileStageState::NotApplicable,
+            conflict_kind: None,
         };
         let json = serde_json::to_string(&cf).unwrap();
         assert!(!json.contains("old_file"), "None should be skipped");
@@ -132,6 +143,8 @@ mod tests {
             additions: 0,
             deletions: 0,
             is_staged: true,
+            stage_state: FileStageState::Staged,
+            conflict_kind: None,
         };
         let json = serde_json::to_string(&cf_rename).unwrap();
         assert!(json.contains("old_file"));
@@ -145,6 +158,8 @@ mod tests {
         let legacy = "{\"file\":\"x\",\"status\":\"M\",\"additions\":0,\"deletions\":0}";
         let back: ChangedFile = serde_json::from_str(legacy).unwrap();
         assert!(!back.is_staged);
+        assert_eq!(back.stage_state, FileStageState::NotApplicable);
+        assert!(back.conflict_kind.is_none());
     }
 
     #[test]

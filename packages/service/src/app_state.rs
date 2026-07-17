@@ -10,6 +10,7 @@ use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::feature_events::FeatureEventBroadcaster;
 use crate::domain::features::run_registry::FeatureRunRegistry;
 use crate::domain::gate_registry::GateRegistry;
+use crate::domain::git::mutation_guard::GitMutationGuard;
 use crate::domain::git::push_sessions::PushSessionRegistry;
 use crate::domain::git::watcher::GitWatcherRegistry;
 use crate::domain::imports::jobs::ImportJobRegistry;
@@ -128,6 +129,10 @@ pub struct AppState {
     /// Per-worktree filesystem watchers driving real-time `git.status`
     /// envelopes. Refcounted by WS subscriptions; see `domain::git::watcher`.
     pub git_watcher: Arc<GitWatcherRegistry>,
+    /// Single-flight owner for foreground Git mutations, keyed by canonical
+    /// worktree path. Index, stash, and update-branch handlers share it.
+    #[allow(dead_code)] // Phase 0 ownership boundary; mutation handlers arrive later.
+    pub git_mutations: Arc<GitMutationGuard>,
     /// Active `git push` sessions keyed by feature_id. Lets the
     /// `POST /api/git/push-input` handler route user-typed bytes
     /// (passphrase, `yes`/`no`) into the push's PTY stdin while it's
@@ -244,6 +249,7 @@ impl AppState {
             custom_action_scheduler: CustomActionScheduler::new(),
             custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
             git_watcher: Arc::new(GitWatcherRegistry::new()),
+            git_mutations: Arc::new(GitMutationGuard::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),
@@ -298,6 +304,7 @@ impl AppState {
             custom_action_scheduler: CustomActionScheduler::new(),
             custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
             git_watcher: Arc::new(GitWatcherRegistry::new()),
+            git_mutations: Arc::new(GitMutationGuard::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),

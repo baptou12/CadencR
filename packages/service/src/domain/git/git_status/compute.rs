@@ -24,6 +24,10 @@ fn empty_snapshot(feature_id: i64, target_branch: &str) -> GitStatusSnapshot {
         ahead_of_remote: 0,
         behind_remote: 0,
         ahead_of_target: 0,
+        behind_target: 0,
+        target_resolved: false,
+        conflict_count: 0,
+        operation: None,
         has_remote: false,
         host: None,
         compare_url: None,
@@ -80,6 +84,10 @@ async fn compute_status(
         ahead_of_remote,
         behind_remote: parsed.behind,
         ahead_of_target,
+        behind_target: 0,
+        target_resolved: false,
+        conflict_count: 0,
+        operation: None,
         has_remote,
         host,
         compare_url,
@@ -188,6 +196,11 @@ mod tests {
         assert_eq!(snap.uncommitted_count, 0);
         assert!(!snap.has_remote);
         assert!(snap.compare_url.is_none());
+        let json = serde_json::to_value(&snap).unwrap();
+        assert!(json.get("behind_target").is_none());
+        assert!(json.get("target_resolved").is_none());
+        assert!(json.get("conflict_count").is_none());
+        assert!(json.get("operation").is_none());
     }
 
     #[tokio::test]
