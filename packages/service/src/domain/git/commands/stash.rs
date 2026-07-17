@@ -17,6 +17,11 @@ use crate::shared::git_cli::run_git;
 
 use super::changed_files::parse_numstat;
 
+mod mutations;
+
+pub(crate) use mutations::stash_common_dir;
+pub use mutations::{apply_stash, drop_stash, pop_stash, push_stash};
+
 /// Record separator emitted before every stash; field separator between the
 /// `--format` placeholders. Both are control bytes that can't appear in stash
 /// metadata, so splitting on them is unambiguous. Fields: full SHA (`%H`),

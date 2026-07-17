@@ -63,7 +63,7 @@ pub(crate) async fn remote_branch_exists(repo: &Path, branch: &str) -> bool {
 /// Best-effort recompute + WS broadcast after a successful write. Errors are
 /// logged and swallowed — the HTTP response already reported success and the
 /// next fs event (or the next subscriber) will refresh the snapshot anyway.
-async fn broadcast_after_write(state: &AppState, feature_id: i64) {
+pub(crate) async fn broadcast_after_write(state: &AppState, feature_id: i64) {
     if let Err(e) = crate::domain::git::watcher::recompute_and_broadcast(state, feature_id).await {
         tracing::warn!(
             feature_id,
