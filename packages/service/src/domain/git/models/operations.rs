@@ -24,6 +24,7 @@ impl FileStageState {
         }
     }
 
+    #[allow(dead_code)] // Retained for consumers merging independently decoded sides.
     pub fn merge(self, other: Self) -> Self {
         match (self, other) {
             (Self::Conflicted, _) | (_, Self::Conflicted) => Self::Conflicted,

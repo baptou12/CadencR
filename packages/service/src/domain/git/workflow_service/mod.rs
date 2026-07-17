@@ -20,6 +20,8 @@ mod branches;
 pub mod checkout;
 mod commit_push;
 mod default_branch;
+#[allow(dead_code)] // Route integration is owned by the Phase 1 API barrier.
+pub mod index;
 mod merge;
 mod merge_runner;
 mod push;
@@ -41,12 +43,32 @@ pub use update_branch::{
     abort_update_branch, continue_update_branch, detect_active_git_operation, update_branch,
 };
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 use crate::app_state::AppState;
 use crate::shared::git_cli::run_git_safe_refs;
 
 const SETTING_TARGET_BRANCH: &str = "target_branch";
+
+pub(super) fn validate_file_mutation_path(file_path: &str) -> Result<(), crate::error::AppError> {
+    if file_path.is_empty() {
+        return Err(crate::error::AppError::BadRequest(
+            "file path must not be empty".into(),
+        ));
+    }
+    if file_path.contains('\0')
+        || file_path.ends_with(std::path::MAIN_SEPARATOR)
+        || Path::new(file_path).is_absolute()
+        || Path::new(file_path)
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(crate::error::AppError::BadRequest(format!(
+            "refusing unsafe file path: {file_path:?}"
+        )));
+    }
+    Ok(())
+}
 
 /// True when `refs/heads/<branch>` resolves in `repo`. Shared by the merge
 /// and checkout flows so the predicate stays in one place.

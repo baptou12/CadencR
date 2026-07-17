@@ -8,13 +8,12 @@ use std::path::Path;
 use crate::app_state::AppState;
 use crate::domain::git::commands;
 use crate::domain::git::models::{CommitBody, GetUncommittedFilesParams, SuccessResponse};
-use crate::domain::git::porcelain::{parse_porcelain_v2_files, UncommittedFile};
+use crate::domain::git::porcelain::UncommittedFile;
 use crate::domain::git::service::resolve_feature_git_path;
 use crate::error::AppError;
-use crate::shared::git_cli::run_git_background;
 
-use super::broadcast_after_write;
 use super::streaming::{broadcast_complete, stream_git_operation, GitStreamOp};
+use super::{broadcast_after_write, validate_file_mutation_path};
 
 // ---------------------------------------------------------------------------
 // POST /api/git/commit
@@ -37,11 +36,7 @@ pub async fn commit(state: &AppState, body: CommitBody) -> Result<SuccessRespons
         ));
     }
     for p in &file_paths {
-        if p.contains("..") || p.starts_with('-') {
-            return Err(AppError::BadRequest(format!(
-                "refusing unsafe file path: {p:?}"
-            )));
-        }
+        validate_file_mutation_path(p)?;
     }
 
     let git_path = resolve_feature_git_path(state, feature_id)
@@ -101,39 +96,11 @@ pub async fn get_uncommitted_files(
         })?;
     let repo = Path::new(&git_path);
 
-    // Fetch porcelain (file list + status flags) and both numstat sides
-    // (staged + unstaged) concurrently. Untracked files don't show up in
-    // numstat — their `additions`/`deletions` stay at the parser's `0`
-    // defaults, which is the right answer (we don't have a baseline to
-    // diff against until they're staged).
-    //
-    // All three are read-style probes: `run_git_background` so they pass
-    // `--no-optional-locks` and can't race a concurrent user-initiated
-    // rebase / commit for `.git/index.lock`.
-    let (porcelain, staged_num, unstaged_num) = tokio::try_join!(
-        run_git_background(&["status", "--porcelain=v2"], repo),
-        run_git_background(&["diff", "--cached", "--numstat"], repo),
-        run_git_background(&["diff", "--numstat"], repo),
-    )?;
-
-    let staged_stats = commands::parse_numstat(&staged_num);
-    let unstaged_stats = commands::parse_numstat(&unstaged_num);
-    let mut files = parse_porcelain_v2_files(&porcelain);
-    for f in files.iter_mut() {
-        let mut add = 0;
-        let mut del = 0;
-        if let Some((a, d)) = staged_stats.get(&f.path) {
-            add += a;
-            del += d;
-        }
-        if let Some((a, d)) = unstaged_stats.get(&f.path) {
-            add += a;
-            del += d;
-        }
-        f.additions = add;
-        f.deletions = del;
-    }
-    Ok(files)
+    Ok(commands::get_uncommitted_entries(repo)
+        .await?
+        .into_iter()
+        .map(|entry| entry.into_uncommitted())
+        .collect())
 }
 
 #[cfg(test)]

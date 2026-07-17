@@ -5,6 +5,8 @@
 //! dialog (`GET /api/git/uncommitted-files`). Format spec:
 //! <https://git-scm.com/docs/git-status>.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -35,45 +37,136 @@ pub struct UncommittedFile {
     pub conflict_kind: Option<ConflictKind>,
 }
 
-/// Parse `git status --porcelain=v2` into a list of `UncommittedFile`s.
-pub fn parse_porcelain_v2_files(output: &str) -> Vec<UncommittedFile> {
-    let mut out: Vec<UncommittedFile> = Vec::new();
-    for line in output.lines() {
-        if let Some(path) = line.strip_prefix("? ") {
-            out.push(UncommittedFile {
-                path: path.to_string(),
-                status: "untracked".to_string(),
-                change_kind: "untracked".to_string(),
-                additions: 0,
-                deletions: 0,
-                stage_state: FileStageState::Untracked,
-                conflict_kind: None,
-            });
-        } else if let Some(rest) = line.strip_prefix("1 ") {
-            push_changed_entry(rest, /* renamed */ false, &mut out);
-        } else if let Some(rest) = line.strip_prefix("2 ") {
-            push_changed_entry(rest, /* renamed */ true, &mut out);
-        } else if let Some(rest) = line.strip_prefix("u ") {
-            if let Some(path) = unmerged_path(rest) {
-                out.push(UncommittedFile {
-                    path,
-                    status: "both".to_string(),
-                    change_kind: "modified".to_string(),
-                    additions: 0,
-                    deletions: 0,
-                    stage_state: FileStageState::Conflicted,
-                    conflict_kind: parse_conflict_kind(rest),
-                });
-            }
+/// Canonical decoded representation of one porcelain-v2 working-tree row.
+///
+/// Both public file-list shapes are projections of this type. Keeping rename
+/// metadata, index/worktree state, and unmerged `XY` decoding here prevents
+/// the changed-files and commit-dialog endpoints from disagreeing about the
+/// same worktree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PorcelainFileEntry {
+    pub(crate) path: String,
+    pub(crate) old_path: Option<String>,
+    pub(crate) status_code: String,
+    pub(crate) change_kind: String,
+    pub(crate) stage_state: FileStageState,
+    pub(crate) conflict_kind: Option<ConflictKind>,
+    pub(crate) additions: i32,
+    pub(crate) deletions: i32,
+}
+
+impl PorcelainFileEntry {
+    pub(crate) fn into_uncommitted(self) -> UncommittedFile {
+        UncommittedFile {
+            path: self.path,
+            status: self.stage_state.legacy_status().to_string(),
+            change_kind: self.change_kind,
+            additions: self.additions,
+            deletions: self.deletions,
+            stage_state: self.stage_state,
+            conflict_kind: self.conflict_kind,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct PorcelainFileEntryRef<'a> {
+    pub(crate) path: &'a str,
+    old_path: Option<&'a str>,
+    status_code: &'a str,
+    change_kind: &'static str,
+    pub(crate) stage_state: FileStageState,
+    pub(crate) conflict_kind: Option<ConflictKind>,
+}
+
+impl From<PorcelainFileEntryRef<'_>> for PorcelainFileEntry {
+    fn from(entry: PorcelainFileEntryRef<'_>) -> Self {
+        Self {
+            path: entry.path.to_string(),
+            old_path: entry.old_path.map(ToOwned::to_owned),
+            status_code: entry.status_code.to_string(),
+            change_kind: entry.change_kind.to_string(),
+            stage_state: entry.stage_state,
+            conflict_kind: entry.conflict_kind,
+            additions: 0,
+            deletions: 0,
+        }
+    }
+}
+
+/// Parse `git status --porcelain=v2` into a list of `UncommittedFile`s.
+#[allow(dead_code)] // Convenience projection retained for non-stat consumers and tests.
+pub fn parse_porcelain_v2_files(output: &str) -> Vec<UncommittedFile> {
+    parse_porcelain_v2_entries(output)
+        .into_iter()
+        .map(PorcelainFileEntry::into_uncommitted)
+        .collect()
+}
+
+pub(crate) fn parse_porcelain_v2_entries(output: &str) -> Vec<PorcelainFileEntry> {
+    let mut out = Vec::new();
+    visit_porcelain_v2_records(output, |record, nul_old_path| {
+        if let Some(entry) = decode_porcelain_v2_record(record, nul_old_path) {
+            out.push(entry.into());
+        }
+    });
     out
+}
+
+pub(crate) fn visit_porcelain_v2_records<'a>(
+    output: &'a str,
+    mut visit: impl FnMut(&'a str, Option<&'a str>),
+) {
+    if output.contains('\0') {
+        let mut records = output.split_terminator('\0');
+        while let Some(record) = records.next() {
+            let old_path = record.starts_with("2 ").then(|| records.next()).flatten();
+            visit(record, old_path);
+        }
+    } else {
+        for record in output.lines() {
+            visit(record, None);
+        }
+    }
+}
+
+pub(crate) fn decode_porcelain_v2_record<'a>(
+    record: &'a str,
+    nul_old_path: Option<&'a str>,
+) -> Option<PorcelainFileEntryRef<'a>> {
+    if let Some(path) = record.strip_prefix("? ") {
+        return Some(PorcelainFileEntryRef {
+            path,
+            old_path: None,
+            status_code: "A",
+            change_kind: "untracked",
+            stage_state: FileStageState::Untracked,
+            conflict_kind: None,
+        });
+    }
+    if let Some(rest) = record.strip_prefix("1 ") {
+        return decode_changed_entry(rest, false, None);
+    }
+    if let Some(rest) = record.strip_prefix("2 ") {
+        return decode_changed_entry(rest, true, nul_old_path);
+    }
+    let rest = record.strip_prefix("u ")?;
+    let path = unmerged_path(rest)?;
+    let xy = rest.get(..2)?;
+    Some(PorcelainFileEntryRef {
+        path,
+        old_path: None,
+        status_code: xy,
+        change_kind: "modified",
+        stage_state: FileStageState::Conflicted,
+        conflict_kind: parse_conflict_kind(xy),
+    })
 }
 
 /// Map a porcelain v2 XY pair to (status, change_kind). For ordinary `1`/`2`
 /// rows, X is the index side (staged) and Y is the worktree side (unstaged);
 /// in v2 the unchanged side is `.`, not space.
-fn classify_xy(x: char, y: char) -> (String, String, FileStageState) {
+fn classify_xy(x: char, y: char) -> (&'static str, FileStageState) {
     let staged = x != '.';
     let stage_state = FileStageState::from_xy(x, y);
     let kind_letter = if staged { x } else { y };
@@ -84,11 +177,7 @@ fn classify_xy(x: char, y: char) -> (String, String, FileStageState) {
         'R' | 'C' => "renamed",
         _ => "modified",
     };
-    (
-        stage_state.legacy_status().to_string(),
-        change_kind.to_string(),
-        stage_state,
-    )
+    (change_kind, stage_state)
 }
 
 /// Format reference for ordinary changed entries:
@@ -98,33 +187,80 @@ fn classify_xy(x: char, y: char) -> (String, String, FileStageState) {
 ///   `2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>\t<orig>`
 /// So we skip 7 whitespace-separated tokens for kind=1 and 8 for kind=2,
 /// then take the rest as the path (stopping at the tab for kind=2).
-fn push_changed_entry(rest: &str, renamed: bool, out: &mut Vec<UncommittedFile>) {
+fn decode_changed_entry<'a>(
+    rest: &'a str,
+    renamed: bool,
+    nul_old_path: Option<&'a str>,
+) -> Option<PorcelainFileEntryRef<'a>> {
     let mut chars = rest.chars();
     let x = chars.next().unwrap_or('.');
     let y = chars.next().unwrap_or('.');
-    let (status, change_kind, stage_state) = classify_xy(x, y);
+    let (change_kind, stage_state) = classify_xy(x, y);
     let skip = if renamed { 8 } else { 7 };
-    let Some(tail) = skip_fields(rest, skip) else {
-        return;
-    };
-    let path = if renamed {
-        // Renamed entries have `<new>\t<orig>`; we only surface `<new>`.
-        tail.split('\t').next().unwrap_or("").to_string()
+    let tail = skip_fields(rest, skip)?;
+    let (path, old_path) = if renamed {
+        if let Some(old_path) = nul_old_path {
+            (tail, Some(old_path))
+        } else {
+            let mut paths = tail.splitn(2, '\t');
+            (paths.next().unwrap_or(""), paths.next())
+        }
     } else {
-        tail.to_string()
+        (tail, None)
     };
     if path.is_empty() {
-        return;
+        return None;
     }
-    out.push(UncommittedFile {
+    let status_code = if renamed {
+        rest.split_whitespace().nth(7).unwrap_or("R")
+    } else if x != '.' {
+        rest.get(..1).unwrap_or("M")
+    } else {
+        rest.get(1..2).unwrap_or("M")
+    };
+    Some(PorcelainFileEntryRef {
         path,
-        status,
+        old_path,
+        status_code,
         change_kind,
-        additions: 0,
-        deletions: 0,
         stage_state,
         conflict_kind: None,
-    });
+    })
+}
+
+/// Sum the two diff sides for ordinary rows. Unmerged paths can appear in
+/// both diffs with the same synthetic conflict stat; use the per-column
+/// maximum there so one porcelain `u` row never gets its stats doubled.
+pub(crate) fn attach_stats(
+    mut entry: PorcelainFileEntry,
+    staged: &HashMap<String, (i32, i32)>,
+    unstaged: &HashMap<String, (i32, i32)>,
+) -> PorcelainFileEntry {
+    let staged = lookup_stats(&entry, staged);
+    let unstaged = lookup_stats(&entry, unstaged);
+    let (additions, deletions) = if entry.stage_state == FileStageState::Conflicted {
+        staged.or(unstaged).unwrap_or_default()
+    } else {
+        let staged = staged.unwrap_or_default();
+        let unstaged = unstaged.unwrap_or_default();
+        (staged.0 + unstaged.0, staged.1 + unstaged.1)
+    };
+    entry.additions = additions;
+    entry.deletions = deletions;
+    entry
+}
+
+fn lookup_stats(
+    entry: &PorcelainFileEntry,
+    stats: &HashMap<String, (i32, i32)>,
+) -> Option<(i32, i32)> {
+    stats.get(&entry.path).copied().or_else(|| {
+        let old = entry.old_path.as_ref()?;
+        stats
+            .get(&format!("{old} => {}", entry.path))
+            .or_else(|| stats.get(old))
+            .copied()
+    })
 }
 
 /// Skip `n` whitespace-separated fields and return the remainder of the
@@ -141,9 +277,9 @@ fn skip_fields(input: &str, n: usize) -> Option<&str> {
 }
 
 /// Unmerged: `u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>`.
-/// 10 fields before the path.
-fn unmerged_path(rest: &str) -> Option<String> {
-    let path = skip_fields(rest, 10)?.to_string();
+/// Nine fields before the path.
+fn unmerged_path(rest: &str) -> Option<&str> {
+    let path = skip_fields(rest, 9)?;
     if path.is_empty() {
         None
     } else {
@@ -151,8 +287,8 @@ fn unmerged_path(rest: &str) -> Option<String> {
     }
 }
 
-fn parse_conflict_kind(rest: &str) -> Option<ConflictKind> {
-    match rest.get(..2)? {
+fn parse_conflict_kind(xy: &str) -> Option<ConflictKind> {
+    match xy {
         "DD" => Some(ConflictKind::Dd),
         "AU" => Some(ConflictKind::Au),
         "UD" => Some(ConflictKind::Ud),
@@ -227,11 +363,30 @@ mod tests {
         assert_eq!(files[0].path, "newname.rs");
         assert_eq!(files[0].status, "staged");
         assert_eq!(files[0].change_kind, "renamed");
+        let entries = parse_porcelain_v2_entries(out);
+        assert_eq!(entries[0].old_path.as_deref(), Some("oldname.rs"));
+    }
+
+    #[test]
+    fn parses_nul_delimited_paths_without_git_quoting() {
+        let out = concat!(
+            "2 R. N... 100644 100644 100644 abc def R100 new name\0",
+            "old name\0",
+            "? quote\"name\0",
+            "? line\nbreak\0",
+        );
+        let entries = parse_porcelain_v2_entries(out);
+
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].path, "new name");
+        assert_eq!(entries[0].old_path.as_deref(), Some("old name"));
+        assert_eq!(entries[1].path, "quote\"name");
+        assert_eq!(entries[2].path, "line\nbreak");
     }
 
     #[test]
     fn parses_unmerged_entry_as_both() {
-        let out = "u UU N... 100644 100644 100644 100644 a b c d conflict.rs\n";
+        let out = "u UU N... 100644 100644 100644 100644 a b c conflict.rs\n";
         let files = parse_porcelain_v2_files(out);
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "conflict.rs");
@@ -251,7 +406,7 @@ mod tests {
             ("AA", ConflictKind::Aa),
             ("UU", ConflictKind::Uu),
         ] {
-            let out = format!("u {xy} N... 100644 100644 100644 100644 a b c d conflict-{xy}.rs\n");
+            let out = format!("u {xy} N... 100644 100644 100644 100644 a b c conflict-{xy}.rs\n");
             let files = parse_porcelain_v2_files(&out);
             assert_eq!(files[0].conflict_kind, Some(expected), "XY={xy}");
         }
@@ -297,9 +452,72 @@ mod tests {
             run(&self.path, args);
         }
 
+        fn capture(&self, args: &[&str]) -> String {
+            let output = ProcCommand::new("git")
+                .args(args)
+                .current_dir(&self.path)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("HOME", &self.path)
+                .output()
+                .expect("git capture");
+            assert!(
+                output.status.success(),
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        }
+
+        fn install_unmerged_stages(&self, stages: &[u8]) {
+            use std::io::Write;
+            use std::process::Stdio;
+
+            self.write("blob-base", b"base\n");
+            self.write("blob-ours", b"ours\n");
+            self.write("blob-theirs", b"theirs\n");
+            let blobs = [
+                self.capture(&["hash-object", "-w", "blob-base"]),
+                self.capture(&["hash-object", "-w", "blob-ours"]),
+                self.capture(&["hash-object", "-w", "blob-theirs"]),
+            ];
+            self.git(&["read-tree", "--empty"]);
+            let mut child = ProcCommand::new("git")
+                .args(["update-index", "--index-info"])
+                .current_dir(&self.path)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("HOME", &self.path)
+                .stdin(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let input = stages
+                .iter()
+                .map(|stage| {
+                    let oid = &blobs[usize::from(*stage - 1)];
+                    format!("100644 {oid} {stage}\tconflict.txt\n")
+                })
+                .collect::<String>();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(input.as_bytes())
+                .unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "update-index failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if stages != [1] {
+                self.write("conflict.txt", b"worktree\n");
+            }
+        }
+
         fn porcelain(&self) -> String {
             let out = ProcCommand::new("git")
-                .args(["status", "--porcelain=v2"])
+                .args(["status", "--porcelain=v2", "-z"])
                 .current_dir(&self.path)
                 .env("GIT_CONFIG_NOSYSTEM", "1")
                 .env("HOME", &self.path)
@@ -437,5 +655,29 @@ mod tests {
         let f = find(&files, "img.bin");
         assert_eq!(f.status, "staged");
         assert_eq!(f.change_kind, "added");
+    }
+
+    #[test]
+    fn real_git_preserves_all_seven_unmerged_xy_kinds() {
+        for (xy, stages, expected) in [
+            ("DD", &[1][..], ConflictKind::Dd),
+            ("AU", &[2][..], ConflictKind::Au),
+            ("UD", &[1, 2][..], ConflictKind::Ud),
+            ("UA", &[3][..], ConflictKind::Ua),
+            ("DU", &[1, 3][..], ConflictKind::Du),
+            ("AA", &[2, 3][..], ConflictKind::Aa),
+            ("UU", &[1, 2, 3][..], ConflictKind::Uu),
+        ] {
+            let repo = seeded_repo();
+            repo.install_unmerged_stages(stages);
+            let entries = parse_porcelain_v2_entries(&repo.porcelain());
+            let conflict = entries
+                .iter()
+                .find(|entry| entry.path == "conflict.txt")
+                .unwrap_or_else(|| panic!("missing {xy} in {entries:?}"));
+            assert_eq!(conflict.status_code, xy);
+            assert_eq!(conflict.conflict_kind, Some(expected));
+            assert_eq!(conflict.stage_state, FileStageState::Conflicted);
+        }
     }
 }

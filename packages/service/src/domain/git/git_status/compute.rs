@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::error::AppError;
-use crate::shared::git_cli::run_git_background;
+use crate::shared::git_cli::{git_ref_resolves_background, run_git_background};
 
 use super::parsing::{self, parse_porcelain_v2};
 use super::{GitStatusSnapshot, SharedFeatureRef};
@@ -63,12 +63,18 @@ async fn compute_status(
     // Watcher hot path: every git spawn here goes through
     // `run_git_background` so this code path can't race a user-initiated
     // rebase/commit for `.git/index.lock`. See `run_git_background` docs.
-    let porcelain =
-        run_git_background(&["status", "--porcelain=v2", "-b", "--ahead-behind"], repo).await?;
+    let porcelain = run_git_background(
+        &["status", "--porcelain=v2", "-z", "-b", "--ahead-behind"],
+        repo,
+    )
+    .await?;
     let parsed = parse_porcelain_v2(&porcelain);
-    let ahead_of_remote = count_unpushed(repo, &parsed).await;
-    let ahead_of_target = count_ahead(repo, target_branch).await;
-    let remote_info = resolve_remote_info(repo).await;
+    let (ahead_of_remote, target_divergence, remote_info) = tokio::join!(
+        count_unpushed(repo, &parsed),
+        resolve_target_divergence(repo, target_branch),
+        resolve_remote_info(repo),
+    );
+    let target_divergence = target_divergence?;
     let has_remote = remote_info.is_some();
     let (host, compare_url, action_label) =
         derive_provider_fields(remote_info.as_ref(), target_branch, &parsed.current_branch);
@@ -83,10 +89,12 @@ async fn compute_status(
         untracked_count: parsed.untracked_count,
         ahead_of_remote,
         behind_remote: parsed.behind,
-        ahead_of_target,
-        behind_target: 0,
-        target_resolved: false,
-        conflict_count: 0,
+        ahead_of_target: target_divergence.ahead,
+        behind_target: target_divergence.behind,
+        target_resolved: target_divergence.resolved,
+        conflict_count: parsed.conflict_count,
+        // Phase 1C owns active merge/rebase detection. Keep the conservative
+        // Phase 0 value here until its helper is integrated at this point.
         operation: None,
         has_remote,
         host,
@@ -97,15 +105,40 @@ async fn compute_status(
     })
 }
 
-/// `git rev-list --count {target}..HEAD`. Returns `0` if the ref doesn't
-/// resolve (e.g. configured target was deleted) — the caller still gets a
-/// well-formed snapshot rather than a 500.
-async fn count_ahead(repo: &Path, target_branch: &str) -> u32 {
-    let range = format!("{target_branch}..HEAD");
-    match run_git_background(&["rev-list", "--count", &range], repo).await {
-        Ok(out) => out.trim().parse().unwrap_or(0),
-        Err(_) => 0,
+#[derive(Debug, Default, PartialEq, Eq)]
+struct TargetDivergence {
+    ahead: u32,
+    behind: u32,
+    resolved: bool,
+}
+
+/// Resolve the configured target independently from its divergence. A valid
+/// target at zero commits is still resolved; a missing target degrades to
+/// zero counts without being mistaken for equality with `HEAD`.
+async fn resolve_target_divergence(
+    repo: &Path,
+    target_branch: &str,
+) -> Result<TargetDivergence, AppError> {
+    crate::shared::git_cli::guard_positionals(&[target_branch])?;
+    let commit = format!("{target_branch}^{{commit}}");
+    if !git_ref_resolves_background(&commit, repo).await? {
+        return Ok(TargetDivergence::default());
     }
+
+    let range = format!("HEAD...{target_branch}");
+    let counts = run_git_background(&["rev-list", "--left-right", "--count", &range], repo).await?;
+    let mut counts = counts.split_whitespace();
+    Ok(TargetDivergence {
+        ahead: counts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0),
+        behind: counts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0),
+        resolved: true,
+    })
 }
 
 /// Count commits reachable from `HEAD` that haven't been published anywhere.
@@ -255,6 +288,10 @@ mod tests {
         assert_eq!(snap.unstaged_count, 0);
         assert_eq!(snap.untracked_count, 0);
         assert_eq!(snap.ahead_of_target, 0);
+        assert_eq!(snap.behind_target, 0);
+        assert!(snap.target_resolved);
+        assert_eq!(snap.conflict_count, 0);
+        assert_eq!(snap.operation, None);
         assert!(!snap.has_remote, "no remote configured in fresh init");
         assert!(snap.compare_url.is_none());
         assert!(snap.shared_with.is_empty());
@@ -297,6 +334,67 @@ mod tests {
         let snap = compute_status(dir.path(), 1, "main").await.unwrap();
         assert_eq!(snap.current_branch, "feat");
         assert_eq!(snap.ahead_of_target, 2);
+        assert_eq!(snap.behind_target, 0);
+        assert!(snap.target_resolved);
+    }
+
+    #[tokio::test]
+    async fn compute_status_reports_two_sided_target_divergence() {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        run_git(dir.path(), &["branch", "feat"]);
+        std::fs::write(dir.path().join("target.txt"), "target\n").unwrap();
+        run_git(dir.path(), &["add", "target.txt"]);
+        run_git(dir.path(), &["commit", "-q", "-m", "target"]);
+        run_git(dir.path(), &["checkout", "-q", "feat"]);
+        std::fs::write(dir.path().join("feature.txt"), "feature\n").unwrap();
+        run_git(dir.path(), &["add", "feature.txt"]);
+        run_git(dir.path(), &["commit", "-q", "-m", "feature"]);
+
+        let snap = compute_status(dir.path(), 1, "main").await.unwrap();
+
+        assert_eq!(snap.ahead_of_target, 1);
+        assert_eq!(snap.behind_target, 1);
+        assert!(snap.target_resolved);
+    }
+
+    #[tokio::test]
+    async fn unresolved_target_is_distinct_from_zero_divergence() {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+
+        let snap = compute_status(dir.path(), 1, "missing-target")
+            .await
+            .unwrap();
+
+        assert_eq!(snap.ahead_of_target, 0);
+        assert_eq!(snap.behind_target, 0);
+        assert!(!snap.target_resolved);
+    }
+
+    #[tokio::test]
+    async fn compute_status_counts_unique_unmerged_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        run_git(dir.path(), &["checkout", "-q", "-b", "other"]);
+        std::fs::write(dir.path().join("seed.txt"), "other\n").unwrap();
+        run_git(dir.path(), &["commit", "-qam", "other"]);
+        run_git(dir.path(), &["checkout", "-q", "main"]);
+        std::fs::write(dir.path().join("seed.txt"), "main\n").unwrap();
+        run_git(dir.path(), &["commit", "-qam", "main"]);
+        let merge = std::process::Command::new("git")
+            .args(["merge", "other"])
+            .current_dir(dir.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("HOME", dir.path())
+            .output()
+            .unwrap();
+        assert!(!merge.status.success());
+
+        let snap = compute_status(dir.path(), 1, "main").await.unwrap();
+
+        assert_eq!(snap.conflict_count, 1);
+        assert_eq!(snap.operation, None);
     }
 
     #[tokio::test]
