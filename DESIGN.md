@@ -218,6 +218,17 @@ iconography:
 
 **What it is NOT.** It is not a chat app — the agent stream is a transcript artifact, not a conversation surface. It is not a code editor — the Editor pane is a read-side review tool, not a place to write. It is not a generic AI sidebar; it is the primary workspace.
 
+## Brand identity (validated 2026-07 — "Violet Night")
+
+The brand direction was re-validated in July 2026 through the landing redesign (`packages/landing/brand-directions.html`, direction C + logo 03-E). The landing leads; a future desktop default theme follows these handoff tokens. Until that theme ships, the three canonical themes below are unchanged.
+
+- **Logo — "Index Dots".** Twelve ink dots (r1.9) on a r14.5 ring around a solid iris core (r5.5), on a 48 grid. Distilled from the original dotted-ring favicon; two colors only. Favicon / ≤32px raster cut: dots r3, core r7. Core color: iris `#7C68C9` on dark grounds, iris-deep `#5843B8` on light. Dots always take the surrounding ink color (currentColor). The old green/cyan agent arcs are retired.
+- **Wordmark.** `CADENCR` in Figtree, weight 800, uppercase, tracked ~0.05em — unchanged (`--font-brand` already renders this).
+- **Handoff palette** for the future default desktop theme: Midnight `#0F0F13` (ground), Ink `#F1F0F4`, Muted `#8F8B99`, Hairline `#2A2831`, Raised `#15141A`, Iris `#7C68C9` (primary), Iris Deep `#5843B8` (primary on light). Near-monochrome chrome, one accent, one loud object per view.
+- **Landing typography** (not a desktop mandate): Schibsted Grotesk for display/body, JetBrains Mono for annotations. Desktop UI stays Inter until the new theme work decides otherwise.
+
+Full spec: `packages/landing/DESIGN.md`.
+
 ## Theme philosophy
 
 Cadencr ships with three canonical themes — **Aurora** (vibrant light), **Dracula** (vibrant dark, the original), and **One Dark** (calm cool-gray dark for long sessions). Three is the floor and the ceiling. We do not ship "high contrast" or "solarized" variants because every additional theme is an additional QA matrix; the three we have cover the three reasons people switch — bright office, low-light room, all-day reading.
