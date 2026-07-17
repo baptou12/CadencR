@@ -142,9 +142,7 @@ function BaseTile({ icon: Icon, accent, label, detail, trailing }: BaseTileProps
       <Icon className={cn("size-3 shrink-0", classes.label)} />
       <span className={cn("font-medium", classes.label)}>{label}</span>
       {detail && (
-        <span className="truncate font-mono text-[11px] text-muted-foreground" title={detail}>
-          {detail}
-        </span>
+        <span className="truncate font-mono text-[11px] text-muted-foreground">{detail}</span>
       )}
       {trailing}
     </div>

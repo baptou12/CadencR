@@ -67,14 +67,13 @@ describe("BashBlock lazy ANSI parse", () => {
 });
 
 describe("BashBlock collapsed-header UX", () => {
-  it("truncates the command header to one line when collapsed and keeps the full text in the title", () => {
+  it("truncates the command header without a native hover title", () => {
     const longCommand = "echo " + "abcdefghij".repeat(40);
     const { container } = render(<BashBlock command={longCommand} content="ok" expanded={false} />);
     const pre = container.querySelector("pre");
     expect(pre).not.toBeNull();
     expect(pre?.className).toContain("truncate");
-    // Native browser tooltip preserves the full command on hover.
-    expect(pre?.getAttribute("title")).toBe(longCommand);
+    expect(pre).not.toHaveAttribute("title");
   });
 
   it("wraps the command across lines when expanded", () => {

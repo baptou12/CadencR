@@ -23,7 +23,7 @@ describe("CompactToolTile", () => {
       />,
     );
     expect(screen.getByText("Bash")).toBeInTheDocument();
-    expect(screen.getByText(/ls -la/)).toBeInTheDocument();
+    expect(screen.getByText(/ls -la/)).not.toHaveAttribute("title");
   });
 
   it("renders Edit tiles with a numstat trailing widget", () => {

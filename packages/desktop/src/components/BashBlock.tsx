@@ -115,12 +115,11 @@ export const BashBlock = memo(function BashBlock({
                     // header reads as one red row.
                     "min-w-0 flex-1 font-mono",
                     isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
-                    // Collapsed: single-line ellipsis with the full command on
-                    // hover. Expanded: wrap with line breaks before shell
-                    // operators (inserted by `formatShellCommand`).
+                    // Collapsed: single-line ellipsis. Expanded: wrap with line
+                    // breaks before shell operators (inserted by
+                    // `formatShellCommand`).
                     isBodyOpen ? "whitespace-pre-wrap break-all" : "truncate",
                   )}
-                  title={command ?? undefined}
                 >
                   {(isBodyOpen ? formattedCommand : command) ?? "Running command…"}
                 </pre>
