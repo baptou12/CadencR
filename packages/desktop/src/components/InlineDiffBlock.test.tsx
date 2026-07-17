@@ -51,7 +51,7 @@ describe("InlineDiffBlock", () => {
         newContent="const x = 2;"
       />,
     );
-    expect(screen.getByText("src/example.ts")).toBeInTheDocument();
+    expect(screen.getByText("src/example.ts")).not.toHaveAttribute("title");
   });
 
   it("shows diff view when content differs", () => {
@@ -98,7 +98,9 @@ describe("InlineDiffBlock", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Edit src/foo.ts in editor" }));
+    const editButton = screen.getByRole("button", { name: "Edit src/foo.ts in editor" });
+    expect(editButton).not.toHaveAttribute("title");
+    await user.click(editButton);
 
     expect(onOpenFileInEditor).toHaveBeenCalledWith("/home/user/project/src/foo.ts", 2);
   });

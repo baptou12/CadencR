@@ -90,15 +90,12 @@ export function InlineDiffBlock({
             <span className="font-medium text-[var(--numstat-add-fg)]">{toolName}</span>
           </>
         )}
-        <span className="flex-1 truncate font-mono text-[var(--editor-fg)]" title={filePath}>
-          {displayPath}
-        </span>
+        <span className="flex-1 truncate font-mono text-[var(--editor-fg)]">{displayPath}</span>
         <NumStat additions={additions} deletions={deletions} hideZero={false} />
         {openFileInEditor && (
           <button
             type="button"
             aria-label={`Edit ${displayPath} in editor`}
-            title="Edit in editor"
             onClick={(e) => {
               e.stopPropagation();
               openFileInEditor(filePath, firstChangedNewLine(patch));
