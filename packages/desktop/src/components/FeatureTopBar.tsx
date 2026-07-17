@@ -18,6 +18,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useFeatureSettingsShortcuts } from "./useFeatureSettingsShortcuts";
+import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { copyToClipboard } from "@/lib/clipboard";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -238,6 +239,11 @@ function FeatureHeaderChrome({
   return (
     <>
       <div
+        // Hooks for theme CSS (the CadencR chassis matches this header's
+        // height to the sidebar header; `data-mac-controls` mirrors the same
+        // platform constant `SidebarHeader` keys its height on).
+        data-feature-header
+        data-mac-controls={HAS_MAC_WINDOW_CONTROLS ? "true" : undefined}
         className={cn(
           draggable && "titlebar-drag",
           "flex items-center gap-3 px-3 py-3 md:px-6",

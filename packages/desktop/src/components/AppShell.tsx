@@ -134,6 +134,9 @@ export function AppShell({
         </div>
       </ResizablePanel>
       <ResizableHandle
+        // CadencR themes collapse this handle to 0 width so the sidebar and
+        // feature header share one seamless chassis band (see theme-cadencr-material.css).
+        data-app-shell-handle=""
         className={cn("cursor-col-resize", collapsed && "pointer-events-none opacity-0")}
       />
       <ResizablePanel id="main">

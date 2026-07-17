@@ -16,7 +16,7 @@ interface Props {
 const { aspect, leftLabel, rightLabel } = Astro.props;
 ---
 <div
-  class="compare media-frame relative overflow-hidden rounded-xl border border-border/70 bg-sidebar shadow-xl shadow-black/35"
+  class="compare frame relative overflow-hidden rounded-lg"
   style={`aspect-ratio: ${aspect}`}
   data-compare
 >
@@ -68,7 +68,7 @@ const { aspect, leftLabel, rightLabel } = Astro.props;
     border-radius: 6px;
     background: color-mix(in oklch, var(--color-background) 72%, transparent);
     backdrop-filter: blur(8px);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -78,8 +78,8 @@ const { aspect, leftLabel, rightLabel } = Astro.props;
     left: var(--pos);
     width: 1px;
     transform: translateX(-50%);
-    background: color-mix(in oklch, var(--sec-accent, var(--color-foreground)) 70%, transparent);
-    box-shadow: 0 0 12px color-mix(in oklch, var(--sec-accent, var(--color-foreground)) 50%, transparent);
+    background: color-mix(in oklch, var(--color-foreground) 70%, transparent);
+    box-shadow: 0 0 12px color-mix(in oklch, var(--color-foreground) 50%, transparent);
   }
   .compare-handle {
     left: var(--pos);
@@ -89,7 +89,7 @@ const { aspect, leftLabel, rightLabel } = Astro.props;
     place-items: center;
     width: 34px;
     height: 34px;
-    border: 1px solid color-mix(in oklch, var(--sec-accent, var(--color-border)) 55%, var(--color-border));
+    border: 1px solid var(--color-border);
     border-radius: 9999px;
     background: color-mix(in oklch, var(--color-background) 80%, transparent);
     backdrop-filter: blur(8px);
@@ -109,7 +109,7 @@ const { aspect, leftLabel, rightLabel } = Astro.props;
     touch-action: pan-y;
   }
   .compare:has(input:focus-visible) .compare-handle {
-    outline: 2px solid var(--sec-accent, var(--color-primary));
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
 </style>

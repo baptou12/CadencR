@@ -6,7 +6,7 @@ export const THEME_FOLLOW_SYSTEM_SETTING_KEY = "theme_follow_system";
 export const THEME_SYSTEM_LIGHT_SETTING_KEY = "theme_system_light";
 export const THEME_SYSTEM_DARK_SETTING_KEY = "theme_system_dark";
 
-export const DEFAULT_SYSTEM_LIGHT_THEME_ID: ThemeId = "aurora";
+export const DEFAULT_SYSTEM_LIGHT_THEME_ID: ThemeId = "cadencr-light";
 export const DEFAULT_SYSTEM_DARK_THEME_ID: ThemeId = DEFAULT_THEME_ID;
 export const DEFAULT_SYSTEM_APPEARANCE: ThemeAppearance = "dark";
 export const SYSTEM_DARK_MEDIA_QUERY = "(prefers-color-scheme: dark)";

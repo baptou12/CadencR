@@ -41,7 +41,12 @@ export function PaneChrome({
   onDockTab,
 }: PaneChromeProps): ReactNode {
   return (
-    <div className={cn("h-full w-full", isRoot ? "pt-px" : "px-1.5 pb-1.5")}>
+    <div
+      // `data-pane-frame` lets CadencR themes equalize the floating-pane gutter
+      // (the default `px-1.5 pb-1.5` has no top padding). Other themes ignore it.
+      data-pane-frame={isRoot ? "root" : "floating"}
+      className={cn("h-full w-full", isRoot ? "pt-px" : "px-1.5 pb-1.5")}
+    >
       <div
         ref={containerRef}
         data-pane-id={leaf.id}
@@ -286,6 +291,7 @@ function PaneTabStrip({
   return (
     <div
       ref={enabled ? droppable.setNodeRef : undefined}
+      data-pane-tab-strip
       className={cn(
         "flex shrink-0 items-stretch border-b border-border transition-colors",
         showOver && "bg-primary/15",

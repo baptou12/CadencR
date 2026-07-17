@@ -1,4 +1,6 @@
 import { AURORA_THEME } from "./aurora";
+import { CADENCR_DARK_THEME } from "./cadencr-dark";
+import { CADENCR_LIGHT_THEME } from "./cadencr-light";
 import { CARBON_OWL_THEME } from "./carbon-owl";
 import { CATPPUCCIN_LATTE_THEME } from "./catppuccin-latte";
 import { CATPPUCCIN_MOCHA_THEME } from "./catppuccin-mocha";
@@ -14,6 +16,8 @@ import { THEME_IDS, type ThemeDefinition, type ThemeId } from "./types";
 
 /** Display order in the settings picker. */
 export const THEME_LIST: ThemeDefinition[] = [
+  CADENCR_DARK_THEME,
+  CADENCR_LIGHT_THEME,
   DRACULA_THEME,
   AURORA_THEME,
   ONE_DARK_THEME,
@@ -30,6 +34,8 @@ export const THEME_LIST: ThemeDefinition[] = [
 
 /** All themes shipped with Cadencr, keyed by id. */
 export const THEMES: Record<ThemeId, ThemeDefinition> = {
+  "cadencr-dark": CADENCR_DARK_THEME,
+  "cadencr-light": CADENCR_LIGHT_THEME,
   dracula: DRACULA_THEME,
   aurora: AURORA_THEME,
   "one-dark": ONE_DARK_THEME,
@@ -44,7 +50,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   "catppuccin-latte": CATPPUCCIN_LATTE_THEME,
 };
 
-export const DEFAULT_THEME_ID: ThemeId = "dracula";
+export const DEFAULT_THEME_ID: ThemeId = "cadencr-dark";
 
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && (THEME_IDS as readonly string[]).includes(value);

@@ -14,35 +14,18 @@ interface PlaceholderProps {
   caption?: string;
 }
 
-/** Dracula accent driving the section's eyebrow, divider, and media glow. */
-type Accent = "purple" | "cyan" | "green" | "orange" | "pink" | "yellow";
-
 interface Props {
   id: string;
   eyebrow: string;
   heading: string;
-  /** Section number ("01", "02", …) shown before the eyebrow label. */
+  /** Figure number ("01", "02", …) shown in the fig-label. */
   index?: string;
   reverse?: boolean;
-  accent?: Accent;
   placeholder?: PlaceholderProps;
 }
-const { id, eyebrow, heading, index, reverse = false, accent = "purple", placeholder } = Astro.props;
+const { id, eyebrow, heading, index, reverse = false, placeholder } = Astro.props;
 ---
-<section
-  id={id}
-  class="relative overflow-hidden py-24"
-  style={`--sec-accent: var(--color-drac-${accent})`}
->
-  <div class="sec-divider" aria-hidden="true"></div>
-  <div
-    class:list={[
-      "sec-glow pointer-events-none absolute -z-10",
-      reverse ? "sec-glow-left" : "sec-glow-right",
-    ]}
-    aria-hidden="true"
-  >
-  </div>
+<section id={id} class="rule relative scroll-mt-16 py-16 sm:py-20">
   <Wrap>
     <TwoUp reverse={reverse}>
       {reverse && (

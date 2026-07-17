@@ -1,31 +1,38 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter";
+@import "@fontsource-variable/schibsted-grotesk";
+@import "@fontsource-variable/jetbrains-mono";
 @import "@fontsource-variable/figtree";
 @import "./docs.css";
 
 @theme {
   --font-sans:
-    "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
+    "Schibsted Grotesk Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --default-font-family: var(--font-sans);
+  --font-mono:
+    "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Brand wordmark — Figtree (used for the "CADENCR" logotype). */
   --font-brand: "Figtree Variable", var(--font-sans);
 
-  /* Palette — mirrors packages/desktop/src/index.css. Keep in sync. */
-  --color-background: oklch(0.22 0.022 277.497);
-  --color-foreground: oklch(0.977 0.008 106.793);
-  --color-primary: oklch(0.742 0.149 301.871);
-  --color-primary-foreground: oklch(0.22 0.022 277.497);
-  --color-muted: oklch(0.403 0.032 277.821);
-  --color-muted-foreground: oklch(0.7 0.05 270);
-  --color-accent: oklch(0.403 0.032 277.821);
-  --color-border: oklch(0.32 0.032 277.821);
-  --color-sidebar: oklch(0.23 0.022 277.497);
+  /* ── Emerald Reserve palette ────────────────────────────────────────
+     Neutral graphite surfaces establish the premium instrument feel;
+     one jewel emerald carries brand and action. Green surface light is
+     deliberately scarce so the primary remains alive rather than ambient. */
+  --color-background: #131416;
+  --color-foreground: #eff0f2;
+  --color-primary: #2db47d;
+  --color-primary-foreground: #131416;
+  --color-muted: #1a1b1d;
+  --color-muted-foreground: #a7a9ad;
+  --color-accent: #202124;
+  --color-border: #34373a;
+  --color-sidebar: #090a0c;
   --color-destructive: oklch(0.682 0.206 24.421);
 
-  /* Dracula accents */
-  --color-drac-bg: #282a36;
+  /* ANSI accents — reserved for terminal/capture DEPICTIONS only
+     (StreamTerminal, brew-copy success tick). Never page chrome. */
+  --color-drac-bg: #16171f;
   --color-drac-fg: #f8f8f2;
   --color-drac-selection: #44475a;
   --color-drac-comment: #6272a4;
@@ -37,17 +44,20 @@
   --color-drac-red: #ff5555;
   --color-drac-yellow: #f1fa8c;
 
-  /* Elevation */
-  --shadow-xs: 0 1px 1px rgb(0 0 0 / 0.25);
-  --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35);
-  --shadow-lg: 0 24px 60px rgb(0 0 0 / 0.45);
+  /* Elevation — shadows stage captures against the ground; hairlines do
+     the structural separation. emerald-seat is the ONE green-tinted shadow
+     on the page (hero capture only — the Jewel-Light Rule). */
+  --shadow-xs: 0 1px 1px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 10px 28px rgb(0 0 0 / 0.42);
+  --shadow-lg: 0 28px 64px rgb(0 0 0 / 0.5);
+  --shadow-emerald-seat: 0 42px 100px -32px rgb(45 180 125 / 0.16);
 
-  /* Radius — mirrors packages/desktop/src/index.css (derived from --radius: 0.625rem) */
-  --radius: 0.625rem;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Radius — crisper than the app (datasheet voice). */
+  --radius: 0.5rem;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
 }
 
 @layer base {
@@ -70,13 +80,15 @@
   body {
     background: var(--color-background);
     color: var(--color-foreground);
-    line-height: 1.55;
+    font-size: 16px;
+    line-height: 1.6;
+    letter-spacing: 0.008em; /* light-on-dark compensation */
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     overflow-x: hidden;
   }
   ::selection {
-    background: color-mix(in oklch, var(--color-drac-purple) 40%, transparent);
+    background: color-mix(in oklch, var(--color-primary) 38%, transparent);
     color: var(--color-foreground);
   }
   a {
@@ -86,186 +98,189 @@
 }
 
 @layer components {
-  /* Reusable patterns that need ::before / ::after or complex backgrounds.
-     Simple layout/color is done with Tailwind utilities directly in markup. */
-
-  /* Eyebrow dot + text pick up the section accent when a section sets
-     --sec-accent; they fall back to the neutral muted tone elsewhere. */
-  .eyebrow {
-    color: color-mix(
-      in oklch,
-      var(--sec-accent, var(--color-muted-foreground)) 55%,
-      var(--color-muted-foreground)
-    );
+  /* ── Sheet structure ──────────────────────────────────────────────
+     The whole page is one ruled technical sheet: a centered column with
+     continuous vertical rails; sections are rows separated by full-width
+     hairline rules. Space inside the rails reads as composition, not
+     absence. */
+  .sheet {
+    max-width: 1180px;
+    margin-inline: auto;
   }
-  .eyebrow::before {
-    content: "";
-    display: inline-block;
-    width: 5px;
-    height: 5px;
-    border-radius: 9999px;
-    background: var(--sec-accent, var(--color-muted-foreground));
-    box-shadow: 0 0 0 3px
-      color-mix(in oklch, var(--sec-accent, var(--color-muted-foreground)) 18%, transparent);
+  @media (min-width: 768px) {
+    .sheet {
+      border-inline: 1px solid var(--color-border);
+    }
+  }
+  .rule {
+    border-top: 1px solid var(--color-border);
   }
 
-  /* Section divider — the same construction everywhere: a neutral hairline
-     fading at the edges, a short accent-tinted core, and a small glowing
-     diamond node at dead center. Sections express their accent only through
-     the core + node, so every boundary reads as one system. Accent-less
-     sections fall back to purple so the node always glows. */
-  .sec-divider {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: min(1160px, 94%);
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in oklch, var(--color-border) 90%, transparent) 22% 78%,
-      transparent
-    );
+  /* ── Figure system ────────────────────────────────────────────────
+     Every section is a numbered figure. The fig-label is the only
+     all-caps text tier: mono, ≤11px, tracked. */
+  .fig-label {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
   }
-  .sec-divider::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 0;
-    transform: translateX(-50%);
-    width: 220px;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in oklch, var(--sec-accent, var(--color-drac-purple)) 65%, transparent),
-      transparent
-    );
+  .fig-label .fig-no {
+    color: var(--color-primary);
+    font-weight: 600;
   }
-  .sec-divider::after {
+
+  /* Registration marks — the sheet's signature ornament. Four corner
+     ticks on major figures, drawn from hairlines. */
+  .reg-marks {
+    position: relative;
+  }
+  .reg-marks::before,
+  .reg-marks::after,
+  .reg-marks > .reg-b::before,
+  .reg-marks > .reg-b::after {
     content: "";
     position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 5px;
-    height: 5px;
-    transform: translate(-50%, -50%) rotate(45deg);
-    background: color-mix(
-      in oklch,
-      var(--sec-accent, var(--color-drac-purple)) 85%,
-      var(--color-background)
-    );
-    box-shadow: 0 0 10px
-      color-mix(in oklch, var(--sec-accent, var(--color-drac-purple)) 60%, transparent);
+    width: 9px;
+    height: 9px;
+    pointer-events: none;
+  }
+  .reg-marks::before {
+    top: -5px;
+    left: -5px;
+    border-top: 1px solid var(--color-muted-foreground);
+    border-left: 1px solid var(--color-muted-foreground);
+  }
+  .reg-marks::after {
+    top: -5px;
+    right: -5px;
+    border-top: 1px solid var(--color-muted-foreground);
+    border-right: 1px solid var(--color-muted-foreground);
+  }
+  .reg-marks > .reg-b::before {
+    bottom: -5px;
+    left: -5px;
+    border-bottom: 1px solid var(--color-muted-foreground);
+    border-left: 1px solid var(--color-muted-foreground);
+  }
+  .reg-marks > .reg-b::after {
+    bottom: -5px;
+    right: -5px;
+    border-bottom: 1px solid var(--color-muted-foreground);
+    border-right: 1px solid var(--color-muted-foreground);
   }
 
-  /* Ambient accent wash behind a feature section's media column. */
-  .sec-glow {
-    inset: 0;
-    background: radial-gradient(
-      42% 58% at var(--gx, 76%) 52%,
-      color-mix(in oklch, var(--sec-accent, var(--color-primary)) 12%, transparent),
-      transparent 72%
-    );
-    filter: blur(44px);
+  /* ── Display type ─────────────────────────────────────────────────
+     Schibsted Grotesk at natural width — one cool, tight grotesque;
+     contrast comes from weight, never a width axis. */
+  .type-display {
+    font-weight: 640;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
   }
-  .sec-glow-left {
-    --gx: 24%;
-  }
-  .sec-glow-right {
-    --gx: 76%;
+  .type-h2 {
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.12;
   }
 
-  /* Screenshot staging: a contour-following shadow (drop-shadow respects the
-     window PNG's rounded corners / transparency) plus a soft accent halo.
-     Kept light — the captures already bake in the macOS window shadow. */
-  .feature-media-img {
-    filter: drop-shadow(0 14px 28px rgb(0 0 0 / 0.28));
-  }
-  .feature-media-glow {
-    background: radial-gradient(
-      52% 62% at 50% 45%,
-      color-mix(in oklch, var(--sec-accent, var(--color-primary)) 22%, transparent),
-      transparent 72%
-    );
-    filter: blur(52px);
-  }
-
-  /* Framed screenshot crop: shared top light + hover lift, tinted by the
-     section accent. Layout utilities stay in markup; only the pseudo-element
-     and interaction live here so every frame behaves identically. */
-  .media-frame {
+  /* ── Media staging ────────────────────────────────────────────────
+     Captures sit in hairline frames with a contour shadow and a faint
+     neutral monitor-light behind them — no colored washes; the capture
+     itself is the color. */
+  .frame {
+    position: relative;
+    border: 1px solid var(--color-border);
+    background: var(--color-sidebar);
     transition:
-      transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
       border-color 0.3s ease,
       box-shadow 0.3s ease;
   }
-  .media-frame::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    z-index: 1;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in oklch, var(--sec-accent, var(--color-foreground)) 45%, transparent),
-      transparent
-    );
+  .frame:hover {
+    border-color: color-mix(in oklch, var(--color-foreground) 28%, var(--color-border));
+    box-shadow: 0 18px 44px rgb(0 0 0 / 0.45);
   }
-  .media-frame:hover {
-    transform: translateY(-3px);
-    border-color: color-mix(
-      in oklch,
-      var(--sec-accent, var(--color-border)) 35%,
-      var(--color-border)
-    );
-    box-shadow:
-      0 20px 45px rgb(0 0 0 / 0.4),
-      0 0 40px color-mix(in oklch, var(--sec-accent, transparent) 12%, transparent);
+  .feature-media-img {
+    filter: drop-shadow(0 16px 32px rgb(0 0 0 / 0.34));
   }
-  @media (prefers-reduced-motion: reduce) {
-    .media-frame,
-    .media-frame:hover {
-      transform: none;
-    }
+  .monitor-light {
+    background: radial-gradient(
+      55% 60% at 50% 45%,
+      color-mix(in oklch, var(--color-foreground) 7%, transparent),
+      transparent 72%
+    );
+    filter: blur(48px);
   }
 
-  /* Small mono caption under a media frame — accent tick + muted label. */
-  .media-caption {
+  /* Figure caption under a frame: mono tick + label. */
+  .fig-caption {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-top: 12px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 10.5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: color-mix(in oklch, var(--color-muted-foreground) 80%, transparent);
+    color: var(--color-muted-foreground);
   }
-  .media-caption::before {
+  .fig-caption::before {
     content: "";
     width: 12px;
     height: 1px;
-    background: color-mix(
-      in oklch,
-      var(--sec-accent, var(--color-muted-foreground)) 75%,
-      transparent
-    );
+    background: var(--color-muted-foreground);
   }
 
-  /* Scroll-reveal. The inline script in BaseLayout tags <html> with .js, so
-     content stays visible when JavaScript is unavailable. */
+  /* ── Spec list ────────────────────────────────────────────────────
+     Replaces checkmark bullets: ruled rows, mono index ticks. */
+  .spec-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .spec-list li {
+    position: relative;
+    padding: 10px 0 10px 26px;
+    border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--color-muted-foreground);
+  }
+  .spec-list li:last-child {
+    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
+  }
+  .spec-list li::before {
+    content: "+";
+    position: absolute;
+    left: 2px;
+    top: 9px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-primary);
+  }
+  .spec-list strong {
+    color: var(--color-foreground);
+    font-weight: 560;
+  }
+
+  /* ── Scroll-reveal ────────────────────────────────────────────────
+     Quieter than before: a short rise, settle easing. The inline script
+     in BaseLayout tags <html> with .js so content stays visible when
+     JavaScript is unavailable. */
   .js .reveal {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(14px);
     transition:
-      opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
-      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+      opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .js .reveal-late {
-    transition-delay: 0.12s;
+    transition-delay: 0.1s;
   }
   .js .reveal.is-visible {
     opacity: 1;
@@ -279,77 +294,27 @@
     }
   }
 
-  /* Bullet list with checkmark icon */
-  .bullets li::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0.35em;
-    width: 14px;
-    height: 14px;
-    border-radius: 4px;
-    background-color: color-mix(in oklch, var(--color-primary) 20%, transparent);
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bd93f9' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>");
-    background-size: 10px 10px;
-    background-repeat: no-repeat;
-    background-position: center;
+  /* Skip link — visible on focus, first tab stop. */
+  .skip-link {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 100;
+    padding: 10px 16px;
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-md);
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-size: 13px;
+    font-weight: 500;
+    transform: translateY(-200%);
   }
-
-  /* Hero dashed orbits */
-  .hero-orbits::before,
-  .hero-orbits::after {
-    content: "";
-    position: absolute;
-    border: 1px dashed color-mix(in oklch, var(--color-drac-selection) 60%, transparent);
-    border-radius: 50%;
-  }
-  .hero-orbits::before {
-    width: 840px;
-    height: 840px;
-    left: -320px;
-    top: -280px;
-  }
-  .hero-orbits::after {
-    width: 1260px;
-    height: 1260px;
-    left: -520px;
-    top: -520px;
-    border-color: color-mix(in oklch, var(--color-drac-selection) 35%, transparent);
-  }
-
-  /* Placeholder diagonal stripe pattern */
-  .placeholder-pattern {
-    background:
-      repeating-linear-gradient(
-        45deg,
-        color-mix(in oklch, var(--color-muted) 18%, transparent) 0 12px,
-        transparent 12px 24px
-      ),
-      color-mix(in oklch, var(--color-muted) 20%, transparent);
-  }
-
-  /* Autonomy level dot marker */
-  .lvl-dot::before {
-    content: "";
-    width: 7px;
-    height: 7px;
-    border-radius: 9999px;
-    display: inline-block;
-    background: currentColor;
-  }
-
-  /* Timeline status dot */
-  .timeline-head::before {
-    content: "";
-    width: 7px;
-    height: 7px;
-    border-radius: 9999px;
-    display: inline-block;
-    background: currentColor;
+  .skip-link:focus-visible {
+    transform: none;
   }
 }
 
-/* Cursor blink for placeholder chrome / terminal */
+/* Cursor blink for terminal depictions */
 @keyframes blink {
   50% {
     opacity: 0;

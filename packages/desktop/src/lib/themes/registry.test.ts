@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_THEME_ID, THEME_LIST, getTheme, isThemeId, parseThemeId } from "./registry";
 
-vi.mock("../../../assets/cadencr-logo3.svg", () => ({ default: "cadencr-logo3.svg" }));
-vi.mock("../../../assets/cadencr-logo3-light.svg", () => ({
-  default: "cadencr-logo3-light.svg",
+vi.mock("../../../assets/cadencr-mark-dark.svg", () => ({ default: "cadencr-mark-dark.svg" }));
+vi.mock("../../../assets/cadencr-mark-light.svg", () => ({
+  default: "cadencr-mark-light.svg",
 }));
 
 describe("theme registry", () => {
-  it("ships dracula, aurora, one-dark, one-light, monokai, monokai-light, and the frost pair", () => {
+  it("ships the cadencr pair, dracula, aurora, one-dark, one-light, monokai, monokai-light, and the frost pair", () => {
     const ids = THEME_LIST.map((t) => t.id);
+    expect(ids).toContain("cadencr-dark");
+    expect(ids).toContain("cadencr-light");
     expect(ids).toContain("dracula");
     expect(ids).toContain("aurora");
     expect(ids).toContain("one-dark");
@@ -24,6 +26,8 @@ describe("theme registry", () => {
   });
 
   it("isThemeId narrows to known ids", () => {
+    expect(isThemeId("cadencr-dark")).toBe(true);
+    expect(isThemeId("cadencr-light")).toBe(true);
     expect(isThemeId("dracula")).toBe(true);
     expect(isThemeId("aurora")).toBe(true);
     expect(isThemeId("one-dark")).toBe(true);
@@ -47,6 +51,32 @@ describe("theme registry", () => {
     expect(parseThemeId(null)).toBe(DEFAULT_THEME_ID);
   });
 
+  it("defaults to CadencR Dark", () => {
+    expect(DEFAULT_THEME_ID).toBe("cadencr-dark");
+    expect(THEME_LIST[0]?.id).toBe("cadencr-dark");
+    expect(THEME_LIST[1]?.id).toBe("cadencr-light");
+  });
+
+  it("ships the cadencr pair with brand colors and the Index Dots logo", () => {
+    const dark = getTheme("cadencr-dark");
+    expect(dark.label).toBe("CadencR Dark");
+    expect(dark.appearance).toBe("dark");
+    expect(dark.logo.variant).toBe("dark");
+    expect(dark.logo.src).toContain("cadencr-mark-dark.svg");
+    expect(dark.swatch.background).toBe("#131416");
+    expect(dark.swatch.primary).toBe("#2db47d");
+    expect(dark.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+
+    const light = getTheme("cadencr-light");
+    expect(light.label).toBe("CadencR Light");
+    expect(light.appearance).toBe("light");
+    expect(light.logo.variant).toBe("light");
+    expect(light.logo.src).toContain("cadencr-mark-light.svg");
+    expect(light.swatch.background).toBe("#fafafb");
+    expect(light.swatch.primary).toBe("#087653");
+    expect(light.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+  });
+
   it("getTheme returns a definition with a label and xterm palette", () => {
     const aurora = getTheme("aurora");
     expect(aurora.label).toBe("Aurora");
@@ -67,12 +97,12 @@ describe("theme registry", () => {
 
     expect(dracula.appearance).toBe("dark");
     expect(dracula.logo.variant).toBe("dark");
-    expect(dracula.logo.src).toContain("cadencr-logo3.svg");
-    expect(dracula.logo.displayScale).toBeCloseTo(1.24);
+    expect(dracula.logo.src).toContain("cadencr-mark-dark.svg");
+    expect(dracula.logo.displayScale).toBeCloseTo(1.1);
 
     expect(aurora.appearance).toBe("light");
     expect(aurora.logo.variant).toBe("light");
-    expect(aurora.logo.src).toContain("cadencr-logo3-light.svg");
+    expect(aurora.logo.src).toContain("cadencr-mark-light.svg");
     expect(aurora.logo.displayScale).toBe(dracula.logo.displayScale);
 
     expect(oneDark.appearance).toBe("dark");

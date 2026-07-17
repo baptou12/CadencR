@@ -1,0 +1,269 @@
+/* -------------------------------------------------------------------------
+ * CadencR material layer — the depth model for the Emerald Reserve pair.
+ *
+ * `theme-cadencr.css` owns the color tokens; this file owns the MATERIAL:
+ * pane elevation, the workspace lamplight, machined code wells, the
+ * prompt-bar chrome, overlay lift, and the Index-Dot heading marker.
+ *
+ * Every rule is scoped to the CadencR pair — including the `data-theme`-absent
+ * first paint, which resolves to CadencR Dark — so all other themes are
+ * untouched. The `--pane-*`, `--well-*`, `--prompt-*`, `--glass-shadow-overlay`,
+ * `--lamplight`, and `--md-h*` tokens consumed here exist ONLY in the CadencR
+ * theme blocks; components that reference them inline always carry a
+ * `var(--x, legacy-fallback)` so the other themes keep their exact look.
+ * ------------------------------------------------------------------------- */
+
+/* ── Chassis + page ──────────────────────────────────────────────────────
+ * The feature view and the unified-agents page read as a machined instrument
+ * case: the sidebar and the page header share one continuous rail-colored
+ * chassis (same surface, no separating hairline), and the content below the
+ * header tucks into it as a raised "page" whose rounded top-left corner is
+ * the visible connection between the two headers. Scoped to full-page chrome
+ * (`data-feature-chrome="standard"`), never the embedded unified-grid cards. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-chrome="standard"] {
+  background-color: var(--sidebar);
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-chrome="standard"]
+  [data-worktree-setup] {
+  background-color: transparent;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-chrome="standard"]
+  [data-feature-layout-shell] {
+  background-color: var(--background);
+  border-top: 1px solid var(--pane-border);
+  border-left: 1px solid var(--pane-border);
+  border-top-left-radius: 14px;
+  box-shadow: var(--page-shadow);
+}
+
+/* The feature page header matches the sidebar header band: same height (the
+ * `data-mac-controls` variant mirrors SidebarHeader's taller macOS layout,
+ * centering content in the band below the traffic-light strip) and the same
+ * chassis surface it now sits on. Unified agents opts out — its filter bar
+ * wraps and needs bottom breathing room (see rule below). */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-header]:not([data-unified-agents-header]) {
+  min-height: 4rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-header][data-mac-controls]:not([data-unified-agents-header]) {
+  min-height: 4.5rem;
+  padding-top: 2rem;
+}
+
+/* Unified agents shares the chassis color but keeps vertical padding so the
+ * filter field (which can wrap to multiple chip lines) doesn't kiss the page
+ * card. Mac builds keep the traffic-light clearance on top. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-header][data-unified-agents-header] {
+  min-height: 4rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.875rem;
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-header][data-unified-agents-header][data-mac-controls] {
+  min-height: 0;
+  padding-top: 2.25rem;
+  padding-bottom: 0.875rem;
+}
+
+/* Seamless chassis: the sidebar's own hairline would cut the shared band in
+ * two. The page card's left border takes over as the content boundary. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-app-sidebar] {
+  border-right-color: transparent;
+}
+
+/* Collapse the app-shell sidebar↔main resize handle to zero layout width so
+ * it doesn't paint a 1px seam through the shared header band. Hit-testing
+ * stays via the handle's ::after (see ui/resizable.tsx). Nested feature-split
+ * handles are untouched — only `[data-app-shell-handle]` matches. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-slot="resizable-handle"][data-app-shell-handle] {
+  width: 0;
+}
+
+/* Floating panes default to `px-1.5 pb-1.5` (top: 0, sides/bottom: 6px), which
+ * makes the card flush the page's top hairline while sitting inset on every
+ * other edge — the "double border / uneven gutter" look when a tab is docked
+ * beside the root. Equalize the inset; other themes keep the original classes. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-frame="floating"] {
+  padding: 0.375rem;
+}
+
+/* When any floating card is present, inset the root pane's top/bottom to the
+ * same gutter so tab strips line up across the split. Leave left/right at 0 so
+ * the ground pane still fills its column. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-feature-layout-shell][data-has-floating-pane="true"]
+  [data-pane-frame="root"] {
+  padding: 0.375rem 0;
+}
+
+/* ── Feature tabs ────────────────────────────────────────────────────────
+ * Full segmented control — same vocabulary as GitTabToggle. The strip drops
+ * the underline hairline-as-indicator; tabs sit in a left-aligned recessed
+ * track; the active segment is a solid raised pill. Emerald marks only the
+ * focused pane's active icon. Unfocused panes keep a solid active pill
+ * (no ghost wash) so the selection stays readable. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-tab-strip] {
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom-color: var(--pane-border);
+  min-height: 0;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-tab-strip]
+  [data-slot="tabs"] {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-tab-strip]
+  [data-slot="tabs-list"] {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--tab-track-border);
+  border-radius: calc(var(--radius) - 2px);
+  background-color: var(--tab-track-bg);
+  color: var(--muted-foreground);
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"] {
+  margin: 0;
+  height: auto;
+  min-height: 0;
+  padding: 5px 10px;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"]::after {
+  content: none;
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"]:not([data-state="active"]):hover {
+  color: var(--foreground);
+  background-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"][data-state="active"] {
+  background-color: var(--tab-active-bg);
+  color: var(--foreground);
+  box-shadow: var(--tab-active-shadow);
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-id][data-pane-focused="true"]
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"][data-state="active"]
+  svg {
+  color: var(--primary);
+}
+
+/* ── Pane elevation ──────────────────────────────────────────────────────
+ * Split panes (terminal / git / editor / browser) become raised instrument
+ * cards: card surface, quiet hairline, machined top edge + soft drop. The
+ * focused pane's hairline picks up a whisper of emerald so "where will my
+ * keystrokes go" is answerable at a glance. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-id]:not([data-pane-root]) {
+  background-color: var(--pane-bg);
+  border-color: var(--pane-border);
+  box-shadow: var(--pane-shadow);
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-id]:not([data-pane-root])[data-pane-focused="true"] {
+  border-color: var(--pane-border-focused);
+}
+
+/* The ROOT pane stays flush with the ground and receives the lamplight — an
+ * emerald top glow at ≤4% alpha, the one place the brand color is allowed to
+ * touch a large surface. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-root] {
+  background-image: var(--lamplight);
+  background-repeat: no-repeat;
+}
+
+/* ── Prompt bar — the instrument the user actually plays ─────────────────
+ * A raised card with a real hairline and a soft cast, instead of the
+ * borderless muted wash. Focus keeps the same chrome (no emerald border or
+ * glow). (The default `bg-muted/40` + `focus-within:bg-muted/55` classes lose
+ * to these theme-scoped declarations.) */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-agent-prompt-bar]
+  > .glass-surface {
+  background-color: var(--card);
+  border-color: var(--border);
+  box-shadow: var(--prompt-shadow);
+  transition:
+    background-color 150ms ease,
+    box-shadow 200ms ease;
+}
+
+/* ── Floating overlays ───────────────────────────────────────────────────
+ * The hand-rolled popovers (slash-command, @-file mention, filter
+ * suggestions) share the `.glass-surface` utility; in the CadencR pair they
+ * get a real overlay lift instead of the flat hairline-only look. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  .glass-surface.absolute {
+  box-shadow: var(--glass-shadow-overlay);
+}
+
+/* ── Machined wells ──────────────────────────────────────────────────────
+ * Code and command output read as carved into the surface rather than laid
+ * on top of it: markdown code blocks and the bash tool body get a shallow
+ * inset shadow under their top edge. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-code-block]
+  pre,
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-bash-body],
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-bash-block]
+  [class~="bg-[var(--block-bash-body-bg)]"] {
+  box-shadow: var(--well-shadow);
+}
+
+/* Other themes retain the established primary-colored editor action. The
+ * CadencR pair keeps this utility action neutral so the emerald primary stays
+ * reserved for higher-level selection and confirmation. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-inline-diff-edit-action] {
+  color: var(--foreground);
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-inline-diff-edit-action]:hover {
+  color: var(--foreground);
+  background-color: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-inline-diff-edit-action]:focus-visible {
+  --tw-ring-color: color-mix(in srgb, var(--foreground) 40%, transparent);
+}

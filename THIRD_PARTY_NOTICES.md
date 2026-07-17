@@ -67,4 +67,4 @@ If you own one of these marks and want the asset removed or replaced, please ope
 
 ## Cadencr-original assets
 
-The Cadencr name, the Cadencr logo (`packages/desktop/assets/cadencr-logo3.png`, `cadencr-logo3.svg`, `icon.icns`, `icon.ico`, `icon.png`), and the marketing content under `packages/landing/` are original works © 2026 Raphael Le Minor, released under the Apache License 2.0 together with the rest of this repository.
+The Cadencr name, the Cadencr "Index Dots" logo (`packages/desktop/assets/cadencr-mark-{dark,light}.svg` and `packages/desktop/icons/{128x128.png,icon.icns,icon.ico}`), and the marketing content under `packages/landing/` are original works © 2026 Raphael Le Minor, released under the Apache License 2.0 together with the rest of this repository.

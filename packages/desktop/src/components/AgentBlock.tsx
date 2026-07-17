@@ -370,7 +370,10 @@ function CodeBlock({ content, language }: { content: string; language?: string }
   const isShell = !!language && SHELL_LANGUAGES.has(language);
 
   return (
-    <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock">
+    <div
+      data-code-block
+      className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock"
+    >
       {language && (
         <CodeBlockHeader
           language={language}

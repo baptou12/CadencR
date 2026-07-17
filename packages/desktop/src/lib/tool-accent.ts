@@ -2,7 +2,7 @@
  * Shared "attributed color" system for tool calls.
  *
  * The Compact-flow tiles and the Summary-mode recap chips paint tools with the
- * same accent so a given tool reads consistently across both: green for file
+ * same accent so a given tool reads consistently across both: edit for file
  * edits, terminal grey for Bash, blue for generic tools, violet for thinking,
  * and brand purple for our own MCP servers. Colors come from per-theme tokens so
  * they stay correct in every theme without per-theme tuning here. (The full
@@ -27,11 +27,9 @@ export const TOOL_ACCENT_CLASSES: Record<ToolAccent, ToolAccentClasses> = {
     label: "text-[var(--block-bash-fg)]",
   },
   edit: {
-    // Neutral border (like the other accents) + a calm green fill; the label is
-    // nudged toward `--foreground` so green text clears its own green tint. The
-    // raw counter green (`--numstat-add-fg`) was too low-contrast on same-hue fill.
-    wrapper: "border-border bg-[color-mix(in_srgb,var(--numstat-add-fg)_13%,var(--card))]",
-    label: "text-[color-mix(in_srgb,var(--numstat-add-fg)_74%,var(--foreground))]",
+    wrapper:
+      "border-border bg-[color-mix(in_srgb,var(--block-edit-accent,var(--numstat-add-fg))_13%,var(--card))]",
+    label: "text-[var(--block-edit-accent,var(--numstat-add-fg))]",
   },
   tool: {
     wrapper: "border-border bg-[var(--block-tool-bg)]",

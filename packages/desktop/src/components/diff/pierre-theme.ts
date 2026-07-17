@@ -2,6 +2,8 @@ import { registerCustomTheme } from "@pierre/diffs";
 import type { ThemeId } from "@/lib/themes";
 import { buildPierreTheme } from "./pierre-theme-builder";
 
+const CADENCR_DARK_DIFF_THEME = "cadencr-dark-diff";
+const CADENCR_LIGHT_DIFF_THEME = "cadencr-light-diff";
 const CADENCR_DRACULA_DIFF_THEME = "cadencr-dracula-diff";
 const CADENCR_AURORA_DIFF_THEME = "cadencr-aurora-diff";
 const CADENCR_ONE_DARK_DIFF_THEME = "cadencr-one-dark-diff";
@@ -16,6 +18,8 @@ const CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME = "cadencr-catppuccin-mocha-diff";
 const CADENCR_CATPPUCCIN_LATTE_DIFF_THEME = "cadencr-catppuccin-latte-diff";
 
 type PierreThemeName =
+  | typeof CADENCR_DARK_DIFF_THEME
+  | typeof CADENCR_LIGHT_DIFF_THEME
   | typeof CADENCR_DRACULA_DIFF_THEME
   | typeof CADENCR_AURORA_DIFF_THEME
   | typeof CADENCR_ONE_DARK_DIFF_THEME
@@ -28,6 +32,53 @@ type PierreThemeName =
   | typeof CADENCR_PAPER_OWL_DIFF_THEME
   | typeof CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME
   | typeof CADENCR_CATPPUCCIN_LATTE_DIFF_THEME;
+
+// CadencR Dark / Light — Emerald Reserve's vibrant functional family (see
+// theme-cadencr.css). Brand emerald stays out of syntax roles; dedicated hues
+// keep inserted/deleted lines and code tokens immediately distinguishable.
+const CADENCR_DARK_THEME = buildPierreTheme(
+  CADENCR_DARK_DIFF_THEME,
+  "dark",
+  {
+    background: "#08090b",
+    foreground: "#eff0f2",
+    lineHighlight: "#13181b",
+    selection: "#12372a",
+  },
+  {
+    comment: "#6e7176",
+    keyword: "#de7ca7",
+    string: "#e2b64d",
+    number: "#f09a5b",
+    function: "#8bcf67",
+    type: "#52bfd0",
+    tag: "#a88af0",
+    deleted: "#ec707b",
+    inserted: "#8bcf67",
+  },
+);
+
+const CADENCR_LIGHT_THEME = buildPierreTheme(
+  CADENCR_LIGHT_DIFF_THEME,
+  "light",
+  {
+    background: "#f4f5f7",
+    foreground: "#222429",
+    lineHighlight: "#e9ebee",
+    selection: "#d8eae3",
+  },
+  {
+    comment: "#95989f",
+    keyword: "#b52b70",
+    string: "#966c00",
+    number: "#b85f00",
+    function: "#3d7d14",
+    type: "#007f9b",
+    tag: "#6f42c1",
+    deleted: "#d12d49",
+    inserted: "#3d7d14",
+  },
+);
 
 const DRACULA_THEME = buildPierreTheme(
   CADENCR_DRACULA_DIFF_THEME,
@@ -297,6 +348,8 @@ let registered = false;
 
 export function ensurePierreThemesRegistered(): void {
   if (registered) return;
+  registerCustomTheme(CADENCR_DARK_DIFF_THEME, () => Promise.resolve(CADENCR_DARK_THEME));
+  registerCustomTheme(CADENCR_LIGHT_DIFF_THEME, () => Promise.resolve(CADENCR_LIGHT_THEME));
   registerCustomTheme(CADENCR_DRACULA_DIFF_THEME, () => Promise.resolve(DRACULA_THEME));
   registerCustomTheme(CADENCR_AURORA_DIFF_THEME, () => Promise.resolve(AURORA_THEME));
   registerCustomTheme(CADENCR_ONE_DARK_DIFF_THEME, () => Promise.resolve(ONE_DARK_THEME));
@@ -318,6 +371,10 @@ export function ensurePierreThemesRegistered(): void {
 
 export function getPierreThemeName(themeId: ThemeId): PierreThemeName {
   switch (themeId) {
+    case "cadencr-dark":
+      return CADENCR_DARK_DIFF_THEME;
+    case "cadencr-light":
+      return CADENCR_LIGHT_DIFF_THEME;
     case "aurora":
       return CADENCR_AURORA_DIFF_THEME;
     case "one-dark":

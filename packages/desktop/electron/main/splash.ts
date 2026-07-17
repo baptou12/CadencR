@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron";
 import { readFileSync } from "node:fs";
+import { ringDots } from "../../../landing/src/lib/logo-dots.mjs";
 import {
   parseStartupRecoveryActionUrl,
   type StartupRecoveryAction,
@@ -28,7 +29,13 @@ const SPLASH_WIDTH = 520;
 const SPLASH_HEIGHT = 400;
 const ERROR_SPLASH_WIDTH = 640;
 const ERROR_SPLASH_HEIGHT = 500;
-const BACKGROUND = "#1e1e28";
+// Emerald Reserve brand surfaces (root DESIGN.md "Brand identity").
+const BACKGROUND = "#131416";
+const INK = "#eff0f2";
+const MUTED = "#a7a9ad";
+const HAIRLINE = "#34373a";
+const RAISED = "#1a1b1d";
+const EMERALD = "#2db47d";
 
 export type SplashPhase =
   | "starting"
@@ -236,7 +243,7 @@ function renderSplashStyles(): string {
   html, body {
     margin: 0; padding: 0; height: 100%;
     background: ${BACKGROUND};
-    color: #e8e6f3;
+    color: ${INK};
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     -webkit-user-select: none; user-select: none; cursor: default;
     overflow: hidden;
@@ -245,20 +252,34 @@ function renderSplashStyles(): string {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 28px 32px;
   }
-  .logo { width: 120px; height: 120px; margin-bottom: 18px; }
+  .logo { width: 112px; height: 112px; margin-bottom: 18px; }
+  /* While loading, the twelve index dots pulse in sequence — the mark itself
+   * is the activity indicator. The pulse stops in the error state. */
+  .logo .d {
+    animation: dot-pulse 1.8s ease-in-out infinite;
+  }
+  body.error .logo .d { animation: none; opacity: 1; }
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 0.3; }
+    16% { opacity: 1; }
+    40% { opacity: 0.3; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .logo .d { animation: none; opacity: 1; }
+  }
   .name {
     font-family: "Figtree Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 28px; font-weight: 800; letter-spacing: 0.18em;
+    font-size: 26px; font-weight: 800; letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: #f8f8f2; margin-bottom: 4px;
+    color: ${INK}; margin-bottom: 4px;
   }
-  .version { font-size: 11px; color: #6c6890; margin-bottom: 22px; }
+  .version { font-size: 11px; color: #6e7176; margin-bottom: 22px; }
   .title {
-    font-size: 14px; font-weight: 500; color: #f8f8f2;
+    font-size: 14px; font-weight: 500; color: ${INK};
     margin-bottom: 6px; text-align: center;
   }
   .detail {
-    font-size: 12px; color: #a59fc4;
+    font-size: 12px; color: ${MUTED};
     text-align: center; min-height: 32px; line-height: 1.4;
     max-width: 100%; max-height: 96px;
     overflow-y: auto; overflow-x: hidden;
@@ -266,36 +287,45 @@ function renderSplashStyles(): string {
     padding: 0 6px;
   }
   body.error { padding: 30px 36px; }
-  body.error .logo { width: 96px; height: 96px; margin-bottom: 12px; }
+  body.error .logo { width: 88px; height: 88px; margin-bottom: 12px; }
   body.error .version { margin-bottom: 18px; }
   body.error .detail { max-height: 150px; }
   .detail::-webkit-scrollbar { width: 6px; }
-  .detail::-webkit-scrollbar-thumb { background: #3a3754; border-radius: 9999px; }
+  .detail::-webkit-scrollbar-thumb { background: ${HAIRLINE}; border-radius: 9999px; }
   .actions {
     display: none; gap: 8px; justify-content: center; flex-wrap: wrap;
     margin-top: 18px; max-width: 100%;
   }
   body.error .actions { display: flex; }
   .action {
-    appearance: none; border: 1px solid #3a3754; border-radius: 10px;
-    padding: 8px 12px; color: #e8e6f3; background: #28263a;
+    appearance: none; border: 1px solid ${HAIRLINE}; border-radius: 8px;
+    padding: 8px 12px; color: ${INK}; background: ${RAISED};
     text-decoration: none; font-size: 12px; font-weight: 600;
     transition: background 120ms ease, border-color 120ms ease;
   }
-  .action:hover { background: #332f48; border-color: #5b5374; }
-  .action.primary { background: #bd93f9; border-color: #bd93f9; color: #1e1e28; }
-  .action.danger { border-color: #ff5555; color: #ffb3b3; }
-  .spinner {
-    width: 28px; height: 28px; border-radius: 50%;
-    border: 2px solid #3a3754; border-top-color: #bd93f9;
-    animation: spin 0.9s linear infinite;
-    margin-top: 18px;
-  }
-  body.error .spinner { display: none; }
-  body.error .title { color: #ff5555; }
-  body.error .detail { color: #ffb3b3; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .action:hover { background: #202124; border-color: #4a4d50; }
+  .action.primary { background: ${EMERALD}; border-color: ${EMERALD}; color: ${BACKGROUND}; }
+  .action.primary:hover { background: #279f70; border-color: #279f70; }
+  .action.danger { border-color: #ec707b; color: #ff9da6; }
+  body.error .title { color: #ec707b; }
+  body.error .detail { color: #e6a8ae; }
 `;
+}
+
+/** The Index Dots mark: twelve dots on a r14.5 ring around an emerald core on a
+ *  48 grid (root DESIGN.md "Brand identity"). Each dot carries a staggered
+ *  animation delay so the pulse travels around the ring while loading. */
+function renderLogoSvg(): string {
+  const dots = ringDots()
+    .map(
+      ({ cx, cy }, i) =>
+        `<circle class="d" cx="${cx}" cy="${cy}" r="1.9" style="animation-delay:${i * 150}ms"/>`,
+    )
+    .join("");
+  return `<svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+    <g fill="${INK}">${dots}</g>
+    <circle cx="24" cy="24" r="5.5" fill="${EMERALD}"/>
+  </svg>`;
 }
 
 export function renderSplashHtml(version: string, initialError?: SplashErrorState): string {
@@ -309,22 +339,12 @@ ${renderSplashStyles()}
 </style>
 </head>
 <body${initialError ? ' class="error"' : ""}>
-  <svg class="logo" viewBox="0 0 1024 1024" aria-hidden="true">
-    <g transform="translate(512 512) scale(8.24) translate(-50 -50)">
-      <circle cx="50" cy="50" r="16" fill="#b388ff"/>
-      <g transform="rotate(-90 50 50)">
-        <circle cx="50" cy="50" r="28" pathLength="360" stroke="#454f63" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 20" fill="none"/>
-        <circle cx="50" cy="50" r="28" pathLength="360" stroke="#b2ff59" stroke-width="5" stroke-linecap="round" stroke-dasharray="40 320" fill="none" transform="rotate(240 50 50)"/>
-        <circle cx="50" cy="50" r="28" pathLength="360" stroke="#80d8ff" stroke-width="5" stroke-linecap="round" stroke-dasharray="40 320" fill="none" transform="rotate(60 50 50)"/>
-      </g>
-    </g>
-  </svg>
+  ${renderLogoSvg()}
   <div class="name">Cadencr</div>
   <div class="version">v${escapeHtml(version)}</div>
   <div class="title" id="title">${escapeHtml(initialError?.title ?? "Starting Cadencr")}</div>
   <div class="detail" id="detail">${escapeHtml(initialError?.detail ?? "Preparing the workspace…")}</div>
   <div class="actions" id="actions">${renderActionHtml(initialError?.actions ?? [])}</div>
-  <div class="spinner" id="spinner"></div>
 </body>
 </html>`;
 }

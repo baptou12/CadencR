@@ -7,22 +7,16 @@ import FeatureMedia from "@/components/ui/FeatureMedia.astro";
 import terminalImage from "@/assets/terminal.png";
 import editorImage from "@/assets/editor.png";
 ---
-<section
-  id="workbench"
-  class="relative overflow-hidden py-24"
-  style="--sec-accent: var(--color-drac-orange)"
->
-  <div class="sec-divider" aria-hidden="true"></div>
+<section id="workbench" class="rule relative scroll-mt-16 py-16 sm:py-20">
   <Wrap>
     <div class="reveal mx-auto mb-12 max-w-[560px] text-center">
-      <Eyebrow index="05">Workbench</Eyebrow>
+      <Eyebrow index="06">Workbench</Eyebrow>
       <SectionHeading>The rest of the IDE is already there.</SectionHeading>
     </div>
-    <div class="grid gap-5 lg:grid-cols-2">
+    <div class="grid gap-6 lg:grid-cols-2">
       <article
         id="terminal"
-        class="bento-card reveal relative overflow-hidden rounded-2xl border border-border/70 bg-muted/10 p-5 sm:p-6"
-        style="--sec-accent: var(--color-drac-orange)"
+        class="frame reveal relative overflow-hidden rounded-lg p-5 sm:p-6"
       >
         {/* Negative margins let the window bleed into the card padding —
             the capture's own transparent margins keep it off the border. */}
@@ -39,10 +33,10 @@ import editorImage from "@/assets/editor.png";
           <h3 class="mt-2.5 text-[19px] font-semibold leading-[1.25] tracking-[-0.015em]">
             A real terminal, next to the agent.
           </h3>
-          <p class="mt-2 text-[13.5px] leading-[1.6] text-muted-foreground [&_.em]:text-foreground">
-            Every session gets a PTY rooted at its own worktree — <span class="em">for the things
-            the agent shouldn't do</span>: ssh, dev servers, ad-hoc scripts. Split the pane any
-            time; both see the same filesystem, in real time.
+          <p class="mt-2 text-[14px] leading-[1.6] text-muted-foreground [&_.em]:text-foreground">
+            Every session gets a real terminal (a PTY) rooted at its own worktree — <span class="em">for
+            the things the agent shouldn't do</span>: ssh, dev servers, ad-hoc scripts. Split the
+            pane any time; both see the same filesystem, in real time.
           </p>
           <BulletList>
             <li><strong>One PTY per session</strong>, rooted at the worktree.</li>
@@ -54,8 +48,7 @@ import editorImage from "@/assets/editor.png";
 
       <article
         id="editor"
-        class="bento-card reveal reveal-late relative overflow-hidden rounded-2xl border border-border/70 bg-muted/10 p-5 sm:p-6"
-        style="--sec-accent: var(--color-drac-pink)"
+        class="frame reveal reveal-late relative overflow-hidden rounded-lg p-5 sm:p-6"
       >
         <div class="-mx-5 -mt-4 sm:-mx-6 sm:-mt-5">
           <FeatureMedia
@@ -70,7 +63,7 @@ import editorImage from "@/assets/editor.png";
           <h3 class="mt-2.5 text-[19px] font-semibold leading-[1.25] tracking-[-0.015em]">
             A real editor — not a viewer.
           </h3>
-          <p class="mt-2 text-[13.5px] leading-[1.6] text-muted-foreground [&_.em]:text-foreground">
+          <p class="mt-2 text-[14px] leading-[1.6] text-muted-foreground [&_.em]:text-foreground">
             Open any file the agent touched and <span class="em">edit it on the spot</span> — no
             jumping to another app to fix a typo, tweak a prompt, or unwind a chunk.
           </p>
@@ -84,31 +77,3 @@ import editorImage from "@/assets/editor.png";
     </div>
   </Wrap>
 </section>
-
-<style>
-  /* Accent hairline along each card's top edge + ambient corner glow. */
-  .bento-card::before {
-    content: "";
-    position: absolute;
-    inset: 0 10% auto 10%;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in oklch, var(--sec-accent) 55%, transparent),
-      transparent
-    );
-  }
-  .bento-card::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background: radial-gradient(
-      60% 40% at 50% 0%,
-      color-mix(in oklch, var(--sec-accent) 7%, transparent),
-      transparent 70%
-    );
-  }
-</style>

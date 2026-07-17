@@ -50,10 +50,11 @@ export const ThinkingBlock = memo(function ThinkingBlock({
   };
 
   // The agent's internal monologue. Surface + accent come from the theme's
-  // `--block-thinking-*` tokens; the outline uses the neutral `--border`
-  // token so the colored bg can carry the identity without a loud border.
+  // `--block-thinking-*` tokens; the outline is themable via
+  // `--block-thinking-border` (a whisper of the thinking accent in the CadencR
+  // pair) and falls back to the neutral `--border` everywhere else.
   return (
-    <div className="my-1 rounded-md border border-border bg-[var(--block-thinking-bg)]">
+    <div className="my-1 rounded-md border border-[var(--block-thinking-border,var(--border))] bg-[var(--block-thinking-bg)]">
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
@@ -83,7 +84,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
         />
       </button>
       <CollapsibleSection open={isExpanded}>
-        <div className="border-t border-border px-3 py-2">
+        <div className="border-t border-[var(--block-thinking-border,var(--border))] px-3 py-2">
           <Markdown
             content={displayContent}
             cacheKey={cacheKey}

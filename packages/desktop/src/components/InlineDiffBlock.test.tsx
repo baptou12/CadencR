@@ -238,7 +238,7 @@ describe("InlineDiffBlock controlled expand API", () => {
   });
 });
 
-it("keeps the green file-change identity for edit tool-call headers", () => {
+it("uses the theme-owned file-change identity for edit tool-call headers", () => {
   render(
     <InlineDiffBlock
       filePath="test.ts"
@@ -248,8 +248,10 @@ it("keeps the green file-change identity for edit tool-call headers", () => {
     />,
   );
 
-  expect(screen.getByText("ApplyPatch")).toHaveClass("text-[var(--numstat-add-fg)]");
+  expect(screen.getByText("ApplyPatch")).toHaveClass(
+    "text-[var(--block-edit-accent,var(--numstat-add-fg))]",
+  );
   expect(screen.getByTestId("inline-diff-header")).toHaveClass(
-    "bg-[color-mix(in_srgb,var(--numstat-add-fg)_15%,var(--editor-bg))]",
+    "bg-[color-mix(in_srgb,var(--block-edit-accent,var(--numstat-add-fg))_15%,var(--editor-bg))]",
   );
 });

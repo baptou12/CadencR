@@ -4,8 +4,8 @@ interface Props {
   class?: string;
 }
 const { maxWidth = "default", class: klass } = Astro.props;
-const widthClass = maxWidth === "narrow" ? "max-w-[860px]" : "max-w-[1160px]";
+const widthClass = maxWidth === "narrow" ? "max-w-[860px]" : "max-w-[1180px]";
 ---
-<div class={`mx-auto px-6 ${widthClass} ${klass ?? ""}`}>
+<div class={`mx-auto px-5 sm:px-8 ${widthClass} ${klass ?? ""}`}>
   <slot />
 </div>

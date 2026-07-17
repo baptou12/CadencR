@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import { useSetWorkspaceSettingWithCache } from "@/hooks/useSetWorkspaceSettingWithCache";
 import { ONBOARDING_INTRO_SHOWN_SETTING_KEY } from "@/lib/onboarding-step";
+import { ringDots } from "../../../../../landing/src/lib/logo-dots.mjs";
 import "./WelcomeIntro.css";
 
 /**
@@ -19,6 +27,11 @@ import "./WelcomeIntro.css";
 // the CTA button, click anywhere, or any key. This gives them as much time
 // as they want to read the wordmark/tagline before entering the app.
 const FADE_OUT_MS = 600;
+
+// The Index Dots mark: twelve dots on a r14.5 ring around an emerald core on a
+// 48 grid (root DESIGN.md "Brand identity"). Precomputed once — each dot's
+// index drives its staggered tick-in and cadence-pulse delays in CSS.
+const INTRO_DOTS = ringDots();
 
 export function WelcomeIntro({ onComplete }: { onComplete: () => void }) {
   const [isFading, setIsFading] = useState(false);
@@ -72,50 +85,19 @@ export function WelcomeIntro({ onComplete }: { onComplete: () => void }) {
       aria-hidden
     >
       <div className="welcome-intro__stage">
-        <svg className="welcome-intro__svg" viewBox="0 0 100 100">
-          <g transform="rotate(-90 50 50)">
-            <circle className="welcome-intro__dot" cx="50" cy="50" r="16" fill="#b388ff" />
+        <svg className="welcome-intro__svg" viewBox="0 0 48 48">
+          {INTRO_DOTS.map((dot, i) => (
             <circle
-              className="welcome-intro__ring"
-              cx="50"
-              cy="50"
-              r="28"
-              pathLength="360"
-              stroke="#454f63"
-              strokeWidth="5"
-              strokeLinecap="round"
-              strokeDasharray="10 20"
-              fill="none"
+              key={i}
+              className="welcome-intro__index-dot"
+              style={{ "--dot-index": i } as CSSProperties}
+              cx={dot.cx}
+              cy={dot.cy}
+              r="1.9"
+              fill="#eff0f2"
             />
-            <g className="welcome-intro__orbit">
-              <circle
-                className="welcome-intro__arc welcome-intro__arc--green"
-                cx="50"
-                cy="50"
-                r="28"
-                pathLength="360"
-                stroke="#b2ff59"
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeDasharray="40 320"
-                fill="none"
-                transform="rotate(240 50 50)"
-              />
-              <circle
-                className="welcome-intro__arc welcome-intro__arc--cyan"
-                cx="50"
-                cy="50"
-                r="28"
-                pathLength="360"
-                stroke="#80d8ff"
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeDasharray="40 320"
-                fill="none"
-                transform="rotate(60 50 50)"
-              />
-            </g>
-          </g>
+          ))}
+          <circle className="welcome-intro__core" cx="24" cy="24" r="5.5" fill="#2db47d" />
         </svg>
       </div>
 

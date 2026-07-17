@@ -33,6 +33,7 @@ export function BashFrame({
         {headerTrailing}
       </div>
       <div
+        data-bash-body
         className={cn("bg-[var(--block-bash-body-bg)] text-[var(--block-bash-fg)]", bodyClassName)}
       >
         {children}

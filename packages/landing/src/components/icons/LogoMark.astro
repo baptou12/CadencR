@@ -1,50 +1,22 @@
 ---
+// Index Dots — the official CadencR mark (DESIGN.md "Logo").
+// Twelve ink dots on a ring around a solid emerald core, on the 48 grid.
+// Dots follow the surrounding text color; the core takes the theme primary.
+import { ringDots } from "@/lib/logo-dots.mjs";
 interface Props {
   size?: number;
 }
 const { size = 20 } = Astro.props;
+const dots = ringDots();
 ---
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  viewBox="0 0 100 100"
+  viewBox="0 0 48 48"
   width={size}
   height={size}
   aria-hidden="true"
   fill="none"
 >
-  <circle cx="50" cy="50" r="16" fill="#b388ff" />
-  <g transform="rotate(-90 50 50)">
-    <circle
-      cx="50"
-      cy="50"
-      r="28"
-      pathLength="360"
-      stroke="#454f63"
-      stroke-width="5"
-      stroke-linecap="round"
-      stroke-dasharray="10 20"
-    />
-    <circle
-      cx="50"
-      cy="50"
-      r="28"
-      pathLength="360"
-      stroke="#b2ff59"
-      stroke-width="5"
-      stroke-linecap="round"
-      stroke-dasharray="40 320"
-      transform="rotate(240 50 50)"
-    />
-    <circle
-      cx="50"
-      cy="50"
-      r="28"
-      pathLength="360"
-      stroke="#80d8ff"
-      stroke-width="5"
-      stroke-linecap="round"
-      stroke-dasharray="40 320"
-      transform="rotate(60 50 50)"
-    />
-  </g>
+  {dots.map((d) => <circle cx={d.cx} cy={d.cy} r="1.9" fill="currentColor" />)}
+  <circle cx="24" cy="24" r="5.5" fill="var(--color-primary)" />
 </svg>

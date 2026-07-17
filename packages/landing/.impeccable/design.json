@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-17T11:15:00Z",
+  "title": "Design System: CadencR Landing",
+  "extensions": {
+    "colorMeta": {
+      "iris": {
+        "role": "primary",
+        "displayName": "Iris",
+        "canonical": "#7C68C9",
+        "tonalRamp": ["oklch(0.18 0.10 293)", "oklch(0.27 0.13 293)", "oklch(0.36 0.145 293)", "oklch(0.47 0.17 289)", "oklch(0.60 0.145 293)", "oklch(0.71 0.11 293)", "oklch(0.83 0.07 293)", "oklch(0.94 0.03 293)"]
+      },
+      "iris-deep": {
+        "role": "primary",
+        "displayName": "Iris Deep",
+        "canonical": "#5843B8",
+        "tonalRamp": ["oklch(0.18 0.12 289)", "oklch(0.28 0.15 289)", "oklch(0.38 0.16 289)", "oklch(0.47 0.17 289)", "oklch(0.57 0.15 289)", "oklch(0.68 0.12 289)", "oklch(0.80 0.08 289)", "oklch(0.92 0.04 289)"]
+      },
+      "midnight": {
+        "role": "neutral",
+        "displayName": "Midnight",
+        "canonical": "#0F0F13",
+        "tonalRamp": ["#0F0F13", "#15141A", "#1B1A21", "#201F26", "#2A2831", "#4A4754", "#8F8B99", "#F1F0F4"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#F1F0F4",
+        "tonalRamp": ["oklch(0.15 0.006 300)", "oklch(0.27 0.006 300)", "oklch(0.39 0.006 300)", "oklch(0.51 0.006 300)", "oklch(0.65 0.006 300)", "oklch(0.78 0.006 300)", "oklch(0.88 0.006 300)", "#F1F0F4"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "#8F8B99",
+        "tonalRamp": ["oklch(0.15 0.02 290)", "oklch(0.27 0.02 290)", "oklch(0.38 0.02 290)", "oklch(0.49 0.02 290)", "oklch(0.57 0.02 290)", "#8F8B99", "oklch(0.80 0.014 290)", "oklch(0.93 0.007 290)"]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#2A2831",
+        "tonalRamp": ["oklch(0.12 0.015 290)", "oklch(0.18 0.015 290)", "#2A2831", "oklch(0.34 0.015 290)", "oklch(0.44 0.015 290)", "oklch(0.58 0.015 290)", "oklch(0.74 0.012 290)", "oklch(0.90 0.007 290)"]
+      },
+      "alarm-red": {
+        "role": "status",
+        "displayName": "Alarm Red",
+        "canonical": "oklch(0.682 0.206 24.421)",
+        "tonalRamp": ["oklch(0.18 0.14 24.421)", "oklch(0.29 0.17 24.421)", "oklch(0.4 0.2 24.421)", "oklch(0.5 0.206 24.421)", "oklch(0.59 0.206 24.421)", "oklch(0.682 0.206 24.421)", "oklch(0.8 0.13 24.421)", "oklch(0.93 0.05 24.421)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero + closing CTA; Schibsted Grotesk 640, -0.02em, natural width." },
+      "title": { "displayName": "Title", "purpose": "Closing CTA display size step." },
+      "headline": { "displayName": "Headline", "purpose": "Section headings; Schibsted Grotesk 600, -0.015em." },
+      "body": { "displayName": "Body", "purpose": "Base prose 16px/1.6 with +0.008em light-on-dark compensation." },
+      "lede": { "displayName": "Lede", "purpose": "Section intros, 15px/1.65 Muted, ≤54ch; .em spans lift to Ink 500." },
+      "label": { "displayName": "Fig Label", "purpose": "Mono annotation layer: fig labels, captions, meta. All-caps only here and the wordmark." },
+      "brand": { "displayName": "Wordmark", "purpose": "Figtree 800 uppercase 0.05em, CADENCR logotype only — always beside the Index Dots mark." }
+    },
+    "shadows": [
+      { "name": "xs", "value": "0 1px 1px rgb(0 0 0 / 0.3)", "purpose": "Buttons, small chrome." },
+      { "name": "md", "value": "0 10px 28px rgb(0 0 0 / 0.42)", "purpose": "Frames at rest." },
+      { "name": "lg", "value": "0 28px 64px rgb(0 0 0 / 0.5)", "purpose": "Hero-scale staging." },
+      { "name": "iris-seat", "value": "0 42px 100px -32px rgb(124 104 201 / 0.22)", "purpose": "The hero capture only — the one iris-tinted shadow on the page." },
+      { "name": "contour", "value": "drop-shadow(0 16px 32px rgb(0 0 0 / 0.34))", "purpose": "Frameless window PNGs." },
+      { "name": "frame-hover", "value": "0 18px 44px rgb(0 0 0 / 0.45)", "purpose": ".frame:hover with ink-mixed border brighten; no transform." },
+      { "name": "monitor-light", "value": "radial-gradient(55% 60% at 50% 45%, color-mix(in oklch, var(--color-foreground) 7%, transparent), transparent 72%) blur(48px)", "purpose": "Neutral light behind captures; the hero top-light is the one iris tint (≤7% alpha)." }
+    ],
+    "motion": [
+      { "name": "ease-settle", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "House easing for reveals and hero entrance." },
+      { "name": "reveal", "value": "0.6s, 14px rise", "purpose": "Scroll reveal; .reveal-late staggers +0.1s; reduced-motion shows instantly." },
+      { "name": "hero-rise", "value": "0.7s staggered 0.06s steps", "purpose": "Single page-load choreography." },
+      { "name": "state", "value": "150ms ease", "purpose": "Color/border transitions." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px (sheet rails appear)" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Logo (Index Dots)",
+      "kind": "custom",
+      "refersTo": "logo-mark",
+      "description": "The official mark: twelve ink dots (r1.9) on a r14.5 ring around a solid iris core (r5.5), 48 grid. Favicon cut for ≤32px rasters: dots r3, core r7. Core is Iris Deep on light grounds.",
+      "html": "<svg viewBox=\"0 0 48 48\" width=\"48\" height=\"48\" fill=\"none\"><g fill=\"currentColor\"><circle cx=\"24\" cy=\"9.5\" r=\"1.9\"/><circle cx=\"31.25\" cy=\"11.44\" r=\"1.9\"/><circle cx=\"36.56\" cy=\"16.75\" r=\"1.9\"/><circle cx=\"38.5\" cy=\"24\" r=\"1.9\"/><circle cx=\"36.56\" cy=\"31.25\" r=\"1.9\"/><circle cx=\"31.25\" cy=\"36.56\" r=\"1.9\"/><circle cx=\"24\" cy=\"38.5\" r=\"1.9\"/><circle cx=\"16.75\" cy=\"36.56\" r=\"1.9\"/><circle cx=\"11.44\" cy=\"31.25\" r=\"1.9\"/><circle cx=\"9.5\" cy=\"24\" r=\"1.9\"/><circle cx=\"11.44\" cy=\"16.75\" r=\"1.9\"/><circle cx=\"16.75\" cy=\"11.44\" r=\"1.9\"/></g><circle cx=\"24\" cy=\"24\" r=\"5.5\" fill=\"var(--color-primary, #7C68C9)\"/></svg>",
+      "css": ""
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The download CTA — the one accent-filled element per view.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/><polyline points=\"7 10 12 15 17 10\"/><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"/></svg>Download for Mac</a>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 20px; border-radius: 8px; border: 1px solid transparent; background: var(--color-primary, #7C68C9); color: var(--color-primary-foreground, #0F0F13); font-family: 'Schibsted Grotesk Variable', system-ui, sans-serif; font-size: 14px; font-weight: 500; white-space: nowrap; text-decoration: none; transition: background-color 150ms ease; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--color-primary, #7C68C9) 90%, transparent); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-primary, #7C68C9); outline-offset: 2px; } .ds-btn-primary svg { width: 14px; height: 14px; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action; hairline border on midnight.",
+      "html": "<a class=\"ds-btn-outline\" href=\"#\">Source on GitHub</a>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 20px; border-radius: 8px; border: 1px solid var(--color-border, #2A2831); background: var(--color-background, #0F0F13); color: var(--color-foreground, #F1F0F4); font-family: 'Schibsted Grotesk Variable', system-ui, sans-serif; font-size: 14px; font-weight: 500; white-space: nowrap; text-decoration: none; box-shadow: 0 1px 1px rgb(0 0 0 / 0.3); transition: background-color 150ms ease; } .ds-btn-outline:hover { background: var(--color-accent, #1B1A21); } .ds-btn-outline:focus-visible { outline: 2px solid var(--color-primary, #7C68C9); outline-offset: 2px; }"
+    },
+    {
+      "name": "Fig Label",
+      "kind": "chip",
+      "refersTo": "fig-label",
+      "description": "The sheet's kicker: Fig. NN in iris + mono uppercase title.",
+      "html": "<span class=\"ds-fig-label\"><span class=\"ds-fig-no\">Fig. 04</span><span>·</span>Git</span>",
+      "css": ".ds-fig-label { display: inline-flex; align-items: baseline; gap: 10px; font-family: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.09em; text-transform: uppercase; color: var(--color-muted-foreground, #8F8B99); } .ds-fig-no { color: var(--color-primary, #7C68C9); font-weight: 600; }"
+    },
+    {
+      "name": "Spec List",
+      "kind": "custom",
+      "description": "The bullet replacement: hairline-ruled rows with iris plus ticks.",
+      "html": "<ul class=\"ds-spec-list\"><li><strong>Per-session branch</strong> with auto-generated names.</li><li><strong>Commit previews</strong> before every tool-group lands.</li></ul>",
+      "css": ".ds-spec-list { margin: 0; padding: 0; list-style: none; } .ds-spec-list li { position: relative; padding: 10px 0 10px 26px; border-top: 1px solid color-mix(in oklch, var(--color-border, #2A2831) 62%, transparent); font-family: 'Schibsted Grotesk Variable', system-ui, sans-serif; font-size: 14px; line-height: 1.55; color: var(--color-muted-foreground, #8F8B99); } .ds-spec-list li:last-child { border-bottom: 1px solid color-mix(in oklch, var(--color-border, #2A2831) 62%, transparent); } .ds-spec-list li::before { content: '+'; position: absolute; left: 2px; top: 9px; font-family: 'JetBrains Mono Variable', ui-monospace, monospace; font-size: 12px; color: var(--color-primary, #7C68C9); } .ds-spec-list strong { color: var(--color-foreground, #F1F0F4); font-weight: 560; }"
+    },
+    {
+      "name": "News Row",
+      "kind": "chip",
+      "refersTo": "news-row",
+      "description": "Hero announcement row: square NEW badge, hairline border.",
+      "html": "<a class=\"ds-news-row\" href=\"#\"><span class=\"ds-news-badge\">New</span><span class=\"ds-news-title\">CadencR v0.7.0 brings loop engineering</span><span class=\"ds-news-arrow\">→</span></a>",
+      "css": ".ds-news-row { display: inline-flex; align-items: center; gap: 10px; max-width: 100%; padding: 6px 14px 6px 6px; border: 1px solid var(--color-border, #2A2831); background: color-mix(in oklch, var(--color-sidebar, #15141A) 60%, transparent); color: var(--color-muted-foreground, #8F8B99); font-family: 'Schibsted Grotesk Variable', system-ui, sans-serif; font-size: 13px; text-decoration: none; transition: border-color 150ms ease, color 150ms ease; } .ds-news-row:hover { border-color: color-mix(in oklch, var(--color-primary, #7C68C9) 50%, transparent); color: var(--color-foreground, #F1F0F4); } .ds-news-badge { display: inline-flex; align-items: center; padding: 2px 8px; background: var(--color-primary, #7C68C9); color: var(--color-primary-foreground, #0F0F13); font-family: 'JetBrains Mono Variable', ui-monospace, monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; } .ds-news-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-news-arrow { color: var(--color-primary, #7C68C9); transition: transform 150ms ease; } .ds-news-row:hover .ds-news-arrow { transform: translateX(2px); }"
+    },
+    {
+      "name": "Fig Caption",
+      "kind": "custom",
+      "description": "Mono caption with tick under framed media.",
+      "html": "<div class=\"ds-fig-caption\">Fig. 00 · live capture, real session</div>",
+      "css": ".ds-fig-caption { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-muted-foreground, #8F8B99); } .ds-fig-caption::before { content: ''; width: 12px; height: 1px; background: var(--color-muted-foreground, #8F8B99); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Violet Night",
+    "overview": "The landing page is a premium midnight sheet. It keeps the engineering-datasheet grammar — one ruled column with continuous rails, numbered Fig. NN figures, hairline rules, spec tables, registration ticks — but the voice is a quiet luxury instrument: a deeper midnight ground, one aged-iris accent used like lamplight, a single loud CTA per view, and captures seated in deep studio shadows with a faint top-light. The chrome is near-monochrome; the real app captures are the only full-color objects, lighting the sheet the way monitors light a dark room.",
+    "keyCharacteristics": [
+      "One ruled sheet: continuous side rails, hairline rules between sections, everything composed as rows.",
+      "Numbered figure system: mono Fig. NN labels with the number in iris — the only all-caps tier besides the wordmark.",
+      "Near-monochrome chrome; the product captures are the only color; one iris accent, one loud CTA per view.",
+      "Schibsted Grotesk for display and body at natural width; JetBrains Mono for the annotation layer; Figtree 800 caps for the wordmark only.",
+      "The Index Dots mark: twelve ink dots on a ring around a solid iris core — the official logo, everywhere.",
+      "Motion is one quiet rise-and-settle; content never gates on JavaScript."
+    ],
+    "rules": [
+      { "name": "The Product-Is-The-Color Rule", "body": "Page chrome stays within the neutral ramp plus one iris. The app captures are the only saturated, multi-hue objects. If a decorative element wants color, it is wrong.", "section": "colors" },
+      { "name": "The One-Loud-Object Rule", "body": "Each view gets exactly one accent-filled element (the hero CTA). Secondary CTAs are hairline ghosts. Two competing accent fills is the SaaS tell this redesign exists to avoid.", "section": "colors" },
+      { "name": "The Lamplight Rule", "body": "Glows are near-invisible: the hero may carry one iris-tinted top-light (≤7% alpha) and hero-scale captures an iris-tinted shadow (≤22% alpha). Everything else uses the neutral monitor-light. Anything louder is prohibited.", "section": "colors" },
+      { "name": "The Fig Rule", "body": "Every kicker is a figure label: mono, uppercase, ≤11px, Fig. NN in iris. The only other all-caps text is the wordmark.", "section": "typography" },
+      { "name": "The One Family Rule", "body": "No second display face and no width axis. Contrast comes from weight (400→640) and Ink vs Muted. Figtree appears only in the wordmark.", "section": "typography" },
+      { "name": "The Drawn-Not-Lifted Rule", "body": "If a boundary is needed, draw a hairline. A shadow that isn't seating a capture is dead weight.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do compose every section as a ruled row of the sheet; if a boundary is needed, draw a hairline, never a glow.",
+      "Do ship real captures of CadencR in every media slot, seated with contour shadow and neutral monitor-light.",
+      "Do keep chrome near-monochrome with the single iris accent and exactly one accent-filled CTA per view.",
+      "Do render the logo from tokens via LogoMark.astro; use the favicon cut for ≤32px rasters and Iris Deep on light grounds.",
+      "Do give every animation a prefers-reduced-motion fallback and keep content visible without JavaScript.",
+      "Do spell the brand \"CadencR\" in prose and CADENCR in the wordmark; keep entity disambiguation intact.",
+      "Do carry this direction into the desktop app's future default theme: Midnight, Ink, Hairline, Iris."
+    ],
+    "donts": [
+      "Don't build \"a generic AI-startup landing page: no hype superlatives, no fabricated dashboards\".",
+      "Don't use gradient text, side-stripe borders, aurora washes, decorative background grids, or glassmorphism.",
+      "Don't fill more than one element per view with iris. The nav Download stays a hairline ghost; the hero CTA is the loud one.",
+      "Don't reintroduce the per-section Dracula accent spectrum in page chrome. ANSI colors live inside terminal/app depictions only.",
+      "Don't let all-caps leave the fig-label + wordmark tiers, or mono leave the annotation layer.",
+      "Don't use a second display face, a width axis, or a light theme. Midnight (#0F0F13) is the only body color.",
+      "Don't animate layout or add entrance choreography beyond the single rise-and-settle."
+    ]
+  }
+}

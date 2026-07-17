@@ -222,6 +222,9 @@ function WebSocketSessionFeatureBody(
           // the cursor highlights, not every mounted prompt.
           data-agent-prompt-id={promptDropTargetId}
           data-agent-dragover={agentDropZone.isDragging ? "true" : undefined}
+          // Distinguishes the full-page feature chrome from unified-grid cards
+          // so theme CSS (e.g. the CadencR chassis) can style only the former.
+          data-feature-chrome={embedded ? "embedded" : "standard"}
           onDragEnter={agentDropZone.onDragEnter}
           onDragLeave={agentDropZone.onDragLeave}
           onDrop={agentDropZone.onDrop}

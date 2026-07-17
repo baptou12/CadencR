@@ -41,8 +41,9 @@
   border-width: var(--border-width);
 }
 
-/* Default — Dracula. Also used when `data-theme` is absent (first paint, SSR). */
-:root,
+/* Dracula — the original Cadencr dark theme. (The app default and the
+ * `data-theme`-absent first-paint fallback is CadencR Dark, bound to the bare
+ * `:root` in `theme-cadencr.css`.) */
 :root[data-theme="dracula"] {
   color-scheme: dark;
   /* Tailwind semantic tokens */
