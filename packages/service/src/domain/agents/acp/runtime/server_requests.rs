@@ -27,6 +27,7 @@ use super::events::session_update_to_events;
 use super::events_stream_blocks::EventIndexer;
 use super::events_tool_call_metadata::is_empty_value;
 use super::fs::{handle_read_text_file, handle_write_text_file};
+use super::permission_tool_updates::emit_permission_tool_update;
 use super::permissions::{
     derive_preview, dispatch_permission_request_with_cache, has_pending_permission_for_tool_call,
     permission_request_from_server_request, refreshed_permission_event_for_tool_input,
@@ -324,7 +325,21 @@ async fn handle_permission_request(
         return;
     };
     enrich_permission_from_recorded_tool_input(&mut permission, config);
+    let normalized_name = config.hooks.normalize_tool_name(&permission.tool_name);
+    permission.tool_name = normalized_name;
+    let raw_input = config.hooks.derive_permission_tool_input(
+        &permission.tool_name,
+        std::mem::take(&mut permission.tool_input),
+        request.params(),
+    );
+    permission.tool_input = config
+        .hooks
+        .normalize_tool_input(&permission.tool_name, raw_input);
+    permission.preview = derive_preview(&permission.tool_input);
     let session_id = config.session_id.read().await.clone();
+    if permission.tool_name.starts_with("mcp__") {
+        emit_permission_tool_update(&permission, session_id.as_deref(), &config.indexer, tx).await;
+    }
     if let Err(error) = dispatch_permission_request_with_cache(
         client,
         config.hooks.as_ref(),

@@ -25,6 +25,7 @@ pub mod lifecycle;
 pub mod mcp;
 pub mod mode_switch;
 pub(crate) mod permission_events;
+mod permission_tool_updates;
 pub mod permissions;
 mod permissions_dispatch;
 mod permissions_refresh;

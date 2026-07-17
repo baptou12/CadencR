@@ -27,6 +27,44 @@ impl AcpProviderHooks for PlainHooks {
     }
 }
 
+struct NormalizingHooks;
+#[async_trait]
+impl AcpProviderHooks for NormalizingHooks {
+    fn normalize_tool_name(&self, raw: &str) -> String {
+        match raw {
+            "MCP: tool" => "mcp__mcp__tool".to_string(),
+            "server-echo_probe: echo_probe" => "mcp__server__echo_probe".to_string(),
+            "chrome-devtools-new_page: new_page" => "mcp__chrome-devtools__new_page".to_string(),
+            "cadencr-browser-browser_open_url: browser_open_url" => {
+                "mcp__cadencr-browser__browser_open_url".to_string()
+            }
+            _ => raw.to_string(),
+        }
+    }
+
+    fn normalize_tool_input(&self, tool_name: &str, mut input: Value) -> Value {
+        if let Some(value) = input.get_mut("textValue").map(Value::take) {
+            input["text"] = value;
+        }
+        if let Some(identity) = tool_name.strip_prefix("mcp__") {
+            let Some((server, tool)) = identity.split_once("__") else {
+                return input;
+            };
+            if server != "mcp" {
+                if input.get("description").and_then(Value::as_str) == Some("MCP: tool") {
+                    input.as_object_mut().expect("object").remove("description");
+                }
+                return json!({ "server": server, "tool": tool, "arguments": input });
+            }
+        }
+        input
+    }
+
+    fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<String> {
+        None
+    }
+}
+
 async fn client_with_agent_io() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
     let (client_reads_stdout, agent_writes_stdout) = duplex(64 * 1024);
     let (agent_reads_stdin, client_writes_stdin) = duplex(64 * 1024);
@@ -264,6 +302,161 @@ async fn permission_request_uses_recorded_tool_input_when_payload_is_empty() {
     let raw = permission_event.raw_json();
     assert_eq!(raw["tool_input"]["command"], "git status --short");
     assert_eq!(raw["preview"], "git status --short");
+}
+
+#[tokio::test]
+async fn permission_request_uses_provider_tool_normalization_before_dispatch() {
+    let (client, mut stdout, _stdin) = client_with_agent_io().await;
+    let (tx, mut rx) = mpsc::channel(8);
+    let mut config = event_loop_config(PathBuf::from("/tmp"));
+    config.hooks = Arc::new(NormalizingHooks);
+    let _loop = spawn_event_loop(client.clone(), client.subscribe(), tx, config);
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "id": "perm-mcp",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s-1",
+                "toolCall": {
+                    "toolCallId": "call-mcp",
+                    "title": "server-echo_probe: echo_probe",
+                    "kind": "other",
+                    "rawInput": { "textValue": "hello" }
+                }
+            }
+        }),
+    )
+    .await;
+
+    let event = rx.recv().await.expect("permission event").expect("ok");
+    let raw = event.raw_json();
+    assert_eq!(raw["tool_name"], "mcp__server__echo_probe");
+    assert_eq!(raw["tool_input"]["server"], "server");
+    assert_eq!(raw["tool_input"]["tool"], "echo_probe");
+    assert_eq!(raw["tool_input"]["arguments"]["text"], "hello");
+}
+
+#[tokio::test]
+async fn permission_repairs_cursor_mcp_identity_on_the_existing_tool_block() {
+    let (client, mut stdout, _stdin) = client_with_agent_io().await;
+    let (tx, mut rx) = mpsc::channel(8);
+    let mut config = event_loop_config(PathBuf::from("/tmp"));
+    config.hooks = Arc::new(NormalizingHooks);
+    let _loop = spawn_event_loop(client.clone(), client.subscribe(), tx, config);
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s-1",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-mcp",
+                    "title": "MCP: tool",
+                    "kind": "other",
+                    "status": "pending"
+                }
+            }
+        }),
+    )
+    .await;
+    let start = rx.recv().await.expect("tool event").expect("ok");
+    assert_eq!(
+        start.raw_json().pointer("/event/content_block/name"),
+        Some(&json!("mcp__mcp__tool"))
+    );
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "id": "perm-mcp",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s-1",
+                "toolCall": {
+                    "toolCallId": "call-mcp",
+                    "title": "chrome-devtools-new_page: new_page",
+                    "kind": "other",
+                    "rawInput": { "url": "https://google.com" }
+                },
+                "options": [{
+                    "optionId": "allow-once",
+                    "name": "Allow once",
+                    "kind": "allow_once"
+                }]
+            }
+        }),
+    )
+    .await;
+
+    let identity_delta = rx.recv().await.expect("identity delta").expect("ok");
+    let partial_json = identity_delta
+        .raw_json()
+        .pointer("/event/delta/partial_json")
+        .and_then(Value::as_str)
+        .expect("input json delta");
+    assert_eq!(
+        serde_json::from_str::<Value>(partial_json).expect("valid JSON"),
+        json!({
+            "description": "MCP: tool",
+            "server": "chrome-devtools",
+            "tool": "new_page",
+            "arguments": { "url": "https://google.com" }
+        })
+    );
+
+    let permission = rx.recv().await.expect("permission event").expect("ok");
+    assert_eq!(
+        permission.raw_json()["tool_name"],
+        "mcp__chrome-devtools__new_page"
+    );
+}
+
+#[tokio::test]
+async fn normalized_cadencr_browser_permission_is_auto_allowed() {
+    let (client, mut stdout, mut stdin) = client_with_agent_io().await;
+    let (tx, mut rx) = mpsc::channel(8);
+    let mut config = event_loop_config(PathBuf::from("/tmp"));
+    config.hooks = Arc::new(NormalizingHooks);
+    let _loop = spawn_event_loop(client.clone(), client.subscribe(), tx, config);
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "id": "perm-browser",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s-1",
+                "toolCall": {
+                    "toolCallId": "call-browser",
+                    "title": "cadencr-browser-browser_open_url: browser_open_url",
+                    "kind": "other",
+                    "rawInput": { "url": "http://localhost:1420" }
+                },
+                "options": [{
+                    "optionId": "allow-once",
+                    "name": "Allow once",
+                    "kind": "allow_once"
+                }]
+            }
+        }),
+    )
+    .await;
+
+    let response = read_agent_response(&mut stdin).await;
+    assert_eq!(response["id"], "perm-browser");
+    assert_eq!(response["result"]["outcome"]["optionId"], "allow-once");
+    assert!(
+        rx.try_recv().is_err(),
+        "trusted browser permission should not reach the UI"
+    );
 }
 
 #[tokio::test]
