@@ -26,7 +26,7 @@ pub async fn apply_model_config(
     hooks: &dyn AcpProviderHooks,
     model: &str,
 ) -> Result<(), RuntimeError> {
-    let (config_value, companions) = hooks.resolve_model_config(model);
+    let config_value = hooks.model_config_value(model);
     let result = set_config_option_model_value(
         client,
         session_id,
@@ -37,15 +37,17 @@ pub async fn apply_model_config(
         &config_value,
     )
     .await?;
-    if let Some(result) = result.as_ref() {
-        match config_options_from_result(result) {
-            Some(options) => hooks.observe_session_config_options(&options),
-            None if result.get("configOptions").is_some() => {
-                tracing::debug!("failed to deserialize ACP set_config_option configOptions");
-            }
-            None => {}
+    if let Some(result) = result {
+        let options = config_options_from_result(result).map_err(|error| {
+            RuntimeError::new(format!(
+                "invalid configOptions returned by ACP model change: {error}"
+            ))
+        })?;
+        if let Some(options) = options {
+            hooks.observe_session_config_options(&options);
         }
     }
+    let companions = hooks.model_config_companions(model);
     let effort_config_id = hooks.thinking_effort_config_id();
     for (config_id, value) in companions {
         let is_effort = effort_config_id.as_deref() == Some(config_id.as_str())
@@ -68,7 +70,193 @@ pub async fn apply_model_config(
     Ok(())
 }
 
-fn config_options_from_result(result: &Value) -> Option<Vec<SessionConfigOption>> {
-    let options = result.get("configOptions")?;
-    serde_json::from_value(options.clone()).ok()
+fn config_options_from_result(
+    mut result: Value,
+) -> Result<Option<Vec<SessionConfigOption>>, serde_json::Error> {
+    let Some(options) = result.get_mut("configOptions") else {
+        return Ok(None);
+    };
+    serde_json::from_value(options.take()).map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_model_config;
+    use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
+    use crate::domain::agents::acp::runtime::test_support::{
+        build_in_memory_client, read_request, send_response,
+    };
+    use crate::domain::agents::adapter::{RuntimeError, RuntimePermissionMode};
+    use agent_client_protocol::schema::v1::{
+        SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    };
+    use serde_json::{json, Value};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::RwLock;
+
+    struct ModelSpecificCompanionHooks {
+        thought_level_id: Mutex<String>,
+    }
+
+    impl ModelSpecificCompanionHooks {
+        fn new(initial_id: &str) -> Self {
+            Self {
+                thought_level_id: Mutex::new(initial_id.to_string()),
+            }
+        }
+
+        fn thought_level_id(&self) -> String {
+            self.thought_level_id
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AcpProviderHooks for ModelSpecificCompanionHooks {
+        fn normalize_tool_name(&self, raw: &str) -> String {
+            raw.to_string()
+        }
+
+        fn normalize_tool_input(&self, _tool_name: &str, input: Value) -> Value {
+            input
+        }
+
+        fn mode_for_permission_mode(&self, _mode: RuntimePermissionMode) -> Option<String> {
+            None
+        }
+
+        fn model_config_id(&self) -> Option<&'static str> {
+            Some("model")
+        }
+
+        fn observe_session_config_options(&self, options: &[SessionConfigOption]) {
+            let Some(option) = options.iter().find(|option| {
+                matches!(
+                    option.category,
+                    Some(SessionConfigOptionCategory::ThoughtLevel)
+                )
+            }) else {
+                return;
+            };
+            *self
+                .thought_level_id
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = option.id.0.to_string();
+        }
+
+        fn model_config_value(&self, model: &str) -> String {
+            model.to_string()
+        }
+
+        fn model_config_companions(&self, _model: &str) -> Vec<(String, String)> {
+            vec![(self.thought_level_id(), "high".to_string())]
+        }
+
+        fn thinking_effort_config_id(&self) -> Option<String> {
+            Some(self.thought_level_id())
+        }
+    }
+
+    #[tokio::test]
+    async fn companions_use_options_returned_by_model_change() -> Result<(), RuntimeError> {
+        let (client, mut stdout, mut stdin) = build_in_memory_client().await;
+        let current_model = Arc::new(RwLock::new(None));
+        let current_effort = Arc::new(RwLock::new(None));
+        let supports = Arc::new(AtomicBool::new(true));
+        let hooks = Arc::new(ModelSpecificCompanionHooks::new("reasoning"));
+
+        let task = tokio::spawn({
+            let client = client.clone();
+            let current_model = Arc::clone(&current_model);
+            let current_effort = Arc::clone(&current_effort);
+            let supports = Arc::clone(&supports);
+            let hooks = Arc::clone(&hooks);
+            async move {
+                apply_model_config(
+                    &client,
+                    "session-1",
+                    &current_model,
+                    &current_effort,
+                    &supports,
+                    hooks.as_ref(),
+                    "grok-4.5",
+                )
+                .await
+            }
+        });
+
+        let model_request = read_request(&mut stdin).await;
+        assert_eq!(model_request["params"]["configId"], "model");
+        let effort_option = SessionConfigOption::select(
+            "effort",
+            "Effort",
+            "high",
+            vec![
+                SessionConfigSelectOption::new("low", "Low"),
+                SessionConfigSelectOption::new("high", "High"),
+            ],
+        )
+        .category(SessionConfigOptionCategory::ThoughtLevel);
+        send_response(
+            &mut stdout,
+            model_request["id"].clone(),
+            json!({ "configOptions": [effort_option] }),
+        )
+        .await;
+
+        let companion_request = read_request(&mut stdin).await;
+        assert_eq!(companion_request["params"]["configId"], "effort");
+        assert_eq!(companion_request["params"]["value"], "high");
+        send_response(&mut stdout, companion_request["id"].clone(), json!({})).await;
+
+        task.await.unwrap()?;
+        assert_eq!(current_model.read().await.as_deref(), Some("grok-4.5"));
+        assert_eq!(current_effort.read().await.as_deref(), Some("high"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn malformed_model_config_options_are_surfaced() {
+        let (client, mut stdout, mut stdin) = build_in_memory_client().await;
+        let current_model = Arc::new(RwLock::new(None));
+        let current_effort = Arc::new(RwLock::new(None));
+        let supports = Arc::new(AtomicBool::new(true));
+        let hooks = Arc::new(ModelSpecificCompanionHooks::new("reasoning"));
+
+        let task = tokio::spawn({
+            let client = client.clone();
+            let current_model = Arc::clone(&current_model);
+            let current_effort = Arc::clone(&current_effort);
+            let supports = Arc::clone(&supports);
+            let hooks = Arc::clone(&hooks);
+            async move {
+                apply_model_config(
+                    &client,
+                    "session-1",
+                    &current_model,
+                    &current_effort,
+                    &supports,
+                    hooks.as_ref(),
+                    "grok-4.5",
+                )
+                .await
+            }
+        });
+
+        let model_request = read_request(&mut stdin).await;
+        send_response(
+            &mut stdout,
+            model_request["id"].clone(),
+            json!({ "configOptions": { "unexpected": true } }),
+        )
+        .await;
+
+        let error = task.await.unwrap().unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("invalid configOptions returned by ACP model change"));
+    }
 }

@@ -178,8 +178,11 @@ servers into the project file:
 4. Cadencr advertises `parameterizedModelPicker` so Cursor exposes clean model
    ids plus `fast` / thought-level companions. Cold `agent models` catalog ids
    still encode variants (`*-fast`, `*-high`); the adapter decomposes those into
-   base model + companion `session/set_config_option` updates. A first-class
-   Cadencr effort chip still waits on per-model `supports_effort` catalog data.
+   base model + companion `session/set_config_option` updates. Cursor replaces
+   the companion option set when the base model changes, so Cadencr resolves
+   companions again from the model-change response before applying them. A
+   first-class Cadencr effort chip still waits on per-model `supports_effort`
+   catalog data.
 5. The `cursor/ask_question` bridge is implemented. Composer may simply not emit
    the extension for a given turn; a prompt cannot force an unavailable tool.
 6. Read/Search starts currently omit ACP `locations` and raw arguments, so the

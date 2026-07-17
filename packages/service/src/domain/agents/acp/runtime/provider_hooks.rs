@@ -117,17 +117,9 @@ pub trait AcpProviderHooks: Send + Sync {
         model.to_string()
     }
 
-    /// Extra set_config_option pairs after the model value (Cursor fast / thought-level).
+    /// Extra set_config_option pairs after the model response (Cursor fast / thought-level).
     fn model_config_companions(&self, _model: &str) -> Vec<(String, String)> {
         Vec::new()
-    }
-
-    /// Wire model value + companions in one provider-local pass.
-    fn resolve_model_config(&self, model: &str) -> (String, Vec<(String, String)>) {
-        (
-            self.model_config_value(model),
-            self.model_config_companions(model),
-        )
     }
 
     /// Catalog model already encodes effort applied via companions; skip spawn effort RPC.

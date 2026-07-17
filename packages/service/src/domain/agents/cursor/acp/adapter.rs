@@ -102,8 +102,12 @@ impl AcpProviderHooks for CursorAcpAdapter {
         lock_mutex(&self.model_config).observe(options);
     }
 
-    fn resolve_model_config(&self, model: &str) -> (String, Vec<(String, String)>) {
-        lock_mutex(&self.model_config).resolve(model)
+    fn model_config_value(&self, model: &str) -> String {
+        lock_mutex(&self.model_config).model_config_value(model)
+    }
+
+    fn model_config_companions(&self, model: &str) -> Vec<(String, String)> {
+        lock_mutex(&self.model_config).companions(model)
     }
 
     fn model_encodes_thinking_effort(&self, model: &str) -> bool {
@@ -225,7 +229,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn resolve_model_config_maps_parameterized_catalog_ids() {
+    fn model_config_hooks_map_parameterized_catalog_ids() {
         let adapter = CursorAcpAdapter::new(None);
         let model = SessionConfigOption::select(
             "model",
@@ -249,21 +253,18 @@ mod tests {
         .category(SessionConfigOptionCategory::ModelConfig);
         adapter.observe_session_config_options(&[model, fast]);
 
-        assert_eq!(adapter.resolve_model_config("auto").0, "default");
+        assert_eq!(adapter.model_config_value("auto"), "default");
+        assert_eq!(adapter.model_config_value("composer-2.5"), "composer-2.5");
         assert_eq!(
-            adapter.resolve_model_config("composer-2.5").0,
+            adapter.model_config_value("composer-2.5-fast"),
             "composer-2.5"
         );
         assert_eq!(
-            adapter.resolve_model_config("composer-2.5-fast").0,
-            "composer-2.5"
-        );
-        assert_eq!(
-            adapter.resolve_model_config("composer-2.5").1,
+            adapter.model_config_companions("composer-2.5"),
             vec![("fast".to_string(), "false".to_string())]
         );
         assert_eq!(
-            adapter.resolve_model_config("composer-2.5-fast").1,
+            adapter.model_config_companions("composer-2.5-fast"),
             vec![("fast".to_string(), "true".to_string())]
         );
         assert!(adapter.model_encodes_thinking_effort("gpt-5.3-codex-high"));

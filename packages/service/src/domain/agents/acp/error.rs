@@ -18,6 +18,7 @@ pub enum AcpError {
     Rpc {
         code: i64,
         message: String,
+        data: Option<serde_json::Value>,
     },
     /// Failed to spawn the subprocess (binary missing, pipes etc.). Distinct
     /// from generic IO so adapters can render an actionable message.
@@ -30,7 +31,16 @@ impl Display for AcpError {
             Self::Io(error) => write!(f, "io error: {error}"),
             Self::Timeout(label) => write!(f, "ACP request timed out: {label}"),
             Self::Protocol(message) => write!(f, "ACP protocol error: {message}"),
-            Self::Rpc { code, message } => write!(f, "ACP returned error {code}: {message}"),
+            Self::Rpc {
+                code,
+                message,
+                data,
+            } => match data.as_ref().and_then(rpc_error_detail) {
+                Some(detail) if detail.as_str() != message.as_str() => {
+                    write!(f, "ACP returned error {code}: {message}: {detail}")
+                }
+                _ => write!(f, "ACP returned error {code}: {message}"),
+            },
             Self::Spawn(message) => write!(f, "failed to spawn ACP subprocess: {message}"),
         }
     }
@@ -56,6 +66,43 @@ impl AcpError {
         Self::Rpc {
             code: i32::from(value.code) as i64,
             message: value.message,
+            data: value.data,
         }
+    }
+}
+
+fn rpc_error_detail(data: &serde_json::Value) -> Option<String> {
+    data.get("message")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| data.as_str())
+        .filter(|detail| !detail.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AcpError;
+    use serde_json::json;
+
+    #[test]
+    fn rpc_error_includes_provider_detail() {
+        let error = agent_client_protocol::Error::invalid_params()
+            .data(json!({ "message": "Unknown model config option: reasoning" }));
+
+        assert_eq!(
+            AcpError::from_acp(error).to_string(),
+            "ACP returned error -32602: Invalid params: Unknown model config option: reasoning"
+        );
+    }
+
+    #[test]
+    fn rpc_error_does_not_render_arbitrary_structured_data() {
+        let error = agent_client_protocol::Error::invalid_params()
+            .data(json!({ "issues": [{ "path": ["configId"] }] }));
+
+        assert_eq!(
+            AcpError::from_acp(error).to_string(),
+            "ACP returned error -32602: Invalid params"
+        );
     }
 }
