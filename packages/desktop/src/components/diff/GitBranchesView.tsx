@@ -128,7 +128,7 @@ const BranchGraphRow = memo(function BranchGraphRow({
     <button
       type="button"
       onClick={handleClick}
-      aria-label={`Open commit graph for ${branch.is_local ? "local" : "remote"} ${branch.name}`}
+      aria-label={`Open commits for ${branch.is_local ? "local" : "remote"} ${branch.name}`}
       className={cn(
         "flex w-full items-center gap-3 border-b border-border/50 px-4 py-2.5 text-left transition-colors hover:bg-accent/60",
         active && "bg-accent/70",

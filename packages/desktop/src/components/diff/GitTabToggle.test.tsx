@@ -33,10 +33,10 @@ describe("GitTabToggle", () => {
     expect(onChange).toHaveBeenCalledWith("vs-target");
   });
 
-  it("renders the Graph tab and reports its value on click", () => {
+  it("renders the Commits tab while reporting the persisted graph value", () => {
     const onChange = vi.fn();
     render(<GitTabToggle value="graph" onChange={onChange} targetBranch="main" />);
-    const graphTab = screen.getByRole("tab", { name: "Graph" });
+    const graphTab = screen.getByRole("tab", { name: "Commits" });
     expect(graphTab).toHaveAttribute("aria-selected", "true");
     fireEvent.click(graphTab);
     // Clicking the already-active tab still reports its value to the parent.

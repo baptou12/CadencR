@@ -12,7 +12,7 @@ interface GitTabToggleProps {
 }
 
 /**
- * Segmented control for the Git tab — "Uncommitted", "vs <target>", "Graph",
+ * Segmented control for the Git tab — "Uncommitted", "vs <target>", "Commits",
  * "Branches", and "Stashes". Mounted next to the streaming agent area, so it must stay
  * cheap to render and stable across pushes from `useGitStatusStore`.
  */
@@ -48,7 +48,7 @@ export const GitTabToggle = memo(function GitTabToggle({
       <ToggleButton
         active={value === "graph"}
         disabled={disabled}
-        label="Graph"
+        label="Commits"
         onClick={() => onChange("graph")}
       />
       <ToggleButton
