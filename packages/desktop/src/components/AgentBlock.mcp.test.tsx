@@ -19,6 +19,41 @@ function makeBlock(overrides: Partial<AgentBlockData>): AgentBlockData {
 }
 
 describe("AgentBlock MCP tools", () => {
+  it("does not present Cursor as the server for an unidentified historical MCP call", () => {
+    render(
+      <AgentBlock
+        block={makeBlock({
+          toolName: "mcp__cursor__tool",
+          toolArgs: JSON.stringify({ description: "MCP: tool" }),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("mcp")).toBeInTheDocument();
+    expect(screen.getByText("Tool")).toBeInTheDocument();
+    expect(screen.queryByText("cursor")).not.toBeInTheDocument();
+  });
+
+  it("uses the MCP identity Cursor reveals in the late permission input", () => {
+    render(
+      <AgentBlock
+        block={makeBlock({
+          toolName: "mcp__cursor__tool",
+          toolArgs: JSON.stringify({
+            server: "chrome-devtools",
+            tool: "new_page",
+            arguments: { url: "https://google.com" },
+          }),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("chrome-devtools")).toBeInTheDocument();
+    expect(screen.getByText("Opening page")).toBeInTheDocument();
+    expect(screen.getByText("https://google.com")).toBeInTheDocument();
+    expect(screen.queryByText("cursor")).not.toBeInTheDocument();
+  });
+
   it("renders a browser_open_url MCP call with custom styling", () => {
     render(
       <AgentBlock

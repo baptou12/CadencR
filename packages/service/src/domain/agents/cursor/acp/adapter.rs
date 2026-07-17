@@ -18,7 +18,7 @@ use crate::domain::agents::adapter::{
 
 use super::extensions;
 use super::model_config::{catalog_model_encodes_effort, lock_mutex, CursorModelConfigState};
-use super::normalize::{canonical_tool_name, normalize_tool_input};
+use super::normalize::{canonical_tool_name, derive_permission_tool_input, normalize_tool_input};
 use super::permission_policy;
 
 const AUTH_TIMEOUT: Duration = Duration::from_secs(60);
@@ -78,6 +78,10 @@ impl AcpProviderHooks for CursorAcpAdapter {
 
     fn normalize_tool_input(&self, tool_name: &str, input: Value) -> Value {
         normalize_tool_input(tool_name, input)
+    }
+
+    fn derive_permission_tool_input(&self, tool_name: &str, input: Value, params: &Value) -> Value {
+        derive_permission_tool_input(tool_name, input, params)
     }
 
     fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<String> {

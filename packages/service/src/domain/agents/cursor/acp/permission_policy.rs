@@ -4,39 +4,40 @@ use crate::domain::agents::adapter::{
     RuntimeAccessMode, RuntimePermissionDecision, RuntimePermissionRequest,
 };
 
-/// Cursor 2026.07.09 accepts `--auto-review` for `agent acp`, but its ACP
+use super::normalize::mcp_input_from_permission_content;
+
+/// Cursor 2026.07.16 accepts `--auto-review` for `agent acp`, but its ACP
 /// session bootstrap does not copy that mode into the session metadata. It
-/// consequently asks the ACP host about every shell allowlist miss. Keep the
-/// workaround provider-local: in Auto Review, preflight shell calls when the
-/// only reason Cursor reports is its ordinary allowlist miss. Cursor has
-/// already applied its parser, sandbox, blocklist, delete-protection, hook, and
-/// team-policy checks before sending this request; requests carrying any of
-/// those stronger reasons still reach the UI.
+/// consequently asks the ACP host about ordinary shell allowlist misses and
+/// MCP calls. Keep the workaround provider-local: in Auto Review, preflight
+/// those ordinary requests after Cursor has applied its parser, sandbox,
+/// blocklist, delete-protection, hook, and team-policy checks. Requests carrying
+/// any stronger safety reason still reach the UI.
 pub(super) fn automatic_permission_decision(
     access_mode: Option<&RuntimeAccessMode>,
-    _request: &RuntimePermissionRequest,
+    request: &RuntimePermissionRequest,
     params: &Value,
 ) -> Option<RuntimePermissionDecision> {
     if access_mode != Some(&RuntimeAccessMode::AutoReview) {
         return None;
     }
     let tool_call = params.get("toolCall")?;
-    if tool_call.get("kind").and_then(Value::as_str) != Some("execute") {
-        return None;
+    match tool_call.get("kind").and_then(Value::as_str) {
+        Some("execute") if has_only_allowlist_miss_reasons(tool_call) => {
+            Some(RuntimePermissionDecision::AllowOnce)
+        }
+        Some("other")
+            if request.tool_name.starts_with("mcp__")
+                && mcp_input_from_permission_content(params).is_some() =>
+        {
+            Some(RuntimePermissionDecision::AllowOnce)
+        }
+        _ => None,
     }
-    if !has_only_allowlist_miss_reasons(tool_call) {
-        return None;
-    }
-    Some(RuntimePermissionDecision::AllowOnce)
 }
 
 fn has_only_allowlist_miss_reasons(tool_call: &Value) -> bool {
-    let reasons = tool_call
-        .get("content")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|block| block.pointer("/content/text").and_then(Value::as_str))
+    let reasons = tool_call_text(tool_call)
         .flat_map(|text| text.split(" • "))
         .map(str::trim)
         .collect::<Vec<_>>();
@@ -46,6 +47,15 @@ fn has_only_allowlist_miss_reasons(tool_call: &Value) -> bool {
                 .strip_prefix("Not in allowlist:")
                 .is_some_and(|command| !command.trim().is_empty())
         })
+}
+
+fn tool_call_text(tool_call: &Value) -> impl Iterator<Item = &str> {
+    tool_call
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block.pointer("/content/text").and_then(Value::as_str))
 }
 
 #[cfg(test)]
@@ -83,14 +93,44 @@ mod tests {
         })
     }
 
+    fn mcp_request() -> RuntimePermissionRequest {
+        RuntimePermissionRequest {
+            request_id: "permission-mcp".to_string(),
+            tool_use_id: Some("tool-mcp".to_string()),
+            tool_name: "mcp__chrome-devtools__new_page".to_string(),
+            tool_input: json!({
+                "server": "chrome-devtools",
+                "tool": "new_page",
+                "arguments": { "url": "https://google.com" }
+            }),
+            description: Some("chrome-devtools-new_page: new_page".to_string()),
+            pattern: None,
+            preview: None,
+            options: Vec::new(),
+        }
+    }
+
+    fn mcp_params(content: &str) -> Value {
+        json!({
+            "toolCall": {
+                "title": "chrome-devtools-new_page: new_page",
+                "kind": "other",
+                "content": [{
+                    "type": "content",
+                    "content": { "type": "text", "text": content }
+                }]
+            }
+        })
+    }
+
     #[test]
     fn auto_review_preflights_cursor_shell_allowlist_misses() {
-        let command = "cd /Users/rle/Projects/cadencr && git diff origin/main...HEAD --stat";
+        let command = "printf cursor-acp-auto-review";
         assert_eq!(
             automatic_permission_decision(
                 Some(&RuntimeAccessMode::AutoReview),
                 &request(command),
-                &params(command, "Not in allowlist: git show, echo, git diff"),
+                &params(command, "Not in allowlist: printf"),
             ),
             Some(RuntimePermissionDecision::AllowOnce)
         );
@@ -109,6 +149,40 @@ mod tests {
                     Some(&RuntimeAccessMode::AutoReview),
                     &request("git diff"),
                     &params("git diff", reason),
+                ),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn auto_review_preflights_cursor_mcp_requests() {
+        assert_eq!(
+            automatic_permission_decision(
+                Some(&RuntimeAccessMode::AutoReview),
+                &mcp_request(),
+                &mcp_params("```json\n{\"url\":\"https://google.com\"}\n```")
+            ),
+            Some(RuntimePermissionDecision::AllowOnce)
+        );
+    }
+
+    #[test]
+    fn auto_review_keeps_unstructured_mcp_requests_interactive() {
+        for params in [
+            mcp_params("Approval required by a newer policy"),
+            json!({
+                "toolCall": {
+                    "title": "chrome-devtools-new_page: new_page",
+                    "kind": "other"
+                }
+            }),
+        ] {
+            assert_eq!(
+                automatic_permission_decision(
+                    Some(&RuntimeAccessMode::AutoReview),
+                    &mcp_request(),
+                    &params,
                 ),
                 None
             );

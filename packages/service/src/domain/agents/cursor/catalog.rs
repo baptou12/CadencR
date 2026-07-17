@@ -136,7 +136,7 @@ fn access_mode_catalog() -> Vec<ProviderModeCatalogEntry> {
             id: "autoReview".to_string(),
             label: "Auto Review".to_string(),
             description: Some(
-                "Sandbox stays enabled. Allowlisted shell calls run directly; ordinary shell allowlist misses are preflight-approved. MCP and other non-shell gates still ask for approval."
+                "Sandbox stays enabled. Ordinary shell allowlist misses and MCP calls are preflight-approved; explicit safety-policy requests still ask for approval."
                     .to_string(),
             ),
         },

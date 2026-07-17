@@ -88,6 +88,17 @@ pub trait AcpProviderHooks: Send + Sync {
     /// `oldText`/`newText` into `old_string`/`new_string`).
     fn normalize_tool_input(&self, tool_name: &str, input: Value) -> Value;
 
+    /// Recover provider-specific permission input that ACP omitted from
+    /// `rawInput`. Defaults to the input parsed from the standard request.
+    fn derive_permission_tool_input(
+        &self,
+        _tool_name: &str,
+        input: Value,
+        _params: &Value,
+    ) -> Value {
+        input
+    }
+
     /// Reduce ACP `ToolCallContent[]` to a shape the FE renders directly.
     /// Most providers can rely on the default flatten that joins text blocks;
     /// some (OpenCode) wrap text in a `{type: "content"}` envelope and need
