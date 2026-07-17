@@ -9,7 +9,7 @@ interface Props {
 const { label, caption, ratio = "16/9", variant = "flat", hint } = Astro.props;
 ---
 <figure
-  class="placeholder-pattern relative flex flex-col overflow-hidden rounded-xl border border-dashed border-border shadow-md"
+  class="relative flex flex-col overflow-hidden rounded-lg border border-dashed border-border bg-sidebar/60"
   style={`aspect-ratio: ${ratio}`}
 >
   {variant === "window" && (

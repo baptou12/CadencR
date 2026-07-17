@@ -1,8 +1,8 @@
 ---
 import DownloadIcon from "@/components/icons/DownloadIcon.astro";
 import CodeIcon from "@/components/icons/CodeIcon.astro";
-import Wrap from "@/components/ui/Wrap.astro";
 import Button from "@/components/ui/Button.astro";
+import Wrap from "@/components/ui/Wrap.astro";
 import { DISPLAY_VERSION } from "@/lib/downloads";
 import { getCollection, type CollectionEntry } from "astro:content";
 import heroImage from "@/assets/hero.png";
@@ -11,82 +11,45 @@ const base = import.meta.env.BASE_URL;
 // Fully-qualified tap form so it works without a separate `brew tap` step.
 const brewCommand = "brew install --cask merkr-software/cadencr/cadencr";
 
-// Eyebrow segments — rendered as a centered, dot-separated mono strip.
-// (License lives in the trust strip below, so it's not repeated here.)
-const eyebrow = ["Desktop IDE", "macOS", DISPLAY_VERSION];
+// The five surfaces CadencR unifies — rendered as a ruled spec strip under
+// the headline instead of inside it, so the headline stays two lines.
+const surfaces = ["Agent", "Git", "Browser", "Editor", "Terminal"];
 
-// Newest news post, if any — surfaced as an announcement pill above the
-// headline. Sorted newest-first, matching the News index page, so the latest
-// article always shows up here automatically.
+// Newest news post, if any — a quiet ruled announcement row above the
+// headline. Sorted newest-first, matching the News index page.
 type NewsEntry = CollectionEntry<"news">;
 const [latestNews] = (await getCollection("news")).sort(
   (a: NewsEntry, b: NewsEntry) => b.data.date.valueOf() - a.data.date.valueOf(),
 );
 ---
-<section class="hero relative isolate overflow-hidden pt-16 pb-24 sm:pt-20">
-  <!-- Ambient backdrop: aurora glow + faded grid, purely decorative. -->
-  <div class="hero-aura pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
-  <div class="hero-grid pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
-
-  <Wrap class="relative">
-    <div class="mx-auto flex max-w-[780px] flex-col items-center text-center">
-      {
-        latestNews && (
-          <a
-            href={`${base}news/${latestNews.id}/`}
-            class="hero-rise hero-news group mb-6 inline-flex max-w-full items-center gap-2.5 rounded-full border border-primary/40 bg-primary/10 py-1.5 pl-1.5 pr-3.5 text-[13px] font-medium text-foreground shadow-sm shadow-primary/20 transition-colors hover:border-primary/70 hover:bg-primary/15"
-          >
-            <span class="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-white">
-              New
-            </span>
-            <span class="truncate">{latestNews.data.title}</span>
-            <span
-              class="text-primary transition-transform group-hover:translate-x-0.5"
-              aria-hidden="true"
-            >
-              →
-            </span>
-          </a>
-        )
-      }
-
-      <p class="hero-rise hero-eyebrow flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 font-mono text-[11px] font-medium uppercase tracking-[0.13em] text-muted-foreground">
-        <span class="hero-dot"></span>
-        {
-          eyebrow.map((seg, i) => (
-            <>
-              {i > 0 && <span class="text-border" aria-hidden="true">·</span>}
-              <span>{seg}</span>
-            </>
-          ))
-        }
+<section class="hero relative pt-14 sm:pt-20">
+  <!-- The one iris top-light on the page (Lamplight Rule: ≤7% alpha). -->
+  <div class="hero-sheen pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px]" aria-hidden="true"></div>
+  <Wrap>
+    <div class="mx-auto flex max-w-[860px] flex-col items-center text-center">
+      <p class="hero-rise fig-label">
+        <span class="fig-no">Desktop IDE</span>
+        <span aria-hidden="true">·</span>
+        <span>macOS</span>
+        <span aria-hidden="true">·</span>
+        <span>{DISPLAY_VERSION}</span>
       </p>
 
-      <h1
-        class="hero-rise hero-rise-1 mt-5 text-[clamp(34px,6.2vw,62px)] font-semibold leading-[1.05] tracking-[-0.025em] [text-wrap:balance]"
-      >
+      <h1 class="hero-rise hero-rise-1 type-display mt-6 text-[clamp(38px,6.6vw,72px)] [text-wrap:balance]">
         Stop switching.<br />
-        <span class="hero-line2">
-          CadencR unifies
-          <span class="hero-feat" style="--i:0">Agent</span>,
-          <span class="hero-feat" style="--i:1">Git</span>,
-          <span class="hero-feat" style="--i:2">Browser</span>,
-          <span class="hero-feat" style="--i:3">Editor</span> &amp;
-          <span class="hero-feat" style="--i:4">Terminal</span><span class="hero-accent"> — one window.</span>
-        </span>
+        Every agent, <span class="whitespace-nowrap text-primary">one window.</span>
       </h1>
 
       <p
-        class="hero-rise hero-rise-2 mt-6 max-w-[620px] text-[15px] leading-[1.65] text-muted-foreground [text-wrap:pretty] [&_.em]:font-medium [&_.em]:text-foreground"
+        class="hero-rise hero-rise-2 mt-6 max-w-[58ch] text-[16px] leading-[1.65] text-muted-foreground [text-wrap:pretty] [&_.em]:font-medium [&_.em]:text-foreground"
       >
-        CadencR is the surface you read, steer and ship from.
-        <span class="em">One workspace for everything</span>
-        — stop alt-tabbing between windows all day. Every running agent, every project, every tab
-        in one place, so context switching is cheap and your dev environment stays easy to manage.
+        CadencR is the desktop workspace around the agent CLIs you already run:
+        <span class="em">bring your own Claude Code, OpenCode, or Codex</span>
+        and read, steer, and ship from one place, with your whole dev environment in view.
       </p>
 
       <div class="hero-rise hero-rise-3 mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button href={`${base}download/`} size="lg" class="h-11 gap-2.5 px-5 text-sm shadow-lg shadow-primary/25">
+        <Button href={`${base}download/`} size="lg" class="h-11 gap-2.5 px-5 text-sm">
           <DownloadIcon />
           Download for Mac
         </Button>
@@ -105,7 +68,7 @@ const [latestNews] = (await getCollection("news")).sort(
         <span>or</span>
         <button
           type="button"
-          class="hero-brew group inline-flex items-center gap-2 rounded-md border border-border bg-sidebar/60 px-2.5 py-1 font-mono text-[12.5px] text-foreground transition-colors hover:border-primary/50 hover:bg-accent"
+          class="hero-brew group inline-flex items-center gap-2 rounded-md border border-border bg-sidebar px-2.5 py-1.5 font-mono text-[12.5px] text-foreground transition-colors hover:border-primary/60"
           data-copy={brewCommand}
           aria-label={`Copy: ${brewCommand}`}
         >
@@ -120,40 +83,80 @@ const [latestNews] = (await getCollection("news")).sort(
         </button>
       </div>
 
-      <p class="hero-rise hero-rise-4 mt-8 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground/85">
-        <span class="hero-dot hero-dot-live"></span>
-        <span>Open source</span>
-        <span class="text-border" aria-hidden="true">·</span>
-        <span>No telemetry</span>
-        <span class="text-border" aria-hidden="true">·</span>
-        <span>Apache 2.0</span>
-      </p>
+      {
+        latestNews && (
+          <a
+            href={`${base}news/${latestNews.id}/`}
+            class="hero-rise hero-rise-4 group mt-7 inline-flex max-w-full items-center gap-2.5 border border-border bg-sidebar/60 py-1.5 pl-1.5 pr-3.5 text-[13px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+          >
+            <span class="inline-flex items-center bg-primary px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-primary-foreground">
+              New
+            </span>
+            <span class="truncate">{latestNews.data.title}</span>
+            <span
+              class="text-primary transition-transform group-hover:translate-x-0.5"
+              aria-hidden="true"
+            >
+              →
+            </span>
+          </a>
+        )
+      }
     </div>
-  </Wrap>
+  </div>
 
-  <!-- Product showcase — wider than the text column for a cinematic feel.
-       The hero <video> drops straight in here over the screenshot poster. -->
-  <div class="relative mt-16 px-6">
-    <div class="hero-rise hero-rise-5 hero-media relative mx-auto max-w-[1360px]">
-      <div class="hero-media-glow pointer-events-none absolute -inset-x-10 -top-10 bottom-0 -z-10" aria-hidden="true"></div>
-      <div class="hero-media-frame relative overflow-hidden rounded-xl border border-border/70 bg-sidebar shadow-xl shadow-black/35">
-        <video
-          class="block h-auto w-full"
-          poster={heroImage.src}
-          autoplay
-          muted
-          loop
-          playsinline
-          preload="metadata"
-          aria-label="CadencR desktop app in action: streaming agent output, the project list, and an inline diff"
-        >
-          {/* AV1 first (Chrome, Firefox, M3+ Safari); H.264 fallback for
-              Safari/iOS on hardware without AV1 decode. */}
-          <source src={`${base}hero.av1.mp4`} type='video/mp4; codecs="av01.0.05M.08"' />
-          <source src={`${base}hero.h264.mp4`} type='video/mp4; codecs="avc1.640028"' />
-        </video>
-      </div>
-    </div>
+  <!-- The five unified surfaces, as a ruled spec strip. -->
+  <div class="hero-rise hero-rise-4 rule mt-12">
+    <Wrap>
+      <ul class="grid grid-cols-2 sm:grid-cols-5" role="list">
+        {surfaces.map((s, i) => (
+          <li
+            class:list={[
+              "flex items-baseline gap-2.5 border-border py-3.5 sm:justify-center",
+              i > 0 && "sm:border-l",
+              i % 2 === 1 && "border-l pl-4 sm:pl-0",
+            ]}
+          >
+            <span class="font-mono text-[11px] text-primary" aria-hidden="true">
+              0{i + 1}
+            </span>
+            <span class="text-[14.5px] font-medium">{s}</span>
+          </li>
+        ))}
+      </ul>
+    </Wrap>
+  </div>
+
+  <!-- FIG. 00 — the product, live. -->
+  <div class="rule">
+    <Wrap class="py-12 sm:py-16">
+      <figure class="hero-rise hero-rise-5 relative mx-auto max-w-[1040px]">
+        <div class="monitor-light pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 sm:-inset-x-8" aria-hidden="true"></div>
+        <div class="reg-marks">
+          <span class="reg-b"></span>
+          <div class="frame hero-seat overflow-hidden rounded-lg">
+            <video
+              class="block h-auto w-full"
+              poster={heroImage.src}
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="metadata"
+              aria-label="CadencR desktop app in action: streaming agent output, the project list, and an inline diff"
+            >
+              {/* AV1 first (Chrome, Firefox, M3+ Safari); H.264 fallback for
+                  Safari/iOS on hardware without AV1 decode. */}
+              <source src={`${base}hero.av1.mp4`} type='video/mp4; codecs="av01.0.05M.08"' />
+              <source src={`${base}hero.h264.mp4`} type='video/mp4; codecs="avc1.640028"' />
+            </video>
+          </div>
+        </div>
+        <figcaption class="fig-caption justify-center">
+          Fig. 00 · live capture, real session · open source · no telemetry · Apache-2.0
+        </figcaption>
+      </figure>
+    </Wrap>
   </div>
 </section>
 
@@ -177,7 +180,7 @@ const [latestNews] = (await getCollection("news")).sort(
         }, 1600);
       } else {
         // Surface the failure rather than swallowing it silently.
-        btn.setAttribute("title", "Couldn't copy — select the text and copy manually");
+        btn.setAttribute("title", "Couldn't copy: select the text and copy manually");
         btn.classList.add("hero-brew-error");
         resetTimer = setTimeout(() => {
           btn.removeAttribute("title");
@@ -198,146 +201,22 @@ const [latestNews] = (await getCollection("news")).sort(
 </script>
 
 <style>
-  /* Aurora glow behind the headline — brand purple with cyan/green hints. */
-  .hero-aura {
-    background:
-      radial-gradient(
-        60% 46% at 50% -4%,
-        color-mix(in oklch, var(--color-primary) 26%, transparent),
-        transparent 72%
-      ),
-      radial-gradient(
-        38% 40% at 16% 12%,
-        color-mix(in oklch, var(--color-drac-cyan) 12%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        40% 42% at 84% 8%,
-        color-mix(in oklch, var(--color-drac-green) 10%, transparent),
-        transparent 70%
-      );
-    filter: blur(8px);
-  }
-
-  /* Faint technical grid that fades toward the edges. */
-  .hero-grid {
-    background-image:
-      linear-gradient(
-        to right,
-        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 52px 52px;
-    opacity: 0.28;
-    -webkit-mask-image: radial-gradient(ellipse 78% 56% at 50% 0%, black 10%, transparent 72%);
-    mask-image: radial-gradient(ellipse 78% 56% at 50% 0%, black 10%, transparent 72%);
-  }
-
-  /* Gradient accent line in the headline. */
-  .hero-accent {
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--color-primary) 78%, white 22%),
-      color-mix(in oklch, var(--color-primary) 62%, var(--color-drac-cyan) 38%)
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  /* The five engineering surfaces. Punctuation between them stays muted; each
-     named feature shimmers brighter in sequence, so the breadth (this many
-     tools, one window) reads at a glance. */
-  .hero-line2 {
-    color: color-mix(in oklch, var(--color-muted-foreground) 80%, var(--color-foreground));
-  }
-  .hero-feat {
-    --feat-base: color-mix(in oklch, var(--color-foreground) 90%, transparent);
-    color: var(--feat-base);
-    animation: hero-feat-sweep 5s ease-in-out infinite;
-    /* Stagger the highlight so a single light travels across the list. */
-    animation-delay: calc(var(--i) * 1s);
-  }
-
-  @keyframes hero-feat-sweep {
-    0%,
-    18%,
-    100% {
-      color: var(--feat-base);
-      text-shadow: none;
-    }
-    7% {
-      color: color-mix(in oklch, var(--color-primary) 72%, white 28%);
-      text-shadow:
-        0 0 24px color-mix(in oklch, var(--color-primary) 55%, transparent),
-        0 0 6px color-mix(in oklch, var(--color-drac-cyan) 40%, transparent);
-    }
-  }
-
-  .hero-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 9999px;
-    background: var(--color-muted-foreground);
-  }
-  .hero-dot-live {
-    background: var(--color-drac-green);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-drac-green) 22%, transparent);
-  }
-
-  /* Soft colored halo behind the product window. */
-  .hero-media-glow {
-    background: radial-gradient(
-      50% 70% at 50% 0%,
-      color-mix(in oklch, var(--color-primary) 34%, transparent),
-      transparent 68%
-    );
-    filter: blur(58px);
-  }
-  /* Thin top light along the window's edge. */
-  .hero-media-frame::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in oklch, var(--color-foreground) 22%, transparent),
-      transparent
-    );
-    z-index: 1;
-  }
-
   .hero-brew-error {
     border-color: var(--color-destructive);
     color: var(--color-destructive);
   }
 
-  /* Gently pulsing glow so the news pill catches the eye without shouting.
-     `a.hero-news` outranks the plain `.hero-rise` rule defined further down, so
-     the entrance + pulse both apply. */
-  a.hero-news {
-    animation:
-      hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both,
-      hero-news-pulse 3.2s ease-in-out 1s infinite;
-  }
-  @keyframes hero-news-pulse {
-    0%,
-    100% {
-      box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-primary) 22%, transparent);
-    }
-    50% {
-      box-shadow: 0 0 0 5px color-mix(in oklch, var(--color-primary) 0%, transparent);
-    }
+  .hero-sheen {
+    background: radial-gradient(58% 46% at 50% 0%, rgb(124 104 201 / 0.07), transparent 72%);
   }
 
-  /* Staggered entrance. */
+  /* The hero capture is the one object seated with the iris-tinted shadow. */
+  .hero-seat,
+  .hero-seat:hover {
+    box-shadow: var(--shadow-iris-seat);
+  }
+
+  /* Staggered entrance: one quiet rise-and-settle sequence. */
   .hero-rise {
     animation: hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
@@ -370,14 +249,8 @@ const [latestNews] = (await getCollection("news")).sort(
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .hero-rise,
-    a.hero-news {
+    .hero-rise {
       animation: none;
-    }
-    /* Hold the feature words bright instead of sweeping them. */
-    .hero-feat {
-      animation: none;
-      color: color-mix(in oklch, var(--color-foreground) 96%, transparent);
     }
   }
 </style>

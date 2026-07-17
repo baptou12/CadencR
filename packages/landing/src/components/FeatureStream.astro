@@ -42,56 +42,56 @@ const highlights = [
   },
 ];
 ---
-<section
-  id="stream"
-  class="relative overflow-hidden py-24"
-  style="--sec-accent: var(--color-drac-cyan)"
->
-  <div class="sec-divider" aria-hidden="true"></div>
-  <div class="stream-glow pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
+<section id="stream" class="rule relative scroll-mt-16 py-16 sm:py-20">
   <Wrap>
     <div class="reveal mx-auto max-w-[640px] text-center">
-      <Eyebrow index="02">Stream</Eyebrow>
-      <SectionHeading>Your harness — finally readable.</SectionHeading>
+      <Eyebrow index="03">Stream</Eyebrow>
+      <SectionHeading>Your agent's output — finally readable.</SectionHeading>
       <Lede class="mx-auto mt-3">
         Raw terminal output buries every signal under
         <span class="em">bash, grep, cat, head</span>.
-        CadencR reinterprets the stream as it arrives — same agent, same commands, orders of
+        CadencR reinterprets the stream as it arrives: same agent, same commands, orders of
         magnitude more legible.
       </Lede>
     </div>
 
     <figure class="reveal reveal-late relative mx-auto mt-12 max-w-[680px]">
       <div
-        class="feature-media-glow pointer-events-none absolute inset-x-10 top-12 -bottom-6 -z-10"
+        class="monitor-light pointer-events-none absolute inset-x-10 top-12 -bottom-6 -z-10"
         aria-hidden="true"
       >
       </div>
-      <CompareSlider aspect={`${box.w}/${box.h}`} leftLabel="CadencR" rightLabel="Raw terminal">
-        <Image
-          slot="left"
-          src={streamShot}
-          alt="CadencR's rendering of the agent turn: collapsible thinking, tool-call pills, an inline diff, and a formatted summary with a table"
-          widths={[800, 1200, 1600, 2280]}
-          sizes="(min-width: 768px) 780px, 110vw"
-          format="webp"
-          quality={95}
-          loading="lazy"
-          decoding="async"
-          style={shotStyle}
-        />
-        <StreamTerminal slot="right" />
-      </CompareSlider>
-      <figcaption class="media-caption justify-center">
+      <div class="reg-marks">
+        <span class="reg-b"></span>
+        <CompareSlider aspect={`${box.w}/${box.h}`} leftLabel="CadencR" rightLabel="Raw terminal">
+          <Image
+            slot="left"
+            src={streamShot}
+            alt="CadencR's rendering of the agent turn: collapsible thinking, tool-call pills, an inline diff, and a formatted summary with a table"
+            widths={[800, 1200, 1600, 2280]}
+            sizes="(min-width: 768px) 780px, 110vw"
+            format="webp"
+            quality={95}
+            loading="lazy"
+            decoding="async"
+            style={shotStyle}
+          />
+          <StreamTerminal slot="right" />
+        </CompareSlider>
+      </div>
+      <figcaption class="fig-caption justify-center">
         Drag — the same agent turn, twice
       </figcaption>
     </figure>
 
-    <ul class="reveal reveal-late mx-auto mt-8 grid max-w-[1080px] list-none gap-2.5 p-0 sm:grid-cols-2 lg:grid-cols-4">
-      {highlights.map((item) => (
-        <li class="stream-chip rounded-xl border border-border bg-muted/15 p-4">
-          <p class="text-[13px] font-semibold tracking-[-0.005em] text-foreground">{item.title}</p>
-          <p class="mt-1 text-[12.5px] leading-[1.55] text-muted-foreground">{item.body}</p>
+    <ul class="reveal reveal-late stream-specs mx-auto mt-10 grid max-w-[1080px] list-none p-0 sm:grid-cols-2 lg:grid-cols-4" role="list">
+      {highlights.map((item, i) => (
+        <li class="px-4 py-4">
+          <p class="flex items-baseline gap-2 text-[13.5px] font-semibold tracking-[-0.005em] text-foreground">
+            <span class="font-mono text-[11px] font-medium text-primary" aria-hidden="true">{`0${i + 1}`}</span>
+            {item.title}
+          </p>
+          <p class="mt-1 text-[13px] leading-[1.55] text-muted-foreground">{item.body}</p>
         </li>
       ))}
     </ul>
@@ -99,22 +99,26 @@ const highlights = [
 </section>
 
 <style>
-  /* Centered cyan wash behind the showcase. */
-  .stream-glow {
-    background: radial-gradient(
-      48% 52% at 50% 34%,
-      color-mix(in oklch, var(--color-drac-cyan) 9%, transparent),
-      transparent 72%
-    );
-    filter: blur(44px);
+  /* Ruled 4-up strip: hairlines between cells, no card chrome. */
+  .stream-specs {
+    border-block: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
   }
-  .stream-chip {
-    transition:
-      border-color 0.2s ease,
-      transform 0.2s ease;
+  @media (min-width: 640px) {
+    .stream-specs li + li {
+      border-left: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
+    }
   }
-  .stream-chip:hover {
-    border-color: color-mix(in oklch, var(--color-drac-cyan) 40%, var(--color-border));
-    transform: translateY(-2px);
+  @media (min-width: 640px) and (max-width: 1023px) {
+    .stream-specs li:nth-child(3) {
+      border-left: none;
+    }
+    .stream-specs li:nth-child(n + 3) {
+      border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
+    }
+  }
+  @media (max-width: 639px) {
+    .stream-specs li + li {
+      border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
+    }
   }
 </style>

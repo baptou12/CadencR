@@ -13,7 +13,7 @@ import { DISPLAY_VERSION } from "@/lib/downloads";
 import { SITE_URL, ORG_REF } from "@/lib/seo";
 import { FAQ_ITEMS } from "@/lib/faq";
 
-const title = "CadencR — Agent IDE for Claude Code, OpenCode, and Codex";
+const title = "CadencR · Agent IDE for Claude Code, OpenCode, and Codex";
 const description =
   "CadencR is a local agent IDE for Claude Code, OpenCode, and Codex. Read streams, manage worktrees, inspect diffs, and ship from one desktop workspace.";
 
@@ -61,13 +61,17 @@ const faqPage = {
 const structuredData = [softwareApplication, faqPage];
 ---
 <BaseLayout title={title} description={description} structuredData={structuredData}>
-  <Hero />
-  <Compatibility />
-  <FeatureAgentCockpit />
-  <FeatureStream />
-  <FeatureGit />
-  <FeatureBrowser />
-  <FeatureBento />
-  <FAQ />
-  <CloserCTA />
+  <div class="sheet">
+    <Hero />
+    <Compatibility />
+    <div id="features" class="scroll-mt-16">
+      <FeatureAgentCockpit />
+      <FeatureStream />
+      <FeatureGit />
+      <FeatureBrowser />
+      <FeatureBento />
+    </div>
+    <FAQ />
+    <CloserCTA />
+  </div>
 </BaseLayout>

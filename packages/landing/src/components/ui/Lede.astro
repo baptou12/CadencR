@@ -5,7 +5,7 @@ interface Props {
 const { class: klass } = Astro.props;
 ---
 <p
-  class={`text-[13.5px] leading-[1.6] text-muted-foreground max-w-[560px] [text-wrap:pretty] [&_.em]:text-foreground ${klass ?? ""}`}
+  class={`text-[15px] leading-[1.65] text-muted-foreground max-w-[54ch] [text-wrap:pretty] [&_.em]:text-foreground [&_.em]:font-medium ${klass ?? ""}`}
 >
   <slot />
 </p>

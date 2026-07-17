@@ -2,6 +2,8 @@
 import { Image } from "astro:assets";
 import Wrap from "@/components/ui/Wrap.astro";
 import Eyebrow from "@/components/ui/Eyebrow.astro";
+import SectionHeading from "@/components/ui/SectionHeading.astro";
+import Lede from "@/components/ui/Lede.astro";
 import claudeLogo from "@/assets/providers/claude.png";
 import codexLogo from "@/assets/providers/codex.png";
 import opencodeLogo from "@/assets/providers/opencode.png";
@@ -12,8 +14,6 @@ interface Provider {
   description: string;
   logo: ImageMetadata;
   logoClass: string;
-  /** Dracula accent CSS color for the card's hairline, glow, and hover ring. */
-  accent: string;
 }
 
 const providers: Provider[] = [
@@ -22,103 +22,65 @@ const providers: Provider[] = [
     description: "Plan, execute, and review Claude sessions from one cockpit.",
     logo: claudeLogo,
     logoClass: "h-5 w-5",
-    accent: "var(--color-drac-orange)",
   },
   {
     name: "OpenCode",
     description: "Run OpenCode locally while CadencR keeps context readable.",
     logo: opencodeLogo,
     logoClass: "h-5 w-4",
-    accent: "var(--color-drac-cyan)",
   },
   {
     name: "Codex",
     description: "Supervise Codex worktrees, streams, terminal output, and diffs.",
     logo: codexLogo,
     logoClass: "h-5 w-5",
-    accent: "var(--color-drac-green)",
   },
 ];
 ---
-<section id="compat" class="relative mt-9 py-8">
-  <div class="sec-divider" aria-hidden="true"></div>
+<section id="compat" class="rule relative scroll-mt-16 py-16 sm:py-20">
   <Wrap>
-    <div class="grid gap-5 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] lg:items-center">
-      <div class="reveal max-w-[390px]">
-        <Eyebrow>Works with your agent CLI</Eyebrow>
-        <p class="mt-2 text-[13px] leading-[1.6] text-muted-foreground">
-          CadencR becomes the IDE surface for the tools you already run locally — no provider
-          lock-in.
-        </p>
-      </div>
+    <div class="reveal max-w-[640px]">
+      <Eyebrow index="01">Compatibility</Eyebrow>
+      <SectionHeading>Works with the agents you already run.</SectionHeading>
+      <Lede>
+        CadencR is <span class="em">provider-neutral by design</span>: it is the IDE surface
+        for the agent CLIs on your machine, not another vendor's chat. Bring your own keys.
+        No lock-in, no proxy, no telemetry.
+      </Lede>
+    </div>
 
-      <div class="reveal reveal-late grid gap-2.5 sm:grid-cols-3">
-        {providers.map((provider) => (
-          <article
-            class="compat-card group relative overflow-hidden rounded-xl border border-border bg-muted/15 p-3.5 transition-all duration-200 hover:-translate-y-0.5 hover:bg-muted/25"
-            style={`--card-accent: ${provider.accent}`}
-          >
-            <div class="flex items-center gap-2">
-              <span class="compat-logo inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background/80">
-                <Image
-                  src={provider.logo}
-                  alt={`${provider.name} logo`}
-                  width={40}
-                  height={40}
-                  class:list={["object-contain", provider.logoClass]}
-                />
-              </span>
-              <h2 class="min-w-0 text-[13px] font-semibold tracking-[-0.01em] text-foreground">
-                {provider.name}
-              </h2>
-              <span class="ml-auto inline-flex items-center gap-1 rounded-full border border-border bg-background/80 px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.08em] text-drac-green">
-                <span class="compat-live-dot" aria-hidden="true"></span>
-                Ready
-              </span>
-            </div>
-            <p class="mt-2.5 text-[12.5px] leading-[1.5] text-muted-foreground">
+    <div class="reveal reveal-late mt-10">
+      <ul class="compat-table" role="list">
+        {providers.map((provider, i) => (
+          <li class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1 py-4 sm:grid-cols-[44px_190px_minmax(0,1fr)_auto] sm:gap-x-6">
+            <span class="inline-flex h-11 w-11 items-center justify-center border border-border bg-sidebar">
+              <Image
+                src={provider.logo}
+                alt=""
+                width={40}
+                height={40}
+                class:list={["object-contain", provider.logoClass]}
+              />
+            </span>
+            <span class="text-[15px] font-semibold tracking-[-0.005em]">{provider.name}</span>
+            <span class="col-span-2 text-[14px] leading-[1.55] text-muted-foreground sm:col-span-1">
               {provider.description}
-            </p>
-          </article>
+            </span>
+            <span class="hidden font-mono text-[11px] uppercase tracking-[0.09em] text-primary sm:inline" aria-hidden="true">
+              {`0${i + 1}`} · supported
+            </span>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   </Wrap>
 </section>
 
 <style>
-  /* Accent hairline along the card's top edge, brightening on hover. */
-  .compat-card::before {
-    content: "";
-    position: absolute;
-    inset: 0 12% auto 12%;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in oklch, var(--card-accent) 55%, transparent),
-      transparent
-    );
-    opacity: 0.7;
-    transition: opacity 0.2s ease;
+  .compat-table li {
+    border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
   }
-  .compat-card:hover::before {
-    opacity: 1;
-  }
-  .compat-card:hover {
-    border-color: color-mix(in oklch, var(--card-accent) 45%, var(--color-border));
-    box-shadow: 0 8px 28px color-mix(in oklch, var(--card-accent) 10%, rgb(0 0 0 / 0.3));
-  }
-  .compat-logo {
-    box-shadow:
-      var(--shadow-xs),
-      0 0 14px color-mix(in oklch, var(--card-accent) 18%, transparent);
-  }
-  .compat-live-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 9999px;
-    background: var(--color-drac-green);
-    box-shadow: 0 0 0 2.5px color-mix(in oklch, var(--color-drac-green) 22%, transparent);
+  .compat-table li:last-child {
+    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
   }
 </style>

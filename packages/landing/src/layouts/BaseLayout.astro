@@ -21,8 +21,8 @@ interface Props {
 }
 
 const {
-  title = "CadencR — IDE for the era of agents",
-  description = "CadencR is the IDE for the era of agents. One workspace for Claude Code, OpenCode and Codex — readable stream, worktrees, and visible git.",
+  title = "CadencR · IDE for the era of agents",
+  description = "CadencR is the IDE for the era of agents. One workspace for Claude Code, OpenCode and Codex: readable stream, worktrees, and visible git.",
   structuredData,
   ogType = "website",
   ogImage,
@@ -34,7 +34,7 @@ const base = import.meta.env.BASE_URL;
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 const ogImageUrl = new URL(ogImage ?? "og-image.png", Astro.site).toString();
 const rssUrl = new URL("rss.xml", Astro.site).toString();
-const ogImageAlt = "CadencR — the IDE for the era of agents.";
+const ogImageAlt = "CadencR, the IDE for the era of agents.";
 const ldJson = buildGraph(structuredData);
 const robots = noindex
   ? "noindex, nofollow"
@@ -58,7 +58,7 @@ const robots = noindex
     <link rel="shortcut icon" href={`${base}favicon.ico`} />
     <link rel="apple-touch-icon" sizes="180x180" href={`${base}apple-touch-icon.png`} />
     <link rel="manifest" href={`${base}site.webmanifest`} />
-    <meta name="theme-color" content="#1f2230" />
+    <meta name="theme-color" content="#0F0F13" />
     <meta name="application-name" content={BRAND_NAME} />
     <meta name="apple-mobile-web-app-title" content={BRAND_NAME} />
 
@@ -100,8 +100,9 @@ const robots = noindex
     <script type="application/ld+json" set:html={ldJson} />
   </head>
   <body>
+    <a href="#main" class="skip-link">Skip to content</a>
     <NavBar />
-    <main>
+    <main id="main">
       <slot />
     </main>
     <Footer />

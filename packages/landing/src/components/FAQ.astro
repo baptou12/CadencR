@@ -3,27 +3,28 @@ import Wrap from "@/components/ui/Wrap.astro";
 import Eyebrow from "@/components/ui/Eyebrow.astro";
 import { FAQ_ITEMS } from "@/lib/faq";
 ---
-<section id="faq" class="relative overflow-hidden py-24" style="--sec-accent: var(--color-drac-purple)">
-  <div class="sec-divider" aria-hidden="true"></div>
-  <div class="faq-glow pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
+<section id="faq" class="rule relative scroll-mt-16 py-16 sm:py-20">
   <Wrap maxWidth="narrow">
     <div class="reveal mb-9 max-w-[560px]">
       <Eyebrow>FAQ</Eyebrow>
-      <h2 class="mt-3 text-[clamp(24px,3vw,32px)] font-semibold leading-[1.18] tracking-[-0.02em] [text-wrap:balance]">
+      <h2 class="type-h2 mt-3.5 text-[clamp(26px,3.4vw,36px)] [text-wrap:balance]">
         What CadencR is, in plain terms.
       </h2>
     </div>
 
-    <dl class="reveal reveal-late flex flex-col gap-2.5">
+    <dl class="reveal reveal-late faq-list m-0">
       {
-        FAQ_ITEMS.map((item) => (
-          <div class="faq-item rounded-xl border border-border bg-muted/15 transition-colors duration-150 hover:border-primary/40">
+        FAQ_ITEMS.map((item, i) => (
+          <div class="faq-item">
             <details class="group">
-              <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
-                <dt class="text-[14.5px] font-medium tracking-[-0.005em] text-foreground">
+              <summary class="flex cursor-pointer list-none items-center gap-4 py-4 [&::-webkit-details-marker]:hidden">
+                <span class="w-8 shrink-0 font-mono text-[11px] text-muted-foreground" aria-hidden="true">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <dt class="flex-1 text-[15px] font-medium tracking-[-0.005em] text-foreground">
                   {item.q}
                 </dt>
-                <span class="faq-toggle inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-all duration-200 group-open:rotate-45 group-open:border-primary/50 group-open:text-primary">
+                <span class="faq-toggle inline-flex h-7 w-7 shrink-0 items-center justify-center border border-border text-muted-foreground transition-all duration-200 group-open:rotate-45 group-open:border-primary/60 group-open:text-primary">
                   <svg
                     class="h-3.5 w-3.5"
                     viewBox="0 0 24 24"
@@ -39,7 +40,7 @@ import { FAQ_ITEMS } from "@/lib/faq";
                   </svg>
                 </span>
               </summary>
-              <dd class="mx-5 mb-4 max-w-[620px] border-t border-border/55 pt-3 text-[13.5px] leading-[1.65] text-muted-foreground">
+              <dd class="m-0 max-w-[62ch] pb-5 pl-12 text-[14px] leading-[1.65] text-muted-foreground">
                 {item.a}
               </dd>
             </details>
@@ -51,18 +52,13 @@ import { FAQ_ITEMS } from "@/lib/faq";
 </section>
 
 <style>
-  /* Faint centered wash so the FAQ column doesn't sit on dead-flat black. */
-  .faq-glow {
-    background: radial-gradient(
-      46% 52% at 50% 18%,
-      color-mix(in oklch, var(--color-primary) 7%, transparent),
-      transparent 74%
-    );
-    filter: blur(40px);
+  .faq-item {
+    border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
   }
-  /* Accent the open card's border so the active question reads at a glance. */
-  .faq-item:has(details[open]) {
-    border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-border));
-    background: color-mix(in oklch, var(--color-muted) 22%, transparent);
+  .faq-item:last-child {
+    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
+  }
+  .faq-item:has(details[open]) dt {
+    color: var(--color-foreground);
   }
 </style>

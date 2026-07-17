@@ -4,23 +4,23 @@ import Wrap from "@/components/ui/Wrap.astro";
 import Button from "@/components/ui/Button.astro";
 const base = import.meta.env.BASE_URL;
 ---
-<section class="relative py-24" style="--sec-accent: var(--color-drac-purple)">
+<section class="rule relative py-20 sm:py-28">
   <Wrap>
-    <div class="cta-panel reveal relative overflow-hidden rounded-2xl border border-border/70 px-6 py-16 text-center sm:px-10 sm:py-20">
-      <div class="cta-aura pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
-      <div class="cta-grid pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
-
-      <p class="eyebrow inline-flex items-center justify-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.13em]">
-        Ready
+    <div class="reveal mx-auto max-w-[760px] text-center">
+      <p class="fig-label justify-center">
+        <span class="fig-no">Ready</span>
+        <span aria-hidden="true">·</span>
+        <span>brew install or one download</span>
       </p>
-      <h2 class="mx-auto mt-4 max-w-[640px] text-[clamp(28px,4.4vw,42px)] font-semibold leading-[1.12] tracking-[-0.025em] [text-wrap:balance]">
-        Ship at the <span class="cta-accent">cadence</span> of your agents.
+      <h2 class="type-display mx-auto mt-5 max-w-[640px] text-[clamp(32px,5.2vw,54px)] [text-wrap:balance]">
+        Ship at the <span class="text-primary">cadence</span> of your agents.
       </h2>
-      <p class="mx-auto mt-4 max-w-[460px] text-[14px] leading-[1.65] text-muted-foreground">
-        Free, open source, runs on your machine. Bring your own Claude or OpenCode keys — and go.
+      <p class="mx-auto mt-5 max-w-[46ch] text-[15px] leading-[1.65] text-muted-foreground">
+        Free, open source, runs on your machine. Bring your own Claude, OpenCode, or Codex
+        keys, and go.
       </p>
-      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button href={`${base}download/`} size="lg" class="h-11 gap-2.5 px-5 text-sm shadow-lg shadow-primary/25">
+      <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
+        <Button href={`${base}download/`} size="lg" class="h-11 gap-2.5 px-5 text-sm">
           <DownloadIcon />
           Download
         </Button>
@@ -31,68 +31,3 @@ const base = import.meta.env.BASE_URL;
     </div>
   </Wrap>
 </section>
-
-<style>
-  .cta-panel {
-    background: color-mix(in oklch, var(--color-sidebar) 70%, transparent);
-  }
-  /* Top light along the panel edge, echoing the hero media frame. */
-  .cta-panel::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in oklch, var(--color-primary) 55%, transparent),
-      transparent
-    );
-  }
-  .cta-aura {
-    background:
-      radial-gradient(
-        56% 68% at 50% 0%,
-        color-mix(in oklch, var(--color-primary) 22%, transparent),
-        transparent 72%
-      ),
-      radial-gradient(
-        34% 40% at 12% 90%,
-        color-mix(in oklch, var(--color-drac-cyan) 9%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        34% 40% at 88% 90%,
-        color-mix(in oklch, var(--color-drac-green) 7%, transparent),
-        transparent 70%
-      );
-    filter: blur(14px);
-  }
-  .cta-grid {
-    background-image:
-      linear-gradient(
-        to right,
-        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 52px 52px;
-    opacity: 0.22;
-    -webkit-mask-image: radial-gradient(ellipse 72% 80% at 50% 0%, black 8%, transparent 74%);
-    mask-image: radial-gradient(ellipse 72% 80% at 50% 0%, black 8%, transparent 74%);
-  }
-  .cta-accent {
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--color-primary) 78%, white 22%),
-      color-mix(in oklch, var(--color-primary) 62%, var(--color-drac-cyan) 38%)
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-</style>
