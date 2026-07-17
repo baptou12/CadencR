@@ -76,7 +76,7 @@ export const BashBlock = memo(function BashBlock({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="min-w-0 max-w-full">
+        <div data-bash-block className="min-w-0 max-w-full">
           <CollapsibleBlock
             totalCount={totalLines}
             visibleCount={maxLines}

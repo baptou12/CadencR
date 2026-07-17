@@ -40,21 +40,22 @@ function GenericToolCallBlock({
   const summary = parseToolCall(canonicalName, args);
   const detail =
     summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
-  // File-patch tools (Edit / Write / ApplyPatch) get a distinct green "file
-  // change" identity so they stand apart from generic tool calls, which keep the
-  // neutral tool accent. The green is derived from each theme's --numstat-add-fg
-  // (the diff "lines added" color), so it stays distinct in every theme without
-  // per-theme tuning.
+  // File-patch tools (Edit / Write / ApplyPatch) use a dedicated accent while
+  // generic tool calls keep the neutral tool accent. Themes without the newer
+  // edit token fall back to their existing diff-add color.
   const isEdit = isFileChangeTool(canonicalName);
   const toolColorClass = isEdit
-    ? "text-[var(--numstat-add-fg)]"
+    ? "text-[var(--block-edit-accent,var(--numstat-add-fg))]"
     : "text-[var(--block-tool-accent)]";
   const wrapperClass = isEdit
-    ? "border-[color-mix(in_srgb,var(--numstat-add-fg)_35%,transparent)] bg-[color-mix(in_srgb,var(--numstat-add-fg)_12%,var(--card))]"
-    : "border-border bg-[var(--block-tool-bg)]";
+    ? "border-[color-mix(in_srgb,var(--block-edit-accent,var(--numstat-add-fg))_35%,transparent)] bg-[color-mix(in_srgb,var(--block-edit-accent,var(--numstat-add-fg))_12%,var(--card))]"
+    : "border-[var(--block-tool-border,var(--border))] bg-[var(--block-tool-bg)]";
 
   return (
-    <div className={cn("my-1 rounded-md border", wrapperClass)}>
+    <div
+      data-tool-family={isEdit ? "edit" : "generic"}
+      className={cn("my-1 rounded-md border", wrapperClass)}
+    >
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
@@ -71,7 +72,7 @@ function GenericToolCallBlock({
         />
       </button>
       {expanded && args && (
-        <pre className="border-t border-border bg-muted/30 p-3 text-xs overflow-x-auto">
+        <pre className="border-t border-[var(--block-tool-border,var(--border))] bg-muted/30 p-3 text-xs overflow-x-auto">
           {formatJson(args)}
         </pre>
       )}

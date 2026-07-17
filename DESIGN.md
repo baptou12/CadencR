@@ -32,8 +32,8 @@ brand:
     hairline: "#D7DADD"
     primary: "#087653"
   functional:
-    dark: { file_change: "#8BCF67", deletion: "#EC707B", thinking: "#52BFD0", warning: "#E2B64D", generic_tool: "#6D9BEC", syntax: "#DE7CA7" }
-    light: { file_change: "#3D7D14", deletion: "#D12D49", thinking: "#007F9B", warning: "#966C00", generic_tool: "#1D5ED8", syntax: "#B52B70" }
+    dark: { file_change: "#8BCF67", edit_heading: "#F09A5B", deletion: "#EC707B", thinking: "#52BFD0", warning: "#E2B64D", generic_tool: "#6D9BEC", syntax: "#DE7CA7" }
+    light: { file_change: "#3D7D14", edit_heading: "#A84F00", deletion: "#D12D49", thinking: "#007F9B", warning: "#966C00", generic_tool: "#1D5ED8", syntax: "#B52B70" }
 
 themes:
   # CadencR Dark and Light are the product defaults. Aurora, Dracula, and
@@ -55,6 +55,7 @@ themes:
     accent_thinking: "#52BFD0"
     accent_thinking_bg: "#1E272A"
     thinking_text: "#C1D2D5"
+    edit_heading: "#F09A5B"
     success: "#8BCF67"
     danger: "#EC707B"
     warning: "#E2B64D"
@@ -81,6 +82,7 @@ themes:
     accent_thinking: "#007F9B"
     accent_thinking_bg: "#F0F7F9"
     thinking_text: "#2F454B"
+    edit_heading: "#A84F00"
     success: "#3D7D14"
     danger: "#D12D49"
     warning: "#966C00"
@@ -300,7 +302,7 @@ The brand direction was re-validated in July 2026 through the in-product palette
 - **Wordmark.** `CADENCR` in Figtree, weight 800, uppercase, tracked ~0.05em — unchanged (`--font-brand` already renders this).
 - **Dark handoff.** Ground `#131416`, darker rail `#090A0C`, Raised `#1A1B1D`, Ink `#EFF0F2`, Soft `#A7A9AD`, Muted `#6E7176`, Hairline `#34373A`, Emerald `#2DB47D` (primary). Neutral surfaces carry no visible green cast; the primary supplies life.
 - **Light handoff.** Ground `#FAFAFB`, darker rail `#EFF0F2`, Raised `#FFFFFF`, Ink `#222429`, Soft `#60636A`, Muted `#95989F`, Hairline `#D7DADD`, Emerald Deep `#087653` (primary). Light-mode functional colors are deliberately deeper and more vibrant than muted pastel tints.
-- **Functional handoff.** Tool colors are semantic and independent of primary: file change `#8BCF67` / `#3D7D14`, deletion `#EC707B` / `#D12D49`, thinking `#52BFD0` / `#007F9B`, warning `#E2B64D` / `#966C00`, generic tool `#6D9BEC` / `#1D5ED8`, syntax `#DE7CA7` / `#B52B70` (dark / light). Bash remains terminal-neutral. Thinking supporting text is `#C1D2D5` / `#2F454B`.
+- **Functional handoff.** Tool colors are semantic and independent of primary: file-change counters and diff status stay green `#8BCF67` / `#3D7D14`, while `Edit` / `Write` / `ApplyPatch` headings use copper `#F09A5B` / `#A84F00`; deletion `#EC707B` / `#D12D49`, thinking `#52BFD0` / `#007F9B`, warning `#E2B64D` / `#966C00`, generic tool `#6D9BEC` / `#1D5ED8`, syntax `#DE7CA7` / `#B52B70` (dark / light). Bash remains terminal-neutral. Thinking supporting text is `#C1D2D5` / `#2F454B`. Model and permission-mode controls retain their established violet/fuchsia/blue identities through `--chip-*`; they do not inherit brand emerald.
 - **Landing typography** (not a desktop mandate): Schibsted Grotesk for display/body, JetBrains Mono for annotations. Desktop UI stays Inter until the new theme work decides otherwise.
 
 Full spec: `packages/landing/DESIGN.md`.
@@ -412,7 +414,7 @@ The agent input. Lives in the root pane only — never duplicate it in a floatin
 Five chips above the prompt: Auto-scroll · Autonomy · Model · Thinking effort · Errors. The error chip is `success`-styled when count is 0, `danger` when nonzero.
 
 - **States:** chip default, chip.on (toggled), chip.success/warn/primary/ghost.
-- **Tokens:** `--border`, `--accent` (hover), `--primary`/`--primary-glow` (model chip + .on), `--acc-green`/`--acc-orange` (status chip variants).
+- **Tokens:** `--border`, `--accent` (hover), `--chip-violet-*` (model and Auto-Accept controls), `--primary`/`--primary-glow` (.on), `--acc-green`/`--acc-orange` (status chip variants).
 
 ### Worktree row
 

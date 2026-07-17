@@ -14,6 +14,8 @@
  */
 
 export const THEME_IDS = [
+  "cadencr-dark",
+  "cadencr-light",
   "dracula",
   "aurora",
   "one-dark",

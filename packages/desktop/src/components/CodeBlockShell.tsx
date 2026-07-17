@@ -14,7 +14,10 @@ interface CodeBlockShellProps {
 /** Bordered card + header chrome shared by code blocks and mermaid diagrams. */
 export function CodeBlockShell({ children, ...header }: CodeBlockShellProps) {
   return (
-    <div className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock">
+    <div
+      data-code-block
+      className="my-1 rounded-md border border-border bg-muted/50 overflow-hidden group/codeblock"
+    >
       <CodeBlockHeader {...header} />
       {children}
     </div>

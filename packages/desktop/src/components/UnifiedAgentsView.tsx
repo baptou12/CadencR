@@ -26,6 +26,7 @@ import { useUnifiedAgentsExcludePruning } from "@/components/useUnifiedAgentsExc
 import type { UnifiedAgentsFilterInputHandle } from "@/components/UnifiedAgentsDynamicFilter";
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
 import { useUnifiedAgentsData, type UnifiedAgentsData } from "@/components/UnifiedAgentsViewData";
+import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 import { useLiveWorkingCount } from "@/stores/session-status-selectors";
 
 export function UnifiedAgentsView(): ReactElement {
@@ -78,7 +79,10 @@ export function UnifiedAgentsView(): ReactElement {
   }, [data.agents, focusFirstMatchedAgent, searchEnterFocusRequest]);
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    // Same chassis hooks as the full-page feature view: CadencR themes paint
+    // the outer rail as `--sidebar` and lift the grid into a raised page card
+    // under a header that merges into the sidebar band.
+    <div data-feature-chrome="standard" className="flex h-full flex-col bg-background">
       <UnifiedAgentsHeader
         projects={projects}
         projectsError={projectsQuery.isError ? projectsQuery.error : null}
@@ -93,14 +97,19 @@ export function UnifiedAgentsView(): ReactElement {
         onRefresh={data.refresh}
       />
 
-      <UnifiedAgentsContent
-        data={data}
-        columns={columns}
-        activeIndex={activeIndex}
-        focusVersion={focusVersion}
-        onActivate={handleActivate}
-        onExcludeAgent={excludeAgent}
-      />
+      <div
+        data-feature-layout-shell
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <UnifiedAgentsContent
+          data={data}
+          columns={columns}
+          activeIndex={activeIndex}
+          focusVersion={focusVersion}
+          onActivate={handleActivate}
+          onExcludeAgent={excludeAgent}
+        />
+      </div>
     </div>
   );
 }
@@ -305,29 +314,32 @@ function UnifiedAgentsHeader({
 }: UnifiedAgentsHeaderProps): ReactElement {
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
   return (
-    <header className="titlebar-drag shrink-0 border-b border-border/40 bg-background px-4 py-3">
-      <div className="flex items-center gap-3">
-        {sidebarCollapsed && <SidebarCollapsedChrome onExpand={() => setSidebarCollapsed(false)} />}
-        <div className="min-w-0 flex-1">
-          <UnifiedAgentsFilters
-            filterText={filterText}
-            projects={projects}
-            agentsCount={agentsCount}
-            runningAgentsCount={runningAgentsCount}
-            agentsPerRowSetting={agentsPerRowSetting}
-            searchInputRef={searchInputRef}
-            isFetching={isFetching}
-            onFilterTextChange={onFilterTextChange}
-            onSearchEnter={onSearchEnter}
-            onRefresh={onRefresh}
-          />
-        </div>
+    <header
+      data-feature-header
+      data-unified-agents-header
+      data-mac-controls={HAS_MAC_WINDOW_CONTROLS ? "true" : undefined}
+      className="titlebar-drag flex shrink-0 items-center gap-3 border-b border-border/40 bg-background px-4 py-4 md:px-6"
+    >
+      {sidebarCollapsed && <SidebarCollapsedChrome onExpand={() => setSidebarCollapsed(false)} />}
+      <div className="min-w-0 flex-1">
+        <UnifiedAgentsFilters
+          filterText={filterText}
+          projects={projects}
+          agentsCount={agentsCount}
+          runningAgentsCount={runningAgentsCount}
+          agentsPerRowSetting={agentsPerRowSetting}
+          searchInputRef={searchInputRef}
+          isFetching={isFetching}
+          onFilterTextChange={onFilterTextChange}
+          onSearchEnter={onSearchEnter}
+          onRefresh={onRefresh}
+        />
+        {projectsError ? (
+          <p className="mt-2 px-1 text-xs text-destructive">
+            {apiErrorMessage(projectsError, "Failed to load projects.")}
+          </p>
+        ) : null}
       </div>
-      {projectsError ? (
-        <p className="mt-2 px-1 text-xs text-destructive">
-          {apiErrorMessage(projectsError, "Failed to load projects.")}
-        </p>
-      ) : null}
     </header>
   );
 }

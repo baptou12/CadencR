@@ -43,6 +43,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
 
   return (
     <aside
+      data-app-sidebar
       ref={sidebarRef}
       // Safe-area insets pad the content here (not the mobile drawer wrapper) so
       // `bg-sidebar` reaches the screen edges while the header/footer clear the

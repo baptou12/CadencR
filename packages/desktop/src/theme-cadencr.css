@@ -1,0 +1,344 @@
+/* -------------------------------------------------------------------------
+ * CadencR Dark / CadencR Light — the brand defaults ("Emerald Reserve").
+ *
+ * Neutral graphite surfaces create the premium instrument hierarchy: the
+ * sidebar rail is darker than the main workspace, raised surfaces are only one
+ * step lighter, and borders stay light gray rather than hue-tinted. Emerald is
+ * reserved for brand and primary action. Tool families keep independent,
+ * vibrant semantic colors so conversations remain scannable.
+ *
+ * CadencR Dark is also bound to bare `:root`: it owns first paint before a
+ * persisted `data-theme` value is applied.
+ * ------------------------------------------------------------------------- */
+
+:root,
+:root[data-theme="cadencr-dark"] {
+  color-scheme: dark;
+  --radius: 0.5rem;
+
+  /* Core surfaces and text tiers. */
+  --background: #131416;
+  --foreground: #eff0f2;
+  --card: #1a1b1d;
+  --card-foreground: #eff0f2;
+  --surface-sunken: #08090b;
+  --popover: #1a1b1d;
+  --popover-foreground: #eff0f2;
+  --primary: #2db47d;
+  --primary-foreground: #131416;
+  --secondary: #1a1b1d;
+  --secondary-foreground: #eff0f2;
+  --muted: #1a1b1d;
+  --muted-foreground: #a7a9ad;
+  --accent: #202124;
+  --accent-foreground: #eff0f2;
+  --destructive: #ec707b;
+  --destructive-foreground: #131416;
+  --border: #34373a;
+  --input: #202124;
+  --ring: #2db47d;
+  --chart-1: #2db47d;
+  --chart-2: #de7ca7;
+  --chart-3: #8bcf67;
+  --chart-4: #6d9bec;
+  --chart-5: #e2b64d;
+  --sidebar: #090a0c;
+  --sidebar-foreground: #eff0f2;
+  --sidebar-primary: #2db47d;
+  --sidebar-primary-foreground: #131416;
+  --sidebar-accent: #1a1b1d;
+  --sidebar-accent-foreground: #eff0f2;
+  --sidebar-border: #34373a;
+  --sidebar-ring: #2db47d;
+
+  /* Vibrant functional palette. Green here means file/status semantics; it is
+   * intentionally lighter and leafier than the blue-biased brand emerald. */
+  --acc-cyan: #52bfd0;
+  --acc-green: #8bcf67;
+  --acc-orange: #f09a5b;
+  --acc-pink: #de7ca7;
+  --acc-purple: #a88af0;
+  --acc-red: #ec707b;
+  --acc-yellow: #e2b64d;
+  --acc-comment: #6e7176;
+
+  --code-bg: #08090b;
+  --code-fg: #eff0f2;
+
+  /* Real conversation families: generic/read/search + plan are blue, thinking
+   * is cyan, edit/write uses copper without stealing green from diff status,
+   * Bash stays neutral, and MCP uses --primary in its component. */
+  --block-tool-bg: #20242c;
+  --block-tool-accent: #6d9bec;
+  --block-thinking-bg: #1e272a;
+  --block-thinking-accent: #52bfd0;
+  --block-thinking-foreground: #c1d2d5;
+  --block-edit-accent: #f09a5b;
+  --block-plan-bg: #20242c;
+  --block-plan-accent: #6d9bec;
+  --block-bash-header-bg: #1a1b1d;
+  --block-bash-body-bg: #08090b;
+  --block-bash-fg: #eff0f2;
+  --block-bash-muted-fg: #a7a9ad;
+  --block-task-bg: #101113;
+
+  --numstat-add-fg: #8bcf67;
+  --numstat-del-fg: #ec707b;
+  --chip-worktree-bg: rgba(82, 191, 208, 0.14);
+  --chip-worktree-bg-hover: rgba(82, 191, 208, 0.22);
+  --chip-worktree-fg: #52bfd0;
+  --chip-shared-worktree-bg: rgba(226, 182, 77, 0.14);
+  --chip-shared-worktree-fg: #e2b64d;
+
+  /* Provider/mode identities are deliberately independent from the brand
+   * primary. Preserve the violet/fuchsia/blue controls users already know. */
+  --chip-violet-bg: #8b5cf6;
+  --chip-violet-fg: #a78bfa;
+  --chip-violet-soft: #c4b5fd;
+  --chip-fuchsia-bg: #d946ef;
+  --chip-fuchsia-fg: #e879f9;
+  --chip-blue-bg: #3b82f6;
+  --chip-blue-fg: #60a5fa;
+
+  /* CodeMirror editor. */
+  --editor-bg: #08090b;
+  --editor-fg: #eff0f2;
+  --editor-comment: var(--acc-comment);
+  --editor-cyan: var(--acc-cyan);
+  --editor-green: var(--acc-green);
+  --editor-orange: var(--acc-orange);
+  --editor-pink: var(--acc-pink);
+  --editor-purple: var(--acc-purple);
+  --editor-red: var(--acc-red);
+  --editor-yellow: var(--acc-yellow);
+  --editor-border: #34373a;
+  --editor-cursor: #2db47d;
+  --editor-line-highlight: rgba(239, 240, 242, 0.04);
+  --editor-gutter-bg: #08090b;
+  --editor-gutter-fg: #6e7176;
+  --editor-selection-bg: #12372a;
+  --editor-selection-bg-soft: #10271f;
+  --editor-search-match-bg: rgba(226, 182, 77, 0.26);
+
+  /* Diff decorations. */
+  --diff-add-bg: rgba(139, 207, 103, 0.1);
+  --diff-add-bg-strong: rgba(139, 207, 103, 0.22);
+  --diff-del-bg: rgba(236, 112, 123, 0.1);
+  --diff-del-bg-strong: rgba(236, 112, 123, 0.22);
+
+  /* Terminal chrome — xterm itself uses the matching palette in
+   * lib/themes/cadencr-dark.ts. */
+  --terminal-bg: #08090b;
+  --terminal-panel-icon: #a7a9ad;
+  --terminal-panel-icon-hover: #eff0f2;
+  --terminal-panel-icon-bg-hover: #202124;
+  --terminal-panel-handle-bg: #202124;
+  --terminal-panel-handle-bg-hover: #34373a;
+  --terminal-warning-bg: #1a1b1d;
+  --terminal-warning-border: #34373a;
+  --terminal-warning-fg: #eff0f2;
+  --terminal-warning-fg-secondary: #a7a9ad;
+  --terminal-warning-accent: #e2b64d;
+  --terminal-warning-link: #6d9bec;
+  --terminal-warning-button-bg: #202124;
+  --terminal-warning-button-bg-hover: #34373a;
+}
+
+/* Material — depth model consumed by theme-cadencr-material.css and by
+ * component-level `var(--x, fallback)` lookups. Scoped to the explicit
+ * CadencR Dark selector plus the `data-theme`-absent first paint — NOT the
+ * bare `:root` the color tokens above use — because these tokens must stay
+ * undefined in every other theme so component fallbacks keep resolving to
+ * each theme's original look. */
+:root:not([data-theme]),
+:root[data-theme="cadencr-dark"] {
+  --pane-bg: #1a1b1d;
+  --pane-border: #2c2f33;
+  --pane-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 12px 32px -16px rgba(0, 0, 0, 0.65),
+    0 2px 8px -4px rgba(0, 0, 0, 0.5);
+  --pane-border-focused: color-mix(in srgb, var(--primary) 26%, #2c2f33);
+  --lamplight: radial-gradient(
+    90% 55% at 50% 0%,
+    color-mix(in srgb, var(--primary) 4%, transparent),
+    transparent 70%
+  );
+  --well-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.32);
+  --glass-shadow-overlay: 0 16px 40px -16px rgba(0, 0, 0, 0.6), 0 2px 8px -4px rgba(0, 0, 0, 0.4);
+  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --prompt-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 24px -18px rgba(0, 0, 0, 0.6);
+  --block-tool-border: color-mix(in srgb, var(--block-tool-accent) 20%, var(--border));
+  --block-thinking-border: color-mix(in srgb, var(--block-thinking-accent) 20%, var(--border));
+  --page-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  --tab-track-bg: #0f1012;
+  --tab-track-border: #2c2f33;
+  --tab-active-bg: #26282c;
+  --tab-active-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* CadencR Light keeps the same hierarchy: the rail is a darker cool gray,
+ * while main content and cards remain neutral white. Functional colors deepen
+ * rather than becoming pastel so tools and syntax stay vivid on light ground. */
+:root[data-theme="cadencr-light"] {
+  color-scheme: light;
+  --radius: 0.5rem;
+
+  --background: #fafafb;
+  --foreground: #222429;
+  --card: #ffffff;
+  --card-foreground: #222429;
+  --surface-sunken: #f4f5f7;
+  --popover: #ffffff;
+  --popover-foreground: #222429;
+  --primary: #087653;
+  --primary-foreground: #ffffff;
+  --secondary: #eff0f2;
+  --secondary-foreground: #222429;
+  --muted: #eff0f2;
+  --muted-foreground: #60636a;
+  --accent: #f4f5f7;
+  --accent-foreground: #222429;
+  --destructive: #d12d49;
+  --destructive-foreground: #ffffff;
+  --border: #d7dadd;
+  --input: #eff0f2;
+  --ring: #087653;
+  --chart-1: #087653;
+  --chart-2: #b52b70;
+  --chart-3: #3d7d14;
+  --chart-4: #1d5ed8;
+  --chart-5: #966c00;
+  --sidebar: #eff0f2;
+  --sidebar-foreground: #222429;
+  --sidebar-primary: #087653;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e5e7e9;
+  --sidebar-accent-foreground: #222429;
+  --sidebar-border: #d7dadd;
+  --sidebar-ring: #087653;
+
+  --acc-cyan: #007f9b;
+  --acc-green: #3d7d14;
+  --acc-orange: #b85f00;
+  --acc-pink: #b52b70;
+  --acc-purple: #6f42c1;
+  --acc-red: #d12d49;
+  --acc-yellow: #966c00;
+  --acc-comment: #95989f;
+
+  --code-bg: #f4f5f7;
+  --code-fg: #222429;
+
+  --block-tool-bg: #edf2fb;
+  --block-tool-accent: #1d5ed8;
+  --block-thinking-bg: #f0f7f9;
+  --block-thinking-accent: #007f9b;
+  --block-thinking-foreground: #2f454b;
+  --block-edit-accent: #a84f00;
+  --block-plan-bg: #edf2fb;
+  --block-plan-accent: #1d5ed8;
+  --block-bash-header-bg: #eff0f2;
+  --block-bash-body-bg: #f4f5f7;
+  --block-bash-fg: #222429;
+  --block-bash-muted-fg: #60636a;
+  --block-task-bg: #f4f5f7;
+
+  --numstat-add-fg: #3d7d14;
+  --numstat-del-fg: #d12d49;
+  --chip-worktree-bg: rgba(0, 127, 155, 0.12);
+  --chip-worktree-bg-hover: rgba(0, 127, 155, 0.2);
+  --chip-worktree-fg: #006d85;
+  --chip-shared-worktree-bg: rgba(150, 108, 0, 0.12);
+  --chip-shared-worktree-fg: #805c00;
+
+  /* Same familiar provider/mode identities, deepened for light-surface
+   * contrast rather than recolored to the Emerald Reserve primary. */
+  --chip-violet-bg: oklch(0.55 0.245 295);
+  --chip-violet-fg: oklch(0.45 0.22 290);
+  --chip-violet-soft: oklch(0.35 0.18 290);
+  --chip-fuchsia-bg: oklch(0.6 0.22 350);
+  --chip-fuchsia-fg: oklch(0.5 0.22 350);
+  --chip-blue-bg: oklch(0.55 0.2 245);
+  --chip-blue-fg: oklch(0.45 0.18 245);
+
+  --editor-bg: #f4f5f7;
+  --editor-fg: #222429;
+  --editor-comment: var(--acc-comment);
+  --editor-cyan: var(--acc-cyan);
+  --editor-green: var(--acc-green);
+  --editor-orange: var(--acc-orange);
+  --editor-pink: var(--acc-pink);
+  --editor-purple: var(--acc-purple);
+  --editor-red: var(--acc-red);
+  --editor-yellow: var(--acc-yellow);
+  --editor-border: #d7dadd;
+  --editor-cursor: #087653;
+  --editor-line-highlight: rgba(34, 36, 41, 0.04);
+  --editor-gutter-bg: #f4f5f7;
+  --editor-gutter-fg: #95989f;
+  --editor-selection-bg: #d8eae3;
+  --editor-selection-bg-soft: #e6f1ed;
+  --editor-search-match-bg: rgba(150, 108, 0, 0.18);
+
+  --diff-add-bg: rgba(61, 125, 20, 0.1);
+  --diff-add-bg-strong: rgba(61, 125, 20, 0.22);
+  --diff-del-bg: rgba(209, 45, 73, 0.1);
+  --diff-del-bg-strong: rgba(209, 45, 73, 0.22);
+
+  --terminal-bg: #f4f5f7;
+  --terminal-panel-icon: #60636a;
+  --terminal-panel-icon-hover: #222429;
+  --terminal-panel-icon-bg-hover: #e5e7e9;
+  --terminal-panel-handle-bg: #e5e7e9;
+  --terminal-panel-handle-bg-hover: #d7dadd;
+  --terminal-warning-bg: #ffffff;
+  --terminal-warning-border: #d7dadd;
+  --terminal-warning-fg: #222429;
+  --terminal-warning-fg-secondary: #60636a;
+  --terminal-warning-accent: #966c00;
+  --terminal-warning-link: #1d5ed8;
+  --terminal-warning-button-bg: #eff0f2;
+  --terminal-warning-button-bg-hover: #e5e7e9;
+
+  /* Material — light counterpart of the dark depth model above. Shadows do
+   * the pane separation so hairlines can stay quiet; the lamplight uses the
+   * deep emerald at 3% so the wash never reads as a green tint. */
+  --pane-bg: #ffffff;
+  --pane-border: #e2e4e9;
+  --pane-shadow: 0 1px 2px rgba(23, 27, 33, 0.05), 0 12px 32px -20px rgba(23, 27, 33, 0.16);
+  --pane-border-focused: color-mix(in srgb, var(--primary) 24%, #e2e4e9);
+  --lamplight: radial-gradient(
+    90% 55% at 50% 0%,
+    color-mix(in srgb, var(--primary) 3%, transparent),
+    transparent 70%
+  );
+  --well-shadow: inset 0 1px 2px rgba(23, 27, 33, 0.06);
+  --glass-shadow-overlay:
+    0 16px 40px -16px rgba(23, 27, 33, 0.2), 0 2px 8px -4px rgba(23, 27, 33, 0.08);
+  --glass-shadow: 0 1px 2px rgba(23, 27, 33, 0.04);
+  --prompt-shadow: 0 1px 2px rgba(23, 27, 33, 0.05), 0 8px 24px -18px rgba(23, 27, 33, 0.14);
+  --block-tool-border: color-mix(in srgb, var(--block-tool-accent) 26%, var(--border));
+  --block-thinking-border: color-mix(in srgb, var(--block-thinking-accent) 26%, var(--border));
+  --page-shadow: 0 2px 12px -6px rgba(23, 27, 33, 0.1);
+  --tab-track-bg: #f4f5f7;
+  --tab-track-border: #e2e4e9;
+  --tab-active-bg: #ffffff;
+  --tab-active-shadow: 0 1px 2px rgba(23, 27, 33, 0.06);
+}
+
+/* Thinking prose deliberately clears the contrast of the global muted tier.
+ * The class selector matches the existing theme-owned Thinking container and
+ * avoids changing muted text elsewhere in the stream. */
+:root:not([data-theme]) [class~="bg-[var(--block-thinking-bg)]"] .text-muted-foreground,
+:root[data-theme="cadencr-dark"] [class~="bg-[var(--block-thinking-bg)]"] .text-muted-foreground,
+:root[data-theme="cadencr-light"] [class~="bg-[var(--block-thinking-bg)]"] .text-muted-foreground {
+  color: var(--block-thinking-foreground);
+}
+
+:root:not([data-theme]) ::selection,
+:root[data-theme="cadencr-dark"] ::selection {
+  background: rgba(45, 180, 125, 0.3);
+}
+:root[data-theme="cadencr-light"] ::selection {
+  background: rgba(8, 118, 83, 0.2);
+}

@@ -1,18 +1,24 @@
-import cadencrLogoDark from "../../../assets/cadencr-logo3.svg";
-import cadencrLogoLight from "../../../assets/cadencr-logo3-light.svg";
+import cadencrMarkDark from "../../../assets/cadencr-mark-dark.svg";
+import cadencrMarkLight from "../../../assets/cadencr-mark-light.svg";
 import type { ThemeLogo, ThemeLogoVariant } from "./types";
 
-const CADENCR_ASSET_DISPLAY_SCALE = 1.24;
+/**
+ * The "Index Dots" brand mark (root DESIGN.md "Brand identity"): twelve ink
+ * dots on a ring around a solid emerald core. `dark` = ink dots + emerald core
+ * for dark grounds; `light` = graphite dots + emerald-deep core for light
+ * grounds. Assets are generated — run `node scripts/generate-icons.mjs`.
+ */
+const CADENCR_ASSET_DISPLAY_SCALE = 1.1;
 
 export const CADENCR_THEME_LOGOS: Record<ThemeLogoVariant, ThemeLogo> = {
   dark: {
-    src: cadencrLogoDark,
+    src: cadencrMarkDark,
     alt: "Cadencr",
     variant: "dark",
     displayScale: CADENCR_ASSET_DISPLAY_SCALE,
   },
   light: {
-    src: cadencrLogoLight,
+    src: cadencrMarkLight,
     alt: "Cadencr",
     variant: "light",
     displayScale: CADENCR_ASSET_DISPLAY_SCALE,

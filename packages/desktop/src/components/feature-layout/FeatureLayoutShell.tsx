@@ -93,7 +93,11 @@ export function FeatureLayoutShell({
         layoutState={effectiveLayout}
         mountVisibleOnly={!mountInactiveTabs}
       />
-      <div className="relative h-full min-h-0 flex-1 overflow-hidden">
+      <div
+        data-feature-layout-shell
+        data-has-floating-pane={splitRoot.type === "split" ? "true" : undefined}
+        className="relative h-full min-h-0 flex-1 overflow-hidden"
+      >
         <SplitTreeRenderer
           featureId={featureId}
           node={splitRoot}

@@ -80,14 +80,14 @@ export function InlineDiffBlock({
       <div
         data-testid="inline-diff-header"
         onClick={toggleExpanded}
-        className="flex cursor-pointer items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--numstat-add-fg)_15%,var(--editor-bg))] px-3 py-1.5 text-xs"
+        className="flex cursor-pointer items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--block-edit-accent,var(--numstat-add-fg))_15%,var(--editor-bg))] px-3 py-1.5 text-xs"
       >
         {toolName && (
           <>
-            {/* File-change tools keep the green "edit" identity (--numstat-add-fg)
-                even once the diff renders, matching the pre-diff ToolCallBlock. */}
-            <ToolIcon className="size-3 shrink-0 text-[var(--numstat-add-fg)]" />
-            <span className="font-medium text-[var(--numstat-add-fg)]">{toolName}</span>
+            <ToolIcon className="size-3 shrink-0 text-[var(--block-edit-accent,var(--numstat-add-fg))]" />
+            <span className="font-medium text-[var(--block-edit-accent,var(--numstat-add-fg))]">
+              {toolName}
+            </span>
           </>
         )}
         <span className="flex-1 truncate font-mono text-[var(--editor-fg)]" title={filePath}>
@@ -96,6 +96,7 @@ export function InlineDiffBlock({
         <NumStat additions={additions} deletions={deletions} hideZero={false} />
         {openFileInEditor && (
           <button
+            data-inline-diff-edit-action
             type="button"
             aria-label={`Edit ${displayPath} in editor`}
             title="Edit in editor"

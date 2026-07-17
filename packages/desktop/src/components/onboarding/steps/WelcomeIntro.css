@@ -3,29 +3,27 @@
  * the very first open of the overlay; gated by the `onboarding_intro_shown`
  * workspace setting.
  *
- * Design language: restraint. Premium motion is slow, deliberate, and
- * single-purpose. Everything uses the same easing curve (a smooth quintic
- * ease-out — Apple-style "settles into place" feel) and the staging gives
- * each element room to breathe before the next one arrives.
+ * Brand: Emerald Reserve (root DESIGN.md). Graphite stage, ink dots, one emerald
+ * core — the Index Dots mark assembled in front of the user. Design
+ * language: restraint. Premium motion is slow, deliberate, single-purpose,
+ * and everything shares the same quintic ease-out.
  *
  * Timeline (mounted at t=0):
- *   0.00s — black stage fades in
- *   0.30s — dashed orbit ring whispers in (no scale pop)
- *   0.80s — purple core blooms (scale + blur lift)
- *   1.30s — green arc draws along the ring
- *   1.60s — cyan arc draws along the ring
- *   2.30s — orbit begins a 30-second rotation; core breathes
+ *   0.00s — graphite stage fades in
+ *   0.35s — the twelve index dots tick in clockwise, one per beat
+ *   1.55s — emerald core blooms (scale + blur lift)
+ *   2.40s — the cadence begins: a soft pulse travels the ring; core breathes
  *   2.40s — CADENCR wordmark fades up (sidebar typography)
  *   2.90s — thin accent line draws under the wordmark
  *   3.20s — tagline fades in
- *   3.60s — CTA button fades in (the only auto-dismiss is the button click)
+ *   3.60s — CTA button fades in
  *   4.10s — "or press any key" hint fades in (whispered)
  *
- * The intro never auto-dismisses: the user takes whatever time they need
- * to read, then clicks the CTA. Click anywhere or press any key also work.
+ * The intro never auto-dismisses: the user takes whatever time they need,
+ * then clicks the CTA. Click anywhere or press any key also work.
  *
- * Honours `prefers-reduced-motion`: animations collapse to plain fades and
- * the orbit holds still.
+ * Honours `prefers-reduced-motion`: animations collapse to plain fades,
+ * the dots hold still, and the cadence pulse never starts.
  */
 
 .welcome-intro {
@@ -37,23 +35,22 @@
   align-items: center;
   justify-content: center;
   gap: 2.25rem;
-  /* Pure deep black; the only colour comes from the logo itself. */
-  background: #07080d;
+  /* Graphite — the brand ground. The only strong colour comes from the mark. */
+  background: #131416;
   cursor: pointer;
   animation: welcome-intro-bg-in 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
   transition: opacity 600ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Subtle radial bloom + edge vignette layered behind everything. Adds depth
- * without ever drawing attention to itself. */
+/* Subtle emerald bloom + edge vignette layered behind everything
+ * (Jewel-Light Rule: the background wash stays at ≤4% alpha). */
 .welcome-intro::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 50% 50%, rgba(179, 136, 255, 0.07) 0%, transparent 36%),
-    radial-gradient(circle at 50% 50%, rgba(128, 216, 255, 0.025) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.65) 100%);
+    radial-gradient(circle at 50% 50%, rgba(45, 180, 125, 0.04) 0%, transparent 38%),
+    radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0, 0, 0, 0.6) 100%);
   pointer-events: none;
   opacity: 0;
   animation: welcome-intro-fade-in 1300ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both;
@@ -66,9 +63,9 @@
 
 .welcome-intro__stage {
   position: relative;
-  width: min(48vmin, 264px);
-  height: min(48vmin, 264px);
-  filter: drop-shadow(0 0 40px rgba(179, 136, 255, 0.18)) drop-shadow(0 0 90px rgba(0, 0, 0, 0.6));
+  width: min(44vmin, 232px);
+  height: min(44vmin, 232px);
+  filter: drop-shadow(0 0 42px rgba(45, 180, 125, 0.16)) drop-shadow(0 0 90px rgba(0, 0, 0, 0.6));
 }
 
 .welcome-intro__svg {
@@ -77,44 +74,29 @@
   overflow: visible;
 }
 
-/* Center node — slow bloom (scale + blur lift), then a 4.5s breath. */
-.welcome-intro__dot {
+/* The twelve index dots. Two phases, delays driven by --dot-index:
+ * 1. tick-in — dots land clockwise, one per 90ms beat, like a metronome
+ *    counting the ring in;
+ * 2. cadence — from 2.4s, a soft opacity pulse travels the ring forever
+ *    (150ms per dot × 12 dots = one revolution per 1.8s cycle). */
+.welcome-intro__index-dot {
   transform-box: fill-box;
   transform-origin: center;
   opacity: 0;
   animation:
-    welcome-intro-dot-bloom 1300ms cubic-bezier(0.16, 1, 0.3, 1) 800ms both,
-    welcome-intro-dot-breathe 4500ms ease-in-out 2300ms infinite;
+    welcome-intro-dot-tick 500ms cubic-bezier(0.16, 1, 0.3, 1) calc(350ms + var(--dot-index) * 90ms)
+      both,
+    welcome-intro-dot-cadence 1800ms ease-in-out calc(2400ms + var(--dot-index) * 150ms) infinite;
 }
 
-/* Dashed gray ring — sets the stage first; never scales or rotates. */
-.welcome-intro__ring {
+/* Emerald core — blooms once the ring is counted in, then breathes. */
+.welcome-intro__core {
   transform-box: fill-box;
   transform-origin: center;
   opacity: 0;
-  animation: welcome-intro-ring-in 1000ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both;
-}
-
-/* Holds both colored arcs so they orbit together once revealed. The spin is
- * intentionally slow (30s/turn) — almost imperceptible, just enough to give
- * the mark a heartbeat. */
-.welcome-intro__orbit {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: welcome-intro-orbit-spin 30s linear 2300ms infinite;
-}
-
-.welcome-intro__arc {
-  stroke-dashoffset: 360;
-  animation: welcome-intro-arc-draw 1200ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.welcome-intro__arc--green {
-  animation-delay: 1300ms;
-}
-
-.welcome-intro__arc--cyan {
-  animation-delay: 1600ms;
+  animation:
+    welcome-intro-core-bloom 1200ms cubic-bezier(0.16, 1, 0.3, 1) 1550ms both,
+    welcome-intro-core-breathe 4500ms ease-in-out 2400ms infinite;
 }
 
 /* Wordmark uses the Sidebar typography exactly: --font-brand (Figtree) at 800,
@@ -129,7 +111,7 @@
   /* Compensate the trailing letter-spacing so the optical center matches
    * the logo above. */
   padding-left: 0.1em;
-  color: rgba(255, 255, 255, 0.96);
+  color: rgba(239, 240, 242, 0.96);
   opacity: 0;
   transform: translateY(6px);
   animation: welcome-intro-wordmark-in 1100ms cubic-bezier(0.16, 1, 0.3, 1) 2400ms both;
@@ -139,7 +121,7 @@
 .welcome-intro__accent {
   width: 56px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45) 50%, transparent);
+  background: linear-gradient(90deg, transparent, rgba(239, 240, 242, 0.45) 50%, transparent);
   transform-origin: center;
   transform: scaleX(0);
   opacity: 0;
@@ -151,13 +133,13 @@
   font-size: 0.875rem;
   font-weight: 300;
   letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(239, 240, 242, 0.5);
   opacity: 0;
   animation: welcome-intro-fade-in 900ms cubic-bezier(0.16, 1, 0.3, 1) 3200ms both;
 }
 
-/* The CTA — restrained outline button with a subtle border-glow on hover.
- * Uses the sidebar typography so it visually rhymes with the wordmark. */
+/* The CTA — restrained outline button with a subtle emerald border-glow on
+ * hover. Uses the sidebar typography so it rhymes with the wordmark. */
 .welcome-intro__cta {
   /* Reset native button defaults */
   appearance: none;
@@ -170,14 +152,14 @@
   padding: 0.85rem 2rem;
   margin-top: 0.5rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(239, 240, 242, 0.18);
 
   font-family: var(--font-sans);
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(239, 240, 242, 0.92);
 
   opacity: 0;
   transform: translateY(6px);
@@ -192,12 +174,12 @@
 }
 
 .welcome-intro__cta:hover {
-  border-color: rgba(179, 136, 255, 0.6);
-  background: rgba(179, 136, 255, 0.06);
+  border-color: rgba(45, 180, 125, 0.7);
+  background: rgba(45, 180, 125, 0.06);
   color: #ffffff;
   box-shadow:
-    0 0 0 1px rgba(179, 136, 255, 0.18),
-    0 12px 40px -8px rgba(179, 136, 255, 0.35);
+    0 0 0 1px rgba(45, 180, 125, 0.2),
+    0 12px 40px -8px rgba(45, 180, 125, 0.35);
 }
 
 .welcome-intro__cta:active {
@@ -206,8 +188,8 @@
 
 .welcome-intro__cta:focus-visible {
   outline: none;
-  border-color: rgba(179, 136, 255, 0.8);
-  box-shadow: 0 0 0 3px rgba(179, 136, 255, 0.25);
+  border-color: rgba(45, 180, 125, 0.85);
+  box-shadow: 0 0 0 3px rgba(45, 180, 125, 0.25);
 }
 
 /* The arrow nudges right on hover — tiny detail, big "I get it" moment. */
@@ -230,7 +212,7 @@
   font-weight: 400;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(239, 240, 242, 0.2);
   opacity: 0;
   animation: welcome-intro-fade-in 700ms cubic-bezier(0.16, 1, 0.3, 1) 4100ms both;
 }
@@ -246,7 +228,38 @@
   }
 }
 
-@keyframes welcome-intro-dot-bloom {
+/* Dots land with a tiny overshoot-settle — a metronome tick, not a pop. */
+@keyframes welcome-intro-dot-tick {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* The travelling cadence: each dot dips and re-lights in turn. Starts and
+ * ends at full opacity so the handoff from tick-in is seamless. */
+@keyframes welcome-intro-dot-cadence {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  12% {
+    opacity: 0.35;
+  }
+  36% {
+    opacity: 1;
+  }
+}
+
+@keyframes welcome-intro-core-bloom {
   0% {
     opacity: 0;
     transform: scale(0.55);
@@ -262,42 +275,15 @@
   }
 }
 
-@keyframes welcome-intro-dot-breathe {
+@keyframes welcome-intro-core-breathe {
   0%,
   100% {
     transform: scale(1);
-    filter: drop-shadow(0 0 4px rgba(179, 136, 255, 0.45));
+    filter: drop-shadow(0 0 3px rgba(45, 180, 125, 0.45));
   }
   50% {
-    transform: scale(1.035);
-    filter: drop-shadow(0 0 12px rgba(179, 136, 255, 0.7));
-  }
-}
-
-@keyframes welcome-intro-ring-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 0.9;
-  }
-}
-
-@keyframes welcome-intro-arc-draw {
-  from {
-    stroke-dashoffset: 360;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes welcome-intro-orbit-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 9px rgba(45, 180, 125, 0.7));
   }
 }
 
@@ -348,10 +334,8 @@
 @media (prefers-reduced-motion: reduce) {
   .welcome-intro,
   .welcome-intro::before,
-  .welcome-intro__dot,
-  .welcome-intro__ring,
-  .welcome-intro__orbit,
-  .welcome-intro__arc,
+  .welcome-intro__index-dot,
+  .welcome-intro__core,
   .welcome-intro__wordmark,
   .welcome-intro__accent,
   .welcome-intro__tagline,
@@ -359,11 +343,8 @@
   .welcome-intro__hint {
     animation: welcome-intro-fade-in 250ms ease-out both !important;
   }
-  .welcome-intro__arc {
-    stroke-dashoffset: 0;
-  }
-  .welcome-intro__dot,
-  .welcome-intro__ring,
+  .welcome-intro__index-dot,
+  .welcome-intro__core,
   .welcome-intro__wordmark,
   .welcome-intro__accent,
   .welcome-intro__cta {
