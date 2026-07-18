@@ -65,6 +65,35 @@ describe("useGitStatusStore.setStatus", () => {
     expect(useGitStatusStore.getState().byFeature[1]?.uncommitted_count).toBe(5);
   });
 
+  it("accepts equal-timestamp updates to update and recovery fields", () => {
+    const setStatus = useGitStatusStore.getState().setStatus;
+    setStatus(
+      snap({
+        behind_target: 3,
+        target_resolved: true,
+        conflict_count: 1,
+        operation: "rebase",
+        computed_at: 100,
+      }),
+    );
+    setStatus(
+      snap({
+        behind_target: 0,
+        target_resolved: false,
+        conflict_count: 0,
+        operation: null,
+        computed_at: 100,
+      }),
+    );
+
+    expect(useGitStatusStore.getState().byFeature[1]).toMatchObject({
+      behind_target: 0,
+      target_resolved: false,
+      conflict_count: 0,
+      operation: null,
+    });
+  });
+
   it("keeps computed_at fresh for otherwise equal newer snapshots", () => {
     const setStatus = useGitStatusStore.getState().setStatus;
     setStatus(snap({ computed_at: 100 }));

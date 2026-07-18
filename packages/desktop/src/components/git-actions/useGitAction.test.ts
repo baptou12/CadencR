@@ -18,6 +18,10 @@ function snapshot(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot
     ahead_of_remote: 0,
     behind_remote: 0,
     ahead_of_target: 0,
+    behind_target: 0,
+    target_resolved: true,
+    conflict_count: 0,
+    operation: null,
     has_remote: true,
     host: "GitHub",
     compare_url: "https://github.com/x/y/compare/main...feature/x",
@@ -33,6 +37,7 @@ describe("deriveGitAction", () => {
     expect(state.primary).toBeNull();
     expect(state.label).toBe("Loading…");
     expect(state.disabled.commit).toBe("Loading…");
+    expect(state.disabled.update).toBe("Loading…");
     expect(state.disabled.push).toBe("Loading…");
     expect(state.disabled.pr).toBe("Loading…");
     expect(state.disabled.merge).toBe("Loading…");
@@ -43,9 +48,118 @@ describe("deriveGitAction", () => {
     expect(state.primary).toBe("commit");
     expect(state.label).toBe("Commit");
     expect(state.disabled.commit).toBeNull();
+    expect(state.disabled.update).toBe("Commit or stash your changes first");
     expect(state.disabled.push).toBe("Commit your changes first");
     expect(state.disabled.pr).toBe("Commit your changes first");
     expect(state.disabled.merge).toBe("Nothing to merge");
+  });
+
+  it("primary=update when the clean current branch is behind its resolved target", () => {
+    const state = deriveGitAction(snapshot({ behind_target: 3, ahead_of_target: 2 }));
+
+    expect(state.primary).toBe("update");
+    expect(state.label).toBe("Update");
+    expect(state.disabled.update).toBeNull();
+    expect(state.disabled.merge).toBeNull();
+  });
+
+  it("disables update when the exact configured target does not resolve", () => {
+    const state = deriveGitAction(
+      snapshot({ target_branch: "origin/missing", target_resolved: false, behind_target: 3 }),
+    );
+
+    expect(state.disabled.update).toBe("Target 'origin/missing' does not resolve");
+  });
+
+  it("disables update when the current and exact target identities are the same", () => {
+    const state = deriveGitAction(
+      snapshot({ current_branch: "main", target_branch: "main", behind_target: 3 }),
+    );
+
+    expect(state.disabled.update).toBe("Current branch is already the update target");
+  });
+
+  it("recognizes a fully-qualified local target as the current branch identity", () => {
+    const state = deriveGitAction(
+      snapshot({ current_branch: "main", target_branch: "refs/heads/main", behind_target: 3 }),
+    );
+
+    expect(state.disabled.update).toBe("Current branch is already the update target");
+  });
+
+  it("preserves origin/main as distinct from checked-out main for Update", () => {
+    const state = deriveGitAction(
+      snapshot({ current_branch: "main", target_branch: "origin/main", behind_target: 2 }),
+    );
+
+    expect(state.primary).toBe("update");
+    expect(state.disabled.update).toBeNull();
+    expect(state.disabled.merge).toBe("Cannot merge a branch into itself");
+  });
+
+  it("requires every clean-worktree count to be zero before Update", () => {
+    const fields: Array<keyof GitStatusSnapshot> = [
+      "uncommitted_count",
+      "staged_count",
+      "unstaged_count",
+      "untracked_count",
+      "conflict_count",
+    ];
+
+    for (const field of fields) {
+      const state = deriveGitAction(snapshot({ behind_target: 1, [field]: 1 }));
+      expect(state.disabled.update, field).toBe("Commit or stash your changes first");
+    }
+  });
+
+  it("requires behind_target to be positive before Update", () => {
+    const state = deriveGitAction(snapshot({ behind_target: 0 }));
+
+    expect(state.disabled.update).toBe("Already up to date");
+  });
+
+  it("blocks incompatible actions while an update request is pending", () => {
+    const state = deriveGitAction(snapshot({ behind_target: 2, ahead_of_target: 2 }), true);
+
+    expect(state.primary).toBeNull();
+    expect(state.label).toBe("Updating…");
+    expect(state.disabled).toMatchObject({
+      commit: "Update request in progress",
+      update: "Update request in progress",
+      push: "Update request in progress",
+      pr: null,
+      merge: "Update request in progress",
+    });
+    expect(state.recovery).toBeNull();
+  });
+
+  it("derives recovery actions from an active operation and live conflict count", () => {
+    const state = deriveGitAction(
+      snapshot({ operation: "rebase", conflict_count: 2, uncommitted_count: 2 }),
+    );
+
+    expect(state.disabled.commit).toBe("Finish or abort the active rebase update first");
+    expect(state.recovery).toEqual({
+      operation: "rebase",
+      conflictCount: 2,
+      continueDisabled: "Resolve and stage 2 conflicting files first",
+      abortDisabled: null,
+    });
+  });
+
+  it("enables Continue only after backend status reports no remaining conflicts", () => {
+    const state = deriveGitAction(snapshot({ operation: "merge", conflict_count: 0 }));
+
+    expect(state.recovery?.continueDisabled).toBeNull();
+    expect(state.recovery?.abortDisabled).toBeNull();
+  });
+
+  it("uses a just-returned conflict operation before its WS snapshot arrives", () => {
+    const state = deriveGitAction(snapshot(), false, "rebase", 1);
+
+    expect(state.recovery?.operation).toBe("rebase");
+    expect(state.recovery?.conflictCount).toBe(1);
+    expect(state.disabled.merge).toBe("Finish or abort the active rebase update first");
   });
 
   it("keeps merge enabled when committed branch changes exist with uncommitted source changes", () => {

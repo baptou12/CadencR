@@ -23,6 +23,7 @@ import {
 import { useSendPendingComments } from "@/hooks/useSendPendingComments";
 import { selectGitTargetBranch, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { GitUpdateRecoveryRegion } from "./git-actions/GitUpdateRecoveryBanner";
 
 const GIT_VIEW_MODE_SETTING = "git_view_mode";
 const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
@@ -94,6 +95,10 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       });
     },
     [featureId, setFeatureSetting, viewMode],
+  );
+  const handleRequestUncommitted = useCallback(
+    () => handleViewModeChange("uncommitted"),
+    [handleViewModeChange],
   );
 
   // Only the target branch affects this component's query parameters. Selecting
@@ -214,6 +219,10 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           />
         )}
       </div>
+      <GitUpdateRecoveryRegion
+        featureId={featureId}
+        onRequestUncommitted={handleRequestUncommitted}
+      />
       <div className="min-h-0 flex-1 overflow-hidden">
         {isGraph ? (
           <GitGraphView featureId={featureId} />
