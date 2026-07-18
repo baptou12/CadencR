@@ -390,4 +390,5 @@ pub fn features_router() -> Router<AppState> {
             "/api/features/{id}/auto-name",
             post(crate::domain::features::auto_name_route::auto_name_feature_handler),
         )
+        .merge(crate::domain::features::pending_gate::pending_gate_routes())
 }

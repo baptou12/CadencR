@@ -234,10 +234,13 @@ export interface BranchRewoundPayload {
   sessionId: string;
 }
 
+export type ChangedFileConflictKind = null | ConflictKind;
+
 export type ChangedFileOldFile = string | null;
 
 export interface ChangedFile {
   additions: number;
+  conflict_kind?: ChangedFileConflictKind;
   deletions: number;
   file: string;
   /** `true` when the file has staged changes (i.e. shows up in
@@ -245,6 +248,9 @@ export interface ChangedFile {
 The frontend uses this to render a "staged" badge next to the file. */
   is_staged?: boolean;
   old_file?: ChangedFileOldFile;
+  /** Typed index/worktree state. `is_staged` remains during the frontend
+migration but new consumers should use this field. */
+  stage_state?: FileStageState;
   status: string;
 }
 
@@ -375,6 +381,23 @@ export interface CompareUrlResponse {
   label: string;
   url: string;
 }
+
+/**
+ * Porcelain-v2 unmerged `XY` state. Variant names preserve Git's canonical
+seven conflict combinations while the wire values remain lowercase.
+ */
+export type ConflictKind = (typeof ConflictKind)[keyof typeof ConflictKind];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ConflictKind = {
+  dd: "dd",
+  au: "au",
+  ud: "ud",
+  ua: "ua",
+  du: "du",
+  aa: "aa",
+  uu: "uu",
+} as const;
 
 export interface ContentMatch {
   context_after: string[];
@@ -694,9 +717,19 @@ export type FeatureLabel = string | null;
 
 export type FeatureModelSession = string | null;
 
+/**
+ * Effective provider id for sidebar display (latest session, else feature setting).
+ */
+export type FeatureRuntimeProvider = string | null;
+
 export type FeatureSpawnLinkType = string | null;
 
 export type FeatureSpawnedByFeatureId = number | null;
+
+/**
+ * Thinking effort on the latest agent session, when set.
+ */
+export type FeatureThinkingEffort = string | null;
 
 export interface Feature {
   created_at: string;
@@ -706,10 +739,14 @@ export interface Feature {
   label?: FeatureLabel;
   model_session?: FeatureModelSession;
   project_id: number;
+  /** Effective provider id for sidebar display (latest session, else feature setting). */
+  runtime_provider?: FeatureRuntimeProvider;
   spawn_link_type?: FeatureSpawnLinkType;
   spawned_by_feature_id?: FeatureSpawnedByFeatureId;
   /** Feature archive state. Only `active` and `archived` are valid. */
   status: FeatureStatus;
+  /** Thinking effort on the latest agent session, when set. */
+  thinking_effort?: FeatureThinkingEffort;
   title: string;
   type: string;
 }
@@ -722,6 +759,59 @@ export interface FeatureActivity {
 export interface FeatureAgentStateResponse {
   sessions: SessionState[];
 }
+
+export type FeatureGateDecisionOneOfMessage = string | null;
+
+export type FeatureGateDecisionOneOfType =
+  (typeof FeatureGateDecisionOneOfType)[keyof typeof FeatureGateDecisionOneOfType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FeatureGateDecisionOneOfType = {
+  permission: "permission",
+} as const;
+
+export type FeatureGateDecisionOneOf = {
+  action: FeaturePermissionAction;
+  message?: FeatureGateDecisionOneOfMessage;
+  type: FeatureGateDecisionOneOfType;
+};
+
+export type FeatureGateDecisionOneOfFourMessage = string | null;
+
+export type FeatureGateDecisionOneOfFourType =
+  (typeof FeatureGateDecisionOneOfFourType)[keyof typeof FeatureGateDecisionOneOfFourType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FeatureGateDecisionOneOfFourType = {
+  plan: "plan",
+} as const;
+
+export type FeatureGateDecisionOneOfFour = {
+  action: FeaturePlanAction;
+  message?: FeatureGateDecisionOneOfFourMessage;
+  type: FeatureGateDecisionOneOfFourType;
+};
+
+export type FeatureGateDecisionOneOfSevenType =
+  (typeof FeatureGateDecisionOneOfSevenType)[keyof typeof FeatureGateDecisionOneOfSevenType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FeatureGateDecisionOneOfSevenType = {
+  question: "question",
+} as const;
+
+export type FeatureGateDecisionOneOfSeven = {
+  answers: unknown;
+  type: FeatureGateDecisionOneOfSevenType;
+};
+
+/**
+ * Public mirror of MCP [`GateDecision`] with utoipa schema support.
+ */
+export type FeatureGateDecision =
+  | FeatureGateDecisionOneOf
+  | FeatureGateDecisionOneOfFour
+  | FeatureGateDecisionOneOfSeven;
 
 /**
  * A user-saved feature-page layout (tab grid configuration).
@@ -748,6 +838,50 @@ export interface FeatureLayoutsSuccessResponse {
  */
 export interface FeatureModelSettings {
   session: string;
+}
+
+/**
+ * Truncated last assistant text message for context, when available.
+ */
+export type FeaturePendingGateResponseLastAssistantText = string | null;
+
+export interface FeaturePendingGateResponse {
+  /** `permission` | `question` | `plan` */
+  kind: string;
+  /** Truncated last assistant text message for context, when available. */
+  last_assistant_text?: FeaturePendingGateResponseLastAssistantText;
+  payload: unknown;
+  request_id: string;
+  session_id: number;
+}
+
+export type FeaturePermissionAction =
+  (typeof FeaturePermissionAction)[keyof typeof FeaturePermissionAction];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FeaturePermissionAction = {
+  allow_once: "allow_once",
+  allow_always: "allow_always",
+  deny: "deny",
+} as const;
+
+export type FeaturePlanAction = (typeof FeaturePlanAction)[keyof typeof FeaturePlanAction];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FeaturePlanAction = {
+  approve: "approve",
+  request_changes: "request_changes",
+  reject: "reject",
+} as const;
+
+export interface FeatureRespondGateRequest {
+  decision: FeatureGateDecision;
+  request_id: string;
+}
+
+export interface FeatureRespondGateResponse {
+  request_id: string;
+  resolved: boolean;
 }
 
 export interface FeatureSetting {
@@ -849,6 +983,22 @@ export interface FileSearchResponse {
   files: FileMatchResult[];
 }
 
+/**
+ * Index/worktree state for one file. Comparison-only rows use
+`NotApplicable`; working-tree rows use one of the remaining variants.
+ */
+export type FileStageState = (typeof FileStageState)[keyof typeof FileStageState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FileStageState = {
+  not_applicable: "not_applicable",
+  untracked: "untracked",
+  unstaged: "unstaged",
+  staged: "staged",
+  both: "both",
+  conflicted: "conflicted",
+} as const;
+
 export interface FileTreeEntry {
   is_dir: boolean;
   is_gitignored: boolean;
@@ -926,6 +1076,17 @@ export const GitHost = {
   Other: "Other",
 } as const;
 
+/**
+ * Git operation that may remain active while the user resolves conflicts.
+ */
+export type GitOperationKind = (typeof GitOperationKind)[keyof typeof GitOperationKind];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GitOperationKind = {
+  merge: "merge",
+  rebase: "rebase",
+} as const;
+
 export interface GitStats {
   deletions: number;
   files_changed: number;
@@ -938,6 +1099,8 @@ export type GitStatusSnapshotCompareUrl = string | null;
 
 export type GitStatusSnapshotHost = null | GitHost;
 
+export type GitStatusSnapshotOperation = null | GitOperationKind;
+
 /**
  * One-shot snapshot of the worktree's git state. Field semantics:
 
@@ -948,10 +1111,12 @@ export type GitStatusSnapshotHost = null | GitHost;
   what a first `git push -u origin HEAD` would publish).
 - `behind_remote` comes from `branch.ab` and is `0` when no upstream is
   configured (we can't be "behind" something that doesn't exist).
-- `ahead_of_target` is `git rev-list --count {target}..HEAD` using the
+- `ahead_of_target` is `git rev-list --count {target}..HEAD` and
+  `behind_target` is `git rev-list --count HEAD..{target}`, using the
   target ref **verbatim** as picked by the user — local `main` and
   remote-tracking `origin/main` are different inputs and produce different
-  counts on purpose. Returns `0` if the ref doesn't resolve.
+  counts on purpose. Both are `0` if the ref doesn't resolve, while
+  `target_resolved` distinguishes that from genuine zero divergence.
 - `host` / `compare_url` / `action_label` are populated only when a remote
   exists. The frontend disables the open-PR button when `compare_url` is
   `None`.
@@ -970,16 +1135,30 @@ export interface GitStatusSnapshot {
   ahead_of_target: number;
   /** @minimum 0 */
   behind_remote: number;
+  /**
+   * Commits reachable from the configured target but not from `HEAD`.
+   * @minimum 0
+   */
+  behind_target?: number;
   compare_url?: GitStatusSnapshotCompareUrl;
   computed_at: number;
+  /**
+   * Number of unique unmerged paths in the current worktree.
+   * @minimum 0
+   */
+  conflict_count?: number;
   current_branch: string;
   feature_id: number;
   has_remote: boolean;
   host?: GitStatusSnapshotHost;
+  operation?: GitStatusSnapshotOperation;
   shared_with?: SharedFeatureRef[];
   /** @minimum 0 */
   staged_count: number;
   target_branch: string;
+  /** Whether the configured target resolved to a commit. This is distinct
+from a zero divergence count. */
+  target_resolved?: boolean;
   /** @minimum 0 */
   uncommitted_count: number;
   /** @minimum 0 */
@@ -2259,6 +2438,8 @@ export interface TunnelHostRequest {
   host?: TunnelHostRequestHost;
 }
 
+export type UncommittedFileConflictKind = null | ConflictKind;
+
 /**
  * One row per uncommitted file. `status` is one of `"staged"`, `"unstaged"`,
 `"untracked"`, or `"both"` (staged + further unstaged change). `change_kind`
@@ -2272,8 +2453,11 @@ cover them) and for binary files (where numstat reports `-`).
 export interface UncommittedFile {
   additions?: number;
   change_kind: string;
+  conflict_kind?: UncommittedFileConflictKind;
   deletions?: number;
   path: string;
+  /** Typed equivalent of `status`; new consumers should prefer this field. */
+  stage_state?: FileStageState;
   status: string;
 }
 
@@ -7224,6 +7408,58 @@ export const useSetFeatureModelSetting = <
   return useMutation(mutationOptions);
 };
 
+export const getPendingGate = (id: number, signal?: AbortSignal) => {
+  return customInstance<FeaturePendingGateResponse>({
+    url: `/api/features/${id}/pending-gate`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetPendingGateQueryKey = (id?: number) => {
+  return [`/api/features/${id}/pending-gate`] as const;
+};
+
+export const getGetPendingGateQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPendingGate>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getPendingGate>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPendingGateQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPendingGate>>> = ({ signal }) =>
+    getPendingGate(id, signal);
+
+  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPendingGate>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPendingGateQueryResult = NonNullable<Awaited<ReturnType<typeof getPendingGate>>>;
+export type GetPendingGateQueryError = ErrorType<void>;
+
+export function useGetPendingGate<
+  TData = Awaited<ReturnType<typeof getPendingGate>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getPendingGate>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPendingGateQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
 export const updateFeaturePinned = (id: number, updatePinnedRequest: UpdatePinnedRequest) => {
   return customInstance<FeaturesSuccessResponse>({
     url: `/api/features/${id}/pin`,
@@ -7421,6 +7657,77 @@ export const useSetFeatureProviderSetting = <
   TContext
 > => {
   const mutationOptions = getSetFeatureProviderSettingMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const respondGate = (
+  id: number,
+  featureRespondGateRequest: FeatureRespondGateRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<FeatureRespondGateResponse>({
+    url: `/api/features/${id}/respond-gate`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: featureRespondGateRequest,
+    signal,
+  });
+};
+
+export const getRespondGateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof respondGate>>,
+    TError,
+    { id: number; data: FeatureRespondGateRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof respondGate>>,
+  TError,
+  { id: number; data: FeatureRespondGateRequest },
+  TContext
+> => {
+  const mutationKey = ["respondGate"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof respondGate>>,
+    { id: number; data: FeatureRespondGateRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return respondGate(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RespondGateMutationResult = NonNullable<Awaited<ReturnType<typeof respondGate>>>;
+export type RespondGateMutationBody = FeatureRespondGateRequest;
+export type RespondGateMutationError = ErrorType<unknown>;
+
+export const useRespondGate = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof respondGate>>,
+    TError,
+    { id: number; data: FeatureRespondGateRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof respondGate>>,
+  TError,
+  { id: number; data: FeatureRespondGateRequest },
+  TContext
+> => {
+  const mutationOptions = getRespondGateMutationOptions(options);
 
   return useMutation(mutationOptions);
 };

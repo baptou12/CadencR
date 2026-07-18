@@ -80,7 +80,7 @@ async fn respond_authorized(
         &request.decision,
     )
     .await?;
-    dispatch_response(state, request.session_id, payload).await
+    dispatch_permission_response(state, request.session_id, payload).await
 }
 
 async fn finish_response(
@@ -133,7 +133,9 @@ async fn require_linked_parent(
     Ok(())
 }
 
-async fn dispatch_response(
+/// Dispatch a permission/question/plan response into the live turn owner.
+/// Shared by MCP parent-child gate replies and the sidebar pending-gate API.
+pub(crate) async fn dispatch_permission_response(
     state: &AppState,
     session_id: i64,
     payload: PermissionRespondPayload,

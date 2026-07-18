@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readPersistedTheme, writePersistedThemeSettings } from "./apply";
+import { applyThemeToDocument, readPersistedTheme, writePersistedThemeSettings } from "./apply";
 
 describe("theme paint hint", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    document.documentElement.removeAttribute("data-theme");
+    document.documentElement.removeAttribute("data-appearance");
     vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
       matches: false,
       media: query,
@@ -14,6 +16,16 @@ describe("theme paint hint", () => {
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     }));
+  });
+
+  it("sets data-theme and data-appearance on the document", () => {
+    applyThemeToDocument("aurora");
+    expect(document.documentElement.dataset.theme).toBe("aurora");
+    expect(document.documentElement.dataset.appearance).toBe("light");
+
+    applyThemeToDocument("dracula");
+    expect(document.documentElement.dataset.theme).toBe("dracula");
+    expect(document.documentElement.dataset.appearance).toBe("dark");
   });
 
   it("resolves the cached light system theme before React mounts", () => {

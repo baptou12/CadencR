@@ -3,11 +3,13 @@ use sqlx::{AssertSqlSafe, SqlitePool};
 use super::super::models::{Feature, FeatureStatus};
 use crate::error::AppError;
 
-const FEATURE_COLUMNS: &str = r#"id, project_id, title, status,
-           COALESCE(type, 'ws-session') as type_, label,
-           model_session,
-           COALESCE(created_at, datetime('now')) as created_at,
-           is_pinned,
+const FEATURE_COLUMNS: &str = r#"f.id, f.project_id, f.title, f.status,
+           COALESCE(f.type, 'ws-session') as type_, f.label,
+           COALESCE(ls.model, f.model_session) AS model_session,
+           COALESCE(ls.runtime_provider, f.agent_runtime_session) AS runtime_provider,
+           ls.thinking_effort AS thinking_effort,
+           COALESCE(f.created_at, datetime('now')) as created_at,
+           f.is_pinned,
            (SELECT source_session.feature_id FROM agent_session_links link
             JOIN agent_sessions target_session ON target_session.id = link.target_session_id
             JOIN agent_sessions source_session ON source_session.id = link.source_session_id
@@ -18,6 +20,12 @@ const FEATURE_COLUMNS: &str = r#"id, project_id, title, status,
             WHERE target_session.feature_id = f.id AND link.link_type IN ('spawned', 'handoff')
             ORDER BY link.created_at ASC, link.id ASC LIMIT 1) AS spawn_link_type"#;
 
+/// Join the latest agent session once so model/provider/thinking come from the same row.
+const LATEST_SESSION_JOIN: &str = r#"
+LEFT JOIN agent_sessions ls ON ls.id = (
+  SELECT id FROM agent_sessions WHERE feature_id = f.id ORDER BY id DESC LIMIT 1
+)"#;
+
 pub async fn list_by_project(
     pool: &SqlitePool,
     project_id: i64,
@@ -26,13 +34,14 @@ pub async fn list_by_project(
     let status_filter = if include_archived {
         ""
     } else {
-        " AND status = 'active'"
+        " AND f.status = 'active'"
     };
     // Order conversations by the most recent *user* message in any of their
     // sessions, falling back to the feature creation time when none exists.
     let sql = format!(
         "SELECT {FEATURE_COLUMNS} \
          FROM features f \
+         {LATEST_SESSION_JOIN} \
          LEFT JOIN ( \
              SELECT s.feature_id AS feature_id, MAX(m.created_at) AS last_user_at \
              FROM agent_sessions s \
@@ -59,6 +68,7 @@ pub async fn list_pinned(pool: &SqlitePool) -> Result<Vec<Feature>, AppError> {
     let sql = format!(
         "SELECT {FEATURE_COLUMNS} \
          FROM features f \
+         {LATEST_SESSION_JOIN} \
          LEFT JOIN ( \
              SELECT s.feature_id AS feature_id, MAX(m.created_at) AS last_user_at \
              FROM agent_sessions s \
@@ -75,7 +85,8 @@ pub async fn list_pinned(pool: &SqlitePool) -> Result<Vec<Feature>, AppError> {
 }
 
 pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, AppError> {
-    let sql = format!("SELECT {FEATURE_COLUMNS} FROM features f WHERE id = ?");
+    let sql =
+        format!("SELECT {FEATURE_COLUMNS} FROM features f {LATEST_SESSION_JOIN} WHERE f.id = ?");
     let row = sqlx::query_as::<_, Feature>(AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
@@ -273,6 +284,7 @@ mod tests {
                 label TEXT,
                 type TEXT NOT NULL DEFAULT 'ws-session',
                 model_session TEXT,
+                agent_runtime_session TEXT,
                 created_at TEXT,
                 is_pinned INTEGER NOT NULL DEFAULT 0
             )"#,
@@ -298,7 +310,10 @@ mod tests {
                 id INTEGER PRIMARY KEY,
                 feature_id INTEGER NOT NULL,
                 status TEXT NOT NULL,
-                is_pinned INTEGER NOT NULL DEFAULT 0
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                runtime_provider TEXT,
+                model TEXT,
+                thinking_effort TEXT
             )"#,
         )
         .execute(&pool)

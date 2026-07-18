@@ -153,6 +153,7 @@ export function ShortcutTooltip({
                 })`,
               }}
               className="pointer-events-none z-50 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-muted-foreground shadow-lg"
+              data-slot="hover-card-content"
             >
               <span>{label}</span>
               {keys?.length ? <KbdShortcut keys={keys} size="sm" /> : null}
