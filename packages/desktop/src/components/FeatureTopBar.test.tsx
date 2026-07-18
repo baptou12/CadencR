@@ -2,8 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
 import { FeatureTopBar } from "./FeatureTopBar";
 
+const platformMock = vi.hoisted(() => ({ hasMacWindowControls: false }));
+
 vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
+}));
+
+vi.mock("@/lib/mac-window-controls", () => ({
+  get HAS_MAC_WINDOW_CONTROLS() {
+    return platformMock.hasMacWindowControls;
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -104,6 +112,7 @@ describe("FeatureTopBar", () => {
     mockSetCollapsed.mockClear();
     mockAutoName.mockClear();
     mockSidebarCollapsed = false;
+    platformMock.hasMacWindowControls = false;
     mockFeatureData = {
       id: 1,
       title: "My Test Feature",
@@ -186,6 +195,19 @@ describe("FeatureTopBar", () => {
     mockSidebarCollapsed = true;
     render(<FeatureTopBar featureId={1} projectId={1} />);
     expect(screen.getByText("Settings")).toBeInTheDocument();
+  });
+
+  it("uses compact Mac spacing when the sidebar is collapsed", () => {
+    mockSidebarCollapsed = true;
+    platformMock.hasMacWindowControls = true;
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+
+    const header = screen
+      .getByRole("heading", { name: "My Test Feature" })
+      .closest("[data-feature-header]");
+    expect(header).toHaveClass("pt-1.5", "pb-0");
+    expect(screen.getByTitle("Expand sidebar (⌘B)")).toHaveClass("size-6");
+    expect(screen.getByTitle("Settings")).toHaveClass("size-6");
   });
 
   it("renders ModelSelector for feature settings", async () => {
