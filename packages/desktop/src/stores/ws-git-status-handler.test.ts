@@ -17,7 +17,7 @@ import {
 } from "./useCommitOutputStore";
 import { selectPushOutput, selectPushRunning, usePushOutputStore } from "./usePushOutputStore";
 import { queryClient } from "@/lib/queryClient";
-import { getGetFileBlobShasQueryKey } from "@/api/generated";
+import { getGetFileBlobShasQueryKey, getListStashesQueryKey } from "@/api/generated";
 import { getInvalidatePredicate } from "@/test-utils";
 
 const validSnapshot = {
@@ -88,6 +88,20 @@ describe("handleGitEnvelope", () => {
 
     expect(useGitStatusStore.getState().byFeature[7]?.uncommitted_count).toBe(4);
     expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it("invalidates stashes after a confirmed newer refresh with unchanged status", () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    useGitStatusStore.getState().setStatus(validSnapshot);
+
+    handleGitEnvelope("status", {
+      ...validSnapshot,
+      computed_at: validSnapshot.computed_at + 1,
+    } as Record<string, unknown>);
+
+    const predicate = getInvalidatePredicate(spy.mock.calls[0]?.[0]);
+    expect(predicate({ queryKey: getListStashesQueryKey({ feature_id: 7 }) })).toBe(true);
+    expect(predicate({ queryKey: getListStashesQueryKey({ feature_id: 8 }) })).toBe(false);
   });
 
   it("invalidates git queries for a newer status event even when counts are unchanged", () => {

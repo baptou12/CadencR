@@ -2,16 +2,15 @@ use std::path::{Path, PathBuf};
 
 use crate::domain::git::models::GitOperationKind;
 use crate::error::AppError;
-use crate::shared::git_cli::run_git;
+use crate::shared::git_cli::run_git_background;
 
 /// Detect the merge/rebase state belonging to `worktree` without assuming
 /// `.git` is a directory. `git rev-parse --git-path` resolves the per-worktree
 /// administrative path correctly for both primary and linked worktrees.
-#[allow(dead_code)] // Status snapshot wiring lands in the integration lane.
 pub async fn detect_active_git_operation(
     worktree: &Path,
 ) -> Result<Option<GitOperationKind>, AppError> {
-    let paths = run_git(
+    let paths = run_git_background(
         &[
             "rev-parse",
             "--path-format=absolute",

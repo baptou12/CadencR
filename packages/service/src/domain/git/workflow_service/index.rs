@@ -10,7 +10,7 @@ use crate::domain::git::mutation_guard::GitMutationGuardError;
 use crate::domain::git::service::resolve_feature_git_path;
 use crate::error::AppError;
 
-use super::{broadcast_after_write, validate_file_mutation_path};
+use super::{broadcast_after_write_at, validate_file_mutation_path};
 
 #[derive(Clone, Copy)]
 enum IndexMutation {
@@ -55,7 +55,7 @@ async fn mutate_file(
     }
     drop(permit);
 
-    broadcast_after_write(state, body.feature_id).await;
+    broadcast_after_write_at(state, &repo).await;
     Ok(SuccessResponse {
         success: true,
         error: None,

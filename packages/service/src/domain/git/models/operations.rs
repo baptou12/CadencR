@@ -81,7 +81,6 @@ pub enum GitOperationKind {
 /// mutates the target worktree instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-#[allow(dead_code)] // Phase 0 contract; update routes are added in a later phase.
 pub enum UpdateBranchStrategy {
     Rebase,
     Merge,
@@ -92,7 +91,6 @@ pub enum UpdateBranchStrategy {
 /// conflict paths.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
-#[allow(dead_code)] // Phase 0 contract; mutation routes are added in a later phase.
 pub enum GitOperationResponse {
     Completed,
     Conflicts { conflict_files: Vec<String> },

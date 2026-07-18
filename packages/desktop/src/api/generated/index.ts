@@ -979,6 +979,15 @@ export interface FileMatchResult {
   positions: number[];
 }
 
+/**
+ * Whole-file index mutation. Stage uses `git add -A -- <file_path>`; reset
+means unstage only and must never change worktree bytes.
+ */
+export interface FileMutationBody {
+  feature_id: number;
+  file_path: string;
+}
+
 export interface FileSearchResponse {
   files: FileMatchResult[];
 }
@@ -1077,6 +1086,13 @@ export const GitHost = {
 } as const;
 
 /**
+ * Continue or abort the merge/rebase currently active in a feature worktree.
+ */
+export interface GitOperationControlBody {
+  feature_id: number;
+}
+
+/**
  * Git operation that may remain active while the user resolves conflicts.
  */
 export type GitOperationKind = (typeof GitOperationKind)[keyof typeof GitOperationKind];
@@ -1086,6 +1102,38 @@ export const GitOperationKind = {
   merge: "merge",
   rebase: "rebase",
 } as const;
+
+export type GitOperationResponseOneOfOutcome =
+  (typeof GitOperationResponseOneOfOutcome)[keyof typeof GitOperationResponseOneOfOutcome];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GitOperationResponseOneOfOutcome = {
+  completed: "completed",
+} as const;
+
+export type GitOperationResponseOneOf = {
+  outcome: GitOperationResponseOneOfOutcome;
+};
+
+export type GitOperationResponseOneOfThreeOutcome =
+  (typeof GitOperationResponseOneOfThreeOutcome)[keyof typeof GitOperationResponseOneOfThreeOutcome];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GitOperationResponseOneOfThreeOutcome = {
+  conflicts: "conflicts",
+} as const;
+
+export type GitOperationResponseOneOfThree = {
+  conflict_files: string[];
+  outcome: GitOperationResponseOneOfThreeOutcome;
+};
+
+/**
+ * Typed result for an operation that can leave recoverable conflicts in the
+current worktree. The tagged enum prevents completed results from carrying
+conflict paths.
+ */
+export type GitOperationResponse = GitOperationResponseOneOf | GitOperationResponseOneOfThree;
 
 export interface GitStats {
   deletions: number;
@@ -2374,6 +2422,27 @@ export interface StashEntry {
 }
 
 /**
+ * Stable selector for apply, pop, and drop. The backend must re-resolve
+`ref_name` and reject the mutation if it no longer matches `expected_sha`.
+ */
+export interface StashMutationBody {
+  expected_sha: string;
+  feature_id: number;
+  ref_name: string;
+}
+
+export type StashPushBodyMessage = string | null;
+
+/**
+ * Create a tracked-files-only stash. A non-blank message is passed to Git;
+`None` or blank input uses Git's default stash description.
+ */
+export interface StashPushBody {
+  feature_id: number;
+  message?: StashPushBodyMessage;
+}
+
+/**
  * Discriminant for `SessionStreamStatusPayload`.
 
 Hard failures stay on `session.error`; this enum only carries
@@ -2499,6 +2568,27 @@ export const UnifiedAgentsMode = {
 export interface UnifiedAgentsResponse {
   agents: UnifiedAgentEntry[];
 }
+
+/**
+ * Bring the configured target ref into the current feature worktree.
+ */
+export interface UpdateBranchBody {
+  feature_id: number;
+  strategy: UpdateBranchStrategy;
+}
+
+/**
+ * Strategy for bringing the configured target into the current feature
+worktree. This is intentionally distinct from finish-branch Merge, which
+mutates the target worktree instead.
+ */
+export type UpdateBranchStrategy = (typeof UpdateBranchStrategy)[keyof typeof UpdateBranchStrategy];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const UpdateBranchStrategy = {
+  rebase: "rebase",
+  merge: "merge",
+} as const;
 
 export type UpdateCustomActionRequestCommand = string | null;
 
@@ -9312,6 +9402,140 @@ export function useHasUncommittedChanges<
   return query;
 }
 
+export const resetFile = (fileMutationBody: FileMutationBody, signal?: AbortSignal) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/git/index/reset`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: fileMutationBody,
+    signal,
+  });
+};
+
+export const getResetFileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetFile>>,
+    TError,
+    { data: FileMutationBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resetFile>>,
+  TError,
+  { data: FileMutationBody },
+  TContext
+> => {
+  const mutationKey = ["resetFile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resetFile>>,
+    { data: FileMutationBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return resetFile(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResetFileMutationResult = NonNullable<Awaited<ReturnType<typeof resetFile>>>;
+export type ResetFileMutationBody = FileMutationBody;
+export type ResetFileMutationError = ErrorType<unknown>;
+
+export const useResetFile = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetFile>>,
+    TError,
+    { data: FileMutationBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resetFile>>,
+  TError,
+  { data: FileMutationBody },
+  TContext
+> => {
+  const mutationOptions = getResetFileMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const stageFile = (fileMutationBody: FileMutationBody, signal?: AbortSignal) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/git/index/stage`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: fileMutationBody,
+    signal,
+  });
+};
+
+export const getStageFileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stageFile>>,
+    TError,
+    { data: FileMutationBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof stageFile>>,
+  TError,
+  { data: FileMutationBody },
+  TContext
+> => {
+  const mutationKey = ["stageFile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof stageFile>>,
+    { data: FileMutationBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return stageFile(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StageFileMutationResult = NonNullable<Awaited<ReturnType<typeof stageFile>>>;
+export type StageFileMutationBody = FileMutationBody;
+export type StageFileMutationError = ErrorType<unknown>;
+
+export const useStageFile = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof stageFile>>,
+    TError,
+    { data: FileMutationBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof stageFile>>,
+  TError,
+  { data: FileMutationBody },
+  TContext
+> => {
+  const mutationOptions = getStageFileMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const mergeFeatureBranch = (
   mergeFeatureBranchBody: MergeFeatureBranchBody,
   signal?: AbortSignal,
@@ -9670,6 +9894,274 @@ export function useListStashes<
   return query;
 }
 
+export const applyStash = (stashMutationBody: StashMutationBody, signal?: AbortSignal) => {
+  return customInstance<GitOperationResponse>({
+    url: `/api/git/stashes/apply`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: stashMutationBody,
+    signal,
+  });
+};
+
+export const getApplyStashMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyStash>>,
+    TError,
+    { data: StashMutationBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof applyStash>>,
+  TError,
+  { data: StashMutationBody },
+  TContext
+> => {
+  const mutationKey = ["applyStash"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof applyStash>>,
+    { data: StashMutationBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return applyStash(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApplyStashMutationResult = NonNullable<Awaited<ReturnType<typeof applyStash>>>;
+export type ApplyStashMutationBody = StashMutationBody;
+export type ApplyStashMutationError = ErrorType<unknown>;
+
+export const useApplyStash = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyStash>>,
+    TError,
+    { data: StashMutationBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof applyStash>>,
+  TError,
+  { data: StashMutationBody },
+  TContext
+> => {
+  const mutationOptions = getApplyStashMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const dropStash = (stashMutationBody: StashMutationBody, signal?: AbortSignal) => {
+  return customInstance<GitOperationResponse>({
+    url: `/api/git/stashes/drop`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: stashMutationBody,
+    signal,
+  });
+};
+
+export const getDropStashMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dropStash>>,
+    TError,
+    { data: StashMutationBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dropStash>>,
+  TError,
+  { data: StashMutationBody },
+  TContext
+> => {
+  const mutationKey = ["dropStash"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dropStash>>,
+    { data: StashMutationBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return dropStash(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DropStashMutationResult = NonNullable<Awaited<ReturnType<typeof dropStash>>>;
+export type DropStashMutationBody = StashMutationBody;
+export type DropStashMutationError = ErrorType<unknown>;
+
+export const useDropStash = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dropStash>>,
+    TError,
+    { data: StashMutationBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dropStash>>,
+  TError,
+  { data: StashMutationBody },
+  TContext
+> => {
+  const mutationOptions = getDropStashMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const popStash = (stashMutationBody: StashMutationBody, signal?: AbortSignal) => {
+  return customInstance<GitOperationResponse>({
+    url: `/api/git/stashes/pop`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: stashMutationBody,
+    signal,
+  });
+};
+
+export const getPopStashMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof popStash>>,
+    TError,
+    { data: StashMutationBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof popStash>>,
+  TError,
+  { data: StashMutationBody },
+  TContext
+> => {
+  const mutationKey = ["popStash"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof popStash>>,
+    { data: StashMutationBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return popStash(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PopStashMutationResult = NonNullable<Awaited<ReturnType<typeof popStash>>>;
+export type PopStashMutationBody = StashMutationBody;
+export type PopStashMutationError = ErrorType<unknown>;
+
+export const usePopStash = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof popStash>>,
+    TError,
+    { data: StashMutationBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof popStash>>,
+  TError,
+  { data: StashMutationBody },
+  TContext
+> => {
+  const mutationOptions = getPopStashMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const pushStash = (stashPushBody: StashPushBody, signal?: AbortSignal) => {
+  return customInstance<GitOperationResponse>({
+    url: `/api/git/stashes/push`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: stashPushBody,
+    signal,
+  });
+};
+
+export const getPushStashMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushStash>>,
+    TError,
+    { data: StashPushBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pushStash>>,
+  TError,
+  { data: StashPushBody },
+  TContext
+> => {
+  const mutationKey = ["pushStash"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pushStash>>,
+    { data: StashPushBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pushStash(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushStashMutationResult = NonNullable<Awaited<ReturnType<typeof pushStash>>>;
+export type PushStashMutationBody = StashPushBody;
+export type PushStashMutationError = ErrorType<unknown>;
+
+export const usePushStash = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushStash>>,
+    TError,
+    { data: StashPushBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pushStash>>,
+  TError,
+  { data: StashPushBody },
+  TContext
+> => {
+  const mutationOptions = getPushStashMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const getStats = (params: GetStatsParams, signal?: AbortSignal) => {
   return customInstance<GitStats>({ url: `/api/git/stats`, method: "GET", params, signal });
 };
@@ -9829,6 +10321,217 @@ export function useGetUncommittedFiles<
 
   return query;
 }
+
+export const updateBranch = (updateBranchBody: UpdateBranchBody, signal?: AbortSignal) => {
+  return customInstance<GitOperationResponse>({
+    url: `/api/git/update-branch`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: updateBranchBody,
+    signal,
+  });
+};
+
+export const getUpdateBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBranch>>,
+    TError,
+    { data: UpdateBranchBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateBranch>>,
+  TError,
+  { data: UpdateBranchBody },
+  TContext
+> => {
+  const mutationKey = ["updateBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateBranch>>,
+    { data: UpdateBranchBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateBranch(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateBranchMutationResult = NonNullable<Awaited<ReturnType<typeof updateBranch>>>;
+export type UpdateBranchMutationBody = UpdateBranchBody;
+export type UpdateBranchMutationError = ErrorType<unknown>;
+
+export const useUpdateBranch = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBranch>>,
+    TError,
+    { data: UpdateBranchBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateBranch>>,
+  TError,
+  { data: UpdateBranchBody },
+  TContext
+> => {
+  const mutationOptions = getUpdateBranchMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const abortUpdateBranch = (
+  gitOperationControlBody: GitOperationControlBody,
+  signal?: AbortSignal,
+) => {
+  return customInstance<GitOperationResponse>({
+    url: `/api/git/update-branch/abort`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: gitOperationControlBody,
+    signal,
+  });
+};
+
+export const getAbortUpdateBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof abortUpdateBranch>>,
+    TError,
+    { data: GitOperationControlBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof abortUpdateBranch>>,
+  TError,
+  { data: GitOperationControlBody },
+  TContext
+> => {
+  const mutationKey = ["abortUpdateBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof abortUpdateBranch>>,
+    { data: GitOperationControlBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return abortUpdateBranch(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AbortUpdateBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof abortUpdateBranch>>
+>;
+export type AbortUpdateBranchMutationBody = GitOperationControlBody;
+export type AbortUpdateBranchMutationError = ErrorType<unknown>;
+
+export const useAbortUpdateBranch = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof abortUpdateBranch>>,
+    TError,
+    { data: GitOperationControlBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof abortUpdateBranch>>,
+  TError,
+  { data: GitOperationControlBody },
+  TContext
+> => {
+  const mutationOptions = getAbortUpdateBranchMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const continueUpdateBranch = (
+  gitOperationControlBody: GitOperationControlBody,
+  signal?: AbortSignal,
+) => {
+  return customInstance<GitOperationResponse>({
+    url: `/api/git/update-branch/continue`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: gitOperationControlBody,
+    signal,
+  });
+};
+
+export const getContinueUpdateBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof continueUpdateBranch>>,
+    TError,
+    { data: GitOperationControlBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof continueUpdateBranch>>,
+  TError,
+  { data: GitOperationControlBody },
+  TContext
+> => {
+  const mutationKey = ["continueUpdateBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof continueUpdateBranch>>,
+    { data: GitOperationControlBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return continueUpdateBranch(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ContinueUpdateBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof continueUpdateBranch>>
+>;
+export type ContinueUpdateBranchMutationBody = GitOperationControlBody;
+export type ContinueUpdateBranchMutationError = ErrorType<unknown>;
+
+export const useContinueUpdateBranch = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof continueUpdateBranch>>,
+    TError,
+    { data: GitOperationControlBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof continueUpdateBranch>>,
+  TError,
+  { data: GitOperationControlBody },
+  TContext
+> => {
+  const mutationOptions = getContinueUpdateBranchMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const createWorktree = (createWorktreeBody: CreateWorktreeBody, signal?: AbortSignal) => {
   return customInstance<CreateWorktreeResponse>({

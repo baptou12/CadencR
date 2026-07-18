@@ -10,9 +10,8 @@ use crate::domain::git::service;
 use crate::domain::git::workflow_service;
 use crate::error::AppError;
 
-// ---------------------------------------------------------------------------
-// Route handlers
-// ---------------------------------------------------------------------------
+mod mutations;
+pub use mutations::*;
 
 #[utoipa::path(get, path = "/api/git/branch", params(("project_id" = i64, Query,)), responses((status = 200, body = BranchResponse)))]
 pub async fn get_branch_handler(
@@ -298,45 +297,6 @@ pub async fn get_compare_url_handler(
 }
 
 #[utoipa::path(
-    post,
-    path = "/api/git/commit",
-    request_body = CommitBody,
-    responses((status = 200, body = SuccessResponse))
-)]
-pub async fn commit_handler(
-    State(state): State<AppState>,
-    Json(body): Json<CommitBody>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    Ok(Json(workflow_service::commit(&state, body).await?))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/git/push",
-    request_body = PushBody,
-    responses((status = 200, body = SuccessResponse))
-)]
-pub async fn push_handler(
-    State(state): State<AppState>,
-    Json(body): Json<PushBody>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    Ok(Json(workflow_service::push(&state, body).await?))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/git/push-input",
-    request_body = PushInputBody,
-    responses((status = 200, body = SuccessResponse))
-)]
-pub async fn push_input_handler(
-    State(state): State<AppState>,
-    Json(body): Json<PushInputBody>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    Ok(Json(workflow_service::push_input(&state, body).await?))
-}
-
-#[utoipa::path(
     get,
     path = "/api/git/uncommitted-files",
     params(("feature_id" = i64, Query,)),
@@ -393,6 +353,12 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/commit-url", get(get_commit_url_handler))
         .route("/api/git/file-blob-shas", get(get_file_blob_shas_handler))
         .route("/api/git/stashes", get(list_stashes_handler))
+        .route("/api/git/stashes/push", post(push_stash_handler))
+        .route("/api/git/stashes/apply", post(apply_stash_handler))
+        .route("/api/git/stashes/pop", post(pop_stash_handler))
+        .route("/api/git/stashes/drop", post(drop_stash_handler))
+        .route("/api/git/index/stage", post(stage_file_handler))
+        .route("/api/git/index/reset", post(reset_file_handler))
         .route("/api/git/files", get(list_files_handler))
         .route("/api/git/worktree/info", get(get_worktree_info_handler))
         .route("/api/git/worktree", post(create_worktree_handler).delete(remove_worktree_handler))
@@ -422,6 +388,9 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/commit", post(commit_handler))
         .route("/api/git/push", post(push_handler))
         .route("/api/git/push-input", post(push_input_handler))
+        .route("/api/git/update-branch", post(update_branch_handler))
+        .route("/api/git/update-branch/continue", post(continue_update_branch_handler))
+        .route("/api/git/update-branch/abort", post(abort_update_branch_handler))
         .route(
             "/api/git/uncommitted-files",
             get(get_uncommitted_files_handler),

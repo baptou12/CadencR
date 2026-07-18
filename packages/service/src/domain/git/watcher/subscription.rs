@@ -81,8 +81,10 @@ pub(super) async fn resolve_paths(
 /// completed — long enough to read as a bug rather than a refresh hop.
 pub async fn recompute_and_broadcast(state: &AppState, feature_id: i64) -> Result<(), AppError> {
     let (worktree_path, _target) = resolve_paths(state, feature_id).await?;
-    state.git_watcher.nudge(&worktree_path).await;
-    state.git_watcher.recompute_now(&worktree_path, state).await;
+    state
+        .git_watcher
+        .confirm_after_write(&worktree_path, state)
+        .await;
     Ok(())
 }
 

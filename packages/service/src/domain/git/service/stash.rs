@@ -1,7 +1,5 @@
 //! Service layer for stash listing and foreground mutations.
 
-#![allow(dead_code)] // Phase 1B backend lane; route wiring is intentionally deferred.
-
 use std::path::{Path, PathBuf};
 
 use crate::app_state::AppState;
@@ -32,7 +30,7 @@ pub async fn push_stash(
     let (repo, permits) = acquire_stash_permits(state, body.feature_id).await?;
     let outcome = commands::push_stash(&repo, body.message.as_deref()).await?;
     drop(permits);
-    crate::domain::git::workflow_service::broadcast_after_write(state, body.feature_id).await;
+    crate::domain::git::workflow_service::broadcast_after_write_at(state, &repo).await;
     Ok(outcome)
 }
 
@@ -43,7 +41,7 @@ pub async fn apply_stash(
     let (repo, permits) = acquire_stash_permits(state, body.feature_id).await?;
     let outcome = commands::apply_stash(&repo, &body.ref_name, &body.expected_sha).await?;
     drop(permits);
-    crate::domain::git::workflow_service::broadcast_after_write(state, body.feature_id).await;
+    crate::domain::git::workflow_service::broadcast_after_write_at(state, &repo).await;
     Ok(outcome)
 }
 
@@ -54,7 +52,7 @@ pub async fn pop_stash(
     let (repo, permits) = acquire_stash_permits(state, body.feature_id).await?;
     let outcome = commands::pop_stash(&repo, &body.ref_name, &body.expected_sha).await?;
     drop(permits);
-    crate::domain::git::workflow_service::broadcast_after_write(state, body.feature_id).await;
+    crate::domain::git::workflow_service::broadcast_after_write_at(state, &repo).await;
     Ok(outcome)
 }
 
@@ -65,7 +63,7 @@ pub async fn drop_stash(
     let (repo, permits) = acquire_stash_permits(state, body.feature_id).await?;
     let outcome = commands::drop_stash(&repo, &body.ref_name, &body.expected_sha).await?;
     drop(permits);
-    crate::domain::git::workflow_service::broadcast_after_write(state, body.feature_id).await;
+    crate::domain::git::workflow_service::broadcast_after_write_at(state, &repo).await;
     Ok(outcome)
 }
 

@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Phase 0 ownership boundary; mutation handlers arrive later.
-
 use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};

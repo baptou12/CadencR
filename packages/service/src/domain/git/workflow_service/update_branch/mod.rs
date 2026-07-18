@@ -4,7 +4,7 @@ mod runner;
 
 use crate::app_state::AppState;
 use crate::domain::git::models::{
-    GitOperationKind, GitOperationResponse, UpdateBranchBody, UpdateBranchControlBody,
+    GitOperationControlBody, GitOperationKind, GitOperationResponse, UpdateBranchBody,
 };
 use crate::error::AppError;
 
@@ -12,13 +12,12 @@ use self::preconditions::{
     attached_head_ref, mutation_error, require_clean_worktree, require_no_active_operation,
     resolve_feature_worktree, validate_target,
 };
-use super::resolve_target_branch;
+use super::{broadcast_after_write_at, resolve_target_branch};
 
 pub use operation::detect_active_git_operation;
 
 /// Bring the configured target ref into the current feature worktree. Unlike
 /// finish-branch merge, this never checks out or mutates the target worktree.
-#[allow(dead_code)] // Route wiring lands in the integration lane.
 pub async fn update_branch(
     state: &AppState,
     body: UpdateBranchBody,
@@ -29,31 +28,30 @@ pub async fn update_branch(
         .git_mutations
         .try_acquire(&worktree)
         .map_err(mutation_error)?;
-    let worktree = permit.worktree_path();
+    let worktree = permit.worktree_path().to_path_buf();
 
-    require_no_active_operation(worktree).await?;
-    let current_ref = attached_head_ref(worktree).await?;
-    require_clean_worktree(worktree).await?;
-    let target = resolve_target_branch(state, feature_id, worktree).await?;
-    validate_target(worktree, &current_ref, &target).await?;
+    require_no_active_operation(&worktree).await?;
+    let current_ref = attached_head_ref(&worktree).await?;
+    require_clean_worktree(&worktree).await?;
+    let target = resolve_target_branch(state, feature_id, &worktree).await?;
+    validate_target(&worktree, &current_ref, &target).await?;
 
-    let result = runner::start(worktree, body.strategy, &target).await;
-    broadcast_after_attempt(state, worktree).await;
+    let result = runner::start(&worktree, body.strategy, &target).await;
+    drop(permit);
+    broadcast_after_write_at(state, &worktree).await;
     result
 }
 
-#[allow(dead_code)] // Route wiring lands in the integration lane.
 pub async fn continue_update_branch(
     state: &AppState,
-    body: UpdateBranchControlBody,
+    body: GitOperationControlBody,
 ) -> Result<GitOperationResponse, AppError> {
     control_operation(state, body.feature_id, ControlAction::Continue).await
 }
 
-#[allow(dead_code)] // Route wiring lands in the integration lane.
 pub async fn abort_update_branch(
     state: &AppState,
-    body: UpdateBranchControlBody,
+    body: GitOperationControlBody,
 ) -> Result<GitOperationResponse, AppError> {
     control_operation(state, body.feature_id, ControlAction::Abort).await
 }
@@ -74,22 +72,18 @@ async fn control_operation(
         .git_mutations
         .try_acquire(&worktree)
         .map_err(mutation_error)?;
-    let worktree = permit.worktree_path();
-    let operation = detect_active_git_operation(worktree)
+    let worktree = permit.worktree_path().to_path_buf();
+    let operation = detect_active_git_operation(&worktree)
         .await?
         .ok_or_else(|| AppError::BadRequest("no merge or rebase is active".into()))?;
 
     let result = match action {
-        ControlAction::Continue => runner::continue_operation(worktree, operation).await,
-        ControlAction::Abort => runner::abort(worktree, operation).await,
+        ControlAction::Continue => runner::continue_operation(&worktree, operation).await,
+        ControlAction::Abort => runner::abort(&worktree, operation).await,
     };
-    broadcast_after_attempt(state, worktree).await;
+    drop(permit);
+    broadcast_after_write_at(state, &worktree).await;
     result
-}
-
-async fn broadcast_after_attempt(state: &AppState, worktree: &std::path::Path) {
-    state.git_watcher.nudge(worktree).await;
-    state.git_watcher.recompute_now(worktree, state).await;
 }
 
 fn operation_name(operation: GitOperationKind) -> &'static str {
@@ -214,7 +208,7 @@ mod tests {
         fixture.write_feature("conflict.txt", "resolved\n");
         fixture.git_feature(&["add", "conflict.txt"]);
         assert_eq!(
-            continue_update_branch(&state, UpdateBranchControlBody { feature_id: 1 })
+            continue_update_branch(&state, GitOperationControlBody { feature_id: 1 })
                 .await
                 .unwrap(),
             GitOperationResponse::Completed
@@ -230,7 +224,7 @@ mod tests {
             GitOperationResponse::Conflicts { .. }
         ));
         assert_eq!(
-            abort_update_branch(&abort_state, UpdateBranchControlBody { feature_id: 1 })
+            abort_update_branch(&abort_state, GitOperationControlBody { feature_id: 1 })
                 .await
                 .unwrap(),
             GitOperationResponse::Completed
