@@ -6,6 +6,9 @@
 import { CommandIcon, CornerDownLeftIcon, ArrowUpIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useIsTabFocused } from "@/hooks/useScopedHotkeys";
+import { formatCombo } from "@/lib/shortcuts/format";
+import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
+import type { ShortcutId } from "@/lib/shortcuts/registry";
 import type { TabKind } from "@/stores/feature-layout-schema";
 import { cn } from "@/lib/utils";
 
@@ -107,6 +110,20 @@ interface KbdContentProps {
   keys: string[];
   map: Record<string, ReactNode>;
   className: string;
+}
+
+/**
+ * Badge for a registry shortcut. Resolves the combo through the override
+ * store, so the hint keeps matching the binding after a user rebinds it —
+ * always prefer this over hardcoding key tokens.
+ */
+export function ResolvedShortcutHint({ shortcutId }: { shortcutId: ShortcutId }) {
+  const keys = formatCombo(useResolvedShortcut(shortcutId).keys);
+  return (
+    <span aria-hidden="true" className="shrink-0">
+      <KbdShortcut keys={keys} variant="hint" />
+    </span>
+  );
 }
 
 function KbdContent({ keys, map, className }: KbdContentProps) {

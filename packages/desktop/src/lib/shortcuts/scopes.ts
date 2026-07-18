@@ -43,6 +43,11 @@ export const SHORTCUT_SCOPES = [
   },
   { id: "terminal", label: "Terminal", hint: "When the Terminal tab has focus." },
   { id: "browser", label: "Browser", hint: "When the Browser tab has focus." },
+  {
+    id: "model-picker",
+    label: "Model picker",
+    hint: "While a model picker popover is open.",
+  },
 ] as const;
 
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number];

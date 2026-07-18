@@ -1,5 +1,7 @@
-import { CheckIcon, LockIcon } from "lucide-react";
+import { CheckIcon, LockIcon, StarIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { CommandGroup, CommandItem } from "@/components/ui/command";
+import { favoriteModelKey } from "@/lib/favorite-models";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { cn } from "@/lib/utils";
 import type { RuntimeModelPickerProvider } from "./RuntimeModelPicker";
@@ -37,15 +39,26 @@ interface SelectionGroupProps {
 }
 
 interface ModelGroupProps {
+  heading: string;
   entries: ModelEntry[];
   selectedModelValue: string;
+  favorites: ReadonlySet<string>;
   onSelect: (entry: ModelEntry) => void;
+  onToggleFavorite: (value: string) => void;
 }
 
 interface ModelItemProps {
   entry: ModelEntry;
   isSelected: boolean;
+  isFavorite: boolean;
   onSelect: (entry: ModelEntry) => void;
+  onToggleFavorite: (value: string) => void;
+}
+
+interface FavoriteToggleProps {
+  isFavorite: boolean;
+  modelLabel: string;
+  onToggle: () => void;
 }
 
 interface ProviderStateGroupProps {
@@ -61,10 +74,29 @@ export function getModelEntries(providers: RuntimeModelPickerProvider[]): ModelE
       modelId: model.id,
       modelLabel: model.label,
       description: model.description,
-      value: `${provider.id}:${model.id}`,
+      value: favoriteModelKey(provider.id, model.id),
       keywords: [provider.label, provider.id, model.label, model.id, model.description ?? ""],
     }));
   });
+}
+
+/**
+ * Splits the catalog into starred and unstarred entries, preserving catalog
+ * order within each half. Starred models render in their own group above the
+ * rest — and because cmdk only ever filters *within* a group, they stay on top
+ * whether or not a search filter is active. An entry appears in exactly one
+ * group: duplicating a cmdk `value` would break selection and highlighting.
+ */
+export function partitionModelEntries(
+  entries: ModelEntry[],
+  favorites: ReadonlySet<string>,
+): { favorite: ModelEntry[]; rest: ModelEntry[] } {
+  const favorite: ModelEntry[] = [];
+  const rest: ModelEntry[] = [];
+  for (const entry of entries) {
+    (favorites.has(entry.value) ? favorite : rest).push(entry);
+  }
+  return { favorite, rest };
 }
 
 export function getProviderStateEntries(
@@ -115,31 +147,42 @@ export function SelectionGroup({ action, onSelect }: SelectionGroupProps): React
 }
 
 export function ModelGroup({
+  heading,
   entries,
   selectedModelValue,
+  favorites,
   onSelect,
+  onToggleFavorite,
 }: ModelGroupProps): React.ReactElement {
   return (
-    <CommandGroup heading="Models">
+    <CommandGroup heading={heading}>
       {entries.map((entry) => (
         <ModelItem
           key={entry.value}
           entry={entry}
           isSelected={entry.value === selectedModelValue}
+          isFavorite={favorites.has(entry.value)}
           onSelect={onSelect}
+          onToggleFavorite={onToggleFavorite}
         />
       ))}
     </CommandGroup>
   );
 }
 
-function ModelItem({ entry, isSelected, onSelect }: ModelItemProps): React.ReactElement {
+function ModelItem({
+  entry,
+  isSelected,
+  isFavorite,
+  onSelect,
+  onToggleFavorite,
+}: ModelItemProps): React.ReactElement {
   return (
     <CommandItem
       value={entry.value}
       keywords={entry.keywords}
       onSelect={() => onSelect(entry)}
-      className="flex items-start justify-between gap-2 text-xs"
+      className="group/model flex items-start justify-between gap-2 text-xs"
       title={entry.description}
     >
       <span className="flex min-w-0 items-start gap-2">
@@ -157,13 +200,50 @@ function ModelItem({ entry, isSelected, onSelect }: ModelItemProps): React.React
           ) : null}
         </span>
       </span>
-      <CheckIcon
-        className={cn(
-          "mt-0.5 size-3 shrink-0 text-violet-400",
-          isSelected ? "opacity-100" : "opacity-0",
-        )}
-      />
+      <span className="mt-0.5 flex shrink-0 items-center gap-1.5">
+        <FavoriteToggle
+          isFavorite={isFavorite}
+          modelLabel={`${entry.providerLabel} / ${entry.modelLabel}`}
+          onToggle={() => onToggleFavorite(entry.value)}
+        />
+        <CheckIcon
+          className={cn(
+            "size-3 shrink-0 text-violet-400",
+            isSelected ? "opacity-100" : "opacity-0",
+          )}
+        />
+      </span>
     </CommandItem>
+  );
+}
+
+function FavoriteToggle({
+  isFavorite,
+  modelLabel,
+  onToggle,
+}: FavoriteToggleProps): React.ReactElement {
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-pressed={isFavorite}
+      // Keep focus in the search input and stop cmdk from treating the click
+      // as a selection of the row.
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "size-4 shrink-0 p-0",
+        isFavorite
+          ? "text-[var(--acc-yellow)]"
+          : "text-muted-foreground opacity-0 group-hover/model:opacity-100 group-data-[selected=true]/model:opacity-100",
+      )}
+    >
+      <StarIcon className={cn("size-3", isFavorite && "fill-current")} />
+      <span className="sr-only">{`${isFavorite ? "Unstar" : "Star"} ${modelLabel}`}</span>
+    </Button>
   );
 }
 

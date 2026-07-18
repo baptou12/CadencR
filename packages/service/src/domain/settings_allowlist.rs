@@ -258,6 +258,12 @@ mod tests {
         assert!(is_workspace_key_allowed("unified_agents_per_row"));
     }
     #[test]
+    fn workspace_accepts_favorite_models() {
+        // Starred models in the model pickers; without this the FE gets a
+        // BAD_REQUEST and starring silently fails.
+        assert!(is_workspace_key_allowed("favorite_models"));
+    }
+    #[test]
     fn workspace_accepts_per_device_zoom_keys() {
         // Desktop and mobile persist independent zoom levels under separate keys;
         // without both, the FE gets a BAD_REQUEST and zoom silently fails to save.

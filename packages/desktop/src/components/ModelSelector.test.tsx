@@ -101,6 +101,7 @@ vi.mock("../api/generated", () => ({
   useGetFeatureModelSettings: () => mockGetFeatureSettings(),
   useGetFeatureSettings: () => ({ data: [], isLoading: false }),
   useSetFeatureModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  getGetWorkspaceSettingQueryKey: vi.fn((key: string) => ["workspace", "setting", key]),
   useSetWorkspaceSetting: vi.fn(() => ({ mutate: vi.fn() })),
   useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
   useSetFeatureSetting: vi.fn(() => ({ mutate: vi.fn() })),
