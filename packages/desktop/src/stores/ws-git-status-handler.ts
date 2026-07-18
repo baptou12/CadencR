@@ -23,25 +23,20 @@ import { usePushOutputStore } from "@/stores/usePushOutputStore";
  *  the HTTP one-shot would race the WS push and cause the branch chip to
  *  flicker — the HTTP response computed at T can land after a WS push
  *  computed at T+Δ. The HTTP query is only used for first-paint hydration. */
-const GIT_STATUS_INVALIDATION_PREFIXES = [
-  "/api/git/changed-files",
-  "/api/git/commit-log",
-  "/api/git/diff",
-  "/api/git/file-diff",
-  "/api/git/file-blob-shas",
-  "/api/git/stats",
-  "/api/git/uncommitted-files",
-  "/api/git/has-uncommitted-changes",
-] as const;
-
 const GIT_CONTENT_INVALIDATION_PREFIXES = [
   "/api/git/changed-files",
   "/api/git/diff",
   "/api/git/file-diff",
   "/api/git/file-blob-shas",
   "/api/git/stats",
+  "/api/git/stashes",
   "/api/git/uncommitted-files",
   "/api/git/has-uncommitted-changes",
+] as const;
+
+const GIT_STATUS_INVALIDATION_PREFIXES = [
+  ...GIT_CONTENT_INVALIDATION_PREFIXES,
+  "/api/git/commit-log",
 ] as const;
 
 export function handleGitEnvelope(action: string, payload: Record<string, unknown>): void {

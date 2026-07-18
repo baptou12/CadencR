@@ -20,7 +20,6 @@ mod branches;
 pub mod checkout;
 mod commit_push;
 mod default_branch;
-#[allow(dead_code)] // Route integration is owned by the Phase 1 API barrier.
 pub mod index;
 mod merge;
 mod merge_runner;
@@ -38,7 +37,6 @@ pub use merge::{merge_feature_branch, MergeFeatureBranchBody};
 pub use push::{push, push_input};
 pub use status::{enrich_with_sharing, get_compare_url, get_git_status};
 pub use target_branch::{resolve_target_branch, update_target_branch};
-#[allow(unused_imports)] // Phase 1C API surface; routes land in the integration lane.
 pub use update_branch::{
     abort_update_branch, continue_update_branch, detect_active_git_operation, update_branch,
 };
@@ -98,4 +96,15 @@ pub(crate) async fn broadcast_after_write(state: &AppState, feature_id: i64) {
             "git status recompute after write failed (best-effort)"
         );
     }
+}
+
+/// Confirm the post-mutation refresh against the already-resolved worktree.
+/// A failed recompute is delivered as the existing `git.status_error` WS
+/// envelope, so the successful Git mutation is never turned into a retryable
+/// HTTP failure and the frontend never fails stale without a visible warning.
+pub(crate) async fn broadcast_after_write_at(state: &AppState, worktree_path: &Path) {
+    state
+        .git_watcher
+        .confirm_after_write(worktree_path, state)
+        .await;
 }

@@ -19,7 +19,6 @@ mod changed_files;
 mod diff;
 mod files;
 mod graph;
-#[allow(dead_code)] // Route integration is owned by the Phase 1 API barrier.
 mod index;
 mod log;
 mod merge;

@@ -6,6 +6,7 @@ use crate::shared::git_cli::{git_ref_resolves_background, run_git_background};
 use super::parsing::{self, parse_porcelain_v2};
 use super::{GitStatusSnapshot, SharedFeatureRef};
 use crate::domain::git::host::{self, GitHost, RemoteInfo};
+use crate::domain::git::workflow_service::detect_active_git_operation;
 
 /// Build a degraded snapshot for cases where we can't actually probe the
 /// worktree (path is missing, worktree is still being created, etc). The
@@ -69,12 +70,14 @@ async fn compute_status(
     )
     .await?;
     let parsed = parse_porcelain_v2(&porcelain);
-    let (ahead_of_remote, target_divergence, remote_info) = tokio::join!(
+    let (ahead_of_remote, target_divergence, remote_info, operation) = tokio::join!(
         count_unpushed(repo, &parsed),
         resolve_target_divergence(repo, target_branch),
         resolve_remote_info(repo),
+        detect_active_git_operation(repo),
     );
     let target_divergence = target_divergence?;
+    let operation = operation?;
     let has_remote = remote_info.is_some();
     let (host, compare_url, action_label) =
         derive_provider_fields(remote_info.as_ref(), target_branch, &parsed.current_branch);
@@ -93,9 +96,7 @@ async fn compute_status(
         behind_target: target_divergence.behind,
         target_resolved: target_divergence.resolved,
         conflict_count: parsed.conflict_count,
-        // Phase 1C owns active merge/rebase detection. Keep the conservative
-        // Phase 0 value here until its helper is integrated at this point.
-        operation: None,
+        operation,
         has_remote,
         host,
         compare_url,
@@ -394,7 +395,10 @@ mod tests {
         let snap = compute_status(dir.path(), 1, "main").await.unwrap();
 
         assert_eq!(snap.conflict_count, 1);
-        assert_eq!(snap.operation, None);
+        assert_eq!(
+            snap.operation,
+            Some(crate::domain::git::models::GitOperationKind::Merge)
+        );
     }
 
     #[tokio::test]
@@ -472,6 +476,43 @@ mod tests {
         assert_eq!(snap_local.ahead_of_target, 1);
         let snap_remote = compute_status(dir.path(), 1, "origin/main").await.unwrap();
         assert_eq!(snap_remote.ahead_of_target, 2);
+    }
+
+    #[tokio::test]
+    async fn linked_worktree_snapshot_reports_the_active_merge() {
+        let temp = tempfile::tempdir().unwrap();
+        let main = temp.path().join("main");
+        let linked = temp.path().join("linked");
+        std::fs::create_dir(&main).unwrap();
+        init_repo(&main);
+        std::fs::write(main.join("conflict.txt"), "base\n").unwrap();
+        run_git(&main, &["add", "conflict.txt"]);
+        run_git(&main, &["commit", "-q", "-m", "base"]);
+        run_git(&main, &["branch", "feature"]);
+        run_git(
+            &main,
+            &["worktree", "add", "-q", linked.to_str().unwrap(), "feature"],
+        );
+
+        std::fs::write(main.join("conflict.txt"), "target\n").unwrap();
+        run_git(&main, &["commit", "-qam", "target"]);
+        std::fs::write(linked.join("conflict.txt"), "feature\n").unwrap();
+        run_git(&linked, &["commit", "-qam", "feature"]);
+        let merge = std::process::Command::new("git")
+            .args(["merge", "main"])
+            .current_dir(&linked)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("HOME", &linked)
+            .output()
+            .unwrap();
+        assert!(!merge.status.success());
+
+        let snapshot = compute_status(&linked, 1, "main").await.unwrap();
+        assert_eq!(
+            snapshot.operation,
+            Some(crate::domain::git::models::GitOperationKind::Merge)
+        );
+        assert_eq!(snapshot.conflict_count, 1);
     }
 
     fn capture_git(dir: &Path, args: &[&str]) -> String {

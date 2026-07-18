@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unmerged_path_has_one_row_and_non_duplicated_stats() {
+    async fn unmerged_path_uses_per_column_max_without_losing_or_doubling_stats() {
         let temp = tempfile::tempdir().unwrap();
         let repo = temp.path();
         init(repo);
@@ -370,7 +370,14 @@ mod tests {
             .unwrap();
         let staged_stats = parse_numstat(&staged).get("both").copied();
         let unstaged_stats = parse_numstat(&unstaged).get("both").copied();
-        let expected_stats = staged_stats.or(unstaged_stats).unwrap_or_default();
+        let staged_stats = staged_stats.unwrap_or_default();
+        let unstaged_stats = unstaged_stats.unwrap_or_default();
+        assert_eq!(staged_stats, (0, 0));
+        assert!(unstaged_stats.0 > 0, "expected conflict-marker additions");
+        let expected_stats = (
+            staged_stats.0.max(unstaged_stats.0),
+            staged_stats.1.max(unstaged_stats.1),
+        );
         let files = get_uncommitted_changed_files(repo).await.unwrap();
         let conflicts: Vec<_> = files.iter().filter(|file| file.file == "both").collect();
 
@@ -378,6 +385,17 @@ mod tests {
         assert_eq!(conflicts[0].stage_state, FileStageState::Conflicted);
         assert_eq!(conflicts[0].additions, expected_stats.0);
         assert_eq!(conflicts[0].deletions, expected_stats.1);
+
+        std::fs::write(repo.join("both"), b"").unwrap();
+        let unstaged = run_git_background(&["diff", "--numstat"], repo)
+            .await
+            .unwrap();
+        let deletion_stats = parse_numstat(&unstaged).get("both").copied().unwrap();
+        assert!(deletion_stats.1 > 0, "expected conflicted deletions");
+        let files = get_uncommitted_changed_files(repo).await.unwrap();
+        let conflict = find(&files, "both");
+        assert_eq!(conflict.additions, deletion_stats.0);
+        assert_eq!(conflict.deletions, deletion_stats.1);
     }
 
     #[tokio::test]

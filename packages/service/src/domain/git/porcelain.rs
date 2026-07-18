@@ -239,7 +239,9 @@ pub(crate) fn attach_stats(
     let staged = lookup_stats(&entry, staged);
     let unstaged = lookup_stats(&entry, unstaged);
     let (additions, deletions) = if entry.stage_state == FileStageState::Conflicted {
-        staged.or(unstaged).unwrap_or_default()
+        let staged = staged.unwrap_or_default();
+        let unstaged = unstaged.unwrap_or_default();
+        (staged.0.max(unstaged.0), staged.1.max(unstaged.1))
     } else {
         let staged = staged.unwrap_or_default();
         let unstaged = unstaged.unwrap_or_default();

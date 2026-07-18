@@ -15,7 +15,6 @@ pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Internal(String),
-    #[allow(dead_code)]
     Conflict(String),
     /// 503 — a downstream resource is temporarily unhealthy. Used by the
     /// LSP host's crash-backoff to signal "retry later", matching the

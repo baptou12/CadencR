@@ -51,22 +51,30 @@ impl GitWatcherRegistry {
 
     /// Synchronously run `compute_status` for every feature subscribed to
     /// `worktree_path` and broadcast the resulting `git.status` envelopes.
-    pub async fn recompute_now(&self, worktree_path: &Path, state: &AppState) {
+    #[cfg(test)]
+    async fn recompute_now(&self, worktree_path: &Path, state: &AppState) {
         let canonical =
             std::fs::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
-        debouncer::recompute_for_path(&self.inner, &canonical, state).await;
+        debouncer::recompute_for_path(&self.inner, &canonical, state, None).await;
     }
 
-    /// Push an explicit "recompute now" through the watcher and start the
-    /// dedupe window so our own write doesn't bounce back as an fs event.
-    pub async fn nudge(&self, worktree_path: &Path) {
+    /// Stamp the self-write dedupe window and supersede queued fs work without
+    /// scheduling a recompute.
+    async fn nudge(&self, canonical: &Path) {
+        let inner = self.inner.lock().await;
+        if let Some(handle) = inner.handles.get(canonical) {
+            handle.last_nudge_ms.store(now_ms(), Ordering::Relaxed);
+            handle.write_generation.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// Suppress self-induced fs events and synchronously confirm one fresh
+    /// status (or status-error) snapshot for a user-initiated write.
+    pub async fn confirm_after_write(&self, worktree_path: &Path, state: &AppState) {
         let canonical =
             std::fs::canonicalize(worktree_path).unwrap_or_else(|_| worktree_path.to_path_buf());
-        let inner = self.inner.lock().await;
-        if let Some(handle) = inner.handles.get(&canonical) {
-            handle.last_nudge_ms.store(now_ms(), Ordering::Relaxed);
-            let _ = handle.ping_tx.send(RecomputePing::Explicit);
-        }
+        self.nudge(&canonical).await;
+        debouncer::recompute_for_path(&self.inner, &canonical, state, None).await;
     }
 
     /// Drop every handle and abort their compute tasks.
@@ -86,10 +94,11 @@ impl GitWatcherRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
+    use std::sync::Arc;
 
-    use super::super::handle::{spawn_handle, Subscriber};
+    use super::super::handle::{spawn_handle, RecomputePing, Subscriber};
 
     fn git_init(dir: &Path) {
         Command::new("git")
@@ -110,35 +119,18 @@ mod tests {
             .unwrap();
     }
 
-    #[tokio::test]
-    async fn nudge_sets_dedupe_window() {
-        let dir = tempfile::tempdir().unwrap();
-        git_init(dir.path());
-
-        let registry = GitWatcherRegistry::new();
-        let canonical = std::fs::canonicalize(dir.path()).unwrap();
-        let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .connect(":memory:")
-            .await
-            .unwrap();
-        let state = AppState::with_pool(pool);
-        let handle = spawn_handle(registry.inner.clone(), canonical.clone(), state).unwrap();
-        let last_nudge = handle.last_nudge_ms.clone();
-        {
-            let mut inner = registry.inner.lock().await;
-            inner.handles.insert(canonical.clone(), handle);
-        }
-
-        registry.nudge(&canonical).await;
-        let stamped = last_nudge.load(Ordering::Relaxed);
-        assert!(stamped > 0, "nudge should stamp last_nudge_ms");
-        assert!(now_ms() - stamped < debouncer::NUDGE_DEDUPE_MS);
-
-        registry.shutdown().await;
+    struct WatchFixture {
+        _dir: tempfile::TempDir,
+        registry: GitWatcherRegistry,
+        state: AppState,
+        canonical: PathBuf,
+        rx: mpsc::UnboundedReceiver<Message>,
+        fs_event_tx: mpsc::UnboundedSender<RecomputePing>,
+        last_nudge: Arc<std::sync::atomic::AtomicI64>,
+        write_generation: Arc<std::sync::atomic::AtomicU64>,
     }
 
-    #[tokio::test]
-    async fn recompute_now_broadcasts_synchronously() {
+    async fn subscribed_fixture() -> WatchFixture {
         let dir = tempfile::tempdir().unwrap();
         git_init(dir.path());
         Command::new("git")
@@ -146,7 +138,6 @@ mod tests {
             .current_dir(dir.path())
             .status()
             .unwrap();
-
         let canonical = std::fs::canonicalize(dir.path()).unwrap();
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .connect(":memory:")
@@ -154,22 +145,105 @@ mod tests {
             .unwrap();
         let state = AppState::with_pool(pool);
         let registry = GitWatcherRegistry::new();
-        let handle =
+        let mut handle =
             spawn_handle(registry.inner.clone(), canonical.clone(), state.clone()).unwrap();
-
-        let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
-        {
-            let mut inner = registry.inner.lock().await;
-            let mut handle = handle;
-            handle.subscribers.push(Subscriber {
-                feature_id: 42,
-                sender: tx,
-            });
-            inner.handles.insert(canonical.clone(), handle);
+        let fs_event_tx = handle.ping_tx.clone();
+        let last_nudge = handle.last_nudge_ms.clone();
+        let write_generation = handle.write_generation.clone();
+        let (tx, rx) = mpsc::unbounded_channel::<Message>();
+        handle.subscribers.push(Subscriber {
+            feature_id: 42,
+            sender: tx,
+        });
+        registry
+            .inner
+            .lock()
+            .await
+            .handles
+            .insert(canonical.clone(), handle);
+        WatchFixture {
+            _dir: dir,
+            registry,
+            state,
+            canonical,
+            rx,
+            fs_event_tx,
+            last_nudge,
+            write_generation,
         }
+    }
 
-        registry.recompute_now(&canonical, &state).await;
-        let msg = rx
+    #[tokio::test]
+    async fn nudge_only_sets_the_dedupe_window() {
+        let fixture = subscribed_fixture().await;
+        fixture.registry.nudge(&fixture.canonical).await;
+        let stamped = fixture.last_nudge.load(Ordering::Relaxed);
+        assert!(stamped > 0, "nudge should stamp last_nudge_ms");
+        assert!(now_ms() - stamped < debouncer::NUDGE_DEDUPE_MS);
+        assert_eq!(fixture.write_generation.load(Ordering::Relaxed), 1);
+
+        fixture.registry.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn confirm_after_write_emits_once_and_later_fs_events_still_refresh() {
+        let mut fixture = subscribed_fixture().await;
+        let original_generation = fixture.write_generation.load(Ordering::Relaxed);
+        fixture
+            .fs_event_tx
+            .send(RecomputePing::FsEvent(original_generation))
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), fixture.rx.recv())
+            .await
+            .expect("baseline fs event should recompute")
+            .expect("subscriber should remain connected");
+
+        fixture
+            .fs_event_tx
+            .send(RecomputePing::FsEvent(original_generation))
+            .unwrap();
+        tokio::task::yield_now().await;
+        fixture
+            .registry
+            .confirm_after_write(&fixture.canonical, &fixture.state)
+            .await;
+        let confirmation = fixture
+            .rx
+            .try_recv()
+            .expect("confirmation must broadcast synchronously");
+        assert!(
+            matches!(confirmation, Message::Text(text) if text.contains("\"action\":\"status\""))
+        );
+
+        let duplicate_wait = std::time::Duration::from_millis(1_500);
+        tokio::time::sleep(duplicate_wait).await;
+        assert!(matches!(
+            fixture.rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+
+        let current_generation = fixture.write_generation.load(Ordering::Relaxed);
+        fixture
+            .fs_event_tx
+            .send(RecomputePing::FsEvent(current_generation))
+            .unwrap();
+        let message = tokio::time::timeout(std::time::Duration::from_secs(3), fixture.rx.recv())
+            .await
+            .expect("later fs-event ping should trigger a recompute")
+            .expect("subscriber should remain connected");
+        assert!(matches!(message, Message::Text(text) if text.contains("\"action\":\"status\"")));
+        fixture.registry.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn recompute_now_broadcasts_synchronously() {
+        let mut fixture = subscribed_fixture().await;
+        fixture
+            .registry
+            .recompute_now(&fixture.canonical, &fixture.state)
+            .await;
+        let msg = fixture
+            .rx
             .try_recv()
             .expect("recompute_now must broadcast synchronously");
         let Message::Text(text) = msg else {
@@ -177,7 +251,23 @@ mod tests {
         };
         assert!(text.contains("\"action\":\"status\""), "got: {text}");
 
-        registry.shutdown().await;
+        fixture.registry.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn recompute_now_surfaces_refresh_failures_as_status_errors() {
+        let mut fixture = subscribed_fixture().await;
+        std::fs::remove_dir_all(fixture.canonical.join(".git")).unwrap();
+        fixture
+            .registry
+            .recompute_now(&fixture.canonical, &fixture.state)
+            .await;
+
+        let messages = std::iter::from_fn(|| fixture.rx.try_recv().ok()).collect::<Vec<_>>();
+        assert!(messages.iter().any(|message| {
+            matches!(message, Message::Text(text) if text.contains("\"action\":\"status_error\""))
+        }));
+        fixture.registry.shutdown().await;
     }
 
     #[tokio::test]

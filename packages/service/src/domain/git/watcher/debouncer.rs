@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,6 +49,7 @@ pub(super) fn build_debouncer(
     worktree_path: PathBuf,
     ping_tx: mpsc::UnboundedSender<RecomputePing>,
     last_nudge_ms: Arc<AtomicI64>,
+    write_generation: Arc<AtomicU64>,
 ) -> Result<Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>, crate::error::AppError> {
     let extra_git_roots = resolve_git_roots(&worktree_path);
     let cb_path = worktree_path.clone();
@@ -63,6 +64,7 @@ pub(super) fn build_debouncer(
                     return;
                 }
             };
+            let generation = write_generation.load(Ordering::Acquire);
             // Self-write dedupe: ignore raw fs events within NUDGE_DEDUPE_MS
             // of an explicit nudge.
             if now_ms() - last_nudge_ms.load(Ordering::Relaxed) < NUDGE_DEDUPE_MS {
@@ -75,7 +77,7 @@ pub(super) fn build_debouncer(
             if events.iter().any(|ev| {
                 ev.kind == DebouncedEventKind::Any && is_relevant(&cb_path, &cb_extra, &ev.path)
             }) {
-                let _ = ping_tx.send(RecomputePing::FsEvent);
+                let _ = ping_tx.send(RecomputePing::FsEvent(generation));
             }
         },
     )
@@ -168,12 +170,15 @@ pub(super) fn spawn_compute_task(
     state: AppState,
     mut ping_rx: mpsc::UnboundedReceiver<RecomputePing>,
     last_compute_ms: Arc<AtomicI64>,
+    last_nudge_ms: Arc<AtomicI64>,
+    write_generation: Arc<AtomicU64>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(ping) = ping_rx.recv().await {
-            if matches!(ping, RecomputePing::Shutdown) {
-                break;
-            }
+            let mut expected_generation = match ping {
+                RecomputePing::FsEvent(generation) => generation,
+                RecomputePing::Shutdown => break,
+            };
             // Sustained-churn cap: ensure at least MIN_RECOMPUTE_GAP_MS
             // between recomputes.
             let now = now_ms();
@@ -184,14 +189,27 @@ pub(super) fn spawn_compute_task(
                     (MIN_RECOMPUTE_GAP_MS - elapsed) as u64,
                 ))
                 .await;
-                if drain_until_shutdown(&mut ping_rx) {
-                    return;
+                match drain_latest_generation(&mut ping_rx) {
+                    Ok(Some(generation)) => expected_generation = generation,
+                    Ok(None) => {}
+                    Err(()) => return,
                 }
+            }
+            if write_generation.load(Ordering::Acquire) != expected_generation
+                || now_ms() - last_nudge_ms.load(Ordering::Relaxed) < NUDGE_DEDUPE_MS
+            {
+                continue;
             }
             last_compute_ms.store(now_ms(), Ordering::Relaxed);
 
             let started = std::time::Instant::now();
-            recompute_for_path(&registry, &worktree_path, &state).await;
+            recompute_for_path(
+                &registry,
+                &worktree_path,
+                &state,
+                Some((write_generation.clone(), expected_generation)),
+            )
+            .await;
             let elapsed = started.elapsed();
             if elapsed.as_millis() > SLOW_COMPUTE_MS {
                 debug!(
@@ -199,23 +217,24 @@ pub(super) fn spawn_compute_task(
                     ms = elapsed.as_millis(),
                     "git watcher: slow compute, will coalesce"
                 );
-                if drain_until_shutdown(&mut ping_rx) {
-                    return;
-                }
             }
         }
     })
 }
 
-/// Drain pending pings; return `true` if a shutdown ping was seen so the
-/// caller can exit instead of looping again.
-fn drain_until_shutdown(ping_rx: &mut mpsc::UnboundedReceiver<RecomputePing>) -> bool {
+/// Coalesce pending fs pings to their latest write generation. A shutdown
+/// takes precedence so the background task can exit promptly.
+fn drain_latest_generation(
+    ping_rx: &mut mpsc::UnboundedReceiver<RecomputePing>,
+) -> Result<Option<u64>, ()> {
+    let mut latest = None;
     while let Ok(extra) = ping_rx.try_recv() {
-        if matches!(extra, RecomputePing::Shutdown) {
-            return true;
+        match extra {
+            RecomputePing::FsEvent(generation) => latest = Some(generation),
+            RecomputePing::Shutdown => return Err(()),
         }
     }
-    false
+    Ok(latest)
 }
 
 /// Resolve the live subscriber list for a worktree, then run
@@ -232,6 +251,7 @@ pub(super) async fn recompute_for_path(
     registry: &Arc<Mutex<RegistryInner>>,
     worktree_path: &Path,
     state: &AppState,
+    expected_write_generation: Option<(Arc<AtomicU64>, u64)>,
 ) {
     // Snapshot the subscriber list under the lock, then drop it before
     // running per-feature compute calls so we don't serialize on the slow
@@ -258,6 +278,7 @@ pub(super) async fn recompute_for_path(
     let futs = by_feature.into_iter().map(|(fid, senders)| {
         let path = worktree_path.to_path_buf();
         let state = state.clone();
+        let expected_write_generation = expected_write_generation.clone();
         async move {
             // Re-resolve target_branch every time so PATCHes on the
             // feature setting are reflected without registry mutation.
@@ -275,11 +296,17 @@ pub(super) async fn recompute_for_path(
                         &path.to_string_lossy(),
                     )
                     .await;
+                    if generation_changed(&expected_write_generation) {
+                        return;
+                    }
                     let env =
                         WsEnvelope::new("git", "status", serde_json::to_value(&snap).unwrap());
                     broadcast(&senders, &env);
                 }
                 Err(err) => {
+                    if generation_changed(&expected_write_generation) {
+                        return;
+                    }
                     warn!(
                         feature_id = fid,
                         path = %path.display(),
@@ -303,6 +330,12 @@ pub(super) async fn recompute_for_path(
     futures::future::join_all(futs).await;
 }
 
+fn generation_changed(expected: &Option<(Arc<AtomicU64>, u64)>) -> bool {
+    expected
+        .as_ref()
+        .is_some_and(|(generation, value)| generation.load(Ordering::Acquire) != *value)
+}
+
 fn broadcast(senders: &[mpsc::UnboundedSender<Message>], envelope: &WsEnvelope) {
     let payload = String::from(envelope.clone());
     for tx in senders {
@@ -322,7 +355,7 @@ mod tests {
         // task, and the gap-enforcement drain logic.
         let (tx, mut rx) = mpsc::unbounded_channel::<RecomputePing>();
         for _ in 0..5 {
-            tx.send(RecomputePing::FsEvent).unwrap();
+            tx.send(RecomputePing::FsEvent(0)).unwrap();
         }
         let _first = rx.recv().await.unwrap();
         let mut drained = 0;
@@ -333,18 +366,18 @@ mod tests {
     }
 
     #[test]
-    fn drain_until_shutdown_returns_true_on_shutdown() {
+    fn drain_latest_generation_honors_shutdown() {
         let (tx, mut rx) = mpsc::unbounded_channel::<RecomputePing>();
-        tx.send(RecomputePing::FsEvent).unwrap();
+        tx.send(RecomputePing::FsEvent(1)).unwrap();
         tx.send(RecomputePing::Shutdown).unwrap();
-        assert!(drain_until_shutdown(&mut rx));
+        assert_eq!(drain_latest_generation(&mut rx), Err(()));
     }
 
     #[test]
-    fn drain_until_shutdown_returns_false_when_clean() {
+    fn drain_latest_generation_coalesces_to_newest_ping() {
         let (tx, mut rx) = mpsc::unbounded_channel::<RecomputePing>();
-        tx.send(RecomputePing::FsEvent).unwrap();
-        tx.send(RecomputePing::FsEvent).unwrap();
-        assert!(!drain_until_shutdown(&mut rx));
+        tx.send(RecomputePing::FsEvent(1)).unwrap();
+        tx.send(RecomputePing::FsEvent(2)).unwrap();
+        assert_eq!(drain_latest_generation(&mut rx), Ok(Some(2)));
     }
 }

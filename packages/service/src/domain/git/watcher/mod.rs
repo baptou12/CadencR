@@ -12,9 +12,9 @@
 //!                                             registered against this worktree
 //! ```
 //!
-//! Self-induced churn is suppressed by `nudge()`: any raw fs events within
-//! 750 ms of a nudge are dropped, then the nudge itself triggers a single
-//! recompute. Sustained churn is capped at one recompute per second.
+//! Self-induced churn is suppressed by `confirm_after_write()`: it stamps a
+//! 750 ms dedupe window, then synchronously emits one fresh status without
+//! enqueueing another background recompute. Later fs events refresh normally.
 //!
 //! Per `error-handling.md`, compute failures are surfaced via a
 //! `git.status_error` envelope rather than swallowed.

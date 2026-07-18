@@ -1,7 +1,5 @@
 //! Foreground stash mutations and their stable-selector safety checks.
 
-#![allow(dead_code)] // Phase 1B backend lane; route wiring is intentionally deferred.
-
 use std::path::{Path, PathBuf};
 
 use crate::domain::git::models::GitOperationResponse;

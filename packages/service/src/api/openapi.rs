@@ -17,8 +17,6 @@ use crate::domain::feature_layouts::routes as feature_layouts_routes;
 use crate::domain::features::auto_name_route as features_auto_name_route;
 use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
-use crate::domain::git::models;
-use crate::domain::git::routes;
 use crate::domain::imports::models as imports_models;
 use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
@@ -43,44 +41,6 @@ use crate::domain::ws_session::protocol as ws_protocol;
     paths(
         health,
         openapi_spec,
-        routes::get_branch_handler,
-        routes::get_stats_handler,
-        routes::get_diff_handler,
-        routes::get_file_diff_handler,
-        routes::get_changed_files_handler,
-        routes::get_file_content_handler,
-        routes::get_file_content_batch_handler,
-        routes::get_commit_log_handler,
-        routes::get_commit_graph_handler,
-        routes::get_commit_url_handler,
-        routes::get_file_blob_shas_handler,
-        routes::list_stashes_handler,
-        routes::list_files_handler,
-        routes::get_worktree_info_handler,
-        routes::create_worktree_handler,
-        routes::remove_worktree_handler,
-        routes::delete_worktree_handler,
-        routes::retry_worktree_setup_handler,
-        routes::list_project_worktrees_handler,
-        routes::list_feature_worktrees_handler,
-        routes::remove_orphan_worktree_handler,
-        routes::get_original_branch_handler,
-        routes::check_merge_conflicts_handler,
-        routes::merge_feature_branch_handler,
-        routes::delete_feature_branch_handler,
-        routes::check_branch_delete_handler,
-        routes::has_uncommitted_changes_handler,
-        routes::get_blame_handler,
-        routes::list_branches_handler,
-        routes::get_git_status_handler,
-        routes::get_compare_url_handler,
-        crate::domain::git::workflow_service::checkout::checkout_branch_handler,
-        crate::domain::git::workflow_service::checkout::validate_checkout_handler,
-        routes::update_target_branch_handler,
-        routes::commit_handler,
-        routes::push_handler,
-        routes::push_input_handler,
-        routes::get_uncommitted_files_handler,
         editor_routes::read_file_handler,
         // `read-image` and `diff-image` are intentionally NOT exposed to orval: their responses
         // is a binary blob that the OpenAPI spec can't usefully describe,
@@ -219,49 +179,6 @@ use crate::domain::ws_session::protocol as ws_protocol;
         discovery_routes::ProviderDiscovery,
         discovery_routes::DiscoveredCandidate,
         discovery_routes::DiscoveredSource,
-        models::BranchResponse,
-        models::GitStats,
-        models::DiffResponse,
-        models::ChangedFile,
-        models::FileContent,
-        models::FileContentBatchItem,
-        models::CommitLogEntry,
-        models::CommitLogResponse,
-        models::CommitGraphEntry,
-        models::CommitGraphResponse,
-        models::CommitUrlResponse,
-        models::StashEntry,
-        models::FileBlobSha,
-        models::WorktreeInfo,
-        models::ProjectWorktreeInfo,
-        models::FeatureWorktreeInfo,
-        models::MergeConflictResult,
-        models::MergeResult,
-        models::OriginalBranchResponse,
-        models::SuccessResponse,
-        models::CreateWorktreeResponse,
-        // Only request bodies are registered as schemas. Query/path
-        // parameter structs are described inline in `#[utoipa::path(params(...))]`
-        // — listing them here would cause orval to emit duplicate TS types.
-        models::GetFileContentBatchBody,
-        models::CreateWorktreeBody,
-        models::RetryWorktreeBody,
-        models::RemoveOrphanWorktreeBody,
-        crate::domain::git::workflow_service::MergeFeatureBranchBody,
-        models::HasUncommittedChangesResponse,
-        models::BlameLine,
-        models::BlameResponse,
-        models::BranchInfo,
-        models::CompareUrlResponse,
-        models::UpdateTargetBranchBody,
-        models::CheckoutBody,
-        models::CheckoutValidateBody,
-        models::CommitBody,
-        models::PushBody,
-        models::PushInputBody,
-        crate::domain::git::host::GitHost,
-        crate::domain::git::git_status::GitStatusSnapshot,
-        crate::domain::git::porcelain::UncommittedFile,
         editor_routes::ReadFileResponse,
         editor_routes::WriteFileRequest,
         editor_routes::WriteFileResponse,
@@ -476,7 +393,9 @@ async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
 /// Returns the full OpenAPI spec. Used by the runtime endpoint above and by the
 /// `dump-openapi` binary that emits the spec for orval client generation.
 pub fn api_doc() -> utoipa::openapi::OpenApi {
-    ApiDoc::openapi()
+    let mut document = ApiDoc::openapi();
+    document.merge(crate::domain::git::openapi::api_doc());
+    document
 }
 
 pub fn routes() -> Router<AppState> {

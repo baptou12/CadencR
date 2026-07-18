@@ -135,7 +135,6 @@ pub struct ListStashesParams {
 /// Whole-file index mutation. Stage uses `git add -A -- <file_path>`; reset
 /// means unstage only and must never change worktree bytes.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[allow(dead_code)] // Phase 0 contract; index routes are added in a later phase.
 pub struct FileMutationBody {
     pub feature_id: i64,
     pub file_path: String,
@@ -144,7 +143,6 @@ pub struct FileMutationBody {
 /// Create a tracked-files-only stash. A non-blank message is passed to Git;
 /// `None` or blank input uses Git's default stash description.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[allow(dead_code)] // Phase 0 contract; stash routes are added in a later phase.
 pub struct StashPushBody {
     pub feature_id: i64,
     pub message: Option<String>,
@@ -153,7 +151,6 @@ pub struct StashPushBody {
 /// Stable selector for apply, pop, and drop. The backend must re-resolve
 /// `ref_name` and reject the mutation if it no longer matches `expected_sha`.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[allow(dead_code)] // Phase 0 contract; stash routes are added in a later phase.
 pub struct StashMutationBody {
     pub feature_id: i64,
     pub ref_name: String,
@@ -162,7 +159,6 @@ pub struct StashMutationBody {
 
 /// Bring the configured target ref into the current feature worktree.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[allow(dead_code)] // Phase 0 contract; update routes are added in a later phase.
 pub struct UpdateBranchBody {
     pub feature_id: i64,
     pub strategy: super::UpdateBranchStrategy,
@@ -170,8 +166,7 @@ pub struct UpdateBranchBody {
 
 /// Continue or abort the merge/rebase currently active in a feature worktree.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[allow(dead_code)] // Phase 0 contract; update routes are added in a later phase.
-pub struct UpdateBranchControlBody {
+pub struct GitOperationControlBody {
     pub feature_id: i64,
 }
 
@@ -314,7 +309,7 @@ mod tests {
         .unwrap();
         assert_eq!(update.strategy, super::super::UpdateBranchStrategy::Rebase);
 
-        let control: UpdateBranchControlBody =
+        let control: GitOperationControlBody =
             serde_json::from_value(serde_json::json!({ "feature_id": 7 })).unwrap();
         assert_eq!(control.feature_id, 7);
     }

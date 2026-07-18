@@ -35,11 +35,7 @@ pub(super) struct Subscriber {
 /// What the fs callback pushes through to the compute task.
 pub(super) enum RecomputePing {
     /// Triggered by debounced fs events.
-    FsEvent,
-    /// Triggered by `nudge()` after a Cadencr-initiated write. Used by
-    /// sub-agent 3's commit/push handlers.
-    #[allow(dead_code)]
-    Explicit,
+    FsEvent(u64),
     /// Asks the compute task to exit (used by `shutdown`).
     Shutdown,
 }
@@ -54,8 +50,10 @@ pub(super) struct WatcherHandle {
     pub(super) ping_tx: mpsc::UnboundedSender<RecomputePing>,
     /// Background task that consumes `ping_tx` and runs `compute_status`.
     pub(super) compute_task: JoinHandle<()>,
-    /// Last time `nudge()` was called (unix millis).
+    /// Last time a Cadencr-initiated write was confirmed (unix millis).
     pub(super) last_nudge_ms: Arc<AtomicI64>,
+    /// Bumped whenever a user-initiated write supersedes queued fs work.
+    pub(super) write_generation: Arc<AtomicU64>,
     /// Pending grace-timer task — `None` while the handle has subscribers.
     pub(super) grace_task: Option<JoinHandle<()>>,
     /// Bumped on every subscribe/unsubscribe so the grace timer can detect
@@ -83,6 +81,7 @@ pub(super) fn spawn_handle(
     state: AppState,
 ) -> Result<WatcherHandle, AppError> {
     let last_nudge_ms = Arc::new(AtomicI64::new(0));
+    let write_generation = Arc::new(AtomicU64::new(0));
     let last_compute_ms = Arc::new(AtomicI64::new(0));
     let epoch = Arc::new(AtomicU64::new(0));
     let (ping_tx, ping_rx) = mpsc::unbounded_channel::<RecomputePing>();
@@ -91,9 +90,18 @@ pub(super) fn spawn_handle(
         worktree_path.clone(),
         ping_tx.clone(),
         last_nudge_ms.clone(),
+        write_generation.clone(),
     )?;
 
-    let compute_task = spawn_compute_task(registry, worktree_path, state, ping_rx, last_compute_ms);
+    let compute_task = spawn_compute_task(
+        registry,
+        worktree_path,
+        state,
+        ping_rx,
+        last_compute_ms,
+        last_nudge_ms.clone(),
+        write_generation.clone(),
+    );
 
     Ok(WatcherHandle {
         subscribers: Vec::new(),
@@ -101,6 +109,7 @@ pub(super) fn spawn_handle(
         ping_tx,
         compute_task,
         last_nudge_ms,
+        write_generation,
         grace_task: None,
         epoch,
     })
