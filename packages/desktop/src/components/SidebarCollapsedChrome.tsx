@@ -8,33 +8,36 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 import { cn } from "@/lib/utils";
 
-export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): ReactElement {
-  const isMobile = useIsMobile();
-  // On phones the brand + settings already live inside the drawer, so the
-  // collapsed chrome is just a menu button that opens it. Keeping the full
-  // logo here would eat the narrow topbar.
-  if (isMobile) {
-    return (
-      <Button
-        variant="ghost"
-        size="icon"
-        className="-ml-1 size-8 shrink-0"
-        title="Open menu"
-        onClick={onExpand}
-      >
-        <PanelLeft className="size-5" />
-        <span className="sr-only">Open menu</span>
-      </Button>
-    );
-  }
+interface SidebarCollapsedChromeProps {
+  visible: boolean;
+  onExpand: () => void;
+}
 
+export function SidebarCollapsedChrome({
+  visible,
+  onExpand,
+}: SidebarCollapsedChromeProps): ReactElement {
+  const isMobile = useIsMobile();
   const actionButtonSize = HAS_MAC_WINDOW_CONTROLS ? "icon-xs" : "icon";
   const actionButtonClass = cn(
     "text-muted-foreground hover:text-foreground",
     !HAS_MAC_WINDOW_CONTROLS && "size-7",
   );
-
-  return (
+  // On phones the brand + settings already live inside the drawer, so the
+  // collapsed chrome is just a menu button that opens it. Keeping the full
+  // logo here would eat the narrow topbar.
+  const content = isMobile ? (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="-ml-1 size-8 shrink-0"
+      title="Open menu"
+      onClick={onExpand}
+    >
+      <PanelLeft className="size-5" />
+      <span className="sr-only">Open menu</span>
+    </Button>
+  ) : (
     <>
       {/* Mac actions use top padding to sit below the traffic lights while the
           sibling brand remains centered against the feature title. */}
@@ -82,7 +85,18 @@ export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): 
           />
         </div>
       </div>
-      <div className="mx-1 h-5 w-px self-center bg-border" />
+      <div className="ml-4 mr-1 h-5 w-px self-center bg-border" />
     </>
+  );
+
+  return (
+    <div
+      data-sidebar-collapsed-chrome
+      data-visible={visible ? "true" : "false"}
+      aria-hidden={visible ? undefined : true}
+      inert={visible ? undefined : true}
+    >
+      {content}
+    </div>
   );
 }

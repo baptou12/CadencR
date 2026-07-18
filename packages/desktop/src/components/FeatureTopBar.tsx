@@ -251,8 +251,8 @@ function FeatureHeaderChrome({
           className,
         )}
       >
-        {showSidebarChrome && sidebarCollapsed && (
-          <SidebarCollapsedChrome onExpand={onExpandSidebar} />
+        {showSidebarChrome && (
+          <SidebarCollapsedChrome visible={sidebarCollapsed} onExpand={onExpandSidebar} />
         )}
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <ProjectColorDot projectId={projectId} className="size-2.5 shrink-0" />

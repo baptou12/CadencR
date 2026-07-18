@@ -37,6 +37,20 @@
   border-left: 1px solid var(--pane-border);
   border-top-left-radius: 14px;
   box-shadow: var(--page-shadow);
+  transition: border-top-left-radius 220ms var(--ease-fluid);
+}
+
+/* Once the sidebar is gone, the page reaches the window edge and should no
+ * longer expose a chassis-colored wedge. The global animation kill-switch
+ * makes this radius change instant when fluid animations are disabled. */
+:root[data-sidebar-collapsed="true"]:is(
+    :not([data-theme]),
+    [data-theme="cadencr-dark"],
+    [data-theme="cadencr-light"]
+  )
+  [data-feature-chrome="standard"]
+  [data-feature-layout-shell] {
+  border-top-left-radius: 0;
 }
 
 /* The feature page header matches the sidebar header band: same height (the

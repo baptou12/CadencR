@@ -106,7 +106,11 @@ export function AppShell({
   }
 
   return (
-    <ResizablePanelGroup orientation="horizontal" onLayoutChanged={onLayoutChanged}>
+    <ResizablePanelGroup
+      data-app-shell-resize={isDragging ? undefined : "fluid"}
+      orientation="horizontal"
+      onLayoutChanged={onLayoutChanged}
+    >
       <ResizablePanel
         id="sidebar"
         panelRef={sidebarPanelRef}

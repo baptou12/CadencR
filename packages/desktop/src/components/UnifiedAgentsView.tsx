@@ -324,7 +324,10 @@ function UnifiedAgentsHeader({
         sidebarCollapsed && HAS_MAC_WINDOW_CONTROLS ? "pt-1.5 pb-1.5" : "py-4",
       )}
     >
-      {sidebarCollapsed && <SidebarCollapsedChrome onExpand={() => setSidebarCollapsed(false)} />}
+      <SidebarCollapsedChrome
+        visible={sidebarCollapsed}
+        onExpand={() => setSidebarCollapsed(false)}
+      />
       <div className="min-w-0 flex-1">
         <UnifiedAgentsFilters
           filterText={filterText}

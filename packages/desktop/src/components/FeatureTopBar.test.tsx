@@ -173,14 +173,28 @@ describe("FeatureTopBar", () => {
     expect(screen.getByText("My Test Feature")).toBeInTheDocument();
   });
 
-  it("does not show logo when sidebar is expanded", () => {
-    render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.queryByText("Cadencr")).not.toBeInTheDocument();
+  it("keeps collapsed chrome mounted while toggling its accessibility state", () => {
+    const { container, rerender } = render(<FeatureTopBar featureId={1} projectId={1} />);
+    const chrome = container.querySelector("[data-sidebar-collapsed-chrome]");
+    expect(chrome).toHaveAttribute("data-visible", "false");
+    expect(chrome).toHaveAttribute("aria-hidden", "true");
+    expect(chrome).toHaveAttribute("inert");
+
+    mockSidebarCollapsed = true;
+    rerender(<FeatureTopBar featureId={1} projectId={1} />);
+
+    expect(container.querySelector("[data-sidebar-collapsed-chrome]")).toBe(chrome);
+    expect(chrome).toHaveAttribute("data-visible", "true");
+    expect(chrome).not.toHaveAttribute("aria-hidden");
+    expect(chrome).not.toHaveAttribute("inert");
   });
 
   it("shows logo and app name when sidebar is collapsed", () => {
     mockSidebarCollapsed = true;
-    render(<FeatureTopBar featureId={1} projectId={1} />);
+    const { container } = render(<FeatureTopBar featureId={1} projectId={1} />);
+    const chrome = container.querySelector("[data-sidebar-collapsed-chrome]");
+    expect(chrome).toHaveAttribute("data-visible", "true");
+    expect(chrome).not.toHaveAttribute("inert");
     expect(screen.getByText("Cadencr")).toBeInTheDocument();
     expect(screen.getByAltText("Cadencr")).toBeInTheDocument();
   });

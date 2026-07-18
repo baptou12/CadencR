@@ -121,6 +121,45 @@ body,
   overscroll-behavior: none;
 }
 
+/* Programmatic app-sidebar collapse/expand updates both panel flex weights.
+ * Animate those weights as a pair, but not during pointer drags or while the
+ * resize handle has keyboard focus, so manual resizing tracks every input.
+ * The global `data-animations="off"` rule makes this instant when fluid
+ * animations are disabled. */
+[data-app-shell-resize="fluid"]:not(:has(> [data-app-shell-handle]:focus-visible))
+  > [data-slot="resizable-panel"] {
+  transition: flex-grow 220ms var(--ease-fluid);
+}
+
+/* The collapsed titlebar chrome stays mounted so its actions and brand can
+ * animate in both directions. Its hidden negative margin cancels the parent
+ * header's 12px flex gap; `interpolate-size` lets Chromium transition between
+ * zero and the lockup's intrinsic width. */
+[data-sidebar-collapsed-chrome] {
+  display: flex;
+  width: 0;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: -0.75rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-0.5rem);
+  interpolate-size: allow-keywords;
+  transition:
+    width 220ms var(--ease-fluid),
+    margin-right 220ms var(--ease-fluid),
+    opacity 220ms var(--ease-fluid),
+    transform 220ms var(--ease-fluid);
+}
+
+[data-sidebar-collapsed-chrome][data-visible="true"] {
+  width: max-content;
+  margin-right: 0;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;

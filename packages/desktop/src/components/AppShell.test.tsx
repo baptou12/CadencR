@@ -1,5 +1,5 @@
 import { createRef, type ReactNode } from "react";
-import type { PanelImperativeHandle, PanelProps } from "react-resizable-panels";
+import type { GroupProps, PanelImperativeHandle, PanelProps } from "react-resizable-panels";
 import { render, act, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,10 +20,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * editor sidebar's drag — exactly the path that triggered the bug.
  */
 
+interface AppShellGroupProps extends GroupProps {
+  "data-app-shell-resize"?: string;
+}
+
+const appShellGroupProps: AppShellGroupProps[] = [];
 const sidebarPanelProps: PanelProps[] = [];
 
 vi.mock("@/components/ui/resizable", () => ({
-  ResizablePanelGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ResizablePanelGroup: (props: AppShellGroupProps) => {
+    appShellGroupProps.push(props);
+    return <div>{props.children}</div>;
+  },
   ResizablePanel: (props: PanelProps) => {
     if (props.id === "sidebar") sidebarPanelProps.push(props);
     return <div data-testid={`panel-${props.id}`}>{props.children}</div>;
@@ -65,6 +73,7 @@ function latestCollapsible(): boolean | undefined {
 
 describe("AppShell global sidebar collapsible", () => {
   beforeEach(() => {
+    appShellGroupProps.length = 0;
     sidebarPanelProps.length = 0;
   });
 
@@ -102,5 +111,16 @@ describe("AppShell global sidebar collapsible", () => {
     });
 
     expect(latestCollapsible()).toBe(false);
+  });
+
+  it("animates programmatic layout changes but not manual resize drags", () => {
+    renderShell(false);
+    expect(appShellGroupProps.at(-1)?.["data-app-shell-resize"]).toBe("fluid");
+
+    act(() => {
+      pushResize();
+    });
+
+    expect(appShellGroupProps.at(-1)?.["data-app-shell-resize"]).toBeUndefined();
   });
 });

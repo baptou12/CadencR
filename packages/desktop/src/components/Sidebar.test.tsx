@@ -113,15 +113,20 @@ vi.mock("@/lib/app-version", () => ({
 }));
 
 const mockSetCollapsed = vi.fn();
+let mockSidebarCollapsed = false;
 
 vi.mock("@/components/SidebarContext", () => ({
-  useSidebarCollapsed: () => ({ collapsed: false, setCollapsed: mockSetCollapsed }),
+  useSidebarCollapsed: () => ({
+    collapsed: mockSidebarCollapsed,
+    setCollapsed: mockSetCollapsed,
+  }),
 }));
 
 describe("Sidebar", () => {
   beforeEach(() => {
     mockNavigate.mockClear();
     mockSetCollapsed.mockClear();
+    mockSidebarCollapsed = false;
     mockLogoSrc = "dracula-logo.svg";
     mockLocation = { pathname: "/" };
   });
@@ -134,6 +139,21 @@ describe("Sidebar", () => {
   it("renders the logo", () => {
     render(<Sidebar onSearch={() => {}} />);
     expect(screen.getByAltText("Cadencr")).toBeInTheDocument();
+  });
+
+  it("keeps the full sidebar mounted but inaccessible while collapsing", () => {
+    const { rerender } = render(<Sidebar onSearch={() => {}} />);
+    const sidebar = screen.getByRole("complementary");
+
+    mockSidebarCollapsed = true;
+    rerender(<Sidebar onSearch={() => {}} />);
+
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-app-sidebar]")).toBe(sidebar);
+    expect(sidebar).toHaveClass("-translate-x-2", "opacity-0", "duration-[220ms]");
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(sidebar).toHaveAttribute("inert");
+    expect(sidebar).toContainElement(screen.getByText("Cadencr"));
   });
 
   it("renders the logo selected by the active theme", () => {

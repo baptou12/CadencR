@@ -9,6 +9,29 @@ const setWorkspaceSettingMutate = vi.fn();
 const focusFilterMock = vi.hoisted(() => vi.fn());
 let workspaceSettingValue: string | null = null;
 
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    Link: ({ children, to }: { children: unknown; to: string }) => {
+      const React = require("react");
+      return React.createElement("a", { href: to }, children);
+    },
+  };
+});
+
+vi.mock("@/hooks/useTheme", () => ({
+  useTheme: () => ({
+    theme: {
+      logo: {
+        src: "cadencr-logo.svg",
+        alt: "Cadencr",
+        displayScale: 1,
+      },
+    },
+  }),
+}));
+
 vi.mock("@/api/generated", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/generated")>();
   return {
@@ -86,6 +109,15 @@ describe("UnifiedAgentsView filter prompt", () => {
     fireEvent.keyDown(window, { key: "F", code: "KeyF", metaKey: true, shiftKey: true });
 
     expect(focusFilterMock).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the collapsed sidebar chrome mounted and inert while expanded", () => {
+    const { container } = render(<UnifiedAgentsView />);
+    const chrome = container.querySelector("[data-sidebar-collapsed-chrome]");
+
+    expect(chrome).toHaveAttribute("data-visible", "false");
+    expect(chrome).toHaveAttribute("aria-hidden", "true");
+    expect(chrome).toHaveAttribute("inert");
   });
 
   it("stops duplicate global Cmd+Shift+F handlers after focusing the filter", () => {
