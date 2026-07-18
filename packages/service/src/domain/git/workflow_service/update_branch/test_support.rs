@@ -54,6 +54,14 @@ impl RepoFixture {
     }
 
     pub(super) async fn state(&self, target: &str) -> AppState {
+        self.state_with_worktree(target, true).await
+    }
+
+    pub(super) async fn state_without_worktree(&self, target: &str) -> AppState {
+        self.state_with_worktree(target, false).await
+    }
+
+    async fn state_with_worktree(&self, target: &str, configure_worktree: bool) -> AppState {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
@@ -86,14 +94,16 @@ impl RepoFixture {
             .execute(&pool)
             .await
             .unwrap();
-        repository::set_feature_setting(
-            &pool,
-            1,
-            "worktree_path",
-            self.feature.to_string_lossy().as_ref(),
-        )
-        .await
-        .unwrap();
+        if configure_worktree {
+            repository::set_feature_setting(
+                &pool,
+                1,
+                "worktree_path",
+                self.feature.to_string_lossy().as_ref(),
+            )
+            .await
+            .unwrap();
+        }
         repository::set_feature_setting(&pool, 1, "target_branch", target)
             .await
             .unwrap();

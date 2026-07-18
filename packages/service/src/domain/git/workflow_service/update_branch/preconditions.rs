@@ -3,37 +3,23 @@ use std::path::{Path, PathBuf};
 use crate::app_state::AppState;
 use crate::domain::git::commands;
 use crate::domain::git::mutation_guard::GitMutationGuardError;
-use crate::domain::git::repository;
-use crate::domain::git::service::SETTING_WORKTREE_PATH;
+use crate::domain::git::service::resolve_feature_git_path;
 use crate::error::AppError;
 use crate::shared::git_cli::{git_output_error, guard_positionals, run_git_output_with_env};
 
 use super::{detect_active_git_operation, operation_name};
 
-pub(super) async fn resolve_feature_worktree(
+/// Resolve the checkout this feature currently observes. A live configured
+/// linked worktree wins; no-worktree and stale-worktree features use the
+/// project's primary checkout, matching status, index, commit, and stash.
+pub(super) async fn resolve_feature_update_path(
     state: &AppState,
     feature_id: i64,
 ) -> Result<PathBuf, AppError> {
-    let (project_id, _) = repository::get_feature_type_and_project(&state.read_pool, feature_id)
+    let git_path = resolve_feature_git_path(state, feature_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("feature not found: {feature_id}")))?;
-    let project_path = repository::get_project_path(&state.read_pool, project_id).await?;
-    let configured =
-        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH)
-            .await?
-            .filter(|path| !path.trim().is_empty())
-            .ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "feature {feature_id} does not have a configured worktree"
-                ))
-            })?;
-    let worktree = PathBuf::from(&configured);
-    if !commands::is_live_worktree(Path::new(&project_path), &worktree).await? {
-        return Err(AppError::NotFound(format!(
-            "feature {feature_id} worktree does not exist or is not registered: {configured}"
-        )));
-    }
-    Ok(worktree)
+        .ok_or_else(|| AppError::NotFound(format!("feature {feature_id} has no git path")))?;
+    Ok(PathBuf::from(git_path))
 }
 
 pub(super) async fn require_no_active_operation(worktree: &Path) -> Result<(), AppError> {
@@ -164,10 +150,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_a_missing_or_unregistered_feature_worktree() {
+    async fn falls_back_to_the_project_checkout_for_a_stale_worktree() {
         let fixture = RepoFixture::new();
+        fixture.create_remote_only_tip();
+        let state = fixture.state("origin/main").await;
         let feature_arg = fixture.feature.to_string_lossy().to_string();
         fixture.git_project(&["worktree", "remove", "--force", &feature_arg]);
-        assert_rejected(&fixture, "main", "does not exist or is not registered").await;
+
+        update_branch(
+            &state,
+            UpdateBranchBody {
+                feature_id: 1,
+                strategy: UpdateBranchStrategy::Rebase,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(fixture.project.join("remote-only.txt").exists());
     }
 }
