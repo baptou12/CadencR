@@ -1,10 +1,13 @@
 import type { ReactElement, ReactNode } from "react";
-import { ChevronDown, ChevronRight, PencilIcon } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import type { ChangedFile } from "@/api/generated";
 import type { ThemeAppearance } from "@/lib/themes";
 import { CopyButton } from "./CopyButton";
 import { NumStat } from "@/components/NumStat";
 import { Checkbox } from "@/components/ui/checkbox";
 import { pierreDiffCountColors } from "./DiffStatusIcon";
+import { GitDiffFileActionError, GitDiffFileHeaderActions } from "./GitDiffFileHeaderActions";
+import type { GitFileIndexActions } from "./useGitFileIndexActions";
 
 interface DiffFileHeaderProps {
   displayName: string;
@@ -18,6 +21,8 @@ interface DiffFileHeaderProps {
   themeAppearance: ThemeAppearance;
   onToggle: () => void;
   onOpenFileInEditor?: () => void;
+  file: ChangedFile;
+  indexActions?: GitFileIndexActions;
   onMarkViewed: () => void;
   onUnmarkViewed: () => void;
 }
@@ -74,32 +79,6 @@ function DiffFileHeaderPrefix({
   );
 }
 
-function DiffFileHeaderOpenInEditor({
-  displayName,
-  onOpenFileInEditor,
-}: {
-  displayName: string;
-  onOpenFileInEditor?: () => void;
-}): ReactElement | null {
-  if (!onOpenFileInEditor) return null;
-
-  return (
-    <button
-      type="button"
-      aria-label={`Open ${displayName} in editor`}
-      title="Open in editor"
-      onClick={(event): void => {
-        event.preventDefault();
-        event.stopPropagation();
-        onOpenFileInEditor();
-      }}
-      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/header:opacity-100 group-hover/patch-file:opacity-100"
-    >
-      <PencilIcon className="h-3.5 w-3.5" />
-    </button>
-  );
-}
-
 function DiffFileHeaderViewed({
   isFileViewed,
   onMarkViewed,
@@ -141,42 +120,45 @@ export function DiffFileHeader({
   themeAppearance,
   onToggle,
   onOpenFileInEditor,
+  file,
+  indexActions,
   onMarkViewed,
   onUnmarkViewed,
 }: DiffFileHeaderProps): ReactElement {
   const countColors = pierreDiffCountColors(themeAppearance);
   return (
-    <div
-      data-diff-file-header
-      className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}
-    >
-      <DiffFileHeaderPrefix
-        displayName={displayName}
-        isCollapsed={isCollapsed}
-        statusIcon={statusIcon}
-        onToggle={onToggle}
-      />
-      {/* NumStat before the edit button, zero counts hidden, and Pierre's exact
-          colors — so this single header looks identical whether the file is
-          collapsed or expanded over a Pierre diff body. */}
-      <NumStat
-        additions={additions}
-        deletions={deletions}
-        addColor={countColors.add}
-        delColor={countColors.del}
-        className="text-xs shrink-0"
-      />
-      <DiffFileHeaderOpenInEditor
-        displayName={displayName}
-        onOpenFileInEditor={onOpenFileInEditor}
-      />
-      {showViewedCheckbox && (
-        <DiffFileHeaderViewed
-          isFileViewed={isFileViewed}
-          onMarkViewed={onMarkViewed}
-          onUnmarkViewed={onUnmarkViewed}
+    <>
+      <div
+        data-diff-file-header
+        className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}
+      >
+        <DiffFileHeaderPrefix
+          displayName={displayName}
+          isCollapsed={isCollapsed}
+          statusIcon={statusIcon}
+          onToggle={onToggle}
         />
-      )}
-    </div>
+        <NumStat
+          additions={additions}
+          deletions={deletions}
+          addColor={countColors.add}
+          delColor={countColors.del}
+          className="text-xs shrink-0"
+        />
+        <GitDiffFileHeaderActions
+          file={file}
+          indexActions={indexActions}
+          onOpenFileInEditor={onOpenFileInEditor}
+        />
+        {showViewedCheckbox && (
+          <DiffFileHeaderViewed
+            isFileViewed={isFileViewed}
+            onMarkViewed={onMarkViewed}
+            onUnmarkViewed={onUnmarkViewed}
+          />
+        )}
+      </div>
+      <GitDiffFileActionError file={file} indexActions={indexActions} />
+    </>
   );
 }

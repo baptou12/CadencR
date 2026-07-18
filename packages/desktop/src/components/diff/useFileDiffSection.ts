@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useGetFileDiff } from "@/api/generated";
 import { parseUnifiedDiff, type FileDiffSection } from "@/lib/parse-unified-diff";
+import { apiErrorMessage } from "@/lib/api-errors";
 import type { DiffMode } from "./useDiffData";
 
 const EMPTY_SECTION: FileDiffSection = {
@@ -13,7 +14,7 @@ export interface FileDiffSectionResult {
   /** Parsed patch for the file, or `null` while the fetch is pending / gated. */
   section: FileDiffSection | null;
   isLoading: boolean;
-  isError: boolean;
+  errorMessage: string | null;
 }
 
 export interface UseFileDiffSectionParams {
@@ -59,7 +60,7 @@ export function useFileDiffSection({
   commitSha,
   enabled,
 }: UseFileDiffSectionParams): FileDiffSectionResult {
-  const { data, isLoading, isError } = useGetFileDiff(
+  const { data, isLoading, isError, error } = useGetFileDiff(
     {
       feature_id: featureId,
       file_path: filePath,
@@ -83,5 +84,6 @@ export function useFileDiffSection({
   // NB: don't gate `section` on `enabled` — once fetched, keep the parsed diff
   // mounted through scroll-out. `data`/`isLoading`/`isError` already reflect the
   // cache: an un-fetched, disabled row has `data === undefined` → `section` null.
-  return { section, isLoading, isError };
+  const errorMessage = isError ? apiErrorMessage(error, "Failed to load this file's diff") : null;
+  return useMemo(() => ({ section, isLoading, errorMessage }), [errorMessage, isLoading, section]);
 }

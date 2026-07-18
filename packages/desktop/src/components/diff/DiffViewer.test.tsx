@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, within } from "@/test-utils";
+import { act, render, screen, within } from "@/test-utils";
 import type { FileDiffSection } from "@/lib/parse-unified-diff";
 
 const singleFileDiff = `diff --git a/src/foo.ts b/src/foo.ts
@@ -17,6 +17,7 @@ const fooFile = {
   additions: 1,
   deletions: 1,
   is_staged: false,
+  stage_state: "unstaged" as const,
 };
 
 const fooSection: FileDiffSection = {
@@ -27,7 +28,13 @@ const fooSection: FileDiffSection = {
 
 const mocks = vi.hoisted(() => {
   const useGetChangedFilesMock = vi.fn(
-    () => ({ data: [] as unknown[], isLoading: false }) as { data: unknown[]; isLoading: boolean },
+    () =>
+      ({ data: [] as unknown[], isLoading: false }) as {
+        data: unknown[];
+        isLoading: boolean;
+        isError?: boolean;
+        error?: unknown;
+      },
   );
   const useMutationMock = vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
   const useGetFileContentMock = vi.fn(() => ({ data: undefined }));
@@ -38,7 +45,7 @@ const mocks = vi.hoisted(() => {
   const useFileDiffSectionMock = vi.fn(({ enabled }: { enabled: boolean }) => ({
     section: enabled ? fooSection : null,
     isLoading: false,
-    isError: false,
+    errorMessage: null,
   }));
   const patchDiffViewMock = vi.fn(({ patch }: { patch: string }) => (
     <div data-testid="patch-diff-view" data-patch={patch}>
@@ -46,6 +53,14 @@ const mocks = vi.hoisted(() => {
     </div>
   ));
   const persistFileListCollapsedMock = vi.fn();
+  const persistTreeDisplayModeMock = vi.fn();
+  const useTreeDisplaySettingMock = vi.fn(() => ({
+    displayMode: "tree" as const,
+    setDisplayMode: persistTreeDisplayModeMock,
+    isPending: false,
+  }));
+  const shortcutCallbacks = new Map<string, (event: KeyboardEvent) => void>();
+  const toastInfo = vi.fn();
   const useDebouncedSettingMock = vi.fn<
     (
       key: string,
@@ -68,11 +83,34 @@ const mocks = vi.hoisted(() => {
     useFileDiffSectionMock,
     patchDiffViewMock,
     persistFileListCollapsedMock,
+    persistTreeDisplayModeMock,
+    useTreeDisplaySettingMock,
     useDebouncedSettingMock,
+    shortcutCallbacks,
+    toastInfo,
   };
 });
 
+vi.mock("sonner", () => ({
+  toast: { info: mocks.toastInfo, success: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("@/hooks/useShortcut", () => ({
+  useScopedGlobalShortcutById: (id: string, callback: (event: KeyboardEvent) => void): void => {
+    mocks.shortcutCallbacks.set(id, callback);
+  },
+}));
+
 vi.mock("@/api/generated", () => ({
+  FileStageState: {
+    not_applicable: "not_applicable",
+    untracked: "untracked",
+    unstaged: "unstaged",
+    staged: "staged",
+    both: "both",
+    conflicted: "conflicted",
+  },
+  ConflictKind: { dd: "dd", au: "au", ud: "ud", ua: "ua", du: "du", aa: "aa", uu: "uu" },
   useGetChangedFiles: mocks.useGetChangedFilesMock,
   useGetFileBlobShas: mocks.useGetFileBlobShasMock,
   useGetFileContent: mocks.useGetFileContentMock,
@@ -89,6 +127,8 @@ vi.mock("@/api/generated", () => ({
   useCreateDiffComment: mocks.useMutationMock,
   useUpdateDiffComment: mocks.useMutationMock,
   useDeleteDiffComment: mocks.useMutationMock,
+  useStageFile: mocks.useMutationMock,
+  useResetFile: mocks.useMutationMock,
 }));
 
 vi.mock("./useFileDiffSection", () => ({
@@ -113,6 +153,10 @@ vi.mock("@/hooks/useDebouncedSetting", () => ({
     mocks.useDebouncedSettingMock(key, debounceMs),
 }));
 
+vi.mock("./useGitDiffTreeDisplaySetting", () => ({
+  useGitDiffTreeDisplaySetting: mocks.useTreeDisplaySettingMock,
+}));
+
 vi.mock("@/hooks/useTheme", () => ({
   useTheme: () => ({ theme: { id: "dracula", appearance: "dark" } }),
 }));
@@ -131,6 +175,10 @@ function withFooFile(): void {
 
 beforeEach(() => {
   mocks.persistFileListCollapsedMock.mockReset();
+  mocks.persistTreeDisplayModeMock.mockReset();
+  mocks.useTreeDisplaySettingMock.mockClear();
+  mocks.shortcutCallbacks.clear();
+  mocks.toastInfo.mockReset();
   mocks.patchDiffViewMock.mockClear();
   mocks.useDebouncedSettingMock.mockReset();
   mocks.useGetChangedFilesMock.mockReset();
@@ -154,6 +202,7 @@ describe("DiffViewer", () => {
     mocks.useGetChangedFilesMock.mockReturnValue({ data: [], isLoading: true });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("Loading diff...")).toBeInTheDocument();
+    expect(mocks.useTreeDisplaySettingMock).not.toHaveBeenCalled();
   });
 
   it("keeps hook order stable when the file list resolves", () => {
@@ -192,6 +241,20 @@ describe("DiffViewer", () => {
     mocks.useGetChangedFilesMock.mockReturnValue({ data: [], isLoading: false });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("No changes detected")).toBeInTheDocument();
+    expect(mocks.useTreeDisplaySettingMock).not.toHaveBeenCalled();
+  });
+
+  it("retains the changed-files query error instead of rendering an empty state", () => {
+    mocks.useGetChangedFilesMock.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: true,
+      error: new Error("porcelain failed"),
+    });
+    render(<DiffViewer featureId={1} mode="worktree" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("porcelain failed");
+    expect(screen.queryByText("No changes detected")).not.toBeInTheDocument();
   });
 
   it("renders diff content when files are present", () => {
@@ -231,6 +294,32 @@ describe("DiffViewer", () => {
     expect(
       screen.queryByRole("button", { name: "Open src/foo.ts in editor" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("blocks Mod+O Editor handoff for a both-deleted conflict and explains the resolution", () => {
+    mocks.useGetChangedFilesMock.mockReturnValue({
+      data: [
+        {
+          ...fooFile,
+          file: "deleted.ts",
+          status: "DD",
+          stage_state: "conflicted",
+          conflict_kind: "dd",
+        },
+      ],
+      isLoading: false,
+    });
+    const openFileInEditor = vi.fn();
+    render(<DiffViewer featureId={1} mode="worktree" onOpenFileInEditor={openFileInEditor} />);
+    const shortcutEvent = new KeyboardEvent("keydown", { key: "o", metaKey: true });
+
+    act(() => mocks.shortcutCallbacks.get("diff-next-file")?.(shortcutEvent));
+    act(() => mocks.shortcutCallbacks.get("diff-open-focused-file")?.(shortcutEvent));
+
+    expect(openFileInEditor).not.toHaveBeenCalled();
+    expect(mocks.toastInfo).toHaveBeenCalledWith("Cannot open deleted.ts in Editor", {
+      description: "Both sides deleted this file. Stage the deletion to resolve the conflict.",
+    });
   });
 
   it("renders split/unified toggle buttons", () => {

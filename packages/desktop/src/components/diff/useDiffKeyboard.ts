@@ -7,21 +7,36 @@ interface UseDiffKeyboardParams {
   setFocusedFileIndex: (index: number) => void;
   scrollToFileIndex: (index: number) => void;
   toggleFile: (fileName: string) => void;
-  blobShas: Record<string, string>;
   viewedFilesSet: Set<string>;
-  markViewed: {
-    mutate: (args: {
-      featureId: number;
-      data: { feature_id: number; file_path: string; blob_sha: string };
-    }) => void;
-  };
-  unmarkViewed: {
-    mutate: (args: { featureId: number; params: { file_path: string } }) => void;
-  };
-  featureId: number;
+  markFileViewed: (fileName: string) => void;
+  unmarkFileViewed: (fileName: string) => void;
   diffAreaRef: RefObject<HTMLDivElement | null>;
-  setCollapsedFiles: (updater: (prev: Set<string>) => Set<string>) => void;
   onOpenFocusedFileInEditor?: (filePath: string) => void;
+}
+
+function useDiffViewedShortcut({
+  fileNames,
+  focusedFileIndexRef,
+  viewedFilesSet,
+  markFileViewed,
+  unmarkFileViewed,
+}: Pick<
+  UseDiffKeyboardParams,
+  "fileNames" | "viewedFilesSet" | "markFileViewed" | "unmarkFileViewed"
+> & { focusedFileIndexRef: RefObject<number> }): void {
+  useScopedGlobalShortcutById(
+    "diff-mark-viewed",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const index = focusedFileIndexRef.current;
+      if (index < 0 || index >= fileNames.length) return;
+      const fileName = fileNames[index];
+      if (viewedFilesSet.has(fileName)) unmarkFileViewed(fileName);
+      else markFileViewed(fileName);
+    },
+    "git",
+  );
 }
 
 /**
@@ -36,13 +51,10 @@ export function useDiffKeyboard({
   setFocusedFileIndex,
   scrollToFileIndex,
   toggleFile,
-  blobShas,
   viewedFilesSet,
-  markViewed,
-  unmarkViewed,
-  featureId,
+  markFileViewed,
+  unmarkFileViewed,
   diffAreaRef,
-  setCollapsedFiles,
   onOpenFocusedFileInEditor,
 }: UseDiffKeyboardParams): void {
   const focusedFileIndexRef = useRef(focusedFileIndex);
@@ -124,26 +136,11 @@ export function useDiffKeyboard({
     { enabled: Boolean(onOpenFocusedFileInEditor) },
   );
 
-  useScopedGlobalShortcutById(
-    "diff-mark-viewed",
-    (e) => {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      const idx = focusedFileIndexRef.current;
-      if (idx >= 0 && idx < fileNames.length) {
-        const name = fileNames[idx];
-        const sha = blobShas[name] ?? "";
-        if (viewedFilesSet.has(name)) {
-          unmarkViewed.mutate({ featureId, params: { file_path: name } });
-        } else {
-          markViewed.mutate({
-            featureId,
-            data: { feature_id: featureId, file_path: name, blob_sha: sha },
-          });
-          setCollapsedFiles((p) => new Set([...p, name]));
-        }
-      }
-    },
-    "git",
-  );
+  useDiffViewedShortcut({
+    fileNames,
+    focusedFileIndexRef,
+    viewedFilesSet,
+    markFileViewed,
+    unmarkFileViewed,
+  });
 }

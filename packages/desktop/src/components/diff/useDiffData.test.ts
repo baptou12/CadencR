@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { QueryClient } from "@tanstack/react-query";
-import { seedBatchFileContentCache } from "./useDiffData";
+import { changedFilesErrorMessage, seedBatchFileContentCache } from "./useDiffData";
 import type { FileContent, FileContentBatchItem, GetFileContentBatchBody } from "@/api/generated";
 
 function makeBatchItem(file_path: string, suffix: string): FileContentBatchItem {
@@ -132,5 +132,17 @@ describe("seedBatchFileContentCache", () => {
     expect(client.setQueryData).toHaveBeenCalledTimes(1);
     const value = (client.setQueryData as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(value).toMatchObject({ new_content: "new-1" });
+  });
+});
+
+describe("changedFilesErrorMessage", () => {
+  it("retains the actual changed-file query failure", () => {
+    expect(changedFilesErrorMessage(true, new Error("git status exploded"))).toBe(
+      "git status exploded",
+    );
+  });
+
+  it("does not synthesize an error for a successful empty list", () => {
+    expect(changedFilesErrorMessage(false, undefined)).toBeNull();
   });
 });

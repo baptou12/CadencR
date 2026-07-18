@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, type ReactNode } from "react";
+import { startTransition, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import {
   FileTree as PierreFileTree,
@@ -7,7 +7,6 @@ import {
 } from "@pierre/trees/react";
 import type {
   FileTree as FileTreeModel,
-  FileTreeDirectoryHandle,
   FileTreeDragAndDropConfig,
   FileTreeOptions,
   FileTreeRenamingConfig,
@@ -15,109 +14,15 @@ import type {
 } from "@pierre/trees";
 import { useFileTreeIconSet, type FileTreeIconSet } from "@/hooks/useFileTreeIconSet";
 import { useFileTreeShadowStylesheet } from "@/components/file-tree/useFileTreeShadowStylesheet";
-import type { FileTreeEntry } from "@/api/generated";
 import { cn } from "@/lib/utils";
-
-/**
- * Pierre encodes path identity with a trailing slash for directories and no
- * slash for files. Convert one of our backend entries to that form.
- *
- * Exported so consumers building their own paths array stay in sync.
- */
-export function toPierrePath(entry: Pick<FileTreeEntry, "path" | "is_dir">): string {
-  return entry.is_dir ? `${entry.path}/` : entry.path;
-}
-
-/** Strip pierre's trailing-slash directory marker, returning the FS-form path. */
-export function fromPierrePath(pierrePath: string): string {
-  return pierrePath.endsWith("/") ? pierrePath.slice(0, -1) : pierrePath;
-}
-
-/**
- * Collapse a list of entries to (a) pierre-form paths for the model and
- * (b) the minimal set of gitignored "roots" — entries whose immediate
- * parent isn't itself gitignored. Fuses three iterations into one so we
- * don't walk a 50k-entry tree multiple times per refetch.
- *
- * Returned `ignoredRoots` use pierre form (trailing slash for dirs).
- */
-export function buildPierreInputs(
-  entries: readonly Pick<FileTreeEntry, "path" | "is_dir" | "is_gitignored">[],
-): { paths: readonly string[]; ignoredRoots: readonly string[] } {
-  const paths: string[] = [];
-  const ignoredDirSet = new Set<string>();
-  for (const entry of entries) {
-    paths.push(toPierrePath(entry));
-    if (entry.is_gitignored && entry.is_dir) ignoredDirSet.add(entry.path);
-  }
-  const ignoredRoots: string[] = [];
-  for (const entry of entries) {
-    if (!entry.is_gitignored) continue;
-    const idx = entry.path.lastIndexOf("/");
-    const parent = idx === -1 ? "" : entry.path.slice(0, idx);
-    if (parent === "" || !ignoredDirSet.has(parent)) ignoredRoots.push(toPierrePath(entry));
-  }
-  return { paths, ignoredRoots };
-}
-
-/**
- * Build pierre's `GitStatusEntry[]` from the backend's uncommitted-files
- * response. Pierre's `change_kind` enum is a 1:1 match for our porcelain-v2
- * tokens after a narrowing guard.
- *
- * IMPORTANT: never feed `is_gitignored` entries as `status: "ignored"` —
- * pierre walks each entry's ancestors into a `directoriesWithChanges` set
- * that drives the "folder has changes" dot, even for ignored entries, so
- * doing so dots every folder above `node_modules/`. Gitignored dimming is
- * routed through `ignoredPathPrefixes` instead (shadow-root CSS).
- */
-export function gitStatusFromUncommittedFiles(
-  files: readonly { path: string; change_kind: string }[] | undefined,
-): FileTreeOptions["gitStatus"] {
-  if (files == null || files.length === 0) return [];
-  const entries: { path: string; status: PierreGitStatus }[] = [];
-  for (const file of files) {
-    const status = toPierreGitStatus(file.change_kind);
-    if (status == null) continue;
-    entries.push({ path: file.path, status });
-  }
-  return entries;
-}
-
-type PierreGitStatus = "added" | "deleted" | "ignored" | "modified" | "renamed" | "untracked";
-
-function toPierreGitStatus(kind: string): PierreGitStatus | null {
-  switch (kind) {
-    case "added":
-    case "deleted":
-    case "modified":
-    case "renamed":
-    case "untracked":
-      return kind;
-    default:
-      return null;
-  }
-}
-
-/**
- * Paths of every currently-expanded directory, used to seed `resetPaths`'s
- * `initialExpandedPaths` so a refetch never collapses the user's open
- * folders. Directories that no longer exist after the reset (e.g. a renamed
- * folder) are silently dropped.
- */
-function collectExpandedDirectoryPaths(model: FileTreeModel, paths: readonly string[]): string[] {
-  const expanded: string[] = [];
-  for (const path of paths) {
-    if (!path.endsWith("/")) continue;
-    const item = model.getItem(path);
-    if (item == null || !item.isDirectory()) continue;
-    // `isDirectory(): true` is a literal-typed method, not a TS
-    // predicate, so narrow explicitly to access `isExpanded`.
-    const dir = item as FileTreeDirectoryHandle;
-    if (dir.isExpanded()) expanded.push(path);
-  }
-  return expanded;
-}
+import { resetFileTreePathsPreservingState } from "./cadencrFileTreeModel";
+export {
+  buildPierreInputs,
+  fromPierrePath,
+  gitStatusFromUncommittedFiles,
+  resetFileTreePathsPreservingState,
+  toPierrePath,
+} from "./cadencrFileTreeModel";
 
 export interface CadencrFileTreeHookOptions {
   /**
@@ -130,7 +35,16 @@ export interface CadencrFileTreeHookOptions {
   dragAndDrop?: FileTreeDragAndDropConfig | false;
   search?: boolean;
   fileTreeSearchMode?: FileTreeSearchMode;
+  searchBlurBehavior?: FileTreeOptions["searchBlurBehavior"];
   initialSelectedPaths?: readonly string[];
+  initialExpansion?: FileTreeOptions["initialExpansion"];
+  composition?: FileTreeOptions["composition"];
+  density?: FileTreeOptions["density"];
+  stickyFolders?: boolean;
+  onSelectionChange?: FileTreeOptions["onSelectionChange"];
+  renderRowDecoration?: FileTreeOptions["renderRowDecoration"];
+  /** Forces Pierre to repaint rows when decoration-only state changes. */
+  rowDecorationVersion?: unknown;
   iconSet?: FileTreeIconSet;
   /**
    * Pierre-form paths (trailing slash for dirs, no slash for files) that
@@ -168,12 +82,26 @@ export function useCadencrFileTree({
   dragAndDrop,
   search = true,
   fileTreeSearchMode = "expand-matches",
+  searchBlurBehavior,
   initialSelectedPaths,
+  initialExpansion,
+  composition,
+  density,
+  stickyFolders,
+  onSelectionChange,
+  renderRowDecoration,
+  rowDecorationVersion,
   iconSet,
   ignoredPathPrefixes,
 }: CadencrFileTreeHookOptions): CadencrFileTreeHookResult {
   const { iconSet: globalIconSet } = useFileTreeIconSet();
   const effectiveIconSet = iconSet ?? globalIconSet;
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const renderRowDecorationRef = useRef(renderRowDecoration);
+  const hasPopulatedPathsRef = useRef(paths.length > 0);
+  const expandFirstPopulationRef = useRef(initialExpansion === "open");
+  onSelectionChangeRef.current = onSelectionChange;
+  renderRowDecorationRef.current = renderRowDecoration;
 
   // Snapshot the initial inputs — pierre's model is built once and then
   // mutated via methods. Subsequent paths/gitStatus updates are applied via
@@ -187,7 +115,14 @@ export function useCadencrFileTree({
       dragAndDrop: dragAndDrop === false ? undefined : dragAndDrop,
       search,
       fileTreeSearchMode,
+      searchBlurBehavior,
       initialSelectedPaths,
+      initialExpansion,
+      composition,
+      density,
+      stickyFolders,
+      onSelectionChange: (selectedPaths) => onSelectionChangeRef.current?.(selectedPaths),
+      renderRowDecoration: (context) => renderRowDecorationRef.current?.(context) ?? null,
       icons: effectiveIconSet,
     }),
     // We intentionally only seed once. Updates flow through model methods
@@ -200,12 +135,15 @@ export function useCadencrFileTree({
 
   // Update paths in-place on refetch. `resetPaths` on tens of thousands of
   // paths is heavy → wrap in `startTransition`. It also clears expansion
-  // state, so seed `initialExpandedPaths` from the current model to keep
-  // open folders open.
+  // state, so preserve the current expansion overrides. If an `"open"` tree
+  // was created empty, apply that intent when its first async paths arrive.
   useEffect(() => {
+    const isFirstPopulation = !hasPopulatedPathsRef.current && paths.length > 0;
+    if (isFirstPopulation) hasPopulatedPathsRef.current = true;
     startTransition(() => {
-      const expanded = collectExpandedDirectoryPaths(model, paths);
-      model.resetPaths(paths, { initialExpandedPaths: expanded });
+      resetFileTreePathsPreservingState(model, paths, {
+        expandAllDirectories: isFirstPopulation && expandFirstPopulationRef.current,
+      });
     });
   }, [model, paths]);
 
@@ -214,7 +152,7 @@ export function useCadencrFileTree({
     startTransition(() => {
       model.setGitStatus(gitStatus);
     });
-  }, [model, gitStatus]);
+  }, [model, gitStatus, rowDecorationVersion]);
 
   // React to the user toggling the icon-set preference live.
   useEffect(() => {
