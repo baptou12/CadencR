@@ -40,10 +40,9 @@
 }
 
 /* The feature page header matches the sidebar header band: same height (the
- * `data-mac-controls` variant mirrors SidebarHeader's taller macOS layout,
- * centering content in the band below the traffic-light strip) and the same
- * chassis surface it now sits on. Unified agents opts out — its filter bar
- * wraps and needs bottom breathing room (see rule below). */
+ * `data-mac-controls` variant mirrors SidebarHeader's taller macOS layout),
+ * while its content stays centered across the full band. Unified agents opts
+ * out — its filter bar wraps and needs bottom breathing room (see rule below). */
 :root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
   [data-feature-header]:not([data-unified-agents-header]) {
   min-height: 4rem;
@@ -53,7 +52,7 @@
 :root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
   [data-feature-header][data-mac-controls]:not([data-unified-agents-header]) {
   min-height: 4.5rem;
-  padding-top: 2rem;
+  padding-top: 0;
 }
 
 /* Unified agents shares the chassis color but keeps vertical padding so the
