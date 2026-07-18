@@ -109,6 +109,9 @@ function RootLayout() {
     },
     [isMobile, sidebarCollapsed],
   );
+  useEffect(() => {
+    document.documentElement.dataset.sidebarCollapsed = isSidebarCollapsed ? "true" : "false";
+  }, [isSidebarCollapsed]);
   const sidebarPanelRef = useRef<PanelImperativeHandle>(null);
 
   useEffect(() => {

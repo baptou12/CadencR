@@ -246,7 +246,10 @@ function FeatureHeaderChrome({
         data-mac-controls={HAS_MAC_WINDOW_CONTROLS ? "true" : undefined}
         className={cn(
           draggable && "titlebar-drag",
-          "flex items-center gap-3 px-3 py-3 md:px-6",
+          "flex items-center gap-3 px-3 md:px-6",
+          showSidebarChrome && sidebarCollapsed && HAS_MAC_WINDOW_CONTROLS
+            ? "pt-1.5 pb-1.5"
+            : "py-3",
           className,
         )}
       >
