@@ -1,4 +1,4 @@
-import { DEFAULT_THEME_ID } from "./registry";
+import { DEFAULT_THEME_ID, getTheme } from "./registry";
 import type { ThemeId } from "./types";
 import {
   isFollowSystemThemeEnabled,
@@ -13,6 +13,10 @@ import {
  * Tailwind's semantic tokens key off this attribute, so changing it instantly
  * re-skins the entire UI (CodeMirror's theme rules, app chrome, etc.).
  *
+ * `data-appearance` mirrors the theme's light/dark classification so chrome
+ * that can't rely on Tailwind's media-query `dark:` variant (e.g. mono logos)
+ * can invert correctly for Cadencr themes.
+ *
  * The xterm.js terminal is canvas-rendered and can't read CSS — it has its
  * own bridge in the terminal components that listens to the same setting.
  */
@@ -26,6 +30,7 @@ const SYSTEM_DARK_STORAGE_KEY = "cadencr.theme.systemDark";
 export function applyThemeToDocument(themeId: ThemeId): void {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.theme = themeId;
+  document.documentElement.dataset.appearance = getTheme(themeId).appearance;
 }
 
 /**

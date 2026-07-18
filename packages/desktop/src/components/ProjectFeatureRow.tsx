@@ -1,10 +1,9 @@
-import { memo, useRef, type ReactElement, type ReactNode } from "react";
+import { memo, useCallback, useRef, type ReactElement, type ReactNode } from "react";
 import {
   TrashIcon,
   ArchiveIcon,
   BotIcon,
   GlobeIcon,
-  MessageCircleQuestionIcon,
   GitBranchIcon,
   TerminalIcon,
   PinIcon,
@@ -19,6 +18,8 @@ import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
+import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
+import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
 import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMenu";
 import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
@@ -142,6 +143,10 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
     onStartLabelEdit(feature);
   };
 
+  const handleOpenConversation = useCallback((): void => {
+    onNavigate(feature);
+  }, [feature, onNavigate]);
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -176,10 +181,13 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           {/* Live status icon driven by the per-session backend store. The
               column keeps its width even when empty so the title never shifts
               as the agent's status changes. */}
-          <div className="flex shrink-0 w-3.5 items-center justify-center">
-            {liveStatus === "agent" && <BotIcon className="size-3.5 text-blue-500 animate-pulse" />}
+          <div className="flex w-3.5 shrink-0 items-center justify-center">
+            {liveStatus === "agent" && <BotIcon className="size-3.5 animate-pulse text-blue-500" />}
             {liveStatus === "question" && (
-              <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />
+              <SidebarPendingGatePopover
+                featureId={feature.id}
+                onOpenConversation={handleOpenConversation}
+              />
             )}
             {liveStatus === "idle" && isUnread && (
               <span
@@ -192,6 +200,11 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           {/* Name + optional metadata sub-line (stats) */}
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex min-w-0 items-center gap-1.5">
+              <SidebarProviderBadge
+                providerId={feature.runtime_provider}
+                modelId={feature.model_session}
+                thinkingEffort={feature.thinking_effort}
+              />
               {hasWorktree && (
                 <GitBranchIcon
                   className="size-3 shrink-0 text-muted-foreground"

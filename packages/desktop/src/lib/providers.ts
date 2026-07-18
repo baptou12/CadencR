@@ -1,7 +1,11 @@
 import claudeLogo from "../../assets/providers/claude.png";
+import claudeMonoLogo from "../../assets/providers/claude-mono.png";
 import codexLogo from "../../assets/providers/codex.png";
+import codexMonoLogo from "../../assets/providers/codex-mono.png";
 import cursorLogo from "../../assets/providers/cursor.png";
+import cursorMonoLogo from "../../assets/providers/cursor-mono.png";
 import opencodeLogo from "../../assets/providers/opencode.png";
+import opencodeMonoLogo from "../../assets/providers/opencode-mono.png";
 
 export const PROVIDER_IDS = {
   CLAUDE_CODE: "claude_code",
@@ -13,6 +17,8 @@ export const PROVIDER_IDS = {
 export type ProviderId = (typeof PROVIDER_IDS)[keyof typeof PROVIDER_IDS];
 
 export const DEFAULT_PROVIDER_ID: ProviderId = PROVIDER_IDS.CLAUDE_CODE;
+
+export type ProviderIconVariant = "color" | "mono";
 
 export interface ProviderMetadata {
   id: string;
@@ -26,6 +32,14 @@ const PROVIDER_ICONS: Record<ProviderId, string> = {
   [PROVIDER_IDS.CODEX_CLI]: codexLogo,
   [PROVIDER_IDS.OPENCODE]: opencodeLogo,
   [PROVIDER_IDS.CURSOR]: cursorLogo,
+};
+
+/** Black-on-transparent silhouettes for compact chrome (sidebar, etc.). */
+const PROVIDER_MONO_ICONS: Record<ProviderId, string> = {
+  [PROVIDER_IDS.CLAUDE_CODE]: claudeMonoLogo,
+  [PROVIDER_IDS.CODEX_CLI]: codexMonoLogo,
+  [PROVIDER_IDS.OPENCODE]: opencodeMonoLogo,
+  [PROVIDER_IDS.CURSOR]: cursorMonoLogo,
 };
 
 /** Canonical display names for known providers (Anthropic-recommended branding). */
@@ -44,14 +58,16 @@ const PROVIDER_LABELS: Partial<Record<string, string>> = {
 export function getProviderMetadata(
   providerId?: string | null,
   catalogLabel?: string | null,
+  variant: ProviderIconVariant = "color",
 ): ProviderMetadata | null {
   if (!providerId) {
     return null;
   }
+  const icons = variant === "mono" ? PROVIDER_MONO_ICONS : PROVIDER_ICONS;
   return {
     id: providerId,
     label: catalogLabel ?? PROVIDER_LABELS[providerId] ?? formatProviderId(providerId),
-    iconSrc: PROVIDER_ICONS[providerId as ProviderId] ?? null,
+    iconSrc: icons[providerId as ProviderId] ?? PROVIDER_ICONS[providerId as ProviderId] ?? null,
   };
 }
 

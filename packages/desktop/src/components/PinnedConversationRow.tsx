@@ -1,5 +1,5 @@
-import { memo, useRef, type ReactElement } from "react";
-import { BotIcon, MessageCircleQuestionIcon, PinOffIcon } from "lucide-react";
+import { memo, useCallback, useRef, type ReactElement } from "react";
+import { BotIcon, PinOffIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
@@ -8,6 +8,8 @@ import { useFeatureStatus } from "@/stores/session-status-selectors";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useIsFeatureUnread } from "@/stores/unread-store";
 import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
+import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
+import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
 import type { Feature } from "@/api/generated";
 
 interface PinnedConversationRowProps {
@@ -38,6 +40,9 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
   const isUnread = useIsFeatureUnread(feature.id);
   const isActive = activeFeatureId === feature.id;
   const prefetchFeature = useFeaturePrefetch(feature.id, feature.project_id);
+  const handleOpenConversation = useCallback((): void => {
+    onNavigate(feature);
+  }, [feature, onNavigate]);
 
   return (
     <div
@@ -71,12 +76,21 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
       <div className="flex w-3.5 shrink-0 items-center justify-center">
         {liveStatus === "agent" && <BotIcon className="size-3.5 animate-pulse text-blue-500" />}
         {liveStatus === "question" && (
-          <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />
+          <SidebarPendingGatePopover
+            featureId={feature.id}
+            onOpenConversation={handleOpenConversation}
+          />
         )}
         {liveStatus === "idle" && isUnread && (
           <span className="size-2 rounded-full bg-blue-500" aria-label="Unread agent messages" />
         )}
       </div>
+
+      <SidebarProviderBadge
+        providerId={feature.runtime_provider}
+        modelId={feature.model_session}
+        thinkingEffort={feature.thinking_effort}
+      />
 
       {isAutoNaming ? (
         <Skeleton className="h-4 w-32 min-w-0 flex-1" />
