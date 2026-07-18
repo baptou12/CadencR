@@ -4,10 +4,17 @@ import { Loader2Icon, ArchiveIcon } from "lucide-react";
 import { useListStashes, type StashEntry } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { GitRevisionDiffView } from "./GitRevisionDiffView";
+import { useOpenDiffInEditor } from "./OpenDiffInEditorContext";
 import { StashRow, STASH_ROW_HEIGHT } from "./StashRow";
+import type { StashConflictHandler, StashConflictOpenHandler } from "./stash-contracts";
+import { useStashMutationCoordinator } from "./useStashMutationCoordinator";
 
-interface StashesViewProps {
+export interface StashesViewProps {
   featureId: number;
+  /** Route a recoverable apply/pop outcome to the Uncommitted Git view. */
+  onConflicts?: StashConflictHandler;
+  /** Optional Editor handoff override; defaults to the existing diff Editor context. */
+  onOpenConflict?: StashConflictOpenHandler;
 }
 
 /**
@@ -19,20 +26,43 @@ interface StashesViewProps {
  */
 export const StashesView = memo(function StashesView({
   featureId,
+  onConflicts,
+  onOpenConflict,
 }: StashesViewProps): ReactElement {
   const [openedStash, setOpenedStash] = useState<StashEntry | null>(null);
   const handleCloseStash = useCallback((): void => setOpenedStash(null), []);
+  const contextOpenConflict = useOpenDiffInEditor();
+  const openConflict = onOpenConflict ?? contextOpenConflict;
+  const mutationCoordinator = useStashMutationCoordinator();
 
-  const { data, isLoading, isError, error } = useListStashes({ feature_id: featureId });
+  const { data, isLoading, isError, error, refetch } = useListStashes({
+    feature_id: featureId,
+  });
   const stashes = useMemo<StashEntry[]>(() => data ?? [], [data]);
+  // The confirmed backend WS status follows the merged invalidation path. This
+  // explicit refetch only lets the row wait for deterministic reflog ordinals;
+  // it never writes or removes cached stashes itself.
+  const refreshStashes = useCallback(async (): Promise<void> => {
+    await refetch({ throwOnError: true });
+  }, [refetch]);
 
   const itemContent = useCallback(
     (index: number): ReactElement => {
       const stash = stashes[index];
       if (!stash) return <div style={{ height: STASH_ROW_HEIGHT }} />;
-      return <StashRow stash={stash} onOpen={setOpenedStash} />;
+      return (
+        <StashRow
+          featureId={featureId}
+          stash={stash}
+          onOpen={setOpenedStash}
+          onConflicts={onConflicts}
+          onOpenConflict={openConflict}
+          onRefresh={refreshStashes}
+          coordinator={mutationCoordinator}
+        />
+      );
     },
-    [stashes],
+    [featureId, mutationCoordinator, onConflicts, openConflict, refreshStashes, stashes],
   );
 
   if (openedStash) {
