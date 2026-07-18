@@ -73,6 +73,9 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "zoom_global",
     "zoom_mobile",
     "unified_agents_per_row",
+    // JSON array of `<provider>:<model>` keys the user starred in the model
+    // pickers. Starred models are grouped above the rest in every selector.
+    "favorite_models",
     // Active theme (id from packages/desktop/src/lib/themes/registry.ts)
     "theme_current",
     // System-theme sync. When enabled, the frontend resolves the active theme
