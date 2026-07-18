@@ -1,18 +1,4 @@
-/**
- * Smart split-button surfaced in `FeatureTopBar`. The primary slot shows the
- * next sensible Git action (commit → push → PR) derived from the live
- * `GitStatusSnapshot`; the caret slot opens a popover listing all three with
- * tooltips that explain why each action is unavailable.
- *
- * Performance:
- * - Subscribes via narrow selectors so streaming updates from other features
- *   don't trigger re-renders here.
- * - `React.memo` plus a `useMemo` derivation hook keep the renders bound to
- *   actual snapshot changes.
- * - `CommitDialog` is loaded lazily so its file-list query and Radix Dialog
- *   subtree only mount when the dialog opens.
- */
-import { lazy, memo, Suspense, useCallback, useState, type ReactElement } from "react";
+import { memo, useCallback, useState, type ReactElement } from "react";
 import { CircleAlert, ChevronDown, GitBranch, GitCommit, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,10 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { getCompareUrl } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
-import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { BranchChip } from "@/components/branch-chip/BranchChip";
-import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { apiErrorMessage, toastError } from "@/lib/api-errors";
 import { cn } from "@/lib/utils";
@@ -34,15 +17,20 @@ import {
   type GitAction,
   type GitActionState,
 } from "./useGitAction";
-import { GitActionPopover, ICONS } from "./GitActionPopover";
+import { gitActionIcon } from "./GitActionPopover";
 import { useCommitSubmission } from "./useCommitSubmission";
+import {
+  effectiveGitUpdateConflictCount,
+  useGitUpdateRecoveryStore,
+  useSyncGitUpdateRecovery,
+} from "./gitUpdateRecoveryStore";
+import { useGitUpdatePending } from "./useGitUpdatePending";
+import { GitActionDialogs, type GitActionDialog } from "./GitActionDialogs";
+import { useGitActionShortcuts } from "./useGitActionShortcuts";
+import { GitActionPopoverContent } from "./GitActionPopoverContent";
 
 const GIT_ACTION_BUTTON_CLASS =
   "border-border/80 bg-muted/20 text-xs text-foreground hover:bg-muted/35 disabled:opacity-100 disabled:bg-muted/20 disabled:text-muted-foreground";
-
-const CommitDialog = lazy(() => import("./CommitDialog"));
-const PushDialog = lazy(() => import("./PushDialog"));
-const MergeDialog = lazy(() => import("./MergeDialog"));
 
 interface GitActionButtonProps {
   featureId: number;
@@ -59,41 +47,18 @@ async function openExternal(url: string): Promise<void> {
   }
 }
 
-export const GitActionButton = memo(function GitActionButton({
-  featureId,
-  projectId,
-}: GitActionButtonProps): ReactElement | null {
-  const snapshot = useGitStatusStore(selectGitStatus(featureId));
-  const state = useGitAction(snapshot);
-  const isMobile = useIsMobile();
-  const [commitOpen, setCommitOpen] = useState(false);
-  const commitSubmission = useCommitSubmission({
-    featureId,
-    open: commitOpen,
-    onOpenChange: setCommitOpen,
-  });
-  const commitActivity: CommitActivity = commitSubmission.submitting
-    ? "running"
-    : commitSubmission.outcome === "error"
-      ? "failed"
-      : null;
-  const [pushOpen, setPushOpen] = useState(false);
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const openCommit = useCallback(() => setCommitOpen(true), []);
-  const openPopover = useCallback(() => setPopoverOpen(true), []);
-
-  const openPush = useCallback(() => setPushOpen(true), []);
-
-  const runOpenCompare = useCallback(async () => {
-    // Prefer the URL the backend already computed and shipped in the snapshot.
-    let url = snapshot?.compare_url ?? null;
+function useOpenCompare(
+  featureId: number,
+  compareUrl: string | null | undefined,
+): () => Promise<void> {
+  return useCallback(async (): Promise<void> => {
+    let url = compareUrl ?? null;
     if (!url) {
       try {
-        const res = await getCompareUrl({ feature_id: featureId });
-        if (res.available) url = res.url;
-      } catch (err) {
-        toastError(err, "Failed to resolve compare URL.");
+        const response = await getCompareUrl({ feature_id: featureId });
+        if (response.available) url = response.url;
+      } catch (error) {
+        toastError(error, "Failed to resolve compare URL.");
         return;
       }
     }
@@ -102,7 +67,46 @@ export const GitActionButton = memo(function GitActionButton({
       return;
     }
     await openExternal(url);
-  }, [snapshot?.compare_url, featureId]);
+  }, [compareUrl, featureId]);
+}
+
+export const GitActionButton = memo(function GitActionButton({
+  featureId,
+  projectId,
+}: GitActionButtonProps): ReactElement | null {
+  const snapshot = useGitStatusStore(selectGitStatus(featureId));
+  const recovery = useGitUpdateRecoveryStore((store) => store.byFeature[featureId]);
+  const updatePending = useGitUpdatePending(featureId);
+  useSyncGitUpdateRecovery(featureId, snapshot?.operation ?? null, snapshot?.computed_at ?? 0);
+  const recoveryOperation = snapshot?.operation ?? recovery?.operation ?? null;
+  const recoveryConflictCount = effectiveGitUpdateConflictCount(
+    snapshot?.operation ?? null,
+    snapshot?.conflict_count ?? 0,
+    snapshot?.computed_at ?? 0,
+    recovery,
+  );
+  const state = useGitAction(snapshot, updatePending, recoveryOperation, recoveryConflictCount);
+  const isMobile = useIsMobile();
+  const [activeDialog, setActiveDialog] = useState<GitActionDialog>(null);
+  const commitOpen = activeDialog === "commit";
+  const handleDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) setActiveDialog(null);
+  }, []);
+  const commitSubmission = useCommitSubmission({
+    featureId,
+    open: commitOpen,
+    onOpenChange: handleDialogOpenChange,
+  });
+  const commitActivity: CommitActivity = commitSubmission.submitting
+    ? "running"
+    : commitSubmission.outcome === "error"
+      ? "failed"
+      : null;
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const openCommit = useCallback(() => setActiveDialog("commit"), []);
+  const openPopover = useCallback(() => setPopoverOpen(true), []);
+  const openPush = useCallback(() => setActiveDialog("push"), []);
+  const runOpenCompare = useOpenCompare(featureId, snapshot?.compare_url);
 
   const runAction = useCallback(
     (action: GitAction) => {
@@ -112,12 +116,10 @@ export const GitActionButton = memo(function GitActionButton({
         return;
       }
       if (state.disabled[action] !== null) return;
-      if (action === "commit") openCommit();
-      else if (action === "push") openPush();
-      else if (action === "merge") setMergeOpen(true);
-      else void runOpenCompare();
+      if (action === "pr") void runOpenCompare();
+      else setActiveDialog(action);
     },
-    [commitActivity, state.disabled, openCommit, openPush, runOpenCompare],
+    [commitActivity, state.disabled, openCommit, runOpenCompare],
   );
 
   useGitActionShortcuts({
@@ -141,18 +143,16 @@ export const GitActionButton = memo(function GitActionButton({
         onPopoverOpenChange={setPopoverOpen}
         onOpenCommit={openCommit}
         onAction={runAction}
+        computedAt={snapshot?.computed_at ?? 0}
       />
-      <Suspense fallback={null}>
-        {commitOpen && (
-          <CommitDialog featureId={featureId} open={commitOpen} submission={commitSubmission} />
-        )}
-        {pushOpen && (
-          <PushDialog featureId={featureId} open={pushOpen} onOpenChange={setPushOpen} />
-        )}
-        {mergeOpen && (
-          <MergeDialog featureId={featureId} open={mergeOpen} onOpenChange={setMergeOpen} />
-        )}
-      </Suspense>
+      <GitActionDialogs
+        activeDialog={activeDialog}
+        featureId={featureId}
+        snapshot={snapshot}
+        updateDisabledReason={state.disabled.update}
+        commitSubmission={commitSubmission}
+        onOpenChange={handleDialogOpenChange}
+      />
     </>
   );
 });
@@ -167,6 +167,7 @@ interface GitActionControlsProps {
   onPopoverOpenChange: (open: boolean) => void;
   onOpenCommit: () => void;
   onAction: (action: GitAction) => void;
+  computedAt: number;
 }
 
 function GitActionControls(props: GitActionControlsProps): ReactElement {
@@ -183,6 +184,7 @@ function MobileGitActionControl({
   onPopoverOpenChange,
   onOpenCommit,
   onAction,
+  computedAt,
 }: GitActionControlsProps): ReactElement {
   if (commitActivity) {
     return (
@@ -204,10 +206,14 @@ function MobileGitActionControl({
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-80 p-0">
-            <div className="border-b border-border px-3 py-2">
-              <BranchChip featureId={featureId} projectId={projectId} />
-            </div>
-            <GitActionPopover state={state} commitActivity={commitActivity} onPick={onAction} />
+            <GitActionPopoverContent
+              featureId={featureId}
+              projectId={projectId}
+              computedAt={computedAt}
+              state={state}
+              commitActivity={commitActivity}
+              onPick={onAction}
+            />
           </PopoverContent>
         </Popover>
       </div>
@@ -227,25 +233,35 @@ function MobileGitActionControl({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
-        <div className="border-b border-border px-3 py-2">
-          <BranchChip featureId={featureId} projectId={projectId} />
-        </div>
-        <GitActionPopover state={state} onPick={onAction} />
+        <GitActionPopoverContent
+          featureId={featureId}
+          projectId={projectId}
+          computedAt={computedAt}
+          state={state}
+          onPick={onAction}
+        />
       </PopoverContent>
     </Popover>
   );
 }
 
 function DesktopGitActionControl({
+  featureId,
+  projectId,
   state,
   commitActivity,
   popoverOpen,
   onPopoverOpenChange,
   onOpenCommit,
   onAction,
+  computedAt,
 }: GitActionControlsProps): ReactElement {
   const primaryAction = commitActivity ? "commit" : state.primary;
-  const PrimaryIcon = primaryAction ? ICONS[primaryAction] : GitCommit;
+  const PrimaryIcon = state.updatePending
+    ? Loader2
+    : primaryAction
+      ? gitActionIcon(primaryAction)
+      : GitCommit;
   const primaryDisabled = primaryAction === null;
   return (
     <div className="inline-flex items-center">
@@ -263,8 +279,9 @@ function DesktopGitActionControl({
           disabled={primaryDisabled}
           onClick={() => primaryAction && onAction(primaryAction)}
           title={primaryDisabled ? (state.disabled.commit ?? state.label) : state.label}
+          aria-live="polite"
         >
-          <PrimaryIcon className="size-3.5" />
+          <PrimaryIcon className={state.updatePending ? "size-3.5 animate-spin" : "size-3.5"} />
           <span>{state.label}</span>
         </Button>
       )}
@@ -282,7 +299,14 @@ function DesktopGitActionControl({
           </PopoverTrigger>
         </ShortcutTooltip>
         <PopoverContent align="end" className="w-80 p-0">
-          <GitActionPopover state={state} commitActivity={commitActivity} onPick={onAction} />
+          <GitActionPopoverContent
+            featureId={featureId}
+            projectId={projectId}
+            computedAt={computedAt}
+            state={state}
+            commitActivity={commitActivity}
+            onPick={onAction}
+          />
         </PopoverContent>
       </Popover>
     </div>
@@ -320,36 +344,4 @@ function CommitActivityButton({
       </span>
     </Button>
   );
-}
-
-interface GitActionShortcutOptions {
-  state: GitActionState;
-  commitActivity: CommitActivity;
-  openCommit: () => void;
-  openPush: () => void;
-  openCompare: () => Promise<void>;
-  openPopover: () => void;
-}
-
-function useGitActionShortcuts(options: GitActionShortcutOptions): void {
-  useShortcut("git-commit", (event) => {
-    if (isInCodeMirrorEditor(event.target)) return;
-    if (!options.commitActivity && options.state.disabled.commit !== null) return;
-    event.preventDefault();
-    options.openCommit();
-  });
-  useShortcut("git-push", (event) => {
-    if (options.state.disabled.push !== null) return;
-    event.preventDefault();
-    options.openPush();
-  });
-  useShortcut("git-pr", (event) => {
-    if (options.state.disabled.pr !== null) return;
-    event.preventDefault();
-    void options.openCompare();
-  });
-  useGlobalShortcutById("git-actions", (event) => {
-    event.preventDefault();
-    options.openPopover();
-  });
 }

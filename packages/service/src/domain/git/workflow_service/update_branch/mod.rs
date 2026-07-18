@@ -10,20 +10,21 @@ use crate::error::AppError;
 
 use self::preconditions::{
     attached_head_ref, mutation_error, require_clean_worktree, require_no_active_operation,
-    resolve_feature_worktree, validate_target,
+    resolve_feature_update_path, validate_target,
 };
 use super::{broadcast_after_write_at, resolve_target_branch};
 
 pub use operation::detect_active_git_operation;
 
-/// Bring the configured target ref into the current feature worktree. Unlike
-/// finish-branch merge, this never checks out or mutates the target worktree.
+/// Bring the configured target ref into the feature's current Git checkout.
+/// This may be a configured linked worktree or the project's primary checkout;
+/// unlike finish-branch merge, it never checks out or mutates the target ref.
 pub async fn update_branch(
     state: &AppState,
     body: UpdateBranchBody,
 ) -> Result<GitOperationResponse, AppError> {
     let feature_id = body.feature_id;
-    let worktree = resolve_feature_worktree(state, feature_id).await?;
+    let worktree = resolve_feature_update_path(state, feature_id).await?;
     let permit = state
         .git_mutations
         .try_acquire(&worktree)
@@ -67,7 +68,7 @@ async fn control_operation(
     feature_id: i64,
     action: ControlAction,
 ) -> Result<GitOperationResponse, AppError> {
-    let worktree = resolve_feature_worktree(state, feature_id).await?;
+    let worktree = resolve_feature_update_path(state, feature_id).await?;
     let permit = state
         .git_mutations
         .try_acquire(&worktree)
@@ -181,6 +182,54 @@ mod tests {
             .await
             .unwrap();
         assert!(!local_fixture.feature.join("remote-only.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn no_worktree_feature_updates_the_project_checkout() {
+        let fixture = RepoFixture::new();
+        fixture.create_remote_only_tip();
+        let state = fixture.state_without_worktree("origin/main").await;
+
+        assert_eq!(
+            update_branch(&state, update_body(UpdateBranchStrategy::Rebase))
+                .await
+                .unwrap(),
+            GitOperationResponse::Completed
+        );
+        assert!(fixture.project.join("remote-only.txt").exists());
+        assert_eq!(
+            fixture.rev_parse_project("HEAD"),
+            fixture.rev_parse_project("origin/main")
+        );
+    }
+
+    #[tokio::test]
+    async fn no_worktree_feature_can_recover_a_project_checkout_rebase() {
+        let fixture = RepoFixture::new();
+        fixture.git_project(&["checkout", "-q", "-b", "local-target"]);
+        fixture.commit_main_file("conflict.txt", "target\n", "target conflict");
+        fixture.git_project(&["checkout", "-q", "main"]);
+        fixture.commit_main_file("conflict.txt", "current\n", "current conflict");
+        let before = fixture.rev_parse_project("HEAD");
+        let state = fixture.state_without_worktree("local-target").await;
+
+        assert!(matches!(
+            update_branch(&state, update_body(UpdateBranchStrategy::Rebase))
+                .await
+                .unwrap(),
+            GitOperationResponse::Conflicts { .. }
+        ));
+        assert_eq!(
+            abort_update_branch(&state, GitOperationControlBody { feature_id: 1 })
+                .await
+                .unwrap(),
+            GitOperationResponse::Completed
+        );
+        assert_eq!(fixture.rev_parse_project("HEAD"), before);
+        assert_eq!(
+            detect_active_git_operation(&fixture.project).await.unwrap(),
+            None
+        );
     }
 
     #[tokio::test]

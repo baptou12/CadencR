@@ -129,6 +129,7 @@ function BranchRow({
       type="button"
       onClick={onSelect}
       disabled={isPending}
+      aria-label={`Select ${branch.is_local ? "local" : "remote"} branch ${branch.name}`}
       className={cn(
         "w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-accent disabled:opacity-50",
         isCurrentTarget && "bg-accent/50",

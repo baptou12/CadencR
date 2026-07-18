@@ -110,6 +110,10 @@ export function gitStatusSnapshotsEqual(a: GitStatusSnapshot, b: GitStatusSnapsh
     a.ahead_of_remote === b.ahead_of_remote &&
     a.behind_remote === b.behind_remote &&
     a.ahead_of_target === b.ahead_of_target &&
+    a.behind_target === b.behind_target &&
+    a.target_resolved === b.target_resolved &&
+    a.conflict_count === b.conflict_count &&
+    a.operation === b.operation &&
     a.has_remote === b.has_remote &&
     a.host === b.host &&
     a.compare_url === b.compare_url &&

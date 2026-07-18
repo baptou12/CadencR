@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { within } from "@testing-library/react";
 import { render, screen } from "@/test-utils";
 import type { GitStatusSnapshot } from "@/api/generated";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { GitActionButton } from "./GitActionButton";
+import { useGitUpdateRecoveryStore } from "./gitUpdateRecoveryStore";
 
-const viewportMocks = vi.hoisted(() => ({ isMobile: false }));
+const buttonMocks = vi.hoisted(() => ({ isMobile: false, updatePending: false }));
 
 vi.mock("@/hooks/useIsMobile", () => ({
-  useIsMobile: () => viewportMocks.isMobile,
+  useIsMobile: () => buttonMocks.isMobile,
+}));
+
+vi.mock("./useGitUpdatePending", () => ({
+  gitUpdateMutationKey: (featureId: number) => ["git-update", featureId],
+  useGitUpdatePending: () => buttonMocks.updatePending,
 }));
 
 vi.mock("./MergeDialog", () => ({
@@ -19,6 +26,11 @@ vi.mock("./MergeDialog", () => ({
 vi.mock("./CommitDialog", () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div role="dialog" aria-label="Commit progress" /> : null,
+}));
+
+vi.mock("./UpdateBranchDialog", () => ({
+  default: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog" aria-label="Update current branch" /> : null,
 }));
 
 function makeMergeableSnapshot(featureId: number): GitStatusSnapshot {
@@ -33,6 +45,10 @@ function makeMergeableSnapshot(featureId: number): GitStatusSnapshot {
     ahead_of_remote: 0,
     behind_remote: 0,
     ahead_of_target: 1,
+    behind_target: 0,
+    target_resolved: true,
+    conflict_count: 0,
+    operation: null,
     has_remote: true,
     compare_url: null,
     action_label: "Open PR",
@@ -48,9 +64,11 @@ function makeDirtyMergeableSnapshot(featureId: number): GitStatusSnapshot {
 }
 
 beforeEach(() => {
-  viewportMocks.isMobile = false;
+  buttonMocks.isMobile = false;
+  buttonMocks.updatePending = false;
   useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
   useCommitOutputStore.setState({ byFeature: {} });
+  useGitUpdateRecoveryStore.setState({ byFeature: {} });
 });
 
 describe("GitActionButton shortcuts", () => {
@@ -82,7 +100,7 @@ describe("GitActionButton shortcuts", () => {
   });
 
   it("keeps the Git actions menu available on mobile while committing", async () => {
-    viewportMocks.isMobile = true;
+    buttonMocks.isMobile = true;
     useGitStatusStore.getState().setStatus(makeDirtyMergeableSnapshot(42));
     useCommitOutputStore.getState().start(42);
 
@@ -130,5 +148,71 @@ describe("GitActionButton shortcuts", () => {
     await user.click(await screen.findByText("Merge"));
 
     expect(await screen.findByRole("dialog", { name: "Merge branch" })).toBeInTheDocument();
+  });
+
+  it("opens the distinct Update dialog without changing finish-branch Merge", async () => {
+    useGitStatusStore.getState().setStatus({
+      ...makeMergeableSnapshot(42),
+      behind_target: 3,
+    });
+
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
+
+    expect(screen.getByRole("button", { name: "Update" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+    expect(await screen.findByText("Merge")).toBeInTheDocument();
+    const actionPicker = screen.getByPlaceholderText("Search git actions…").closest("[cmdk-root]");
+    expect(actionPicker).not.toBeNull();
+    await user.click(within(actionPicker as HTMLElement).getByText("Update"));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Update current branch" }),
+    ).toBeInTheDocument();
+  });
+
+  it("exposes the exact target selector in the desktop Git actions menu", async () => {
+    useGitStatusStore.getState().setStatus({
+      ...makeMergeableSnapshot(42),
+      behind_target: 3,
+    });
+
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+
+    expect(await screen.findByRole("button", { name: "origin/main" })).toHaveAttribute(
+      "title",
+      "Change target branch (currently origin/main)",
+    );
+  });
+
+  it("shows Continue and Abort actions while a rebase is active", async () => {
+    useGitStatusStore.getState().setStatus({
+      ...makeDirtyMergeableSnapshot(42),
+      operation: "rebase",
+      conflict_count: 1,
+    });
+
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+
+    expect(await screen.findByText("Continue update")).toBeInTheDocument();
+    expect(screen.getByText("Abort update")).toBeInTheDocument();
+    expect(screen.getByText("Resolve and stage 1 conflicting file first")).toBeInTheDocument();
+  });
+
+  it("shows visible update activity and disables conflicting actions while pending", async () => {
+    buttonMocks.updatePending = true;
+    useGitStatusStore.getState().setStatus({
+      ...makeMergeableSnapshot(42),
+      behind_target: 3,
+    });
+
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
+
+    const activity = screen.getByRole("button", { name: "Updating…" });
+    expect(activity).toBeDisabled();
+    expect(activity.querySelector(".animate-spin")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+    expect(screen.getAllByText("Update request in progress").length).toBeGreaterThan(0);
   });
 });
