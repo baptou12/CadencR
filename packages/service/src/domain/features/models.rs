@@ -31,6 +31,12 @@ pub struct Feature {
     pub type_: String,
     pub label: Option<String>,
     pub model_session: Option<String>,
+    /// Effective provider id for sidebar display (latest session, else feature setting).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_provider: Option<String>,
+    /// Thinking effort on the latest agent session, when set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_effort: Option<String>,
     pub created_at: String,
     /// Whether the conversation is pinned to the top of the sidebar.
     pub is_pinned: bool,
@@ -138,6 +144,8 @@ mod tests {
             type_: "ws-session".to_string(),
             label: Some("Review".to_string()),
             model_session: Some("claude-session".to_string()),
+            runtime_provider: Some("claude_code".to_string()),
+            thinking_effort: Some("high".to_string()),
             created_at: "2024-01-01T00:00:00".to_string(),
             is_pinned: false,
             spawned_by_feature_id: None,

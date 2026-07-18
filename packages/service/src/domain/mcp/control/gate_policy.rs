@@ -7,7 +7,7 @@ use crate::error::AppError;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(super) enum GateDecision {
+pub(crate) enum GateDecision {
     Permission {
         action: PermissionAction,
         message: Option<String>,
@@ -23,7 +23,7 @@ pub(super) enum GateDecision {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum PermissionAction {
+pub(crate) enum PermissionAction {
     AllowOnce,
     AllowAlways,
     Deny,
@@ -31,13 +31,13 @@ pub(super) enum PermissionAction {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum PlanAction {
+pub(crate) enum PlanAction {
     Approve,
     RequestChanges,
     Reject,
 }
 
-pub(super) async fn authorize_decision(
+pub(crate) async fn authorize_decision(
     state: &AppState,
     session_id: i64,
     request_id: &str,
