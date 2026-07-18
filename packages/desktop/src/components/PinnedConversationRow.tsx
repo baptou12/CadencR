@@ -78,6 +78,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
         {liveStatus === "question" && (
           <SidebarPendingGatePopover
             featureId={feature.id}
+            allowAutoOpen={!isActive}
             onOpenConversation={handleOpenConversation}
           />
         )}

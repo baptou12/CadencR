@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useMostRecentPendingFeatureId,
   useFeaturePendingRequestId,
@@ -15,9 +15,13 @@ interface UsePendingGatePopoverOpenResult {
 /**
  * Open/close rules for sidebar pending-gate popovers:
  * - most-recent pending feature auto-opens (and reopens on a new request id)
+ * - the currently open conversation never auto-opens its sidebar popover
  * - older popovers close when another agent becomes most-recent, unless hovered
  */
-export function usePendingGatePopoverOpen(featureId: number): UsePendingGatePopoverOpenResult {
+export function usePendingGatePopoverOpen(
+  featureId: number,
+  allowAutoOpen: boolean,
+): UsePendingGatePopoverOpenResult {
   const mostRecentFeatureId = useMostRecentPendingFeatureId();
   const pendingRequestId = useFeaturePendingRequestId(featureId);
   const hoveredFeatureId = usePendingGatePopoverHoverStore((s) => s.hoveredFeatureId);
@@ -25,11 +29,23 @@ export function usePendingGatePopoverOpen(featureId: number): UsePendingGatePopo
 
   const isMostRecent = mostRecentFeatureId === featureId;
   const isHovered = hoveredFeatureId === featureId;
-  const [open, setOpen] = useState(isMostRecent);
+  const [open, setOpen] = useState(isMostRecent && allowAutoOpen);
+  const previousAllowAutoOpenRef = useRef(allowAutoOpen);
 
   useEffect(() => {
-    if (isMostRecent) setOpen(true);
-  }, [featureId, isMostRecent, pendingRequestId]);
+    if (allowAutoOpen && isMostRecent) setOpen(true);
+  }, [allowAutoOpen, featureId, isMostRecent, pendingRequestId]);
+
+  // Navigating into this conversation closes its sidebar popover and clears a
+  // hover that may otherwise survive the programmatic close. Manual opening
+  // remains available after that transition.
+  useEffect(() => {
+    const wasAllowed = previousAllowAutoOpenRef.current;
+    previousAllowAutoOpenRef.current = allowAutoOpen;
+    if (!wasAllowed || allowAutoOpen) return;
+    setOpen(false);
+    if (hoveredFeatureId === featureId) setHovered(null);
+  }, [allowAutoOpen, featureId, hoveredFeatureId, setHovered]);
 
   useEffect(() => {
     if (!isMostRecent && !isHovered) setOpen(false);

@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 interface SidebarPendingGatePopoverProps {
   featureId: number;
+  allowAutoOpen: boolean;
   onOpenConversation: () => void;
 }
 
@@ -44,9 +45,13 @@ const TEXT_SCROLL_CLASS = "max-h-[10lh] overflow-y-auto";
  */
 export const SidebarPendingGatePopover = memo(function SidebarPendingGatePopover({
   featureId,
+  allowAutoOpen,
   onOpenConversation,
 }: SidebarPendingGatePopoverProps): ReactElement {
-  const { open, setOpen, setHovered, hoveredFeatureId } = usePendingGatePopoverOpen(featureId);
+  const { open, setOpen, setHovered, hoveredFeatureId } = usePendingGatePopoverOpen(
+    featureId,
+    allowAutoOpen,
+  );
   const { gate, isLoading, isError, errorMessage, isSubmitting, respond } = useFeaturePendingGate({
     featureId,
     enabled: open,

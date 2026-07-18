@@ -186,6 +186,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
             {liveStatus === "question" && (
               <SidebarPendingGatePopover
                 featureId={feature.id}
+                allowAutoOpen={!isActive}
                 onOpenConversation={handleOpenConversation}
               />
             )}
