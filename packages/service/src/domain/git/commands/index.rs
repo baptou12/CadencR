@@ -3,9 +3,12 @@
 
 use std::path::Path;
 
-use crate::domain::git::porcelain::parse_porcelain_v2_entries;
 use crate::error::AppError;
-use crate::shared::git_cli::{git_ref_resolves_background, run_git_background, run_git_safe};
+use crate::shared::git_cli::{git_ref_resolves_background, run_git_safe};
+
+mod pathspecs;
+
+use pathspecs::mutation_pathspecs;
 
 pub async fn stage_file(repo: &Path, file_path: &str) -> Result<(), AppError> {
     let pathspecs = mutation_pathspecs(repo, file_path).await?;
@@ -33,23 +36,6 @@ pub async fn reset_file(repo: &Path, file_path: &str) -> Result<(), AppError> {
         .await?;
     }
     Ok(())
-}
-
-async fn mutation_pathspecs(repo: &Path, file_path: &str) -> Result<Vec<String>, AppError> {
-    let porcelain = run_git_background(&["status", "--porcelain=v2", "-z"], repo).await?;
-    let old_path = parse_porcelain_v2_entries(&porcelain)
-        .into_iter()
-        .find(|entry| entry.path == file_path)
-        .and_then(|entry| entry.old_path);
-    let mut paths = vec![literal_pathspec(file_path)];
-    if let Some(old_path) = old_path.filter(|old_path| old_path != file_path) {
-        paths.push(literal_pathspec(&old_path));
-    }
-    Ok(paths)
-}
-
-fn literal_pathspec(file_path: &str) -> String {
-    format!(":(literal){file_path}")
 }
 
 #[cfg(test)]
@@ -116,6 +102,13 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    fn bad_request_message(error: AppError) -> String {
+        match error {
+            AppError::BadRequest(message) => message,
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -213,6 +206,124 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn untracked_symlink_to_directory_stages_only_the_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let repo = Repo::seeded();
+        std::fs::create_dir(repo.path.join("target-dir")).unwrap();
+        std::fs::write(repo.path.join("target-dir/content.txt"), b"target\n").unwrap();
+        symlink("target-dir", repo.path.join("link-dir")).unwrap();
+
+        stage_file(&repo.path, "link-dir").await.unwrap();
+
+        assert_eq!(
+            capture(&repo.path, &["diff", "--cached", "--name-only"]),
+            "link-dir\n"
+        );
+        assert!(
+            capture(&repo.path, &["ls-files", "--stage", "--", "link-dir"]).starts_with("120000 ")
+        );
+    }
+
+    #[tokio::test]
+    async fn modified_gitlink_directory_stages_its_exact_row() {
+        let repo = Repo::seeded();
+        let source = Repo::seeded();
+        git(
+            &repo.path,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                source.path.to_str().unwrap(),
+                "modules/child",
+            ],
+        );
+        git(&repo.path, &["commit", "-q", "-m", "add submodule"]);
+        let checkout = repo.path.join("modules/child");
+        git(&checkout, &["config", "user.email", "test@example.com"]);
+        git(&checkout, &["config", "user.name", "Test"]);
+        std::fs::write(checkout.join("tracked.txt"), b"advanced\n").unwrap();
+        git(&checkout, &["commit", "-qam", "advance"]);
+
+        stage_file(&repo.path, "modules/child").await.unwrap();
+
+        assert_eq!(
+            capture(&repo.path, &["diff", "--cached", "--name-only"]),
+            "modules/child\n"
+        );
+        assert!(
+            capture(&repo.path, &["ls-files", "--stage", "--", "modules/child"])
+                .starts_with("160000 ")
+        );
+    }
+
+    #[tokio::test]
+    async fn directory_prefix_cannot_stage_descendants_or_change_the_index() {
+        let repo = Repo::seeded();
+        std::fs::create_dir(repo.path.join("src")).unwrap();
+        for path in ["src/one.txt", "src/two.txt"] {
+            std::fs::write(repo.path.join(path), b"original\n").unwrap();
+        }
+        git(&repo.path, &["add", "src"]);
+        git(&repo.path, &["commit", "-q", "-m", "add src"]);
+        for path in ["src/one.txt", "src/two.txt"] {
+            std::fs::write(repo.path.join(path), b"modified\n").unwrap();
+        }
+        let index_before = capture(&repo.path, &["write-tree"]);
+
+        let message = bad_request_message(stage_file(&repo.path, "src").await.unwrap_err());
+
+        assert!(message.contains("directory"), "{message}");
+        assert_eq!(capture(&repo.path, &["write-tree"]), index_before);
+        stage_file(&repo.path, "src/one.txt").await.unwrap();
+        assert_eq!(
+            capture(&repo.path, &["diff", "--cached", "--name-only"]),
+            "src/one.txt\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn directory_prefix_cannot_reset_descendants_or_change_the_index() {
+        let repo = Repo::seeded();
+        std::fs::create_dir(repo.path.join("src")).unwrap();
+        for path in ["src/one.txt", "src/two.txt"] {
+            std::fs::write(repo.path.join(path), path.as_bytes()).unwrap();
+        }
+        git(&repo.path, &["add", "src"]);
+        let index_before = capture(&repo.path, &["write-tree"]);
+
+        let message = bad_request_message(reset_file(&repo.path, "src").await.unwrap_err());
+
+        assert!(message.contains("directory"), "{message}");
+        assert_eq!(capture(&repo.path, &["write-tree"]), index_before);
+        assert_eq!(
+            capture(&repo.path, &["diff", "--cached", "--name-only"]),
+            "src/one.txt\nsrc/two.txt\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn clean_and_missing_paths_are_rejected_without_changing_the_index() {
+        let repo = Repo::seeded();
+        let index_before = capture(&repo.path, &["write-tree"]);
+
+        let clean = bad_request_message(stage_file(&repo.path, "tracked.txt").await.unwrap_err());
+        assert!(clean.contains("clean or ignored"), "{clean}");
+        let clean = bad_request_message(reset_file(&repo.path, "tracked.txt").await.unwrap_err());
+        assert!(clean.contains("clean or ignored"), "{clean}");
+        let missing = bad_request_message(stage_file(&repo.path, "missing.txt").await.unwrap_err());
+        assert!(missing.contains("does not exist"), "{missing}");
+        let missing = bad_request_message(reset_file(&repo.path, "missing.txt").await.unwrap_err());
+        assert!(missing.contains("does not exist"), "{missing}");
+
+        assert_eq!(capture(&repo.path, &["write-tree"]), index_before);
+    }
+
     #[tokio::test]
     async fn reset_preserves_worktree_bytes() {
         let repo = Repo::seeded();
@@ -243,6 +354,21 @@ mod tests {
             std::fs::read(repo.path.join("renamed.txt")).unwrap(),
             b"original\n"
         );
+    }
+
+    #[tokio::test]
+    async fn reset_staged_deletion_preserves_the_worktree_deletion() {
+        let repo = Repo::seeded();
+        std::fs::remove_file(repo.path.join("tracked.txt")).unwrap();
+        stage_file(&repo.path, "tracked.txt").await.unwrap();
+
+        reset_file(&repo.path, "tracked.txt").await.unwrap();
+
+        assert!(!repo.path.join("tracked.txt").exists());
+        assert!(capture(&repo.path, &["diff", "--cached", "--name-only"])
+            .trim()
+            .is_empty());
+        assert!(capture(&repo.path, &["status", "--porcelain=v2"]).contains("tracked.txt"));
     }
 
     #[tokio::test]
