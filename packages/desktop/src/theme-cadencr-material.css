@@ -73,6 +73,20 @@
   padding-bottom: 0.875rem;
 }
 
+/* Collapsed sidebar: chrome is a short strip under the traffic lights — don't
+ * force the open-sidebar 4.5rem band (that left empty space under the lockup).
+ * Vertical padding stays on the header components (`pt-1.5 pb-1.5`). */
+:root[data-sidebar-collapsed="true"]:is(
+    :not([data-theme]),
+    [data-theme="cadencr-dark"],
+    [data-theme="cadencr-light"]
+  )
+  [data-feature-header][data-mac-controls] {
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 /* Seamless chassis: the sidebar's own hairline would cut the shared band in
  * two. The page card's left border takes over as the content boundary. */
 :root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
