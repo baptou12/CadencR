@@ -36,9 +36,9 @@ const base = import.meta.env.BASE_URL;
         <div class="flex flex-col gap-10">
           <a
             href={`${base}news/${featured.id}/`}
-            class="group relative flex flex-col gap-4 overflow-hidden rounded-xl border border-border bg-muted/20 p-7 transition-colors duration-150 hover:border-primary/50 sm:p-10"
+            class="group soft-panel relative flex flex-col gap-4 overflow-hidden p-7 transition-colors duration-150 hover:bg-accent/70 sm:p-10"
           >
-            <span class="absolute right-5 top-5 inline-flex items-center rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-primary">
+            <span class="absolute right-5 top-5 inline-flex items-center rounded-full bg-primary/15 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-primary">
               Latest
             </span>
             <span class="font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
@@ -61,7 +61,7 @@ const base = import.meta.env.BASE_URL;
               {rest.map((entry: NewsEntry) => (
                 <a
                   href={`${base}news/${entry.id}/`}
-                  class="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 p-5 transition-colors duration-150 hover:border-primary/40"
+                  class="soft-panel flex flex-col gap-2 p-5 transition-colors duration-150 hover:bg-accent/70"
                 >
                   <span class="font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
                     {formatDate(entry.data.date)}

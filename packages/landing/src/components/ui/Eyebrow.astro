@@ -1,7 +1,7 @@
 ---
 /**
  * Figure label — the sheet's kicker. Mono, uppercase, ≤11px: the only
- * all-caps tier in the system. With `index`, reads as "Fig. 03 · Git".
+ * all-caps tier in the system. With `index`, reads as "03 · Git".
  */
 interface Props {
   /** Figure number ("01", "02", …) rendered in the accent color. */
@@ -12,7 +12,7 @@ const { index } = Astro.props;
 <span class="fig-label">
   {index && (
     <>
-      <span class="fig-no">Fig. {index}</span>
+      <span class="fig-no">{index}</span>
       <span aria-hidden="true">·</span>
     </>
   )}

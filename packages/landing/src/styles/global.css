@@ -44,15 +44,15 @@
   --color-drac-red: #ff5555;
   --color-drac-yellow: #f1fa8c;
 
-  /* Elevation — shadows stage captures against the ground; hairlines do
-     the structural separation. emerald-seat is the ONE green-tinted shadow
-     on the page (hero capture only — the Jewel-Light Rule). */
+  /* Elevation — shadows stage captures against the ground and do the
+     structural separation that hairlines used to. emerald-seat is the ONE
+     green-tinted shadow on the page (hero capture only — Jewel-Light). */
   --shadow-xs: 0 1px 1px rgb(0 0 0 / 0.3);
   --shadow-md: 0 10px 28px rgb(0 0 0 / 0.42);
   --shadow-lg: 0 28px 64px rgb(0 0 0 / 0.5);
   --shadow-emerald-seat: 0 42px 100px -32px rgb(45 180 125 / 0.16);
 
-  /* Radius — crisper than the app (datasheet voice). */
+  /* Radius — crisper than the app; xl is the soft-panel step. */
   --radius: 0.5rem;
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -99,21 +99,28 @@
 
 @layer components {
   /* ── Sheet structure ──────────────────────────────────────────────
-     The whole page is one ruled technical sheet: a centered column with
-     continuous vertical rails; sections are rows separated by full-width
-     hairline rules. Space inside the rails reads as composition, not
-     absence. */
+     One centered column. Sections are separated by space and surface,
+     not drawn rules — the page breathes instead of being gridded. */
   .sheet {
     max-width: 1180px;
     margin-inline: auto;
   }
-  @media (min-width: 768px) {
-    .sheet {
-      border-inline: 1px solid var(--color-border);
-    }
+
+  /* Soft raised surface — the line replacement: where the old sheet drew
+     a hairline row, we now lift a quiet rounded surface off the ground. */
+  .soft-panel {
+    border-radius: var(--radius-xl);
+    background: color-mix(in oklch, var(--color-foreground) 3.5%, transparent);
   }
-  .rule {
-    border-top: 1px solid var(--color-border);
+
+  /* The page's only emerald wash (Jewel-Light Rule): the hero top-light and
+     its closing bookend. --jewel-y flips the origin to the bottom edge. */
+  .jewel-light {
+    background: radial-gradient(
+      58% var(--jewel-spread, 46%) at 50% var(--jewel-y, 0%),
+      color-mix(in oklch, var(--color-primary) 4%, transparent),
+      transparent 72%
+    );
   }
 
   /* ── Figure system ────────────────────────────────────────────────
@@ -133,46 +140,6 @@
   .fig-label .fig-no {
     color: var(--color-primary);
     font-weight: 600;
-  }
-
-  /* Registration marks — the sheet's signature ornament. Four corner
-     ticks on major figures, drawn from hairlines. */
-  .reg-marks {
-    position: relative;
-  }
-  .reg-marks::before,
-  .reg-marks::after,
-  .reg-marks > .reg-b::before,
-  .reg-marks > .reg-b::after {
-    content: "";
-    position: absolute;
-    width: 9px;
-    height: 9px;
-    pointer-events: none;
-  }
-  .reg-marks::before {
-    top: -5px;
-    left: -5px;
-    border-top: 1px solid var(--color-muted-foreground);
-    border-left: 1px solid var(--color-muted-foreground);
-  }
-  .reg-marks::after {
-    top: -5px;
-    right: -5px;
-    border-top: 1px solid var(--color-muted-foreground);
-    border-right: 1px solid var(--color-muted-foreground);
-  }
-  .reg-marks > .reg-b::before {
-    bottom: -5px;
-    left: -5px;
-    border-bottom: 1px solid var(--color-muted-foreground);
-    border-left: 1px solid var(--color-muted-foreground);
-  }
-  .reg-marks > .reg-b::after {
-    bottom: -5px;
-    right: -5px;
-    border-bottom: 1px solid var(--color-muted-foreground);
-    border-right: 1px solid var(--color-muted-foreground);
   }
 
   /* ── Display type ─────────────────────────────────────────────────
@@ -195,14 +162,15 @@
      itself is the color. */
   .frame {
     position: relative;
-    border: 1px solid var(--color-border);
+    border: 1px solid color-mix(in oklch, var(--color-border) 60%, transparent);
     background: var(--color-sidebar);
+    box-shadow: var(--shadow-md);
     transition:
       border-color 0.3s ease,
       box-shadow 0.3s ease;
   }
   .frame:hover {
-    border-color: color-mix(in oklch, var(--color-foreground) 28%, var(--color-border));
+    border-color: color-mix(in oklch, var(--color-foreground) 20%, var(--color-border));
     box-shadow: 0 18px 44px rgb(0 0 0 / 0.45);
   }
   .feature-media-img {
@@ -217,11 +185,10 @@
     filter: blur(48px);
   }
 
-  /* Figure caption under a frame: mono tick + label. */
+  /* Figure caption under a frame: quiet mono label. */
   .fig-caption {
     display: flex;
     align-items: center;
-    gap: 8px;
     margin-top: 12px;
     font-family: var(--font-mono);
     font-size: 11px;
@@ -229,15 +196,10 @@
     text-transform: uppercase;
     color: var(--color-muted-foreground);
   }
-  .fig-caption::before {
-    content: "";
-    width: 12px;
-    height: 1px;
-    background: var(--color-muted-foreground);
-  }
 
   /* ── Spec list ────────────────────────────────────────────────────
-     Replaces checkmark bullets: ruled rows, mono index ticks. */
+     Replaces checkmark bullets: open rows, mono index ticks — no rules,
+     the emerald + carries the row. */
   .spec-list {
     margin: 0;
     padding: 0;
@@ -245,20 +207,16 @@
   }
   .spec-list li {
     position: relative;
-    padding: 10px 0 10px 26px;
-    border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
+    padding: 7px 0 7px 26px;
     font-size: 14px;
     line-height: 1.55;
     color: var(--color-muted-foreground);
-  }
-  .spec-list li:last-child {
-    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
   }
   .spec-list li::before {
     content: "+";
     position: absolute;
     left: 2px;
-    top: 9px;
+    top: 6px;
     font-family: var(--font-mono);
     font-size: 12px;
     color: var(--color-primary);

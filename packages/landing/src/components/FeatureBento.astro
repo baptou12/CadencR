@@ -7,7 +7,7 @@ import FeatureMedia from "@/components/ui/FeatureMedia.astro";
 import terminalImage from "@/assets/terminal.png";
 import editorImage from "@/assets/editor.png";
 ---
-<section id="workbench" class="rule relative scroll-mt-16 py-16 sm:py-20">
+<section id="workbench" class="relative scroll-mt-16 py-16 sm:py-20">
   <Wrap>
     <div class="reveal mx-auto mb-12 max-w-[560px] text-center">
       <Eyebrow index="06">Workbench</Eyebrow>
@@ -16,7 +16,7 @@ import editorImage from "@/assets/editor.png";
     <div class="grid gap-6 lg:grid-cols-2">
       <article
         id="terminal"
-        class="frame reveal relative overflow-hidden rounded-lg p-5 sm:p-6"
+        class="frame reveal relative scroll-mt-20 overflow-hidden rounded-xl p-5 sm:p-6"
       >
         {/* Negative margins let the window bleed into the card padding —
             the capture's own transparent margins keep it off the border. */}
@@ -48,7 +48,7 @@ import editorImage from "@/assets/editor.png";
 
       <article
         id="editor"
-        class="frame reveal reveal-late relative overflow-hidden rounded-lg p-5 sm:p-6"
+        class="frame reveal reveal-late relative scroll-mt-20 overflow-hidden rounded-xl p-5 sm:p-6"
       >
         <div class="-mx-5 -mt-4 sm:-mx-6 sm:-mt-5">
           <FeatureMedia

@@ -42,7 +42,7 @@ const highlights = [
   },
 ];
 ---
-<section id="stream" class="rule relative scroll-mt-16 py-16 sm:py-20">
+<section id="stream" class="relative scroll-mt-16 py-16 sm:py-20">
   <Wrap>
     <div class="reveal mx-auto max-w-[640px] text-center">
       <Eyebrow index="03">Stream</Eyebrow>
@@ -61,32 +61,29 @@ const highlights = [
         aria-hidden="true"
       >
       </div>
-      <div class="reg-marks">
-        <span class="reg-b"></span>
-        <CompareSlider aspect={`${box.w}/${box.h}`} leftLabel="CadencR" rightLabel="Raw terminal">
-          <Image
-            slot="left"
-            src={streamShot}
-            alt="CadencR's rendering of the agent turn: collapsible thinking, tool-call pills, an inline diff, and a formatted summary with a table"
-            widths={[800, 1200, 1600, 2280]}
-            sizes="(min-width: 768px) 780px, 110vw"
-            format="webp"
-            quality={95}
-            loading="lazy"
-            decoding="async"
-            style={shotStyle}
-          />
-          <StreamTerminal slot="right" />
-        </CompareSlider>
-      </div>
+      <CompareSlider aspect={`${box.w}/${box.h}`} leftLabel="CadencR" rightLabel="Raw terminal">
+        <Image
+          slot="left"
+          src={streamShot}
+          alt="CadencR's rendering of the agent turn: collapsible thinking, tool-call pills, an inline diff, and a formatted summary with a table"
+          widths={[800, 1200, 1600, 2280]}
+          sizes="(min-width: 768px) 780px, 110vw"
+          format="webp"
+          quality={95}
+          loading="lazy"
+          decoding="async"
+          style={shotStyle}
+        />
+        <StreamTerminal slot="right" />
+      </CompareSlider>
       <figcaption class="fig-caption justify-center">
         Drag — the same agent turn, twice
       </figcaption>
     </figure>
 
-    <ul class="reveal reveal-late stream-specs mx-auto mt-10 grid max-w-[1080px] list-none p-0 sm:grid-cols-2 lg:grid-cols-4" role="list">
+    <ul class="reveal reveal-late mx-auto mt-12 grid max-w-[1080px] list-none gap-2.5 p-0 sm:grid-cols-2 lg:grid-cols-4" role="list">
       {highlights.map((item, i) => (
-        <li class="px-4 py-4">
+        <li class="soft-panel px-5 py-4">
           <p class="flex items-baseline gap-2 text-[13.5px] font-semibold tracking-[-0.005em] text-foreground">
             <span class="font-mono text-[11px] font-medium text-primary" aria-hidden="true">{`0${i + 1}`}</span>
             {item.title}
@@ -97,28 +94,3 @@ const highlights = [
     </ul>
   </Wrap>
 </section>
-
-<style>
-  /* Ruled 4-up strip: hairlines between cells, no card chrome. */
-  .stream-specs {
-    border-block: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
-  }
-  @media (min-width: 640px) {
-    .stream-specs li + li {
-      border-left: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
-    }
-  }
-  @media (min-width: 640px) and (max-width: 1023px) {
-    .stream-specs li:nth-child(3) {
-      border-left: none;
-    }
-    .stream-specs li:nth-child(n + 3) {
-      border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
-    }
-  }
-  @media (max-width: 639px) {
-    .stream-specs li + li {
-      border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
-    }
-  }
-</style>

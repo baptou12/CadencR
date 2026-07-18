@@ -75,7 +75,7 @@ components:
     height: "44px"
     padding: "0 20px"
   button-outline:
-    backgroundColor: "{colors.ground}"
+    backgroundColor: "{colors.hover-wash}"
     textColor: "{colors.ink}"
     rounded: "{rounded.lg}"
     height: "44px"
@@ -102,15 +102,15 @@ components:
 
 **Creative North Star: "Emerald Reserve"**
 
-The landing page is a premium graphite sheet. It keeps the engineering-datasheet grammar the site was rebuilt on — one ruled column with continuous rails, numbered `Fig. NN` figures, hairline rules, spec tables, registration ticks — but the voice is a quiet luxury instrument: a darker rail around a lighter main ground, one jewel emerald used with restraint, a single loud CTA per view, and captures seated in deep studio shadows with a barely visible green top-light. Validated 2026-07 through the in-product palette lab in `palette-exploration.html` and Raphael's iterative review.
+The landing page is a premium graphite sheet. The 2026-07 "soft surfaces" round retired the engineering-datasheet line grammar (side rails, full-width section rules, registration ticks, ruled rows — removed at Raphael's request): structure now comes from space, quiet raised surfaces, and rounded corners, while the numbered figure voice stays (bare `NN` numbers — the "Fig." prefix was dropped 2026-07-18). The tone is a quiet luxury instrument: one jewel emerald used with restraint, a single loud CTA per view, and captures seated in deep studio shadows with a barely visible green top-light. Palette validated 2026-07 through the in-product palette lab in `palette-exploration.html` and Raphael's iterative review.
 
-The chrome is near-monochrome: graphite ground, near-black rails, cool-white ink, light-gray hairlines, and one emerald accent. The real app captures — vivid, alive — are the only multi-hue objects on the page. They light the sheet the way monitors light a dark room.
+The chrome is near-monochrome: graphite ground, near-black footer band, cool-white ink, soft raised panels, and one emerald accent. The real app captures — vivid, alive — are the only multi-hue objects on the page. They light the sheet the way monitors light a dark room.
 
 The system explicitly rejects the generic AI-startup landing page: no hype superlatives, no fabricated dashboards, no gradient text, no aurora washes, no decorative grids — and no competing accents: each view has exactly one loud object.
 
 **Key Characteristics:**
-- One ruled sheet: continuous side rails (≥768px), hairline rules between sections, everything composed as rows.
-- Numbered figure system: mono `Fig. NN` labels, the only all-caps tier besides the wordmark, with the number in emerald.
+- One breathing column: sections separated by space (64/80px), lists and tables seated on soft rounded panels — no drawn rules, rails, or corner ticks.
+- Numbered figure system: mono numbered labels (`01 · Compatibility`), the only all-caps tier besides the wordmark, with the number in emerald.
 - Near-monochrome chrome; the product captures are the only multi-hue color; one emerald accent, one loud CTA per view.
 - Schibsted Grotesk for display and body (a cool, tight cut — no width games); JetBrains Mono for the annotation layer; Figtree 800 caps for the wordmark only.
 - The Index Dots mark: twelve ink dots on a ring around a solid emerald core — the official logo, everywhere.
@@ -131,7 +131,7 @@ A graphite instrument palette: near-black rail, slightly lighter main ground, co
 - **Ink** (#EFF0F2): primary text; also the logo's dots.
 - **Soft / Muted** (#A7A9AD / #6E7176): secondary and tertiary text tiers. Use Soft for normal supporting copy and Muted only for metadata that remains nonessential.
 - **Hover Wash** (#202124): neutral interactive hover state.
-- **Hairline** (#34373A): every rule, rail, and border — intentionally light gray rather than hue-tinted.
+- **Hairline** (#34373A): the few remaining functional borders (media frames at 60% mix, the nav's soft bottom edge at 50%, floating menus). Never used for decorative rules or row separators.
 
 ### Status
 - **Alarm Red** (oklch(0.682 0.206 24.421)): error semantics only (brew-copy failure). Never decorative.
@@ -140,9 +140,9 @@ A graphite instrument palette: near-black rail, slightly lighter main ground, co
 ### Named Rules
 **The Product-Is-The-Color Rule.** Page chrome stays within the neutral ramp plus one emerald. The app captures are the only saturated, multi-hue objects. If a decorative element wants a second color, it is wrong.
 
-**The One-Loud-Object Rule.** Each view gets exactly one accent-filled element (the hero CTA). Secondary CTAs are hairline ghosts. Two competing accent fills is the SaaS tell this redesign exists to avoid.
+**The One-Loud-Object Rule.** Each view gets exactly one accent-filled element (the hero CTA). Secondary CTAs are quiet neutral washes. Two competing accent fills is the SaaS tell this redesign exists to avoid.
 
-**The Jewel-Light Rule.** Green in backgrounds is exceptional and near-invisible: the hero may carry one emerald top-light (≤4% alpha, wide radius) and hero-scale captures an emerald shadow (≤16% alpha). Everything else uses the neutral monitor-light (ink-mixed radial at 7%, blurred 48px). Anything louder is prohibited.
+**The Jewel-Light Rule.** Green in backgrounds is exceptional and near-invisible: the page carries exactly one emerald wash as a bookend pair — the hero top-light and its mirrored closer light (both `.jewel-light`, ≤4% alpha, wide radius) — plus an emerald shadow on hero-scale captures (≤16% alpha). Everything else uses the neutral monitor-light (ink-mixed radial at 7%, blurred 48px). Anything louder, or a third wash, is prohibited.
 
 ## 3. Typography
 
@@ -163,13 +163,13 @@ A graphite instrument palette: near-black rail, slightly lighter main ground, co
 - **Wordmark** (Figtree 800, uppercase, 0.05em): `CADENCR`, always next to the Index Dots mark.
 
 ### Named Rules
-**The Fig Rule.** Every kicker is a figure label: mono, uppercase, ≤11px, `Fig. NN` in emerald followed by a middot and the title. The only other all-caps text is the wordmark.
+**The Fig Rule.** Every kicker is a figure label: mono, uppercase, ≤11px, a bare `NN` number in emerald followed by a middot and the title (no "Fig." prefix). The only other all-caps text is the wordmark.
 
 **The One Family Rule.** No second display face and no width axis. Contrast comes from weight and Ink vs Muted. Figtree appears only in the wordmark.
 
 ## 4. Elevation
 
-Structure is drawn, not lifted: hairline rules and rails do all separation. Shadows exist to seat captures against the ground — deeper than before, studio-grade. The signature ornament is the registration mark — four 9px hairline corner ticks (`.reg-marks`) on major framed figures.
+Structure is spaced and lifted, not drawn: separation comes from vertical rhythm, soft raised panels (`.soft-panel`: Ink at 3.5% on Ground, 12px radius), and surface changes (the near-black footer band). Shadows seat captures against the ground — studio-grade — and media frames carry the page's only hairlines, softened to 60%.
 
 ### Shadow Vocabulary
 - **xs** (`0 1px 1px rgb(0 0 0 / 0.3)`): buttons, small chrome.
@@ -180,7 +180,7 @@ Structure is drawn, not lifted: hairline rules and rails do all separation. Shad
 - **hover** (`0 18px 44px rgb(0 0 0 / 0.45)`): `.frame:hover`, with an ink-mixed border brighten — no transform.
 
 ### Named Rules
-**The Drawn-Not-Lifted Rule.** If a boundary is needed, draw a hairline. A shadow that isn't seating a capture is dead weight.
+**The Space-Not-Lines Rule.** If a boundary is needed, use space, a soft panel, or a surface change — never a decorative rule, rail, or tick. Hairline borders survive only where they do a job: seating a capture's frame or edging a floating menu.
 
 ## 5. Components
 
@@ -190,42 +190,39 @@ The official mark: twelve r1.9 ink dots on a r14.5 ring around a solid emerald c
 The ring geometry is defined once in `src/lib/logo-dots.mjs` and shared by both the inline mark and the icon pipeline. `scripts/generate-icons.mjs` (run by hand, uses `sharp`) regenerates every raster — the PNG favicons, `apple-touch-icon`, the manifest icons, `logo.png`, the PNG-entry `favicon.ico`, and the served `favicon.svg` (a baked ground/ink/emerald cut) — from that one source, so the on-screen logo and the icons can never drift.
 
 ### Sheet
-`.sheet`: max-width 1180px, centered, `border-inline` rails from 768px up. `.rule`: a full-width hairline `border-top` marking every section row. Sections use `py-16 sm:py-20` (64/80px); figures may bleed past the rails deliberately.
+`.sheet`: max-width 1180px, centered — a plain breathing column, no rails. Sections use `py-16 sm:py-20` (64/80px) and separate by space alone; figures may bleed past the column deliberately. `.soft-panel` (Ink 3.5% on Ground, 12px radius) is the row/card surface everywhere a hairline row used to be.
 
 ### Buttons
 - **Shape:** 8px radius, 44px tall at lg, 36px at md, 13–14px Schibsted medium.
 - **Primary:** Emerald fill, Ground text; hover dims to 90%. One per view (the One-Loud-Object Rule).
-- **Outline:** Ground fill, Ink text, Hairline border, xs shadow; hover uses the neutral wash.
+- **Outline (soft):** Hover-Wash fill at 70%, Ink text, no border, xs shadow; hover deepens to the full wash.
 - **Ghost:** transparent, Soft text; hover uses the neutral wash + Ink text.
 
 ### Fig label
-`.fig-label`: mono 11px uppercase tracked 0.09em, Soft, with `.fig-no` (the `Fig. NN` or lead word) in emerald 600. Used above every section heading and in the hero version strip.
-
-### Registration marks (signature)
-`.reg-marks` + one `.reg-b` child: four hairline corner ticks in Muted, offset -5px, framing the hero video and the compare slider.
+`.fig-label`: mono 11px uppercase tracked 0.09em, Soft, with `.fig-no` (the `NN` number or lead word) in emerald 600. Used above every section heading and in the hero version strip.
 
 ### Frame + fig caption
-`.frame`: hairline border on Raised, hover brightens border and deepens shadow. Below framed media, `.fig-caption`: mono 11px uppercase with a 12px tick, e.g. `Fig. 00 · live capture, real session`.
+`.frame`: softened hairline border (60% mix) on Raised with an md shadow at rest; hover brightens the border and deepens the shadow. Media frames round to 12px. Below framed media, `.fig-caption`: mono 11px uppercase, e.g. `00 · live capture, real session` — no tick mark.
 
 ### Spec list
-`.spec-list`: the bullet replacement. Hairline-ruled rows (62% mix), 14px, emerald mono `+` tick at left, `strong` in Ink 560. Used for every feature enumeration.
+`.spec-list`: the bullet replacement. Open rows (no rules), 14px, emerald mono `+` tick at left, `strong` in Ink 560. Used for every feature enumeration.
 
-### Spec table (compatibility)
-Ruled rows: logo cell (hairline box on Raised), name (15px 600), description (14px Soft), and a mono `NN · supported` tag in emerald at the right (hidden on mobile).
+### Compatibility grid
+A 2-up grid of `.soft-panel` cards, 10px gaps, sat beside the section copy: a rounded 48px logo tile on Rail above the provider name (14.5px 600), centered. No description, no support tag — the logos carry it.
 
 ### Compare slider (signature)
-Range-input-driven before/after in a `.frame` with reg-marks: neutral ink divider + round handle, mono corner labels, keyboard-operable, no-JS degrades to a 50% split.
+Range-input-driven before/after in a `.frame`: neutral ink divider + round borderless handle, mono pill corner labels, keyboard-operable, no-JS degrades to a 50% split.
 
 ### FAQ rows
-Ruled `details` rows: mono `01`-style index, 15px question, hairline-boxed plus toggle that rotates 45° and turns emerald when open. Answers are 14px/1.65 Soft, ≤62ch.
+`details` on `.soft-panel` rows with 10px gaps: mono `01`-style index, 15px question, round wash-filled plus toggle that rotates 45° and turns emerald on `open`; the open row's panel brightens to Ink 5%. Answers are 14px/1.65 Soft, ≤62ch.
 
 ### Navigation
-Sticky hairline-bottom bar on Ground at 90% with blur: Index Dots mark + `CADENCR` wordmark + version chip, links in scroll order (Compatibility, Features, News, Docs), mono GitHub pill, and an **outline** Download button (h-9) — a hairline ghost, not the emerald fill, so the hero CTA stays the one loud object (see the One-Loud-Object Rule). A 44px hamburger with `aria-expanded`; a `.skip-link` is the first tab stop.
+Sticky bar on Ground at 90% with blur, a 50% hairline bottom edge plus a soft shadow: Index Dots mark + `CADENCR` wordmark + pill version chip (wash fill), links in scroll order (Compatibility, Features, News, Docs), mono GitHub link (hover wash, no border), and a soft-wash Download button (h-9) — not the emerald fill, so the hero CTA stays the one loud object (see the One-Loud-Object Rule). A 44px hamburger with `aria-expanded`; a `.skip-link` is the first tab stop.
 
 ## 6. Do's and Don'ts
 
 ### Do:
-- **Do** compose every section as a ruled row of the sheet; if a boundary is needed, draw a hairline, never a glow.
+- **Do** separate sections with space and seat lists on `.soft-panel` surfaces; if a boundary is needed, change the surface, never draw a rule.
 - **Do** ship real captures of CadencR in every media slot, seated with contour shadow and neutral monitor-light (PRODUCT.md: "the product is the imagery").
 - **Do** keep chrome near-monochrome with the single emerald accent and exactly one accent-filled CTA per view.
 - **Do** render the logo from tokens via `LogoMark.astro`; use the favicon cut for ≤32px rasters and Emerald Deep on light grounds.
@@ -236,7 +233,8 @@ Sticky hairline-bottom bar on Ground at 90% with blur: Index Dots mark + `CADENC
 ### Don't:
 - **Don't** build "a generic AI-startup landing page: no hype superlatives, no fabricated dashboards" (PRODUCT.md, verbatim).
 - **Don't** use gradient text, side-stripe borders, aurora washes, decorative background grids, or glassmorphism. The 2026-02 redesign removed them; they do not come back.
-- **Don't** fill more than one element per view with emerald. The nav Download stays a hairline ghost; the hero CTA is the loud one.
+- **Don't** fill more than one element per view with emerald. The nav Download stays a soft wash; the hero CTA is the loud one.
+- **Don't** reintroduce the datasheet line grammar: no side rails, no full-width section rules, no registration corner ticks, no hairline-ruled list rows (removed 2026-07 at Raphael's request).
 - **Don't** reintroduce the per-section Dracula accent spectrum in page chrome. ANSI colors live inside terminal/app depictions only.
 - **Don't** let all-caps leave the fig-label + wordmark tiers, or mono leave the annotation layer.
 - **Don't** use a second display face, a width axis, or a light theme. Ground (#131416) is the only body color.
