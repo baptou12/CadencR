@@ -93,6 +93,122 @@ export function seedBatchFileContentCache(
  */
 export type DiffMode = "worktree" | "branch" | "uncommitted";
 
+export function changedFilesErrorMessage(isError: boolean, error: unknown): string | null {
+  return isError ? apiErrorMessage(error, "Failed to load changed files") : null;
+}
+
+function useChangedFiles(
+  featureId: number,
+  mode: DiffMode,
+  targetBranch: string | undefined,
+  selectedCommit: string | null,
+) {
+  const diffParamsReady = mode !== "branch" || !!targetBranch || !!selectedCommit;
+  const query = useGetChangedFiles(
+    {
+      feature_id: featureId,
+      mode,
+      target_branch: targetBranch,
+      commit_sha: selectedCommit ?? undefined,
+    },
+    { query: { enabled: diffParamsReady } },
+  );
+  const changedFiles = useMemo(() => query.data ?? [], [query.data]);
+  const fileNames = useMemo(() => changedFiles.map((file) => file.file), [changedFiles]);
+  const errorMessage = changedFilesErrorMessage(query.isError, query.error);
+  const isLoading = query.isLoading || !diffParamsReady;
+  return useMemo(
+    () => ({ changedFiles, fileNames, errorMessage, isLoading }),
+    [changedFiles, errorMessage, fileNames, isLoading],
+  );
+}
+
+function useViewedFiles(featureId: number, queryClient: QueryClient) {
+  const blobShasQuery = useGetFileBlobShas({ feature_id: featureId });
+  const blobShas: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const item of blobShasQuery.data ?? []) {
+      if (item.sha) map[item.file_path] = item.sha;
+    }
+    return map;
+  }, [blobShasQuery.data]);
+  const viewedQuery = useListDiffViewed(featureId);
+  const viewedFilesSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const viewed of viewedQuery.data ?? []) {
+      const currentSha = blobShas[viewed.file_path];
+      if (currentSha && currentSha !== viewed.blob_sha) continue;
+      set.add(viewed.file_path);
+    }
+    return set;
+  }, [blobShas, viewedQuery.data]);
+  const markViewed = useMarkDiffViewed({
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getListDiffViewedQueryKey(featureId) }),
+    },
+  });
+  const unmarkViewed = useUnmarkDiffViewed({
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getListDiffViewedQueryKey(featureId) }),
+    },
+  });
+  return useMemo(
+    () => ({ blobShas, viewedFilesSet, markViewed, unmarkViewed }),
+    [blobShas, markViewed, unmarkViewed, viewedFilesSet],
+  );
+}
+
+function useCommentActions(featureId: number, queryClient: QueryClient) {
+  const commentsQuery = useListDiffComments(featureId);
+  const comments = useMemo(() => commentsQuery.data ?? [], [commentsQuery.data]);
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) });
+  const createComment = useCreateDiffComment({ mutation: { onSuccess: invalidate } });
+  const updateComment = useUpdateDiffComment({ mutation: { onSuccess: invalidate } });
+  const deleteComment = useDeleteDiffComment({ mutation: { onSuccess: invalidate } });
+  return useMemo(
+    () => ({ comments, createComment, updateComment, deleteComment }),
+    [comments, createComment, deleteComment, updateComment],
+  );
+}
+
+function useStaleCommentInvalidation(
+  featureId: number,
+  comments: ReturnType<typeof useCommentActions>["comments"],
+  blobShas: Record<string, string>,
+  deleteComment: ReturnType<typeof useCommentActions>["deleteComment"],
+): void {
+  const deleteCommentMutate = deleteComment.mutate;
+  useEffect(() => {
+    if (comments.length === 0) return;
+    const staleIds = findStalePendingCommentIds(comments, blobShas).filter(
+      (id) => !inFlightStaleDeleteIds.has(id),
+    );
+    if (staleIds.length === 0) return;
+    const batchKey = [...staleIds].sort((a, b) => a - b).join(",");
+    if (lastToastedStaleBatchKeys.get(featureId) !== batchKey) {
+      lastToastedStaleBatchKeys.set(featureId, batchKey);
+      const noun = staleIds.length === 1 ? "comment" : "comments";
+      toast.info(`Removed ${staleIds.length} ${noun} on changed files`);
+    }
+    for (const id of staleIds) {
+      inFlightStaleDeleteIds.add(id);
+      deleteCommentMutate(
+        { id },
+        {
+          onSettled: () => inFlightStaleDeleteIds.delete(id),
+          onError: (error: unknown) => {
+            const message = apiErrorMessage(error, "Unknown error");
+            toast.error(`Failed to remove stale comment: ${message}`);
+          },
+        },
+      );
+    }
+  }, [blobShas, comments, deleteCommentMutate, featureId]);
+}
+
 export function useDiffData(
   featureId: number,
   mode: DiffMode,
@@ -107,155 +223,33 @@ export function useDiffData(
 ) {
   const queryClient = useQueryClient();
   const selectedCommit = commitSha ?? null;
-
-  // ---- Changed-file list ----
-  // The pane is driven by the cheap changed-files list; each file's unified
-  // diff is fetched lazily per row (see `useFileDiffSection`) as it's expanded
-  // and scrolled into view, so opening the Git tab no longer downloads +
-  // JSON-parses the entire working-tree diff (multi-MB) as one blob.
-  //
-  // In branch mode the target branch resolves asynchronously (the Git tab reads
-  // it from a snapshot query). Firing before it's known triggers a throwaway
-  // fetch against the default branch that's immediately refetched once the real
-  // target arrives; gate the query until the target (or a pinned commit) is
-  // known.
-  const diffParamsReady = mode !== "branch" || !!targetBranch || !!selectedCommit;
-  const { data: changedFiles = [], isLoading } = useGetChangedFiles(
-    {
-      feature_id: featureId,
-      mode,
-      target_branch: targetBranch,
-      commit_sha: selectedCommit ?? undefined,
-    },
-    { query: { enabled: diffParamsReady } },
+  const changed = useChangedFiles(featureId, mode, targetBranch, selectedCommit);
+  const viewed = useViewedFiles(featureId, queryClient);
+  const commentActions = useCommentActions(featureId, queryClient);
+  useStaleCommentInvalidation(
+    featureId,
+    commentActions.comments,
+    viewed.blobShas,
+    commentActions.deleteComment,
   );
-  const fileNames = useMemo(() => changedFiles.map((f) => f.file), [changedFiles]);
-
-  // Per-file staging state. Only meaningful in the working-tree views; in
-  // `branch`/commit views the set stays empty so the badge never renders.
-  const isUncommittedView = mode === "uncommitted" || mode === "worktree";
-  const stagedFiles: Set<string> = useMemo(() => {
-    const set = new Set<string>();
-    if (!isUncommittedView || selectedCommit) return set;
-    for (const f of changedFiles) {
-      if (f.is_staged) set.add(f.file);
-    }
-    return set;
-  }, [changedFiles, isUncommittedView, selectedCommit]);
-
-  // ---- Blob SHAs & viewed tracking ----
-  const { data: blobShasList = [] } = useGetFileBlobShas({ feature_id: featureId });
-  const blobShas: Record<string, string> = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const item of blobShasList) {
-      if (item.sha) map[item.file_path] = item.sha;
-    }
-    return map;
-  }, [blobShasList]);
-
-  const { data: viewedList = [] } = useListDiffViewed(featureId);
-  const viewedFilesSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const v of viewedList) {
-      const currentSha = blobShas[v.file_path];
-      if (currentSha && currentSha !== v.blob_sha) continue;
-      set.add(v.file_path);
-    }
-    return set;
-  }, [viewedList, blobShas]);
-
-  const markViewed = useMarkDiffViewed({
-    mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getListDiffViewedQueryKey(featureId) }),
-    },
-  });
-  const unmarkViewed = useUnmarkDiffViewed({
-    mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getListDiffViewedQueryKey(featureId) }),
-    },
-  });
-
-  // ---- Comments ----
-  const { data: comments = [] } = useListDiffComments(featureId);
-
-  const createComment = useCreateDiffComment({
-    mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) }),
-    },
-  });
-  const updateComment = useUpdateDiffComment({
-    mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) }),
-    },
-  });
-  const deleteComment = useDeleteDiffComment({
-    mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) }),
-    },
-  });
-
-  // ---- Auto-invalidate pending comments on changed files ----
-  // Product rule: if any pending comment on a file is stale (its recorded
-  // `original_blob_sha` no longer matches the file's current SHA), drop *all*
-  // pending comments on that file. State below is module-scoped so two
-  // simultaneously-mounted `DiffViewer`s don't double-fire
-  // deletes or double-toast for the same batch.
-  const deleteCommentMutate = deleteComment.mutate;
-  useEffect(() => {
-    if (comments.length === 0) return;
-    const staleIds = findStalePendingCommentIds(comments, blobShas).filter(
-      (id) => !inFlightStaleDeleteIds.has(id),
-    );
-    if (staleIds.length === 0) return;
-
-    // Sorted-id key dedupes re-renders within a batch and across hook instances.
-    const batchKey = [...staleIds].sort((a, b) => a - b).join(",");
-    if (lastToastedStaleBatchKeys.get(featureId) !== batchKey) {
-      lastToastedStaleBatchKeys.set(featureId, batchKey);
-      const noun = staleIds.length === 1 ? "comment" : "comments";
-      toast.info(`Removed ${staleIds.length} ${noun} on changed files`);
-    }
-
-    for (const id of staleIds) {
-      inFlightStaleDeleteIds.add(id);
-      deleteCommentMutate(
-        { id },
-        {
-          onSettled: () => inFlightStaleDeleteIds.delete(id),
-          onError: (err: unknown) => {
-            const message = apiErrorMessage(err, "Unknown error");
-            toast.error(`Failed to remove stale comment: ${message}`);
-          },
-        },
-      );
-    }
-  }, [featureId, comments, blobShas, deleteCommentMutate]);
-
-  // ---- Auto-collapse viewed files ----
   const hasInitializedCollapse = useRef(false);
-
-  return {
-    // Surface the branch-mode target-resolution gate as loading so the view
-    // shows its loader (and never a momentary empty body) until the file list
-    // is ready.
-    isLoading: isLoading || !diffParamsReady,
-    changedFiles,
-    fileNames,
-    stagedFiles,
-    selectedCommit,
-    blobShas,
-    viewedFilesSet,
-    markViewed,
-    unmarkViewed,
-    createComment,
-    updateComment,
-    deleteComment,
-    comments,
-    hasInitializedCollapse,
-  };
+  return useMemo(
+    () => ({
+      isLoading: changed.isLoading,
+      errorMessage: changed.errorMessage,
+      changedFiles: changed.changedFiles,
+      fileNames: changed.fileNames,
+      selectedCommit,
+      blobShas: viewed.blobShas,
+      viewedFilesSet: viewed.viewedFilesSet,
+      markViewed: viewed.markViewed,
+      unmarkViewed: viewed.unmarkViewed,
+      createComment: commentActions.createComment,
+      updateComment: commentActions.updateComment,
+      deleteComment: commentActions.deleteComment,
+      comments: commentActions.comments,
+      hasInitializedCollapse,
+    }),
+    [changed, commentActions, selectedCommit, viewed],
+  );
 }

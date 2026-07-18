@@ -26,9 +26,9 @@ export function CopyButton({
       text={text}
       label={label}
       copiedLabel={copiedLabel}
-      className={cn("hover:text-[#f8f8f2]", className)}
-      copiedClassName="text-[#50fa7b]"
-      idleClassName={cn("text-[#6272a4]", hoverClass)}
+      className={cn("hover:text-foreground", className)}
+      copiedClassName="text-[var(--acc-green)]"
+      idleClassName={cn("text-muted-foreground", hoverClass)}
       iconClassName={sizeClass}
     />
   );

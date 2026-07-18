@@ -1,37 +1,200 @@
-import { memo, useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { memo, useMemo, useRef, type ReactNode } from "react";
+import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { GIT_DIFF_VIEW_MODE_KEY, parseGitDiffViewMode } from "@/lib/git-diff-view-mode";
 import { useTheme } from "@/hooks/useTheme";
-import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
+import { GIT_DIFF_VIEW_MODE_KEY, parseGitDiffViewMode } from "@/lib/git-diff-view-mode";
 import { DiffContent } from "./DiffContent";
 import { DiffLayout } from "./DiffLayout";
-import type { CommentSide } from "./PatchDiffView";
 import { DiffViewerBottomBar } from "./DiffViewerBottomBar";
+import { GitDiffFileTree } from "./GitDiffFileTree";
 import { useDiffData, type DiffMode } from "./useDiffData";
-import { useDiffKeyboard } from "./useDiffKeyboard";
-import { useCollapseLargeFilesOnLoad } from "./useLargeFileCollapse";
-import { scrollFileToTop } from "./scroll-to-file";
-import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
-import type { DiffComment } from "./DiffCommentWidget";
 import { useOpenDiffInEditor } from "./OpenDiffInEditorContext";
+import { useGitFileIndexActions } from "./useGitFileIndexActions";
+import { useGitFileListCollapse, type GitFileListCollapseState } from "./useGitFileListCollapse";
+import { useDiffViewerComments } from "./useDiffViewerComments";
+import { useDiffViewerNavigation } from "./useDiffViewerNavigation";
 
 interface DiffViewerProps {
   featureId: number;
   mode: DiffMode;
   targetBranch?: string;
-  /**
-   * When set, render the full diff of this single commit instead of the
-   * working-tree / branch comparison. Drives the Git-tab Graph view's
-   * click-to-open-commit flow.
-   */
   commitSha?: string | null;
-  /** Optional controlled file-list collapsed state. */
   fileListCollapsed?: boolean;
   onFileListCollapsedChange?: (collapsed: boolean) => void;
   onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
 }
 
-const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
+type DiffData = ReturnType<typeof useDiffData>;
+
+interface LoadedDiffViewerProps {
+  featureId: number;
+  mode: DiffMode;
+  targetBranch?: string;
+  data: DiffData;
+  fileList: GitFileListCollapseState;
+  diffMode: "unified" | "split";
+  setDiffMode: (mode: string) => void;
+  themeAppearance: ThemeAppearance;
+  themeId: ThemeId;
+  openFileInEditor?: (filePath: string, lineNumber?: number) => void;
+}
+
+function DiffViewerMessage({ children, error = false }: { children: ReactNode; error?: boolean }) {
+  return (
+    <div
+      className={`flex h-full items-center justify-center bg-background px-4 text-center ${error ? "text-destructive" : "text-muted-foreground"}`}
+      role={error ? "alert" : "status"}
+    >
+      <p>{children}</p>
+    </div>
+  );
+}
+
+function DiffQueryErrorBanner({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div
+      className="shrink-0 border-b border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+      role="alert"
+    >
+      {message}
+    </div>
+  );
+}
+
+const DiffViewerLayout = memo(function DiffViewerLayout({
+  data,
+  fileList,
+  tree,
+  content,
+  diffMode,
+  setDiffMode,
+}: {
+  data: DiffData;
+  fileList: GitFileListCollapseState;
+  tree: ReactNode;
+  content: ReactNode;
+  diffMode: "unified" | "split";
+  setDiffMode: (mode: string) => void;
+}) {
+  return (
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <DiffQueryErrorBanner message={data.errorMessage} />
+      <DiffLayout
+        collapsed={fileList.showCollapsedRail}
+        controlled={fileList.isControlled}
+        disabled={fileList.isLoading}
+        sidebar={tree}
+        content={content}
+        onCollapsedChange={fileList.setCollapsed}
+      />
+      <DiffViewerBottomBar
+        viewedCount={data.viewedFilesSet.size}
+        fileCount={data.changedFiles.length}
+        diffMode={diffMode}
+        onDiffModeChange={setDiffMode}
+      />
+    </div>
+  );
+});
+
+function LoadedDiffViewer({
+  featureId,
+  mode,
+  targetBranch,
+  data,
+  fileList,
+  diffMode,
+  setDiffMode,
+  themeAppearance,
+  themeId,
+  openFileInEditor,
+}: LoadedDiffViewerProps) {
+  const indexActions = useGitFileIndexActions(featureId);
+  const diffAreaRef = useRef<HTMLDivElement>(null);
+  const navigation = useDiffViewerNavigation({
+    featureId,
+    data,
+    indexActions,
+    diffAreaRef,
+    onOpenFileInEditor: openFileInEditor,
+  });
+  const comments = useDiffViewerComments(featureId, data);
+  const indexMutable =
+    (mode === "uncommitted" || mode === "worktree") && data.selectedCommit === null;
+  const content = useMemo(
+    () => (
+      <DiffContent
+        diffAreaRef={diffAreaRef}
+        files={data.changedFiles}
+        featureId={featureId}
+        mode={mode}
+        targetBranch={targetBranch}
+        selectedCommit={data.selectedCommit}
+        diffMode={diffMode}
+        collapsedFiles={navigation.collapsedFiles}
+        focusedFileIndex={navigation.focusedFileIndex}
+        viewedFilesSet={data.viewedFilesSet}
+        commentLinesByFile={comments.commentLinesByFile}
+        activeCommentWidget={comments.activeCommentWidget}
+        memoizedActiveWidget={comments.activeWidget}
+        commentCallbacks={comments.callbacks}
+        onToggleFile={navigation.toggleFile}
+        onMarkViewedFile={navigation.markFileViewed}
+        onUnmarkViewedFile={navigation.unmarkFileViewed}
+        onOpenFileInEditor={openFileInEditor}
+        indexActions={indexMutable ? indexActions : undefined}
+        onAddComment={comments.addComment}
+        themeAppearance={themeAppearance}
+        themeId={themeId}
+      />
+    ),
+    [
+      comments,
+      data,
+      diffAreaRef,
+      diffMode,
+      featureId,
+      indexActions,
+      indexMutable,
+      mode,
+      navigation,
+      openFileInEditor,
+      targetBranch,
+      themeAppearance,
+      themeId,
+    ],
+  );
+  const tree = useMemo(
+    () => (
+      <GitDiffFileTree
+        model={navigation.tree.model}
+        files={data.changedFiles}
+        expandedFiles={navigation.expandedFiles}
+        indexActions={indexActions}
+        displayMode={navigation.tree.displayMode}
+        isDisplayModePending={navigation.tree.isDisplayModePending}
+        onDisplayModeChange={navigation.tree.setDisplayMode}
+        resolveFilePath={navigation.tree.resolveFilePath}
+        onToggleExpand={navigation.toggleFile}
+        onOpenFileInEditor={openFileInEditor}
+        onCollapse={fileList.isControlled ? undefined : fileList.collapse}
+      />
+    ),
+    [data.changedFiles, fileList, indexActions, navigation, openFileInEditor],
+  );
+
+  return (
+    <DiffViewerLayout
+      data={data}
+      fileList={fileList}
+      tree={tree}
+      content={content}
+      diffMode={diffMode}
+      setDiffMode={setDiffMode}
+    />
+  );
+}
 
 function DiffViewerImpl({
   featureId,
@@ -44,328 +207,38 @@ function DiffViewerImpl({
 }: DiffViewerProps) {
   const contextOpenFileInEditor = useOpenDiffInEditor();
   const openFileInEditor = onOpenFileInEditor ?? contextOpenFileInEditor;
-  const { value: persistedDiffMode, setValue: setDiffMode } = useDebouncedSetting(
-    GIT_DIFF_VIEW_MODE_KEY,
-    0,
-  );
-  const diffMode = parseGitDiffViewMode(persistedDiffMode);
-  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [focusedFileIndex, setFocusedFileIndex] = useState(-1);
-  const [activeCommentWidget, setActiveCommentWidget] = useState<{
-    filePath: string;
-    lineNumber: number;
-    side: CommentSide;
-  } | null>(null);
-  const diffAreaRef = useRef<HTMLDivElement>(null);
-  const isControlled = fileListCollapsed !== undefined;
-  const {
-    value: persistedFileListCollapsed,
-    setValue: persistFileListCollapsed,
-    isLoading: isFileListCollapseLoading,
-  } = useDebouncedSetting(GIT_SIDEBAR_COLLAPSED_SETTING, 0);
-  const isFileListCollapsed = isControlled
-    ? !!fileListCollapsed
-    : persistedFileListCollapsed === "true";
-  const showFileListRail = isControlled
-    ? isFileListCollapsed
-    : isFileListCollapseLoading || isFileListCollapsed;
-
+  const { value, setValue: setDiffMode } = useDebouncedSetting(GIT_DIFF_VIEW_MODE_KEY, 0);
+  const diffMode = parseGitDiffViewMode(value);
+  const fileList = useGitFileListCollapse({
+    controlledValue: fileListCollapsed,
+    onControlledChange: onFileListCollapsedChange,
+  });
   const { theme } = useTheme();
   const data = useDiffData(featureId, mode, targetBranch, commitSha);
 
-  const commentLinesByFile = useMemo(() => {
-    const map = new Map<string, CommentLineData[]>();
-    for (const c of data.comments as DiffComment[]) {
-      const lines = map.get(c.file_path) ?? [];
-      const existing = lines.find((l) => l.lineNumber === c.line_number);
-      if (existing) {
-        existing.comments.push(c);
-      } else {
-        lines.push({ lineNumber: c.line_number, comments: [c] });
-      }
-      map.set(c.file_path, lines);
-    }
-    return map;
-  }, [data.comments]);
-
-  const callbacksRef = useRef<{
-    activeWidget: typeof activeCommentWidget;
-    data: typeof data;
-    featureId: number;
-  }>({
-    activeWidget: activeCommentWidget,
-    data,
-    featureId,
-  });
-  callbacksRef.current = { activeWidget: activeCommentWidget, data, featureId };
-
-  const handleAddComment = useCallback(
-    (filePath: string, lineNumber: number, side: CommentSide = "new") =>
-      setActiveCommentWidget({ filePath, lineNumber, side }),
-    [],
-  );
-
-  const memoizedActiveWidget = useMemo<ActiveWidget | null>(
-    () =>
-      activeCommentWidget
-        ? { lineNumber: activeCommentWidget.lineNumber, side: activeCommentWidget.side }
-        : null,
-    [activeCommentWidget],
-  );
-
-  const stableCallbacks = useMemo<CommentCallbacks>(
-    () => ({
-      onSubmit: (lineNumber: number, content: string) => {
-        const { activeWidget, data: d, featureId: currentFeatureId } = callbacksRef.current;
-        if (!activeWidget || !content) {
-          return;
-        }
-        d.createComment.mutate({
-          featureId: currentFeatureId,
-          data: {
-            feature_id: currentFeatureId,
-            file_path: activeWidget.filePath,
-            line_number: lineNumber,
-            side: activeWidget.side,
-            content,
-            // Snapshotted so `useDiffData`'s auto-invalidation can drop this
-            // comment if the file changes before it's sent.
-            original_blob_sha: d.blobShas[activeWidget.filePath] ?? null,
-          },
-        });
-        setActiveCommentWidget(null);
-      },
-      onClose: () => setActiveCommentWidget(null),
-      onEdit: (id: number, content: string) =>
-        callbacksRef.current.data.updateComment.mutate({ id, data: { content } }),
-      onDelete: (id: number) => callbacksRef.current.data.deleteComment.mutate({ id }),
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }),
-    [],
-  );
-
-  useEffect(() => {
-    if (!data.hasInitializedCollapse.current && data.viewedFilesSet.size > 0) {
-      data.hasInitializedCollapse.current = true;
-      setCollapsedFiles((prev) => new Set([...prev, ...data.viewedFilesSet]));
-    }
-  }, [data.viewedFilesSet, data.hasInitializedCollapse]);
-
-  useCollapseLargeFilesOnLoad(data.changedFiles, setCollapsedFiles);
-
-  const scrollToFileIndex = useCallback(
-    (index: number) => {
-      const name = data.fileNames[index];
-      if (!name) return;
-      setSelectedFile(name);
-      const container = diffAreaRef.current;
-      if (container) scrollFileToTop(container, name);
-    },
-    [data.fileNames],
-  );
-
-  const toggleFile = useCallback((fileName: string) => {
-    setSelectedFile(fileName);
-    setCollapsedFiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileName)) next.delete(fileName);
-      else next.add(fileName);
-      return next;
-    });
-  }, []);
-  const markFileViewed = useCallback((fileName: string) => {
-    const { data: currentData, featureId: currentFeatureId } = callbacksRef.current;
-    currentData.markViewed.mutate({
-      featureId: currentFeatureId,
-      data: {
-        feature_id: currentFeatureId,
-        file_path: fileName,
-        blob_sha: currentData.blobShas[fileName] ?? "",
-      },
-    });
-    setCollapsedFiles((prev) => new Set([...prev, fileName]));
-  }, []);
-  const unmarkFileViewed = useCallback((fileName: string) => {
-    const { data: currentData, featureId: currentFeatureId } = callbacksRef.current;
-    currentData.unmarkViewed.mutate({
-      featureId: currentFeatureId,
-      params: { file_path: fileName },
-    });
-  }, []);
-
-  useDiffKeyboard({
-    fileNames: data.fileNames,
-    focusedFileIndex,
-    setFocusedFileIndex,
-    scrollToFileIndex,
-    toggleFile,
-    blobShas: data.blobShas,
-    viewedFilesSet: data.viewedFilesSet,
-    markViewed: data.markViewed,
-    unmarkViewed: data.unmarkViewed,
-    featureId,
-    diffAreaRef,
-    setCollapsedFiles,
-    onOpenFocusedFileInEditor: openFileInEditor,
-  });
-
-  const changedFileEntries: ChangedFileEntry[] = useMemo(() => {
-    return data.changedFiles.map((f) => ({
-      file: f.file,
-      status: f.status,
-      additions: f.additions,
-      deletions: f.deletions,
-      is_staged: data.stagedFiles.has(f.file),
-    }));
-  }, [data.changedFiles, data.stagedFiles]);
-
-  const expandedFiles = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of changedFileEntries) {
-      if (!collapsedFiles.has(e.file)) set.add(e.file);
-    }
-    return set;
-  }, [changedFileEntries, collapsedFiles]);
-
-  const handleSelectFile = useCallback((filePath: string) => {
-    setSelectedFile(filePath);
-    setCollapsedFiles((prev) => {
-      const next = new Set(prev);
-      next.delete(filePath);
-      return next;
-    });
-    const container = diffAreaRef.current;
-    if (container) scrollFileToTop(container, filePath);
-  }, []);
-
-  const setFileListCollapsed = useCallback(
-    (collapsed: boolean): void => {
-      if (isControlled) {
-        onFileListCollapsedChange?.(collapsed);
-        return;
-      }
-      persistFileListCollapsed(String(collapsed));
-    },
-    [isControlled, onFileListCollapsedChange, persistFileListCollapsed],
-  );
-
-  const collapseFileList = useCallback((): void => {
-    setFileListCollapsed(true);
-  }, [setFileListCollapsed]);
-
-  const diffContent = useMemo(
-    () => (
-      <DiffContent
-        diffAreaRef={diffAreaRef}
-        files={data.changedFiles}
-        featureId={featureId}
-        mode={mode}
-        targetBranch={targetBranch}
-        selectedCommit={data.selectedCommit}
-        diffMode={diffMode}
-        collapsedFiles={collapsedFiles}
-        focusedFileIndex={focusedFileIndex}
-        viewedFilesSet={data.viewedFilesSet}
-        commentLinesByFile={commentLinesByFile}
-        activeCommentWidget={activeCommentWidget}
-        memoizedActiveWidget={memoizedActiveWidget}
-        commentCallbacks={stableCallbacks}
-        onToggleFile={toggleFile}
-        onMarkViewedFile={markFileViewed}
-        onUnmarkViewedFile={unmarkFileViewed}
-        onOpenFileInEditor={openFileInEditor}
-        onAddComment={handleAddComment}
-        themeAppearance={theme.appearance}
-        themeId={theme.id}
-      />
-    ),
-    [
-      activeCommentWidget,
-      collapsedFiles,
-      commentLinesByFile,
-      data.changedFiles,
-      data.selectedCommit,
-      data.viewedFilesSet,
-      diffMode,
-      featureId,
-      mode,
-      targetBranch,
-      focusedFileIndex,
-      handleAddComment,
-      markFileViewed,
-      memoizedActiveWidget,
-      openFileInEditor,
-      stableCallbacks,
-      theme.appearance,
-      theme.id,
-      toggleFile,
-      unmarkFileViewed,
-    ],
-  );
-
-  const fileTree = useMemo(
-    () => (
-      <DiffFileTree
-        files={changedFileEntries}
-        expandedFiles={expandedFiles}
-        selectedFile={selectedFile}
-        viewedFiles={data.viewedFilesSet}
-        onToggleExpand={toggleFile}
-        onSelectFile={handleSelectFile}
-        onCollapse={isControlled ? undefined : collapseFileList}
-      />
-    ),
-    [
-      changedFileEntries,
-      collapseFileList,
-      data.viewedFilesSet,
-      expandedFiles,
-      handleSelectFile,
-      isControlled,
-      selectedFile,
-      toggleFile,
-    ],
-  );
-
-  if (data.isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center bg-background text-foreground">
-        <p className="text-muted-foreground">Loading diff...</p>
-      </div>
-    );
+  if (data.isLoading) return <DiffViewerMessage>Loading diff...</DiffViewerMessage>;
+  if (data.errorMessage && data.changedFiles.length === 0) {
+    return <DiffViewerMessage error>{data.errorMessage}</DiffViewerMessage>;
   }
-
   if (data.changedFiles.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center bg-background text-foreground">
-        <p className="text-muted-foreground">No changes detected</p>
-      </div>
-    );
+    return <DiffViewerMessage>No changes detected</DiffViewerMessage>;
   }
-
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
-      <DiffLayout
-        collapsed={showFileListRail}
-        controlled={isControlled}
-        disabled={isFileListCollapseLoading}
-        sidebar={fileTree}
-        content={diffContent}
-        onCollapsedChange={setFileListCollapsed}
-      />
-
-      <DiffViewerBottomBar
-        viewedCount={data.viewedFilesSet.size}
-        fileCount={data.changedFiles.length}
-        diffMode={diffMode}
-        onDiffModeChange={setDiffMode}
-      />
-    </div>
+    <LoadedDiffViewer
+      featureId={featureId}
+      mode={mode}
+      targetBranch={targetBranch}
+      data={data}
+      fileList={fileList}
+      diffMode={diffMode}
+      setDiffMode={setDiffMode}
+      themeAppearance={theme.appearance}
+      themeId={theme.id}
+      openFileInEditor={openFileInEditor}
+    />
   );
 }
 
-// The Git panel is mounted beside a streaming agent. Parent toolbar/badge
-// updates must not make the diff tree render again; its own React Query hooks
-// still update it immediately when changed-files or a per-file patch changes.
+// Mounted beside a streaming agent; stable props keep unrelated stream
+// updates from repainting the virtualized tree and diff instances.
 export const DiffViewer = memo(DiffViewerImpl);

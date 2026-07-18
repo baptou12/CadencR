@@ -7,6 +7,7 @@ import { DiffFileBlock, type DiffFileBlockProps } from "./DiffFileBlock";
 import { DiffVirtualizer } from "./DiffVirtualizer";
 import type { CommentSide } from "./PatchDiffView";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
+import type { GitFileIndexActions } from "./useGitFileIndexActions";
 
 interface ActiveCommentWidget {
   filePath: string;
@@ -27,7 +28,7 @@ const DiffRow = memo(function DiffRow({
   return (
     <div
       ref={setRef}
-      data-file={blockProps.displayName}
+      data-file={blockProps.file.file}
       className="relative isolate border-b border-border"
     >
       <DiffFileBlock {...blockProps} isVisible={inView} />
@@ -54,6 +55,7 @@ interface DiffContentProps {
   onMarkViewedFile: (fileName: string) => void;
   onUnmarkViewedFile: (fileName: string) => void;
   onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  indexActions?: GitFileIndexActions;
   onAddComment: (filePath: string, lineNumber: number, side?: CommentSide) => void;
   themeAppearance: ThemeAppearance;
   themeId: ThemeId;
@@ -78,6 +80,7 @@ function DiffContentImpl({
   onMarkViewedFile,
   onUnmarkViewedFile,
   onOpenFileInEditor,
+  indexActions,
   onAddComment,
   themeAppearance,
   themeId,
@@ -92,16 +95,12 @@ function DiffContentImpl({
           mode={mode}
           targetBranch={targetBranch}
           commitSha={selectedCommit}
-          status={file.status}
-          oldFile={file.old_file ?? undefined}
+          file={file}
           diffMode={diffMode}
-          displayName={file.file}
           isCollapsed={collapsedFiles.has(file.file)}
           isFocused={fileIndex === focusedFileIndex}
           isFileViewed={viewedFilesSet.has(file.file)}
           showViewedCheckbox={!selectedCommit}
-          additions={file.additions}
-          deletions={file.deletions}
           commentLines={commentLinesByFile.get(file.file)}
           activeWidget={activeCommentWidget?.filePath === file.file ? memoizedActiveWidget : null}
           commentCallbacks={commentCallbacks}
@@ -109,6 +108,7 @@ function DiffContentImpl({
           onMarkViewedFile={onMarkViewedFile}
           onUnmarkViewedFile={onUnmarkViewedFile}
           onOpenFileInEditor={onOpenFileInEditor}
+          indexActions={indexActions}
           onAddComment={onAddComment}
           themeAppearance={themeAppearance}
           themeId={themeId}

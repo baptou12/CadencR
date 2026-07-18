@@ -1,5 +1,3 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { ContextMenuItem, ContextMenuOpenContext } from "@pierre/trees";
 import {
   ClipboardCopyIcon,
@@ -10,10 +8,10 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { ContextMenuActionButton, type ContextMenuIcon } from "@/components/ContextMenuActionItem";
+import { FileTreeContextMenuPortal } from "@/components/file-tree/FileTreeContextMenuPortal";
 
 export type FileTreeContextMenuItem = ContextMenuItem;
 export type FileTreeContextMenuOpenContext = ContextMenuOpenContext;
-import { cn } from "@/lib/utils";
 
 interface MenuItemSpec {
   label: string;
@@ -38,8 +36,6 @@ interface FileTreeContextMenuProps {
     context: FileTreeContextMenuOpenContext,
   ) => void;
 }
-
-const VIEWPORT_PADDING = 8;
 
 /**
  * Build the menu spec for an item — files get an `Open` entry, directories
@@ -108,58 +104,13 @@ export function FileTreeContextMenu({
   onAction,
 }: FileTreeContextMenuProps): React.JSX.Element {
   const items = buildMenuItems(item, context, onAction);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  // Pre-render off-screen so the first paint of the menu is already in
-  // its final, flipped position. Avoids a one-frame flash near edges.
-  const [pos, setPos] = useState<{ top: number; left: number; opacity: number }>({
-    top: -9999,
-    left: -9999,
-    opacity: 0,
-  });
-
-  // Position once on mount based on pierre's anchor rect, flipping if the
-  // measured menu would overflow the viewport on either axis. We only run
-  // this once — pierre dismisses on scroll/resize anyway.
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const anchor = context.anchorRect;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-
-    // Prefer below-right of the anchor's top-left, matching pierre's
-    // default. Flip if it would overflow.
-    let left = anchor.left;
-    if (left + rect.width > vw - VIEWPORT_PADDING) {
-      left = Math.max(VIEWPORT_PADDING, anchor.right - rect.width);
-    }
-    let top = anchor.bottom;
-    if (top + rect.height > vh - VIEWPORT_PADDING) {
-      top = Math.max(VIEWPORT_PADDING, anchor.top - rect.height);
-    }
-    setPos({ top, left, opacity: 1 });
-  }, [context.anchorRect]);
-
   // The shortcut hints in the menu (↵, ⌘⌫) are served by the tree-level
   // key handler in `FileTree.tsx`, which already binds these to the
   // focused row. We deliberately don't add a document-level listener
   // here — it would race with the tree handler and fire the action twice.
 
-  return createPortal(
-    <div
-      ref={menuRef}
-      role="menu"
-      data-file-tree-context-menu-root="true"
-      // z-50 is `--z-popover`-tier; the editor pane sits below. We use a
-      // numeric class instead of an arbitrary `z-[…]` so it composes with
-      // shadcn's dialog/popover layers.
-      className={cn(
-        "fixed z-50 min-w-[12rem] overflow-hidden rounded-md border border-border bg-popover p-1",
-        "text-popover-foreground shadow-md",
-      )}
-      style={{ top: pos.top, left: pos.left, opacity: pos.opacity }}
-    >
+  return (
+    <FileTreeContextMenuPortal context={context}>
       {items.map((entry, index) => (
         <MenuRow
           key={`${index}-${entry.label}`}
@@ -170,8 +121,7 @@ export function FileTreeContextMenu({
           onSelect={entry.onSelect}
         />
       ))}
-    </div>,
-    document.body,
+    </FileTreeContextMenuPortal>
   );
 }
 

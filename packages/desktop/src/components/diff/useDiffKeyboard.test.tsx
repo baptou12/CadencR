@@ -22,9 +22,15 @@ vi.mock("@/hooks/useShortcut", () => ({
 function Harness({
   focusedFileIndex = 0,
   onOpenFocusedFileInEditor,
+  viewedFilesSet = new Set(),
+  markFileViewed = vi.fn(),
+  unmarkFileViewed = vi.fn(),
 }: {
   focusedFileIndex?: number;
   onOpenFocusedFileInEditor?: (filePath: string) => void;
+  viewedFilesSet?: Set<string>;
+  markFileViewed?: (filePath: string) => void;
+  unmarkFileViewed?: (filePath: string) => void;
 }) {
   useDiffKeyboard({
     fileNames: ["src/a.ts", "src/b.ts"],
@@ -32,13 +38,10 @@ function Harness({
     setFocusedFileIndex: vi.fn(),
     scrollToFileIndex: vi.fn(),
     toggleFile: vi.fn(),
-    blobShas: {},
-    viewedFilesSet: new Set(),
-    markViewed: { mutate: vi.fn() },
-    unmarkViewed: { mutate: vi.fn() },
-    featureId: 1,
+    viewedFilesSet,
+    markFileViewed,
+    unmarkFileViewed,
     diffAreaRef: { current: null },
-    setCollapsedFiles: vi.fn(),
     onOpenFocusedFileInEditor,
   });
   return null;
@@ -78,5 +81,27 @@ describe("useDiffKeyboard", () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(event.stopImmediatePropagation).not.toHaveBeenCalled();
     expect(mocks.shortcutOptions.get("diff-open-focused-file")).toEqual({ enabled: false });
+  });
+
+  it("routes viewed-state shortcuts through the shared file actions", () => {
+    const markFileViewed = vi.fn();
+    const unmarkFileViewed = vi.fn();
+    const event = new KeyboardEvent("keydown");
+
+    const { rerender } = render(
+      <Harness markFileViewed={markFileViewed} unmarkFileViewed={unmarkFileViewed} />,
+    );
+    mocks.shortcutCallbacks.get("diff-mark-viewed")?.(event);
+    expect(markFileViewed).toHaveBeenCalledWith("src/a.ts");
+
+    rerender(
+      <Harness
+        viewedFilesSet={new Set(["src/a.ts"])}
+        markFileViewed={markFileViewed}
+        unmarkFileViewed={unmarkFileViewed}
+      />,
+    );
+    mocks.shortcutCallbacks.get("diff-mark-viewed")?.(event);
+    expect(unmarkFileViewed).toHaveBeenCalledWith("src/a.ts");
   });
 });

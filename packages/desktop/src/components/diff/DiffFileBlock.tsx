@@ -1,4 +1,5 @@
 import { memo, useCallback, useState, type ReactNode } from "react";
+import type { ChangedFile } from "@/api/generated";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import { firstChangedNewLine } from "@/lib/diff-line";
 import { type FileDiffSection, hasTextHunks } from "@/lib/parse-unified-diff";
@@ -17,17 +18,14 @@ import { DiffStatusIcon, deriveChangeTypeFromStatus } from "./DiffStatusIcon";
 import { useFileDiffSection } from "./useFileDiffSection";
 import type { DiffMode } from "./useDiffData";
 import { DiffImageView } from "./DiffImageView";
+import type { GitFileIndexActions } from "./useGitFileIndexActions";
 
 export interface DiffFileBlockProps {
   featureId: number;
   mode: DiffMode;
   targetBranch?: string;
   commitSha?: string | null;
-  /** `git status` code (`M`/`A`/`D`/`R…`) from the changed-files list. */
-  status: string;
-  /** Pre-rename path for a rename/copy, forwarded so the per-file diff can
-   * scope both paths and git detects the rename (not a whole-file addition). */
-  oldFile?: string;
+  file: ChangedFile;
   /**
    * Whether the row is on (or near) screen. All rows mount — the outer list
    * isn't component-virtualized — so this gates the per-file diff fetch to the
@@ -35,13 +33,10 @@ export interface DiffFileBlockProps {
    */
   isVisible: boolean;
   diffMode: "unified" | "split";
-  displayName: string;
   isCollapsed: boolean;
   isFocused: boolean;
   isFileViewed: boolean;
   showViewedCheckbox: boolean;
-  additions: number;
-  deletions: number;
   commentLines?: CommentLineData[];
   activeWidget?: ActiveWidget | null;
   commentCallbacks?: CommentCallbacks;
@@ -49,6 +44,7 @@ export interface DiffFileBlockProps {
   onMarkViewedFile: (fileName: string) => void;
   onUnmarkViewedFile: (fileName: string) => void;
   onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  indexActions?: GitFileIndexActions;
   onAddComment?: (filePath: string, lineNumber: number, side?: CommentSide) => void;
   themeAppearance: ThemeAppearance;
   themeId: ThemeId;
@@ -105,7 +101,7 @@ interface DiffFileBodyProps {
 }
 
 /** Body of an expanded file: binary/no-hunk/large placeholders or the diff. */
-function DiffFileBody({
+function DiffFileBodyImpl({
   featureId,
   displayName,
   oldFile,
@@ -195,22 +191,23 @@ function DiffFileBody({
   );
 }
 
+const DiffFileBody = memo(DiffFileBodyImpl);
+
 function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patch?: string }) {
   const {
-    status,
-    displayName,
+    file,
     isCollapsed,
     isFocused,
     isFileViewed,
     showViewedCheckbox,
-    additions,
-    deletions,
     onToggleFile,
     onMarkViewedFile,
     onUnmarkViewedFile,
     onOpenFileInEditor,
     themeAppearance,
+    indexActions,
   } = props;
+  const { status, file: displayName, additions, deletions } = file;
   const onToggle = useCallback((): void => onToggleFile(displayName), [displayName, onToggleFile]);
   const onMarkViewed = useCallback(
     (): void => onMarkViewedFile(displayName),
@@ -240,6 +237,8 @@ function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patc
       themeAppearance={themeAppearance}
       onToggle={onToggle}
       onOpenFileInEditor={onOpenFileInEditor ? onOpenFile : undefined}
+      file={file}
+      indexActions={indexActions}
       onMarkViewed={onMarkViewed}
       onUnmarkViewed={onUnmarkViewed}
     />
@@ -252,13 +251,9 @@ function ExpandedDiffFileBlock(props: DiffFileBlockProps) {
     mode,
     targetBranch,
     commitSha,
-    status,
-    oldFile,
+    file,
     isVisible,
     diffMode,
-    displayName,
-    additions,
-    deletions,
     commentLines,
     activeWidget,
     commentCallbacks,
@@ -267,10 +262,12 @@ function ExpandedDiffFileBlock(props: DiffFileBlockProps) {
     themeId,
     isFocused,
   } = props;
+  const { status, file: displayName, additions, deletions } = file;
+  const oldFile = file.old_file ?? undefined;
   // Fetch this file's patch lazily — only when it's expanded AND on screen.
   // All rows mount (the outer list isn't component-virtualized), so gating on
   // visibility is what keeps a 400-file diff from firing 400 requests on open.
-  const { section, isLoading, isError } = useFileDiffSection({
+  const { section, isLoading, errorMessage } = useFileDiffSection({
     featureId,
     filePath: displayName,
     oldFilePath: oldFile,
@@ -298,8 +295,8 @@ function ExpandedDiffFileBlock(props: DiffFileBlockProps) {
   return (
     <>
       <DiffFileBlockHeader props={props} patch={patch} />
-      {isError ? (
-        <DiffFileNotice tone="error">Failed to load this file's diff.</DiffFileNotice>
+      {errorMessage ? (
+        <DiffFileNotice tone="error">{errorMessage}</DiffFileNotice>
       ) : section === null || isLoading ? (
         <DiffFileNotice>Loading diff…</DiffFileNotice>
       ) : (

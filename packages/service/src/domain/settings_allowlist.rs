@@ -258,6 +258,12 @@ mod tests {
         assert!(is_workspace_key_allowed("unified_agents_per_row"));
     }
     #[test]
+    fn workspace_accepts_git_diff_tree_display_mode() {
+        assert!(is_workspace_key_allowed("git_diff_tree_display_mode"));
+        assert!(!is_feature_key_allowed("git_diff_tree_display_mode"));
+        assert!(!is_project_key_allowed("git_diff_tree_display_mode"));
+    }
+    #[test]
     fn workspace_accepts_favorite_models() {
         // Starred models in the model pickers; without this the FE gets a
         // BAD_REQUEST and starring silently fails.

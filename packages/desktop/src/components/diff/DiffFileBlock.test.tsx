@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { DiffFileBlock } from "./DiffFileBlock";
 import type { FileDiffSection } from "@/lib/parse-unified-diff";
+import { FileStageState } from "@/api/generated";
 
 const patch = `diff --git a/src/foo.ts b/src/foo.ts
 --- a/src/foo.ts
@@ -45,6 +46,7 @@ const mocks = vi.hoisted(() => ({
   // through this mutable holder instead of passing it as a prop.
   section: null as FileDiffSection | null,
   isLoading: false,
+  errorMessage: null as string | null,
 }));
 
 vi.mock("./DiffImageView", () => ({
@@ -64,19 +66,22 @@ vi.mock("./useFileDiffSection", () => ({
     // screen → `enabled` false) has no section yet.
     section: enabled ? mocks.section : null,
     isLoading: enabled && mocks.isLoading,
-    isError: false,
+    errorMessage: enabled ? mocks.errorMessage : null,
   }),
 }));
 
 const baseProps = {
   featureId: 1,
   mode: "uncommitted" as const,
-  status: "M",
+  file: {
+    file: "src/foo.ts",
+    status: "M",
+    additions: 1,
+    deletions: 1,
+    stage_state: FileStageState.unstaged,
+  },
   isVisible: true,
   diffMode: "unified" as const,
-  displayName: "src/foo.ts",
-  additions: 1,
-  deletions: 1,
   themeAppearance: "dark" as const,
   themeId: "dracula" as const,
   isFocused: false,
@@ -91,6 +96,7 @@ beforeEach(() => {
   mocks.patchDiffViewMock.mockClear();
   mocks.section = defaultSection;
   mocks.isLoading = false;
+  mocks.errorMessage = null;
 });
 
 describe("DiffFileBlock", () => {
@@ -119,6 +125,14 @@ describe("DiffFileBlock", () => {
     );
     expect(getByText("Loading diff…")).toBeInTheDocument();
     expect(queryByTestId("patch-diff-view")).not.toBeInTheDocument();
+  });
+
+  it("retains the actual per-file diff query error", () => {
+    mocks.section = null;
+    mocks.errorMessage = "Failed to load this file's diff: porcelain failed";
+    render(<DiffFileBlock {...baseProps} isCollapsed={false} />);
+
+    expect(screen.getByText(/porcelain failed/)).toBeInTheDocument();
   });
 
   it("opens the file at the first changed line from the expanded header", async () => {
@@ -157,7 +171,11 @@ Binary files a/image.png and b/image.png differ
       ],
     };
     const { getByTestId, queryByText, queryByTestId } = render(
-      <DiffFileBlock {...baseProps} displayName="image.png" status="M" isCollapsed={false} />,
+      <DiffFileBlock
+        {...baseProps}
+        file={{ ...baseProps.file, file: "image.png" }}
+        isCollapsed={false}
+      />,
     );
     expect(getByTestId("diff-image-view")).toHaveAttribute("data-file-path", "image.png");
     expect(queryByText("Binary file")).not.toBeInTheDocument();
@@ -175,7 +193,11 @@ Binary files a/archive.zip and b/archive.zip differ
       ],
     };
     const { getByText, queryByTestId } = render(
-      <DiffFileBlock {...baseProps} displayName="archive.zip" status="M" isCollapsed={false} />,
+      <DiffFileBlock
+        {...baseProps}
+        file={{ ...baseProps.file, file: "archive.zip" }}
+        isCollapsed={false}
+      />,
     );
     expect(getByText("Binary file")).toBeInTheDocument();
     expect(queryByTestId("diff-image-view")).not.toBeInTheDocument();
@@ -195,9 +217,7 @@ ${bigHunkBody}
     const { getByText, queryByTestId, getByRole, user } = render(
       <DiffFileBlock
         {...baseProps}
-        displayName="big.ts"
-        additions={2000}
-        deletions={0}
+        file={{ ...baseProps.file, file: "big.ts", additions: 2000, deletions: 0 }}
         isCollapsed={false}
       />,
     );

@@ -3,21 +3,6 @@ import { Circle } from "lucide-react";
 import { HoverCard } from "radix-ui";
 import { cn } from "@/lib/utils";
 
-export interface ChangedFileEntry {
-  file: string;
-  status: string;
-  oldFile?: string;
-  additions: number;
-  deletions: number;
-  /**
-   * True when the file has staged content (`git add`-ed). Backed by the
-   * `is_staged` field on `ChangedFile` from `/api/git/changed-files`, threaded
-   * through `useDiffData` and merged onto the parsed-diff entry list. Always
-   * `false` in `branch` mode (no concept of staging when comparing commits).
-   */
-  is_staged?: boolean;
-}
-
 export interface CommitEntry {
   sha: string;
   shortSha: string;
