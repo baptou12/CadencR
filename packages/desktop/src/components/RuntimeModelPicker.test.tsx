@@ -1,8 +1,15 @@
 import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@/test-utils";
+import { render, screen, waitFor, within } from "@/test-utils";
 import { RuntimeModelPicker, type RuntimeModelSelectionResolver } from "./RuntimeModelPicker";
+
+const toggleFavorite = vi.fn();
+let favorites = new Set<string>();
+
+vi.mock("@/hooks/useFavoriteModels", () => ({
+  useFavoriteModels: () => ({ favorites, toggleFavorite, isLoading: false }),
+}));
 
 function Harness(props: {
   onSelect?: (providerId: string, modelId: string) => void;
@@ -45,6 +52,7 @@ function Harness(props: {
 describe("RuntimeModelPicker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    favorites = new Set<string>();
   });
 
   it("calls the post-close callback after selecting a model", async () => {
@@ -123,6 +131,79 @@ describe("RuntimeModelPicker", () => {
         "false",
       ),
     );
+  });
+
+  it("stars a model without selecting it", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+
+    render(<Harness onSelect={onSelect} />);
+
+    await user.click(screen.getByRole("button", { name: "Open picker" }));
+    await user.click(screen.getByRole("button", { name: "Star Claude / Opus" }));
+
+    expect(toggleFavorite).toHaveBeenCalledWith("claude_code:opus");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("stars the highlighted model with the keyboard shortcut", async () => {
+    const user = userEvent.setup();
+
+    render(<Harness />);
+
+    await user.click(screen.getByRole("button", { name: "Open picker" }));
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Claude \/ Opus/i })).toHaveAttribute(
+        "data-selected",
+        "true",
+      ),
+    );
+
+    await user.keyboard("{Meta>}s{/Meta}");
+
+    expect(toggleFavorite).toHaveBeenCalledWith("claude_code:opus");
+  });
+
+  it("lists starred models in their own group above the rest, filtered or not", async () => {
+    const user = userEvent.setup();
+    favorites = new Set(["claude_code:zeta"]);
+
+    render(
+      <Harness
+        models={[
+          { id: "alpha", label: "Alpha" },
+          { id: "zeta", label: "Zeta" },
+        ]}
+        selectedModelId="alpha"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open picker" }));
+
+    function groupHeadingsWithOptions(): Array<{ heading: string; options: string[] }> {
+      return Array.from(document.querySelectorAll('[data-slot="command-group"]'))
+        .filter((group) => group.querySelectorAll('[role="option"]').length > 0)
+        .map((group) => ({
+          heading: group.querySelector("[cmdk-group-heading]")?.textContent ?? "",
+          options: within(group as HTMLElement)
+            .getAllByRole("option")
+            .map((option) => option.getAttribute("data-value") ?? ""),
+        }));
+    }
+
+    expect(groupHeadingsWithOptions()).toEqual([
+      { heading: "Starred", options: ["claude_code:zeta"] },
+      { heading: "All models", options: ["claude_code:alpha"] },
+    ]);
+
+    // The starred group still leads once a filter matches both models.
+    await user.type(screen.getByPlaceholderText("Search providers or models..."), "a");
+
+    await waitFor(() => expect(groupHeadingsWithOptions()[0]?.heading).toBe("Starred"));
+    expect(groupHeadingsWithOptions()).toEqual([
+      { heading: "Starred", options: ["claude_code:zeta"] },
+      { heading: "All models", options: ["claude_code:alpha"] },
+    ]);
   });
 
   it("uses an injected resolver to highlight provider-specific aliases", async () => {

@@ -20,6 +20,7 @@
 import type { Shortcut } from "./types";
 import { BROWSER_SHORTCUTS } from "./entries-browser";
 import { EDITOR_SHORTCUTS } from "./entries-editor";
+import { MODEL_PICKER_SHORTCUTS } from "./entries-model-picker";
 import { TERMINAL_SHORTCUTS } from "./entries-terminal";
 
 const APP_SHORTCUTS = [
@@ -380,6 +381,7 @@ export const SHORTCUTS = [
   ...TERMINAL_SHORTCUTS,
   ...EDITOR_SHORTCUTS,
   ...BROWSER_SHORTCUTS,
+  ...MODEL_PICKER_SHORTCUTS,
 ] as const;
 
 export type ShortcutId = (typeof SHORTCUTS)[number]["id"];

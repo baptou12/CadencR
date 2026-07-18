@@ -3,15 +3,12 @@ import { AlertCircleIcon, Loader2Icon } from "lucide-react";
 import { useShortcut } from "@/hooks/useShortcut";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { getFileName } from "@/lib/file-language";
-import { formatCombo } from "@/lib/shortcuts/format";
-import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
-import type { ShortcutId } from "@/lib/shortcuts/registry";
 import { getEditorLanguageLabel, type EditorLanguageId } from "@/lib/editor-language";
 import type { EditorLanguagePreference } from "@/lib/editor-language-overrides";
 import type { EditorLanguageState } from "@/hooks/useEditorLanguage";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { KbdShortcut } from "@/components/KbdShortcut";
+import { ResolvedShortcutHint } from "@/components/KbdShortcut";
 import {
   Dialog,
   DialogContent,
@@ -248,15 +245,6 @@ function LanguageFields(props: LanguageFieldsProps) {
         </div>
       )}
     </>
-  );
-}
-
-function ResolvedShortcutHint({ shortcutId }: { shortcutId: ShortcutId }) {
-  const keys = formatCombo(useResolvedShortcut(shortcutId).keys);
-  return (
-    <span aria-hidden="true" className="shrink-0">
-      <KbdShortcut keys={keys} variant="hint" />
-    </span>
   );
 }
 
