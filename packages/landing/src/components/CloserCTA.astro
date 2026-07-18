@@ -4,7 +4,12 @@ import Wrap from "@/components/ui/Wrap.astro";
 import Button from "@/components/ui/Button.astro";
 const base = import.meta.env.BASE_URL;
 ---
-<section class="rule relative py-20 sm:py-28">
+<section class="relative py-20 sm:py-28">
+  <!-- Closing bookend of the hero's top-light: same emerald, same 4% ceiling. -->
+  <div
+    class="jewel-light pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-[420px] [--jewel-spread:60%] [--jewel-y:100%]"
+    aria-hidden="true"
+  ></div>
   <Wrap>
     <div class="reveal mx-auto max-w-[760px] text-center">
       <p class="fig-label justify-center">

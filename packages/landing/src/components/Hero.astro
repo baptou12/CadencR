@@ -11,12 +11,18 @@ const base = import.meta.env.BASE_URL;
 // Fully-qualified tap form so it works without a separate `brew tap` step.
 const brewCommand = "brew install --cask merkr-software/cadencr/cadencr";
 
-// The five surfaces CadencR unifies — rendered as a ruled spec strip under
-// the headline instead of inside it, so the headline stays two lines.
-const surfaces = ["Agent", "Git", "Browser", "Editor", "Terminal"];
+// The five surfaces CadencR unifies — a quiet strip under the headline,
+// each linking to the section that shows it.
+const surfaces = [
+  { label: "Agent", anchor: "agent-cockpit" },
+  { label: "Git", anchor: "git" },
+  { label: "Browser", anchor: "browser" },
+  { label: "Editor", anchor: "editor" },
+  { label: "Terminal", anchor: "terminal" },
+];
 
-// Newest news post, if any — a quiet ruled announcement row above the
-// headline. Sorted newest-first, matching the News index page.
+// Newest news post, if any — a quiet wash pill below the CTAs. Sorted
+// newest-first, matching the News index page.
 type NewsEntry = CollectionEntry<"news">;
 const [latestNews] = (await getCollection("news")).sort(
   (a: NewsEntry, b: NewsEntry) => b.data.date.valueOf() - a.data.date.valueOf(),
@@ -24,7 +30,7 @@ const [latestNews] = (await getCollection("news")).sort(
 ---
 <section class="hero relative pt-14 sm:pt-20">
   <!-- The one emerald top-light on the page (Jewel-Light Rule: ≤4% alpha). -->
-  <div class="hero-sheen pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px]" aria-hidden="true"></div>
+  <div class="jewel-light pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px]" aria-hidden="true"></div>
   <Wrap>
     <div class="mx-auto flex max-w-[860px] flex-col items-center text-center">
       <p class="hero-rise fig-label">
@@ -68,7 +74,7 @@ const [latestNews] = (await getCollection("news")).sort(
         <span>or</span>
         <button
           type="button"
-          class="hero-brew group inline-flex items-center gap-2 rounded-md border border-border bg-sidebar px-2.5 py-1.5 font-mono text-[12.5px] text-foreground transition-colors hover:border-primary/60"
+          class="hero-brew group inline-flex items-center gap-2 rounded-lg bg-accent/70 px-3 py-1.5 font-mono text-[12.5px] text-foreground transition-colors hover:bg-accent"
           data-copy={brewCommand}
           aria-label={`Copy: ${brewCommand}`}
         >
@@ -87,9 +93,9 @@ const [latestNews] = (await getCollection("news")).sort(
         latestNews && (
           <a
             href={`${base}news/${latestNews.id}/`}
-            class="hero-rise hero-rise-4 group mt-7 inline-flex max-w-full items-center gap-2.5 border border-border bg-sidebar/60 py-1.5 pl-1.5 pr-3.5 text-[13px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            class="hero-rise hero-rise-4 group mt-7 inline-flex max-w-full items-center gap-2.5 rounded-full bg-accent/70 py-1.5 pl-1.5 pr-4 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
-            <span class="inline-flex items-center bg-primary px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-primary-foreground">
+            <span class="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-primary-foreground">
               New
             </span>
             <span class="truncate">{latestNews.data.title}</span>
@@ -105,59 +111,50 @@ const [latestNews] = (await getCollection("news")).sort(
     </div>
   </div>
 
-  <!-- The five unified surfaces, as a ruled spec strip. -->
-  <div class="hero-rise hero-rise-4 rule mt-12">
+  <!-- The five unified surfaces — a quiet centered strip, no rules. -->
+  <div class="hero-rise hero-rise-4 mt-12">
     <Wrap>
-      <ul class="grid grid-cols-2 sm:grid-cols-5" role="list">
+      <ul class="flex flex-wrap items-center justify-center gap-2.5" role="list">
         {surfaces.map((s, i) => (
-          <li
-            class:list={[
-              "flex items-baseline gap-2.5 border-border py-3.5 sm:justify-center",
-              i > 0 && "sm:border-l",
-              i % 2 === 1 && "border-l pl-4 sm:pl-0",
-            ]}
-          >
-            <span class="font-mono text-[11px] text-primary" aria-hidden="true">
-              0{i + 1}
-            </span>
-            <span class="text-[14.5px] font-medium">{s}</span>
+          <li>
+            <a href={`${base}#${s.anchor}`} class="surface-chip">
+              <span class="font-mono text-[11px] text-primary" aria-hidden="true">
+                0{i + 1}
+              </span>
+              <span class="text-[13.5px] font-medium">{s.label}</span>
+            </a>
           </li>
         ))}
       </ul>
     </Wrap>
   </div>
 
-  <!-- FIG. 00 — the product, live. -->
-  <div class="rule">
-    <Wrap class="py-12 sm:py-16">
-      <figure class="hero-rise hero-rise-5 relative mx-auto max-w-[1040px]">
-        <div class="monitor-light pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 sm:-inset-x-8" aria-hidden="true"></div>
-        <div class="reg-marks">
-          <span class="reg-b"></span>
-          <div class="frame hero-seat overflow-hidden rounded-lg">
-            <video
-              class="block h-auto w-full"
-              poster={heroImage.src}
-              autoplay
-              muted
-              loop
-              playsinline
-              preload="metadata"
-              aria-label="CadencR desktop app in action: streaming agent output, the project list, and an inline diff"
-            >
-              {/* AV1 first (Chrome, Firefox, M3+ Safari); H.264 fallback for
-                  Safari/iOS on hardware without AV1 decode. */}
-              <source src={`${base}hero.av1.mp4`} type='video/mp4; codecs="av01.0.05M.08"' />
-              <source src={`${base}hero.h264.mp4`} type='video/mp4; codecs="avc1.640028"' />
-            </video>
-          </div>
-        </div>
-        <figcaption class="fig-caption justify-center">
-          Fig. 00 · live capture, real session · open source · no telemetry · Apache-2.0
-        </figcaption>
-      </figure>
-    </Wrap>
-  </div>
+  <!-- 00 — the product, live. -->
+  <Wrap class="py-12 sm:py-16">
+    <figure class="hero-rise hero-rise-5 relative mx-auto max-w-[1040px]">
+      <div class="monitor-light pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 sm:-inset-x-8" aria-hidden="true"></div>
+      <div class="frame hero-seat overflow-hidden rounded-xl">
+        <video
+          class="block h-auto w-full"
+          poster={heroImage.src}
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="metadata"
+          aria-label="CadencR desktop app in action: streaming agent output, the project list, and an inline diff"
+        >
+          {/* AV1 first (Chrome, Firefox, M3+ Safari); H.264 fallback for
+              Safari/iOS on hardware without AV1 decode. */}
+          <source src={`${base}hero.av1.mp4`} type='video/mp4; codecs="av01.0.05M.08"' />
+          <source src={`${base}hero.h264.mp4`} type='video/mp4; codecs="avc1.640028"' />
+        </video>
+      </div>
+      <figcaption class="fig-caption justify-center">
+        00 · live capture, real session · open source · no telemetry · Apache-2.0
+      </figcaption>
+    </figure>
+  </Wrap>
 </section>
 
 <script>
@@ -201,13 +198,38 @@ const [latestNews] = (await getCollection("news")).sort(
 </script>
 
 <style>
-  .hero-brew-error {
-    border-color: var(--color-destructive);
-    color: var(--color-destructive);
+  /* Surface chips — machined pills for the five unified surfaces. A soft
+     wash with an inset top highlight at rest; hover warms the wash and
+     rims the pill with a faint emerald light. */
+  .surface-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 9px 16px 9px 13px;
+    border-radius: var(--radius-lg);
+    background: color-mix(in oklch, var(--color-foreground) 4.5%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, var(--color-foreground) 5%, transparent),
+      var(--shadow-xs);
+    transition:
+      background-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  .surface-chip:hover {
+    background: var(--color-accent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklch, var(--color-foreground) 7%, transparent),
+      0 0 0 1px color-mix(in oklch, var(--color-primary) 28%, transparent),
+      0 4px 18px -4px color-mix(in oklch, var(--color-primary) 20%, transparent);
+  }
+  .surface-chip:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
   }
 
-  .hero-sheen {
-    background: radial-gradient(58% 46% at 50% 0%, rgb(45 180 125 / 0.04), transparent 72%);
+  .hero-brew-error {
+    box-shadow: inset 0 0 0 1px var(--color-destructive);
+    color: var(--color-destructive);
   }
 
   /* The hero capture is the one object seated with an emerald-tinted shadow. */

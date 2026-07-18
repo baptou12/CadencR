@@ -44,7 +44,7 @@ const breadcrumbs = {
 const structuredData = [softwareApplication, breadcrumbs];
 ---
 <BaseLayout title={pageTitle} description={pageDescription} structuredData={structuredData}>
-  <section class="border-b border-border/55 py-16">
+  <section class="py-16">
     <div class="mx-auto grid max-w-[1160px] grid-cols-1 gap-10 px-4 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
       <div>
         <p class="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
@@ -61,7 +61,7 @@ const structuredData = [softwareApplication, breadcrumbs];
 
       <section
         aria-labelledby="recommended-download-title"
-        class="rounded-2xl border border-border bg-sidebar p-5 shadow-xs"
+        class="rounded-2xl bg-sidebar p-6 shadow-md"
         data-download-card
       >
         <p class="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
@@ -86,7 +86,7 @@ const structuredData = [softwareApplication, breadcrumbs];
           </a>
           <a
             href={LATEST_RELEASE_URL}
-            class="-my-px inline-flex h-[42px] items-center gap-2 rounded-lg border border-border bg-background px-4 text-[13px] font-medium transition-colors hover:bg-accent [&_svg]:h-[14px] [&_svg]:w-[14px] [&_svg]:shrink-0 [&_svg]:stroke-[2]"
+            class="inline-flex h-10 items-center gap-2 rounded-lg bg-accent/70 px-4 text-[13px] font-medium transition-colors hover:bg-accent [&_svg]:h-[14px] [&_svg]:w-[14px] [&_svg]:shrink-0 [&_svg]:stroke-[2]"
           >
             <GithubIcon />
             View GitHub release
@@ -115,7 +115,7 @@ const structuredData = [softwareApplication, breadcrumbs];
             <a
               id={asset.href.slice(1)}
               href={asset.url}
-              class="group grid gap-3 rounded-xl border border-border bg-background p-4 transition-colors hover:bg-accent sm:grid-cols-[1fr_auto] sm:items-center"
+              class="group soft-panel grid gap-3 p-4 transition-colors hover:bg-accent sm:grid-cols-[1fr_auto] sm:items-center"
               data-download-asset={asset.assetName}
             >
               <span>
@@ -131,7 +131,7 @@ const structuredData = [softwareApplication, breadcrumbs];
         </div>
       </div>
 
-      <aside class="rounded-2xl border border-border bg-sidebar p-5">
+      <aside class="self-start rounded-2xl bg-sidebar p-6 shadow-md">
         <p class="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
           Coming next
         </p>

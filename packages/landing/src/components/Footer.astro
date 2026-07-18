@@ -4,7 +4,7 @@ import Wrap from "@/components/ui/Wrap.astro";
 import { DISPLAY_VERSION } from "@/lib/app-version";
 const base = import.meta.env.BASE_URL;
 ---
-<footer class="border-t border-border/55 pb-11 pt-9">
+<footer class="bg-sidebar/60 pb-11 pt-10">
   <Wrap>
     <div class="grid grid-cols-1 gap-7 sm:[grid-template-columns:1.2fr_3fr] sm:gap-14">
       <div class="flex flex-col gap-2.5">
@@ -41,7 +41,7 @@ const base = import.meta.env.BASE_URL;
       </div>
     </div>
     <div
-      class="mt-7 flex flex-wrap gap-4 border-t border-border/55 pt-4.5 font-mono text-[10.5px] text-muted-foreground"
+      class="mt-9 flex flex-wrap gap-4 font-mono text-[10.5px] text-muted-foreground"
     >
       <span>Independent project, not affiliated with Anthropic, OpenAI, or SST.</span>
       <span class="flex-1"></span>

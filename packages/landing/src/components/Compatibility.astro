@@ -6,81 +6,52 @@ import SectionHeading from "@/components/ui/SectionHeading.astro";
 import Lede from "@/components/ui/Lede.astro";
 import claudeLogo from "@/assets/providers/claude.png";
 import codexLogo from "@/assets/providers/codex.png";
+import cursorLogo from "@/assets/providers/cursor.png";
 import opencodeLogo from "@/assets/providers/opencode.png";
 import type { ImageMetadata } from "astro";
 
 interface Provider {
   name: string;
-  description: string;
   logo: ImageMetadata;
   logoClass: string;
 }
 
 const providers: Provider[] = [
-  {
-    name: "Claude Code",
-    description: "Plan, execute, and review Claude sessions from one cockpit.",
-    logo: claudeLogo,
-    logoClass: "h-5 w-5",
-  },
-  {
-    name: "OpenCode",
-    description: "Run OpenCode locally while CadencR keeps context readable.",
-    logo: opencodeLogo,
-    logoClass: "h-5 w-4",
-  },
-  {
-    name: "Codex",
-    description: "Supervise Codex worktrees, streams, terminal output, and diffs.",
-    logo: codexLogo,
-    logoClass: "h-5 w-5",
-  },
+  { name: "Claude Code", logo: claudeLogo, logoClass: "h-7 w-7" },
+  { name: "OpenCode", logo: opencodeLogo, logoClass: "h-7 w-[22px]" },
+  { name: "Codex", logo: codexLogo, logoClass: "h-7 w-7" },
+  { name: "Cursor", logo: cursorLogo, logoClass: "h-7 w-7" },
 ];
 ---
-<section id="compat" class="rule relative scroll-mt-16 py-16 sm:py-20">
+<section id="compat" class="relative scroll-mt-16 py-14 sm:py-16">
   <Wrap>
-    <div class="reveal max-w-[640px]">
-      <Eyebrow index="01">Compatibility</Eyebrow>
-      <SectionHeading>Works with the agents you already run.</SectionHeading>
-      <Lede>
-        CadencR is <span class="em">provider-neutral by design</span>: it is the IDE surface
-        for the agent CLIs on your machine, not another vendor's chat. Bring your own keys.
-        No lock-in, no proxy, no telemetry.
-      </Lede>
-    </div>
+    <div class="grid items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)] md:gap-14">
+      <div class="reveal">
+        <Eyebrow index="01">Compatibility</Eyebrow>
+        <SectionHeading>Works with the agents you already run.</SectionHeading>
+        <Lede>
+          CadencR is <span class="em">provider-neutral by design</span>: it is the IDE surface
+          for the agent CLIs on your machine, not another vendor's chat. Bring your own keys.
+          No lock-in, no proxy, no telemetry.
+        </Lede>
+      </div>
 
-    <div class="reveal reveal-late mt-10">
-      <ul class="compat-table" role="list">
-        {providers.map((provider, i) => (
-          <li class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-1 py-4 sm:grid-cols-[44px_190px_minmax(0,1fr)_auto] sm:gap-x-6">
-            <span class="inline-flex h-11 w-11 items-center justify-center border border-border bg-sidebar">
+      <ul class="reveal reveal-late grid grid-cols-2 gap-2.5 max-w-[440px] md:ml-auto md:w-full" role="list">
+        {providers.map((provider) => (
+          <li class="soft-panel flex flex-col items-center justify-center gap-3 px-4 py-6">
+            <span class="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-sidebar shadow-xs">
               <Image
                 src={provider.logo}
                 alt=""
-                width={40}
-                height={40}
+                width={56}
+                height={56}
                 class:list={["object-contain", provider.logoClass]}
               />
             </span>
-            <span class="text-[15px] font-semibold tracking-[-0.005em]">{provider.name}</span>
-            <span class="col-span-2 text-[14px] leading-[1.55] text-muted-foreground sm:col-span-1">
-              {provider.description}
-            </span>
-            <span class="hidden font-mono text-[11px] uppercase tracking-[0.09em] text-primary sm:inline" aria-hidden="true">
-              {`0${i + 1}`} · supported
-            </span>
+            <span class="text-[14.5px] font-semibold tracking-[-0.005em]">{provider.name}</span>
           </li>
         ))}
       </ul>
     </div>
   </Wrap>
 </section>
-
-<style>
-  .compat-table li {
-    border-top: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
-  }
-  .compat-table li:last-child {
-    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 62%, transparent);
-  }
-</style>
