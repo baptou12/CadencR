@@ -293,7 +293,16 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
 
     return (
       <LexicalComposer initialConfig={initialConfig}>
-        <div className="relative min-w-0 flex-1">
+        {/* This wrapper — not the editable — is the flex item of the prompt
+            surface, so the height budget has to land here and be handed down.
+            `self-stretch` takes the surface's height (which the surface caps
+            and can shrink), `flex-col` + the editable's `flex-1 min-h-0` pass
+            it to the editable, which scrolls. All used values, no percentage
+            heights: those need a definite ancestor to resolve against, and
+            WebKit resolves them differently from Blink inside a flex column.
+            Keep the scroll on the editable, not here — the mention and slash
+            menus are positioned against this wrapper. */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col self-stretch">
           <PromptEditorInner ref={ref} {...props} />
         </div>
       </LexicalComposer>

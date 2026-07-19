@@ -317,7 +317,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           hidden={hasSpecialState}
           aria-hidden={hasSpecialState}
           className={cn(
-            "flex flex-col px-3 pb-4",
+            // `min-h-0`: the one composer row allowed to shrink. Its siblings
+            // (chips, context bar) keep `min-height: auto` and hold their
+            // content size, so a tall draft's whole deficit lands here.
+            "flex min-h-0 flex-col px-3 pb-4",
             noTopPadding ? "pt-0" : "pt-3",
             "group-data-[agent-dragover]/agent-section:ring-2 group-data-[agent-dragover]/agent-section:ring-inset group-data-[agent-dragover]/agent-section:ring-primary/50",
           )}
@@ -332,7 +335,13 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           )}
           <div
             data-shell-command-mode={isShellCommandMode || undefined}
-            className="glass-surface flex items-center gap-1.5 rounded-lg border border-transparent bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
+            // The draft's height budget: never more than 40% of `--app-vh`
+            // (`vh` would be wrong — it tracks the URL bar but never the
+            // on-screen keyboard; `useVisualViewportHeight` pins `--app-vh`
+            // while the keyboard is open), and `min-h-0` lets it give up even
+            // that when the composer as a whole runs short. A plain length, so
+            // it resolves identically in every engine.
+            className="glass-surface flex max-h-[calc(var(--app-vh,100dvh)*0.4)] min-h-0 items-center gap-1.5 rounded-lg border border-transparent bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
             onClick={handlePromptSurfaceClick}
           >
             {isShellCommandMode && <ShellCommandModeMarker onClear={clearShellCommandMode} />}
@@ -348,7 +357,12 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
                   ? "Send a message to resume…"
                   : `Send a message… (@ files, @@ conversations, ${promptCommandHint})`
               }
-              className="max-h-[40vh] min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
+              // No cap here — the height budget is set on the prompt surface
+              // and handed down through the wrapper. `flex-1 min-h-0` takes
+              // whatever that leaves and `overflow-y-auto` scrolls the rest, so
+              // a long draft stops growing instead of shoving the send button
+              // off the bottom of the screen.
+              className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
               mentionProjectId={projectId}
               mentionFeatureId={featureId}
               slashCommands={slashCommandsOverride}

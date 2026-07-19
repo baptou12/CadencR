@@ -44,6 +44,46 @@ export interface AgentSessionComposerProps {
 
 type AgentSessionMetaProps = Parameters<typeof MetaBar>[0];
 
+// Unified-grid cards are inline rather than screen-bottom, so they opt out of
+// all the viewport-fitting below.
+const COLLAPSIBLE_ROOT_CLASS = "shrink-0";
+
+// Full-page sessions must stay INSIDE the frame. This row used to be `shrink-0`,
+// which let the composer grow straight past the bottom of the screen: the
+// transcript above it is `flex-1 min-h-0` but bottoms out at its own 48px of
+// vertical padding, so once the composer got tall — a long draft with the
+// keyboard open — nothing could absorb the excess and the send button plus the
+// rows beneath it fell off-screen unreachable. Dropping `shrink-0` hands the
+// overflow here instead; the transcript's `flex-basis: 0` means it still can't
+// squeeze the composer in the normal case, since free space goes to the
+// transcript by `grow` and shrinking only starts once the composer alone
+// exceeds the frame.
+//
+// `flex flex-col` then passes that squeeze down: the prompt bar is the only row
+// with `min-h-0`, so it absorbs the whole deficit and the editable inside it
+// scrolls rather than shoving the send button off-screen. Without this the
+// composer stayed a block box, grew past the frame on a ~6-line draft, and
+// `overflow-y-auto` merely parked the overflow in a top-anchored scroll area —
+// reachable, but only if you thought to scroll the composer. That scroll stays
+// as a backstop for chrome that can't shrink at all; it should no longer engage.
+//
+// `-mt-6 pt-6` is layout-neutral (the negative margin cancels the padding) and
+// exists only to keep the scroll container from clipping `MetaBar`'s own
+// `-mt-6`, the overhang that fades the chip row into the transcript above.
+// Without the extra 24px of padding box, `overflow-y-auto` shears the top off
+// the chips.
+//
+// The home-indicator clearance sits on this root so it applies whichever
+// optional row happens to be last. It used to hang off `ComposerContextUsage`,
+// which returns null until a session reports context usage — so before the
+// first prompt the bottom chips sat flush against the screen edge.
+const FULL_PAGE_ROOT_CLASS =
+  "-mt-6 flex min-h-0 flex-col overflow-y-auto pt-6 pb-[env(safe-area-inset-bottom)]";
+
+// Bottom safe-area clearance lives on the composer root (see above), so this row
+// only owns its own spacing — the same in both layouts.
+const CONTEXT_USAGE_CLASS = "flex items-center gap-2 px-3 pb-1.5 pt-0";
+
 export const AgentSessionComposer = memo(function AgentSessionComposer(
   props: AgentSessionComposerProps,
 ): ReactElement {
@@ -66,7 +106,7 @@ export const AgentSessionComposer = memo(function AgentSessionComposer(
     ) : null;
 
   return (
-    <div className="shrink-0">
+    <div className={props.collapsible ? COLLAPSIBLE_ROOT_CLASS : FULL_PAGE_ROOT_CLASS}>
       {props.collapsible && !props.hasMeta && <ComposerFade />}
       {props.shouldShowPromptBar && (
         <SessionScheduledCard schedule={schedule} onSend={props.onSend} />
@@ -255,7 +295,7 @@ function ComposerContextUsage({
   if (!contextUsage || !shouldShow) return null;
 
   return (
-    <div className={contextUsageClassName(collapsible)}>
+    <div className={CONTEXT_USAGE_CLASS}>
       <ContextUsageBar
         usage={contextUsage}
         className="flex-1 px-0 py-0"
@@ -263,9 +303,4 @@ function ComposerContextUsage({
       />
     </div>
   );
-}
-
-function contextUsageClassName(collapsible: boolean): string {
-  if (collapsible) return "flex items-center gap-2 px-3 pb-1.5 pt-0";
-  return "flex items-center gap-2 px-3 pt-0 pb-[max(0.375rem,env(safe-area-inset-bottom))]";
 }
