@@ -233,7 +233,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
             projectId={projectId}
           />
         ) : isStashes ? (
-          <StashesView featureId={featureId} />
+          <StashesView featureId={featureId} onConflicts={handleRequestUncommitted} />
         ) : (
           <DiffViewer
             featureId={featureId}

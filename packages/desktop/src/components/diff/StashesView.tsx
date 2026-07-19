@@ -33,7 +33,7 @@ export const StashesView = memo(function StashesView({
   const handleCloseStash = useCallback((): void => setOpenedStash(null), []);
   const contextOpenConflict = useOpenDiffInEditor();
   const openConflict = onOpenConflict ?? contextOpenConflict;
-  const mutationCoordinator = useStashMutationCoordinator();
+  const mutationCoordinator = useStashMutationCoordinator(featureId);
 
   const { data, isLoading, isError, error, refetch } = useListStashes({
     feature_id: featureId,

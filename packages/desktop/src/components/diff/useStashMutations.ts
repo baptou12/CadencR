@@ -16,7 +16,7 @@ import type {
   StashConflictOutcome,
   StashMutationOperation,
 } from "./stash-contracts";
-import type { StashMutationCoordinator } from "./useStashMutationCoordinator";
+import type { StashMutationCoordinator, StashMutationLease } from "./useStashMutationCoordinator";
 
 type StashMutationExecutor = (variables: {
   data: StashMutationBody;
@@ -109,7 +109,9 @@ export function useStashMutations({
   const execute = useCallback(
     async (operation: StashMutationOperation, mutate: StashMutationExecutor): Promise<boolean> => {
       if (activeOperationRef.current) return false;
-      if (coordinator && !coordinator.tryAcquire(stash.ref_name)) return false;
+      const lease: StashMutationLease | null =
+        coordinator?.tryAcquire({ kind: "row", operation, stashRefName: stash.ref_name }) ?? null;
+      if (coordinator && !lease) return false;
       activeOperationRef.current = operation;
       setActiveOperation(operation);
       try {
@@ -135,7 +137,7 @@ export function useStashMutations({
       } finally {
         activeOperationRef.current = null;
         setActiveOperation(null);
-        coordinator?.release(stash.ref_name);
+        if (lease) coordinator?.release(lease);
       }
     },
     [coordinator, onConflicts, onOpenConflict, refreshAfterMutation, selector, stash],

@@ -6,6 +6,10 @@ use crate::domain::git::models::GitOperationResponse;
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git_background, run_git_capture, run_git_safe_refs};
 
+mod push;
+
+pub use push::push_stash;
+
 /// Resolve the repository-global Git directory that owns `refs/stash` and its
 /// reflog. Linked worktrees return the same canonical directory here.
 pub async fn stash_common_dir(repo_path: &Path) -> Result<PathBuf, AppError> {
@@ -22,29 +26,6 @@ pub async fn stash_common_dir(repo_path: &Path) -> Result<PathBuf, AppError> {
             common_dir.display()
         ))
     })
-}
-
-/// Stash staged and unstaged tracked-file changes using Git's default stash
-/// behavior. Untracked and ignored files are intentionally not included.
-pub async fn push_stash(
-    repo_path: &Path,
-    message: Option<&str>,
-) -> Result<GitOperationResponse, AppError> {
-    let tracked = run_git_background(
-        &["status", "--porcelain=v2", "--untracked-files=no"],
-        repo_path,
-    )
-    .await?;
-    if tracked.trim().is_empty() {
-        return Err(AppError::BadRequest(
-            "No tracked changes are available to stash".into(),
-        ));
-    }
-
-    let trimmed = message.map(str::trim).filter(|value| !value.is_empty());
-    let flags = trimmed.map_or_else(Vec::new, |value| vec!["-m", value]);
-    run_git_capture(&["stash", "push"], &flags, &[], repo_path).await?;
-    Ok(GitOperationResponse::Completed)
 }
 
 pub async fn apply_stash(
@@ -162,13 +143,13 @@ mod tests {
     use crate::domain::git::commands::list_stashes;
     use crate::shared::git_cli::run_git;
 
-    struct Repo {
+    pub(super) struct Repo {
         _temp: tempfile::TempDir,
-        path: PathBuf,
+        pub(super) path: PathBuf,
     }
 
     impl Repo {
-        async fn seeded() -> Self {
+        pub(super) async fn seeded() -> Self {
             let temp = tempfile::tempdir().unwrap();
             let path = temp.path().to_path_buf();
             for args in [
@@ -196,80 +177,9 @@ mod tests {
             tokio::fs::write(self.path.join("staged.txt"), "stashed\n")
                 .await
                 .unwrap();
-            push_stash(&self.path, message).await.unwrap();
+            push_stash(&self.path, message, false).await.unwrap();
             list_stashes(&self.path).await.unwrap()[0].sha.clone()
         }
-    }
-
-    #[tokio::test]
-    async fn named_push_stashes_staged_and_unstaged_tracked_changes_only() {
-        let repo = Repo::seeded().await;
-        tokio::fs::write(repo.path.join(".gitignore"), "ignored.txt\n")
-            .await
-            .unwrap();
-        run_git(&["add", ".gitignore"], &repo.path).await.unwrap();
-        run_git(&["commit", "-q", "-m", "ignore"], &repo.path)
-            .await
-            .unwrap();
-        tokio::fs::write(repo.path.join("staged.txt"), "staged change\n")
-            .await
-            .unwrap();
-        run_git(&["add", "staged.txt"], &repo.path).await.unwrap();
-        tokio::fs::write(repo.path.join("unstaged.txt"), "unstaged change\n")
-            .await
-            .unwrap();
-        tokio::fs::write(repo.path.join("untracked.txt"), "leave me\n")
-            .await
-            .unwrap();
-        tokio::fs::write(repo.path.join("ignored.txt"), "leave me too\n")
-            .await
-            .unwrap();
-
-        assert_eq!(
-            push_stash(&repo.path, Some("  named work  "))
-                .await
-                .unwrap(),
-            GitOperationResponse::Completed
-        );
-        let entries = list_stashes(&repo.path).await.unwrap();
-        assert!(entries[0].message.ends_with("named work"));
-        assert!(repo.path.join("untracked.txt").exists());
-        assert!(repo.path.join("ignored.txt").exists());
-        assert_eq!(
-            tokio::fs::read_to_string(repo.path.join("staged.txt"))
-                .await
-                .unwrap(),
-            "base staged\n"
-        );
-        assert_eq!(
-            tokio::fs::read_to_string(repo.path.join("unstaged.txt"))
-                .await
-                .unwrap(),
-            "base unstaged\n"
-        );
-    }
-
-    #[tokio::test]
-    async fn unnamed_and_blank_message_pushes_use_gits_default_description() {
-        for message in [None, Some(" \t\n ")] {
-            let repo = Repo::seeded().await;
-            repo.modify_and_push(message).await;
-            let entry = &list_stashes(&repo.path).await.unwrap()[0];
-            assert!(entry.message.starts_with("WIP on main:"), "{entry:?}");
-        }
-    }
-
-    #[tokio::test]
-    async fn clean_or_untracked_only_repository_returns_noop_error() {
-        let repo = Repo::seeded().await;
-        let clean_error = push_stash(&repo.path, None).await.unwrap_err();
-        assert!(matches!(clean_error, AppError::BadRequest(_)));
-        tokio::fs::write(repo.path.join("untracked.txt"), "untouched\n")
-            .await
-            .unwrap();
-        let untracked_error = push_stash(&repo.path, None).await.unwrap_err();
-        assert!(matches!(untracked_error, AppError::BadRequest(_)));
-        assert!(list_stashes(&repo.path).await.unwrap().is_empty());
     }
 
     #[tokio::test]

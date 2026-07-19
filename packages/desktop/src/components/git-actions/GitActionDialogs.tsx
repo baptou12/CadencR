@@ -6,6 +6,7 @@ import type { GitAction } from "./useGitAction";
 import type { CommitSubmissionController } from "./useCommitSubmission";
 
 const CommitDialog = lazy(() => import("./CommitDialog"));
+const StashChangesDialog = lazy(() => import("./StashChangesDialog"));
 const PushDialog = lazy(() => import("./PushDialog"));
 const MergeDialog = lazy(() => import("./MergeDialog"));
 const UpdateBranchDialog = lazy(() => import("./UpdateBranchDialog"));
@@ -21,10 +22,7 @@ interface GitActionDialogsProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/**
- * Controlled sibling-dialog outlet. The Phase 2B checkpoint can add
- * `StashChangesDialog` here without nesting it inside UpdateBranchDialog.
- */
+/** Controlled sibling-dialog outlet for every Git action picker dialog. */
 export function GitActionDialogs({
   activeDialog,
   featureId,
@@ -37,6 +35,9 @@ export function GitActionDialogs({
     <Suspense fallback={<GitActionDialogLoading />}>
       {activeDialog === "commit" && (
         <CommitDialog featureId={featureId} open submission={commitSubmission} />
+      )}
+      {activeDialog === "stash" && (
+        <StashChangesDialog featureId={featureId} open onOpenChange={onOpenChange} />
       )}
       {activeDialog === "push" && (
         <PushDialog featureId={featureId} open onOpenChange={onOpenChange} />

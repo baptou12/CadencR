@@ -3,15 +3,17 @@
  * by `GitActionButton`. Kept pure (no React) so the snapshot matrix can be
  * tested directly with Vitest — `useGitAction` is a thin `useMemo` wrapper.
  *
- * Order of preference for the primary action: commit → update → push → pr → merge. The first
- * one that's enabled wins; if none are, `primary` is `null` and the main
- * button is disabled with the most relevant reason.
+ * Order of preference for the primary action: commit → update → push → pr → merge. Stash is
+ * intentionally secondary-only, so adding tracked changes never replaces the
+ * existing primary action. The first primary action that's enabled wins; if
+ * none are, `primary` is `null` and the main button is disabled.
  */
 import { useMemo } from "react";
 import type { GitOperationKind, GitStatusSnapshot } from "@/api/generated";
 import { gitUpdateContinueDisabledReason } from "./gitUpdateMessages";
 
-export type GitAction = "commit" | "update" | "push" | "pr" | "merge";
+export type GitAction = "commit" | "stash" | "update" | "push" | "pr" | "merge";
+export type PrimaryGitAction = Exclude<GitAction, "stash">;
 export type CommitActivity = "running" | "failed" | null;
 
 export interface GitUpdateRecoveryActionState {
@@ -22,7 +24,7 @@ export interface GitUpdateRecoveryActionState {
 }
 
 export interface GitActionState {
-  primary: GitAction | null;
+  primary: PrimaryGitAction | null;
   /** Human label for the primary action button (or the disabled placeholder). */
   label: string;
   /** Per-action reason. `null` = enabled, `string` = disabled-because reason. */
@@ -35,13 +37,14 @@ export interface GitActionState {
   recovery: GitUpdateRecoveryActionState | null;
 }
 
-const ORDER: readonly GitAction[] = ["commit", "update", "push", "pr", "merge"] as const;
+const PRIMARY_ORDER: readonly PrimaryGitAction[] = ["commit", "update", "push", "pr", "merge"];
 
 const LOADING_STATE: GitActionState = {
   primary: null,
   label: "Loading…",
   disabled: {
     commit: "Loading…",
+    stash: "Loading…",
     update: "Loading…",
     push: "Loading…",
     pr: "Loading…",
@@ -54,6 +57,12 @@ const LOADING_STATE: GitActionState = {
 
 function deriveCommitDisabled(snapshot: GitStatusSnapshot): string | null {
   return snapshot.uncommitted_count > 0 ? null : "No uncommitted changes";
+}
+
+function deriveStashDisabled(snapshot: GitStatusSnapshot): string | null {
+  if ((snapshot.conflict_count ?? 0) > 0) return "Resolve conflicting files first";
+  if (snapshot.uncommitted_count > 0) return null;
+  return "No changes to stash";
 }
 
 function derivePushDisabled(snapshot: GitStatusSnapshot): string | null {
@@ -133,6 +142,7 @@ export function deriveGitAction(
   updatePending = false,
   recoveryOperation: GitOperationKind | null = null,
   recoveryConflictCount = 0,
+  stashMutationBlockedReason: string | null = null,
 ): GitActionState {
   if (!snapshot) return LOADING_STATE;
 
@@ -155,7 +165,14 @@ export function deriveGitAction(
     return {
       primary: null,
       label: reason,
-      disabled: { commit: reason, update: reason, push: reason, pr: reason, merge: reason },
+      disabled: {
+        commit: reason,
+        stash: reason,
+        update: reason,
+        push: reason,
+        pr: reason,
+        merge: reason,
+      },
       compareLabel: snapshot.action_label ?? "Open PR",
       updatePending,
       recovery: null,
@@ -165,6 +182,7 @@ export function deriveGitAction(
   const compareLabel = snapshot.action_label ?? "Open PR";
   const disabled: Record<GitAction, string | null> = {
     commit: mutationBlockedReason ?? deriveCommitDisabled(snapshot),
+    stash: mutationBlockedReason ?? stashMutationBlockedReason ?? deriveStashDisabled(snapshot),
     update: mutationBlockedReason ?? deriveUpdateDisabled(snapshot),
     push: mutationBlockedReason ?? derivePushDisabled(snapshot),
     // Opening an existing compare URL does not mutate Git, so keep it
@@ -175,7 +193,7 @@ export function deriveGitAction(
 
   const primary = mutationBlockedReason
     ? null
-    : (ORDER.find((action) => disabled[action] === null) ?? null);
+    : (PRIMARY_ORDER.find((action) => disabled[action] === null) ?? null);
   const label = updatePending
     ? "Updating…"
     : primary === "commit"
@@ -214,9 +232,17 @@ export function useGitAction(
   updatePending = false,
   recoveryOperation: GitOperationKind | null = null,
   recoveryConflictCount = 0,
+  stashMutationBlockedReason: string | null = null,
 ): GitActionState {
   return useMemo(
-    () => deriveGitAction(snapshot, updatePending, recoveryOperation, recoveryConflictCount),
-    [snapshot, updatePending, recoveryOperation, recoveryConflictCount],
+    () =>
+      deriveGitAction(
+        snapshot,
+        updatePending,
+        recoveryOperation,
+        recoveryConflictCount,
+        stashMutationBlockedReason,
+      ),
+    [snapshot, updatePending, recoveryOperation, recoveryConflictCount, stashMutationBlockedReason],
   );
 }

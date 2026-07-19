@@ -28,7 +28,8 @@ pub async fn push_stash(
     body: StashPushBody,
 ) -> Result<GitOperationResponse, AppError> {
     let (repo, permits) = acquire_stash_permits(state, body.feature_id).await?;
-    let outcome = commands::push_stash(&repo, body.message.as_deref()).await?;
+    let outcome =
+        commands::push_stash(&repo, body.message.as_deref(), body.include_untracked).await?;
     drop(permits);
     crate::domain::git::workflow_service::broadcast_after_write_at(state, &repo).await;
     Ok(outcome)
@@ -194,6 +195,7 @@ mod tests {
             StashPushBody {
                 feature_id: 2,
                 message: Some("linked".into()),
+                include_untracked: false,
             },
         )
         .await
@@ -207,6 +209,7 @@ mod tests {
             StashPushBody {
                 feature_id: 2,
                 message: Some("linked".into()),
+                include_untracked: false,
             },
         )
         .await

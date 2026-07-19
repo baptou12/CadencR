@@ -37,6 +37,7 @@ describe("deriveGitAction", () => {
     expect(state.primary).toBeNull();
     expect(state.label).toBe("Loading…");
     expect(state.disabled.commit).toBe("Loading…");
+    expect(state.disabled.stash).toBe("Loading…");
     expect(state.disabled.update).toBe("Loading…");
     expect(state.disabled.push).toBe("Loading…");
     expect(state.disabled.pr).toBe("Loading…");
@@ -52,6 +53,46 @@ describe("deriveGitAction", () => {
     expect(state.disabled.push).toBe("Commit your changes first");
     expect(state.disabled.pr).toBe("Commit your changes first");
     expect(state.disabled.merge).toBe("Nothing to merge");
+  });
+
+  it("enables secondary Stash for tracked changes without replacing Commit", () => {
+    const state = deriveGitAction(
+      snapshot({ uncommitted_count: 2, staged_count: 1, unstaged_count: 1 }),
+    );
+
+    expect(state.primary).toBe("commit");
+    expect(state.label).toBe("Commit");
+    expect(state.disabled.stash).toBeNull();
+  });
+
+  it("enables untracked-only stash creation and explains clean and conflicted states", () => {
+    expect(deriveGitAction(snapshot()).disabled.stash).toBe("No changes to stash");
+    expect(
+      deriveGitAction(snapshot({ uncommitted_count: 1, untracked_count: 1 })).disabled.stash,
+    ).toBeNull();
+    expect(
+      deriveGitAction(
+        snapshot({
+          uncommitted_count: 2,
+          staged_count: 1,
+          unstaged_count: 1,
+          conflict_count: 1,
+        }),
+      ).disabled.stash,
+    ).toBe("Resolve conflicting files first");
+  });
+
+  it("surfaces feature-scoped stash mutation exclusion without changing the primary action", () => {
+    const state = deriveGitAction(
+      snapshot({ uncommitted_count: 1, unstaged_count: 1 }),
+      false,
+      null,
+      0,
+      "Pop stash@{0} in progress",
+    );
+
+    expect(state.primary).toBe("commit");
+    expect(state.disabled.stash).toBe("Pop stash@{0} in progress");
   });
 
   it("primary=update when the clean current branch is behind its resolved target", () => {
@@ -125,6 +166,7 @@ describe("deriveGitAction", () => {
     expect(state.label).toBe("Updating…");
     expect(state.disabled).toMatchObject({
       commit: "Update request in progress",
+      stash: "Update request in progress",
       update: "Update request in progress",
       push: "Update request in progress",
       pr: null,

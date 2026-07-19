@@ -1,26 +1,74 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@/test-utils";
-import { StashChangesDialog } from "./StashChangesDialog";
+import { act, fireEvent, renderHook } from "@testing-library/react";
+import { createTestQueryClient, render, screen, waitFor } from "@/test-utils";
+import StashChangesDialog from "./StashChangesDialog";
+import {
+  resetStashMutationCoordinatorForTest,
+  useStashMutationCoordinator,
+} from "@/components/diff/useStashMutationCoordinator";
 
 const mocks = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   pending: false,
+  filesResult: {
+    data: [
+      {
+        path: "src/parser.ts",
+        status: "unstaged",
+        change_kind: "modified",
+        additions: 12,
+        deletions: 3,
+      },
+      {
+        path: "notes.txt",
+        status: "untracked",
+        change_kind: "untracked",
+        additions: 0,
+        deletions: 0,
+      },
+    ],
+    isLoading: false,
+    isError: false,
+    error: null as Error | null,
+  },
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 vi.mock("@/api/generated", () => ({
+  getListStashesQueryKey: (params: unknown) => ["/api/git/stashes", params],
+  useGetUncommittedFiles: () => mocks.filesResult,
   usePushStash: () => ({ mutateAsync: mocks.mutateAsync, isPending: mocks.pending }),
 }));
 
 describe("StashChangesDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetStashMutationCoordinatorForTest();
     mocks.pending = false;
+    mocks.filesResult.data = [
+      {
+        path: "src/parser.ts",
+        status: "unstaged",
+        change_kind: "modified",
+        additions: 12,
+        deletions: 3,
+      },
+      {
+        path: "notes.txt",
+        status: "untracked",
+        change_kind: "untracked",
+        additions: 0,
+        deletions: 0,
+      },
+    ];
+    mocks.filesResult.isLoading = false;
+    mocks.filesResult.isError = false;
+    mocks.filesResult.error = null;
     mocks.mutateAsync.mockResolvedValue({ outcome: "completed" });
   });
 
-  it("states the tracked-files-only contract and submits a trimmed optional name", async () => {
+  it("summarizes files with numstats and submits tracked changes with a trimmed name", async () => {
     const onOpenChange = vi.fn();
     const onCompleted = vi.fn();
     const { user } = render(
@@ -32,15 +80,17 @@ describe("StashChangesDialog", () => {
       />,
     );
 
-    expect(screen.getByText("Tracked files only.")).toBeInTheDocument();
-    expect(
-      screen.getByText(/untracked and ignored files stay in the worktree/i),
-    ).toBeInTheDocument();
-    await user.type(screen.getByRole("textbox", { name: /Name/ }), "  parser WIP  ");
+    expect(screen.getByText("src/parser.ts")).toBeInTheDocument();
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    expect(screen.getByText("+12")).toBeInTheDocument();
+    expect(screen.getByText("-3")).toBeInTheDocument();
+    expect(screen.getByText("· excluded")).toBeInTheDocument();
+    const nameInput = screen.getByRole("textbox", { name: /Name/ });
+    await user.type(nameInput, "  parser WIP  ");
     await user.click(screen.getByRole("button", { name: "Stash changes" }));
 
     expect(mocks.mutateAsync).toHaveBeenCalledWith({
-      data: { feature_id: 21, message: "parser WIP" },
+      data: { feature_id: 21, message: "parser WIP", include_untracked: false },
     });
     expect(onCompleted).toHaveBeenCalledWith({
       outcome: "completed",
@@ -48,6 +98,68 @@ describe("StashChangesDialog", () => {
       name: "parser WIP",
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("lists a file with staged and unstaged changes exactly once", () => {
+    mocks.filesResult.data = [
+      {
+        path: "src/both.ts",
+        status: "both",
+        change_kind: "modified",
+        additions: 4,
+        deletions: 2,
+      },
+    ];
+
+    render(<StashChangesDialog featureId={32} open onOpenChange={vi.fn()} />);
+
+    expect(screen.getByText("Staged & unstaged (1)")).toBeInTheDocument();
+    expect(screen.getAllByText("src/both.ts")).toHaveLength(1);
+    expect(screen.getByText("1 of 1 included")).toBeInTheDocument();
+  });
+
+  it("starts outside the name input and uses the layout-aware N mnemonic to focus it", async () => {
+    render(<StashChangesDialog featureId={31} open onOpenChange={vi.fn()} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Include untracked files" });
+    const nameInput = screen.getByRole("textbox", { name: /Name/ });
+
+    await waitFor(() => expect(checkbox).toHaveFocus());
+    expect(nameInput).not.toHaveFocus();
+    fireEvent.keyDown(checkbox, { key: "n", code: "KeyB" });
+
+    expect(nameInput).toHaveFocus();
+  });
+
+  it("confirms with Cmd+Enter from the focused name input", async () => {
+    const onOpenChange = vi.fn();
+    const { user } = render(<StashChangesDialog featureId={29} open onOpenChange={onOpenChange} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Include untracked files" });
+    const nameInput = screen.getByRole("textbox", { name: /Name/ });
+
+    await waitFor(() => expect(checkbox).toHaveFocus());
+    fireEvent.keyDown(checkbox, { key: "n", code: "KeyB" });
+    expect(nameInput).toHaveFocus();
+    await user.type(nameInput, "keyboard stash");
+    fireEvent.keyDown(nameInput, { key: "Enter", code: "Enter", metaKey: true });
+
+    await waitFor(() =>
+      expect(mocks.mutateAsync).toHaveBeenCalledWith({
+        data: { feature_id: 29, message: "keyboard stash", include_untracked: false },
+      }),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("cancels with Escape from the default dialog focus", async () => {
+    const onOpenChange = vi.fn();
+    render(<StashChangesDialog featureId={30} open onOpenChange={onOpenChange} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Include untracked files" });
+
+    await waitFor(() => expect(checkbox).toHaveFocus());
+    fireEvent.keyDown(checkbox, { key: "Escape", code: "Escape" });
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(mocks.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("creates an unnamed stash when the optional name is blank", async () => {
@@ -60,12 +172,42 @@ describe("StashChangesDialog", () => {
     await user.click(screen.getByRole("button", { name: "Stash changes" }));
 
     expect(mocks.mutateAsync).toHaveBeenCalledWith({
-      data: { feature_id: 22, message: null },
+      data: { feature_id: 22, message: null, include_untracked: false },
     });
     expect(onCompleted).toHaveBeenCalledWith({
       outcome: "completed",
       featureId: 22,
       name: null,
+    });
+  });
+
+  it("uses the layout-aware U mnemonic to include and stash untracked-only changes", async () => {
+    mocks.filesResult.data = [
+      {
+        path: "draft.txt",
+        status: "untracked",
+        change_kind: "untracked",
+        additions: 0,
+        deletions: 0,
+      },
+    ];
+    const { user } = render(<StashChangesDialog featureId={28} open onOpenChange={vi.fn()} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Include untracked files" });
+    const submit = screen.getByRole("button", { name: "Stash changes" });
+
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: /Name/ }), "u");
+    expect(checkbox).not.toBeChecked();
+    await user.clear(screen.getByRole("textbox", { name: /Name/ }));
+    checkbox.focus();
+    fireEvent.keyDown(checkbox, { key: "u", code: "KeyQ" });
+    expect(checkbox).toBeChecked();
+    expect(screen.getByText("· included")).toBeInTheDocument();
+    expect(submit).toBeEnabled();
+
+    await user.click(submit);
+    expect(mocks.mutateAsync).toHaveBeenCalledWith({
+      data: { feature_id: 28, message: null, include_untracked: true },
     });
   });
 
@@ -79,7 +221,26 @@ describe("StashChangesDialog", () => {
     expect(screen.getByRole("button", { name: "Stashing…" })).toBeDisabled();
   });
 
-  it("surfaces the clean or untracked-only backend error inline and stays open", async () => {
+  it("blocks dispatch while a row mutation owns the feature coordinator", async () => {
+    const { result } = renderHook(() => useStashMutationCoordinator(27));
+    const lease = result.current.tryAcquire({
+      kind: "row",
+      operation: "apply",
+      stashRefName: "stash@{0}",
+    });
+    const { user } = render(<StashChangesDialog featureId={27} open onOpenChange={vi.fn()} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Apply stash@{0} in progress");
+    expect(screen.getByRole("button", { name: "Stash changes" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Stash changes" }));
+    expect(mocks.mutateAsync).not.toHaveBeenCalled();
+
+    act(() => {
+      if (lease) result.current.release(lease);
+    });
+  });
+
+  it("surfaces a backend stash error inline and stays open", async () => {
     mocks.mutateAsync.mockRejectedValue(new Error("No tracked changes are available to stash"));
     const onOpenChange = vi.fn();
     const { user } = render(<StashChangesDialog featureId={24} open onOpenChange={onOpenChange} />);
@@ -92,21 +253,39 @@ describe("StashChangesDialog", () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
-  it("does not close until the backend confirms creation", async () => {
+  it("holds its feature lease until creation and the confirmed query refresh settle", async () => {
     let complete: ((value: { outcome: "completed" }) => void) | undefined;
+    let completeRefresh: (() => void) | undefined;
     mocks.mutateAsync.mockReturnValue(
       new Promise<{ outcome: "completed" }>((resolve) => {
         complete = resolve;
       }),
     );
     const onOpenChange = vi.fn();
-    const { user } = render(<StashChangesDialog featureId={25} open onOpenChange={onOpenChange} />);
+    const coordinator = renderHook(() => useStashMutationCoordinator(25));
+    const queryClient = createTestQueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockReturnValue(
+      new Promise<void>((resolve) => {
+        completeRefresh = resolve;
+      }),
+    );
+    const { user } = render(
+      <StashChangesDialog featureId={25} open onOpenChange={onOpenChange} />,
+      { queryClient },
+    );
 
     await user.click(screen.getByRole("button", { name: "Stash changes" }));
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(coordinator.result.current.activeMutation).toEqual({ kind: "push" });
 
-    complete?.({ outcome: "completed" });
+    act(() => complete?.({ outcome: "completed" }));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledOnce());
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(coordinator.result.current.activeMutation).toEqual({ kind: "push" });
+
+    act(() => completeRefresh?.());
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(coordinator.result.current.activeMutation).toBeNull();
   });
 
   it("does not misreport a completed stash when the follow-up callback fails", async () => {
