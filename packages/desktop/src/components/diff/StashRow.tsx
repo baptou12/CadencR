@@ -45,8 +45,7 @@ export const StashRow = memo(function StashRow({
     onRefresh,
     coordinator,
   });
-  const blockedByAnotherRow =
-    coordinator?.activeStashRefName != null && coordinator.activeStashRefName !== stash.ref_name;
+  const blockedReason = actions.pendingOperation ? null : (coordinator?.blockedReason ?? null);
 
   const handleOpen = useCallback((): void => onOpen(stash), [onOpen, stash]);
   const handleApply = useCallback((): void => void actions.apply(), [actions]);
@@ -82,7 +81,7 @@ export const StashRow = memo(function StashRow({
       <StashRowActions
         stash={stash}
         pendingOperation={actions.pendingOperation}
-        blockedByAnotherRow={blockedByAnotherRow}
+        blockedReason={blockedReason}
         dropButtonRef={dropButtonRef}
         onApply={handleApply}
         onPop={handlePop}
@@ -96,7 +95,7 @@ export const StashRow = memo(function StashRow({
         open={dropConfirmationOpen}
         stash={stash}
         pending={actions.pendingOperation === "drop"}
-        blocked={blockedByAnotherRow}
+        blocked={blockedReason !== null}
         onOpenChange={handleDropOpenChange}
         onConfirm={handleDropConfirmClick}
       />
@@ -107,7 +106,7 @@ export const StashRow = memo(function StashRow({
 interface StashRowActionsProps {
   stash: StashEntry;
   pendingOperation: StashMutationOperation | null;
-  blockedByAnotherRow: boolean;
+  blockedReason: string | null;
   dropButtonRef: RefObject<HTMLButtonElement | null>;
   onApply: () => void;
   onPop: () => void;
@@ -117,7 +116,7 @@ interface StashRowActionsProps {
 const StashRowActions = memo(function StashRowActions({
   stash,
   pendingOperation,
-  blockedByAnotherRow,
+  blockedReason,
   dropButtonRef,
   onApply,
   onPop,
@@ -133,14 +132,14 @@ const StashRowActions = memo(function StashRowActions({
         operation="apply"
         stashRef={stash.ref_name}
         pendingOperation={pendingOperation}
-        blockedByAnotherRow={blockedByAnotherRow}
+        blockedReason={blockedReason}
         onClick={onApply}
       />
       <StashInlineAction
         operation="pop"
         stashRef={stash.ref_name}
         pendingOperation={pendingOperation}
-        blockedByAnotherRow={blockedByAnotherRow}
+        blockedReason={blockedReason}
         onClick={onPop}
       />
       <StashInlineAction
@@ -148,7 +147,7 @@ const StashRowActions = memo(function StashRowActions({
         operation="drop"
         stashRef={stash.ref_name}
         pendingOperation={pendingOperation}
-        blockedByAnotherRow={blockedByAnotherRow}
+        blockedReason={blockedReason}
         onClick={onDropRequest}
       />
     </div>
@@ -159,7 +158,7 @@ interface StashInlineActionProps {
   operation: StashMutationOperation;
   stashRef: string;
   pendingOperation: StashMutationOperation | null;
-  blockedByAnotherRow: boolean;
+  blockedReason: string | null;
   onClick: () => void;
   buttonRef?: RefObject<HTMLButtonElement | null>;
 }
@@ -186,14 +185,14 @@ const StashInlineAction = memo(function StashInlineAction({
   operation,
   stashRef,
   pendingOperation,
-  blockedByAnotherRow,
+  blockedReason,
   onClick,
   buttonRef,
 }: StashInlineActionProps): ReactElement {
   const Icon = ACTION_ICONS[operation];
   const label = ACTION_LABELS[operation];
   const isPending = pendingOperation === operation;
-  const disabled = pendingOperation !== null || blockedByAnotherRow;
+  const disabled = pendingOperation !== null || blockedReason !== null;
 
   return (
     <Button
@@ -204,9 +203,7 @@ const StashInlineAction = memo(function StashInlineAction({
       disabled={disabled}
       onClick={onClick}
       aria-label={isPending ? `${label} ${stashRef} in progress` : `${label} ${stashRef}`}
-      title={
-        blockedByAnotherRow ? "Another stash operation is in progress" : `${label} ${stashRef}`
-      }
+      title={blockedReason ?? `${label} ${stashRef}`}
       className={cn("h-7 px-1.5 text-[10px] disabled:opacity-40", ACTION_CLASS_NAMES[operation])}
     >
       {isPending ? <Loader2Icon className="size-3 animate-spin" /> : <Icon className="size-3" />}

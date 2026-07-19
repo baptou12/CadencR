@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { within } from "@testing-library/react";
+import { act, renderHook, within } from "@testing-library/react";
 import { render, screen } from "@/test-utils";
 import type { GitStatusSnapshot } from "@/api/generated";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { GitActionButton } from "./GitActionButton";
 import { useGitUpdateRecoveryStore } from "./gitUpdateRecoveryStore";
+import {
+  resetStashMutationCoordinatorForTest,
+  useStashMutationCoordinator,
+} from "../diff/useStashMutationCoordinator";
 
 const buttonMocks = vi.hoisted(() => ({ isMobile: false, updatePending: false }));
 
@@ -31,6 +35,11 @@ vi.mock("./CommitDialog", () => ({
 vi.mock("./UpdateBranchDialog", () => ({
   default: ({ open }: { open: boolean }) =>
     open ? <div role="dialog" aria-label="Update current branch" /> : null,
+}));
+
+vi.mock("./StashChangesDialog", () => ({
+  default: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog" aria-label="Stash changes" /> : null,
 }));
 
 function makeMergeableSnapshot(featureId: number): GitStatusSnapshot {
@@ -60,6 +69,7 @@ function makeDirtyMergeableSnapshot(featureId: number): GitStatusSnapshot {
   return {
     ...makeMergeableSnapshot(featureId),
     uncommitted_count: 2,
+    unstaged_count: 2,
   };
 }
 
@@ -69,6 +79,7 @@ beforeEach(() => {
   useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
   useCommitOutputStore.setState({ byFeature: {} });
   useGitUpdateRecoveryStore.setState({ byFeature: {} });
+  resetStashMutationCoordinatorForTest();
 });
 
 describe("GitActionButton shortcuts", () => {
@@ -148,6 +159,54 @@ describe("GitActionButton shortcuts", () => {
     await user.click(await screen.findByText("Merge"));
 
     expect(await screen.findByRole("dialog", { name: "Merge branch" })).toBeInTheDocument();
+  });
+
+  it("opens the lazy controlled Stash dialog without replacing Commit as primary", async () => {
+    useGitStatusStore.getState().setStatus(makeDirtyMergeableSnapshot(42));
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
+
+    expect(screen.getByRole("button", { name: "Commit" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+    await user.click(await screen.findByText("Stash changes"));
+
+    expect(await screen.findByRole("dialog", { name: "Stash changes" })).toBeInTheDocument();
+  });
+
+  it("allows an untracked-only worktree to open Stash while keeping Commit primary", async () => {
+    useGitStatusStore.getState().setStatus({
+      ...makeMergeableSnapshot(42),
+      uncommitted_count: 1,
+      untracked_count: 1,
+    });
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
+
+    expect(screen.getByRole("button", { name: "Commit" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+    const stashItem = (await screen.findByText("Stash changes")).closest("[cmdk-item]");
+    expect(stashItem).toHaveAttribute("aria-disabled", "false");
+    await user.click(screen.getByText("Stash changes"));
+
+    expect(await screen.findByRole("dialog", { name: "Stash changes" })).toBeInTheDocument();
+  });
+
+  it("shows the row-operation reason and blocks opening Stash", async () => {
+    useGitStatusStore.getState().setStatus(makeDirtyMergeableSnapshot(42));
+    const coordinator = renderHook(() => useStashMutationCoordinator(42));
+    act(() => {
+      coordinator.result.current.tryAcquire({
+        kind: "row",
+        operation: "apply",
+        stashRefName: "stash@{0}",
+      });
+    });
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
+
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+    const stashItem = (await screen.findByText("Stash changes")).closest("[cmdk-item]");
+    expect(stashItem).toHaveAttribute("aria-disabled", "true");
+    expect(stashItem).toHaveAttribute("title", "Apply stash@{0} in progress");
+    await user.click(screen.getByText("Stash changes"));
+    expect(screen.queryByRole("dialog", { name: "Stash changes" })).not.toBeInTheDocument();
   });
 
   it("opens the distinct Update dialog without changing finish-branch Merge", async () => {

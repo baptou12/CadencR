@@ -3,6 +3,7 @@
  */
 import { type ComponentType, type ReactElement } from "react";
 import {
+  Archive,
   GitCommit,
   GitMerge,
   GitPullRequest,
@@ -26,22 +27,26 @@ import type { CommitActivity, GitAction, GitActionState } from "./useGitAction";
 export interface GitActionRegistration {
   label: string;
   icon: ComponentType<{ className?: string }>;
+  searchTerms?: readonly string[];
 }
 
 /**
- * Additive registration seam for action-picker entries. Phase 2B can add its
- * `stash` registration and ordering entry here, route it in `GitActionButton`,
- * and mount its controlled dialog in the sibling outlet without coupling them.
+ * Additive registration seam for action-picker entries.
  */
 export const GIT_ACTION_REGISTRATIONS: Readonly<Record<GitAction, GitActionRegistration>> = {
   commit: { label: "Commit", icon: GitCommit },
+  stash: {
+    label: "Stash changes",
+    icon: Archive,
+    searchTerms: ["save", "tracked", "untracked", "changes"],
+  },
   update: { label: "Update", icon: RefreshCw },
   push: { label: "Push", icon: Upload },
   pr: { label: "Open compare", icon: GitPullRequest },
   merge: { label: "Merge", icon: GitMerge },
 };
 
-const GIT_ACTION_ORDER: readonly GitAction[] = ["commit", "update", "push", "pr", "merge"];
+const GIT_ACTION_ORDER: readonly GitAction[] = ["commit", "stash", "update", "push", "pr", "merge"];
 
 export function gitActionIcon(action: GitAction): ComponentType<{ className?: string }> {
   return GIT_ACTION_REGISTRATIONS[action].icon;
@@ -74,7 +79,11 @@ export function GitActionPopover({
         <CommandEmpty>No matching git action.</CommandEmpty>
         <CommandGroup>
           {GIT_ACTION_ORDER.map((action) => {
-            const { label: registeredLabel, icon: Icon } = GIT_ACTION_REGISTRATIONS[action];
+            const {
+              label: registeredLabel,
+              icon: Icon,
+              searchTerms,
+            } = GIT_ACTION_REGISTRATIONS[action];
             const reason = action === "commit" && commitActivity ? null : state.disabled[action];
             const label =
               action === "commit" && commitActivity === "running"
@@ -87,7 +96,7 @@ export function GitActionPopover({
             return (
               <CommandItem
                 key={action}
-                value={`${label} ${action}`}
+                value={[label, action, ...(searchTerms ?? [])].join(" ")}
                 disabled={reason !== null}
                 onSelect={() => onPick(action)}
                 title={reason ?? label}

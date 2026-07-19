@@ -29,6 +29,23 @@ function snapshot(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot
 }
 
 describe("GitActionPopover", () => {
+  it("registers searchable Stash changes after Commit without making it primary", async () => {
+    const onPick = vi.fn();
+    const state = deriveGitAction(
+      snapshot({ uncommitted_count: 1, unstaged_count: 1, ahead_of_target: 0 }),
+    );
+    const { user } = render(<GitActionPopover state={state} onPick={onPick} />);
+
+    expect(state.primary).toBe("commit");
+    const commit = screen.getByText("Commit").closest("[cmdk-item]");
+    const stash = screen.getByText("Stash changes").closest("[cmdk-item]");
+    expect(commit?.compareDocumentPosition(stash as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    await user.type(screen.getByPlaceholderText("Search git actions…"), "save untracked changes");
+    await user.click(screen.getByText("Stash changes"));
+    expect(onPick).toHaveBeenCalledWith("stash");
+  });
+
   it("registers Update separately from existing finish-branch Merge", async () => {
     const onPick = vi.fn();
     const { user } = render(

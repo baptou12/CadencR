@@ -1,11 +1,11 @@
-import { memo, useCallback, useState, type ReactElement } from "react";
+import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
 import { CircleAlert, ChevronDown, GitBranch, GitCommit, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
-import { getCompareUrl } from "@/api/generated";
+import { getCompareUrl, type GitStatusSnapshot } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -28,6 +28,7 @@ import { useGitUpdatePending } from "./useGitUpdatePending";
 import { GitActionDialogs, type GitActionDialog } from "./GitActionDialogs";
 import { useGitActionShortcuts } from "./useGitActionShortcuts";
 import { GitActionPopoverContent } from "./GitActionPopoverContent";
+import { useStashMutationCoordinator } from "../diff/useStashMutationCoordinator";
 
 const GIT_ACTION_BUTTON_CLASS =
   "border-border/80 bg-muted/20 text-xs text-foreground hover:bg-muted/35 disabled:opacity-100 disabled:bg-muted/20 disabled:text-muted-foreground";
@@ -70,10 +71,11 @@ function useOpenCompare(
   }, [compareUrl, featureId]);
 }
 
-export const GitActionButton = memo(function GitActionButton({
-  featureId,
-  projectId,
-}: GitActionButtonProps): ReactElement | null {
+function useGitActionButtonState(featureId: number): {
+  snapshot: GitStatusSnapshot | undefined;
+  state: GitActionState;
+  getStashMutationBlockedReason: () => string | null;
+} {
   const snapshot = useGitStatusStore(selectGitStatus(featureId));
   const recovery = useGitUpdateRecoveryStore((store) => store.byFeature[featureId]);
   const updatePending = useGitUpdatePending(featureId);
@@ -85,7 +87,26 @@ export const GitActionButton = memo(function GitActionButton({
     snapshot?.computed_at ?? 0,
     recovery,
   );
-  const state = useGitAction(snapshot, updatePending, recoveryOperation, recoveryConflictCount);
+  const { blockedReason: stashBlockedReason, getBlockedReason: getStashMutationBlockedReason } =
+    useStashMutationCoordinator(featureId);
+  const state = useGitAction(
+    snapshot,
+    updatePending,
+    recoveryOperation,
+    recoveryConflictCount,
+    stashBlockedReason,
+  );
+  return useMemo(
+    () => ({ snapshot, state, getStashMutationBlockedReason }),
+    [getStashMutationBlockedReason, snapshot, state],
+  );
+}
+
+export const GitActionButton = memo(function GitActionButton({
+  featureId,
+  projectId,
+}: GitActionButtonProps): ReactElement | null {
+  const { snapshot, state, getStashMutationBlockedReason } = useGitActionButtonState(featureId);
   const isMobile = useIsMobile();
   const [activeDialog, setActiveDialog] = useState<GitActionDialog>(null);
   const commitOpen = activeDialog === "commit";
@@ -116,10 +137,17 @@ export const GitActionButton = memo(function GitActionButton({
         return;
       }
       if (state.disabled[action] !== null) return;
+      if (action === "stash") {
+        const blockedReason = getStashMutationBlockedReason();
+        if (blockedReason) {
+          toast.error("Cannot stash changes", { description: blockedReason });
+          return;
+        }
+      }
       if (action === "pr") void runOpenCompare();
       else setActiveDialog(action);
     },
-    [commitActivity, state.disabled, openCommit, runOpenCompare],
+    [commitActivity, getStashMutationBlockedReason, state.disabled, openCommit, runOpenCompare],
   );
 
   useGitActionShortcuts({

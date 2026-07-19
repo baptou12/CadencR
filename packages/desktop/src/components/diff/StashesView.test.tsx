@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderHook } from "@testing-library/react";
 import { act, fireEvent, render, screen, waitFor } from "@/test-utils";
 import { StashesView } from "./StashesView";
+import {
+  resetStashMutationCoordinatorForTest,
+  useStashMutationCoordinator,
+  type StashMutationLease,
+} from "./useStashMutationCoordinator";
 
 const mockUseListStashes = vi.fn();
 const mockDiffViewer = vi.fn();
@@ -26,6 +32,7 @@ vi.mock("./DiffViewer", () => ({
 describe("StashesView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetStashMutationCoordinatorForTest();
     mutationResult.mutateAsync.mockResolvedValue({ outcome: "completed" });
   });
 
@@ -175,6 +182,48 @@ describe("StashesView", () => {
     });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Apply stash@{1}" })).toBeEnabled(),
+    );
+  });
+
+  it("blocks row Apply, Pop, and Drop while a stash push is pending", async () => {
+    mockUseListStashes.mockReturnValue({
+      data: [
+        {
+          ref_name: "stash@{0}",
+          sha: "a".repeat(40),
+          message: "First stash",
+          date: "2026-01-02 12:00:00 +0000",
+          files_changed: 1,
+          additions: 2,
+          deletions: 1,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const { result } = renderHook(() => useStashMutationCoordinator(9));
+    let lease: StashMutationLease | null = null;
+    act(() => {
+      lease = result.current.tryAcquire({ kind: "push" });
+    });
+
+    render(<StashesView featureId={9} />);
+
+    expect(screen.getByRole("button", { name: "Apply stash@{0}" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pop stash@{0}" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Drop stash@{0}" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Apply stash@{0}" })).toHaveAttribute(
+      "title",
+      "Stash changes request in progress",
+    );
+
+    act(() => {
+      if (lease) result.current.release(lease);
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Apply stash@{0}" })).toBeEnabled(),
     );
   });
 });

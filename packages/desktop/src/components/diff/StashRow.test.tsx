@@ -96,12 +96,14 @@ describe("StashRow", () => {
 
   it("keeps an open Drop dialog but blocks confirmation during another row operation", async () => {
     const coordinatorBase = {
-      tryAcquire: vi.fn(() => true),
+      getBlockedReason: vi.fn(() => null),
+      tryAcquire: vi.fn(() => ({ featureId: 8, id: 1, owner: { kind: "push" } as const })),
       release: vi.fn(),
     };
     const coordinator: StashMutationCoordinator = {
       ...coordinatorBase,
-      activeStashRefName: null,
+      activeMutation: null,
+      blockedReason: null,
     };
     const { rerender, user } = render(
       <StashRow featureId={8} stash={stash} onOpen={vi.fn()} coordinator={coordinator} />,
@@ -113,7 +115,11 @@ describe("StashRow", () => {
         featureId={8}
         stash={stash}
         onOpen={vi.fn()}
-        coordinator={{ ...coordinatorBase, activeStashRefName: "stash@{1}" }}
+        coordinator={{
+          ...coordinatorBase,
+          activeMutation: { kind: "row", operation: "apply", stashRefName: "stash@{1}" },
+          blockedReason: "Apply stash@{1} in progress",
+        }}
       />,
     );
 
