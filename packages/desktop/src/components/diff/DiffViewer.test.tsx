@@ -412,16 +412,30 @@ describe("DiffViewer", () => {
     expect(mocks.unmarkViewedMutate).not.toHaveBeenCalled();
   });
 
-  it("suppresses viewed toggles while the viewed mutation is pending", () => {
+  it("disables every Viewed control but announces pending state only once", async () => {
     mocks.useMarkViewedMock.mockReturnValue({
       mutate: mocks.markViewedMutate,
       isPending: true,
     });
     const adapter = createAdapterCapture();
-    withFooFile();
-    render(
+    mocks.useGetChangedFilesMock.mockReturnValue({
+      data: [fooFile, { ...fooFile, file: "src/bar.ts" }],
+      isLoading: false,
+    });
+    const { user } = render(
       <DiffViewer featureId={8} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
     );
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Viewed" });
+
+    expect(checkboxes).toHaveLength(2);
+    for (const checkbox of checkboxes) {
+      expect(checkbox).toBeDisabled();
+      expect(checkbox).toHaveAttribute("aria-busy", "true");
+      expect(checkbox).toHaveAccessibleDescription("Updating viewed state");
+    }
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getByRole("status")).toHaveTextContent("Updating viewed state");
+    await user.click(screen.getAllByText("Viewed")[0]);
 
     act(() => adapter.current?.moveSelection(1));
     expect(adapter.current?.toggleViewed?.()).toBe(false);
