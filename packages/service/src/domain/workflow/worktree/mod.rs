@@ -36,8 +36,9 @@ use std::path::PathBuf;
 
 use sqlx::SqlitePool;
 
-use crate::domain::git::worktree_context::{
-    build_worktree_context, resolve_source_git_root, WorktreeContext,
+use crate::domain::git::{
+    commands,
+    worktree_context::{build_worktree_context, resolve_source_git_root, WorktreeContext},
 };
 use crate::domain::workflow::ws_sender::WsSender;
 use crate::shared::worktree_paths::compute_worktree_path;
@@ -191,6 +192,13 @@ async fn ensure_new(
     );
 
     let source_root = resolve_source_git_root(std::path::Path::new(&project_dir)).await?;
+    let target_branch = match base_branch.as_ref() {
+        Some(base) => Some(base.clone()),
+        None => commands::get_current_branch(&source_root)
+            .await
+            .map_err(|error| error.to_string())?
+            .filter(|branch| branch != "HEAD"),
+    };
     let source_root_str = source_root.to_string_lossy();
     new_branch::add_new_worktree(&source_root_str, &branch, &path_str, base_branch.as_deref())
         .await?;
@@ -201,7 +209,15 @@ async fn ensure_new(
     )?;
     let session_cwd_str = context.session_cwd.to_string_lossy().to_string();
     notify_provider_worktree_created(&context).await?;
-    persist_and_announce(write_pool, feature_id, &session_cwd_str, &branch, ws_sender).await?;
+    persist_and_announce(
+        write_pool,
+        feature_id,
+        &session_cwd_str,
+        &branch,
+        target_branch.as_deref(),
+        ws_sender,
+    )
+    .await?;
     Ok(context.session_cwd)
 }
 
@@ -244,6 +260,7 @@ async fn ensure_reuse(
         feature_id,
         &session_cwd_str,
         &attached.branch,
+        None,
         ws_sender,
     )
     .await?;
@@ -277,17 +294,22 @@ async fn notify_provider_worktree_created(context: &WorktreeContext) -> Result<(
 }
 
 /// Persist worktree path + branch to `feature_settings` and emit
-/// `worktree.created` + `feature.updated` envelopes. Used by both the
-/// `New` and `Reuse` paths.
+/// `worktree.created` + `feature.updated` envelopes. New branches also record
+/// their fork point as the compare/merge target; reused branches preserve the
+/// target resolver's existing upstream/default behavior.
 async fn persist_and_announce(
     write_pool: &SqlitePool,
     feature_id: i64,
     path_str: &str,
     branch: &str,
+    target_branch: Option<&str>,
     ws_sender: &WsSender,
 ) -> Result<(), String> {
     set_setting(write_pool, feature_id, "worktree_path", path_str).await?;
     set_setting(write_pool, feature_id, "worktree_branch", branch).await?;
+    if let Some(target) = target_branch {
+        set_setting(write_pool, feature_id, "target_branch", target).await?;
+    }
     set_setting(write_pool, feature_id, "worktree_setup_step", "created").await?;
 
     send_envelope(
