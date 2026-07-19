@@ -8,7 +8,7 @@ use crate::shared::git_cli::{git_ref_resolves_background, run_git_safe};
 
 mod pathspecs;
 
-use pathspecs::mutation_pathspecs;
+use pathspecs::{mutation_pathspecs, reset_pathspecs};
 
 pub async fn stage_file(repo: &Path, file_path: &str) -> Result<(), AppError> {
     let pathspecs = mutation_pathspecs(repo, file_path).await?;
@@ -21,7 +21,7 @@ pub async fn stage_file(repo: &Path, file_path: &str) -> Result<(), AppError> {
 /// bytes. `restore --staged` is the normal path; an unborn repository has no
 /// `HEAD`, so `rm --cached -f` is the safe index-only equivalent there.
 pub async fn reset_file(repo: &Path, file_path: &str) -> Result<(), AppError> {
-    let pathspecs = mutation_pathspecs(repo, file_path).await?;
+    let pathspecs = reset_pathspecs(repo, file_path).await?;
     let positionals = pathspecs.iter().map(String::as_str).collect::<Vec<_>>();
     let has_head = git_ref_resolves_background("HEAD", repo).await?;
     if has_head {

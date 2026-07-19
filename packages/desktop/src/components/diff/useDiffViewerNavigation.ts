@@ -1,4 +1,4 @@
-import { FileStageState, type ChangedFile } from "@/api/generated";
+import type { ChangedFile } from "@/api/generated";
 import { getGitFileActionAvailability, type GitFileIndexActions } from "./useGitFileIndexActions";
 import {
   resolvedStageState,
@@ -66,10 +66,6 @@ function runIndexAction(state: DiffNavigationAdapterState, action: "stage" | "re
   const file = path ? state.fileByPath.get(path) : undefined;
   if (!file) return false;
   const stageState = resolvedStageState(file);
-  // Existing reset UI/backend semantics are unsafe for unresolved conflicts:
-  // `git restore --staged` can clear the unmerged index while marker bytes
-  // remain. Phase 3 must never make that path keyboard-reachable.
-  if (action === "reset" && stageState === FileStageState.conflicted) return false;
   const availability = getGitFileActionAvailability(stageState);
   if (action === "stage" && availability.canStage) state.indexActions.stage(file.file);
   else if (action === "reset" && availability.canReset) state.indexActions.reset(file.file);

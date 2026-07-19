@@ -109,7 +109,11 @@ fn inspection_error(primary: &AppError, inspection: AppError) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::git::git_status::compute_status_or_empty;
+    use crate::domain::git::models::FileMutationBody;
+    use crate::domain::git::workflow_service::index as index_service;
     use crate::domain::git::workflow_service::update_branch::test_support::RepoFixture;
+    use crate::error::AppError;
 
     #[tokio::test]
     async fn merge_conflicts_are_returned_and_left_active() {
@@ -175,6 +179,101 @@ mod tests {
                 .await
                 .unwrap(),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_rejection_preserves_merge_conflicts_and_blocks_continue() {
+        assert_reset_rejection_preserves_conflict(
+            UpdateBranchStrategy::Merge,
+            GitOperationKind::Merge,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn reset_rejection_preserves_rebase_conflicts_and_blocks_continue() {
+        assert_reset_rejection_preserves_conflict(
+            UpdateBranchStrategy::Rebase,
+            GitOperationKind::Rebase,
+        )
+        .await;
+    }
+
+    async fn assert_reset_rejection_preserves_conflict(
+        strategy: UpdateBranchStrategy,
+        operation: GitOperationKind,
+    ) {
+        let fixture = RepoFixture::new();
+        fixture.create_conflicting_histories();
+        assert!(matches!(
+            start(&fixture.feature, strategy, "main").await.unwrap(),
+            GitOperationResponse::Conflicts { .. }
+        ));
+        let marker_bytes = std::fs::read(fixture.feature.join("conflict.txt")).unwrap();
+        assert!(
+            marker_bytes
+                .windows(b"<<<<<<<".len())
+                .any(|bytes| bytes == b"<<<<<<<"),
+            "{strategy:?} must begin with conflict markers"
+        );
+        let index_before = fixture
+            .git_output_feature(&["ls-files", "--stage", "--", "conflict.txt"])
+            .stdout;
+        let status_before = compute_status_or_empty(&fixture.feature, 1, "main")
+            .await
+            .unwrap();
+        assert_eq!(status_before.conflict_count, 1, "{strategy:?}");
+        assert_eq!(status_before.operation, Some(operation), "{strategy:?}");
+        let state = fixture.state("main").await;
+
+        let error = index_service::reset_file(
+            &state,
+            FileMutationBody {
+                feature_id: 1,
+                file_path: "conflict.txt".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        let AppError::BadRequest(message) = error else {
+            panic!("expected BadRequest for {strategy:?}");
+        };
+        assert!(message.contains("resolve the conflict"), "{message}");
+        assert!(message.contains("stage the resolution"), "{message}");
+        assert_eq!(
+            fixture
+                .git_output_feature(&["ls-files", "--stage", "--", "conflict.txt"])
+                .stdout,
+            index_before,
+            "{strategy:?} unmerged index entries changed"
+        );
+        assert_eq!(
+            std::fs::read(fixture.feature.join("conflict.txt")).unwrap(),
+            marker_bytes,
+            "{strategy:?} worktree bytes changed"
+        );
+        let status_after = compute_status_or_empty(&fixture.feature, 1, "main")
+            .await
+            .unwrap();
+        assert_eq!(status_after.conflict_count, 1, "{strategy:?}");
+        assert_eq!(status_after.operation, Some(operation), "{strategy:?}");
+
+        assert!(matches!(
+            continue_operation(&fixture.feature, operation)
+                .await
+                .unwrap(),
+            GitOperationResponse::Conflicts { .. }
+        ));
+        let status_after_continue = compute_status_or_empty(&fixture.feature, 1, "main")
+            .await
+            .unwrap();
+        assert_eq!(status_after_continue.conflict_count, 1, "{strategy:?}");
+        assert_eq!(
+            status_after_continue.operation,
+            Some(operation),
+            "{strategy:?}"
         );
     }
 
