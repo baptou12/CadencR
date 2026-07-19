@@ -2434,11 +2434,13 @@ export interface StashMutationBody {
 export type StashPushBodyMessage = string | null;
 
 /**
- * Create a tracked-files-only stash. A non-blank message is passed to Git;
-`None` or blank input uses Git's default stash description.
+ * Create a stash. A non-blank message is passed to Git; `None` or blank input
+uses Git's default stash description. Untracked files are opt-in and ignored
+files are never included.
  */
 export interface StashPushBody {
   feature_id: number;
+  include_untracked?: boolean;
   message?: StashPushBodyMessage;
 }
 

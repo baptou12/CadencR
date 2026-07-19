@@ -140,12 +140,15 @@ pub struct FileMutationBody {
     pub file_path: String,
 }
 
-/// Create a tracked-files-only stash. A non-blank message is passed to Git;
-/// `None` or blank input uses Git's default stash description.
+/// Create a stash. A non-blank message is passed to Git; `None` or blank input
+/// uses Git's default stash description. Untracked files are opt-in and ignored
+/// files are never included.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct StashPushBody {
     pub feature_id: i64,
     pub message: Option<String>,
+    #[serde(default)]
+    pub include_untracked: bool,
 }
 
 /// Stable selector for apply, pop, and drop. The backend must re-resolve
@@ -292,6 +295,14 @@ mod tests {
         let unnamed: StashPushBody =
             serde_json::from_value(serde_json::json!({ "feature_id": 7 })).unwrap();
         assert!(unnamed.message.is_none());
+        assert!(!unnamed.include_untracked);
+
+        let with_untracked: StashPushBody = serde_json::from_value(serde_json::json!({
+            "feature_id": 7,
+            "include_untracked": true
+        }))
+        .unwrap();
+        assert!(with_untracked.include_untracked);
 
         let stash: StashMutationBody = serde_json::from_value(serde_json::json!({
             "feature_id": 7,
