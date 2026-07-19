@@ -20,6 +20,7 @@ use crate::domain::features::routes as features_routes;
 use crate::domain::imports::models as imports_models;
 use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
+use crate::domain::projects::icon as projects_icon;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
 use crate::domain::push::models as push_models;
@@ -79,6 +80,7 @@ use crate::domain::ws_session::protocol as ws_protocol;
         projects_routes::set_project_model_setting_handler,
         projects_routes::get_project_provider_settings_handler,
         projects_routes::set_project_provider_setting_handler,
+        projects_icon::scan_project_icons_handler,
         features_routes::list_features_handler,
         features_routes::list_feature_activity_handler,
         features_routes::list_pinned_features_handler,
@@ -221,6 +223,7 @@ use crate::domain::ws_session::protocol as ws_protocol;
         projects_models::SetProjectModelSettingRequest,
         projects_models::SetProjectProviderSettingRequest,
         projects_routes::SuccessResponse,
+        projects_icon::ProjectIconCandidate,
         features_models::Feature,
         features_models::FeatureStatus,
         features_models::CreateFeatureRequest,

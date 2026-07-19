@@ -35,7 +35,7 @@ import {
 import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
-import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { ProjectBadge } from "@/components/ProjectBadge";
 import { PROJECT_COLORS } from "@/lib/project-colors";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { NewProjectOnboardingDialog } from "./NewProjectOnboardingDialog";
@@ -198,7 +198,7 @@ export function ProjectTree({
                         ) : (
                           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                         )}
-                        <ProjectColorDot projectId={project.id} />
+                        <ProjectBadge projectId={project.id} />
                         <span className="min-w-0 truncate">{project.name}</span>
 
                         <div className="ml-auto flex shrink-0 items-center gap-0.5">

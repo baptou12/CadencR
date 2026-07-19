@@ -28,6 +28,7 @@ function bridgeWithRuntime(
     setLinkHoverContext: vi.fn(),
     onOpenLinkFromMenu: vi.fn(),
     pickDirectory: vi.fn(),
+    pickImageFile: vi.fn(),
     showSaveDialog: vi.fn(),
     notifyPermission: vi.fn(),
     notify: vi.fn(),

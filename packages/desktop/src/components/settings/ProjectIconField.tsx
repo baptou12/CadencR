@@ -1,0 +1,133 @@
+import { useCallback, useEffect } from "react";
+import { toast } from "sonner";
+import { FolderOpen, Loader2, RefreshCw, X } from "lucide-react";
+import { useScanProjectIcons } from "@/api/generated";
+import { Button } from "@/components/ui/button";
+import { ProjectBadge } from "@/components/ProjectBadge";
+import { ProjectIconCandidateGrid } from "@/components/settings/ProjectIconCandidateGrid";
+import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
+import { apiErrorMessage } from "@/lib/api-errors";
+import { PROJECT_ICON_SETTING_KEY } from "@/lib/project-icon";
+
+/**
+ * Lets a project show its own logo instead of the accent dot.
+ *
+ * On mount it scans the repository's git-tracked files for plausible logos and
+ * presents them ranked; the scan is re-runnable at any time and the user can
+ * always point at a file themselves via the native dialog. Shared by the
+ * Project Settings dialog and the new-project onboarding modal, so both stay in
+ * lockstep — the caller owns the surrounding chrome and persistence.
+ */
+export function ProjectIconField({
+  projectId,
+  iconPath,
+  onSave,
+}: {
+  projectId: number;
+  iconPath: string | undefined;
+  onSave: (key: typeof PROJECT_ICON_SETTING_KEY, value: string) => void;
+}): React.JSX.Element {
+  const selectedPath = iconPath ?? "";
+
+  const {
+    data: candidates,
+    isFetching,
+    error,
+    refetch,
+  } = useScanProjectIcons(projectId, {
+    query: { staleTime: Infinity, refetchOnWindowFocus: false, retry: false },
+  });
+
+  // The scan shells out to git, which fails on a project that isn't a repo (or
+  // whose directory has moved). Surface it rather than showing an empty grid
+  // that looks like "no logos here".
+  useEffect(() => {
+    if (!error) return;
+    toast.error(apiErrorMessage(error, "Could not scan this project for logos"), {
+      id: `project-icon-scan:${projectId}`,
+    });
+  }, [error, projectId]);
+
+  const handlePickFile = useCallback(async (): Promise<void> => {
+    try {
+      const picked = await desktopBridge.pickImageFile();
+      if (picked) onSave(PROJECT_ICON_SETTING_KEY, picked);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not open the file picker"));
+    }
+  }, [onSave]);
+
+  const handleSelect = useCallback(
+    (path: string): void => {
+      // Clicking the current icon again clears it, so the tile doubles as a toggle.
+      onSave(PROJECT_ICON_SETTING_KEY, path === selectedPath ? "" : path);
+    },
+    [onSave, selectedPath],
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="text-sm font-medium">Project icon</div>
+          <p className="text-xs text-muted-foreground">
+            Show a logo from this repository instead of the color dot.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <ProjectBadge projectId={projectId} size="md" />
+          {selectedPath ? (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              title="Remove icon and use the color dot"
+              aria-label="Remove icon"
+              onClick={() => onSave(PROJECT_ICON_SETTING_KEY, "")}
+            >
+              <X className="size-3.5" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {selectedPath ? (
+        <p className="truncate text-xs text-muted-foreground" title={selectedPath}>
+          Using <span className="font-mono">{selectedPath}</span>
+        </p>
+      ) : null}
+
+      {isFetching ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          Scanning repository for logos…
+        </div>
+      ) : candidates && candidates.length > 0 ? (
+        <ProjectIconCandidateGrid
+          projectId={projectId}
+          candidates={candidates}
+          selectedPath={selectedPath}
+          onSelect={handleSelect}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {error
+            ? "The scan failed — check that this project is a git repository."
+            : "No logo files found in this repository. Pick one manually instead."}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
+          <RefreshCw className={isFetching ? "size-3.5 animate-spin" : "size-3.5"} aria-hidden />
+          {candidates ? "Rescan" : "Scan for logos"}
+        </Button>
+        {isDesktopShell() ? (
+          <Button variant="ghost" size="sm" onClick={() => void handlePickFile()}>
+            <FolderOpen className="size-3.5" aria-hidden />
+            Choose file…
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

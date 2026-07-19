@@ -121,6 +121,11 @@ export interface CadencrDesktopBridge {
   onOpenLinkFromMenu: (cb: (payload: LinkMenuOpenPayload) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   /**
+   * Prompt the user to pick an image file (project icon). Resolves to the
+   * chosen absolute path or `null` if the dialog was canceled.
+   */
+  pickImageFile: () => Promise<string | null>;
+  /**
    * Prompt the user with the native "Save As" dialog. Resolves to the chosen
    * absolute path or `null` if the dialog was canceled.
    */
@@ -274,6 +279,7 @@ const browserBridge: CadencrBrowserBridge = {
   setLinkHoverContext: () => Promise.resolve(),
   onOpenLinkFromMenu: () => () => undefined,
   pickDirectory: () => unavailable("pickDirectory"),
+  pickImageFile: () => unavailable("pickImageFile"),
   showSaveDialog: () => unavailable("showSaveDialog"),
   notifyPermission: () => Promise.resolve(false),
   notify: () => Promise.resolve(),

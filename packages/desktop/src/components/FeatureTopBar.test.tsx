@@ -84,8 +84,8 @@ vi.mock("@/hooks/useFeatureTitle", () => ({
   useFeatureTitle: vi.fn(() => ({ title: null, isAutoNaming: false })),
 }));
 
-vi.mock("@/hooks/useProjectColor", () => ({
-  ProjectColorDot: ({ projectId }: { projectId: number }) => {
+vi.mock("@/components/ProjectBadge", () => ({
+  ProjectBadge: ({ projectId }: { projectId: number }) => {
     const React = require("react");
     return React.createElement("span", { "data-testid": `color-dot-${projectId}` });
   },

@@ -8,9 +8,9 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
 }));
 
-// ProjectColorDot pulls in project-settings queries we don't care about here.
-vi.mock("@/hooks/useProjectColor", () => ({
-  ProjectColorDot: () => null,
+// ProjectBadge pulls in project-settings queries we don't care about here.
+vi.mock("@/components/ProjectBadge", () => ({
+  ProjectBadge: () => null,
 }));
 
 const mocks = vi.hoisted(() => ({ createFeature: vi.fn() }));

@@ -4,6 +4,7 @@ use axum::Router;
 use serde::Serialize;
 
 use crate::app_state::AppState;
+use crate::domain::projects::icon;
 use crate::domain::projects::models::*;
 use crate::domain::projects::service;
 use crate::domain::settings_allowlist;
@@ -168,5 +169,13 @@ pub fn projects_router() -> Router<AppState> {
         .route(
             "/api/projects/{id}/provider-settings",
             get(get_project_provider_settings_handler).put(set_project_provider_setting_handler),
+        )
+        .route(
+            "/api/projects/{id}/icon-candidates",
+            get(icon::scan_project_icons_handler),
+        )
+        .route(
+            "/api/projects/{id}/icon",
+            get(icon::get_project_icon_handler),
         )
 }

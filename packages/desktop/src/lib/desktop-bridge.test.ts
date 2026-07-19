@@ -20,6 +20,7 @@ function makeElectronBridge(): CadencrDesktopBridge {
     setLinkHoverContext: vi.fn(),
     onOpenLinkFromMenu: vi.fn(),
     pickDirectory: vi.fn(() => Promise.resolve("/picked")),
+    pickImageFile: vi.fn(),
     showSaveDialog: vi.fn(() => Promise.resolve("/picked/file.md")),
     notifyPermission: vi.fn(() => Promise.resolve(true)),
     notify: vi.fn(() => Promise.resolve()),

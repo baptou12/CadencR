@@ -99,8 +99,8 @@ vi.mock("../api/generated", () => ({
   })),
 }));
 
-vi.mock("@/hooks/useProjectColor", () => ({
-  ProjectColorDot: () => null,
+vi.mock("@/components/ProjectBadge", () => ({
+  ProjectBadge: () => null,
 }));
 
 // Mock ProjectSettingsDialog

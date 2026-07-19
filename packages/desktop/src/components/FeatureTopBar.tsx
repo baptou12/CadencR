@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import type { WorktreeStatus } from "@/types/workflow";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
-import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { ProjectBadge } from "@/components/ProjectBadge";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
@@ -255,7 +255,7 @@ function FeatureHeaderChrome({
           <SidebarCollapsedChrome visible={sidebarCollapsed} onExpand={onExpandSidebar} />
         )}
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <ProjectColorDot projectId={projectId} className="size-2.5 shrink-0" />
+          <ProjectBadge projectId={projectId} size="md" />
           {isAutoNaming ? (
             <Skeleton className="h-5 w-40" />
           ) : (
