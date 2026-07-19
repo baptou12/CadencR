@@ -44,6 +44,11 @@ describe("GitDiffFileHeaderActions", () => {
     );
 
     expect(screen.getByLabelText("Conflict: both modified")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Unstage src/file.ts; worktree content is preserved",
+      }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open src/file.ts in editor" }));
     await user.click(screen.getByRole("button", { name: "Stage src/file.ts" }));
     expect(open).toHaveBeenCalledOnce();
@@ -119,6 +124,11 @@ describe("GitDiffFileHeaderActions", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stage deletion src/file.ts" })).toBeEnabled();
+    expect(
+      screen.queryByRole("button", {
+        name: "Unstage src/file.ts; worktree content is preserved",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the retained mutation error inline", () => {

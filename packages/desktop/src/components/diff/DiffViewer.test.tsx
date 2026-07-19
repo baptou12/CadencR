@@ -461,9 +461,17 @@ describe("DiffViewer", () => {
     });
   });
 
-  it("suppresses reset for an unresolved conflicted row", () => {
+  it.each([
+    ["DD", "dd"],
+    ["AU", "au"],
+    ["UD", "ud"],
+    ["UA", "ua"],
+    ["DU", "du"],
+    ["AA", "aa"],
+    ["UU", "uu"],
+  ] as const)("keeps Stage and suppresses bare reset for a %s conflict", (status, conflictKind) => {
     mocks.useGetChangedFilesMock.mockReturnValue({
-      data: [{ ...fooFile, status: "UU", stage_state: "conflicted", conflict_kind: "uu" }],
+      data: [{ ...fooFile, status, stage_state: "conflicted", conflict_kind: conflictKind }],
       isLoading: false,
     });
     const adapter = createAdapterCapture();
@@ -474,6 +482,10 @@ describe("DiffViewer", () => {
     act(() => adapter.current?.moveSelection(1));
     expect(adapter.current?.reset?.()).toBe(false);
     expect(mocks.resetMutate).not.toHaveBeenCalled();
+    expect(adapter.current?.stage?.()).toBe(true);
+    expect(mocks.stageMutate).toHaveBeenCalledWith({
+      data: { feature_id: 11, file_path: "src/foo.ts" },
+    });
   });
 
   it("does not dispatch stage or reset for a read-only revision", () => {

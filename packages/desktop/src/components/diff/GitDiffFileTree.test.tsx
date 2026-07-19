@@ -279,8 +279,35 @@ describe("Git diff tree actions", () => {
 
     expect(screen.getByRole("menuitem", { name: "Open in Editor" })).toBeDisabled();
     expect(screen.getByRole("note")).toHaveTextContent("both sides deleted");
+    expect(
+      screen.queryByRole("menuitem", { name: "Unstage file (keeps worktree changes)" }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Stage deletion" }));
     expect(actions.stage).toHaveBeenCalledWith("deleted.ts");
+  });
+
+  it("keeps Stage and removes Unstage from an unresolved-conflict context menu", () => {
+    const file = changedFile({
+      file: "conflict.ts",
+      status: "UU",
+      stage_state: FileStageState.conflicted,
+      conflict_kind: ConflictKind.uu,
+    });
+    render(
+      <GitDiffTreeContextMenu
+        item={{ kind: "file", name: file.file, path: file.file }}
+        context={menuContext()}
+        file={file}
+        expanded
+        indexActions={indexActions()}
+        onToggleExpand={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("menuitem", { name: "Stage file" })).toBeEnabled();
+    expect(
+      screen.queryByRole("menuitem", { name: "Unstage file (keeps worktree changes)" }),
+    ).not.toBeInTheDocument();
   });
 });
 

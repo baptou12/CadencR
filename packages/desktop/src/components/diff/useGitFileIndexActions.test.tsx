@@ -45,7 +45,8 @@ vi.mock("@/api/generated", () => ({
   },
 }));
 
-import { useGitFileIndexActions } from "./useGitFileIndexActions";
+import { FileStageState } from "@/api/generated";
+import { getGitFileActionAvailability, useGitFileIndexActions } from "./useGitFileIndexActions";
 
 beforeEach(() => {
   mocks.stageMutate.mockReset();
@@ -55,6 +56,17 @@ beforeEach(() => {
 });
 
 describe("useGitFileIndexActions", () => {
+  it.each([
+    [FileStageState.not_applicable, false, false],
+    [FileStageState.untracked, true, false],
+    [FileStageState.unstaged, true, false],
+    [FileStageState.staged, false, true],
+    [FileStageState.both, true, true],
+    [FileStageState.conflicted, true, false],
+  ] as const)("reports stage/reset availability for %s", (stageState, canStage, canReset) => {
+    expect(getGitFileActionAvailability(stageState)).toEqual({ canStage, canReset });
+  });
+
   it("sends exact file paths for separate completed stage/reset operations", () => {
     const { result } = renderHook(() => useGitFileIndexActions(42));
 

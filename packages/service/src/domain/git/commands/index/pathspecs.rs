@@ -1,13 +1,29 @@
 use std::path::Path;
 
+use crate::domain::git::models::FileStageState;
 use crate::domain::git::porcelain::{parse_porcelain_v2_entries, PorcelainFileEntry};
 use crate::error::AppError;
 use crate::shared::git_cli::run_git_background;
+
+struct MutationTarget {
+    pathspecs: Vec<String>,
+    stage_state: FileStageState,
+}
 
 pub(super) async fn mutation_pathspecs(
     repo: &Path,
     file_path: &str,
 ) -> Result<Vec<String>, AppError> {
+    Ok(mutation_target(repo, file_path).await?.pathspecs)
+}
+
+pub(super) async fn reset_pathspecs(repo: &Path, file_path: &str) -> Result<Vec<String>, AppError> {
+    let target = mutation_target(repo, file_path).await?;
+    validate_reset_target(file_path, &target)?;
+    Ok(target.pathspecs)
+}
+
+async fn mutation_target(repo: &Path, file_path: &str) -> Result<MutationTarget, AppError> {
     let porcelain = run_git_background(
         &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
         repo,
@@ -41,7 +57,19 @@ pub(super) async fn mutation_pathspecs(
         )));
     }
 
-    Ok(paths.into_iter().map(literal_pathspec).collect())
+    Ok(MutationTarget {
+        pathspecs: paths.into_iter().map(literal_pathspec).collect(),
+        stage_state: entry.stage_state,
+    })
+}
+
+fn validate_reset_target(file_path: &str, target: &MutationTarget) -> Result<(), AppError> {
+    if target.stage_state == FileStageState::Conflicted {
+        return Err(AppError::BadRequest(format!(
+            "cannot unstage unresolved conflict {file_path:?}; resolve the conflict in the worktree and stage the resolution instead"
+        )));
+    }
+    Ok(())
 }
 
 fn path_is_directory_prefix(repo: &Path, file_path: &str, entries: &[PorcelainFileEntry]) -> bool {
@@ -102,5 +130,30 @@ mod tests {
             mutation_paths(&entries[0]).collect::<Vec<_>>(),
             ["copied.txt"]
         );
+    }
+
+    #[test]
+    fn reset_rejects_every_unmerged_xy_kind() {
+        for xy in ["DD", "AU", "UD", "UA", "DU", "AA", "UU"] {
+            let path = format!("conflict-{xy}.txt");
+            let output = format!("u {xy} N... 100644 100644 100644 100644 a b c {path}\n");
+            let entry = parse_porcelain_v2_entries(&output).remove(0);
+            let target = MutationTarget {
+                pathspecs: mutation_paths(&entry).map(literal_pathspec).collect(),
+                stage_state: entry.stage_state,
+            };
+
+            let error = validate_reset_target(&path, &target).unwrap_err();
+
+            let AppError::BadRequest(message) = error else {
+                panic!("expected BadRequest for {xy}");
+            };
+            assert!(
+                message.contains("cannot unstage unresolved conflict"),
+                "{xy}: {message}"
+            );
+            assert!(message.contains("resolve the conflict"), "{xy}: {message}");
+            assert!(message.contains("stage the resolution"), "{xy}: {message}");
+        }
     }
 }

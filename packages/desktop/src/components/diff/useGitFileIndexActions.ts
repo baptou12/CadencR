@@ -40,10 +40,7 @@ export function getGitFileActionAvailability(
       stageState === FileStageState.unstaged ||
       stageState === FileStageState.both ||
       stageState === FileStageState.conflicted,
-    canReset:
-      stageState === FileStageState.staged ||
-      stageState === FileStageState.both ||
-      stageState === FileStageState.conflicted,
+    canReset: stageState === FileStageState.staged || stageState === FileStageState.both,
   };
 }
 
