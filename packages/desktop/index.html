@@ -5,8 +5,15 @@
     <!-- Without this, mobile browsers (remote access on a phone) use a ~980px
          layout viewport and render the desktop layout zoomed out, so the
          responsive breakpoints never trigger. `viewport-fit=cover` lets the UI
-         extend under the iPhone safe-area insets. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+         extend under the iPhone safe-area insets.
+         `interactive-widget=resizes-content` makes Chrome/Android shrink the
+         LAYOUT viewport when the on-screen keyboard opens, so `dvh` (and the
+         prompt's height cap) track the keyboard natively there. iOS ignores it
+         and is handled in JS by `useVisualViewportHeight`. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <!-- iOS Safari/Chrome have no JS Fullscreen API, so the only way to drop the
          browser chrome on a phone is "Add to Home Screen": these tell iOS to
          launch the saved icon in standalone (chromeless) mode. `black-translucent`

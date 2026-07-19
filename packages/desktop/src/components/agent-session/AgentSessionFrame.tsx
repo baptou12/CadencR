@@ -63,8 +63,19 @@ export const AgentSessionFrame = memo(function AgentSessionFrame({
     return (
       <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
         {isIdle ? (
-          <div className="flex flex-1 items-center justify-center px-4 pt-4 pb-8">
-            <SessionHint />
+          // `min-h-0` matters as much here as on the stream branch below: a bare
+          // `flex-1` takes an automatic minimum size equal to its content, so on
+          // a short viewport (phone + on-screen keyboard) the hint card refused
+          // to shrink, crushed the composer, and shoved the prompt's bottom and
+          // send button off-screen. With `min-h-0` the hint yields first — its
+          // `flex-basis: 0` means the composer keeps its natural size — and the
+          // inner `min-h-full` wrapper keeps the card centred when there IS room
+          // while letting it scroll from the top when there isn't (centring
+          // directly on a scroll container clips the overflow out of reach).
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-8">
+            <div className="flex min-h-full items-center justify-center">
+              <SessionHint />
+            </div>
           </div>
         ) : (
           <div className="flex-1 min-h-0 px-4 pt-4 pb-8">{streamContent}</div>
