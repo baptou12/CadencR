@@ -48,6 +48,12 @@ describe("scrollbar CSS", () => {
     expect(cadencrMaterialCss).toContain('[data-has-floating-pane="true"]');
   });
 
+  it("reserves end padding on floating-pane tabs for the dock-close control", () => {
+    expect(cadencrMaterialCss).toMatch(
+      /\[data-pane-frame="floating"\]\s*\[data-pane-tab-strip\]\s*\[data-slot="tabs-trigger"\]\s*{[^}]*padding-inline-end:\s*2rem;/s,
+    );
+  });
+
   it("keeps Dracula hover and active accents subdued", () => {
     expect(themeCss).toMatch(
       /:root\[data-theme="dracula"\]\s*{[^}]*--accent:\s*oklch\(0\.34 0\.032 277\.821\);/s,

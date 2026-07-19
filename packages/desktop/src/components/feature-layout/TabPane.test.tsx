@@ -110,8 +110,12 @@ describe("TabPane", () => {
     const dockButton = screen.getByRole("button", {
       name: "Return Terminal to the root tab strip",
     });
+    const terminalTab = screen.getByText("Terminal").closest("button");
+    if (!(terminalTab instanceof HTMLElement)) throw new Error("Terminal tab was not rendered");
 
     expect(dockButton.closest("[data-slot='tabs-trigger']")).toBeNull();
+    expect(dockButton).not.toHaveClass("opacity-0");
+    expect(terminalTab).toHaveClass("pr-8");
   });
 
   it("only leaves the active underline visible in the focused pane", () => {
