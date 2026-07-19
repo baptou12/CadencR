@@ -188,6 +188,7 @@ contextBridge.exposeInMainWorld("cadencr", {
   onOpenLinkFromMenu: (cb: (payload: unknown) => void): (() => void) =>
     onIpc("links:open-from-menu", cb),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke("dialog:pick-directory"),
+  pickImageFile: (): Promise<string | null> => ipcRenderer.invoke("dialog:pick-image-file"),
   showSaveDialog: (opts: { defaultPath: string; title?: string }): Promise<string | null> =>
     ipcRenderer.invoke("dialog:save-file", opts),
   notifyPermission: (): Promise<boolean> => ipcRenderer.invoke("notify:permission"),

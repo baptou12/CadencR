@@ -12,6 +12,8 @@ import { WorktreeList } from "./WorktreeList";
 import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { ProjectColorField } from "@/components/settings/ProjectColorField";
+import { ProjectIconField } from "@/components/settings/ProjectIconField";
+import { PROJECT_ICON_SETTING_KEY } from "@/lib/project-icon";
 import { ProjectJsonSettings } from "@/components/settings/SettingsJsonControls";
 import { ProjectEditorToolingSettings } from "@/components/settings/ProjectEditorToolingSettings";
 import { WorktreeSetupFields } from "@/components/settings/WorktreeSetupFields";
@@ -20,6 +22,7 @@ import { settingsArrayToMap } from "@/api/settings";
 const PROJECT_SETTING_KEYS = {
   branchPrefix: "branch_prefix",
   color: "color",
+  iconPath: PROJECT_ICON_SETTING_KEY,
   setupWorktree: "setup_worktree",
 } as const;
 
@@ -75,6 +78,7 @@ export function ProjectSettingsDialog({
           <IdentitySection
             projectId={projectId}
             color={settings[PROJECT_SETTING_KEYS.color]}
+            iconPath={settings[PROJECT_SETTING_KEYS.iconPath]}
             saveProjectSetting={saveProjectSetting}
           />
           <EditorToolingSection projectId={projectId} enabled={open} />
@@ -111,20 +115,26 @@ function ConfigurationSection({
 function IdentitySection({
   projectId,
   color,
+  iconPath,
   saveProjectSetting,
 }: {
   projectId: number;
   color: string | undefined;
+  iconPath: string | undefined;
   saveProjectSetting: (key: ProjectSettingKey, value: string) => void;
 }): React.JSX.Element {
   return (
-    <SettingsSection size="sm" title="Identity" subtitle="Color · Display">
+    <SettingsSection size="sm" title="Identity" subtitle="Color · Icon · Display">
       <SettingsCard padded>
-        <ProjectColorField
-          resetKeyPrefix={String(projectId)}
-          color={color}
-          onSave={saveProjectSetting}
-        />
+        <div className="space-y-5">
+          <ProjectColorField
+            resetKeyPrefix={String(projectId)}
+            color={color}
+            onSave={saveProjectSetting}
+          />
+          <div className="border-t border-border" />
+          <ProjectIconField projectId={projectId} iconPath={iconPath} onSave={saveProjectSetting} />
+        </div>
       </SettingsCard>
     </SettingsSection>
   );

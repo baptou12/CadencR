@@ -9,7 +9,7 @@ import {
   type Project,
 } from "@/api/generated";
 import { toastError } from "@/lib/api-errors";
-import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { ProjectBadge } from "@/components/ProjectBadge";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Button } from "@/components/ui/button";
 import {
@@ -113,7 +113,7 @@ export const UnifiedAgentsNewFeatureButton = memo(function UnifiedAgentsNewFeatu
                   onSelect={() => selectProject(project.id)}
                   className="gap-2 text-xs"
                 >
-                  <ProjectColorDot projectId={project.id} className="size-2" />
+                  <ProjectBadge projectId={project.id} />
                   <span className="truncate">{project.name}</span>
                 </CommandItem>
               ))}

@@ -15,7 +15,7 @@ import {
   type UnifiedAgentsFilterSuggestion,
 } from "@/components/UnifiedAgentsFilterLanguage";
 import { getUnifiedAgentsFilterActiveToken } from "@/components/UnifiedAgentsFilterEditorText";
-import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { ProjectBadge } from "@/components/ProjectBadge";
 import { cn } from "@/lib/utils";
 
 interface SuggestionsMenuProps {
@@ -76,9 +76,7 @@ function SuggestionRow({
       }}
     >
       <span className="flex min-w-0 items-center gap-2">
-        {suggestion.projectId ? (
-          <ProjectColorDot projectId={suggestion.projectId} className="size-2" />
-        ) : null}
+        {suggestion.projectId ? <ProjectBadge projectId={suggestion.projectId} /> : null}
         <span className="truncate font-mono text-foreground group-data-[selected=true]:text-accent-foreground">
           {suggestion.label}
         </span>

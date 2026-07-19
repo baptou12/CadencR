@@ -40,19 +40,3 @@ export function useSetProjectColor(): ReturnType<typeof useSetProjectSetting> {
     },
   });
 }
-
-export function ProjectColorDot({
-  projectId,
-  className = "size-2",
-}: {
-  projectId: number;
-  className?: string;
-}) {
-  const color = useProjectColor(projectId);
-  return (
-    <span
-      className={`${className} shrink-0 rounded-full`}
-      style={{ backgroundColor: `#${color}` }}
-    />
-  );
-}

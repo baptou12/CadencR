@@ -18,13 +18,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ProjectColorField } from "@/components/settings/ProjectColorField";
+import { ProjectIconField } from "@/components/settings/ProjectIconField";
+import { PROJECT_ICON_SETTING_KEY } from "@/lib/project-icon";
 import {
   WorktreeSetupFields,
   type WorktreeSetupKey,
 } from "@/components/settings/WorktreeSetupFields";
 import { useProjectOnboardingDismissed } from "@/lib/project-onboarding";
 
-type OnboardingSettingKey = "color" | WorktreeSetupKey;
+type OnboardingSettingKey = "color" | typeof PROJECT_ICON_SETTING_KEY | WorktreeSetupKey;
 
 /**
  * Lightweight onboarding shown right after a project is added: set the sidebar
@@ -84,10 +86,16 @@ export function NewProjectOnboardingDialog({
         </DialogHeader>
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
-          <section>
+          <section className="space-y-5">
             <ProjectColorField
               resetKeyPrefix={String(projectId)}
               color={settings.color}
+              onSave={saveProjectSetting}
+            />
+            <div className="border-t border-border" />
+            <ProjectIconField
+              projectId={projectId}
+              iconPath={settings.icon_path}
               onSave={saveProjectSetting}
             />
           </section>

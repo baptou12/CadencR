@@ -38,6 +38,7 @@ function bridge(isElectron: boolean): CadencrDesktopBridge {
     setLinkHoverContext: vi.fn(),
     onOpenLinkFromMenu: vi.fn(),
     pickDirectory: vi.fn(() => Promise.resolve(null)),
+    pickImageFile: vi.fn(),
     showSaveDialog: vi.fn(() => Promise.resolve(null)),
     notifyPermission: vi.fn(() => Promise.resolve(false)),
     notify: vi.fn(() => Promise.resolve()),

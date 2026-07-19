@@ -1666,6 +1666,17 @@ export interface Project {
   path: string;
 }
 
+/**
+ * One plausible logo found in the repository.
+ */
+export interface ProjectIconCandidate {
+  /** File name alone, for display. */
+  name: string;
+  /** Path relative to the project root, as git reported it. */
+  path: string;
+  size_bytes: number;
+}
+
 export interface ProjectModelSettings {
   session: string;
 }
@@ -11468,6 +11479,62 @@ export const useDeleteProject = <TError = ErrorType<unknown>, TContext = unknown
 
   return useMutation(mutationOptions);
 };
+
+export const scanProjectIcons = (id: number, signal?: AbortSignal) => {
+  return customInstance<ProjectIconCandidate[]>({
+    url: `/api/projects/${id}/icon-candidates`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getScanProjectIconsQueryKey = (id?: number) => {
+  return [`/api/projects/${id}/icon-candidates`] as const;
+};
+
+export const getScanProjectIconsQueryOptions = <
+  TData = Awaited<ReturnType<typeof scanProjectIcons>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof scanProjectIcons>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getScanProjectIconsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof scanProjectIcons>>> = ({ signal }) =>
+    scanProjectIcons(id, signal);
+
+  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof scanProjectIcons>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ScanProjectIconsQueryResult = NonNullable<Awaited<ReturnType<typeof scanProjectIcons>>>;
+export type ScanProjectIconsQueryError = ErrorType<unknown>;
+
+export function useScanProjectIcons<
+  TData = Awaited<ReturnType<typeof scanProjectIcons>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof scanProjectIcons>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getScanProjectIconsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const startClaudeCodeImport = (
   id: number,

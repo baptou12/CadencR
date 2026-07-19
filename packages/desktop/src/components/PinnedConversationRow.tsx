@@ -2,7 +2,7 @@ import { memo, useCallback, useRef, type ReactElement } from "react";
 import { BotIcon, PinOffIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { ProjectBadge } from "@/components/ProjectBadge";
 import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
@@ -70,7 +70,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
         }
       }}
     >
-      <ProjectColorDot projectId={feature.project_id} />
+      <ProjectBadge projectId={feature.project_id} />
 
       {/* Live status icon driven by the per-session backend store. */}
       <div className="flex w-3.5 shrink-0 items-center justify-center">

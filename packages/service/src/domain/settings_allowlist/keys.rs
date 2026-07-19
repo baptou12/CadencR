@@ -32,6 +32,10 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     "branch_prefix",
     "default_worktree_mode",
     "color",
+    // Path to a logo file displayed instead of the accent dot. Project-relative
+    // when the file lives in the repo, absolute when picked from elsewhere.
+    // Empty string clears it and restores the color dot.
+    "icon_path",
     "setup_worktree",
     // Per-project editor tooling selection (Phase 4). Each falls back to the
     // workspace-scoped default when unset on the project (see the matching

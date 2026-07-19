@@ -26,8 +26,8 @@ vi.mock("@/hooks/useFeaturePrefetch", () => ({
   useFeaturePrefetch: () => mocks.prefetch,
 }));
 
-vi.mock("@/hooks/useProjectColor", () => ({
-  ProjectColorDot: () => <span data-testid="color-dot" />,
+vi.mock("@/components/ProjectBadge", () => ({
+  ProjectBadge: () => <span data-testid="color-dot" />,
 }));
 
 vi.mock("@/components/ProjectFeatureRow", () => ({

@@ -13,8 +13,8 @@ import {
 } from "@/components/UnifiedAgentsFilterSuggestions";
 import { render, screen } from "@/test-utils";
 
-vi.mock("@/hooks/useProjectColor", () => ({
-  ProjectColorDot: ({ projectId, className }: { projectId: number; className?: string }) => (
+vi.mock("@/components/ProjectBadge", () => ({
+  ProjectBadge: ({ projectId, className }: { projectId: number; className?: string }) => (
     <span className={className} data-testid={`project-color-dot-${projectId}`} />
   ),
 }));

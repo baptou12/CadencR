@@ -7,8 +7,8 @@ import {
   type UnifiedAgentsFilterInputHandle,
 } from "@/components/UnifiedAgentsDynamicFilter";
 
-vi.mock("@/hooks/useProjectColor", () => ({
-  ProjectColorDot: ({ projectId, className }: { projectId: number; className?: string }) => (
+vi.mock("@/components/ProjectBadge", () => ({
+  ProjectBadge: ({ projectId, className }: { projectId: number; className?: string }) => (
     <span className={className} data-testid={`project-color-dot-${projectId}`} />
   ),
 }));

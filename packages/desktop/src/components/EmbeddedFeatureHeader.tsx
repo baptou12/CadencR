@@ -1,7 +1,7 @@
 import { memo, useCallback, type MouseEvent, type ReactElement } from "react";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangleIcon, EyeOffIcon, GitBranchIcon, Loader2Icon, PinIcon } from "lucide-react";
-import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { ProjectBadge } from "@/components/ProjectBadge";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { SlidingText } from "@/components/SlidingText";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,7 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1">
-        <ProjectColorDot projectId={projectId} className="size-1.5" />
+        <ProjectBadge projectId={projectId} size="xs" />
         {projectName && (
           <>
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">

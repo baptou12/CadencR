@@ -109,8 +109,8 @@ vi.mock("@/stores/ws-session-store", () => ({
   ),
 }));
 
-vi.mock("@/hooks/useProjectColor", () => ({
-  ProjectColorDot: ({ projectId }: { projectId: number }) => {
+vi.mock("@/components/ProjectBadge", () => ({
+  ProjectBadge: ({ projectId }: { projectId: number }) => {
     const React = require("react");
     return React.createElement("span", { "data-testid": `color-dot-${projectId}` });
   },
