@@ -1,0 +1,11 @@
+# Generated brand assets are compared against a freshly rendered copy by
+# `pnpm brand:check`, which renders LF. Pin SVGs to LF so a CRLF checkout does
+# not rewrite them. (The check also normalizes line endings before comparing,
+# so a stray global core.autocrlf still can't produce a phantom failure — this
+# keeps the committed bytes clean, the normalization keeps the check honest.)
+*.svg text eol=lf
+
+# Never let CRLF conversion or diff heuristics touch generated binaries.
+*.png binary
+*.ico binary
+*.icns binary
