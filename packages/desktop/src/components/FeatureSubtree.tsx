@@ -44,10 +44,11 @@ export function FeatureSubtree({
     <>
       {renderFeature(node.feature, control)}
       {expanded && hasChildren && (
-        <div data-feature-subtree-children={node.feature.id} className="relative ml-1 pl-2">
-          {/* Guide rail at the nested rows' left edge (~12px in from the parent
-              row's edge). Kept intentionally shallow so deep chains don't march
-              off to the right; the rail still descends from the chevron column. */}
+        <div data-feature-subtree-children={node.feature.id} className="relative ml-[11px] pl-2">
+          {/* Guide rail centered under the parent chevron:
+              pl-3 (12px) + half of size-3.5 (7px) = 19px from the row edge.
+              ml-[11px] + left-2 (8px) = 19px. Shallow indent so deep chains
+              don't march off to the right. */}
           <span aria-hidden className="absolute inset-y-0 left-2 w-px bg-sidebar-border" />
           {node.children.map((child) => (
             <FeatureSubtree

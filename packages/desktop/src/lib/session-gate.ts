@@ -46,7 +46,7 @@ export function parseGeneratedSessionGate(
       childFeatureId,
       childFeatureTitle,
       childProjectId,
-      kind: normalizedKind(kind, payload),
+      kind: normalizeGateKind(kind, payload),
       requestId: decodeXmlAttribute(attrs["request-id"]) ?? attrs["request-id"],
       payload,
     };
@@ -55,16 +55,22 @@ export function parseGeneratedSessionGate(
   }
 }
 
-function normalizedKind(kind: SessionGateKind, payload: unknown): SessionGateKind {
-  if (
+/**
+ * Aligns with backend `GateKind::from_pending`: AskUserQuestion → question,
+ * ExitPlanMode → plan. Used for MCP gate envelopes and the sidebar pending-gate API.
+ */
+export function normalizeGateKind(kind: string, payload: unknown): SessionGateKind {
+  const toolName =
     payload !== null &&
     typeof payload === "object" &&
     "tool_name" in payload &&
-    payload.tool_name === "AskUserQuestion"
-  ) {
-    return "question";
-  }
-  return kind;
+    typeof payload.tool_name === "string"
+      ? payload.tool_name
+      : "";
+  if (toolName === "ExitPlanMode") return "plan";
+  if (toolName === "AskUserQuestion") return "question";
+  if (isKind(kind)) return kind;
+  return "permission";
 }
 
 function isKind(value: string | undefined): value is SessionGateKind {

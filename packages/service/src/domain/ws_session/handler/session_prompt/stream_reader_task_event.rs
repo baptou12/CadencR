@@ -113,7 +113,8 @@ impl StreamReaderTask {
             return false;
         };
         let is_question = crate::domain::ws_session::protocol::is_question_tool(&request.tool_name);
-        let payload: PermissionRequestPayload = permission_request_payload(request);
+        let mut payload: PermissionRequestPayload = permission_request_payload(request);
+        crate::domain::ws_session::protocol::clear_question_permission_chrome(&mut payload);
         let question_payload = is_question.then(|| {
             serde_json::to_value(&payload).expect("question permission payload should serialize")
         });

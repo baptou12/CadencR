@@ -15,7 +15,7 @@ vi.mock("@/hooks/useFeatureTitle", () => ({
 }));
 
 vi.mock("@/stores/session-status-selectors", () => ({
-  useFeatureStatus: () => ({ status: mocks.status }),
+  useFeatureStatus: () => ({ status: mocks.status, kind: null }),
 }));
 
 vi.mock("@/stores/unread-store", () => ({

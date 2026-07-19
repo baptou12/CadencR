@@ -27,6 +27,14 @@ describe("parseGeneratedSessionGate", () => {
     expect(gate?.kind).toBe("question");
   });
 
+  it("normalizes ExitPlanMode permission envelopes to plan", () => {
+    const gate = parseGeneratedSessionGate(
+      '<cadencr-gate from-session="7" from-feature="8" kind="permission" request-id="p1">{"tool_name":"ExitPlanMode","tool_input":{}}</cadencr-gate>',
+      { originKind: "session_generated", sourceSessionId: 7, sourceFeatureId: 8 },
+    );
+    expect(gate?.kind).toBe("plan");
+  });
+
   it("rejects mismatched feature and project provenance", () => {
     const content =
       '<cadencr-gate from-session="7" from-feature="8" from-project="9" kind="question" request-id="r">{}</cadencr-gate>';
