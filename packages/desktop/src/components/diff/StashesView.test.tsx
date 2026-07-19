@@ -7,6 +7,7 @@ import {
   useStashMutationCoordinator,
   type StashMutationLease,
 } from "./useStashMutationCoordinator";
+import type { GitNavigationAdapter } from "./gitNavigation";
 
 const mockUseListStashes = vi.fn();
 const mockDiffViewer = vi.fn();
@@ -59,11 +60,63 @@ describe("StashesView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open stash@{0}: WIP on feature" }));
     expect(screen.getByRole("button", { name: "Stashes" })).toBeInTheDocument();
     expect(screen.getByText("Revision diff")).toBeInTheDocument();
-    expect(mockDiffViewer).toHaveBeenCalledWith({
-      featureId: 9,
-      mode: "worktree",
-      commitSha: "abc123",
+    expect(mockDiffViewer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureId: 9,
+        mode: "worktree",
+        commitSha: "abc123",
+        registerNavigationAdapter: expect.any(Function),
+      }),
+    );
+  });
+
+  it("navigates, opens, and returns from a stash through the Git adapter", () => {
+    mockUseListStashes.mockReturnValue({
+      data: [
+        {
+          ref_name: "stash@{0}",
+          sha: "abc123",
+          message: "First stash",
+          date: "2026-01-02 12:00:00 +0000",
+          files_changed: 1,
+          additions: 2,
+          deletions: 1,
+        },
+        {
+          ref_name: "stash@{1}",
+          sha: "def456",
+          message: "Second stash",
+          date: "2026-01-01 12:00:00 +0000",
+          files_changed: 2,
+          additions: 3,
+          deletions: 2,
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn().mockResolvedValue({ data: [] }),
     });
+    const capture: { current: GitNavigationAdapter | null } = { current: null };
+    render(
+      <StashesView
+        featureId={9}
+        registerNavigationAdapter={(next) => {
+          capture.current = next;
+          return () => {};
+        }}
+      />,
+    );
+
+    expect(capture.current?.getActiveItem()).toBe("stash@{0}");
+    act(() => expect(capture.current?.moveSelection(1)).toBe(true));
+    expect(capture.current?.getActiveItem()).toBe("stash@{1}");
+    act(() => expect(capture.current?.open()).toBe(true));
+    expect(screen.getByText("Revision diff")).toBeInTheDocument();
+    act(() => expect(capture.current?.back()).toBe(true));
+    expect(
+      screen.getByRole("button", { name: "Open stash@{1}: Second stash" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps a stash row until a pop is confirmed and the list refetches", async () => {

@@ -24,6 +24,7 @@ export interface StashRowProps {
   onOpenConflict?: StashConflictOpenHandler;
   onRefresh?: () => Promise<void>;
   coordinator?: StashMutationCoordinator;
+  active?: boolean;
 }
 
 export const StashRow = memo(function StashRow({
@@ -34,6 +35,7 @@ export const StashRow = memo(function StashRow({
   onOpenConflict,
   onRefresh,
   coordinator,
+  active = false,
 }: StashRowProps): ReactElement {
   const [dropConfirmationOpen, setDropConfirmationOpen] = useState(false);
   const dropButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -67,11 +69,15 @@ export const StashRow = memo(function StashRow({
   return (
     <div
       style={{ height: STASH_ROW_HEIGHT }}
-      className="group flex w-full items-stretch transition-colors hover:bg-accent/60"
+      className={cn(
+        "group flex w-full items-stretch transition-colors hover:bg-accent/60",
+        active && "bg-accent/70 ring-1 ring-inset ring-primary",
+      )}
     >
       <button
         type="button"
         onClick={handleOpen}
+        aria-current={active ? "true" : undefined}
         aria-label={`Open ${stash.ref_name}: ${stash.message}`}
         className="flex min-w-0 flex-1 items-center px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >

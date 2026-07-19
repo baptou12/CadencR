@@ -14,6 +14,16 @@ import { create } from "zustand";
 import { getRegistryShortcut } from "./resolve";
 import type { ShortcutId, ShortcutKey } from "./registry";
 
+const LEGACY_OVERRIDE_IDS: Partial<Record<ShortcutId, readonly string[]>> = {
+  "git-next-item": ["diff-next-file"],
+  "git-previous-item": ["diff-prev-file"],
+  "git-open-item": ["diff-toggle-file"],
+  "git-scroll-down": ["diff-scroll-down"],
+  "git-scroll-up": ["diff-scroll-up"],
+  "git-toggle-viewed": ["diff-mark-viewed"],
+  "git-open-in-editor": ["diff-open-focused-file"],
+};
+
 export interface ShortcutOverride {
   keys: ShortcutKey[];
   altKeys?: ShortcutKey[];
@@ -28,12 +38,18 @@ interface ShortcutOverridesState {
 
 export const useShortcutOverridesStore = create<ShortcutOverridesState>((set) => ({
   overrides: {},
-  setOverride: (id, override) => set((s) => ({ overrides: { ...s.overrides, [id]: override } })),
+  setOverride: (id, override) =>
+    set((s) => {
+      const next = { ...s.overrides, [id]: override };
+      for (const legacyId of LEGACY_OVERRIDE_IDS[id] ?? []) delete next[legacyId];
+      return { overrides: next };
+    }),
   clearOverride: (id) =>
     set((s) => {
-      if (!(id in s.overrides)) return s;
       const next = { ...s.overrides };
       delete next[id];
+      for (const legacyId of LEGACY_OVERRIDE_IDS[id] ?? []) delete next[legacyId];
+      if (Object.keys(next).length === Object.keys(s.overrides).length) return s;
       return { overrides: next };
     }),
   resetAll: () => set({ overrides: {} }),
@@ -51,6 +67,14 @@ export function useResolvedShortcut(id: ShortcutId): {
   keys: ShortcutKey[];
   altKeys?: ShortcutKey[];
 } {
-  const override = useShortcutOverridesStore((s) => s.overrides[id]);
+  const override = useShortcutOverridesStore((s) => {
+    const current = s.overrides[id];
+    if (current) return current;
+    for (const legacyId of LEGACY_OVERRIDE_IDS[id] ?? []) {
+      const legacy = s.overrides[legacyId];
+      if (legacy) return legacy;
+    }
+    return undefined;
+  });
   return override ?? getRegistryShortcut(id);
 }

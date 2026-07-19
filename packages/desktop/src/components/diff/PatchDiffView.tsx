@@ -74,6 +74,19 @@ interface RenderableFilePatch {
   patch: string;
 }
 
+type PierreDiffInstance<LAnnotation> =
+  | PierreFileDiff<LAnnotation>
+  | PierreVirtualizedFileDiff<LAnnotation>;
+
+function cleanUpManagedPierreHost<LAnnotation>(
+  instance: PierreDiffInstance<LAnnotation> | null,
+  container: HTMLElement | null,
+): void {
+  instance?.cleanUp();
+  // Clear managed shadow DOM so StrictMode cannot retain an orphaned virtualized placeholder.
+  container?.shadowRoot?.replaceChildren();
+}
+
 // Pierre's "+" gutter affordance is hover-driven (it follows `pointermove` and
 // is torn down on `pointerleave`), so on touch it only flickers in during a
 // scroll and a tap can never reach it. Where the pointer can't hover, a tap on a
@@ -135,9 +148,8 @@ function SafePatchDiff<LAnnotation>({
 }: SafePatchDiffProps<LAnnotation>) {
   const fileDiff = useMemo(() => getSingularPatch(patch), [patch]);
   const virtualizer = useVirtualizer();
-  const instanceRef = useRef<
-    PierreFileDiff<LAnnotation> | PierreVirtualizedFileDiff<LAnnotation> | null
-  >(null);
+  const instanceRef = useRef<PierreDiffInstance<LAnnotation> | null>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
   const fileDiffRef = useRef(fileDiff);
   const optionsRef = useRef(options);
   const lineAnnotationsRef = useRef(lineAnnotations);
@@ -148,11 +160,13 @@ function SafePatchDiff<LAnnotation>({
   const ref = useCallback(
     (node: HTMLElement | null): void => {
       if (!node) {
-        instanceRef.current?.cleanUp();
+        cleanUpManagedPierreHost(instanceRef.current, containerRef.current);
         instanceRef.current = null;
+        containerRef.current = null;
         return;
       }
       if (instanceRef.current) return;
+      containerRef.current = node;
       const currentOptions = optionsRef.current;
       const instance = virtualizer
         ? new PierreVirtualizedFileDiff(

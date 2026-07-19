@@ -24,6 +24,7 @@ import { useSendPendingComments } from "@/hooks/useSendPendingComments";
 import { selectGitTargetBranch, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { GitUpdateRecoveryRegion } from "./git-actions/GitUpdateRecoveryBanner";
+import { useGitKeyboardController } from "./diff/useGitKeyboardController";
 
 const GIT_VIEW_MODE_SETTING = "git_view_mode";
 const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
@@ -53,6 +54,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   const queryClient = useQueryClient();
   const { data: comments = [] } = useListDiffComments(featureId);
   const pendingComments = useMemo(() => comments.filter((c) => c.status === "pending"), [comments]);
+  const registerNavigationAdapter = useGitKeyboardController(hotkeysEnabled);
   const fallbackViewMode: GitViewMode = diffMode === "branch" ? "vs-target" : "uncommitted";
 
   // Per-feature persisted toggle. The `viewMode` local state holds the
@@ -225,15 +227,23 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {isGraph ? (
-          <GitGraphView featureId={featureId} />
+          <GitGraphView
+            featureId={featureId}
+            registerNavigationAdapter={registerNavigationAdapter}
+          />
         ) : isBranches ? (
           <GitBranchesView
             key={`${projectId}:${featureId}`}
             featureId={featureId}
             projectId={projectId}
+            registerNavigationAdapter={registerNavigationAdapter}
           />
         ) : isStashes ? (
-          <StashesView featureId={featureId} onConflicts={handleRequestUncommitted} />
+          <StashesView
+            featureId={featureId}
+            onConflicts={handleRequestUncommitted}
+            registerNavigationAdapter={registerNavigationAdapter}
+          />
         ) : (
           <DiffViewer
             featureId={featureId}
@@ -241,6 +251,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
             targetBranch={diffTargetBranch}
             fileListCollapsed={fileListCollapsed}
             onFileListCollapsedChange={setFileListCollapsed}
+            registerNavigationAdapter={registerNavigationAdapter}
           />
         )}
       </div>

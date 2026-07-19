@@ -12,7 +12,7 @@
  *   - case-insensitive name filtering against `query`,
  *   - the `<Virtuoso>` viewport (fixed-height — Virtuoso requires a
  *     bounded height),
- *   - keyboard nav state via `useBranchListKeyboard`, returned alongside
+ *   - keyboard nav state via `useVirtualizedListNavigation`, returned alongside
  *     the rendered list so the caller can wire `onKeyDown` onto whichever
  *     element actually captures focus (auto-focused input vs. popover).
  */
@@ -20,7 +20,10 @@ import { useCallback, useMemo, type CSSProperties, type ReactElement, type React
 import { Virtuoso } from "react-virtuoso";
 
 import { type BranchInfo } from "@/api/generated";
-import { useBranchListKeyboard } from "./useBranchListKeyboard";
+import {
+  useVirtualizedListNavigation,
+  type VirtualizedListNavigation,
+} from "@/hooks/useVirtualizedListNavigation";
 
 function filterBranches(branches: BranchInfo[], query: string): BranchInfo[] {
   if (!query) return branches;
@@ -32,6 +35,7 @@ export interface BranchListRowContext {
   branch: BranchInfo;
   index: number;
   isActive: boolean;
+  open: () => boolean;
 }
 
 interface UseBranchListOptions {
@@ -51,6 +55,7 @@ interface UseBranchListResult {
   onKeyDown: (e: React.KeyboardEvent) => void;
   /** Filtered count, useful for parents that need to disable submit when 0. */
   filteredCount: number;
+  navigation: VirtualizedListNavigation<BranchInfo>;
 }
 
 /**
@@ -68,28 +73,36 @@ export function useBranchList({
   emptyState,
 }: UseBranchListOptions): UseBranchListResult {
   const filtered = useMemo(() => filterBranches(branches, query), [branches, query]);
-  const { activeIndex, virtuosoRef, onKeyDown } = useBranchListKeyboard(filtered, onPick);
+  const { activeIndex, viewportRef, virtuosoRef, onKeyDown, navigation } =
+    useVirtualizedListNavigation(filtered, onPick);
 
   const itemContent = useCallback(
     (index: number) => {
       const branch = filtered[index];
       if (!branch) return null;
-      return renderRow({ branch, index, isActive: index === activeIndex });
+      return renderRow({
+        branch,
+        index,
+        isActive: index === activeIndex,
+        open: () => navigation.openIndex(index),
+      });
     },
-    [filtered, activeIndex, renderRow],
+    [activeIndex, filtered, navigation, renderRow],
   );
 
   const list =
     filtered.length === 0 ? (
       <>{emptyState ?? null}</>
     ) : (
-      <Virtuoso
-        ref={virtuosoRef}
-        style={{ height }}
-        totalCount={filtered.length}
-        itemContent={itemContent}
-      />
+      <div ref={viewportRef} style={{ height }}>
+        <Virtuoso
+          ref={virtuosoRef}
+          style={{ height: "100%" }}
+          totalCount={filtered.length}
+          itemContent={itemContent}
+        />
+      </div>
     );
 
-  return { list, onKeyDown, filteredCount: filtered.length };
+  return { list, onKeyDown, filteredCount: filtered.length, navigation };
 }

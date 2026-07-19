@@ -13,6 +13,7 @@ import { useGitFileIndexActions } from "./useGitFileIndexActions";
 import { useGitFileListCollapse, type GitFileListCollapseState } from "./useGitFileListCollapse";
 import { useDiffViewerComments } from "./useDiffViewerComments";
 import { useDiffViewerNavigation } from "./useDiffViewerNavigation";
+import type { GitNavigationAdapterRegistrar } from "./gitNavigation";
 
 interface DiffViewerProps {
   featureId: number;
@@ -22,6 +23,7 @@ interface DiffViewerProps {
   fileListCollapsed?: boolean;
   onFileListCollapsedChange?: (collapsed: boolean) => void;
   onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
 type DiffData = ReturnType<typeof useDiffData>;
@@ -37,6 +39,7 @@ interface LoadedDiffViewerProps {
   themeAppearance: ThemeAppearance;
   themeId: ThemeId;
   openFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
 function DiffViewerMessage({ children, error = false }: { children: ReactNode; error?: boolean }) {
@@ -109,19 +112,22 @@ function LoadedDiffViewer({
   themeAppearance,
   themeId,
   openFileInEditor,
+  registerNavigationAdapter,
 }: LoadedDiffViewerProps) {
   const indexActions = useGitFileIndexActions(featureId);
   const diffAreaRef = useRef<HTMLDivElement>(null);
+  const indexMutable =
+    (mode === "uncommitted" || mode === "worktree") && data.selectedCommit === null;
   const navigation = useDiffViewerNavigation({
     featureId,
     data,
     indexActions,
     diffAreaRef,
     onOpenFileInEditor: openFileInEditor,
+    indexMutable,
+    registerNavigationAdapter,
   });
   const comments = useDiffViewerComments(featureId, data);
-  const indexMutable =
-    (mode === "uncommitted" || mode === "worktree") && data.selectedCommit === null;
   const content = useMemo(
     () => (
       <DiffContent
@@ -133,7 +139,7 @@ function LoadedDiffViewer({
         selectedCommit={data.selectedCommit}
         diffMode={diffMode}
         collapsedFiles={navigation.collapsedFiles}
-        focusedFileIndex={navigation.focusedFileIndex}
+        activeFilePath={navigation.activeFilePath}
         viewedFilesSet={data.viewedFilesSet}
         commentLinesByFile={comments.commentLinesByFile}
         activeCommentWidget={comments.activeCommentWidget}
@@ -204,6 +210,7 @@ function DiffViewerImpl({
   fileListCollapsed,
   onFileListCollapsedChange,
   onOpenFileInEditor,
+  registerNavigationAdapter,
 }: DiffViewerProps) {
   const contextOpenFileInEditor = useOpenDiffInEditor();
   const openFileInEditor = onOpenFileInEditor ?? contextOpenFileInEditor;
@@ -235,6 +242,7 @@ function DiffViewerImpl({
       themeAppearance={theme.appearance}
       themeId={theme.id}
       openFileInEditor={openFileInEditor}
+      registerNavigationAdapter={registerNavigationAdapter}
     />
   );
 }

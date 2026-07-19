@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@/test-utils";
+import { act, fireEvent, render, screen } from "@/test-utils";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import { GitBranchesView } from "./GitBranchesView";
+import type { GitNavigationAdapter } from "./gitNavigation";
 
 const mockUseListBranches = vi.fn();
 
@@ -107,6 +108,28 @@ describe("GitBranchesView", () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open commits for remote origin/main" }));
     expect(screen.getByText("Commits for remote origin/main")).toBeInTheDocument();
+  });
+
+  it("navigates, opens, and returns from a branch through the Git adapter", () => {
+    const capture: { current: GitNavigationAdapter | null } = { current: null };
+    render(
+      <GitBranchesView
+        featureId={7}
+        projectId={3}
+        registerNavigationAdapter={(next) => {
+          capture.current = next;
+          return () => {};
+        }}
+      />,
+    );
+
+    expect(capture.current?.getActiveItem()).toBe("feature/branches");
+    act(() => expect(capture.current?.moveSelection(1)).toBe(true));
+    expect(capture.current?.getActiveItem()).toBe("main");
+    act(() => expect(capture.current?.open()).toBe(true));
+    expect(screen.getByText("Commits for local main")).toBeInTheDocument();
+    act(() => expect(capture.current?.back()).toBe(true));
+    expect(screen.getByRole("button", { name: "Open commits for local main" })).toBeInTheDocument();
   });
 
   it("shows visible loading and error states", () => {

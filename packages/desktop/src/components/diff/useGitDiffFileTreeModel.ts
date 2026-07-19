@@ -1,5 +1,10 @@
 import { useCallback, useMemo, useRef } from "react";
-import type { FileTree, FileTreeOptions, FileTreeRowDecoration } from "@pierre/trees";
+import {
+  prepareFileTreeInput,
+  type FileTree,
+  type FileTreeOptions,
+  type FileTreeRowDecoration,
+} from "@pierre/trees";
 import { useFileTreeSelection, useFileTreeSelector } from "@pierre/trees/react";
 import {
   ConflictKind,
@@ -27,6 +32,7 @@ export interface GitDiffTreeNavigationAdapter {
   getActivePath: () => string | null;
   selectPath: (filePath: string) => boolean;
   moveSelection: (offset: -1 | 1) => string | null;
+  focusActive: () => boolean;
 }
 
 interface GitDiffFileTreeModelResult {
@@ -145,9 +151,53 @@ export function gitDiffTreeDecoration(
 }
 
 interface NavigationState {
-  filePaths: readonly string[];
+  orderedFileTreePaths: readonly string[];
   treePathByFilePath: ReadonlyMap<string, string>;
   filePathByTreePath: ReadonlyMap<string, string>;
+}
+
+function isVisibleThroughExpandedAncestors(model: FileTree, treePath: string): boolean {
+  let separatorIndex = treePath.indexOf("/");
+  while (separatorIndex >= 0) {
+    const directoryPath = treePath.slice(0, separatorIndex + 1);
+    const directory = model.getItem(directoryPath);
+    if (directory && "isExpanded" in directory && !directory.isExpanded()) return false;
+    separatorIndex = treePath.indexOf("/", separatorIndex + 1);
+  }
+  return true;
+}
+
+function canNavigateToTreePath(
+  model: FileTree,
+  state: NavigationState,
+  treePath: string,
+  searchActive: boolean,
+): boolean {
+  return (
+    state.filePathByTreePath.has(treePath) &&
+    (searchActive || isVisibleThroughExpandedAncestors(model, treePath))
+  );
+}
+
+function adjacentVisibleFileTreePath(
+  model: FileTree,
+  state: NavigationState,
+  activeTreePath: string | null,
+  offset: -1 | 1,
+): string | null {
+  const searchActive = model.getSearchValue().length > 0;
+  const paths = searchActive ? model.getSearchMatchingPaths() : state.orderedFileTreePaths;
+  if (paths.length === 0) return null;
+  const currentIndex = activeTreePath == null ? -1 : paths.indexOf(activeTreePath);
+  const startIndex = currentIndex < 0 ? 0 : currentIndex + offset;
+  const step = currentIndex < 0 ? 1 : offset;
+  for (let index = startIndex; index >= 0 && index < paths.length; index += step) {
+    const path = paths[index];
+    if (path && canNavigateToTreePath(model, state, path, searchActive)) return path;
+  }
+  return activeTreePath && canNavigateToTreePath(model, state, activeTreePath, searchActive)
+    ? activeTreePath
+    : null;
 }
 
 function useNavigationAdapter(model: FileTree, state: NavigationState) {
@@ -164,17 +214,21 @@ function useNavigationAdapter(model: FileTree, state: NavigationState) {
         return treePath ? selectGitDiffTreePath(model, treePath) : false;
       },
       moveSelection: (offset) => {
-        const { filePaths, filePathByTreePath, treePathByFilePath } = stateRef.current;
-        const paths = filePaths;
-        if (paths.length === 0) return null;
+        const { filePathByTreePath } = stateRef.current;
         const activeTreePath = model.getFocusedPath() ?? model.getSelectedPaths().at(-1) ?? null;
-        const active = activeTreePath ? (filePathByTreePath.get(activeTreePath) ?? null) : null;
-        const currentIndex = active == null ? -1 : paths.indexOf(active);
-        const nextIndex = Math.max(0, Math.min(paths.length - 1, currentIndex + offset));
-        const nextPath = paths[nextIndex] ?? null;
-        const nextTreePath = nextPath ? treePathByFilePath.get(nextPath) : null;
-        if (nextTreePath) selectGitDiffTreePath(model, nextTreePath);
-        return nextPath;
+        const nextTreePath = adjacentVisibleFileTreePath(
+          model,
+          stateRef.current,
+          activeTreePath,
+          offset,
+        );
+        if (!nextTreePath) return null;
+        selectGitDiffTreePath(model, nextTreePath);
+        return filePathByTreePath.get(nextTreePath) ?? null;
+      },
+      focusActive: () => {
+        const treePath = model.getFocusedPath() ?? model.getSelectedPaths().at(-1) ?? null;
+        return treePath ? selectGitDiffTreePath(model, treePath) : false;
       },
     }),
     [model],
@@ -231,7 +285,6 @@ export function useGitDiffFileTreeModel({
     isPending: isDisplayModePending,
   } = useGitDiffTreeDisplaySetting();
   const hierarchicalPaths = useMemo(() => buildGitDiffTreePaths(files), [files]);
-  const filePaths = useMemo(() => files.map((file) => file.file), [files]);
   const fileByPath = useMemo(() => new Map(files.map((file) => [file.file, file])), [files]);
   const presentation = useMemo(
     () =>
@@ -277,11 +330,13 @@ export function useGitDiffFileTreeModel({
   const activePath = useActiveTreePath(model, presentation);
   const navigationState = useMemo<NavigationState>(
     () => ({
-      filePaths,
+      orderedFileTreePaths: prepareFileTreeInput(presentation.paths).paths.filter((path) =>
+        presentation.filePathByTreePath.has(path),
+      ),
       treePathByFilePath: presentation.treePathByFilePath,
       filePathByTreePath: presentation.filePathByTreePath,
     }),
-    [filePaths, presentation.filePathByTreePath, presentation.treePathByFilePath],
+    [presentation.filePathByTreePath, presentation.paths, presentation.treePathByFilePath],
   );
   const navigation = useNavigationAdapter(model, navigationState);
   const resolveFilePath = useCallback(
