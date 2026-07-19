@@ -206,6 +206,13 @@
     background-color 150ms ease,
     box-shadow 150ms ease;
 }
+/* Reserve end space for the absolute dock-close control on floating panes. */
+:root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
+  [data-pane-frame="floating"]
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"] {
+  padding-inline-end: 2rem;
+}
 :root:is(:not([data-theme]), [data-theme="cadencr-dark"], [data-theme="cadencr-light"])
   [data-pane-tab-strip]
   [data-slot="tabs-trigger"]::after {

@@ -189,7 +189,7 @@ function DraggableTabTrigger({
         transform: CSS.Translate.toString(transform),
         opacity: isDragging ? 0.4 : undefined,
       }}
-      className="group relative inline-flex shrink-0"
+      className="relative inline-flex shrink-0"
     >
       <ShortcutTooltip label={def.label} keys={def.shortcut}>
         <TabsTrigger
@@ -201,7 +201,7 @@ function DraggableTabTrigger({
           onClick={onActivate}
           className={cn(
             "cursor-grab active:cursor-grabbing",
-            !isRootPane && "pr-7",
+            !isRootPane && "pr-8",
             !isFocusedPane && "data-[state=active]:after:bg-transparent",
           )}
         >
@@ -217,7 +217,7 @@ function DraggableTabTrigger({
             e.stopPropagation();
             onClose();
           }}
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           aria-label={`Return ${def.label} to the root tab strip`}
         >
           <XIcon className="size-3" />
