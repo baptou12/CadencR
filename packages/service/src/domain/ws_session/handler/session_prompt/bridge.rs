@@ -333,7 +333,7 @@ impl WsBridgeCanUseTool {
         let permission_updates =
             permission_bridge::persistent_permission_updates(&request.permission_updates);
 
-        let payload = PermissionRequestPayload {
+        let mut payload = PermissionRequestPayload {
             request_id: request.tool_use_id.clone(),
             tool_name: request.tool_name.clone(),
             tool_input: request.input.clone(),
@@ -342,6 +342,7 @@ impl WsBridgeCanUseTool {
             preview: permission_bridge::extract_permission_preview(&request.input),
             options: permission_bridge::build_provider_permission_options(&permission_updates),
         };
+        crate::domain::ws_session::protocol::clear_question_permission_chrome(&mut payload);
         let question_payload = is_question.then(|| {
             serde_json::to_value(&payload).expect("question permission payload should serialize")
         });

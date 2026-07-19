@@ -72,14 +72,16 @@ impl WsSessionPersistence {
         feature_id: i64,
         input: &PendingUserInput<'_>,
     ) {
-        let kind = input.kind().as_session_kind();
+        let fallback_kind = input.kind().as_session_kind();
         Self::set_pending_user_input_static(&state.write_pool, session_id, input).await;
         let registered = register_gate(state, session_id, input).await;
         if let Some(gate) = &registered {
+            // Prefer the registry kind so AskUserQuestion (often persisted on the
+            // permission column by Claude Code) still broadcasts as a question.
             state.session_status_tx.broadcast_gate(
                 session_id,
                 feature_id,
-                kind,
+                gate.kind.as_session_kind(),
                 gate.request_id.clone(),
             );
         } else {
@@ -88,7 +90,7 @@ impl WsSessionPersistence {
                 session_id,
                 feature_id,
                 crate::domain::session_status::AgentStatus::Question,
-                Some(kind),
+                Some(fallback_kind),
             );
         }
         if let Some(gate) = registered {

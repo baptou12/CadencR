@@ -328,6 +328,7 @@ mod pending_user_input_tests {
         let pool = setup_pool().await;
         let id = insert_session(&pool).await;
         let state = crate::app_state::AppState::with_pool(pool);
+        let mut rx = state.session_status_tx.subscribe();
         let mut payload = sample_permission_payload();
         payload.tool_name = "AskUserQuestion".into();
         payload.tool_input = serde_json::json!({
@@ -346,6 +347,12 @@ mod pending_user_input_tests {
         let gate = state.pending_gates.latest_open(id).await.unwrap();
         assert_eq!(gate.kind, crate::domain::gate_registry::GateKind::Question);
         assert_eq!(gate.payload["tool_input"]["question"], "Which provider?");
+
+        let event = rx.recv().await.unwrap();
+        assert_eq!(
+            event.kind,
+            Some(crate::domain::session_status::PendingKind::Question)
+        );
     }
 
     #[tokio::test]

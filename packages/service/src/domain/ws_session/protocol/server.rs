@@ -72,6 +72,18 @@ pub fn is_question_tool(tool_name: &str) -> bool {
     tool_name == "AskUserQuestion"
 }
 
+/// Strip allow/deny chrome from AskUserQuestion payloads so API/sidebar
+/// surfaces treat them as questions rather than permission prompts.
+pub fn clear_question_permission_chrome(payload: &mut PermissionRequestPayload) {
+    if !is_question_tool(&payload.tool_name) {
+        return;
+    }
+    payload.options.clear();
+    payload.description = None;
+    payload.preview = None;
+    payload.pattern = None;
+}
+
 pub fn permission_request_envelope(payload: impl Serialize) -> serde_json::Result<WsEnvelope> {
     WsEnvelope::session_event(WsSessionAction::PermissionRequest, payload)
 }
@@ -347,5 +359,53 @@ mod tests {
     fn canonical_question_tool_is_distinct_from_permissions() {
         assert!(is_question_tool("AskUserQuestion"));
         assert!(!is_question_tool("Bash"));
+    }
+
+    #[test]
+    fn clear_question_permission_chrome_strips_allow_deny() {
+        let mut payload = PermissionRequestPayload {
+            request_id: "req-1".into(),
+            tool_name: "AskUserQuestion".into(),
+            tool_input: serde_json::json!({}),
+            description: Some("Allow this?".into()),
+            pattern: Some("AskUserQuestion".into()),
+            preview: Some("preview".into()),
+            options: vec![PermissionOptionPayload {
+                decision: PermissionDecision::AllowOnce,
+                option_id: None,
+                label: "Allow".into(),
+                description: String::new(),
+                collect_feedback: false,
+            }],
+        };
+        clear_question_permission_chrome(&mut payload);
+        assert!(payload.options.is_empty());
+        assert!(payload.description.is_none());
+        assert!(payload.preview.is_none());
+        assert!(payload.pattern.is_none());
+    }
+
+    #[test]
+    fn clear_question_permission_chrome_ignores_permissions() {
+        let mut payload = PermissionRequestPayload {
+            request_id: "req-2".into(),
+            tool_name: "Bash".into(),
+            tool_input: serde_json::json!({}),
+            description: Some("Run bash?".into()),
+            pattern: Some("Bash(*)".into()),
+            preview: Some("ls".into()),
+            options: vec![PermissionOptionPayload {
+                decision: PermissionDecision::Deny,
+                option_id: None,
+                label: "Deny".into(),
+                description: String::new(),
+                collect_feedback: false,
+            }],
+        };
+        clear_question_permission_chrome(&mut payload);
+        assert_eq!(payload.options.len(), 1);
+        assert!(payload.description.is_some());
+        assert!(payload.preview.is_some());
+        assert!(payload.pattern.is_some());
     }
 }

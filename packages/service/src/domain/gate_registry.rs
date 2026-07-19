@@ -23,6 +23,13 @@ impl GateKind {
         }
     }
 
+    pub(crate) fn as_session_kind(self) -> crate::domain::session_status::PendingKind {
+        match self {
+            Self::Question => crate::domain::session_status::PendingKind::Question,
+            Self::Permission | Self::Plan => crate::domain::session_status::PendingKind::Permission,
+        }
+    }
+
     pub(crate) fn from_pending(kind: PendingUserInputKind, tool_name: &str) -> Self {
         if tool_name == "ExitPlanMode" {
             Self::Plan
