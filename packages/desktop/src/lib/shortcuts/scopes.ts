@@ -34,7 +34,7 @@ export const SHORTCUT_SCOPES = [
     label: "Agent questions",
     hint: "While the agent is asking a multiple-choice question.",
   },
-  { id: "diff-viewer", label: "Diff viewer", hint: "When the Git tab is focused." },
+  { id: "diff-viewer", label: "Git tab", hint: "When the Git tab is focused." },
   { id: "editor", label: "Editor", hint: "When the Editor tab has focus." },
   {
     id: "editor-buffer",

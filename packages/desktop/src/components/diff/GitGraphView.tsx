@@ -1,28 +1,21 @@
-import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
-import { Virtuoso } from "react-virtuoso";
-import { toast } from "sonner";
+import { memo, useCallback, useMemo, type ReactElement, type RefObject } from "react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Loader2Icon, GitBranchIcon, ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
-import {
-  getCommitUrl,
-  useGetCommitGraph,
-  type BranchInfo,
-  type CommitGraphEntry,
-  type GetCommitGraphParams,
-} from "@/api/generated";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import type { BranchInfo } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { computeGraphLayout, type GraphCommitInput } from "@/lib/git-graph-layout";
+import { computeGraphLayout } from "@/lib/git-graph-layout";
 import { cn } from "@/lib/utils";
 import { GitRevisionDiffView } from "./GitRevisionDiffView";
 import { GitGraphRow, ROW_HEIGHT, type GitGraphRowData } from "./GitGraphRow";
-
-const PAGE_SIZE = 50;
+import type { GitNavigationAdapterRegistrar } from "./gitNavigation";
+import { useGitGraphViewModel } from "./useGitGraphViewModel";
 
 interface GitGraphViewProps {
   featureId: number;
   /** When set, show only this branch's history instead of HEAD + target. */
   branch?: Pick<BranchInfo, "name" | "is_local">;
   onBackToBranches?: () => void;
+  registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
 /** Virtualized, paginated commit graph with an optional single-branch scope. */
@@ -30,41 +23,96 @@ export const GitGraphView = memo(function GitGraphView({
   featureId,
   branch,
   onBackToBranches,
+  registerNavigationAdapter,
 }: GitGraphViewProps): ReactElement {
-  const [limit, setLimit] = useState(PAGE_SIZE);
-  const [openedCommit, setOpenedCommit] = useState<string | null>(null);
-
-  const queryParams = useMemo<GetCommitGraphParams>(
-    () => ({
-      feature_id: featureId,
-      branch: branch?.name,
-      branch_is_local: branch?.is_local,
-      skip: 0,
-      limit,
-    }),
-    [branch, featureId, limit],
-  );
-  const { data, isLoading, isError, error } = useGetCommitGraph(queryParams, {
-    query: { keepPreviousData: true },
+  const model = useGitGraphViewModel({
+    featureId,
+    branch,
+    onBackToBranches,
+    registerNavigationAdapter,
+  });
+  const { data, isLoading, isError, error } = model.query;
+  const components = useMemo(() => (model.hasMore ? { Footer: GraphFooter } : {}), [model.hasMore]);
+  const itemContent = useGraphItemContent({
+    commits: model.commits,
+    layout: model.layout,
+    activeIndex: model.list.activeIndex,
+    onOpenIndex: model.list.navigation.openIndex,
+    onOpenOnline: model.openOnline,
   });
 
-  const commits = useMemo(() => toGraphRows(data?.commits ?? []), [data]);
-  const layout = useMemo(() => {
-    const inputs: GraphCommitInput[] = commits.map((commit) => ({
-      sha: commit.sha,
-      parents: commit.parents,
-    }));
-    return computeGraphLayout(inputs);
-  }, [commits]);
+  if (model.openedCommit) {
+    return (
+      <OpenedCommitDiff
+        featureId={featureId}
+        sha={model.openedCommit}
+        commit={model.openedEntry}
+        onBack={model.closeCommit}
+        onOpenOnline={model.openOnline}
+        registerNavigationAdapter={model.registerDetailAdapter}
+      />
+    );
+  }
 
-  const hasMore = data?.has_more ?? false;
-  const handleEndReached = useCallback(() => {
-    if (hasMore) setLimit((current) => current + PAGE_SIZE);
-  }, [hasMore]);
-  const components = useMemo(() => (hasMore ? { Footer: GraphFooter } : {}), [hasMore]);
-  const handleOpenOnline = useOpenCommitOnline(featureId);
-  const handleCloseCommit = useCallback((): void => setOpenedCommit(null), []);
-  const itemContent = useCallback(
+  const branchName = branch?.name;
+  const showHeader = branchName != null || (!isError && model.commits.length > 0);
+  return (
+    <GraphListFrame
+      header={
+        showHeader ? (
+          <GraphHeader
+            currentBranch={branchName ?? data?.current_branch ?? null}
+            targetBranch={branchName ? null : (data?.target_branch ?? null)}
+            onBackToBranches={branchName ? onBackToBranches : undefined}
+          />
+        ) : null
+      }
+      body={
+        <GraphBody
+          commits={model.commits}
+          isLoading={isLoading}
+          isError={isError}
+          error={error}
+          itemContent={itemContent}
+          onEndReached={model.endReached}
+          components={components}
+          viewportRef={model.list.viewportRef}
+          virtuosoRef={model.list.virtuosoRef}
+        />
+      }
+    />
+  );
+});
+
+function GraphListFrame({
+  header,
+  body,
+}: {
+  header: ReactElement | null;
+  body: ReactElement;
+}): ReactElement {
+  return (
+    <div className="flex h-full flex-col">
+      {header}
+      <div className="min-h-0 flex-1">{body}</div>
+    </div>
+  );
+}
+
+function useGraphItemContent({
+  commits,
+  layout,
+  activeIndex,
+  onOpenIndex,
+  onOpenOnline,
+}: {
+  commits: GitGraphRowData[];
+  layout: ReturnType<typeof computeGraphLayout>;
+  activeIndex: number;
+  onOpenIndex: (index: number) => boolean;
+  onOpenOnline: (sha: string) => Promise<void>;
+}): (index: number) => ReactElement {
+  return useCallback(
     (index: number): ReactElement => {
       const commit = commits[index];
       const row = layout.rows[index];
@@ -74,54 +122,46 @@ export const GitGraphView = memo(function GitGraphView({
           commit={commit}
           row={row}
           columns={layout.columns}
-          onOpenCommit={setOpenedCommit}
-          onOpenOnline={handleOpenOnline}
+          active={index === activeIndex}
+          onOpenCommit={() => {
+            onOpenIndex(index);
+          }}
+          onOpenOnline={onOpenOnline}
         />
       );
     },
-    [commits, handleOpenOnline, layout],
+    [activeIndex, commits, layout, onOpenIndex, onOpenOnline],
   );
+}
 
-  if (openedCommit) {
-    const commit = commits.find((entry) => entry.sha === openedCommit);
-    return (
-      <GitRevisionDiffView
-        featureId={featureId}
-        revision={openedCommit}
-        backLabel="Commits"
-        label={commit?.shortSha ?? openedCommit.slice(0, 7)}
-        message={commit?.message}
-        onBack={handleCloseCommit}
-        trailingAction={<CommitOnlineButton sha={openedCommit} onOpen={handleOpenOnline} />}
-      />
-    );
-  }
-
-  const branchName = branch?.name;
-  const showHeader = branchName != null || (!isError && commits.length > 0);
+function OpenedCommitDiff({
+  featureId,
+  sha,
+  commit,
+  onBack,
+  onOpenOnline,
+  registerNavigationAdapter,
+}: {
+  featureId: number;
+  sha: string;
+  commit: GitGraphRowData | null;
+  onBack: () => void;
+  onOpenOnline: (sha: string) => Promise<void>;
+  registerNavigationAdapter: GitNavigationAdapterRegistrar;
+}): ReactElement {
   return (
-    <div className="flex h-full flex-col">
-      {showHeader && (
-        <GraphHeader
-          currentBranch={branchName ?? data?.current_branch ?? null}
-          targetBranch={branchName ? null : (data?.target_branch ?? null)}
-          onBackToBranches={branchName ? onBackToBranches : undefined}
-        />
-      )}
-      <div className="min-h-0 flex-1">
-        <GraphBody
-          commits={commits}
-          isLoading={isLoading}
-          isError={isError}
-          error={error}
-          itemContent={itemContent}
-          onEndReached={handleEndReached}
-          components={components}
-        />
-      </div>
-    </div>
+    <GitRevisionDiffView
+      featureId={featureId}
+      revision={sha}
+      backLabel="Commits"
+      label={commit?.shortSha ?? sha.slice(0, 7)}
+      message={commit?.message}
+      onBack={onBack}
+      trailingAction={<CommitOnlineButton sha={sha} onOpen={onOpenOnline} />}
+      registerNavigationAdapter={registerNavigationAdapter}
+    />
   );
-});
+}
 
 function CommitOnlineButton({
   sha,
@@ -143,42 +183,6 @@ function CommitOnlineButton({
   );
 }
 
-function toGraphRows(commits: CommitGraphEntry[]): GitGraphRowData[] {
-  return commits.map((commit) => ({
-    sha: commit.sha,
-    shortSha: commit.short_sha,
-    message: commit.message,
-    body: commit.body,
-    author: commit.author,
-    date: commit.date,
-    isPushed: commit.is_pushed,
-    parents: commit.parents,
-    refs: commit.refs,
-    filesChanged: commit.files_changed,
-    additions: commit.additions,
-    deletions: commit.deletions,
-  }));
-}
-
-function useOpenCommitOnline(featureId: number): (sha: string) => Promise<void> {
-  return useCallback(
-    async (sha: string) => {
-      try {
-        const response = await getCommitUrl({ feature_id: featureId, sha });
-        if (!response.available || !response.url) {
-          toast.error("No remote host is configured for this repository.");
-          return;
-        }
-        await desktopBridge.openExternal(response.url);
-      } catch (error) {
-        const message = apiErrorMessage(error, "Unknown error");
-        toast.error(`Could not open the commit online: ${message}`);
-      }
-    },
-    [featureId],
-  );
-}
-
 interface GraphBodyProps {
   commits: GitGraphRowData[];
   isLoading: boolean;
@@ -187,6 +191,8 @@ interface GraphBodyProps {
   itemContent: (index: number) => ReactElement;
   onEndReached: () => void;
   components: { Footer?: () => ReactElement };
+  viewportRef: RefObject<HTMLDivElement | null>;
+  virtuosoRef: RefObject<VirtuosoHandle | null>;
 }
 
 const GraphBody = memo(function GraphBody({
@@ -197,6 +203,8 @@ const GraphBody = memo(function GraphBody({
   itemContent,
   onEndReached,
   components,
+  viewportRef,
+  virtuosoRef,
 }: GraphBodyProps): ReactElement {
   if (isLoading && commits.length === 0) {
     return <GraphMessage variant="loading">Loading commits…</GraphMessage>;
@@ -212,14 +220,17 @@ const GraphBody = memo(function GraphBody({
     return <GraphMessage variant="empty">No commits to show.</GraphMessage>;
   }
   return (
-    <Virtuoso
-      style={{ height: "100%" }}
-      totalCount={commits.length}
-      itemContent={itemContent}
-      endReached={onEndReached}
-      increaseViewportBy={ROW_HEIGHT * 6}
-      components={components}
-    />
+    <div ref={viewportRef} className="h-full">
+      <Virtuoso
+        ref={virtuosoRef}
+        style={{ height: "100%" }}
+        totalCount={commits.length}
+        itemContent={itemContent}
+        endReached={onEndReached}
+        increaseViewportBy={ROW_HEIGHT * 6}
+        components={components}
+      />
+    </div>
   );
 });
 

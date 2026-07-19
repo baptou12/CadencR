@@ -10,7 +10,42 @@ function shortcutKeys(id: string): string[] {
 describe("shortcut registry", () => {
   it("keeps unified-agent open-feature on mod+shift+o so Git can use mod+o", () => {
     expect(shortcutKeys("agents-open-feature")).toEqual(["mod", "shift", "o"]);
-    expect(shortcutKeys("diff-open-focused-file")).toEqual(["mod", "o"]);
+    expect(shortcutKeys("git-open-in-editor")).toEqual(["mod", "o"]);
+  });
+
+  it("registers the approved bare-key Git navigation map", () => {
+    expect({
+      next: shortcutKeys("git-next-item"),
+      previous: shortcutKeys("git-previous-item"),
+      open: shortcutKeys("git-open-item"),
+      back: shortcutKeys("git-back"),
+      viewed: shortcutKeys("git-toggle-viewed"),
+      stage: shortcutKeys("git-stage-file"),
+      reset: shortcutKeys("git-reset-file"),
+      down: shortcutKeys("git-scroll-down"),
+      up: shortcutKeys("git-scroll-up"),
+    }).toEqual({
+      next: ["j"],
+      previous: ["k"],
+      open: ["l"],
+      back: ["h"],
+      viewed: ["v"],
+      stage: ["s"],
+      reset: ["r"],
+      down: ["d"],
+      up: ["u"],
+    });
+  });
+
+  it("removes the superseded Ctrl-based diff shortcut identifiers", () => {
+    const ids = new Set(SHORTCUTS.map((shortcut) => shortcut.id));
+    expect(ids).not.toContain("diff-next-file");
+    expect(ids).not.toContain("diff-prev-file");
+    expect(ids).not.toContain("diff-toggle-file");
+    expect(ids).not.toContain("diff-scroll-down");
+    expect(ids).not.toContain("diff-scroll-up");
+    expect(ids).not.toContain("diff-mark-viewed");
+    expect(ids).not.toContain("diff-open-focused-file");
   });
 
   it("scopes new-session to feature pages and gives the agents view its own mod+shift+n", () => {

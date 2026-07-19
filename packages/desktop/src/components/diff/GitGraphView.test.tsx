@@ -7,9 +7,10 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 
 vi.unmock("react-virtuoso");
 
-import { fireEvent, render, screen } from "@/test-utils";
+import { act, fireEvent, render, screen } from "@/test-utils";
 import { GitGraphView } from "./GitGraphView";
 import type { CommitGraphResponse } from "@/api/generated";
+import type { GitNavigationAdapter } from "./gitNavigation";
 
 const commit = {
   sha: "abc123def456",
@@ -26,9 +27,9 @@ const commit = {
   deletions: 0,
 };
 
-function mockGraph(hasMore: boolean): void {
+function mockGraph(hasMore: boolean, commits = [commit]): void {
   const data: CommitGraphResponse = {
-    commits: [commit],
+    commits,
     has_more: hasMore,
     current_branch: "feature/x",
     target_branch: "main",
@@ -100,5 +101,33 @@ describe("GitGraphView", () => {
     expect(screen.queryByText("main")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Branches" }));
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("navigates and opens commits through the Git adapter", () => {
+    const secondCommit = {
+      ...commit,
+      sha: "def456abc123",
+      short_sha: "def456a",
+      message: "Second change",
+    };
+    mockGraph(false, [commit, secondCommit]);
+    const capture: { current: GitNavigationAdapter | null } = { current: null };
+    render(
+      <GitGraphView
+        featureId={1}
+        registerNavigationAdapter={(next) => {
+          capture.current = next;
+          return () => {};
+        }}
+      />,
+    );
+
+    expect(capture.current?.getActiveItem()).toBe(commit.sha);
+    act(() => expect(capture.current?.moveSelection(1)).toBe(true));
+    expect(capture.current?.getActiveItem()).toBe(secondCommit.sha);
+    act(() => expect(capture.current?.open()).toBe(true));
+    expect(screen.getByRole("button", { name: "Commits" })).toBeInTheDocument();
+    act(() => expect(capture.current?.back()).toBe(true));
+    expect(screen.queryByRole("button", { name: "Commits" })).not.toBeInTheDocument();
   });
 });

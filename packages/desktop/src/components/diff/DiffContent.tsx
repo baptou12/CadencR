@@ -45,7 +45,7 @@ interface DiffContentProps {
   selectedCommit: string | null;
   diffMode: "unified" | "split";
   collapsedFiles: Set<string>;
-  focusedFileIndex: number;
+  activeFilePath: string | null;
   viewedFilesSet: Set<string>;
   commentLinesByFile: Map<string, CommentLineData[]>;
   activeCommentWidget: ActiveCommentWidget | null;
@@ -70,7 +70,7 @@ function DiffContentImpl({
   selectedCommit,
   diffMode,
   collapsedFiles,
-  focusedFileIndex,
+  activeFilePath,
   viewedFilesSet,
   commentLinesByFile,
   activeCommentWidget,
@@ -87,7 +87,7 @@ function DiffContentImpl({
 }: DiffContentProps) {
   return (
     <DiffVirtualizer scrollRef={diffAreaRef}>
-      {files.map((file, fileIndex) => (
+      {files.map((file) => (
         <DiffRow
           key={file.file}
           scrollRef={diffAreaRef}
@@ -98,7 +98,7 @@ function DiffContentImpl({
           file={file}
           diffMode={diffMode}
           isCollapsed={collapsedFiles.has(file.file)}
-          isFocused={fileIndex === focusedFileIndex}
+          isFocused={file.file === activeFilePath}
           isFileViewed={viewedFilesSet.has(file.file)}
           showViewedCheckbox={!selectedCommit}
           commentLines={commentLinesByFile.get(file.file)}

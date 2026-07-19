@@ -1,3 +1,10 @@
+import { FileStageState, type ChangedFile } from "@/api/generated";
+import { getGitFileActionAvailability, type GitFileIndexActions } from "./useGitFileIndexActions";
+import {
+  resolvedStageState,
+  useGitDiffFileTreeModel,
+  type GitDiffTreeNavigationAdapter,
+} from "./useGitDiffFileTreeModel";
 import {
   useCallback,
   useEffect,
@@ -9,12 +16,10 @@ import {
   type SetStateAction,
 } from "react";
 import { useDiffData } from "./useDiffData";
-import { useDiffKeyboard } from "./useDiffKeyboard";
 import { useCollapseLargeFilesOnLoad } from "./useLargeFileCollapse";
 import { scrollFileToTop } from "./scroll-to-file";
-import { useGitDiffFileTreeModel } from "./useGitDiffFileTreeModel";
-import type { GitFileIndexActions } from "./useGitFileIndexActions";
 import { openGitFileInEditor } from "./gitFileEditorHandoff";
+import type { GitNavigationAdapterRegistrar, GitNavigationAdapter } from "./gitNavigation";
 
 type DiffData = ReturnType<typeof useDiffData>;
 
@@ -24,16 +29,108 @@ interface UseDiffViewerNavigationOptions {
   indexActions: GitFileIndexActions;
   diffAreaRef: RefObject<HTMLDivElement | null>;
   onOpenFileInEditor?: (filePath: string) => void;
+  indexMutable: boolean;
+  registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
 export interface DiffViewerNavigationState {
   tree: ReturnType<typeof useGitDiffFileTreeModel>;
   collapsedFiles: Set<string>;
   expandedFiles: Set<string>;
-  focusedFileIndex: number;
+  activeFilePath: string | null;
   toggleFile: (filePath: string) => void;
   markFileViewed: (filePath: string) => void;
   unmarkFileViewed: (filePath: string) => void;
+}
+
+interface DiffNavigationAdapterState {
+  tree: GitDiffTreeNavigationAdapter;
+  collapsedFiles: ReadonlySet<string>;
+  fileByPath: ReadonlyMap<string, ChangedFile>;
+  viewedFiles: ReadonlySet<string>;
+  viewedPending: boolean;
+  viewedSupported: boolean;
+  indexActions: GitFileIndexActions;
+  indexMutable: boolean;
+  diffAreaRef: RefObject<HTMLDivElement | null>;
+  revealFile: (filePath: string) => void;
+  collapseFile: (filePath: string) => void;
+  markFileViewed: (filePath: string) => void;
+  unmarkFileViewed: (filePath: string) => void;
+  openFileInEditor?: (filePath: string) => void;
+}
+
+function runIndexAction(state: DiffNavigationAdapterState, action: "stage" | "reset"): boolean {
+  if (!state.indexMutable || state.indexActions.isPending) return false;
+  const path = state.tree.getActivePath();
+  const file = path ? state.fileByPath.get(path) : undefined;
+  if (!file) return false;
+  const stageState = resolvedStageState(file);
+  // Existing reset UI/backend semantics are unsafe for unresolved conflicts:
+  // `git restore --staged` can clear the unmerged index while marker bytes
+  // remain. Phase 3 must never make that path keyboard-reachable.
+  if (action === "reset" && stageState === FileStageState.conflicted) return false;
+  const availability = getGitFileActionAvailability(stageState);
+  if (action === "stage" && availability.canStage) state.indexActions.stage(file.file);
+  else if (action === "reset" && availability.canReset) state.indexActions.reset(file.file);
+  else return false;
+  return true;
+}
+
+function useDiffNavigationAdapter(state: DiffNavigationAdapterState): GitNavigationAdapter {
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  return useMemo<GitNavigationAdapter>(
+    () => ({
+      getActiveItem: () => stateRef.current.tree.getActivePath(),
+      moveSelection: (offset) => {
+        const current = stateRef.current;
+        const path = current.tree.moveSelection(offset);
+        if (!path) return false;
+        current.revealFile(path);
+        return true;
+      },
+      open: () => {
+        const current = stateRef.current;
+        const path = current.tree.getActivePath();
+        if (!path) return false;
+        current.revealFile(path);
+        return true;
+      },
+      back: () => {
+        const current = stateRef.current;
+        const path = current.tree.getActivePath();
+        if (!path) return false;
+        if (!current.collapsedFiles.has(path)) current.collapseFile(path);
+        else return current.tree.focusActive();
+        return true;
+      },
+      toggleViewed: () => {
+        const current = stateRef.current;
+        const path = current.tree.getActivePath();
+        if (!path || !current.viewedSupported || current.viewedPending) return false;
+        if (current.viewedFiles.has(path)) current.unmarkFileViewed(path);
+        else current.markFileViewed(path);
+        return true;
+      },
+      stage: () => runIndexAction(stateRef.current, "stage"),
+      reset: () => runIndexAction(stateRef.current, "reset"),
+      scrollHalfPage: (direction) => {
+        const area = stateRef.current.diffAreaRef.current;
+        if (!area) return false;
+        area.scrollBy({ top: direction * (area.clientHeight / 2), behavior: "smooth" });
+        return true;
+      },
+      openInEditor: () => {
+        const current = stateRef.current;
+        const path = current.tree.getActivePath();
+        if (!path || !current.openFileInEditor) return false;
+        current.openFileInEditor(path);
+        return true;
+      },
+    }),
+    [],
+  );
 }
 
 function useViewedFileActions(
@@ -91,13 +188,9 @@ function useCollapseInitialization(
 }
 
 function useFocusedFileEditorOpener(
-  data: DiffData,
+  fileByPath: ReadonlyMap<string, ChangedFile>,
   onOpenFileInEditor: ((filePath: string) => void) | undefined,
 ): (filePath: string) => void {
-  const fileByPath = useMemo(
-    () => new Map(data.changedFiles.map((file) => [file.file, file])),
-    [data.changedFiles],
-  );
   return useCallback(
     (filePath: string): void => {
       const file = fileByPath.get(filePath);
@@ -115,6 +208,8 @@ export function useDiffViewerNavigation({
   indexActions,
   diffAreaRef,
   onOpenFileInEditor,
+  indexMutable,
+  registerNavigationAdapter,
 }: UseDiffViewerNavigationOptions): DiffViewerNavigationState {
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const revealFile = useCallback(
@@ -135,24 +230,18 @@ export function useDiffViewerNavigation({
     indexActions,
     onSelectionChange: revealFile,
   });
-  const focusedFileIndex = tree.activePath ? data.fileNames.indexOf(tree.activePath) : -1;
   useCollapseInitialization(data, setCollapsedFiles);
-  const openFocusedFileInEditor = useFocusedFileEditorOpener(data, onOpenFileInEditor);
+  const fileByPath = useMemo(
+    () => new Map(data.changedFiles.map((file) => [file.file, file])),
+    [data.changedFiles],
+  );
+  const openFocusedFileInEditor = useFocusedFileEditorOpener(fileByPath, onOpenFileInEditor);
 
-  const selectFileIndex = useCallback(
-    (index: number): void => {
-      const filePath = data.fileNames[index];
-      if (filePath) tree.navigation.selectPath(filePath);
-    },
-    [data.fileNames, tree.navigation],
-  );
-  const scrollToFileIndex = useCallback(
-    (index: number): void => {
-      const filePath = data.fileNames[index];
-      if (filePath) revealFile(filePath);
-    },
-    [data.fileNames, revealFile],
-  );
+  const collapseFile = useCallback((filePath: string): void => {
+    setCollapsedFiles((previous) =>
+      previous.has(filePath) ? previous : new Set([...previous, filePath]),
+    );
+  }, []);
   const toggleFile = useCallback(
     (filePath: string): void => {
       tree.navigation.selectPath(filePath);
@@ -171,38 +260,35 @@ export function useDiffViewerNavigation({
     setCollapsedFiles,
   );
 
-  useDiffKeyboard({
-    fileNames: data.fileNames,
-    focusedFileIndex,
-    setFocusedFileIndex: selectFileIndex,
-    scrollToFileIndex,
-    toggleFile,
-    viewedFilesSet: data.viewedFilesSet,
+  const expandedFiles = useExpandedFiles(data, collapsedFiles);
+  const adapter = useDiffNavigationAdapter({
+    tree: tree.navigation,
+    collapsedFiles,
+    fileByPath,
+    viewedFiles: data.viewedFilesSet,
+    viewedPending: data.markViewed.isPending || data.unmarkViewed.isPending,
+    viewedSupported: data.selectedCommit === null,
+    indexActions,
+    indexMutable,
+    diffAreaRef,
+    revealFile,
+    collapseFile,
     markFileViewed,
     unmarkFileViewed,
-    diffAreaRef,
-    onOpenFocusedFileInEditor: onOpenFileInEditor ? openFocusedFileInEditor : undefined,
+    openFileInEditor: onOpenFileInEditor ? openFocusedFileInEditor : undefined,
   });
-  const expandedFiles = useExpandedFiles(data, collapsedFiles);
+  useEffect(() => registerNavigationAdapter?.(adapter), [adapter, registerNavigationAdapter]);
 
   return useMemo(
     () => ({
       tree,
       collapsedFiles,
       expandedFiles,
-      focusedFileIndex,
+      activeFilePath: tree.activePath,
       toggleFile,
       markFileViewed,
       unmarkFileViewed,
     }),
-    [
-      collapsedFiles,
-      expandedFiles,
-      focusedFileIndex,
-      markFileViewed,
-      toggleFile,
-      tree,
-      unmarkFileViewed,
-    ],
+    [collapsedFiles, expandedFiles, markFileViewed, toggleFile, tree, unmarkFileViewed],
   );
 }

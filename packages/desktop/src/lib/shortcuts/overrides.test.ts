@@ -35,6 +35,38 @@ describe("overrides store", () => {
 });
 
 describe("useResolvedShortcut", () => {
+  it.each([
+    ["diff-next-file", "git-next-item"],
+    ["diff-prev-file", "git-previous-item"],
+    ["diff-toggle-file", "git-open-item"],
+    ["diff-scroll-down", "git-scroll-down"],
+    ["diff-scroll-up", "git-scroll-up"],
+    ["diff-mark-viewed", "git-toggle-viewed"],
+    ["diff-open-focused-file", "git-open-in-editor"],
+  ] as const)("reads stored %s overrides through %s", (legacyId, replacementId) => {
+    useShortcutOverridesStore.setState({
+      overrides: { [legacyId]: { keys: ["ctrl", "j"] } },
+    });
+
+    const { result } = renderHook(() => useResolvedShortcut(replacementId));
+
+    expect(result.current.keys).toEqual(["ctrl", "j"]);
+  });
+
+  it("migrates a legacy override when the replacement id is rebound", () => {
+    useShortcutOverridesStore.setState({
+      overrides: { "diff-next-file": { keys: ["ctrl", "j"] } },
+    });
+
+    act(() => {
+      useShortcutOverridesStore.getState().setOverride("git-next-item", { keys: ["alt", "j"] });
+    });
+
+    expect(useShortcutOverridesStore.getState().overrides).toEqual({
+      "git-next-item": { keys: ["alt", "j"] },
+    });
+  });
+
   it("does NOT re-render when an unrelated override changes (narrow selector)", () => {
     let renders = 0;
     renderHook(() => {

@@ -5,6 +5,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
 import type { GraphRow } from "@/lib/git-graph-layout";
 import { SlidingText } from "@/components/SlidingText";
+import { cn } from "@/lib/utils";
 import { CommitItemHoverCard, formatRelativeDate, type CommitEntry } from "./DiffFileTreeHelpers";
 
 export const ROW_HEIGHT = 46;
@@ -120,6 +121,7 @@ interface GitGraphRowProps {
   onOpenCommit: (sha: string) => void;
   /** Open this commit on the remote host (GitHub/GitLab/…). */
   onOpenOnline: (sha: string) => void;
+  active?: boolean;
 }
 
 export const GitGraphRow = memo(function GitGraphRow({
@@ -128,6 +130,7 @@ export const GitGraphRow = memo(function GitGraphRow({
   columns,
   onOpenCommit,
   onOpenOnline,
+  active = false,
 }: GitGraphRowProps): ReactElement {
   return (
     <ContextMenu>
@@ -140,8 +143,12 @@ export const GitGraphRow = memo(function GitGraphRow({
             <button
               type="button"
               onClick={() => onOpenCommit(commit.sha)}
+              aria-current={active ? "true" : undefined}
               style={{ height: ROW_HEIGHT }}
-              className="flex w-full items-center gap-2 px-2 text-left transition-colors hover:bg-accent/60"
+              className={cn(
+                "flex w-full items-center gap-2 px-2 text-left transition-colors hover:bg-accent/60",
+                active && "bg-accent/70 ring-1 ring-inset ring-primary",
+              )}
             >
               <GraphCell row={row} columns={columns} isPushed={commit.isPushed} />
               <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 py-1">

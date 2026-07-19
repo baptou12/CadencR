@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act, render, screen, within } from "@/test-utils";
 import type { FileDiffSection } from "@/lib/parse-unified-diff";
+import type { GitNavigationAdapter, GitNavigationAdapterRegistrar } from "./gitNavigation";
 
 const singleFileDiff = `diff --git a/src/foo.ts b/src/foo.ts
 index abc..def 100644
@@ -37,6 +38,12 @@ const mocks = vi.hoisted(() => {
       },
   );
   const useMutationMock = vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
+  const stageMutate = vi.fn();
+  const resetMutate = vi.fn();
+  const markViewedMutate = vi.fn();
+  const unmarkViewedMutate = vi.fn();
+  const useMarkViewedMock = vi.fn(() => ({ mutate: markViewedMutate, isPending: false }));
+  const useUnmarkViewedMock = vi.fn(() => ({ mutate: unmarkViewedMutate, isPending: false }));
   const useGetFileContentMock = vi.fn(() => ({ data: undefined }));
   const useGetFileBlobShasMock = vi.fn<() => { data: unknown[] }>(() => ({ data: [] }));
   const useListDiffViewedMock = vi.fn<() => { data: unknown[] }>(() => ({ data: [] }));
@@ -77,6 +84,12 @@ const mocks = vi.hoisted(() => {
   return {
     useGetChangedFilesMock,
     useMutationMock,
+    stageMutate,
+    resetMutate,
+    markViewedMutate,
+    unmarkViewedMutate,
+    useMarkViewedMock,
+    useUnmarkViewedMock,
     useGetFileContentMock,
     useGetFileBlobShasMock,
     useListDiffViewedMock,
@@ -121,14 +134,14 @@ vi.mock("@/api/generated", () => ({
   getListDiffViewedQueryKey: vi.fn((id?: number) => ["/api/features", id, "diff-viewed"]),
   getListDiffCommentsQueryKey: vi.fn((id?: number) => ["/api/features", id, "diff-comments"]),
   useListDiffViewed: mocks.useListDiffViewedMock,
-  useMarkDiffViewed: mocks.useMutationMock,
-  useUnmarkDiffViewed: mocks.useMutationMock,
+  useMarkDiffViewed: mocks.useMarkViewedMock,
+  useUnmarkDiffViewed: mocks.useUnmarkViewedMock,
   useListDiffComments: vi.fn(() => ({ data: [] })),
   useCreateDiffComment: mocks.useMutationMock,
   useUpdateDiffComment: mocks.useMutationMock,
   useDeleteDiffComment: mocks.useMutationMock,
-  useStageFile: mocks.useMutationMock,
-  useResetFile: mocks.useMutationMock,
+  useStageFile: () => ({ mutate: mocks.stageMutate }),
+  useResetFile: () => ({ mutate: mocks.resetMutate }),
 }));
 
 vi.mock("./useFileDiffSection", () => ({
@@ -173,12 +186,45 @@ function withFooFile(): void {
   mocks.useGetChangedFilesMock.mockReturnValue({ data: [fooFile], isLoading: false });
 }
 
+function createAdapterCapture(): {
+  current: GitNavigationAdapter | null;
+  register: GitNavigationAdapterRegistrar;
+} {
+  const capture: {
+    current: GitNavigationAdapter | null;
+    register: GitNavigationAdapterRegistrar;
+  } = {
+    current: null,
+    register: (adapter) => {
+      capture.current = adapter;
+      return () => {
+        if (capture.current === adapter) capture.current = null;
+      };
+    },
+  };
+  return capture;
+}
+
 beforeEach(() => {
   mocks.persistFileListCollapsedMock.mockReset();
   mocks.persistTreeDisplayModeMock.mockReset();
   mocks.useTreeDisplaySettingMock.mockClear();
   mocks.shortcutCallbacks.clear();
   mocks.toastInfo.mockReset();
+  mocks.stageMutate.mockReset();
+  mocks.resetMutate.mockReset();
+  mocks.markViewedMutate.mockReset();
+  mocks.unmarkViewedMutate.mockReset();
+  mocks.useMarkViewedMock.mockReset();
+  mocks.useMarkViewedMock.mockReturnValue({
+    mutate: mocks.markViewedMutate,
+    isPending: false,
+  });
+  mocks.useUnmarkViewedMock.mockReset();
+  mocks.useUnmarkViewedMock.mockReturnValue({
+    mutate: mocks.unmarkViewedMutate,
+    isPending: false,
+  });
   mocks.patchDiffViewMock.mockClear();
   mocks.useDebouncedSettingMock.mockReset();
   mocks.useGetChangedFilesMock.mockReset();
@@ -310,16 +356,169 @@ describe("DiffViewer", () => {
       isLoading: false,
     });
     const openFileInEditor = vi.fn();
-    render(<DiffViewer featureId={1} mode="worktree" onOpenFileInEditor={openFileInEditor} />);
-    const shortcutEvent = new KeyboardEvent("keydown", { key: "o", metaKey: true });
+    const adapter = createAdapterCapture();
+    render(
+      <DiffViewer
+        featureId={1}
+        mode="uncommitted"
+        onOpenFileInEditor={openFileInEditor}
+        registerNavigationAdapter={adapter.register}
+      />,
+    );
 
-    act(() => mocks.shortcutCallbacks.get("diff-next-file")?.(shortcutEvent));
-    act(() => mocks.shortcutCallbacks.get("diff-open-focused-file")?.(shortcutEvent));
+    act(() => adapter.current?.moveSelection(1));
+    act(() => adapter.current?.openInEditor?.());
 
     expect(openFileInEditor).not.toHaveBeenCalled();
     expect(mocks.toastInfo).toHaveBeenCalledWith("Cannot open deleted.ts in Editor", {
       description: "Both sides deleted this file. Stage the deletion to resolve the conflict.",
     });
+  });
+
+  it("stages only the exact selected eligible file", () => {
+    const adapter = createAdapterCapture();
+    withFooFile();
+    render(
+      <DiffViewer featureId={7} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    expect(adapter.current?.stage?.()).toBe(true);
+
+    expect(mocks.stageMutate).toHaveBeenCalledOnce();
+    expect(mocks.stageMutate).toHaveBeenCalledWith({
+      data: { feature_id: 7, file_path: "src/foo.ts" },
+    });
+  });
+
+  it("toggles viewed for only the selected supported file", () => {
+    const adapter = createAdapterCapture();
+    withFooFile();
+    render(
+      <DiffViewer featureId={8} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    expect(adapter.current?.toggleViewed?.()).toBe(true);
+
+    expect(mocks.markViewedMutate).toHaveBeenCalledWith({
+      featureId: 8,
+      data: {
+        feature_id: 8,
+        file_path: "src/foo.ts",
+        blob_sha: "",
+      },
+    });
+    expect(mocks.unmarkViewedMutate).not.toHaveBeenCalled();
+  });
+
+  it("suppresses viewed toggles while the viewed mutation is pending", () => {
+    mocks.useMarkViewedMock.mockReturnValue({
+      mutate: mocks.markViewedMutate,
+      isPending: true,
+    });
+    const adapter = createAdapterCapture();
+    withFooFile();
+    render(
+      <DiffViewer featureId={8} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    expect(adapter.current?.toggleViewed?.()).toBe(false);
+    expect(mocks.markViewedMutate).not.toHaveBeenCalled();
+  });
+
+  it("resets only the exact selected eligible staged file", () => {
+    mocks.useGetChangedFilesMock.mockReturnValue({
+      data: [{ ...fooFile, is_staged: true, stage_state: "staged" }],
+      isLoading: false,
+    });
+    const adapter = createAdapterCapture();
+    render(
+      <DiffViewer featureId={9} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    expect(adapter.current?.reset?.()).toBe(true);
+
+    expect(mocks.resetMutate).toHaveBeenCalledOnce();
+    expect(mocks.resetMutate).toHaveBeenCalledWith({
+      data: { feature_id: 9, file_path: "src/foo.ts" },
+    });
+  });
+
+  it("suppresses reset for an unresolved conflicted row", () => {
+    mocks.useGetChangedFilesMock.mockReturnValue({
+      data: [{ ...fooFile, status: "UU", stage_state: "conflicted", conflict_kind: "uu" }],
+      isLoading: false,
+    });
+    const adapter = createAdapterCapture();
+    render(
+      <DiffViewer featureId={11} mode="worktree" registerNavigationAdapter={adapter.register} />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    expect(adapter.current?.reset?.()).toBe(false);
+    expect(mocks.resetMutate).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch stage or reset for a read-only revision", () => {
+    const adapter = createAdapterCapture();
+    withFooFile();
+    render(
+      <DiffViewer
+        featureId={13}
+        mode="worktree"
+        commitSha="abc123"
+        registerNavigationAdapter={adapter.register}
+      />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    expect(adapter.current?.stage?.()).toBe(false);
+    expect(adapter.current?.reset?.()).toBe(false);
+    expect(adapter.current?.toggleViewed?.()).toBe(false);
+    expect(mocks.stageMutate).not.toHaveBeenCalled();
+    expect(mocks.resetMutate).not.toHaveBeenCalled();
+  });
+
+  it("navigates VS Target while keeping index mutations unavailable", () => {
+    const adapter = createAdapterCapture();
+    withFooFile();
+    render(
+      <DiffViewer
+        featureId={14}
+        mode="branch"
+        targetBranch="origin/main"
+        registerNavigationAdapter={adapter.register}
+      />,
+    );
+
+    expect(adapter.current?.moveSelection(1)).toBe(true);
+    expect(adapter.current?.getActiveItem()).toBe("src/foo.ts");
+    expect(adapter.current?.open()).toBe(true);
+    expect(adapter.current?.stage?.()).toBe(false);
+    expect(adapter.current?.reset?.()).toBe(false);
+    expect(mocks.stageMutate).not.toHaveBeenCalled();
+    expect(mocks.resetMutate).not.toHaveBeenCalled();
+  });
+
+  it("keeps stage/reset single-flight while the exact row is pending", () => {
+    const adapter = createAdapterCapture();
+    withFooFile();
+    render(
+      <DiffViewer featureId={15} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    act(() => {
+      adapter.current?.stage?.();
+      adapter.current?.stage?.();
+      adapter.current?.reset?.();
+    });
+
+    expect(mocks.stageMutate).toHaveBeenCalledOnce();
+    expect(mocks.resetMutate).not.toHaveBeenCalled();
   });
 
   it("renders split/unified toggle buttons", () => {

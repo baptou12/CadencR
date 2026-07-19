@@ -1,7 +1,8 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, fireEvent, render, renderHook } from "@testing-library/react";
 import type { FileTreeDirectoryHandle } from "@pierre/trees";
 import { describe, expect, it, vi } from "vitest";
 import { FileStageState, type ChangedFile } from "@/api/generated";
+import { CadencrFileTree } from "@/components/file-tree/CadencrFileTree";
 import type { GitFileIndexActions } from "./useGitFileIndexActions";
 
 vi.mock("@/hooks/useFileTreeIconSet", () => ({
@@ -83,6 +84,139 @@ describe("useGitDiffFileTreeModel display mode", () => {
     expect(restoredDirectory.isExpanded()).toBe(false);
     expect(newDirectory.isExpanded()).toBe(true);
 
+    unmount();
+  });
+
+  it("moves through Pierre's filename presentation order instead of API order", () => {
+    const files = [changedFile("a/zeta.ts"), changedFile("z/alpha.ts")];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({
+        files,
+        viewedFiles: new Set(),
+        indexActions,
+        onSelectionChange: vi.fn(),
+      }),
+    );
+
+    act(() => result.current.setDisplayMode("filenames"));
+    act(() => result.current.navigation.selectPath("z/alpha.ts"));
+
+    let movedPath: string | null = null;
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(1);
+    });
+
+    expect(movedPath).toBe("a/zeta.ts");
+    expect(result.current.model.getFocusedPath()).toBe("zeta.ts");
+    expect(result.current.activePath).toBe("a/zeta.ts");
+
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(-1);
+    });
+    expect(movedPath).toBe("z/alpha.ts");
+    expect(result.current.model.getFocusedPath()).toBe("alpha.ts");
+    expect(result.current.activePath).toBe("z/alpha.ts");
+    unmount();
+  });
+
+  it("skips hidden nonmatches after a retained Pierre search loses focus", () => {
+    const files = [
+      changedFile("src/alpha-match.ts"),
+      changedFile("src/beta-hidden.ts"),
+      changedFile("src/zeta-match.ts"),
+    ];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({
+        files,
+        viewedFiles: new Set(),
+        indexActions,
+        onSelectionChange: vi.fn(),
+      }),
+    );
+
+    act(() => result.current.model.setSearch("match"));
+    const tree = render(<CadencrFileTree model={result.current.model} />);
+    const searchInput = result.current.model
+      .getFileTreeContainer()
+      ?.shadowRoot?.querySelector<HTMLInputElement>("[data-file-tree-search-input]");
+    expect(searchInput).not.toBeNull();
+    fireEvent.blur(searchInput as HTMLInputElement);
+    expect(result.current.model.getSearchValue()).toBe("match");
+
+    act(() => result.current.navigation.selectPath("src/alpha-match.ts"));
+    let movedPath: string | null = null;
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(1);
+    });
+
+    expect(movedPath).toBe("src/zeta-match.ts");
+    expect(result.current.model.getFocusedPath()).toBe("src/zeta-match.ts");
+    expect(result.current.activePath).toBe("src/zeta-match.ts");
+    tree.unmount();
+    unmount();
+  });
+
+  it("does not move selection after a retained zero-result search loses focus", () => {
+    const files = [changedFile("src/alpha.ts"), changedFile("src/beta.ts")];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({
+        files,
+        viewedFiles: new Set(),
+        indexActions,
+        onSelectionChange: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      result.current.navigation.selectPath("src/alpha.ts");
+      result.current.model.setSearch("no-results");
+    });
+    const tree = render(<CadencrFileTree model={result.current.model} />);
+    const searchInput = result.current.model
+      .getFileTreeContainer()
+      ?.shadowRoot?.querySelector<HTMLInputElement>("[data-file-tree-search-input]");
+    expect(searchInput).not.toBeNull();
+    fireEvent.blur(searchInput as HTMLInputElement);
+    expect(result.current.model.getSearchValue()).toBe("no-results");
+
+    const selectedBeforeMove = result.current.model.getSelectedPaths();
+    const focusedBeforeMove = result.current.model.getFocusedPath();
+    let movedPath: string | null = "unexpected";
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(1);
+    });
+
+    expect(movedPath).toBeNull();
+    expect(result.current.model.getSelectedPaths()).toEqual(selectedBeforeMove);
+    expect(result.current.model.getFocusedPath()).toBe(focusedBeforeMove);
+    tree.unmount();
+    unmount();
+  });
+
+  it("skips files hidden by collapsed directories in Pierre tree order", () => {
+    const files = [changedFile("a/alpha.ts"), changedFile("b/beta.ts"), changedFile("root.ts")];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({
+        files,
+        viewedFiles: new Set(),
+        indexActions,
+        onSelectionChange: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      (result.current.model.getItem("b/") as FileTreeDirectoryHandle).collapse();
+      result.current.navigation.selectPath("a/alpha.ts");
+    });
+
+    let movedPath: string | null = null;
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(1);
+    });
+
+    expect(movedPath).toBe("root.ts");
+    expect(result.current.model.getFocusedPath()).toBe("root.ts");
+    expect(result.current.activePath).toBe("root.ts");
     unmount();
   });
 });

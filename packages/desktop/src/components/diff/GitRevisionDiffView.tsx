@@ -1,6 +1,7 @@
 import { ArrowLeftIcon } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { DiffViewer } from "./DiffViewer";
+import type { GitNavigationAdapterRegistrar } from "./gitNavigation";
 
 interface GitRevisionDiffViewProps {
   featureId: number;
@@ -10,6 +11,7 @@ interface GitRevisionDiffViewProps {
   message: string | undefined;
   onBack: () => void;
   trailingAction?: ReactNode;
+  registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
 /** Shared frame for commit-like revisions opened from Git list views. */
@@ -21,6 +23,7 @@ export function GitRevisionDiffView({
   message,
   onBack,
   trailingAction,
+  registerNavigationAdapter,
 }: GitRevisionDiffViewProps): ReactElement {
   return (
     <div className="flex h-full flex-col">
@@ -38,7 +41,12 @@ export function GitRevisionDiffView({
         {trailingAction}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <DiffViewer featureId={featureId} mode="worktree" commitSha={revision} />
+        <DiffViewer
+          featureId={featureId}
+          mode="worktree"
+          commitSha={revision}
+          registerNavigationAdapter={registerNavigationAdapter}
+        />
       </div>
     </div>
   );

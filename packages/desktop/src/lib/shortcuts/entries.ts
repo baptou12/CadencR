@@ -334,26 +334,34 @@ const APP_SHORTCUTS = [
   { id: "q-prev", keys: ["left"], description: "Previous question", scope: "question-drawer" },
   { id: "q-next", keys: ["right"], description: "Next question", scope: "question-drawer" },
 
-  // ─── Diff viewer ─────────────────────────────────────────────────────
-  { id: "diff-next-file", keys: ["ctrl", "j"], description: "Next file", scope: "diff-viewer" },
-  { id: "diff-prev-file", keys: ["ctrl", "k"], description: "Previous file", scope: "diff-viewer" },
-  { id: "diff-toggle-file", keys: ["ctrl", "l"], description: "Toggle file", scope: "diff-viewer" },
+  // ─── Git tab ─────────────────────────────────────────────────────────
+  { id: "git-next-item", keys: ["j"], description: "Next item", scope: "diff-viewer" },
+  { id: "git-previous-item", keys: ["k"], description: "Previous item", scope: "diff-viewer" },
+  { id: "git-open-item", keys: ["l"], description: "Open or expand item", scope: "diff-viewer" },
+  { id: "git-back", keys: ["h"], description: "Collapse or go back", scope: "diff-viewer" },
   {
-    id: "diff-scroll-down",
-    keys: ["ctrl", "d"],
+    id: "git-scroll-down",
+    keys: ["d"],
     description: "Scroll half-page down",
     scope: "diff-viewer",
   },
   {
-    id: "diff-scroll-up",
-    keys: ["ctrl", "u"],
+    id: "git-scroll-up",
+    keys: ["u"],
     description: "Scroll half-page up",
     scope: "diff-viewer",
   },
   {
-    id: "diff-mark-viewed",
-    keys: ["ctrl", "h"],
-    description: "Mark file viewed / unviewed",
+    id: "git-toggle-viewed",
+    keys: ["v"],
+    description: "Toggle selected file viewed",
+    scope: "diff-viewer",
+  },
+  { id: "git-stage-file", keys: ["s"], description: "Stage selected file", scope: "diff-viewer" },
+  {
+    id: "git-reset-file",
+    keys: ["r"],
+    description: "Unstage selected file (preserve worktree)",
     scope: "diff-viewer",
   },
   {
@@ -369,9 +377,9 @@ const APP_SHORTCUTS = [
     scope: "diff-viewer",
   },
   {
-    id: "diff-open-focused-file",
+    id: "git-open-in-editor",
     keys: ["mod", "o"],
-    description: "Open focused file in editor",
+    description: "Open selected file in editor",
     scope: "diff-viewer",
   },
 ] as const satisfies readonly Shortcut[];
