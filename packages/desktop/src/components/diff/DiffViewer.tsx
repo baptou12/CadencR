@@ -141,6 +141,7 @@ function LoadedDiffViewer({
         collapsedFiles={navigation.collapsedFiles}
         activeFilePath={navigation.activeFilePath}
         viewedFilesSet={data.viewedFilesSet}
+        isViewedPending={data.markViewed.isPending || data.unmarkViewed.isPending}
         commentLinesByFile={comments.commentLinesByFile}
         activeCommentWidget={comments.activeCommentWidget}
         memoizedActiveWidget={comments.activeWidget}
@@ -189,7 +190,6 @@ function LoadedDiffViewer({
     ),
     [data.changedFiles, fileList, indexActions, navigation, openFileInEditor],
   );
-
   return (
     <DiffViewerLayout
       data={data}

@@ -36,6 +36,7 @@ export interface DiffFileBlockProps {
   isCollapsed: boolean;
   isFocused: boolean;
   isFileViewed: boolean;
+  isViewedPending: boolean;
   showViewedCheckbox: boolean;
   commentLines?: CommentLineData[];
   activeWidget?: ActiveWidget | null;
@@ -199,6 +200,7 @@ function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patc
     isCollapsed,
     isFocused,
     isFileViewed,
+    isViewedPending,
     showViewedCheckbox,
     onToggleFile,
     onMarkViewedFile,
@@ -230,6 +232,7 @@ function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patc
       isCollapsed={isCollapsed}
       isFocused={isFocused}
       isFileViewed={isFileViewed}
+      isViewedPending={isViewedPending}
       showViewedCheckbox={showViewedCheckbox}
       statusIcon={
         <DiffStatusIcon type={deriveChangeTypeFromStatus(status)} appearance={themeAppearance} />

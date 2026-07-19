@@ -47,6 +47,7 @@ interface DiffContentProps {
   collapsedFiles: Set<string>;
   activeFilePath: string | null;
   viewedFilesSet: Set<string>;
+  isViewedPending: boolean;
   commentLinesByFile: Map<string, CommentLineData[]>;
   activeCommentWidget: ActiveCommentWidget | null;
   memoizedActiveWidget: ActiveWidget | null;
@@ -72,6 +73,7 @@ function DiffContentImpl({
   collapsedFiles,
   activeFilePath,
   viewedFilesSet,
+  isViewedPending,
   commentLinesByFile,
   activeCommentWidget,
   memoizedActiveWidget,
@@ -86,35 +88,43 @@ function DiffContentImpl({
   themeId,
 }: DiffContentProps) {
   return (
-    <DiffVirtualizer scrollRef={diffAreaRef}>
-      {files.map((file) => (
-        <DiffRow
-          key={file.file}
-          scrollRef={diffAreaRef}
-          featureId={featureId}
-          mode={mode}
-          targetBranch={targetBranch}
-          commitSha={selectedCommit}
-          file={file}
-          diffMode={diffMode}
-          isCollapsed={collapsedFiles.has(file.file)}
-          isFocused={file.file === activeFilePath}
-          isFileViewed={viewedFilesSet.has(file.file)}
-          showViewedCheckbox={!selectedCommit}
-          commentLines={commentLinesByFile.get(file.file)}
-          activeWidget={activeCommentWidget?.filePath === file.file ? memoizedActiveWidget : null}
-          commentCallbacks={commentCallbacks}
-          onToggleFile={onToggleFile}
-          onMarkViewedFile={onMarkViewedFile}
-          onUnmarkViewedFile={onUnmarkViewedFile}
-          onOpenFileInEditor={onOpenFileInEditor}
-          indexActions={indexActions}
-          onAddComment={onAddComment}
-          themeAppearance={themeAppearance}
-          themeId={themeId}
-        />
-      ))}
-    </DiffVirtualizer>
+    <>
+      <DiffVirtualizer scrollRef={diffAreaRef}>
+        {files.map((file) => (
+          <DiffRow
+            key={file.file}
+            scrollRef={diffAreaRef}
+            featureId={featureId}
+            mode={mode}
+            targetBranch={targetBranch}
+            commitSha={selectedCommit}
+            file={file}
+            diffMode={diffMode}
+            isCollapsed={collapsedFiles.has(file.file)}
+            isFocused={file.file === activeFilePath}
+            isFileViewed={viewedFilesSet.has(file.file)}
+            isViewedPending={isViewedPending}
+            showViewedCheckbox={!selectedCommit}
+            commentLines={commentLinesByFile.get(file.file)}
+            activeWidget={activeCommentWidget?.filePath === file.file ? memoizedActiveWidget : null}
+            commentCallbacks={commentCallbacks}
+            onToggleFile={onToggleFile}
+            onMarkViewedFile={onMarkViewedFile}
+            onUnmarkViewedFile={onUnmarkViewedFile}
+            onOpenFileInEditor={onOpenFileInEditor}
+            indexActions={indexActions}
+            onAddComment={onAddComment}
+            themeAppearance={themeAppearance}
+            themeId={themeId}
+          />
+        ))}
+      </DiffVirtualizer>
+      {isViewedPending && (
+        <span className="sr-only" role="status">
+          Updating viewed state
+        </span>
+      )}
+    </>
   );
 }
 

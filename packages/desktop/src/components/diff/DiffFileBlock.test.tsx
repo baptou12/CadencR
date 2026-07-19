@@ -86,6 +86,7 @@ const baseProps = {
   themeId: "dracula" as const,
   isFocused: false,
   isFileViewed: false,
+  isViewedPending: false,
   showViewedCheckbox: true,
   onToggleFile: vi.fn(),
   onMarkViewedFile: vi.fn(),
@@ -158,6 +159,106 @@ describe("DiffFileBlock", () => {
     await user.click(screen.getByRole("button", { name: "Open src/foo.ts in editor" }));
 
     expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", undefined);
+  });
+
+  it("exposes the Viewed checkbox by name and toggles it through its visible label", async () => {
+    const onMarkViewedFile = vi.fn();
+    const onUnmarkViewedFile = vi.fn();
+    const { rerender, user } = render(
+      <DiffFileBlock
+        {...baseProps}
+        isCollapsed
+        onMarkViewedFile={onMarkViewedFile}
+        onUnmarkViewedFile={onUnmarkViewedFile}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: "Viewed" })).not.toBeChecked();
+    await user.click(screen.getByText("Viewed"));
+    expect(onMarkViewedFile).toHaveBeenCalledWith("src/foo.ts");
+    expect(onUnmarkViewedFile).not.toHaveBeenCalled();
+
+    rerender(
+      <DiffFileBlock
+        {...baseProps}
+        isCollapsed
+        isFileViewed
+        onMarkViewedFile={onMarkViewedFile}
+        onUnmarkViewedFile={onUnmarkViewedFile}
+      />,
+    );
+
+    expect(screen.getByRole("checkbox", { name: "Viewed" })).toBeChecked();
+    await user.click(screen.getByText("Viewed"));
+    expect(onUnmarkViewedFile).toHaveBeenCalledWith("src/foo.ts");
+  });
+
+  it("toggles the Viewed checkbox with Space", async () => {
+    const onMarkViewedFile = vi.fn();
+    const { user } = render(
+      <DiffFileBlock {...baseProps} isCollapsed onMarkViewedFile={onMarkViewedFile} />,
+    );
+    const checkbox = screen.getByRole("checkbox", { name: "Viewed" });
+
+    checkbox.focus();
+    await user.keyboard(" ");
+
+    expect(onMarkViewedFile).toHaveBeenCalledWith("src/foo.ts");
+  });
+
+  it("announces and disables the Viewed checkbox while its mutation is pending", async () => {
+    const onMarkViewedFile = vi.fn();
+    const onUnmarkViewedFile = vi.fn();
+    const { user } = render(
+      <DiffFileBlock
+        {...baseProps}
+        isCollapsed
+        isViewedPending
+        onMarkViewedFile={onMarkViewedFile}
+        onUnmarkViewedFile={onUnmarkViewedFile}
+      />,
+    );
+    const checkbox = screen.getByRole("checkbox", { name: "Viewed" });
+
+    expect(checkbox).toBeDisabled();
+    expect(checkbox).toHaveAttribute("aria-busy", "true");
+    expect(checkbox).toHaveAccessibleDescription("Updating viewed state");
+
+    await user.click(screen.getByText("Viewed"));
+    checkbox.focus();
+    await user.keyboard(" ");
+
+    expect(onMarkViewedFile).not.toHaveBeenCalled();
+    expect(onUnmarkViewedFile).not.toHaveBeenCalled();
+  });
+
+  it("uses unique valid label associations for repeated diff headers", async () => {
+    const onMarkViewedFile = vi.fn();
+    const { user } = render(
+      <>
+        <DiffFileBlock {...baseProps} isCollapsed onMarkViewedFile={onMarkViewedFile} />
+        <DiffFileBlock
+          {...baseProps}
+          file={{ ...baseProps.file, file: "src/bar.ts" }}
+          isCollapsed
+          onMarkViewedFile={onMarkViewedFile}
+        />
+      </>,
+    );
+    const checkboxes = screen.getAllByRole("checkbox", { name: "Viewed" });
+    const labels = screen.getAllByText("Viewed");
+    const checkboxIds = checkboxes.map((checkbox) => checkbox.id);
+
+    expect(checkboxes).toHaveLength(2);
+    expect(new Set(checkboxIds)).toHaveProperty("size", 2);
+    for (const [index, label] of labels.entries()) {
+      expect(label).toHaveAttribute("for", checkboxIds[index]);
+      expect(document.getElementById(checkboxIds[index])).toBe(checkboxes[index]);
+    }
+
+    await user.click(labels[1]);
+    expect(onMarkViewedFile).toHaveBeenCalledOnce();
+    expect(onMarkViewedFile).toHaveBeenCalledWith("src/bar.ts");
   });
 
   it("renders an image preview for binary image patches", () => {

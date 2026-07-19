@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from "react";
+import { useId, type ReactElement, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ChangedFile } from "@/api/generated";
 import type { ThemeAppearance } from "@/lib/themes";
@@ -16,6 +16,7 @@ interface DiffFileHeaderProps {
   isCollapsed: boolean;
   isFocused: boolean;
   isFileViewed: boolean;
+  isViewedPending: boolean;
   showViewedCheckbox: boolean;
   statusIcon?: ReactNode;
   themeAppearance: ThemeAppearance;
@@ -37,6 +38,7 @@ interface DiffFileHeaderPrefixProps {
 
 interface DiffFileHeaderViewedProps {
   isFileViewed: boolean;
+  isPending: boolean;
   onMarkViewed: () => void;
   onUnmarkViewed: () => void;
 }
@@ -81,28 +83,37 @@ function DiffFileHeaderPrefix({
 
 function DiffFileHeaderViewed({
   isFileViewed,
+  isPending,
   onMarkViewed,
   onUnmarkViewed,
 }: DiffFileHeaderViewedProps): ReactElement {
+  const checkboxId = useId();
+  const pendingDescriptionId = `${checkboxId}-pending`;
   return (
     <div className="ml-2 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
       <Checkbox
+        id={checkboxId}
         checked={isFileViewed}
+        disabled={isPending}
+        aria-busy={isPending}
+        aria-describedby={isPending ? pendingDescriptionId : undefined}
         onCheckedChange={(checked: boolean | "indeterminate"): void => {
           if (checked) onMarkViewed();
           else onUnmarkViewed();
         }}
         className="h-3.5 w-3.5 cursor-pointer"
       />
-      <span
-        className="cursor-pointer select-none"
-        onClick={(): void => {
-          if (isFileViewed) onUnmarkViewed();
-          else onMarkViewed();
-        }}
+      <label
+        htmlFor={checkboxId}
+        className={`select-none ${isPending ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
       >
         Viewed
-      </span>
+      </label>
+      {isPending && (
+        <span id={pendingDescriptionId} className="sr-only">
+          Updating viewed state
+        </span>
+      )}
     </div>
   );
 }
@@ -115,6 +126,7 @@ export function DiffFileHeader({
   isCollapsed,
   isFocused,
   isFileViewed,
+  isViewedPending,
   showViewedCheckbox,
   statusIcon,
   themeAppearance,
@@ -153,6 +165,7 @@ export function DiffFileHeader({
         {showViewedCheckbox && (
           <DiffFileHeaderViewed
             isFileViewed={isFileViewed}
+            isPending={isViewedPending}
             onMarkViewed={onMarkViewed}
             onUnmarkViewed={onUnmarkViewed}
           />
