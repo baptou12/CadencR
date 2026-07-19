@@ -8,7 +8,7 @@
 
 mod common;
 
-use cadencr_service::domain::workflow::worktree::{ensure_worktree, WorktreeMode};
+use cadencr_service::domain::workflow::worktree::{ensure_worktree, get_setting, WorktreeMode};
 
 use common::git_in;
 use common::worktree::{
@@ -91,6 +91,34 @@ async fn ensure_worktree_new_with_base_branch_forks_from_base() {
     let wt_path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
     let head_sha = rev_parse_head(&wt_path);
     assert_eq!(head_sha, develop_sha, "new worktree must fork from develop");
+    assert_eq!(
+        get_setting(&pool, 1, "target_branch").await.as_deref(),
+        Some("develop"),
+        "fork base must become the Git target",
+    );
+
+    worktree_remove(project.path(), &wt_path);
+}
+
+#[tokio::test]
+async fn ensure_worktree_new_without_base_targets_current_branch() {
+    let pool = worktree_pool().await;
+    let tmp_home = tempfile::tempdir().unwrap();
+    let _guard = HomeGuard::set(tmp_home.path());
+
+    let project = tempfile::tempdir().unwrap();
+    init_git_repo(project.path());
+    git_in(project.path(), &["checkout", "-q", "-b", "develop"]);
+
+    insert_project_and_feature(&pool, "demoproj", project.path()).await;
+    set_feature_setting(&pool, 1, "worktree_mode", "new").await;
+
+    let (sender, _rx) = fresh_ws_sender();
+    let wt_path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    assert_eq!(
+        get_setting(&pool, 1, "target_branch").await.as_deref(),
+        Some("develop"),
+    );
 
     worktree_remove(project.path(), &wt_path);
 }
