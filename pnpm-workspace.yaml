@@ -71,3 +71,6 @@ allowBuilds:
   esbuild: false
   msw: false
   sharp: false
+
+patchedDependencies:
+  '@pierre/trees@1.0.0-beta.4': patches/@pierre__trees@1.0.0-beta.4.patch

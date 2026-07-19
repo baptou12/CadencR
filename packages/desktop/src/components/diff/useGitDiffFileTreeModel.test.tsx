@@ -1,4 +1,4 @@
-import { act, fireEvent, render, renderHook } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, waitFor } from "@testing-library/react";
 import type { FileTreeDirectoryHandle } from "@pierre/trees";
 import { describe, expect, it, vi } from "vitest";
 import { FileStageState, type ChangedFile } from "@/api/generated";
@@ -156,7 +156,7 @@ describe("useGitDiffFileTreeModel display mode", () => {
     unmount();
   });
 
-  it("does not move selection after a retained zero-result search loses focus", () => {
+  it("renders no rows and does not move selection after a retained zero-result search", async () => {
     const files = [changedFile("src/alpha.ts"), changedFile("src/beta.ts")];
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
@@ -169,15 +169,20 @@ describe("useGitDiffFileTreeModel display mode", () => {
 
     act(() => {
       result.current.navigation.selectPath("src/alpha.ts");
-      result.current.model.setSearch("no-results");
+      result.current.model.setSearch("alpha");
     });
     const tree = render(<CadencrFileTree model={result.current.model} />);
-    const searchInput = result.current.model
-      .getFileTreeContainer()
-      ?.shadowRoot?.querySelector<HTMLInputElement>("[data-file-tree-search-input]");
+    const shadowRoot = result.current.model.getFileTreeContainer()?.shadowRoot;
+    const searchInput = shadowRoot?.querySelector<HTMLInputElement>(
+      "[data-file-tree-search-input]",
+    );
     expect(searchInput).not.toBeNull();
+    expect(shadowRoot?.querySelector('[data-item-path="src/alpha.ts"]')).not.toBeNull();
+
+    act(() => result.current.model.setSearch("no-results"));
     fireEvent.blur(searchInput as HTMLInputElement);
     expect(result.current.model.getSearchValue()).toBe("no-results");
+    await waitFor(() => expect(shadowRoot?.querySelectorAll("[data-item-path]")).toHaveLength(0));
 
     const selectedBeforeMove = result.current.model.getSelectedPaths();
     const focusedBeforeMove = result.current.model.getFocusedPath();

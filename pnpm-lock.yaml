@@ -9,6 +9,9 @@ overrides:
   '@stoplight/spectral-rulesets': 1.22.2
   volar-service-yaml: 0.0.71
 
+patchedDependencies:
+  '@pierre/trees@1.0.0-beta.4': 16cb5392364cf686033ae1dbe2c0f44f532eb6354ff53d9925231c69e91f7363
+
 importers:
 
   .:
@@ -138,7 +141,7 @@ importers:
         version: 1.2.11(@shikijs/themes@4.3.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pierre/trees':
         specifier: 1.0.0-beta.4
-        version: 1.0.0-beta.4(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        version: 1.0.0-beta.4(patch_hash=16cb5392364cf686033ae1dbe2c0f44f532eb6354ff53d9925231c69e91f7363)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@react-symbols/icons':
         specifier: ^1.4.1
         version: 1.4.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -10261,7 +10264,7 @@ snapshots:
       react-dom: 19.2.7(react@19.2.7)
       shiki: 4.3.0
 
-  '@pierre/trees@1.0.0-beta.4(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@pierre/trees@1.0.0-beta.4(patch_hash=16cb5392364cf686033ae1dbe2c0f44f532eb6354ff53d9925231c69e91f7363)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       preact: 11.0.0-beta.0
       preact-render-to-string: 6.6.5(preact@11.0.0-beta.0)
