@@ -1,6 +1,15 @@
 import { BrowserWindow } from "electron";
 import { readFileSync } from "node:fs";
-import { ringDots } from "../../../landing/src/lib/logo-dots.mjs";
+import {
+  EMERALD,
+  GROUND as BACKGROUND,
+  HAIRLINE,
+  INK,
+  RAISED,
+  ringDots,
+  SOFT as MUTED,
+  STANDARD_CUT,
+} from "@cadencr/brand";
 import {
   parseStartupRecoveryActionUrl,
   type StartupRecoveryAction,
@@ -29,13 +38,6 @@ const SPLASH_WIDTH = 520;
 const SPLASH_HEIGHT = 400;
 const ERROR_SPLASH_WIDTH = 640;
 const ERROR_SPLASH_HEIGHT = 500;
-// Emerald Reserve brand surfaces (root DESIGN.md "Brand identity").
-const BACKGROUND = "#131416";
-const INK = "#eff0f2";
-const MUTED = "#a7a9ad";
-const HAIRLINE = "#34373a";
-const RAISED = "#1a1b1d";
-const EMERALD = "#2db47d";
 
 export type SplashPhase =
   | "starting"
@@ -319,12 +321,12 @@ function renderLogoSvg(): string {
   const dots = ringDots()
     .map(
       ({ cx, cy }, i) =>
-        `<circle class="d" cx="${cx}" cy="${cy}" r="1.9" style="animation-delay:${i * 150}ms"/>`,
+        `<circle class="d" cx="${cx}" cy="${cy}" r="${STANDARD_CUT.dotR}" style="animation-delay:${i * 150}ms"/>`,
     )
     .join("");
   return `<svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
     <g fill="${INK}">${dots}</g>
-    <circle cx="24" cy="24" r="5.5" fill="${EMERALD}"/>
+    <circle cx="24" cy="24" r="${STANDARD_CUT.coreR}" fill="${EMERALD}"/>
   </svg>`;
 }
 

@@ -2,7 +2,7 @@
 // Index Dots — the official CadencR mark (DESIGN.md "Logo").
 // Twelve ink dots on a ring around a solid emerald core, on the 48 grid.
 // Dots follow the surrounding text color; the core takes the theme primary.
-import { ringDots } from "@/lib/logo-dots.mjs";
+import { ringDots, STANDARD_CUT } from "@cadencr/brand";
 interface Props {
   size?: number;
 }
@@ -17,6 +17,6 @@ const dots = ringDots();
   aria-hidden="true"
   fill="none"
 >
-  {dots.map((d) => <circle cx={d.cx} cy={d.cy} r="1.9" fill="currentColor" />)}
-  <circle cx="24" cy="24" r="5.5" fill="var(--color-primary)" />
+  {dots.map((d) => <circle cx={d.cx} cy={d.cy} r={STANDARD_CUT.dotR} fill="currentColor" />)}
+  <circle cx="24" cy="24" r={STANDARD_CUT.coreR} fill="var(--color-primary)" />
 </svg>

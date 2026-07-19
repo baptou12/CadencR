@@ -78,6 +78,13 @@
       ],
       "outputs": []
     },
+    "@cadencr/brand#test": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [],
+      "cache": false
+    },
     "lint": {
       "dependsOn": [
         "^build"

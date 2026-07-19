@@ -1,0 +1,30 @@
+{
+  "name": "@cadencr/brand",
+  "private": true,
+  "version": "0.7.2",
+  "description": "Cadencr brand source of truth — Index Dots geometry, Emerald Reserve tokens, and every generated icon and social asset in the repo.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.mts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "scripts": {
+    "install:assets": "node scripts/install-assets.mjs",
+    "check": "node scripts/install-assets.mjs --check",
+    "lint": "oxlint src/ scripts/ test/",
+    "lint:fix": "oxlint --fix src/ scripts/ test/",
+    "format": "oxfmt src/ scripts/ test/",
+    "format:check": "oxfmt --check src/ scripts/ test/",
+    "test": "node --test test/*.test.mjs && node scripts/install-assets.mjs --check",
+    "knip": "knip"
+  },
+  "devDependencies": {
+    "knip": "^6.22.0",
+    "oxfmt": "^0.56.0",
+    "oxlint": "^1.71.0",
+    "sharp": "^0.34.5"
+  }
+}

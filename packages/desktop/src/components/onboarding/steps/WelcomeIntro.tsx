@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useSetWorkspaceSettingWithCache } from "@/hooks/useSetWorkspaceSettingWithCache";
 import { ONBOARDING_INTRO_SHOWN_SETTING_KEY } from "@/lib/onboarding-step";
-import { ringDots } from "../../../../../landing/src/lib/logo-dots.mjs";
+import { EMERALD, INK, ringDots, STANDARD_CUT } from "@cadencr/brand";
 import "./WelcomeIntro.css";
 
 /**
@@ -93,11 +93,17 @@ export function WelcomeIntro({ onComplete }: { onComplete: () => void }) {
               style={{ "--dot-index": i } as CSSProperties}
               cx={dot.cx}
               cy={dot.cy}
-              r="1.9"
-              fill="#eff0f2"
+              r={STANDARD_CUT.dotR}
+              fill={INK}
             />
           ))}
-          <circle className="welcome-intro__core" cx="24" cy="24" r="5.5" fill="#2db47d" />
+          <circle
+            className="welcome-intro__core"
+            cx="24"
+            cy="24"
+            r={STANDARD_CUT.coreR}
+            fill={EMERALD}
+          />
         </svg>
       </div>
 
