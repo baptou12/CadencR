@@ -26,6 +26,7 @@ import type { BrowserManager } from "./browser-manager";
 import { handleStartupRecoveryAction } from "./startup-recovery-actions";
 import { buildStartupRecovery, type StartupRecoveryState } from "./startup-recovery";
 import { installDefaultRendererCrashRecovery } from "./renderer-crash-recovery";
+import { configureLinuxOzonePlatform } from "./linux-ozone-platform";
 import { installCsp, rendererLoadTarget, secureWebContents } from "./renderer-window-security";
 import { registerNotchIpc } from "./notch-ipc";
 import type { NotchController } from "./notch-window";
@@ -295,9 +296,7 @@ if (!app.isPackaged) {
 // every privileged scheme belongs in this single call.
 protocol.registerSchemesAsPrivileged([PLUGIN_TAB_PRIVILEGED_SCHEME]);
 
-if (process.platform === "linux") {
-  app.commandLine.appendSwitch("ozone-platform-hint", "auto");
-}
+configureLinuxOzonePlatform(app.commandLine, process.platform);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
