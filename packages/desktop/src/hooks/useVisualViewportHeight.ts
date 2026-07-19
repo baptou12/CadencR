@@ -50,11 +50,16 @@ export function useVisualViewportHeight(enabled: boolean): void {
     // cache the last write and skip redundant style mutations.
     let lastHeightPx: number | null = null;
     const sync = (): void => {
-      // If the keyboard is already open, undo any pan before measuring: a panned
-      // viewport inflates `offsetTop`, which would under-report the inset below
-      // and spuriously drop the override, snapping the shell back behind the
-      // keyboard — the very bug we're fixing.
-      if (lastHeightPx !== null) undoPan();
+      // Undo any pan before measuring: a panned viewport inflates `offsetTop`,
+      // which under-reports the inset below and drops (or never applies) the
+      // override, leaving the shell sized to the full screen while only the
+      // strip above the keyboard is visible — the prompt you just focused is
+      // then off-screen entirely.
+      //
+      // Unconditional on purpose: gating this on an already-known-open keyboard
+      // means the first focus of a session measures a viewport iOS has already
+      // panned, and the override never applies. See the regression test.
+      undoPan();
 
       const inset = window.innerHeight - vv.height - vv.offsetTop;
       const heightPx = inset > KEYBOARD_INSET_THRESHOLD ? Math.round(vv.height) : null;
@@ -63,9 +68,6 @@ export function useVisualViewportHeight(enabled: boolean): void {
         if (heightPx === null) root.style.removeProperty("--app-vh");
         else root.style.setProperty("--app-vh", `${heightPx}px`);
       }
-      // Re-pin after a collapse: the browser often pans *after* the resize tick
-      // that opened the keyboard, so this trailing reset catches that pass.
-      if (heightPx !== null) undoPan();
     };
 
     // The pan can also arrive as a standalone visualViewport scroll (no height

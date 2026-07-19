@@ -142,6 +142,25 @@ describe("useVisualViewportHeight", () => {
     expect(vh()).toBe("450px");
   });
 
+  it("applies the override on the FIRST focus even if the viewport is already panned", () => {
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    const { resize, setPan } = installViewport(800);
+
+    renderHook(() => useVisualViewportHeight(true));
+
+    // iOS pans to lift the caret BEFORE the resize tick that reports the
+    // keyboard. On that first tick the raw inset reads 800 - 450 - 250 = 100,
+    // under the 120px threshold — so a pre-measure reset gated on "we already
+    // know the keyboard is open" would skip the override entirely and leave the
+    // shell full-height with only a strip visible: the prompt the user just
+    // focused stays off-screen. Every *later* focus worked, which is exactly why
+    // the bug looked intermittent.
+    setPan(250);
+    act(() => resize(450));
+
+    expect(vh()).toBe("450px");
+  });
+
   it("clears the override and detaches its listener on unmount", () => {
     vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
     const { resize } = installViewport(800);
