@@ -97,6 +97,7 @@ export function AppShell({
         <MobileDrawer
           collapsed={collapsed}
           onClose={() => setCollapsed(true)}
+          onOpen={() => setCollapsed(false)}
           closeLabel="Close menu"
         >
           <Sidebar onSearch={onSearch} />

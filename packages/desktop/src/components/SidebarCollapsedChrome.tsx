@@ -26,11 +26,15 @@ export function SidebarCollapsedChrome({
   // On phones the brand + settings already live inside the drawer, so the
   // collapsed chrome is just a menu button that opens it. Keeping the full
   // logo here would eat the narrow topbar.
+  //
+  // `ml-1` (rather than the desktop `-ml-1`) keeps the whole tap target to the
+  // right of `MobileDrawer`'s 16px edge-swipe strip, which swallows touches to
+  // block the browser's back gesture.
   const content = isMobile ? (
     <Button
       variant="ghost"
       size="icon"
-      className="-ml-1 size-8 shrink-0"
+      className="ml-1 size-8 shrink-0"
       title="Open menu"
       onClick={onExpand}
     >
