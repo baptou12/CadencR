@@ -76,6 +76,66 @@ pub enum GitOperationKind {
     Rebase,
 }
 
+/// Resolver layout selected from the exact available stages and content.
+#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum ConflictResolverPresentation {
+    ThreeWay,
+    TwoWay,
+    ModifyDelete,
+    Guidance { reason: ConflictFallbackReason },
+}
+
+/// Typed reason why the multi-pane text resolver must not mount.
+#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictFallbackReason {
+    Binary,
+    BothDeleted,
+    Large,
+    Unavailable,
+}
+
+/// Git entry kind derived by Phase 5B from the index mode or filesystem entry.
+/// The frontend never interprets raw Git modes.
+#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictFileKind {
+    RegularFile,
+    Symlink,
+    Gitlink,
+    Other,
+}
+
+/// Typed reason why one present stage or result cannot supply text content.
+#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictContentUnavailableReason {
+    /// An index entry exists but its object no longer does.
+    ObjectMissing,
+    /// The entry is a symlink, gitlink, or other unsupported file kind.
+    UnsupportedFileKind,
+    /// The entry exists but its bytes could not be read.
+    ReadFailed,
+}
+
+/// Typed expected-unavailable reason in a successful conflict-content response.
+#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictUnavailableReason {
+    /// The literal path is no longer present as an unmerged row.
+    Resolved,
+    /// The conflict fingerprint changed while content was being read.
+    Stale,
+    /// The repository could not be inspected; clients show fixed safe copy.
+    RepositoryUnavailable,
+}
+
 /// Strategy for bringing the configured target into the current feature
 /// worktree. This is intentionally distinct from finish-branch Merge, which
 /// mutates the target worktree instead.
@@ -115,6 +175,51 @@ mod tests {
             serde_json::to_string(&UpdateBranchStrategy::Merge).unwrap(),
             "\"merge\""
         );
+        assert_eq!(
+            serde_json::to_string(&ConflictFileKind::RegularFile).unwrap(),
+            "\"regular_file\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ConflictContentUnavailableReason::ObjectMissing).unwrap(),
+            "\"object_missing\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ConflictUnavailableReason::Resolved).unwrap(),
+            "\"resolved\""
+        );
+    }
+
+    #[test]
+    fn resolver_presentation_is_explicitly_tagged() {
+        for (presentation, expected) in [
+            (
+                ConflictResolverPresentation::ThreeWay,
+                serde_json::json!({ "mode": "three_way" }),
+            ),
+            (
+                ConflictResolverPresentation::TwoWay,
+                serde_json::json!({ "mode": "two_way" }),
+            ),
+            (
+                ConflictResolverPresentation::ModifyDelete,
+                serde_json::json!({ "mode": "modify_delete" }),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(presentation).unwrap(), expected);
+        }
+        for (reason, expected) in [
+            (ConflictFallbackReason::Binary, "binary"),
+            (ConflictFallbackReason::BothDeleted, "both_deleted"),
+            (ConflictFallbackReason::Large, "large"),
+            (ConflictFallbackReason::Unavailable, "unavailable"),
+        ] {
+            let value =
+                serde_json::to_value(ConflictResolverPresentation::Guidance { reason }).unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({ "mode": "guidance", "reason": expected })
+            );
+        }
     }
 
     #[test]
