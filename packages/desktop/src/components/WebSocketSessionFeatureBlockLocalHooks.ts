@@ -16,6 +16,7 @@ import {
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
 import { useEditorStore } from "@/stores/editor-store";
+import type { OpenDiffInEditor } from "@/components/diff/OpenDiffInEditorContext";
 
 export function useOpenDiffFileInEditor({
   featureId,
@@ -27,20 +28,17 @@ export function useOpenDiffFileInEditor({
   layoutFeatureId: number;
   rootPath: string;
   refs: ReturnType<typeof useSessionRefs>;
-}): (filePath: string, lineNumber?: number) => void {
+}): OpenDiffInEditor {
   return useCallback(
-    (filePath: string, lineNumber?: number): void => {
+    (filePath, lineNumber): void => {
       const editor = useEditorStore.getState();
       editor.initFeature(featureId);
       const feature = useEditorStore.getState().features[featureId];
       const paneId = feature?.activePaneId ?? "main";
-      editor.openFile(
-        featureId,
-        paneId,
-        toRelativePath(filePath, rootPath).replace(/^\.\//, ""),
-        undefined,
-        lineNumber,
-      );
+      const relativePath = toRelativePath(filePath, rootPath).replace(/^\.\//, "");
+      // Always an ordinary open; if Git reports this exact path as unmerged the
+      // resolver mounts automatically via `useAutoConflictResolution`.
+      editor.openFile(featureId, paneId, relativePath, undefined, lineNumber);
       activateFeatureTab(layoutFeatureId, "editor");
       requestAnimationFrame(() => refs.editor.current?.focusActiveEditor());
     },

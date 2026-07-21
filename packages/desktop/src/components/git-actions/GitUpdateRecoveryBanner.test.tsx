@@ -118,8 +118,8 @@ describe("GitUpdateRecoveryRegion", () => {
 
     expect(screen.getByRole("region", { name: "Git update recovery" })).toBeInTheDocument();
     expect(screen.getByText("src/first.ts")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue update" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Abort update" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Continue rebase" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Abort rebase" })).toBeEnabled();
     await waitFor(() => expect(onRequestUncommitted).toHaveBeenCalledTimes(1));
   });
 
@@ -134,7 +134,7 @@ describe("GitUpdateRecoveryRegion", () => {
         .getState()
         .setStatus(snapshot({ operation: "rebase", conflict_count: 1, computed_at: 11 }));
     });
-    expect(screen.getByRole("button", { name: "Continue update" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue rebase" })).toBeDisabled();
 
     mocks.continueMutateAsync.mockResolvedValueOnce({ outcome: "completed" });
     act(() => {
@@ -142,11 +142,32 @@ describe("GitUpdateRecoveryRegion", () => {
         .getState()
         .setStatus(snapshot({ operation: "rebase", conflict_count: 0, computed_at: 12 }));
     });
-    const continueButton = screen.getByRole("button", { name: "Continue update" });
+    const continueButton = screen.getByRole("button", { name: "Continue rebase" });
     expect(continueButton).toBeEnabled();
     await user.click(continueButton);
 
     expect(mocks.continueMutateAsync).toHaveBeenCalledWith({ data: { feature_id: 42 } });
+  });
+
+  it("flips from the paused warning to a ready-to-continue state once conflicts clear", () => {
+    recordFirstConflict();
+    render(<GitUpdateRecoveryRegion featureId={42} onRequestUncommitted={vi.fn()} />);
+
+    act(() => {
+      useGitStatusStore
+        .getState()
+        .setStatus(snapshot({ operation: "rebase", conflict_count: 1, computed_at: 11 }));
+    });
+    expect(screen.getByText("Rebase paused on conflicts")).toBeInTheDocument();
+
+    act(() => {
+      useGitStatusStore
+        .getState()
+        .setStatus(snapshot({ operation: "rebase", conflict_count: 0, computed_at: 12 }));
+    });
+    expect(screen.getByText("Rebase ready to continue")).toBeInTheDocument();
+    expect(screen.queryByText("Rebase paused on conflicts")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue rebase" })).toBeEnabled();
   });
 
   it("keeps a repeated Continue conflict recoverable and requests Uncommitted again", async () => {
@@ -164,7 +185,7 @@ describe("GitUpdateRecoveryRegion", () => {
     );
     await waitFor(() => expect(onRequestUncommitted).toHaveBeenCalledTimes(1));
 
-    await user.click(screen.getByRole("button", { name: "Continue update" }));
+    await user.click(screen.getByRole("button", { name: "Continue rebase" }));
 
     expect(await screen.findByText("src/second.ts")).toBeInTheDocument();
     expect(screen.getByText("src/third.ts")).toBeInTheDocument();
@@ -185,7 +206,7 @@ describe("GitUpdateRecoveryRegion", () => {
       <GitUpdateRecoveryRegion featureId={42} onRequestUncommitted={vi.fn()} />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Abort update" }));
+    await user.click(screen.getByRole("button", { name: "Abort rebase" }));
 
     expect(mocks.abortMutateAsync).toHaveBeenCalledWith({ data: { feature_id: 42 } });
     expect(screen.getByRole("region", { name: "Git update recovery" })).toBeInTheDocument();
@@ -200,8 +221,8 @@ describe("GitUpdateRecoveryRegion", () => {
   });
 
   it.each([
-    { action: "continue", buttonName: "Continue update", successMessage: "Update completed" },
-    { action: "abort", buttonName: "Abort update", successMessage: "Update aborted" },
+    { action: "continue", buttonName: "Continue rebase", successMessage: "Update completed" },
+    { action: "abort", buttonName: "Abort rebase", successMessage: "Update aborted" },
   ] as const)(
     "keeps recovery cleared when $action HTTP completion follows operation=null status",
     async ({ action, buttonName, successMessage }) => {
@@ -265,7 +286,7 @@ describe("GitUpdateRecoveryRegion", () => {
       <GitUpdateRecoveryRegion featureId={42} onRequestUncommitted={vi.fn()} />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Continue update" }));
+    await user.click(screen.getByRole("button", { name: "Continue rebase" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("rebase continue failed");
     expect(mocks.toastError).toHaveBeenCalledWith("Could not continue the update", {

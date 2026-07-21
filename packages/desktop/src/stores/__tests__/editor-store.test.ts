@@ -105,6 +105,80 @@ describe("openFile", () => {
   });
 });
 
+describe("reconcileConflictResolution", () => {
+  beforeEach(() => getStore().initFeature(FEATURE_ID));
+
+  it("drops a Git-unmerged open file into the resolver and leaves ordinary files alone", () => {
+    getStore().openFile(FEATURE_ID, PANE_ID, "/a.ts");
+    getStore().openFile(FEATURE_ID, PANE_ID, "/b.ts");
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/a.ts"]);
+
+    const tabs = pane().tabs;
+    expect(tabs.find((t) => t.filePath === "/a.ts")?.resolveConflict).toBe(true);
+    expect(tabs.find((t) => t.filePath === "/b.ts")?.resolveConflict ?? false).toBe(false);
+    // Reconciliation only flips existing flags — it never creates duplicate tabs.
+    expect(tabs).toHaveLength(2);
+  });
+
+  it("matches conflicted paths exactly — a look-alike path is never flipped", () => {
+    getStore().openFile(FEATURE_ID, PANE_ID, "/a.ts");
+    getStore().openFile(FEATURE_ID, PANE_ID, "/nested/a.ts");
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/a.ts"]);
+
+    const tabs = pane().tabs;
+    expect(tabs.find((t) => t.filePath === "/a.ts")?.resolveConflict).toBe(true);
+    expect(tabs.find((t) => t.filePath === "/nested/a.ts")?.resolveConflict ?? false).toBe(false);
+  });
+
+  it("resolves independent conflicts across split panes", () => {
+    getStore().openFile(FEATURE_ID, PANE_ID, "/a.ts");
+    getStore().splitEditorPane(FEATURE_ID, PANE_ID, "horizontal");
+    const secondPane = feature().activePaneId;
+    getStore().openFile(FEATURE_ID, secondPane, "/b.ts");
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/a.ts", "/b.ts"]);
+
+    const resolved = Object.values(feature().panes)
+      .flatMap((editorPane) => editorPane.tabs)
+      .filter((tab) => tab.resolveConflict)
+      .map((tab) => tab.filePath)
+      .sort();
+    expect(resolved).toEqual(["/a.ts", "/b.ts"]);
+  });
+
+  it("clears resolver mode once the watcher drops the unmerged path", () => {
+    getStore().openFile(FEATURE_ID, PANE_ID, "/a.ts");
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/a.ts"]);
+    expect(pane().tabs[0].resolveConflict).toBe(true);
+
+    getStore().reconcileConflictResolution(FEATURE_ID, []);
+    expect(pane().tabs[0].resolveConflict).toBe(false);
+    expect(pane().activeFilePath).toBe("/a.ts");
+  });
+
+  it("never flips a dirty buffer in either direction", () => {
+    // A dirty ordinary buffer is never remounted into the resolver.
+    getStore().openFile(FEATURE_ID, PANE_ID, "/a.ts");
+    getStore().setDirty(FEATURE_ID, PANE_ID, "/a.ts", true);
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/a.ts"]);
+    expect(pane().tabs[0].resolveConflict ?? false).toBe(false);
+
+    // A dirty resolver Result is never cleared out from under the user.
+    getStore().openFile(FEATURE_ID, PANE_ID, "/b.ts");
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/b.ts"]);
+    getStore().setDirty(FEATURE_ID, PANE_ID, "/b.ts", true);
+    getStore().reconcileConflictResolution(FEATURE_ID, []);
+    expect(pane().tabs.find((t) => t.filePath === "/b.ts")?.resolveConflict).toBe(true);
+  });
+
+  it("is idempotent — a no-op reconciliation keeps the same tab reference", () => {
+    getStore().openFile(FEATURE_ID, PANE_ID, "/a.ts");
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/a.ts"]);
+    const settled = pane().tabs;
+    getStore().reconcileConflictResolution(FEATURE_ID, ["/a.ts"]);
+    expect(pane().tabs).toBe(settled);
+  });
+});
+
 describe("closeTab", () => {
   beforeEach(() => {
     getStore().initFeature(FEATURE_ID);
@@ -145,6 +219,13 @@ describe("setDirty", () => {
     getStore().setDirty(FEATURE_ID, PANE_ID, "/a.ts", true);
     getStore().setDirty(FEATURE_ID, PANE_ID, "/a.ts", false);
     expect(pane().tabs[0].isDirty).toBe(false);
+  });
+
+  it("keeps the same state when the dirty flag is already settled", () => {
+    getStore().setDirty(FEATURE_ID, PANE_ID, "/a.ts", true);
+    const settled = getStore().features[FEATURE_ID];
+    getStore().setDirty(FEATURE_ID, PANE_ID, "/a.ts", true);
+    expect(getStore().features[FEATURE_ID]).toBe(settled);
   });
 });
 

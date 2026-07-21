@@ -259,6 +259,8 @@ export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTa
       set((state) => {
         const feature = state.features[featureId];
         if (!feature) return state;
+        const tab = feature.panes[paneId]?.tabs.find((item) => item.filePath === filePath);
+        if (!tab || tab.isDirty === isDirty) return state;
         const next = updatePane(feature, paneId, (pane) => ({
           ...pane,
           tabs: pane.tabs.map((t) => (t.filePath === filePath ? { ...t, isDirty } : t)),

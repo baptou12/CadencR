@@ -86,11 +86,11 @@ describe("GitActionPopover", () => {
       />,
     );
 
-    expect(screen.getByText("Continue update").closest("[cmdk-item]")).toHaveAttribute(
+    expect(screen.getByText("Continue merge").closest("[cmdk-item]")).toHaveAttribute(
       "aria-disabled",
       "true",
     );
-    expect(screen.getByText("Abort update").closest("[cmdk-item]")).toHaveAttribute(
+    expect(screen.getByText("Abort merge").closest("[cmdk-item]")).toHaveAttribute(
       "aria-disabled",
       "false",
     );

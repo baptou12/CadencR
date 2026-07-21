@@ -22,6 +22,8 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import type { GitOperationKind } from "@/api/generated";
+import { gitUpdateActionLabel } from "./gitUpdateMessages";
 import type { CommitActivity, GitAction, GitActionState } from "./useGitAction";
 
 export interface GitActionRegistration {
@@ -119,12 +121,14 @@ export function GitActionPopover({
           <CommandGroup heading="Update recovery">
             <RecoveryCommand
               action="continue"
+              operation={state.recovery.operation}
               disabledReason={state.recovery.continueDisabled}
               pendingAction={recoveryControls.pendingAction}
               onSelect={recoveryControls.onContinue}
             />
             <RecoveryCommand
               action="abort"
+              operation={state.recovery.operation}
               disabledReason={state.recovery.abortDisabled}
               pendingAction={recoveryControls.pendingAction}
               onSelect={recoveryControls.onAbort}
@@ -146,6 +150,7 @@ export function GitActionPopover({
 
 interface RecoveryCommandProps {
   action: "continue" | "abort";
+  operation: GitOperationKind;
   disabledReason: string | null;
   pendingAction: "continue" | "abort" | null;
   onSelect: () => void;
@@ -153,12 +158,13 @@ interface RecoveryCommandProps {
 
 function RecoveryCommand({
   action,
+  operation,
   disabledReason,
   pendingAction,
   onSelect,
 }: RecoveryCommandProps): ReactElement {
   const pending = pendingAction === action;
-  const label = action === "continue" ? "Continue update" : "Abort update";
+  const label = gitUpdateActionLabel(action, operation);
   const Icon = pending ? Loader2 : action === "continue" ? Play : Undo2;
   return (
     <CommandItem

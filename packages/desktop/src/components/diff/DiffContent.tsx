@@ -8,6 +8,7 @@ import { DiffVirtualizer } from "./DiffVirtualizer";
 import type { CommentSide } from "./PatchDiffView";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
 import type { GitFileIndexActions } from "./useGitFileIndexActions";
+import type { OpenDiffInEditor } from "./OpenDiffInEditorContext";
 
 interface ActiveCommentWidget {
   filePath: string;
@@ -55,7 +56,7 @@ interface DiffContentProps {
   onToggleFile: (fileName: string) => void;
   onMarkViewedFile: (fileName: string) => void;
   onUnmarkViewedFile: (fileName: string) => void;
-  onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  onOpenFileInEditor?: OpenDiffInEditor;
   indexActions?: GitFileIndexActions;
   onAddComment: (filePath: string, lineNumber: number, side?: CommentSide) => void;
   themeAppearance: ThemeAppearance;

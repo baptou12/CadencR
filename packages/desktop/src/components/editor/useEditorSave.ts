@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import type { EditorView } from "@codemirror/view";
 import { useQueryClient } from "@tanstack/react-query";
 import { getReadFileQueryKey, useWriteFile, type ReadFileResponse } from "@/api/generated";
-import { toastError } from "@/lib/api-errors";
+import { apiErrorMessage, toastError } from "@/lib/api-errors";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFreshFileContentSync } from "./useFreshFileContentSync";
 
@@ -30,6 +30,9 @@ interface UseEditorSaveResult {
   saveQuiet: () => Promise<void>;
   /** True for ~1.5s after a successful auto-save — drives the status bar. */
   autoSavedVisible: boolean;
+  /** Visible async/error state for save controls outside the normal status bar. */
+  isSaving: boolean;
+  errorMessage: string | null;
 }
 
 /**
@@ -59,6 +62,8 @@ export function useEditorSave({
   const queryClient = useQueryClient();
   const setDirty = useEditorStore((s) => s.setDirty);
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
+  const [pendingSaveCount, setPendingSaveCount] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const autoSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const writeFile = useWriteFile();
@@ -88,8 +93,6 @@ export function useEditorSave({
   const write = useCallback(async (): Promise<string | null> => {
     const view = viewRef.current;
     if (!view) return null;
-    // Format-on-save runs first so the persisted text is the formatted text.
-    // It surfaces its own errors and never throws, so it can't block saving.
     if (beforeWriteRef.current) await beforeWriteRef.current();
     const next = view.state.doc.toString();
     await mutateAsyncRef.current({
@@ -100,14 +103,21 @@ export function useEditorSave({
   }, [projectId, featureId, filePath, markSavedContent, viewRef]);
 
   const save = useCallback(async () => {
+    setPendingSaveCount((count) => count + 1);
+    setErrorMessage(null);
     try {
       await write();
     } catch (err) {
+      setErrorMessage(apiErrorMessage(err, "Failed to save file"));
       toastError(err, "Failed to save file");
+    } finally {
+      setPendingSaveCount((count) => Math.max(0, count - 1));
     }
   }, [write]);
 
   const saveQuiet = useCallback(async () => {
+    setPendingSaveCount((count) => count + 1);
+    setErrorMessage(null);
     try {
       const saved = await write();
       if (saved === null) return;
@@ -115,7 +125,10 @@ export function useEditorSave({
       if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
       autoSavedTimerRef.current = setTimeout(() => setAutoSavedVisible(false), 1500);
     } catch (err) {
+      setErrorMessage(apiErrorMessage(err, "Failed to auto-save file"));
       toastError(err, "Failed to auto-save file");
+    } finally {
+      setPendingSaveCount((count) => Math.max(0, count - 1));
     }
   }, [write]);
 
@@ -125,5 +138,14 @@ export function useEditorSave({
     };
   }, []);
 
-  return { save, saveQuiet, autoSavedVisible };
+  return useMemo(
+    () => ({
+      save,
+      saveQuiet,
+      autoSavedVisible,
+      isSaving: pendingSaveCount > 0,
+      errorMessage,
+    }),
+    [autoSavedVisible, errorMessage, pendingSaveCount, save, saveQuiet],
+  );
 }

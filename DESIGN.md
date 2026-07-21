@@ -387,13 +387,16 @@ Review-first two-column grid: 200px file explorer + writable code area with tab 
 
 #### Conflict resolver
 
-The conflict resolver is an Editor mode for one unmerged worktree path. It reuses the existing tab, theme, dirty-buffer behavior, Save ownership, and review-first posture rather than creating a separate editor surface.
+The conflict resolver is an Editor mode for one unmerged worktree path. It reuses the existing tab, theme, dirty-buffer behavior, Save ownership, auto-save/Mod+S, and review-first posture rather than creating a separate editor surface. It must read as a **native CodeMirror file edit, not a bespoke conflict dashboard**.
 
-##### Anatomy and labels
+##### Activation and anatomy
 
-- A compact header names the file, conflict kind, and merge/rebase context.
-- Read-only source comparisons surround one writable `Result`; optional `Base` context may collapse.
+- Opening a path that backend-confirmed Git status reports as an exact unmerged file activates the resolver automatically — there is no "Resolve in Editor" step. Watcher-confirmed resolution returns the tab to the ordinary editor. Ordinary files open normally; matching is exact-path only, so linked worktrees and literal paths stay safe.
+- No resolver header, footer, or comparison toolbar. There is exactly **one writable `Result` `EditorView`**; conflict regions and per-hunk actions live inline in CodeMirror. The Result is the whole surface — the tab strip already names the file.
+- Current vs Incoming regions are rendered as color-coded inline decorations (theme-owned cyan for the Current side, violet for the Incoming side; both defined in every theme, distinct from the reserved add/green and delete/red diff colors). The lazily-loaded CodeMirror merge view compares the evolving Result against its initial conflicted state; there is no source-comparison picker.
 - Missing sources are described as absent, never shown as empty documents.
+
+Operation-aware side labels drive the inline accept actions (never generic Current/Incoming during rebase):
 
 | Source  | Merge label     | Rebase label    | No operation context |
 | ------- | --------------- | --------------- | -------------------- |
@@ -402,15 +405,15 @@ The conflict resolver is an Editor mode for one unmerged worktree path. It reuse
 | Stage 3 | Incoming branch | Replayed commit | Index stage 3        |
 | Result  | Result          | Result          | Result               |
 
-Do not show generic Current/Incoming labels during rebase. Supported text hunks offer `Accept Current branch` and `Accept Incoming branch` during merge, `Accept Rebased result` and `Accept Replayed commit` during rebase, plus `Accept both`. They edit only `Result`, are undoable and dirty the buffer, and never Save or Stage immediately. `Accept both` applies stage 2 before stage 3. If a hunk no longer maps safely after manual edits, disable its actions and preserve manual editing rather than guessing.
+Supported text hunks offer `Accept Current branch` and `Accept Incoming branch` during merge, `Accept Rebased result` and `Accept Replayed commit` during rebase, plus `Accept both`. They edit only `Result` as one undoable transaction, dirty the buffer, and never Save or Stage immediately. `Accept both` applies stage 2 before stage 3. If a hunk no longer maps safely after manual edits, its action row is replaced inline by a short reason and manual editing is preserved rather than guessing.
 
 ##### States and actions
 
-- Use a three-way presentation when Base, both sides, and Result are readable text. Use two-way when a base or side is absent in a non-delete conflict and at least one source plus Result remain readable text.
-- Deleted-by-one-side conflicts show the surviving source and an explicit deletion state. Binary, both-deleted, large, unsupported, unavailable, stale, and resolved cases use guidance or result-only editing instead of empty comparison panes.
-- Save writes only `Result` to the worktree and continues to show that staging is required. Stage is explicit, and the conflict UI remains until watcher-confirmed status removes the unmerged path.
-- The per-file Git banner routes to `Resolve in Editor`; the operation-wide banner continues to own Continue and Abort.
-- Loading, failures, and actions have visible progress or error states. Comparison panes expose read-only semantics, action groups are keyboard reachable with clear focus, disabled actions explain why, and updates use one polite status region.
+- Binary, both-deleted, large, unsupported, unavailable, stale, and resolved cases use guidance or result-only editing instead of empty comparison panes.
+- Deleted-by-one-side conflicts show the surviving text and an explicit deletion state.
+- Save writes only `Result` bytes to the worktree and continues to show that staging is required. Stage is explicit, and the conflict UI remains until watcher-confirmed status removes the unmerged path.
+- The per-file Git banner owns explicit `Stage` and watcher-confirmed resolution; the operation-wide banner owns Continue and Abort, and Continue stays disabled until every conflict is staged. It is state-aware: while conflicts remain it wears the warm `--acc-orange` "paused on conflicts" identity, and once every conflict is staged it flips to the `--acc-green` "ready to continue" identity with Continue enabled — the two accents follow the documented in-progress/ready status semantics. Continue and Abort read as the operation Git itself is running (`Continue merge`/`Abort rebase`), never the internal "update" wording. The per-file banners stay visually subordinate to this one command bar — a quiet accent stripe rather than a stack of repeated alarm bands.
+- Loading, failures, and actions have visible progress or error states. Action groups are keyboard reachable with clear focus, disabled actions explain why, and updates use one polite status region.
 - The resolver is for bounded review and conflict resolution, not general three-way authoring.
 
 ### Sidebar (`<window.Sidebar/>`)

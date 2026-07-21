@@ -70,6 +70,11 @@ vi.mock("./useFileDiffSection", () => ({
   }),
 }));
 
+vi.mock("./GitConflictFileBanner", () => ({
+  GitConflictFileBanner: ({ file }: { file: { stage_state?: string } }) =>
+    file.stage_state === "conflicted" ? <div data-testid="conflict-banner">Conflict</div> : null,
+}));
+
 const baseProps = {
   featureId: 1,
   mode: "uncommitted" as const,
@@ -159,6 +164,27 @@ describe("DiffFileBlock", () => {
     await user.click(screen.getByRole("button", { name: "Open src/foo.ts in editor" }));
 
     expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", undefined);
+  });
+
+  it("surfaces the conflict banner for an unmerged file", () => {
+    render(
+      <DiffFileBlock
+        {...baseProps}
+        file={{
+          ...baseProps.file,
+          status: "UU",
+          stage_state: FileStageState.conflicted,
+          conflict_kind: "uu",
+        }}
+        isCollapsed={false}
+        onOpenFileInEditor={vi.fn()}
+      />,
+    );
+
+    // The banner owns staging; opening the file resolves it automatically, so
+    // there is no in-diff "Resolve in Editor" handoff to click.
+    expect(screen.getByTestId("conflict-banner")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resolve in Editor" })).not.toBeInTheDocument();
   });
 
   it("exposes the Viewed checkbox by name and toggles it through its visible label", async () => {

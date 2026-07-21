@@ -1,5 +1,5 @@
-import { memo, useEffect, type ReactElement } from "react";
-import { AlertTriangle, Loader2, Play, Undo2 } from "lucide-react";
+import { memo, useEffect, type CSSProperties, type ReactElement } from "react";
+import { AlertTriangle, CheckCircle2, Loader2, Play, Undo2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
 import type { GitOperationKind } from "@/api/generated";
@@ -10,7 +10,11 @@ import {
   useGitUpdateRecoveryStore,
   useSyncGitUpdateRecovery,
 } from "./gitUpdateRecoveryStore";
-import { gitUpdateContinueDisabledReason } from "./gitUpdateMessages";
+import {
+  gitOperationNoun,
+  gitUpdateActionLabel,
+  gitUpdateContinueDisabledReason,
+} from "./gitUpdateMessages";
 import { useGitUpdateRecoveryActions } from "./useGitUpdateRecoveryActions";
 
 const MAX_CONFLICT_FILES = 8;
@@ -88,28 +92,38 @@ export const GitUpdateRecoveryBanner = memo(function GitUpdateRecoveryBanner({
     computedAt,
   });
   const operationLabel = operation === "rebase" ? "Rebase" : "Merge";
+  const noun = gitOperationNoun(operation);
   const continueReason = gitUpdateContinueDisabledReason(conflictCount);
+  // Once every conflict is staged the operation is queued to finish: swap the
+  // warm "paused" identity for the ready/green one so the flip to an enabled
+  // Continue reads as clear forward momentum, not a lingering warning.
+  const resolved = continueReason === null;
+  const accent = resolved ? "var(--acc-green)" : "var(--acc-orange)";
 
   return (
     <section
       aria-label="Git update recovery"
-      className="shrink-0 border-b border-[color-mix(in_oklab,var(--acc-orange)_35%,transparent)] bg-[color-mix(in_oklab,var(--acc-orange)_8%,var(--card))] px-4 py-3"
+      style={{ "--recovery-accent": accent } as CSSProperties}
+      className="shrink-0 border-b border-[color-mix(in_oklab,var(--recovery-accent)_35%,transparent)] bg-[color-mix(in_oklab,var(--recovery-accent)_8%,var(--card))] px-4 py-3"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-sm font-medium text-[var(--acc-orange)]">
-            <AlertTriangle className="size-4 shrink-0" aria-hidden />
-            {operationLabel} update needs attention
+          <div className="flex items-center gap-2 text-sm font-medium text-[var(--recovery-accent)]">
+            {resolved ? (
+              <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+            ) : (
+              <AlertTriangle className="size-4 shrink-0" aria-hidden />
+            )}
+            {resolved
+              ? `${operationLabel} ready to continue`
+              : `${operationLabel} paused on conflicts`}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {continueReason ?? "All conflicts are resolved. Continue the update or abort it."}
+            {continueReason ??
+              `All conflicts staged. Continue to finish the ${noun}, or abort to undo it.`}
           </p>
           {conflictFiles.length > 0 && (
-            <ConflictBatch
-              files={conflictFiles}
-              batch={conflictBatch}
-              resolved={conflictCount === 0}
-            />
+            <ConflictBatch files={conflictFiles} batch={conflictBatch} resolved={resolved} />
           )}
           {actions.error && (
             <p role="alert" className="mt-2 whitespace-pre-wrap text-xs text-destructive">
@@ -129,20 +143,20 @@ export const GitUpdateRecoveryBanner = memo(function GitUpdateRecoveryBanner({
             ) : (
               <Undo2 className="mr-2 size-3.5" />
             )}
-            Abort update
+            {gitUpdateActionLabel("abort", operation)}
           </Button>
           <Button
             size="sm"
             onClick={() => void actions.continueUpdate()}
             disabled={actions.pending || continueReason !== null}
-            title={continueReason ?? "Continue update"}
+            title={continueReason ?? `Continue ${noun}`}
           >
             {actions.pendingAction === "continue" ? (
               <Loader2 className="mr-2 size-3.5 animate-spin" />
             ) : (
               <Play className="mr-2 size-3.5" />
             )}
-            Continue update
+            {gitUpdateActionLabel("continue", operation)}
           </Button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { memo, useCallback, useState, type ReactNode } from "react";
-import type { ChangedFile } from "@/api/generated";
+import { FileStageState, type ChangedFile } from "@/api/generated";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import { firstChangedNewLine } from "@/lib/diff-line";
 import { type FileDiffSection, hasTextHunks } from "@/lib/parse-unified-diff";
@@ -19,6 +19,9 @@ import { useFileDiffSection } from "./useFileDiffSection";
 import type { DiffMode } from "./useDiffData";
 import { DiffImageView } from "./DiffImageView";
 import type { GitFileIndexActions } from "./useGitFileIndexActions";
+import { GitConflictFileBanner } from "./GitConflictFileBanner";
+import type { OpenDiffInEditor } from "./OpenDiffInEditorContext";
+import { resolvedStageState } from "./useGitDiffFileTreeModel";
 
 export interface DiffFileBlockProps {
   featureId: number;
@@ -44,7 +47,7 @@ export interface DiffFileBlockProps {
   onToggleFile: (fileName: string) => void;
   onMarkViewedFile: (fileName: string) => void;
   onUnmarkViewedFile: (fileName: string) => void;
-  onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  onOpenFileInEditor?: OpenDiffInEditor;
   indexActions?: GitFileIndexActions;
   onAddComment?: (filePath: string, lineNumber: number, side?: CommentSide) => void;
   themeAppearance: ThemeAppearance;
@@ -210,6 +213,7 @@ function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patc
     indexActions,
   } = props;
   const { status, file: displayName, additions, deletions } = file;
+  const conflicted = resolvedStageState(file) === FileStageState.conflicted;
   const onToggle = useCallback((): void => onToggleFile(displayName), [displayName, onToggleFile]);
   const onMarkViewed = useCallback(
     (): void => onMarkViewedFile(displayName),
@@ -225,26 +229,29 @@ function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patc
   );
 
   return (
-    <DiffFileHeader
-      displayName={displayName}
-      additions={additions}
-      deletions={deletions}
-      isCollapsed={isCollapsed}
-      isFocused={isFocused}
-      isFileViewed={isFileViewed}
-      isViewedPending={isViewedPending}
-      showViewedCheckbox={showViewedCheckbox}
-      statusIcon={
-        <DiffStatusIcon type={deriveChangeTypeFromStatus(status)} appearance={themeAppearance} />
-      }
-      themeAppearance={themeAppearance}
-      onToggle={onToggle}
-      onOpenFileInEditor={onOpenFileInEditor ? onOpenFile : undefined}
-      file={file}
-      indexActions={indexActions}
-      onMarkViewed={onMarkViewed}
-      onUnmarkViewed={onUnmarkViewed}
-    />
+    <>
+      <DiffFileHeader
+        displayName={displayName}
+        additions={additions}
+        deletions={deletions}
+        isCollapsed={isCollapsed}
+        isFocused={isFocused}
+        isFileViewed={isFileViewed}
+        isViewedPending={isViewedPending}
+        showViewedCheckbox={showViewedCheckbox}
+        statusIcon={
+          <DiffStatusIcon type={deriveChangeTypeFromStatus(status)} appearance={themeAppearance} />
+        }
+        themeAppearance={themeAppearance}
+        onToggle={onToggle}
+        onOpenFileInEditor={onOpenFileInEditor ? onOpenFile : undefined}
+        file={file}
+        indexActions={indexActions}
+        onMarkViewed={onMarkViewed}
+        onUnmarkViewed={onUnmarkViewed}
+      />
+      {conflicted && <GitConflictFileBanner file={file} indexActions={indexActions} />}
+    </>
   );
 }
 

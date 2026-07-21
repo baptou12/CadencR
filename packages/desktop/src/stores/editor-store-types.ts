@@ -20,6 +20,8 @@ export interface EditorTab {
   cursorPosition: { line: number; col: number };
   /** When set, the editor scrolls to this line on next load and clears it. */
   pendingGoToLine?: number;
+  /** Mount the conflict-resolution surface instead of the ordinary editor. */
+  resolveConflict?: boolean;
   isArtifact?: boolean;
   artifactFeatureId?: number;
   artifactPhaseSlug?: string;
@@ -75,6 +77,15 @@ export interface EditorStore {
     maxTabs?: number,
     goToLine?: number,
   ) => void;
+  /**
+   * Reconcile every open tab's `resolveConflict` flag against the set of paths
+   * Git currently reports as unmerged (backend-confirmed, exact-path). Opening
+   * a conflicted file therefore drops into the resolver automatically, and a
+   * watcher-confirmed resolution clears it — without any "Resolve in Editor"
+   * click. Dirty buffers are never flipped in either direction so unsaved work
+   * is preserved. Idempotent: safe to call on every status/tab change.
+   */
+  reconcileConflictResolution: (featureId: number, conflictedPaths: readonly string[]) => void;
   /**
    * Open a new empty "untitled" scratch tab. Used by CMD+N before the
    * buffer is ever saved to disk. Returns the synthetic `untitled://…`

@@ -254,8 +254,8 @@ describe("GitActionButton shortcuts", () => {
     const { user } = render(<GitActionButton featureId={42} projectId={7} />);
     await user.click(screen.getByRole("button", { name: /more git actions/i }));
 
-    expect(await screen.findByText("Continue update")).toBeInTheDocument();
-    expect(screen.getByText("Abort update")).toBeInTheDocument();
+    expect(await screen.findByText("Continue rebase")).toBeInTheDocument();
+    expect(screen.getByText("Abort rebase")).toBeInTheDocument();
     expect(screen.getByText("Resolve and stage 1 conflicting file first")).toBeInTheDocument();
   });
 

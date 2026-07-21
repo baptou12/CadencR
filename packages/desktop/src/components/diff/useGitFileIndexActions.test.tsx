@@ -46,6 +46,7 @@ vi.mock("@/api/generated", () => ({
 }));
 
 import { FileStageState } from "@/api/generated";
+import { useEditorStore } from "@/stores/editor-store";
 import { getGitFileActionAvailability, useGitFileIndexActions } from "./useGitFileIndexActions";
 
 beforeEach(() => {
@@ -53,6 +54,7 @@ beforeEach(() => {
   mocks.resetMutate.mockReset();
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
+  useEditorStore.setState({ features: {} });
 });
 
 describe("useGitFileIndexActions", () => {
@@ -102,6 +104,26 @@ describe("useGitFileIndexActions", () => {
     act(() => result.current.reset("src/other.ts"));
     expect(mocks.resetMutate).toHaveBeenCalledWith({
       data: { feature_id: 42, file_path: "src/other.ts" },
+    });
+  });
+
+  it("refuses to stage stale worktree bytes while the exact Editor buffer is dirty", () => {
+    const editor = useEditorStore.getState();
+    editor.initFeature(42);
+    editor.openFile(42, "main", "src/conflict.ts");
+    editor.setDirty(42, "main", "src/conflict.ts", true);
+    const { result } = renderHook(() => useGitFileIndexActions(42));
+
+    act(() => result.current.stage("src/conflict.ts"));
+
+    expect(mocks.stageMutate).not.toHaveBeenCalled();
+    expect(result.current.error).toEqual({
+      action: "stage",
+      filePath: "src/conflict.ts",
+      message: "Save the open Editor buffer before staging this file.",
+    });
+    expect(mocks.toastError).toHaveBeenCalledWith("Could not stage src/conflict.ts", {
+      description: "Save the open Editor buffer before staging this file.",
     });
   });
 

@@ -76,6 +76,12 @@ vi.mock("@/stores/editor-store", () => ({
   ),
 }));
 
+// Auto conflict-resolution has its own unit test and needs the real store +
+// changed-files query; keep it out of this layout-focused suite.
+vi.mock("../useAutoConflictResolution", () => ({
+  useAutoConflictResolution: () => {},
+}));
+
 vi.mock("../FileTree", () => ({
   default: () => <div data-testid="file-tree" />,
 }));

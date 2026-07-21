@@ -8,6 +8,7 @@ import { copyFilePath } from "./copyFilePath";
 import { clearPaneSearch } from "./editor-search/search-cache";
 
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
+const ConflictResolverEditor = lazy(() => import("./ConflictResolverEditor"));
 const UntitledCodeMirrorEditor = lazy(() => import("./UntitledCodeMirrorEditor"));
 const ImageFileViewer = lazy(() => import("./ImageFileViewer"));
 const ExcalidrawEditor = lazy(() => import("./ExcalidrawEditor"));
@@ -31,6 +32,11 @@ export default function EditorPane({
     (s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null,
   );
   const activePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId);
+  const resolvesConflict = useEditorStore(
+    (s) =>
+      s.features[featureId]?.panes[paneId]?.tabs.find((tab) => tab.filePath === activeFilePath)
+        ?.resolveConflict ?? false,
+  );
   const setActivePane = useEditorStore((s) => s.setActivePane);
   const openUntitledBuffer = useEditorStore((s) => s.openUntitledBuffer);
 
@@ -162,7 +168,16 @@ export default function EditorPane({
       <div className="flex-1 overflow-hidden">
         {activeFilePath ? (
           <Suspense fallback={suspenseFallback}>
-            {isExcalidrawFile(activeFilePath) ? (
+            {resolvesConflict ? (
+              <ConflictResolverEditor
+                key={`conflict:${activeFilePath}`}
+                filePath={activeFilePath}
+                projectId={projectId}
+                paneId={paneId}
+                featureId={featureId}
+                onEditorViewChange={onEditorViewChange}
+              />
+            ) : isExcalidrawFile(activeFilePath) ? (
               <ExcalidrawEditor
                 key={activeFilePath}
                 filePath={activeFilePath}

@@ -41,6 +41,7 @@ import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
+import { useAutoConflictResolution } from "./useAutoConflictResolution";
 
 interface FeatureEditorTabProps {
   featureId: number;
@@ -94,6 +95,9 @@ const FeatureEditorTab = memo(
     const editorViewsRef = useRef<Map<string, EditorView>>(new Map());
 
     useFileWatcher(projectPath);
+    // Open any Git-unmerged file straight into the conflict resolver, and clear
+    // it once the watcher confirms resolution — no "Resolve in Editor" click.
+    useAutoConflictResolution(featureId);
 
     const focusActiveEditor = useCallback((): void => {
       editorViewsRef.current.get(activePaneId)?.focus();

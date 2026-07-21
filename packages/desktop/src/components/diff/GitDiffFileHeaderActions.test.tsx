@@ -28,7 +28,7 @@ function actions(overrides: Partial<GitFileIndexActions> = {}): GitFileIndexActi
 }
 
 describe("GitDiffFileHeaderActions", () => {
-  it("exposes conflict, Editor, and stage actions in the diff header", async () => {
+  it("leaves conflict staging to the per-file banner", async () => {
     const indexActions = actions();
     const open = vi.fn();
     const conflict = file({
@@ -50,9 +50,9 @@ describe("GitDiffFileHeaderActions", () => {
       }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open src/file.ts in editor" }));
-    await user.click(screen.getByRole("button", { name: "Stage src/file.ts" }));
+    expect(screen.queryByRole("button", { name: "Stage src/file.ts" })).not.toBeInTheDocument();
     expect(open).toHaveBeenCalledOnce();
-    expect(indexActions.stage).toHaveBeenCalledWith("src/file.ts");
+    expect(indexActions.stage).not.toHaveBeenCalled();
   });
 
   it("shows a spinner on only the pending file and disables mutation actions", () => {
@@ -100,7 +100,7 @@ describe("GitDiffFileHeaderActions", () => {
     expect(screen.getByText("Unstage file — keeps worktree changes intact")).toBeInTheDocument();
   });
 
-  it("disables Editor for both-deleted conflicts while leaving stage deletion available", () => {
+  it("disables Editor for both-deleted conflicts and leaves deletion staging to the banner", () => {
     render(
       <GitDiffFileHeaderActions
         file={file({
@@ -123,7 +123,9 @@ describe("GitDiffFileHeaderActions", () => {
         "Editor unavailable: both sides deleted this file. Stage the deletion to resolve it.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stage deletion src/file.ts" })).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Stage deletion src/file.ts" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
         name: "Unstage src/file.ts; worktree content is preserved",
@@ -143,5 +145,22 @@ describe("GitDiffFileHeaderActions", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent("Stage failed: index is locked");
+  });
+
+  it("leaves conflict mutation errors to the per-file banner", () => {
+    const conflict = file({
+      stage_state: FileStageState.conflicted,
+      conflict_kind: ConflictKind.uu,
+    });
+    render(
+      <GitDiffFileActionError
+        file={conflict}
+        indexActions={actions({
+          error: { action: "stage", filePath: conflict.file, message: "index is locked" },
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

@@ -6,7 +6,7 @@ import {
   TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
-import type { ChangedFile } from "@/api/generated";
+import { FileStageState, type ChangedFile } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Button } from "@/components/ui/button";
 import { getGitFileActionAvailability, type GitFileIndexActions } from "./useGitFileIndexActions";
@@ -69,7 +69,9 @@ export function GitDiffFileHeaderActions({
   onOpenFileInEditor,
 }: GitDiffFileHeaderActionsProps): React.JSX.Element {
   const deleteConflict = isUnavailableDeleteConflict(file);
-  const availability = getGitFileActionAvailability(resolvedStageState(file));
+  const stageState = resolvedStageState(file);
+  const conflicted = stageState === FileStageState.conflicted;
+  const availability = getGitFileActionAvailability(stageState);
   const pendingPath = indexActions?.pendingPath === file.file;
   const stagePending = pendingPath && indexActions?.pendingAction === "stage";
   const resetPending = pendingPath && indexActions?.pendingAction === "reset";
@@ -108,7 +110,7 @@ export function GitDiffFileHeaderActions({
           onClick={() => openGitFileInEditor(file, onOpenFileInEditor)}
         />
       ) : null}
-      {indexActions && availability.canStage ? (
+      {indexActions && availability.canStage && !conflicted ? (
         <HeaderActionButton
           label={deleteConflict ? `Stage deletion ${file.file}` : `Stage ${file.file}`}
           title={
@@ -145,6 +147,7 @@ export function GitDiffFileActionError({
   file: ChangedFile;
   indexActions?: GitFileIndexActions;
 }): React.JSX.Element | null {
+  if (resolvedStageState(file) === FileStageState.conflicted) return null;
   const error = indexActions?.error;
   if (!error || error.filePath !== file.file) return null;
   return (

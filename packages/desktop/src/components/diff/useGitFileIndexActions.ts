@@ -7,6 +7,7 @@ import {
   type FileStageState as FileStageStateValue,
 } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { useEditorStore } from "@/stores/editor-store";
 
 export type GitFileIndexAction = "stage" | "reset";
 
@@ -28,6 +29,14 @@ export interface GitFileIndexActions {
 export interface GitFileActionAvailability {
   canStage: boolean;
   canReset: boolean;
+}
+
+function hasDirtyEditorBuffer(featureId: number, filePath: string): boolean {
+  const feature = useEditorStore.getState().features[featureId];
+  if (!feature) return false;
+  return Object.values(feature.panes).some((pane) =>
+    pane.tabs.some((tab) => tab.filePath === filePath && tab.isDirty),
+  );
 }
 
 /** Whole-file mutation availability derived exclusively from typed stage state. */
@@ -98,6 +107,12 @@ export function useGitFileIndexActions(featureId: number): GitFileIndexActions {
 
   const stage = useCallback(
     (filePath: string): void => {
+      if (hasDirtyEditorBuffer(featureId, filePath)) {
+        const message = "Save the open Editor buffer before staging this file.";
+        setError({ action: "stage", filePath, message });
+        toast.error(`Could not stage ${filePath}`, { description: message });
+        return;
+      }
       if (!acquireFlight("stage", filePath)) return;
       stageMutate({ data: { feature_id: featureId, file_path: filePath } });
     },
