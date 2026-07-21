@@ -14,7 +14,10 @@ describe("Select", () => {
         </SelectContent>
       </Select>,
     );
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveClass(
+      "border-control-border",
+      "focus-visible:ring-control-focus-ring",
+    );
   });
 
   it("shows placeholder text", () => {

@@ -7,8 +7,8 @@ const baseClasses =
 
 const variantClasses = {
   default: cn(
-    "file:text-foreground selection:bg-primary selection:text-primary-foreground border-input h-9 rounded-md border px-3 py-1 text-base shadow-xs transition-[color,box-shadow] file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium md:text-sm",
-    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+    "file:text-foreground selection:bg-primary selection:text-primary-foreground border-control-border h-9 rounded-md border px-3 py-1 text-base shadow-xs transition-[color,box-shadow] file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium md:text-sm",
+    "focus-visible:border-ring focus-visible:ring-control-focus-ring focus-visible:ring-[3px]",
     "aria-invalid:ring-destructive/20 aria-invalid:border-destructive",
   ),
   /** Borderless transparent input matching the command palette style. */

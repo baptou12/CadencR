@@ -5,7 +5,10 @@ import { Textarea } from "./textarea";
 describe("Textarea", () => {
   it("renders a textarea element", () => {
     render(<Textarea />);
-    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveClass(
+      "border-control-border",
+      "focus-visible:ring-control-focus-ring",
+    );
   });
 
   it("renders with placeholder", () => {

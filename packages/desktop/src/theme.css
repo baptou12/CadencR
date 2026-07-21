@@ -23,6 +23,19 @@
 :root {
   --radius: 0.625rem;
   --border-width: 1px;
+  /* Interactive control outlines need more contrast than structural
+   * hairlines. Light themes derive a >= 3:1 edge from their already-audited
+   * muted foreground; dark themes keep their existing input treatment. */
+  --control-border: light-dark(
+    color-mix(in oklab, var(--muted-foreground) 82%, var(--background)),
+    var(--input)
+  );
+  /* Light themes use the solid primary for a clear keyboard-focus halo. Dark
+   * themes retain the existing softer ring treatment. */
+  --control-focus-ring: light-dark(
+    var(--primary),
+    color-mix(in oklab, var(--ring) 50%, transparent)
+  );
   /* Radius for pill-shaped chrome buttons (sidebar Settings, remote toggle).
    * A fully-round pill by default; the square themes square it back to
    * `--radius` via their `rounded-[…]` clamp in `theme-square.css` (a literal

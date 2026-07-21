@@ -5,7 +5,10 @@ import { Input } from "./input";
 describe("Input", () => {
   it("renders an input element", () => {
     render(<Input />);
-    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveClass(
+      "border-control-border",
+      "focus-visible:ring-control-focus-ring",
+    );
   });
 
   it("renders with placeholder", () => {
