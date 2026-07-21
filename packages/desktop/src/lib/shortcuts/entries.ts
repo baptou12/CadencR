@@ -20,6 +20,7 @@
 import type { Shortcut } from "./types";
 import { BROWSER_SHORTCUTS } from "./entries-browser";
 import { EDITOR_SHORTCUTS } from "./entries-editor";
+import { GIT_SHORTCUTS } from "./entries-git";
 import { MODEL_PICKER_SHORTCUTS } from "./entries-model-picker";
 import { TERMINAL_SHORTCUTS } from "./entries-terminal";
 
@@ -333,59 +334,11 @@ const APP_SHORTCUTS = [
   },
   { id: "q-prev", keys: ["left"], description: "Previous question", scope: "question-drawer" },
   { id: "q-next", keys: ["right"], description: "Next question", scope: "question-drawer" },
-
-  // ─── Git tab ─────────────────────────────────────────────────────────
-  { id: "git-next-item", keys: ["j"], description: "Next item", scope: "diff-viewer" },
-  { id: "git-previous-item", keys: ["k"], description: "Previous item", scope: "diff-viewer" },
-  { id: "git-open-item", keys: ["l"], description: "Open or expand item", scope: "diff-viewer" },
-  { id: "git-back", keys: ["h"], description: "Collapse or go back", scope: "diff-viewer" },
-  {
-    id: "git-scroll-down",
-    keys: ["d"],
-    description: "Scroll half-page down",
-    scope: "diff-viewer",
-  },
-  {
-    id: "git-scroll-up",
-    keys: ["u"],
-    description: "Scroll half-page up",
-    scope: "diff-viewer",
-  },
-  {
-    id: "git-toggle-viewed",
-    keys: ["v"],
-    description: "Toggle selected file viewed",
-    scope: "diff-viewer",
-  },
-  { id: "git-stage-file", keys: ["s"], description: "Stage selected file", scope: "diff-viewer" },
-  {
-    id: "git-reset-file",
-    keys: ["r"],
-    description: "Unstage selected file (preserve worktree)",
-    scope: "diff-viewer",
-  },
-  {
-    id: "diff-toggle-sidebar",
-    keys: ["mod", "e"],
-    description: "Toggle Git file list",
-    scope: "diff-viewer",
-  },
-  {
-    id: "diff-send-comments",
-    keys: ["mod", "enter"],
-    description: "Send pending comments",
-    scope: "diff-viewer",
-  },
-  {
-    id: "git-open-in-editor",
-    keys: ["mod", "o"],
-    description: "Open selected file in editor",
-    scope: "diff-viewer",
-  },
 ] as const satisfies readonly Shortcut[];
 
 export const SHORTCUTS = [
   ...APP_SHORTCUTS,
+  ...GIT_SHORTCUTS,
   ...TERMINAL_SHORTCUTS,
   ...EDITOR_SHORTCUTS,
   ...BROWSER_SHORTCUTS,

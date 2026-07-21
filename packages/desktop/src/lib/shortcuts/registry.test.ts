@@ -37,6 +37,22 @@ describe("shortcut registry", () => {
     });
   });
 
+  it("registers the approved persisted Git view map", () => {
+    expect({
+      uncommitted: shortcutKeys("git-show-uncommitted"),
+      target: shortcutKeys("git-show-vs-target"),
+      commits: shortcutKeys("git-show-commits"),
+      branches: shortcutKeys("git-show-branches"),
+      stashes: shortcutKeys("git-show-stashes"),
+    }).toEqual({
+      uncommitted: ["mod", "u"],
+      target: ["mod", "t"],
+      commits: ["mod", "h"],
+      branches: ["mod", "l"],
+      stashes: ["mod", "s"],
+    });
+  });
+
   it("removes the superseded Ctrl-based diff shortcut identifiers", () => {
     const ids = new Set(SHORTCUTS.map((shortcut) => shortcut.id));
     expect(ids).not.toContain("diff-next-file");

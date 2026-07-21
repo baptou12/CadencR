@@ -72,10 +72,12 @@ const mocks = vi.hoisted(() => {
     (
       key: string,
       debounceMs?: number,
+      options?: { immediateCache?: boolean },
     ) => {
       value: string | null;
       setValue: typeof persistFileListCollapsedMock;
       isLoading?: boolean;
+      isSaving?: boolean;
     }
   >(() => ({
     value: null as string | null,
@@ -124,6 +126,23 @@ vi.mock("@/api/generated", () => ({
     conflicted: "conflicted",
   },
   ConflictKind: { dd: "dd", au: "au", ud: "ud", ua: "ua", du: "du", aa: "aa", uu: "uu" },
+  ConflictFallbackReason: {
+    binary: "binary",
+    both_deleted: "both_deleted",
+    large: "large",
+    unavailable: "unavailable",
+  },
+  ConflictUnavailableReason: {
+    resolved: "resolved",
+    stale: "stale",
+    repository_unavailable: "repository_unavailable",
+  },
+  useGetConflictContent: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+  })),
   useGetChangedFiles: mocks.useGetChangedFilesMock,
   useGetFileBlobShas: mocks.useGetFileBlobShasMock,
   useGetFileContent: mocks.useGetFileContentMock,
@@ -162,8 +181,8 @@ vi.mock("@tanstack/react-query", async () => {
 });
 
 vi.mock("@/hooks/useDebouncedSetting", () => ({
-  useDebouncedSetting: (key: string, debounceMs?: number) =>
-    mocks.useDebouncedSettingMock(key, debounceMs),
+  useDebouncedSetting: (...args: [string, number?, { immediateCache?: boolean }?]) =>
+    mocks.useDebouncedSettingMock(...args),
 }));
 
 vi.mock("./useGitDiffTreeDisplaySetting", () => ({
@@ -557,7 +576,9 @@ describe("DiffViewer", () => {
   it("reads the workspace-level git diff view mode setting", () => {
     withFooFile();
     render(<DiffViewer featureId={1} mode="worktree" />);
-    expect(mocks.useDebouncedSettingMock).toHaveBeenCalledWith("git_diff_view_mode", 0);
+    expect(mocks.useDebouncedSettingMock).toHaveBeenCalledWith("git_diff_view_mode", 0, {
+      immediateCache: false,
+    });
   });
 
   it("persists the diff view mode when toggling Split", async () => {

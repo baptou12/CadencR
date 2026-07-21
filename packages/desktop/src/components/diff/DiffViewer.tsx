@@ -5,10 +5,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { GIT_DIFF_VIEW_MODE_KEY, parseGitDiffViewMode } from "@/lib/git-diff-view-mode";
 import { DiffContent } from "./DiffContent";
 import { DiffLayout } from "./DiffLayout";
-import { DiffViewerBottomBar } from "./DiffViewerBottomBar";
+import { GitDiffToolbar } from "./GitDiffToolbar";
 import { GitDiffFileTree } from "./GitDiffFileTree";
 import { useDiffData, type DiffMode } from "./useDiffData";
-import { useOpenDiffInEditor } from "./OpenDiffInEditorContext";
+import { useOpenDiffInEditor, type OpenDiffInEditor } from "./OpenDiffInEditorContext";
 import { useGitFileIndexActions } from "./useGitFileIndexActions";
 import { useGitFileListCollapse, type GitFileListCollapseState } from "./useGitFileListCollapse";
 import { useDiffViewerComments } from "./useDiffViewerComments";
@@ -22,8 +22,9 @@ interface DiffViewerProps {
   commitSha?: string | null;
   fileListCollapsed?: boolean;
   onFileListCollapsedChange?: (collapsed: boolean) => void;
-  onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  onOpenFileInEditor?: OpenDiffInEditor;
   registerNavigationAdapter?: GitNavigationAdapterRegistrar;
+  afterToolbar?: ReactNode;
 }
 
 type DiffData = ReturnType<typeof useDiffData>;
@@ -35,10 +36,9 @@ interface LoadedDiffViewerProps {
   data: DiffData;
   fileList: GitFileListCollapseState;
   diffMode: "unified" | "split";
-  setDiffMode: (mode: string) => void;
   themeAppearance: ThemeAppearance;
   themeId: ThemeId;
-  openFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  openFileInEditor?: OpenDiffInEditor;
   registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
@@ -70,15 +70,11 @@ const DiffViewerLayout = memo(function DiffViewerLayout({
   fileList,
   tree,
   content,
-  diffMode,
-  setDiffMode,
 }: {
   data: DiffData;
   fileList: GitFileListCollapseState;
   tree: ReactNode;
   content: ReactNode;
-  diffMode: "unified" | "split";
-  setDiffMode: (mode: string) => void;
 }) {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -91,12 +87,6 @@ const DiffViewerLayout = memo(function DiffViewerLayout({
         content={content}
         onCollapsedChange={fileList.setCollapsed}
       />
-      <DiffViewerBottomBar
-        viewedCount={data.viewedFilesSet.size}
-        fileCount={data.changedFiles.length}
-        diffMode={diffMode}
-        onDiffModeChange={setDiffMode}
-      />
     </div>
   );
 });
@@ -108,7 +98,6 @@ function LoadedDiffViewer({
   data,
   fileList,
   diffMode,
-  setDiffMode,
   themeAppearance,
   themeId,
   openFileInEditor,
@@ -190,16 +179,7 @@ function LoadedDiffViewer({
     ),
     [data.changedFiles, fileList, indexActions, navigation, openFileInEditor],
   );
-  return (
-    <DiffViewerLayout
-      data={data}
-      fileList={fileList}
-      tree={tree}
-      content={content}
-      diffMode={diffMode}
-      setDiffMode={setDiffMode}
-    />
-  );
+  return <DiffViewerLayout data={data} fileList={fileList} tree={tree} content={content} />;
 }
 
 function DiffViewerImpl({
@@ -211,10 +191,16 @@ function DiffViewerImpl({
   onFileListCollapsedChange,
   onOpenFileInEditor,
   registerNavigationAdapter,
+  afterToolbar,
 }: DiffViewerProps) {
   const contextOpenFileInEditor = useOpenDiffInEditor();
   const openFileInEditor = onOpenFileInEditor ?? contextOpenFileInEditor;
-  const { value, setValue: setDiffMode } = useDebouncedSetting(GIT_DIFF_VIEW_MODE_KEY, 0);
+  const {
+    value,
+    setValue: setDiffMode,
+    isLoading: isDiffModeLoading,
+    isSaving: isDiffModeSaving,
+  } = useDebouncedSetting(GIT_DIFF_VIEW_MODE_KEY, 0, { immediateCache: false });
   const diffMode = parseGitDiffViewMode(value);
   const fileList = useGitFileListCollapse({
     controlledValue: fileListCollapsed,
@@ -223,27 +209,43 @@ function DiffViewerImpl({
   const { theme } = useTheme();
   const data = useDiffData(featureId, mode, targetBranch, commitSha);
 
-  if (data.isLoading) return <DiffViewerMessage>Loading diff...</DiffViewerMessage>;
-  if (data.errorMessage && data.changedFiles.length === 0) {
-    return <DiffViewerMessage error>{data.errorMessage}</DiffViewerMessage>;
+  let content: ReactNode;
+  if (data.isLoading) {
+    content = <DiffViewerMessage>Loading diff...</DiffViewerMessage>;
+  } else if (data.errorMessage && data.changedFiles.length === 0) {
+    content = <DiffViewerMessage error>{data.errorMessage}</DiffViewerMessage>;
+  } else if (data.changedFiles.length === 0) {
+    content = <DiffViewerMessage>No changes detected</DiffViewerMessage>;
+  } else {
+    content = (
+      <LoadedDiffViewer
+        featureId={featureId}
+        mode={mode}
+        targetBranch={targetBranch}
+        data={data}
+        fileList={fileList}
+        diffMode={diffMode}
+        themeAppearance={theme.appearance}
+        themeId={theme.id}
+        openFileInEditor={openFileInEditor}
+        registerNavigationAdapter={registerNavigationAdapter}
+      />
+    );
   }
-  if (data.changedFiles.length === 0) {
-    return <DiffViewerMessage>No changes detected</DiffViewerMessage>;
-  }
+  const supportsViewed = data.selectedCommit === null;
   return (
-    <LoadedDiffViewer
-      featureId={featureId}
-      mode={mode}
-      targetBranch={targetBranch}
-      data={data}
-      fileList={fileList}
-      diffMode={diffMode}
-      setDiffMode={setDiffMode}
-      themeAppearance={theme.appearance}
-      themeId={theme.id}
-      openFileInEditor={openFileInEditor}
-      registerNavigationAdapter={registerNavigationAdapter}
-    />
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <GitDiffToolbar
+        diffMode={diffMode}
+        onDiffModeChange={setDiffMode}
+        isPreferenceLoading={isDiffModeLoading || isDiffModeSaving}
+        viewedCount={supportsViewed ? data.viewedFilesSet.size : undefined}
+        fileCount={supportsViewed ? data.changedFiles.length : undefined}
+        isViewedPending={data.markViewed.isPending || data.unmarkViewed.isPending}
+      />
+      {afterToolbar}
+      <div className="min-h-0 flex-1 overflow-hidden">{content}</div>
+    </div>
   );
 }
 

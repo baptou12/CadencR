@@ -25,6 +25,7 @@ import { selectGitTargetBranch, useGitStatusStore } from "@/stores/useGitStatusS
 import { apiErrorMessage } from "@/lib/api-errors";
 import { GitUpdateRecoveryRegion } from "./git-actions/GitUpdateRecoveryBanner";
 import { useGitKeyboardController } from "./diff/useGitKeyboardController";
+import { useGitViewShortcuts } from "./diff/useGitViewShortcuts";
 
 const GIT_VIEW_MODE_SETTING = "git_view_mode";
 const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
@@ -57,11 +58,9 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   const registerNavigationAdapter = useGitKeyboardController(hotkeysEnabled);
   const fallbackViewMode: GitViewMode = diffMode === "branch" ? "vs-target" : "uncommitted";
 
-  // Per-feature persisted toggle. The `viewMode` local state holds the
-  // user's pick; it stays in sync with the persisted setting via the effect
-  // below, so reload / cross-tab switches resume on the right view. Local
-  // state lets the toggle flip instantly without an optimistic cache write
-  // (per `no-optimistic-updates.md`).
+  // Per-feature persisted toggle. The local mirror advances only after the
+  // backend confirms the setting mutation; the persisted query remains the
+  // reload/cross-tab source of truth.
   const { data: settingsData } = useGetFeatureSettings(featureId);
   const persistedViewMode = useMemo<GitViewMode>(() => {
     const raw = settingsData?.find((s) => s.key === GIT_VIEW_MODE_SETTING)?.value;
@@ -75,12 +74,12 @@ export const FeatureGitTab = memo(function FeatureGitTab({
 
   const setFeatureSetting = useSetFeatureSetting({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (_response, variables) => {
+        const confirmed = variables.data.value;
+        if (isGitViewMode(confirmed)) setViewMode(confirmed);
         queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
       },
       onError: (err: unknown) => {
-        // Roll back the local pick so the UI matches the persisted state.
-        setViewMode(persistedViewMode);
         const message = apiErrorMessage(err, "Unknown error");
         toast.error(`Could not save Git view setting: ${message}`);
       },
@@ -90,7 +89,6 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   const handleViewModeChange = useCallback(
     (next: GitViewMode) => {
       if (next === viewMode) return;
-      setViewMode(next);
       setFeatureSetting.mutate({
         id: featureId,
         data: { key: GIT_VIEW_MODE_SETTING, value: next },
@@ -102,6 +100,16 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     () => handleViewModeChange("uncommitted"),
     [handleViewModeChange],
   );
+  const recoveryRegion = useMemo(
+    () => (
+      <GitUpdateRecoveryRegion
+        featureId={featureId}
+        onRequestUncommitted={handleRequestUncommitted}
+      />
+    ),
+    [featureId, handleRequestUncommitted],
+  );
+  useGitViewShortcuts(handleViewModeChange, hotkeysEnabled && !setFeatureSetting.isPending);
 
   // Only the target branch affects this component's query parameters. Selecting
   // the full live snapshot would re-render the entire Git tab whenever the
@@ -211,7 +219,16 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           value={viewMode}
           onChange={handleViewModeChange}
           targetBranch={targetBranch}
+          disabled={setFeatureSetting.isPending}
         />
+        {setFeatureSetting.isPending && (
+          <span
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+            role="status"
+          >
+            <Loader2Icon className="size-3 animate-spin" aria-hidden /> Saving view…
+          </span>
+        )}
         {!isListView && (
           <GitToolbarNumStat
             isLoading={statsQuery.isLoading}
@@ -221,10 +238,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           />
         )}
       </div>
-      <GitUpdateRecoveryRegion
-        featureId={featureId}
-        onRequestUncommitted={handleRequestUncommitted}
-      />
+      {isListView && recoveryRegion}
       <div className="min-h-0 flex-1 overflow-hidden">
         {isGraph ? (
           <GitGraphView
@@ -252,6 +266,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
             fileListCollapsed={fileListCollapsed}
             onFileListCollapsedChange={setFileListCollapsed}
             registerNavigationAdapter={registerNavigationAdapter}
+            afterToolbar={recoveryRegion}
           />
         )}
       </div>

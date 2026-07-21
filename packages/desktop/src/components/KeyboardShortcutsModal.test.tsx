@@ -34,4 +34,31 @@ describe("KeyboardShortcutsModal", () => {
     expect(screen.getByText("Git actions popover")).toBeInTheDocument();
     expect(screen.queryByText("Zoom in")).not.toBeInTheDocument();
   });
+
+  it("lists and searches every Git command from the central registry", () => {
+    render(<KeyboardShortcutsModal open onOpenChange={() => {}} />);
+    const search = screen.getByLabelText("Search shortcuts");
+
+    fireEvent.change(search, { target: { value: "git" } });
+
+    for (const label of [
+      "Next Git item",
+      "Previous Git item",
+      "Open or expand Git item",
+      "Collapse or go back in Git",
+      "Scroll Git half-page down",
+      "Scroll Git half-page up",
+      "Toggle selected Git file viewed",
+      "Stage selected Git file",
+      "Unstage selected Git file (preserve worktree)",
+      "Open selected Git file in Editor",
+      "Show Git Uncommitted",
+      "Show Git vs Target",
+      "Show Git Commits",
+      "Show Git Branches",
+      "Show Git Stashes",
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+  });
 });

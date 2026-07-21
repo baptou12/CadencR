@@ -8,7 +8,7 @@ const mockUseQuery = vi.fn(() => ({ data: { value: "stored-value" }, isLoading: 
 
 vi.mock("../api/generated", () => ({
   useGetWorkspaceSetting: () => mockUseQuery(),
-  useSetWorkspaceSetting: vi.fn(() => ({ mutate: mockMutate })),
+  useSetWorkspaceSetting: vi.fn(() => ({ mutate: mockMutate, isPending: false })),
   getGetWorkspaceSettingQueryKey: vi.fn((key: string) => ["workspace", "settings", key]),
 }));
 

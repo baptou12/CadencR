@@ -14,6 +14,7 @@ interface DebouncedSettingResult {
   value: string | null;
   setValue: (value: string) => void;
   isLoading: boolean;
+  isSaving: boolean;
 }
 
 /**
@@ -26,7 +27,7 @@ export function useDebouncedSetting(
   { immediateCache = true } = {},
 ): DebouncedSettingResult {
   const query = useGetWorkspaceSetting(key);
-  const { mutate } = useSetWorkspaceSetting();
+  const { mutate, isPending: isSaving } = useSetWorkspaceSetting();
   const queryClient = useQueryClient();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -83,7 +84,10 @@ export function useDebouncedSetting(
 
   const value = query.data?.value ?? null;
   const isLoading = query.isLoading;
-  return useMemo(() => ({ value, setValue, isLoading }), [value, setValue, isLoading]);
+  return useMemo(
+    () => ({ value, setValue, isLoading, isSaving }),
+    [value, setValue, isLoading, isSaving],
+  );
 }
 
 /**
@@ -173,7 +177,7 @@ export function useDebouncedSettingFromMap(
   const rawValue = map[key];
   const value = rawValue === undefined ? null : rawValue;
   return useMemo(
-    () => ({ value, setValue, isLoading: isMapLoading }),
-    [value, setValue, isMapLoading],
+    () => ({ value, setValue, isLoading: isMapLoading, isSaving: mutation.isPending }),
+    [value, setValue, isMapLoading, mutation.isPending],
   );
 }

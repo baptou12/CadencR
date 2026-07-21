@@ -27,6 +27,7 @@ describe("BrowserSection", () => {
       value: key === "browser_default_mode" ? "normal" : null,
       setValue: settingSetter(key),
       isLoading: false,
+      isSaving: false,
     }));
   });
 

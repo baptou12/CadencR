@@ -25,4 +25,14 @@ describe("installApplicationMenu", () => {
     expect(JSON.stringify(buildFromTemplate.mock.calls[0]?.[0])).not.toContain("zoomOut");
     expect(setApplicationMenu).toHaveBeenCalledOnce();
   });
+
+  it("retains the native macOS Hide role alongside the Git-scoped Mod+H renderer binding", async () => {
+    const { installApplicationMenu } = await import("./menu");
+
+    installApplicationMenu(vi.fn());
+
+    if (process.platform === "darwin") {
+      expect(JSON.stringify(buildFromTemplate.mock.calls.at(-1)?.[0])).toContain('"role":"hide"');
+    }
+  });
 });

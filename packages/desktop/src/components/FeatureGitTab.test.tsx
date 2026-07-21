@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import { act, render, screen } from "@/test-utils";
 import { FeatureGitTab } from "./FeatureGitTab";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import type { StashConflictOutcome } from "./diff/stash-contracts";
@@ -7,6 +7,8 @@ import type { StashConflictOutcome } from "./diff/stash-contracts";
 const mocks = vi.hoisted(() => ({
   setFeatureSetting: vi.fn(),
   persistSidebar: vi.fn(),
+  shortcutCallbacks: new Map<string, (event: KeyboardEvent) => void>(),
+  settingPending: false,
 }));
 
 vi.mock("@/api/generated", () => ({
@@ -14,10 +16,27 @@ vi.mock("@/api/generated", () => ({
   useGetFeatureSettings: () => ({ data: [{ key: "git_view_mode", value: "stashes" }] }),
   useGetStats: () => ({ isLoading: false, isError: false, data: undefined }),
   useListDiffComments: () => ({ data: [] }),
-  useSetFeatureSetting: () => ({ mutate: mocks.setFeatureSetting }),
+  useSetFeatureSetting: (options: {
+    mutation: { onSuccess: (response: unknown, variables: { data: { value: string } }) => void };
+  }) => ({
+    isPending: mocks.settingPending,
+    mutate: (variables: { data: { value: string } }) => {
+      mocks.setFeatureSetting(variables);
+      options.mutation.onSuccess({}, variables);
+    },
+  }),
 }));
 
-vi.mock("@/hooks/useShortcut", () => ({ useScopedGlobalShortcutById: vi.fn() }));
+vi.mock("@/hooks/useShortcut", () => ({
+  useScopedGlobalShortcutById: (
+    id: string,
+    callback: (event: KeyboardEvent) => void,
+    _scope: string,
+    options?: { enabled?: boolean },
+  ) => {
+    if (options?.enabled !== false) mocks.shortcutCallbacks.set(id, callback);
+  },
+}));
 vi.mock("@/hooks/useDebouncedSetting", () => ({
   useDebouncedSetting: () => ({
     value: "false",
@@ -68,6 +87,8 @@ vi.mock("./diff/GitBranchesView", () => ({ GitBranchesView: () => null }));
 describe("FeatureGitTab stash conflicts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.shortcutCallbacks.clear();
+    mocks.settingPending = false;
     useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
     useGitStatusStore.getState().setStatus({
       feature_id: 9,
@@ -104,5 +125,29 @@ describe("FeatureGitTab stash conflicts", () => {
       id: 9,
       data: { key: "git_view_mode", value: "uncommitted" },
     });
+  });
+
+  it("routes Git view shortcuts through the confirmed persistence transition", () => {
+    render(<FeatureGitTab featureId={9} projectId={3} />);
+    const event = new KeyboardEvent("keydown", { key: "u", metaKey: true, cancelable: true });
+
+    act(() => mocks.shortcutCallbacks.get("git-show-uncommitted")?.(event));
+
+    expect(mocks.setFeatureSetting).toHaveBeenCalledWith({
+      id: 9,
+      data: { key: "git_view_mode", value: "uncommitted" },
+    });
+    expect(screen.getByRole("tab", { name: "Uncommitted" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("shows a visible pending state while a Git view transition is being saved", () => {
+    mocks.settingPending = true;
+    render(<FeatureGitTab featureId={9} projectId={3} />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Saving view…");
+    expect(screen.getByRole("tab", { name: "Stashes" })).toBeDisabled();
   });
 });
