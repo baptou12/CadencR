@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   $createTextNode,
   $getSelection,
@@ -200,13 +207,27 @@ export function useCursorRect(): [DOMRect | null, () => void] {
   return [cursorRect, updateCursorRect];
 }
 
-/** Wrapper component for positioning a popover above the cursor. */
+/** Minimal rect shared by cursor- and editor-anchored fixed popovers. */
+export interface PopoverAnchorRect {
+  left: number;
+  top: number;
+  width: number;
+}
+
+function samePopoverAnchorRect(a: PopoverAnchorRect | null, b: PopoverAnchorRect): boolean {
+  return a?.left === b.left && a.top === b.top && a.width === b.width;
+}
+
+/** Wrapper for positioning a popover above a cursor or editor-top anchor. */
 export function CursorPopover({
   cursorRect,
   children,
+  matchWidth = false,
 }: {
-  cursorRect: DOMRect;
+  cursorRect: PopoverAnchorRect;
   children: ReactNode;
+  /** Stretch to the anchor width (slash/skill menus). */
+  matchWidth?: boolean;
 }) {
   return (
     <div
@@ -214,10 +235,68 @@ export function CursorPopover({
       style={{
         left: cursorRect.left,
         top: cursorRect.top - 4,
+        width: matchWidth ? cursorRect.width : undefined,
         transform: "translateY(-100%)",
       }}
     >
       {children}
     </div>
   );
+}
+
+/**
+ * Tracks the PromptEditor anchor box while `active` so fixed popovers can
+ * escape composer overflow yet stay prompt-width. Uses ResizeObserver +
+ * scroll/resize (rAF-coalesced, equality-gated) — not Lexical updates.
+ */
+export function useEditorAnchorRect(
+  editor: LexicalEditor,
+  active: boolean,
+): PopoverAnchorRect | null {
+  const [rect, setRect] = useState<PopoverAnchorRect | null>(null);
+
+  useLayoutEffect(() => {
+    if (!active) {
+      setRect(null);
+      return;
+    }
+
+    const root = editor.getRootElement();
+    const anchor =
+      (root?.closest("[data-prompt-editor-anchor]") as HTMLElement | null) ??
+      root?.parentElement ??
+      root;
+    if (!anchor) return;
+
+    let frame: number | null = null;
+    let last: PopoverAnchorRect | null = null;
+
+    const sync = (): void => {
+      frame = null;
+      const nextRect = anchor.getBoundingClientRect();
+      const next = { left: nextRect.left, top: nextRect.top, width: nextRect.width };
+      if (samePopoverAnchorRect(last, next)) return;
+      last = next;
+      setRect(next);
+    };
+    const schedule = (): void => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(sync);
+    };
+
+    sync();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
+    observer?.observe(anchor);
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [active, editor]);
+
+  return rect;
 }

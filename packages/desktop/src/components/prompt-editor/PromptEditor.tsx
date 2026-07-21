@@ -300,9 +300,12 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
             it to the editable, which scrolls. All used values, no percentage
             heights: those need a definite ancestor to resolve against, and
             WebKit resolves them differently from Blink inside a flex column.
-            Keep the scroll on the editable, not here — the mention and slash
-            menus are positioned against this wrapper. */}
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col self-stretch">
+            Keep the scroll on the editable, not here — `data-prompt-editor-anchor`
+            lets slash menus fix-position to this box and escape composer overflow. */}
+        <div
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col self-stretch"
+          data-prompt-editor-anchor
+        >
           <PromptEditorInner ref={ref} {...props} />
         </div>
       </LexicalComposer>

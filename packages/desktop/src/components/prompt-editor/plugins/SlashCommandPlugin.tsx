@@ -2,14 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { $getRoot, $getSelection, $isRangeSelection, $isTextNode, type TextNode } from "lexical";
 import { $createSlashCommandNode } from "../nodes/SlashCommandNode";
-import { SlashCommandPopover } from "@/components/SlashCommandPopover";
+import {
+  SlashCommandPopover,
+  slashCommandPopoverMaxHeight,
+} from "@/components/SlashCommandPopover";
 import { useSlashCommand } from "@/hooks/useSlashCommand";
 import { useProjectMcpEnabled, useWorkspaceMcpEnabled } from "@/lib/mcp-settings";
 import type { PromptCommandTriggerChar } from "@/lib/prompt-command-policy";
 import type { SlashCommand } from "@/lib/slash-command";
 import {
+  CursorPopover,
   getTriggerMatch,
   replaceTriggerWithNode,
+  useEditorAnchorRect,
   usePopoverKeyboardCommands,
 } from "./trigger-utils";
 
@@ -144,19 +149,23 @@ export function SlashCommandPlugin({
 
   usePopoverKeyboardCommands(editor, slash.isOpen, slashRef, getSelectedValue, handleSelect);
 
-  if (!slash.isOpen || (!isLoading && slash.filteredItems.length === 0)) return null;
+  const popoverOpen = slash.isOpen && (!!isLoading || slash.filteredItems.length > 0);
+  const anchorRect = useEditorAnchorRect(editor, popoverOpen);
+
+  if (!popoverOpen || !anchorRect) return null;
 
   return (
-    <SlashCommandPopover
-      open={true}
-      items={slash.filteredItems}
-      selectedIndex={slash.selectedIndex}
-      onSelect={handleSelect}
-      isLoading={isLoading ?? false}
-      triggerChar={triggerChar}
-      cadencrDisabled={!cadencrEnabled}
-    >
-      <span />
-    </SlashCommandPopover>
+    <CursorPopover cursorRect={anchorRect} matchWidth>
+      <SlashCommandPopover
+        open={true}
+        items={slash.filteredItems}
+        selectedIndex={slash.selectedIndex}
+        onSelect={handleSelect}
+        isLoading={isLoading ?? false}
+        triggerChar={triggerChar}
+        cadencrDisabled={!cadencrEnabled}
+        maxHeight={slashCommandPopoverMaxHeight(anchorRect.top)}
+      />
+    </CursorPopover>
   );
 }

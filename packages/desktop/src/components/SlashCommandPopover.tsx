@@ -5,6 +5,17 @@ import { CadencrLogo } from "@/components/CadencrLogo";
 import { SlidingText } from "@/components/SlidingText";
 import type { SlashCommand } from "@/lib/slash-command";
 
+export const SLASH_COMMAND_POPOVER_MAX_HEIGHT = 300;
+export const SLASH_COMMAND_POPOVER_MIN_HEIGHT = 120;
+
+/** Cap the list to available space above the prompt (with a usable floor). */
+export function slashCommandPopoverMaxHeight(spaceAbovePx: number): number {
+  return Math.max(
+    SLASH_COMMAND_POPOVER_MIN_HEIGHT,
+    Math.min(SLASH_COMMAND_POPOVER_MAX_HEIGHT, spaceAbovePx - 8),
+  );
+}
+
 interface SlashCommandPopoverProps {
   open: boolean;
   items: SlashCommand[];
@@ -16,7 +27,8 @@ interface SlashCommandPopoverProps {
   /** When true, Cadencr virtual skills (`kind === "cadencr"`) are shown but
    * disabled because a required MCP dependency (project or workspace) is off. */
   cadencrDisabled?: boolean;
-  children: React.ReactNode;
+  /** Viewport-aware list height; defaults to 300px. */
+  maxHeight?: number;
 }
 
 const CADENCR_DISABLED_HINT =
@@ -119,7 +131,7 @@ export function SlashCommandPopover({
   isLoading,
   triggerChar = "/",
   cadencrDisabled = false,
-  children,
+  maxHeight = SLASH_COMMAND_POPOVER_MAX_HEIGHT,
 }: SlashCommandPopoverProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -130,35 +142,33 @@ export function SlashCommandPopover({
     selected?.scrollIntoView({ block: "nearest" });
   }, [open, selectedIndex]);
 
+  if (!open) return null;
+
   return (
-    <>
-      {children}
-      {open && (
-        <div
-          ref={listRef}
-          className="glass-surface absolute bottom-full left-0 right-0 z-50 mb-1 max-h-[300px] overflow-y-auto rounded-md border border-border bg-popover py-0 shadow-lg"
-        >
-          {isLoading ? (
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-              <Loader2Icon className="size-3 animate-spin" />
-              Loading commands…
-            </div>
-          ) : items.length > 0 ? (
-            items.map((item, i) => (
-              <SlashCommandItem
-                key={item.name}
-                item={item}
-                selected={i === selectedIndex}
-                disabled={item.kind === "cadencr" && cadencrDisabled}
-                triggerChar={triggerChar}
-                onSelect={onSelect}
-              />
-            ))
-          ) : (
-            <div className="px-3 py-2 text-xs text-muted-foreground">No matching commands</div>
-          )}
+    <div
+      ref={listRef}
+      className="glass-surface w-full overflow-y-auto rounded-md border border-border bg-popover py-0 shadow-lg"
+      style={{ maxHeight }}
+    >
+      {isLoading ? (
+        <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3 animate-spin" />
+          Loading commands…
         </div>
+      ) : items.length > 0 ? (
+        items.map((item, i) => (
+          <SlashCommandItem
+            key={item.name}
+            item={item}
+            selected={i === selectedIndex}
+            disabled={item.kind === "cadencr" && cadencrDisabled}
+            triggerChar={triggerChar}
+            onSelect={onSelect}
+          />
+        ))
+      ) : (
+        <div className="px-3 py-2 text-xs text-muted-foreground">No matching commands</div>
       )}
-    </>
+    </div>
   );
 }

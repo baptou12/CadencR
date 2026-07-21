@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
-import { SlashCommandPopover } from "./SlashCommandPopover";
+import {
+  SlashCommandPopover,
+  slashCommandPopoverMaxHeight,
+  SLASH_COMMAND_POPOVER_MAX_HEIGHT,
+  SLASH_COMMAND_POPOVER_MIN_HEIGHT,
+} from "./SlashCommandPopover";
 
 const commands = [
   {
@@ -24,22 +29,21 @@ const cadencrCommand = {
   argumentHint: "[focus]",
 };
 
-describe("SlashCommandPopover", () => {
-  it("renders children", () => {
-    render(
-      <SlashCommandPopover
-        open={false}
-        items={[]}
-        selectedIndex={0}
-        onSelect={vi.fn()}
-        isLoading={false}
-      >
-        <input placeholder="Type command" />
-      </SlashCommandPopover>,
-    );
-    expect(screen.getByPlaceholderText("Type command")).toBeInTheDocument();
+describe("slashCommandPopoverMaxHeight", () => {
+  it("caps at the shared max when there is plenty of space", () => {
+    expect(slashCommandPopoverMaxHeight(800)).toBe(SLASH_COMMAND_POPOVER_MAX_HEIGHT);
   });
 
+  it("shrinks to available space above the prompt", () => {
+    expect(slashCommandPopoverMaxHeight(200)).toBe(192);
+  });
+
+  it("floors at the shared minimum", () => {
+    expect(slashCommandPopoverMaxHeight(50)).toBe(SLASH_COMMAND_POPOVER_MIN_HEIGHT);
+  });
+});
+
+describe("SlashCommandPopover", () => {
   it("does not show popover when closed", () => {
     render(
       <SlashCommandPopover
@@ -48,9 +52,7 @@ describe("SlashCommandPopover", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         isLoading={false}
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
     expect(screen.queryByText("/commit")).not.toBeInTheDocument();
   });
@@ -63,13 +65,25 @@ describe("SlashCommandPopover", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         isLoading={false}
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
     expect(screen.getByText("/commit")).toBeInTheDocument();
     expect(screen.getByText("/plan")).toBeInTheDocument();
     expect(container.querySelector(".glass-surface")).toHaveClass("py-0");
+  });
+
+  it("applies viewport-aware maxHeight", () => {
+    const { container } = render(
+      <SlashCommandPopover
+        open={true}
+        items={commands}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        isLoading={false}
+        maxHeight={180}
+      />,
+    );
+    expect(container.querySelector(".glass-surface")).toHaveStyle({ maxHeight: "180px" });
   });
 
   it("does not render command kind badges", () => {
@@ -80,9 +94,7 @@ describe("SlashCommandPopover", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         isLoading={false}
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
     expect(screen.queryByText("command")).not.toBeInTheDocument();
     expect(screen.queryByText("skill")).not.toBeInTheDocument();
@@ -96,9 +108,7 @@ describe("SlashCommandPopover", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         isLoading={false}
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
 
     // The description text lives in SlidingText's inner span; the color class
@@ -117,9 +127,7 @@ describe("SlashCommandPopover", () => {
         selectedIndex={selectedIndex}
         onSelect={vi.fn()}
         isLoading={false}
-      >
-        <input />
-      </SlashCommandPopover>
+      />
     );
     const { rerender } = render(renderPopover(0));
 
@@ -148,9 +156,7 @@ describe("SlashCommandPopover", () => {
         onSelect={vi.fn()}
         isLoading={false}
         triggerChar="$"
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
     expect(screen.getByText("$plan")).toBeInTheDocument();
   });
@@ -163,9 +169,7 @@ describe("SlashCommandPopover", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         isLoading={true}
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
     expect(screen.getByText(/loading commands/i)).toBeInTheDocument();
   });
@@ -178,9 +182,7 @@ describe("SlashCommandPopover", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         isLoading={false}
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
     expect(screen.getByText(/no matching commands/i)).toBeInTheDocument();
   });
@@ -194,9 +196,7 @@ describe("SlashCommandPopover", () => {
         selectedIndex={0}
         onSelect={onSelect}
         isLoading={false}
-      >
-        <input />
-      </SlashCommandPopover>,
+      />,
     );
     await user.pointer({ keys: "[MouseLeft>]", target: screen.getByText("/commit") });
     expect(onSelect).toHaveBeenCalledWith("commit");
