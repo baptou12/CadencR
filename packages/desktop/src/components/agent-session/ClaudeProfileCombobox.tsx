@@ -112,7 +112,7 @@ function triggerBaseClassName(variant: "default" | "compact"): string {
   if (variant === "compact") {
     return "inline-flex h-8 min-w-0 max-w-[180px] items-center justify-between gap-1.5 overflow-hidden whitespace-nowrap rounded-md border border-border bg-muted/40 px-2.5 text-[11px] font-medium text-foreground shadow-sm hover:bg-accent [&_svg]:size-3 [&_svg]:shrink-0 [&_svg]:opacity-70";
   }
-  return "inline-flex h-8 min-w-32 items-center justify-between gap-2 whitespace-nowrap rounded-md border border-control-border bg-transparent px-3 py-2 text-xs shadow-xs transition-[color,box-shadow] outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-control-focus-ring";
+  return "inline-flex h-8 min-w-32 items-center justify-between gap-2 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-xs transition-[color,box-shadow] outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 }
 
 function loadingClassName(variant: "default" | "compact"): string {
