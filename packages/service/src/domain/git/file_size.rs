@@ -30,7 +30,8 @@ pub fn classify_content(
 ) -> FileContentBatchItem {
     let old_size = old_content.len() as u64;
     let new_size = new_content.len() as u64;
-    let is_binary = head_has_null(&old_content) || head_has_null(&new_content);
+    let is_binary = bytes_have_binary_marker(old_content.as_bytes())
+        || bytes_have_binary_marker(new_content.as_bytes());
     let is_large = old_size.max(new_size) >= LARGE_FILE_BYTES;
 
     let drop_content = is_binary || (is_large && !keep_large_content);
@@ -51,11 +52,8 @@ pub fn classify_content(
     }
 }
 
-fn head_has_null(s: &str) -> bool {
-    s.as_bytes()
-        .iter()
-        .take(BINARY_SNIFF_BYTES)
-        .any(|&b| b == 0)
+pub(crate) fn bytes_have_binary_marker(bytes: &[u8]) -> bool {
+    bytes.iter().take(BINARY_SNIFF_BYTES).any(|&b| b == 0)
 }
 
 #[cfg(test)]

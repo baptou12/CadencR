@@ -62,7 +62,6 @@ pub struct GetFileContentParams {
 /// Read the exact current unmerged index row and worktree result for one path.
 /// Phase 5B must validate the literal path against porcelain before reading
 /// index objects; these two fields are identity, not Git revision syntax.
-#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct GetConflictContentParams {
     pub feature_id: i64,

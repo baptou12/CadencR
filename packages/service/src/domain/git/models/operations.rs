@@ -77,7 +77,6 @@ pub enum GitOperationKind {
 }
 
 /// Resolver layout selected from the exact available stages and content.
-#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum ConflictResolverPresentation {
@@ -88,7 +87,6 @@ pub enum ConflictResolverPresentation {
 }
 
 /// Typed reason why the multi-pane text resolver must not mount.
-#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictFallbackReason {
@@ -100,7 +98,6 @@ pub enum ConflictFallbackReason {
 
 /// Git entry kind derived by Phase 5B from the index mode or filesystem entry.
 /// The frontend never interprets raw Git modes.
-#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictFileKind {
@@ -111,7 +108,6 @@ pub enum ConflictFileKind {
 }
 
 /// Typed reason why one present stage or result cannot supply text content.
-#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictContentUnavailableReason {
@@ -124,7 +120,6 @@ pub enum ConflictContentUnavailableReason {
 }
 
 /// Typed expected-unavailable reason in a successful conflict-content response.
-#[allow(dead_code)] // Phase 5A contract; Phase 5B routes will consume it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictUnavailableReason {

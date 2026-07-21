@@ -19,6 +19,7 @@
 mod branches;
 pub mod checkout;
 mod commit_push;
+mod conflict_content;
 mod default_branch;
 pub mod index;
 mod merge;
@@ -32,6 +33,7 @@ mod update_branch;
 pub use branches::list_branches;
 pub(crate) use checkout::resolve_ref as resolve_checkout_ref;
 pub use commit_push::{commit, get_uncommitted_files};
+pub use conflict_content::get_conflict_content;
 pub use default_branch::{resolve_default_branch, same_branch_identity};
 pub use merge::{merge_feature_branch, MergeFeatureBranchBody};
 pub use push::{push, push_input};

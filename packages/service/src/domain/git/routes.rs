@@ -10,7 +10,9 @@ use crate::domain::git::service;
 use crate::domain::git::workflow_service;
 use crate::error::AppError;
 
+mod conflict;
 mod mutations;
+pub use conflict::*;
 pub use mutations::*;
 
 #[utoipa::path(get, path = "/api/git/branch", params(("project_id" = i64, Query,)), responses((status = 200, body = BranchResponse)))]
@@ -346,6 +348,7 @@ pub fn git_router() -> Router<AppState> {
         .route("/api/git/file-diff", get(get_file_diff_handler))
         .route("/api/git/changed-files", get(get_changed_files_handler))
         .route("/api/git/file-content", get(get_file_content_handler))
+        .route("/api/git/conflict-content", get(get_conflict_content_handler))
         .route("/api/git/diff-image", get(get_diff_image_handler))
         .route("/api/git/file-content-batch", post(get_file_content_batch_handler))
         .route("/api/git/commit-log", get(get_commit_log_handler))

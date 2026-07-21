@@ -16,6 +16,7 @@
 mod blob_shas;
 mod branch_name;
 mod changed_files;
+mod conflict_content;
 mod diff;
 mod files;
 mod graph;
@@ -36,6 +37,7 @@ pub use blob_shas::get_file_blob_shas;
 pub use branch_name::build_branch_name;
 pub use changed_files::get_changed_files;
 pub(crate) use changed_files::get_uncommitted_entries;
+pub use conflict_content::get_conflict_content;
 pub use diff::{get_commit_diff, get_diff, get_file_diff, get_stats};
 pub use files::{get_file_bytes, get_file_content, get_file_content_batch, list_files};
 pub use graph::get_commit_graph;

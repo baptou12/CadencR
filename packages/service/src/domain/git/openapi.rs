@@ -11,6 +11,7 @@ use super::{models, routes};
         routes::get_file_diff_handler,
         routes::get_changed_files_handler,
         routes::get_file_content_handler,
+        routes::get_conflict_content_handler,
         routes::get_file_content_batch_handler,
         routes::get_commit_log_handler,
         routes::get_commit_graph_handler,
@@ -59,6 +60,16 @@ use super::{models, routes};
         models::DiffResponse,
         models::ChangedFile,
         models::FileContent,
+        models::ConflictContent,
+        models::ConflictIndexEntryContent,
+        models::ConflictResultContent,
+        models::ConflictContentSnapshot,
+        models::ConflictContentResponse,
+        models::ConflictResolverPresentation,
+        models::ConflictFallbackReason,
+        models::ConflictFileKind,
+        models::ConflictContentUnavailableReason,
+        models::ConflictUnavailableReason,
         models::FileContentBatchItem,
         models::CommitLogEntry,
         models::CommitLogResponse,
@@ -135,6 +146,7 @@ mod tests {
     fn mutation_paths_and_schemas_preserve_the_frozen_contract() {
         let document = serde_json::to_value(api_doc()).unwrap();
         for path in [
+            "/api/git/conflict-content",
             "/api/git/index/stage",
             "/api/git/index/reset",
             "/api/git/stashes/push",
@@ -145,7 +157,12 @@ mod tests {
             "/api/git/update-branch/continue",
             "/api/git/update-branch/abort",
         ] {
-            assert!(document["paths"][path]["post"].is_object(), "{path}");
+            let method = if path == "/api/git/conflict-content" {
+                "get"
+            } else {
+                "post"
+            };
+            assert!(document["paths"][path][method].is_object(), "{path}");
         }
 
         assert_eq!(
