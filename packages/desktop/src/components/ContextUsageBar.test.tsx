@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@/test-utils";
 import { ContextUsageBar } from "./ContextUsageBar";
@@ -138,5 +139,69 @@ describe("ContextUsageBar", () => {
       />,
     );
     expect(container.firstChild).toBeNull();
+  });
+
+  it("shows token detail popover on hover", async () => {
+    const user = userEvent.setup();
+    render(
+      <ContextUsageBar
+        usage={makeUsage({ inputTokens: 40000, outputTokens: 5230, contextWindow: 200000 })}
+        isStreaming={false}
+      />,
+    );
+
+    expect(screen.queryByText("45,230 / 200,000")).not.toBeInTheDocument();
+
+    await user.hover(screen.getByRole("button", { name: /context usage 23%/i }));
+
+    expect(await screen.findByText("Context")).toBeInTheDocument();
+    expect(screen.getByText("45,230 / 200,000")).toBeInTheDocument();
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+    expect(screen.queryByText("Output")).not.toBeInTheDocument();
+    expect(screen.getAllByText("23%")).toHaveLength(1);
+  });
+
+  it("hides the popover again on unhover", async () => {
+    const user = userEvent.setup();
+    render(<ContextUsageBar usage={makeUsage({ usageRatio: 0.3 })} isStreaming={false} />);
+
+    const trigger = screen.getByRole("button", { name: /context usage 30%/i });
+    await user.hover(trigger);
+    expect(await screen.findByText("Context")).toBeInTheDocument();
+
+    await user.unhover(trigger);
+    expect(screen.queryByText("Context")).not.toBeInTheDocument();
+  });
+
+  it("shows the compacted note only when wasCompacted is true", async () => {
+    const user = userEvent.setup();
+    render(
+      <ContextUsageBar
+        usage={makeUsage({ usageRatio: 0.3, wasCompacted: true })}
+        isStreaming={false}
+      />,
+    );
+
+    await user.hover(screen.getByRole("button", { name: /context usage 30%/i }));
+
+    expect(await screen.findByText("Context compacted")).toBeInTheDocument();
+  });
+
+  it("omits the compacted note when wasCompacted is false", async () => {
+    const user = userEvent.setup();
+    render(<ContextUsageBar usage={makeUsage({ usageRatio: 0.3 })} isStreaming={false} />);
+
+    await user.hover(screen.getByRole("button", { name: /context usage 30%/i }));
+
+    expect(await screen.findByText("Context")).toBeInTheDocument();
+    expect(screen.queryByText("Context compacted")).not.toBeInTheDocument();
+  });
+
+  it("keeps keyboard hints outside the usage trigger", () => {
+    render(<ContextUsageBar usage={makeUsage({ usageRatio: 0.3 })} isStreaming={false} />);
+
+    const trigger = screen.getByRole("button", { name: /context usage 30%/i });
+    expect(trigger).not.toHaveTextContent("send");
+    expect(screen.getByText("send")).toBeInTheDocument();
   });
 });
