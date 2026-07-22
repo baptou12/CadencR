@@ -17,8 +17,13 @@ export interface GitFileIndexError {
   message: string;
 }
 
+export interface StageFileOptions {
+  /** When true, toast a warning after a successful stage (unresolved conflict path). */
+  conflicted?: boolean;
+}
+
 export interface GitFileIndexActions {
-  stage: (filePath: string) => void;
+  stage: (filePath: string, options?: StageFileOptions) => void;
   reset: (filePath: string) => void;
   isPending: boolean;
   pendingAction: GitFileIndexAction | null;
@@ -61,6 +66,7 @@ export function useGitFileIndexActions(featureId: number): GitFileIndexActions {
     filePath: string;
   } | null>(null);
   const flightAcquiredRef = useRef(false);
+  const conflictWarnPathRef = useRef<string | null>(null);
   const releaseFlight = useCallback((): void => {
     flightAcquiredRef.current = false;
     setPending(null);
@@ -69,9 +75,16 @@ export function useGitFileIndexActions(featureId: number): GitFileIndexActions {
     mutation: {
       onSuccess: (_response, variables) => {
         setError(null);
-        toast.success(`Staged ${variables.data.file_path}`);
+        const path = variables.data.file_path;
+        if (conflictWarnPathRef.current === path) {
+          toast.warning(`Staged ${path} with conflicts`, {
+            description: "Confirm conflict markers are resolved before continuing the merge.",
+          });
+        }
+        conflictWarnPathRef.current = null;
       },
       onError: (mutationError, variables) => {
+        conflictWarnPathRef.current = null;
         const message = apiErrorMessage(mutationError, "Git could not stage this path");
         setError({ action: "stage", filePath: variables.data.file_path, message });
         toast.error(`Could not stage ${variables.data.file_path}`, { description: message });
@@ -81,11 +94,8 @@ export function useGitFileIndexActions(featureId: number): GitFileIndexActions {
   });
   const resetMutation = useResetFile({
     mutation: {
-      onSuccess: (_response, variables) => {
+      onSuccess: () => {
         setError(null);
-        toast.success(`Unstaged ${variables.data.file_path}`, {
-          description: "Worktree content was preserved.",
-        });
       },
       onError: (mutationError, variables) => {
         const message = apiErrorMessage(mutationError, "Git could not unstage this path");
@@ -106,7 +116,7 @@ export function useGitFileIndexActions(featureId: number): GitFileIndexActions {
   }, []);
 
   const stage = useCallback(
-    (filePath: string): void => {
+    (filePath: string, options?: StageFileOptions): void => {
       if (hasDirtyEditorBuffer(featureId, filePath)) {
         const message = "Save the open Editor buffer before staging this file.";
         setError({ action: "stage", filePath, message });
@@ -114,6 +124,7 @@ export function useGitFileIndexActions(featureId: number): GitFileIndexActions {
         return;
       }
       if (!acquireFlight("stage", filePath)) return;
+      conflictWarnPathRef.current = options?.conflicted ? filePath : null;
       stageMutate({ data: { feature_id: featureId, file_path: filePath } });
     },
     [acquireFlight, featureId, stageMutate],

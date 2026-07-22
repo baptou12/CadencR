@@ -175,9 +175,10 @@ function LoadedDiffViewer({
         onToggleExpand={navigation.toggleFile}
         onOpenFileInEditor={openFileInEditor}
         onCollapse={fileList.isControlled ? undefined : fileList.collapse}
+        stageCheckboxesEnabled={indexMutable}
       />
     ),
-    [data.changedFiles, fileList, indexActions, navigation, openFileInEditor],
+    [data.changedFiles, fileList, indexActions, indexMutable, navigation, openFileInEditor],
   );
   return <DiffViewerLayout data={data} fileList={fileList} tree={tree} content={content} />;
 }

@@ -157,7 +157,7 @@ describe("Git diff tree actions", () => {
     );
     await user.click(screen.getByRole("menuitem", { name: "Copy path" }));
 
-    expect(actions.stage).toHaveBeenCalledWith("src/both.ts");
+    expect(actions.stage).toHaveBeenCalledWith("src/both.ts", { conflicted: false });
     expect(actions.reset).toHaveBeenCalledWith("src/both.ts");
     expect(clipboard.copyToClipboard).toHaveBeenCalledWith("src/both.ts", "Path copied");
   });
@@ -180,7 +180,7 @@ describe("Git diff tree actions", () => {
     await user.click(screen.getByRole("menuitem", { name: "Stage file" }));
     await user.click(screen.getByRole("menuitem", { name: "Copy path" }));
 
-    expect(actions.stage).toHaveBeenCalledWith("src/deep/file.ts");
+    expect(actions.stage).toHaveBeenCalledWith("src/deep/file.ts", { conflicted: false });
     expect(clipboard.copyToClipboard).toHaveBeenCalledWith("src/deep/file.ts", "Path copied");
   });
 
@@ -233,7 +233,7 @@ describe("Git diff tree actions", () => {
       screen.queryByRole("menuitem", { name: "Unstage file (keeps worktree changes)" }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Stage deletion" }));
-    expect(actions.stage).toHaveBeenCalledWith("deleted.ts");
+    expect(actions.stage).toHaveBeenCalledWith("deleted.ts", { conflicted: true });
   });
 
   it("keeps Stage and removes Unstage from an unresolved-conflict context menu", () => {

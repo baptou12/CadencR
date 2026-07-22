@@ -22,7 +22,7 @@ vi.mock("./useGitDiffTreeDisplaySetting", async () => {
   };
 });
 
-import { useGitDiffFileTreeModel } from "./useGitDiffFileTreeModel";
+import { sortChangedFilesForDiff, useGitDiffFileTreeModel } from "./useGitDiffFileTreeModel";
 
 const indexActions: GitFileIndexActions = {
   stage: vi.fn(),
@@ -290,5 +290,15 @@ describe("useGitDiffFileTreeModel display mode", () => {
     expect(result.current.model.getFocusedPath()).toBe("root.ts");
     expect(result.current.activePath).toBe("root.ts");
     unmount();
+  });
+
+  it("sorts conflicted files ahead of other changes", () => {
+    const ordered = sortChangedFilesForDiff([
+      { ...changedFile("z.ts"), stage_state: FileStageState.unstaged },
+      { ...changedFile("a.ts"), stage_state: FileStageState.conflicted },
+      { ...changedFile("m.ts"), stage_state: FileStageState.staged },
+      { ...changedFile("b.ts"), stage_state: FileStageState.conflicted },
+    ]);
+    expect(ordered.map((file) => file.file)).toEqual(["a.ts", "b.ts", "m.ts", "z.ts"]);
   });
 });

@@ -31,32 +31,44 @@ function actions(overrides: Partial<GitFileIndexActions> = {}): GitFileIndexActi
 }
 
 describe("GitConflictFileBanner", () => {
-  it("owns the one explicit Stage action and directs text resolution through file open", async () => {
+  it("offers Fix to open the editor instead of Stage for content conflicts", async () => {
     const indexActions = actions();
-    const { user } = render(<GitConflictFileBanner file={file} indexActions={indexActions} />);
+    const onOpenFileInEditor = vi.fn();
+    const { user } = render(
+      <GitConflictFileBanner
+        file={file}
+        indexActions={indexActions}
+        onOpenFileInEditor={onOpenFileInEditor}
+      />,
+    );
 
-    expect(screen.getByText(/both modified conflict/i)).toBeInTheDocument();
-    expect(screen.getByText(/open it to inspect and resolve the result/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resolve in Editor" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Stage" }));
-    expect(indexActions.stage).toHaveBeenCalledWith(file.file);
+    expect(screen.getByText(/^both modified$/i)).toBeInTheDocument();
+    expect(screen.getByText(/open it to resolve the markers/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stage" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Fix" }));
+    expect(onOpenFileInEditor).toHaveBeenCalledOnce();
+    expect(indexActions.stage).not.toHaveBeenCalled();
   });
 
-  it("labels a both-deleted conflict as an explicit deletion", () => {
-    render(
+  it("labels a both-deleted conflict as an explicit deletion", async () => {
+    const indexActions = actions();
+    const { user } = render(
       <GitConflictFileBanner
         file={{ ...file, status: "DD", conflict_kind: "dd" }}
-        indexActions={actions()}
+        indexActions={indexActions}
+        onOpenFileInEditor={vi.fn()}
       />,
     );
     expect(screen.getByText(/both sides deleted/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stage deletion" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Fix" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stage deletion" }));
+    expect(indexActions.stage).toHaveBeenCalledWith(file.file, { conflicted: true });
   });
 
-  it("shows visible stage-pending and stage-error states", () => {
+  it("shows visible stage-pending and stage-error states for deletions", () => {
     render(
       <GitConflictFileBanner
-        file={file}
+        file={{ ...file, status: "DD", conflict_kind: "dd" }}
         indexActions={actions({
           isPending: true,
           pendingAction: "stage",

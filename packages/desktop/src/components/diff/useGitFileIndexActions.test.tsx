@@ -20,10 +20,15 @@ const mocks = vi.hoisted(() => ({
     | undefined,
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastWarning: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+  toast: {
+    success: mocks.toastSuccess,
+    error: mocks.toastError,
+    warning: mocks.toastWarning,
+  },
 }));
 
 vi.mock("@/api/generated", () => ({
@@ -54,6 +59,7 @@ beforeEach(() => {
   mocks.resetMutate.mockReset();
   mocks.toastSuccess.mockReset();
   mocks.toastError.mockReset();
+  mocks.toastWarning.mockReset();
   useEditorStore.setState({ features: {} });
 });
 
@@ -146,15 +152,39 @@ describe("useGitFileIndexActions", () => {
     });
   });
 
-  it("makes reset success copy explicit that worktree content is preserved", () => {
+  it("does not toast success after a normal stage", () => {
+    const { result } = renderHook(() => useGitFileIndexActions(42));
+
+    act(() => result.current.stage("src/clean.ts"));
+    act(() => {
+      mocks.stageOptions?.onSuccess?.({}, { data: { file_path: "src/clean.ts" } });
+    });
+
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.toastWarning).not.toHaveBeenCalled();
+  });
+
+  it("toasts a warning when staging with conflicted: true", () => {
+    const { result } = renderHook(() => useGitFileIndexActions(42));
+
+    act(() => result.current.stage("src/conflict.ts", { conflicted: true }));
+    act(() => {
+      mocks.stageOptions?.onSuccess?.({}, { data: { file_path: "src/conflict.ts" } });
+    });
+
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.toastWarning).toHaveBeenCalledWith("Staged src/conflict.ts with conflicts", {
+      description: "Confirm conflict markers are resolved before continuing the merge.",
+    });
+  });
+
+  it("does not toast success after reset", () => {
     renderHook(() => useGitFileIndexActions(42));
 
     act(() => {
       mocks.resetOptions?.onSuccess?.({}, { data: { file_path: "src/file.ts" } });
     });
 
-    expect(mocks.toastSuccess).toHaveBeenCalledWith("Unstaged src/file.ts", {
-      description: "Worktree content was preserved.",
-    });
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
   });
 });

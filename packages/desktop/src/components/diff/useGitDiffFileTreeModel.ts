@@ -1,5 +1,10 @@
 import { useCallback, useMemo, useRef } from "react";
-import type { FileTree, FileTreeOptions, FileTreeRowDecoration } from "@pierre/trees";
+import type {
+  FileTree,
+  FileTreeOptions,
+  FileTreeRowDecoration,
+  FileTreeSortComparator,
+} from "@pierre/trees";
 import { useFileTreeSelection, useFileTreeSelector } from "@pierre/trees/react";
 import {
   ConflictKind,
@@ -72,6 +77,20 @@ export function buildGitDiffTreeStatus(
 export function resolvedStageState(file: ChangedFile): FileStageStateValue {
   if (file.stage_state != null) return file.stage_state;
   return file.is_staged ? FileStageState.staged : FileStageState.not_applicable;
+}
+
+/** 0 = conflicted (sort first), 1 = everything else. */
+export function conflictSortRank(file: ChangedFile): 0 | 1 {
+  return resolvedStageState(file) === FileStageState.conflicted ? 0 : 1;
+}
+
+/** Flat-list ordering: conflicted files first, then path name. */
+export function sortChangedFilesForDiff(files: readonly ChangedFile[]): ChangedFile[] {
+  return [...files].sort((left, right) => {
+    const byConflict = conflictSortRank(left) - conflictSortRank(right);
+    if (byConflict !== 0) return byConflict;
+    return left.file.localeCompare(right.file);
+  });
 }
 
 export function conflictKindLabel(kind: ConflictKindValue | null | undefined): string {
@@ -208,6 +227,27 @@ export function useGitDiffFileTreeModel({
   const gitStatus = useMemo(() => buildGitDiffTreeStatus(files), [files]);
   const fileByPath = useMemo(() => new Map(files.map((file) => [file.file, file])), [files]);
   const filePaths = useMemo(() => new Set(fileByPath.keys()), [fileByPath]);
+  const conflictPaths = useMemo(
+    () =>
+      new Set(
+        files
+          .filter((file) => resolvedStageState(file) === FileStageState.conflicted)
+          .map((file) => file.file),
+      ),
+    [files],
+  );
+  const conflictPathsRef = useRef(conflictPaths);
+  conflictPathsRef.current = conflictPaths;
+  const conflictFirstSort = useMemo<FileTreeSortComparator>(
+    () => (left, right) => {
+      if (left.isDirectory !== right.isDirectory) return left.isDirectory ? -1 : 1;
+      const leftConflict = conflictPathsRef.current.has(left.path) ? 0 : 1;
+      const rightConflict = conflictPathsRef.current.has(right.path) ? 0 : 1;
+      if (leftConflict !== rightConflict) return leftConflict - rightConflict;
+      return left.basename.localeCompare(right.basename, undefined, { sensitivity: "base" });
+    },
+    [],
+  );
   const handleSelectionChange = useCallback(
     (selectedPaths: readonly string[]): void => {
       const selectedPath = selectedPaths.findLast((path) => filePaths.has(path));
@@ -234,6 +274,7 @@ export function useGitDiffFileTreeModel({
     stickyFolders: true,
     renaming: false,
     dragAndDrop: false,
+    sort: conflictFirstSort,
     composition: {
       contextMenu: { enabled: true, triggerMode: "both", buttonVisibility: "when-needed" },
     },

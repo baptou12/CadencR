@@ -38,7 +38,9 @@ export function useFileTreeShadowStylesheet(model: FileTreeModel, key: string, c
 
     const attach = () => {
       if (cancelled) return;
-      const shadowRoot = model.getFileTreeContainer()?.shadowRoot;
+      const getContainer = model.getFileTreeContainer;
+      if (typeof getContainer !== "function") return;
+      const shadowRoot = getContainer.call(model)?.shadowRoot;
       if (!shadowRoot) {
         if (++attempts >= MAX_ATTEMPTS) {
           // eslint-disable-next-line no-console

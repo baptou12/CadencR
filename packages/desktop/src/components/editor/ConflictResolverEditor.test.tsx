@@ -98,7 +98,7 @@ describe("ConflictResolverEditor", () => {
     const { user } = renderResolver();
     expect(screen.getByText(/Binary content cannot be resolved safely/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stage" }));
-    expect(mocks.stage).toHaveBeenCalledWith("conflict.ts");
+    expect(mocks.stage).toHaveBeenCalledWith("conflict.ts", { conflicted: true });
   });
 
   it.each(["dd", "du", "ud"] as const)(
@@ -115,7 +115,7 @@ describe("ConflictResolverEditor", () => {
       const { user } = renderResolver(kind);
       expect(screen.getByText(/worktree result is deleted/i)).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Stage deletion" }));
-      expect(mocks.stage).toHaveBeenCalledWith("conflict.ts");
+      expect(mocks.stage).toHaveBeenCalledWith("conflict.ts", { conflicted: true });
     },
   );
 

@@ -1,4 +1,5 @@
 import type { ChangedFile } from "@/api/generated";
+import { FileStageState } from "@/api/generated";
 import { getGitFileActionAvailability, type GitFileIndexActions } from "./useGitFileIndexActions";
 import {
   resolvedStageState,
@@ -67,8 +68,11 @@ function runIndexAction(state: DiffNavigationAdapterState, action: "stage" | "re
   if (!file) return false;
   const stageState = resolvedStageState(file);
   const availability = getGitFileActionAvailability(stageState);
-  if (action === "stage" && availability.canStage) state.indexActions.stage(file.file);
-  else if (action === "reset" && availability.canReset) state.indexActions.reset(file.file);
+  if (action === "stage" && availability.canStage) {
+    state.indexActions.stage(file.file, {
+      conflicted: stageState === FileStageState.conflicted,
+    });
+  } else if (action === "reset" && availability.canReset) state.indexActions.reset(file.file);
   else return false;
   return true;
 }

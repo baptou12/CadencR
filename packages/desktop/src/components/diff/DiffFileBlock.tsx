@@ -250,7 +250,13 @@ function DiffFileBlockHeader({ props, patch }: { props: DiffFileBlockProps; patc
         onMarkViewed={onMarkViewed}
         onUnmarkViewed={onUnmarkViewed}
       />
-      {conflicted && <GitConflictFileBanner file={file} indexActions={indexActions} />}
+      {conflicted && (
+        <GitConflictFileBanner
+          file={file}
+          indexActions={indexActions}
+          onOpenFileInEditor={onOpenFileInEditor ? onOpenFile : undefined}
+        />
+      )}
     </>
   );
 }

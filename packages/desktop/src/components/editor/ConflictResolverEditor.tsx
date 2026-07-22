@@ -146,7 +146,7 @@ function StageGuidanceMessage({
         <Button
           disabled={indexActions.isPending}
           aria-busy={pending}
-          onClick={() => indexActions.stage(filePath)}
+          onClick={() => indexActions.stage(filePath, { conflicted: true })}
         >
           {pending ? "Staging…" : stageDeletion ? "Stage deletion" : "Stage"}
         </Button>

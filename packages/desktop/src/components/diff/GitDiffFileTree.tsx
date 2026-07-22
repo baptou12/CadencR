@@ -26,6 +26,7 @@ import type { GitDiffTreeDisplayMode } from "./useGitDiffTreeDisplaySetting";
 import { getGitFileActionAvailability, type GitFileIndexActions } from "./useGitFileIndexActions";
 import { isUnavailableDeleteConflict, resolvedStageState } from "./useGitDiffFileTreeModel";
 import { openGitFileInEditor } from "./gitFileEditorHandoff";
+import { useGitDiffStageCheckboxes } from "./useGitDiffStageCheckboxes";
 
 interface GitDiffFileTreeProps {
   model: FileTree;
@@ -39,6 +40,8 @@ interface GitDiffFileTreeProps {
   onToggleExpand: (filePath: string) => void;
   onOpenFileInEditor?: (filePath: string) => void;
   onCollapse?: () => void;
+  /** When false, stage checkboxes are hidden (e.g. branch comparison mode). */
+  stageCheckboxesEnabled?: boolean;
 }
 
 function eventFilePath(event: MouseEvent | KeyboardEvent): string | null {
@@ -227,7 +230,13 @@ function GitDiffTreeContextMenu({
           icon={pathPending && indexActions.pendingAction === "stage" ? Loader2Icon : PlusIcon}
           disabled={indexActions.isPending}
           className="py-1"
-          onSelect={() => closeAndRun(() => indexActions.stage(file.file))}
+          onSelect={() =>
+            closeAndRun(() =>
+              indexActions.stage(file.file, {
+                conflicted: resolvedStageState(file) === FileStageState.conflicted,
+              }),
+            )
+          }
         >
           {pathPending && indexActions.pendingAction === "stage"
             ? "Staging…"
@@ -308,9 +317,11 @@ function GitDiffFileTreeImpl({
   onToggleExpand,
   onOpenFileInEditor,
   onCollapse,
+  stageCheckboxesEnabled = true,
 }: GitDiffFileTreeProps): React.JSX.Element {
   const fileByPath = useMemo(() => new Map(files.map((file) => [file.file, file])), [files]);
   const conflictCount = useMemo(() => countUniqueConflicts(files), [files]);
+  useGitDiffStageCheckboxes(model, files, indexActions, stageCheckboxesEnabled);
   const activateConflict = useCallback(
     (filePath: string): void => {
       const file = fileByPath.get(filePath);

@@ -10,20 +10,12 @@ const mocks = vi.hoisted(() => ({
   abortMutateAsync: vi.fn(),
   continuePending: false,
   abortPending: false,
-  changedFiles: {
-    data: [] as Array<{ file: string; status: string; stage_state: string }>,
-    isLoading: false,
-    isError: false,
-    error: null as unknown,
-  },
   toastSuccess: vi.fn(),
   toastWarning: vi.fn(),
   toastError: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
-  FileStageState: { conflicted: "conflicted" },
-  useGetChangedFiles: () => mocks.changedFiles,
   useContinueUpdateBranch: () => ({
     mutateAsync: mocks.continueMutateAsync,
     isPending: mocks.continuePending,
@@ -72,10 +64,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.continuePending = false;
   mocks.abortPending = false;
-  mocks.changedFiles.data = [];
-  mocks.changedFiles.isLoading = false;
-  mocks.changedFiles.isError = false;
-  mocks.changedFiles.error = null;
   useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
   useGitStatusStore.getState().setStatus(snapshot());
 });
@@ -100,50 +88,42 @@ describe("GitUpdateRecoveryRegion", () => {
     expect(screen.queryByText("src/http-first.ts")).not.toBeInTheDocument();
     expect(onRequestUncommitted).not.toHaveBeenCalled();
 
-    mocks.changedFiles.data = [
-      { file: "src/http-first.ts", status: "UU", stage_state: "conflicted" },
-    ];
     setStatus({ operation: "rebase", conflict_count: 1, computed_at: 12 });
-    expect(await screen.findByText("src/http-first.ts")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Resolve and stage 1 conflicting file first"),
+    ).toBeInTheDocument();
     await waitFor(() => expect(onRequestUncommitted).toHaveBeenCalledOnce());
   });
 
-  it("renders a WS-first conflict immediately from canonical status and changed files", async () => {
-    mocks.changedFiles.data = [
-      { file: "src/ws-first.ts", status: "UU", stage_state: "conflicted" },
-    ];
+  it("shows conflict count without listing file paths", async () => {
     useGitStatusStore
       .getState()
-      .setStatus(snapshot({ operation: "merge", conflict_count: 1, computed_at: 11 }));
+      .setStatus(snapshot({ operation: "merge", conflict_count: 3, computed_at: 11 }));
     const onRequestUncommitted = vi.fn();
     render(<GitUpdateRecoveryRegion featureId={42} onRequestUncommitted={onRequestUncommitted} />);
 
     expect(screen.getByText("Merge paused on conflicts")).toBeInTheDocument();
-    expect(screen.getByText("src/ws-first.ts")).toBeInTheDocument();
+    expect(screen.getByText("Resolve and stage 3 conflicting files first")).toBeInTheDocument();
+    expect(screen.queryByText("Conflict batch")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue merge" })).toBeDisabled();
     await waitFor(() => expect(onRequestUncommitted).toHaveBeenCalledOnce());
   });
 
-  it("tracks repeated rebase batches only on confirmed zero-to-conflict transitions", async () => {
+  it("updates the remaining conflict count as files are resolved", async () => {
     const onRequestUncommitted = vi.fn();
-    setStatus({ operation: "rebase", conflict_count: 1, computed_at: 11 });
-    mocks.changedFiles.data = [{ file: "src/first.ts", status: "UU", stage_state: "conflicted" }];
+    setStatus({ operation: "rebase", conflict_count: 2, computed_at: 11 });
     const view = render(
       <GitUpdateRecoveryRegion featureId={42} onRequestUncommitted={onRequestUncommitted} />,
     );
+    expect(screen.getByText("Resolve and stage 2 conflicting files first")).toBeInTheDocument();
     await waitFor(() => expect(onRequestUncommitted).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Conflict batch 1")).toBeInTheDocument();
 
-    setStatus({ operation: "rebase", conflict_count: 0, computed_at: 12 });
-    mocks.changedFiles.data = [{ file: "src/second.ts", status: "UU", stage_state: "conflicted" }];
-    setStatus({ operation: "rebase", conflict_count: 1, computed_at: 13 });
+    setStatus({ operation: "rebase", conflict_count: 1, computed_at: 12 });
     view.rerender(
       <GitUpdateRecoveryRegion featureId={42} onRequestUncommitted={onRequestUncommitted} />,
     );
-
-    expect(await screen.findByText("src/second.ts")).toBeInTheDocument();
-    expect(screen.getByText("Conflict batch 2")).toBeInTheDocument();
-    await waitFor(() => expect(onRequestUncommitted).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Resolve and stage 1 conflicting file first")).toBeInTheDocument();
+    expect(onRequestUncommitted).toHaveBeenCalledTimes(1);
   });
 
   it("gates Continue from conflict_count and clears only on operation=null", async () => {
@@ -165,16 +145,13 @@ describe("GitUpdateRecoveryRegion", () => {
     );
   });
 
-  it("surfaces changed-files and control errors visibly", async () => {
-    mocks.changedFiles.isError = true;
-    mocks.changedFiles.error = new Error("changed files unavailable");
+  it("surfaces control errors visibly", async () => {
     setStatus({ operation: "rebase", conflict_count: 0, computed_at: 11 });
     mocks.continueMutateAsync.mockRejectedValueOnce(new Error("continue failed"));
     const { user } = render(
       <GitUpdateRecoveryRegion featureId={42} onRequestUncommitted={vi.fn()} />,
     );
 
-    expect(screen.getByText(/changed files unavailable/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Continue rebase" }));
     expect(await screen.findByText("continue failed")).toBeInTheDocument();
     expect(mocks.toastError).toHaveBeenCalled();

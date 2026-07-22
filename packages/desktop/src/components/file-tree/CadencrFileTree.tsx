@@ -43,6 +43,8 @@ export interface CadencrFileTreeHookOptions {
   stickyFolders?: boolean;
   /** Render every file as a flat basename row while retaining its real path identity. */
   filesOnly?: boolean;
+  /** Optional sort override; use a stable function (e.g. ref-backed) if it reads live state. */
+  sort?: FileTreeOptions["sort"];
   onSelectionChange?: FileTreeOptions["onSelectionChange"];
   renderRowDecoration?: FileTreeOptions["renderRowDecoration"];
   /** Forces Pierre to repaint rows when decoration-only state changes. */
@@ -91,6 +93,7 @@ export function useCadencrFileTree({
   density,
   stickyFolders,
   filesOnly = false,
+  sort,
   onSelectionChange,
   renderRowDecoration,
   rowDecorationVersion,
@@ -125,6 +128,7 @@ export function useCadencrFileTree({
       density,
       stickyFolders,
       filesOnly,
+      sort,
       onSelectionChange: (selectedPaths) => onSelectionChangeRef.current?.(selectedPaths),
       renderRowDecoration: (context) => renderRowDecorationRef.current?.(context) ?? null,
       icons: effectiveIconSet,

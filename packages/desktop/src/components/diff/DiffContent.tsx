@@ -1,4 +1,4 @@
-import { memo, type RefObject } from "react";
+import { memo, useMemo, type RefObject } from "react";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import type { ChangedFile } from "@/api/generated";
 import { useInViewport } from "@/hooks/useInViewport";
@@ -9,6 +9,7 @@ import type { CommentSide } from "./PatchDiffView";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
 import type { GitFileIndexActions } from "./useGitFileIndexActions";
 import type { OpenDiffInEditor } from "./OpenDiffInEditorContext";
+import { sortChangedFilesForDiff } from "./useGitDiffFileTreeModel";
 
 interface ActiveCommentWidget {
   filePath: string;
@@ -88,10 +89,11 @@ function DiffContentImpl({
   themeAppearance,
   themeId,
 }: DiffContentProps) {
+  const orderedFiles = useMemo(() => sortChangedFilesForDiff(files), [files]);
   return (
     <>
       <DiffVirtualizer scrollRef={diffAreaRef}>
-        {files.map((file) => (
+        {orderedFiles.map((file) => (
           <DiffRow
             key={file.file}
             scrollRef={diffAreaRef}
