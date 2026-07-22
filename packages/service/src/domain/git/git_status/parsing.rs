@@ -12,15 +12,15 @@ use crate::domain::git::porcelain::{decode_porcelain_v2_record, visit_porcelain_
 pub(super) struct ParsedPorcelain {
     pub(super) current_branch: String,
     /// `branch.ab` ahead — `0` when there's no upstream configured. **Only
-    /// meaningful when `has_upstream` is true**; without an upstream, git
+    /// meaningful when `upstream` is present**; without an upstream, git
     /// omits `branch.ab` and the ahead-of-remote count must be derived
     /// another way (see `count_unpushed` in the parent module).
     pub(super) ahead: u32,
     pub(super) behind: u32,
-    /// `true` iff `# branch.upstream <ref>` was present. We use this instead
-    /// of `ahead == 0` because "no upstream + 1 unpushed commit" and "upstream
-    /// + 0 unpushed commits" both leave `ahead = 0` without it.
-    pub(super) has_upstream: bool,
+    /// Exact ref from `# branch.upstream <ref>`, when configured. Keeping the
+    /// value lets the status hot path select an incoming upstream without
+    /// rediscovering data Git already returned.
+    pub(super) upstream: Option<String>,
     pub(super) staged_count: u32,
     pub(super) unstaged_count: u32,
     pub(super) untracked_count: u32,
@@ -42,12 +42,8 @@ pub(super) fn parse_porcelain_v2(output: &str) -> ParsedPorcelain {
             p.current_branch = rest.trim().to_string();
             // A detached HEAD shows up as `(detached)` — keep it verbatim so
             // the UI can display something sensible without inventing a name.
-        } else if record.starts_with("# branch.upstream ") {
-            // Presence alone is the signal — we don't need the ref name here,
-            // only the boolean "is an upstream configured?". The count of
-            // unpushed commits in the no-upstream case is computed by
-            // `count_unpushed` via `git rev-list --not --remotes`.
-            p.has_upstream = true;
+        } else if let Some(rest) = record.strip_prefix("# branch.upstream ") {
+            p.upstream = Some(rest.trim().to_string());
         } else if let Some(rest) = record.strip_prefix("# branch.ab ") {
             // Format: `+<ahead> -<behind>`
             let mut parts = rest.split_whitespace();
@@ -91,6 +87,7 @@ mod tests {
         assert_eq!(p.current_branch, "main");
         assert_eq!(p.ahead, 0);
         assert_eq!(p.behind, 0);
+        assert_eq!(p.upstream.as_deref(), Some("origin/main"));
         assert_eq!(p.staged_count, 0);
         assert_eq!(p.unstaged_count, 0);
         assert_eq!(p.untracked_count, 0);
@@ -139,16 +136,16 @@ mod tests {
         let p = parse_porcelain_v2(out);
         assert_eq!(p.ahead, 3);
         assert_eq!(p.behind, 1);
-        assert!(p.has_upstream);
+        assert_eq!(p.upstream.as_deref(), Some("origin/feat"));
     }
 
     #[test]
-    fn parses_has_upstream_false_when_branch_upstream_missing() {
+    fn parses_no_upstream_when_branch_upstream_is_missing() {
         // Local-only branch (never pushed): git omits `# branch.upstream`
-        // entirely. The flag drives the `count_unpushed` fallback path.
+        // entirely. The missing ref drives the `count_unpushed` fallback.
         let out = "# branch.head feat\n? new.txt\n";
         let p = parse_porcelain_v2(out);
-        assert!(!p.has_upstream);
+        assert!(p.upstream.is_none());
         assert_eq!(p.ahead, 0);
     }
 

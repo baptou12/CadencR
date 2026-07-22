@@ -15,6 +15,7 @@ use self::preconditions::{
 use super::{broadcast_after_write_at, resolve_target_branch};
 
 pub use operation::detect_active_git_operation;
+pub(crate) use preconditions::{resolve_configured_update_target, resolve_update_target};
 
 /// Bring the configured target ref into the feature's current Git checkout.
 /// This may be a configured linked worktree or the project's primary checkout;
@@ -34,7 +35,8 @@ pub async fn update_branch(
     require_no_active_operation(&worktree).await?;
     let current_ref = attached_head_ref(&worktree).await?;
     require_clean_worktree(&worktree).await?;
-    let target = resolve_target_branch(state, feature_id, &worktree).await?;
+    let configured_target = resolve_target_branch(state, feature_id, &worktree).await?;
+    let target = resolve_update_target(&worktree, &current_ref, &configured_target).await?;
     validate_target(&worktree, &current_ref, &target).await?;
 
     let result = runner::start(&worktree, body.strategy, &target).await;
@@ -182,6 +184,66 @@ mod tests {
             .await
             .unwrap();
         assert!(!local_fixture.feature.join("remote-only.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn current_branch_can_update_from_its_incoming_upstream() {
+        let fixture = RepoFixture::new();
+        fixture.create_current_branch_remote_only_tip();
+        let state = fixture.state("feature/test").await;
+
+        assert_eq!(
+            update_branch(&state, update_body(UpdateBranchStrategy::Rebase))
+                .await
+                .unwrap(),
+            GitOperationResponse::Completed
+        );
+        assert!(fixture.feature.join("upstream-only.txt").exists());
+        assert_eq!(
+            fixture.rev_parse_feature("HEAD"),
+            fixture.rev_parse_feature("origin/feature/test")
+        );
+    }
+
+    #[tokio::test]
+    async fn local_configured_target_uses_its_incoming_upstream() {
+        let fixture = RepoFixture::new();
+        fixture.create_tracked_target_remote_only_tip();
+        let state = fixture.state("main").await;
+
+        assert_eq!(
+            update_branch(&state, update_body(UpdateBranchStrategy::Rebase))
+                .await
+                .unwrap(),
+            GitOperationResponse::Completed
+        );
+        assert!(fixture.feature.join("remote-only.txt").exists());
+        assert_eq!(
+            fixture.rev_parse_feature("HEAD"),
+            fixture.rev_parse_feature("origin/main")
+        );
+    }
+
+    #[tokio::test]
+    async fn local_target_ahead_of_upstream_keeps_its_local_commits() {
+        let fixture = RepoFixture::new();
+        fixture.create_tracked_target_remote_only_tip();
+        fixture.git_project(&["reset", "--hard", "origin/main"]);
+        fixture.commit_main_file("local-only.txt", "local\n", "local-only");
+        let state = fixture.state("main").await;
+
+        assert_eq!(
+            update_branch(&state, update_body(UpdateBranchStrategy::Rebase))
+                .await
+                .unwrap(),
+            GitOperationResponse::Completed
+        );
+        assert!(fixture.feature.join("remote-only.txt").exists());
+        assert!(fixture.feature.join("local-only.txt").exists());
+        assert_eq!(
+            fixture.rev_parse_feature("HEAD"),
+            fixture.rev_parse_feature("main")
+        );
     }
 
     #[tokio::test]

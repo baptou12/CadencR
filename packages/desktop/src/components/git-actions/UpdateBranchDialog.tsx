@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { describeGitUpdateConflictFiles } from "./gitUpdateMessages";
+import { resolveGitUpdateSource, type GitUpdateSource } from "./useGitAction";
 import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 import { gitUpdateMutationKey } from "./useGitUpdatePending";
 
@@ -29,12 +30,12 @@ const STRATEGY_OPTIONS: readonly RadioCardOption<UpdateBranchStrategy>[] = [
   {
     value: "rebase",
     label: "Rebase",
-    description: "Replay the current branch's commits on the configured target.",
+    description: "Replay the current branch's commits on the selected update source.",
   },
   {
     value: "merge",
     label: "Merge",
-    description: "Merge the configured target into the current branch.",
+    description: "Merge the selected update source into the current branch.",
   },
 ];
 
@@ -59,6 +60,7 @@ export default function UpdateBranchDialog({
     mutation: { mutationKey: gitUpdateMutationKey(featureId) },
   });
   const submitting = update.isPending;
+  const source = resolveGitUpdateSource(snapshot);
 
   async function handleUpdate(): Promise<void> {
     if (submitting || disabledReason) return;
@@ -74,7 +76,7 @@ export default function UpdateBranchDialog({
         onOpenChange(false);
         return;
       }
-      toast.success(`Updated ${snapshot.current_branch} from ${snapshot.target_branch}`);
+      toast.success(`Updated ${snapshot.current_branch} from ${source.branch}`);
       onOpenChange(false);
     } catch (caught) {
       setError(apiErrorMessage(caught, "Could not update the current branch."));
@@ -103,8 +105,8 @@ export default function UpdateBranchDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <BranchDirection snapshot={snapshot} />
-          <DivergenceCounts snapshot={snapshot} />
+          <BranchDirection currentBranch={snapshot.current_branch} source={source} />
+          <DivergenceCounts source={source} />
 
           <div className="space-y-2">
             <div className="text-sm font-medium">Update strategy</div>
@@ -142,35 +144,41 @@ export default function UpdateBranchDialog({
   );
 }
 
-function BranchDirection({ snapshot }: { snapshot: GitStatusSnapshot }): ReactElement {
+function BranchDirection({
+  currentBranch,
+  source,
+}: {
+  currentBranch: string;
+  source: GitUpdateSource;
+}): ReactElement {
   return (
     <div className="rounded-md border border-border bg-card p-3">
       <div className="flex min-w-0 items-center gap-2 font-mono text-sm">
-        <code className="truncate" title={snapshot.target_branch}>
-          {snapshot.target_branch}
+        <code className="truncate" title={source.branch}>
+          {source.branch}
         </code>
         <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-label="updates" />
-        <code className="truncate" title={snapshot.current_branch}>
-          {snapshot.current_branch}
+        <code className="truncate" title={currentBranch}>
+          {currentBranch}
         </code>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Exact target ref: <code>{snapshot.target_branch}</code>
+        Exact {source.kind} ref: <code>{source.branch}</code>
       </p>
     </div>
   );
 }
 
-function DivergenceCounts({ snapshot }: { snapshot: GitStatusSnapshot }): ReactElement {
+function DivergenceCounts({ source }: { source: GitUpdateSource }): ReactElement {
   return (
     <dl className="grid grid-cols-2 gap-3 text-sm">
       <div className="rounded-md border border-border p-3">
-        <dt className="text-xs text-muted-foreground">Behind target</dt>
-        <dd className="mt-1 font-mono text-base">{snapshot.behind_target ?? 0}</dd>
+        <dt className="text-xs text-muted-foreground">Behind {source.kind}</dt>
+        <dd className="mt-1 font-mono text-base">{source.behind}</dd>
       </div>
       <div className="rounded-md border border-border p-3">
-        <dt className="text-xs text-muted-foreground">Ahead of target</dt>
-        <dd className="mt-1 font-mono text-base">{snapshot.ahead_of_target}</dd>
+        <dt className="text-xs text-muted-foreground">Ahead of {source.kind}</dt>
+        <dd className="mt-1 font-mono text-base">{source.ahead}</dd>
       </div>
     </dl>
   );

@@ -37,6 +37,7 @@ pub use merge::{merge_feature_branch, MergeFeatureBranchBody};
 pub use push::{push, push_input};
 pub use status::{enrich_with_sharing, get_compare_url, get_git_status};
 pub use target_branch::{resolve_target_branch, update_target_branch};
+pub(crate) use update_branch::resolve_configured_update_target;
 pub use update_branch::{
     abort_update_branch, continue_update_branch, detect_active_git_operation, update_branch,
 };

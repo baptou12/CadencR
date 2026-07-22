@@ -112,6 +112,10 @@ export function gitStatusSnapshotsEqual(a: GitStatusSnapshot, b: GitStatusSnapsh
     a.ahead_of_target === b.ahead_of_target &&
     a.behind_target === b.behind_target &&
     a.target_resolved === b.target_resolved &&
+    a.update_target_branch === b.update_target_branch &&
+    a.ahead_of_update_target === b.ahead_of_update_target &&
+    a.behind_update_target === b.behind_update_target &&
+    a.update_target_resolved === b.update_target_resolved &&
     a.conflict_count === b.conflict_count &&
     a.operation === b.operation &&
     a.has_remote === b.has_remote &&

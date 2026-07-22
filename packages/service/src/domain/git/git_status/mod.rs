@@ -35,6 +35,11 @@ use super::models::GitOperationKind;
 ///   remote-tracking `origin/main` are different inputs and produce different
 ///   counts on purpose. Both are `0` if the ref doesn't resolve, while
 ///   `target_resolved` distinguishes that from genuine zero divergence.
+/// - `update_target_branch` is the exact source the Update action will use.
+///   Incoming commits on the checked-out branch's upstream win first; then an
+///   incoming upstream of a configured local target wins; otherwise it is the
+///   configured target verbatim. Its divergence fields are computed against
+///   that resolved source without changing the configured comparison target.
 /// - `host` / `compare_url` / `action_label` are populated only when a remote
 ///   exists. The frontend disables the open-PR button when `compare_url` is
 ///   `None`.
@@ -63,6 +68,15 @@ pub struct GitStatusSnapshot {
     /// from a zero divergence count.
     #[serde(default, skip_serializing_if = "is_false")]
     pub target_resolved: bool,
+    /// Exact ref selected as the source for Update.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_target_branch: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub ahead_of_update_target: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub behind_update_target: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub update_target_resolved: bool,
     /// Number of unique unmerged paths in the current worktree.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub conflict_count: u32,

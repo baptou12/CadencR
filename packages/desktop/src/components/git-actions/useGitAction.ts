@@ -37,6 +37,14 @@ export interface GitActionState {
   recovery: GitUpdateRecoveryActionState | null;
 }
 
+export interface GitUpdateSource {
+  branch: string;
+  ahead: number;
+  behind: number;
+  kind: "upstream" | "target";
+  resolved: boolean;
+}
+
 const PRIMARY_ORDER: readonly PrimaryGitAction[] = ["commit", "update", "push", "pr", "merge"];
 
 const LOADING_STATE: GitActionState = {
@@ -96,17 +104,45 @@ function deriveMergeDisabled(snapshot: GitStatusSnapshot): string | null {
 }
 
 function deriveUpdateDisabled(snapshot: GitStatusSnapshot): string | null {
-  if (snapshot.target_resolved !== true) {
-    return `Target '${snapshot.target_branch}' does not resolve`;
+  if (!isWorktreeClean(snapshot)) return "Commit or stash your changes first";
+  const source = resolveGitUpdateSource(snapshot);
+  if (!source.resolved) {
+    const noun = source.kind === "target" ? "Target" : "Update source";
+    return `${noun} '${source.branch}' does not resolve`;
   }
-  // Update uses the configured target identity verbatim. Unlike finish-branch
-  // Merge, `origin/main` is intentionally distinct from a checked-out `main`.
-  if (isSameUpdateBranch(snapshot.current_branch, snapshot.target_branch)) {
+  if (isSameUpdateBranch(snapshot.current_branch, source.branch)) {
     return "Current branch is already the update target";
   }
-  if (!isWorktreeClean(snapshot)) return "Commit or stash your changes first";
-  if ((snapshot.behind_target ?? 0) <= 0) return "Already up to date";
+  if (source.behind <= 0) return "Already up to date";
   return null;
+}
+
+export function resolveGitUpdateSource(snapshot: GitStatusSnapshot): GitUpdateSource {
+  if (snapshot.update_target_branch) {
+    return {
+      branch: snapshot.update_target_branch,
+      ahead: snapshot.ahead_of_update_target ?? 0,
+      behind: snapshot.behind_update_target ?? 0,
+      kind: snapshot.update_target_branch === snapshot.target_branch ? "target" : "upstream",
+      resolved: snapshot.update_target_resolved === true,
+    };
+  }
+  if (snapshot.behind_remote > 0) {
+    return {
+      branch: "@{upstream}",
+      ahead: snapshot.ahead_of_remote,
+      behind: snapshot.behind_remote,
+      kind: "upstream",
+      resolved: true,
+    };
+  }
+  return {
+    branch: snapshot.target_branch,
+    ahead: snapshot.ahead_of_target,
+    behind: snapshot.behind_target ?? 0,
+    kind: "target",
+    resolved: snapshot.target_resolved === true,
+  };
 }
 
 function isSameUpdateBranch(currentBranch: string, targetBranch: string): boolean {

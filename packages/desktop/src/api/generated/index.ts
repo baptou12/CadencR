@@ -1150,6 +1150,11 @@ export type GitStatusSnapshotHost = null | GitHost;
 export type GitStatusSnapshotOperation = null | GitOperationKind;
 
 /**
+ * Exact ref selected as the source for Update.
+ */
+export type GitStatusSnapshotUpdateTargetBranch = string | null;
+
+/**
  * One-shot snapshot of the worktree's git state. Field semantics:
 
 - `*_count` fields are derived from `git status --porcelain=v2`.
@@ -1165,6 +1170,11 @@ export type GitStatusSnapshotOperation = null | GitOperationKind;
   remote-tracking `origin/main` are different inputs and produce different
   counts on purpose. Both are `0` if the ref doesn't resolve, while
   `target_resolved` distinguishes that from genuine zero divergence.
+- `update_target_branch` is the exact source the Update action will use.
+  Incoming commits on the checked-out branch's upstream win first; then an
+  incoming upstream of a configured local target wins; otherwise it is the
+  configured target verbatim. Its divergence fields are computed against
+  that resolved source without changing the configured comparison target.
 - `host` / `compare_url` / `action_label` are populated only when a remote
   exists. The frontend disables the open-PR button when `compare_url` is
   `None`.
@@ -1182,12 +1192,16 @@ export interface GitStatusSnapshot {
   /** @minimum 0 */
   ahead_of_target: number;
   /** @minimum 0 */
+  ahead_of_update_target?: number;
+  /** @minimum 0 */
   behind_remote: number;
   /**
    * Commits reachable from the configured target but not from `HEAD`.
    * @minimum 0
    */
   behind_target?: number;
+  /** @minimum 0 */
+  behind_update_target?: number;
   compare_url?: GitStatusSnapshotCompareUrl;
   computed_at: number;
   /**
@@ -1213,6 +1227,9 @@ from a zero divergence count. */
   unstaged_count: number;
   /** @minimum 0 */
   untracked_count: number;
+  /** Exact ref selected as the source for Update. */
+  update_target_branch?: GitStatusSnapshotUpdateTargetBranch;
+  update_target_resolved?: boolean;
 }
 
 export type GitSuccessResponseBlockedReason = string | null;

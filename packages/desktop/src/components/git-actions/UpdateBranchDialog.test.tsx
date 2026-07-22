@@ -73,6 +73,37 @@ describe("UpdateBranchDialog", () => {
     expect(within(dialog).getByText("4")).toBeInTheDocument();
   });
 
+  it("shows and submits the current branch upstream when it has incoming commits", async () => {
+    mocks.mutateAsync.mockResolvedValueOnce({ outcome: "completed" });
+    const { user } = render(
+      <UpdateBranchDialog
+        featureId={42}
+        open
+        snapshot={snapshot({
+          current_branch: "main",
+          target_branch: "main",
+          ahead_of_remote: 1,
+          behind_remote: 3,
+          update_target_branch: "origin/main",
+          ahead_of_update_target: 1,
+          behind_update_target: 3,
+          update_target_resolved: true,
+        })}
+        disabledReason={null}
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Update current branch" });
+    expect(within(dialog).getAllByText("origin/main")).toHaveLength(2);
+    expect(within(dialog).getByText("Behind upstream")).toBeInTheDocument();
+    expect(within(dialog).getByText("Ahead of upstream")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Update branch" }));
+
+    expect(mocks.toastSuccess).toHaveBeenCalledWith("Updated main from origin/main");
+  });
+
   it("submits Rebase by default and the exact Merge strategy when selected", async () => {
     mocks.mutateAsync.mockResolvedValue({ outcome: "completed" });
     const onOpenChange = vi.fn();
