@@ -9,6 +9,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
+  resetMutation: vi.fn(),
   pending: false,
   filesResult: {
     data: [
@@ -35,17 +36,40 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("sonner", () => ({ toast: mocks.toast }));
-vi.mock("@/api/generated", () => ({
-  getListStashesQueryKey: (params: unknown) => ["/api/git/stashes", params],
-  useGetUncommittedFiles: () => mocks.filesResult,
-  usePushStash: () => ({ mutateAsync: mocks.mutateAsync, isPending: mocks.pending }),
-}));
+vi.mock("@/api/generated", async () => {
+  const React = await import("react");
+  return {
+    getListStashesQueryKey: (params: unknown) => ["/api/git/stashes", params],
+    useGetUncommittedFiles: () => mocks.filesResult,
+    usePushStash: () => {
+      const [error, setError] = React.useState<unknown>(null);
+      const reset = React.useCallback(() => {
+        mocks.resetMutation();
+        setError(null);
+      }, []);
+      return {
+        mutateAsync: async (variables: unknown) => {
+          try {
+            return await mocks.mutateAsync(variables);
+          } catch (caught) {
+            setError(caught);
+            throw caught;
+          }
+        },
+        isPending: mocks.pending,
+        error,
+        reset,
+      };
+    },
+  };
+});
 
 describe("StashChangesDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStashMutationCoordinatorForTest();
     mocks.pending = false;
+    mocks.resetMutation.mockReset();
     mocks.filesResult.data = [
       {
         path: "src/parser.ts",
@@ -70,15 +94,7 @@ describe("StashChangesDialog", () => {
 
   it("summarizes files with numstats and submits tracked changes with a trimmed name", async () => {
     const onOpenChange = vi.fn();
-    const onCompleted = vi.fn();
-    const { user } = render(
-      <StashChangesDialog
-        featureId={21}
-        open
-        onOpenChange={onOpenChange}
-        onCompleted={onCompleted}
-      />,
-    );
+    const { user } = render(<StashChangesDialog featureId={21} open onOpenChange={onOpenChange} />);
 
     expect(screen.getByText("src/parser.ts")).toBeInTheDocument();
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
@@ -92,11 +108,7 @@ describe("StashChangesDialog", () => {
     expect(mocks.mutateAsync).toHaveBeenCalledWith({
       data: { feature_id: 21, message: "parser WIP", include_untracked: false },
     });
-    expect(onCompleted).toHaveBeenCalledWith({
-      outcome: "completed",
-      featureId: 21,
-      name: "parser WIP",
-    });
+    expect(mocks.toast.success).toHaveBeenCalledWith("Stashed changes as “parser WIP”");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -163,10 +175,7 @@ describe("StashChangesDialog", () => {
   });
 
   it("creates an unnamed stash when the optional name is blank", async () => {
-    const onCompleted = vi.fn();
-    const { user } = render(
-      <StashChangesDialog featureId={22} open onOpenChange={vi.fn()} onCompleted={onCompleted} />,
-    );
+    const { user } = render(<StashChangesDialog featureId={22} open onOpenChange={vi.fn()} />);
 
     await user.type(screen.getByRole("textbox", { name: /Name/ }), "   ");
     await user.click(screen.getByRole("button", { name: "Stash changes" }));
@@ -174,11 +183,7 @@ describe("StashChangesDialog", () => {
     expect(mocks.mutateAsync).toHaveBeenCalledWith({
       data: { feature_id: 22, message: null, include_untracked: false },
     });
-    expect(onCompleted).toHaveBeenCalledWith({
-      outcome: "completed",
-      featureId: 22,
-      name: null,
-    });
+    expect(mocks.toast.success).toHaveBeenCalledWith("Stashed changes");
   });
 
   it("uses the layout-aware U mnemonic to include and stash untracked-only changes", async () => {
@@ -253,6 +258,41 @@ describe("StashChangesDialog", () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
+  it("clears a local response error across close and reopen", async () => {
+    mocks.mutateAsync.mockResolvedValue({
+      outcome: "conflicts",
+      conflict_files: ["src/parser.ts"],
+    });
+    const onOpenChange = vi.fn();
+    const view = render(<StashChangesDialog featureId={34} open onOpenChange={onOpenChange} />);
+
+    await view.user.click(screen.getByRole("button", { name: "Stash changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Stash creation unexpectedly reported conflicts",
+    );
+
+    view.rerender(<StashChangesDialog featureId={34} open={false} onOpenChange={onOpenChange} />);
+    await waitFor(() => expect(mocks.resetMutation).toHaveBeenCalledOnce());
+    view.rerender(<StashChangesDialog featureId={34} open onOpenChange={onOpenChange} />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("resets a generated mutation error across close and reopen", async () => {
+    mocks.mutateAsync.mockRejectedValue(new Error("stale backend failure"));
+    const onOpenChange = vi.fn();
+    const view = render(<StashChangesDialog featureId={35} open onOpenChange={onOpenChange} />);
+
+    await view.user.click(screen.getByRole("button", { name: "Stash changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("stale backend failure");
+
+    view.rerender(<StashChangesDialog featureId={35} open={false} onOpenChange={onOpenChange} />);
+    await waitFor(() => expect(mocks.resetMutation).toHaveBeenCalledOnce());
+    view.rerender(<StashChangesDialog featureId={35} open onOpenChange={onOpenChange} />);
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("holds its feature lease until creation and the confirmed query refresh settle", async () => {
     let complete: ((value: { outcome: "completed" }) => void) | undefined;
     let completeRefresh: (() => void) | undefined;
@@ -286,29 +326,5 @@ describe("StashChangesDialog", () => {
     act(() => completeRefresh?.());
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(coordinator.result.current.activeMutation).toBeNull();
-  });
-
-  it("does not misreport a completed stash when the follow-up callback fails", async () => {
-    const onOpenChange = vi.fn();
-    const onCompleted = vi.fn(() => {
-      throw new Error("route failed");
-    });
-    const { user } = render(
-      <StashChangesDialog
-        featureId={26}
-        open
-        onOpenChange={onOpenChange}
-        onCompleted={onCompleted}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Stash changes" }));
-
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(mocks.toast.error).toHaveBeenCalledWith(
-      "Stashed changes, but the follow-up action failed",
-      expect.objectContaining({ description: "route failed" }),
-    );
   });
 });

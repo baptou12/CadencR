@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import {
   useApplyStash,
@@ -28,7 +28,7 @@ interface UseStashMutationsOptions {
   onConflicts?: StashConflictHandler;
   onOpenConflict?: StashConflictOpenHandler;
   onRefresh?: () => Promise<void>;
-  coordinator?: StashMutationCoordinator;
+  coordinator: StashMutationCoordinator;
 }
 
 export interface StashMutationController {
@@ -85,8 +85,6 @@ export function useStashMutations({
   const applyMutation = useApplyStash();
   const popMutation = usePopStash();
   const dropMutation = useDropStash();
-  const activeOperationRef = useRef<StashMutationOperation | null>(null);
-  const [activeOperation, setActiveOperation] = useState<StashMutationOperation | null>(null);
   const selector = useMemo<StashMutationBody>(
     () => ({ feature_id: featureId, ref_name: stash.ref_name, expected_sha: stash.sha }),
     [featureId, stash.ref_name, stash.sha],
@@ -108,12 +106,12 @@ export function useStashMutations({
 
   const execute = useCallback(
     async (operation: StashMutationOperation, mutate: StashMutationExecutor): Promise<boolean> => {
-      if (activeOperationRef.current) return false;
-      const lease: StashMutationLease | null =
-        coordinator?.tryAcquire({ kind: "row", operation, stashRefName: stash.ref_name }) ?? null;
-      if (coordinator && !lease) return false;
-      activeOperationRef.current = operation;
-      setActiveOperation(operation);
+      const lease: StashMutationLease | null = coordinator.tryAcquire({
+        kind: "row",
+        operation,
+        stashRefName: stash.ref_name,
+      });
+      if (!lease) return false;
       try {
         const result = await mutate({ data: selector });
         if (result.outcome === "conflicts") {
@@ -135,9 +133,7 @@ export function useStashMutations({
         toastError(error, `Could not ${operation} ${stash.ref_name}.`);
         return false;
       } finally {
-        activeOperationRef.current = null;
-        setActiveOperation(null);
-        if (lease) coordinator?.release(lease);
+        coordinator.release(lease);
       }
     },
     [coordinator, onConflicts, onOpenConflict, refreshAfterMutation, selector, stash],
@@ -156,8 +152,14 @@ export function useStashMutations({
     [dropMutation.mutateAsync, execute],
   );
 
+  const pendingOperation =
+    coordinator.activeMutation?.kind === "row" &&
+    coordinator.activeMutation.stashRefName === stash.ref_name
+      ? coordinator.activeMutation.operation
+      : null;
+
   return useMemo(
-    () => ({ pendingOperation: activeOperation, apply, pop, drop }),
-    [activeOperation, apply, drop, pop],
+    () => ({ pendingOperation, apply, pop, drop }),
+    [apply, drop, pendingOperation, pop],
   );
 }

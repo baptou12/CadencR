@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import type { StashEntry } from "@/api/generated";
 import { useStashMutations } from "./useStashMutations";
+import {
+  resetStashMutationCoordinatorForTest,
+  useStashMutationCoordinator,
+} from "./useStashMutationCoordinator";
 
 const mocks = vi.hoisted(() => ({
   apply: vi.fn(),
@@ -31,6 +35,7 @@ const stash: StashEntry = {
 describe("useStashMutations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetStashMutationCoordinatorForTest();
     mocks.apply.mockResolvedValue({ outcome: "completed" });
     mocks.pop.mockResolvedValue({ outcome: "completed" });
     mocks.drop.mockResolvedValue({ outcome: "completed" });
@@ -44,7 +49,10 @@ describe("useStashMutations", () => {
     "sends a stable selector for %s and explicitly refreshes",
     async (operation, mutate) => {
       const onRefresh = vi.fn().mockResolvedValue(undefined);
-      const { result } = renderHook(() => useStashMutations({ featureId: 17, stash, onRefresh }));
+      const { result } = renderHook(() => {
+        const coordinator = useStashMutationCoordinator(17);
+        return useStashMutations({ featureId: 17, stash, onRefresh, coordinator });
+      });
 
       await act(() => result.current[operation]());
 
@@ -66,9 +74,10 @@ describe("useStashMutations", () => {
     });
     const onConflicts = vi.fn();
     const onOpenConflict = vi.fn();
-    const { result } = renderHook(() =>
-      useStashMutations({ featureId: 17, stash, onConflicts, onOpenConflict }),
-    );
+    const { result } = renderHook(() => {
+      const coordinator = useStashMutationCoordinator(17);
+      return useStashMutations({ featureId: 17, stash, onConflicts, onOpenConflict, coordinator });
+    });
 
     await act(() => result.current.pop());
 
@@ -98,7 +107,10 @@ describe("useStashMutations", () => {
           finishRefresh = resolve;
         }),
     );
-    const { result } = renderHook(() => useStashMutations({ featureId: 17, stash, onRefresh }));
+    const { result } = renderHook(() => {
+      const coordinator = useStashMutationCoordinator(17);
+      return useStashMutations({ featureId: 17, stash, onRefresh, coordinator });
+    });
 
     let operation: Promise<boolean> | undefined;
     act(() => {
@@ -118,7 +130,10 @@ describe("useStashMutations", () => {
   it("surfaces mutation and refresh errors", async () => {
     mocks.apply.mockRejectedValueOnce(new Error("stash moved"));
     const onRefresh = vi.fn().mockRejectedValue(new Error("refresh failed"));
-    const { result } = renderHook(() => useStashMutations({ featureId: 17, stash, onRefresh }));
+    const { result } = renderHook(() => {
+      const coordinator = useStashMutationCoordinator(17);
+      return useStashMutations({ featureId: 17, stash, onRefresh, coordinator });
+    });
 
     await act(() => result.current.apply());
     expect(toast.error).toHaveBeenCalledWith("stash moved");

@@ -27,6 +27,14 @@ const stash: StashEntry = {
   deletions: 1,
 };
 
+const coordinator: StashMutationCoordinator = {
+  activeMutation: null,
+  blockedReason: null,
+  getBlockedReason: vi.fn(() => null),
+  tryAcquire: vi.fn(),
+  release: vi.fn(),
+};
+
 describe("StashRow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -38,7 +46,9 @@ describe("StashRow", () => {
 
   it("renders the primary open action beside inline stash actions", async () => {
     const onOpen = vi.fn();
-    const { user } = render(<StashRow featureId={8} stash={stash} onOpen={onOpen} />);
+    const { user } = render(
+      <StashRow featureId={8} stash={stash} onOpen={onOpen} coordinator={coordinator} />,
+    );
     const openButton = screen.getByRole("button", {
       name: "Open stash@{0}: Keep this work",
     });
@@ -65,7 +75,9 @@ describe("StashRow", () => {
   });
 
   it("offers Apply and Pop as independent inline actions", async () => {
-    const { user } = render(<StashRow featureId={8} stash={stash} onOpen={vi.fn()} />);
+    const { user } = render(
+      <StashRow featureId={8} stash={stash} onOpen={vi.fn()} coordinator={coordinator} />,
+    );
     await user.click(screen.getByRole("button", { name: "Apply stash@{0}" }));
     expect(mocks.controller.apply).toHaveBeenCalledOnce();
 
@@ -74,7 +86,9 @@ describe("StashRow", () => {
   });
 
   it("confirms Drop with both the stash selector and message", async () => {
-    const { user } = render(<StashRow featureId={8} stash={stash} onOpen={vi.fn()} />);
+    const { user } = render(
+      <StashRow featureId={8} stash={stash} onOpen={vi.fn()} coordinator={coordinator} />,
+    );
     await user.click(screen.getByRole("button", { name: "Drop stash@{0}" }));
 
     expect(screen.getByRole("dialog", { name: "Drop stash@{0}?" })).toHaveTextContent(
@@ -86,7 +100,9 @@ describe("StashRow", () => {
   });
 
   it("returns focus to the inline Drop action when confirmation is cancelled", async () => {
-    const { user } = render(<StashRow featureId={8} stash={stash} onOpen={vi.fn()} />);
+    const { user } = render(
+      <StashRow featureId={8} stash={stash} onOpen={vi.fn()} coordinator={coordinator} />,
+    );
     const dropButton = screen.getByRole("button", { name: "Drop stash@{0}" });
     await user.click(dropButton);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -100,13 +116,13 @@ describe("StashRow", () => {
       tryAcquire: vi.fn(() => ({ featureId: 8, id: 1, owner: { kind: "push" } as const })),
       release: vi.fn(),
     };
-    const coordinator: StashMutationCoordinator = {
+    const activeCoordinator: StashMutationCoordinator = {
       ...coordinatorBase,
       activeMutation: null,
       blockedReason: null,
     };
     const { rerender, user } = render(
-      <StashRow featureId={8} stash={stash} onOpen={vi.fn()} coordinator={coordinator} />,
+      <StashRow featureId={8} stash={stash} onOpen={vi.fn()} coordinator={activeCoordinator} />,
     );
     await user.click(screen.getByRole("button", { name: "Drop stash@{0}" }));
 
@@ -130,7 +146,7 @@ describe("StashRow", () => {
 
   it("shows the row operation and disables incompatible inline actions while pending", () => {
     mocks.controller.pendingOperation = "pop";
-    render(<StashRow featureId={8} stash={stash} onOpen={vi.fn()} />);
+    render(<StashRow featureId={8} stash={stash} onOpen={vi.fn()} coordinator={coordinator} />);
 
     expect(screen.getByText("pop stash in progress")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply stash@{0}" })).toBeDisabled();

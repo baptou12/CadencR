@@ -18,13 +18,9 @@ import {
   getListStashesQueryKey,
   useGetUncommittedFiles,
   usePushStash,
-  type GitOperationResponse,
   type UncommittedFile,
 } from "@/api/generated";
-import {
-  useStashMutationCoordinator,
-  type StashMutationLease,
-} from "@/components/diff/useStashMutationCoordinator";
+import { useStashMutationCoordinator } from "@/components/diff/useStashMutationCoordinator";
 import {
   Dialog,
   DialogContent,
@@ -36,19 +32,10 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { StashChangesDialogBody, type StashDialogViewModel } from "./StashChangesDialogBody";
 import { useStashDialogShortcuts } from "./useStashDialogShortcuts";
 
-export interface StashChangesDialogResult {
-  outcome: "completed";
-  featureId: number;
-  name: string | null;
-}
-
-export type StashChangesDialogCompleteHandler = (result: StashChangesDialogResult) => void;
-
 export interface StashChangesDialogProps {
   featureId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCompleted?: StashChangesDialogCompleteHandler;
 }
 
 /** Controlled stash-push dialog. Backend/query state remains authoritative. */
@@ -56,7 +43,6 @@ const StashChangesDialog = memo(function StashChangesDialog({
   featureId,
   open,
   onOpenChange,
-  onCompleted,
 }: StashChangesDialogProps): ReactElement {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const filesQuery = useGetUncommittedFiles(
@@ -70,7 +56,6 @@ const StashChangesDialog = memo(function StashChangesDialog({
     filesReady: !filesQuery.isLoading && !filesQuery.isError,
     open,
     onOpenChange,
-    onCompleted,
   });
   useStashDialogShortcuts({
     canSubmit: submission.canSubmit,
@@ -134,26 +119,27 @@ function useStashPushSubmission({
   filesReady,
   open,
   onOpenChange,
-  onCompleted,
 }: StashPushSubmissionOptions): StashPushSubmissionController {
-  const {
-    name,
-    includeUntracked,
-    error,
-    submitting,
-    setName,
-    setIncludeUntracked,
-    setError,
-    setSubmitting,
-  } = useStashFormState(open);
-  const leaseRef = useRef<StashMutationLease | null>(null);
-  const { mutateAsync: pushStash, isPending: pushStashPending } = usePushStash();
+  const { name, includeUntracked, setName, setIncludeUntracked } = useStashFormState(open);
+  const [responseError, setResponseError] = useState<string | null>(null);
+  const pushStash = usePushStash();
   const coordinator = useStashMutationCoordinator(featureId);
   const refreshStashes = useRefreshStashes(featureId);
-  const pending = submitting || pushStashPending;
-  const blockedReason = leaseRef.current ? null : coordinator.blockedReason;
+  const resetPushStash = pushStash.reset;
+  const ownsPush = coordinator.activeMutation?.kind === "push";
+  const pending = ownsPush || pushStash.isPending;
+  const blockedReason = ownsPush ? null : coordinator.blockedReason;
+  const error =
+    responseError ??
+    (pushStash.error ? apiErrorMessage(pushStash.error, "Could not stash changes.") : null);
   const hasStashable = useHasStashableChanges(files, includeUntracked);
   const canSubmit = filesReady && hasStashable && !pending && !blockedReason;
+
+  useEffect(() => {
+    if (open) return;
+    setResponseError(null);
+    resetPushStash();
+  }, [open, resetPushStash]);
 
   const handleNameChange = useCallback((nextName: string): void => setName(nextName), []);
   const handleToggleUntracked = useCallback((): void => {
@@ -171,14 +157,11 @@ function useStashPushSubmission({
       coordinator,
       featureId,
       includeUntracked,
-      leaseRef,
       name,
-      onCompleted,
       onOpenChange,
-      pushStash,
+      pushStash: pushStash.mutateAsync,
       refreshStashes,
-      setError,
-      setSubmitting,
+      setResponseError,
     });
   }, [
     canSubmit,
@@ -186,9 +169,8 @@ function useStashPushSubmission({
     featureId,
     includeUntracked,
     name,
-    onCompleted,
     onOpenChange,
-    pushStash,
+    pushStash.mutateAsync,
     refreshStashes,
   ]);
   const handleSubmit = useCallback(
@@ -234,90 +216,71 @@ interface SubmitStashPushOptions {
   coordinator: ReturnType<typeof useStashMutationCoordinator>;
   featureId: number;
   includeUntracked: boolean;
-  leaseRef: { current: StashMutationLease | null };
   name: string;
-  onCompleted?: StashChangesDialogCompleteHandler;
   onOpenChange: (open: boolean) => void;
   pushStash: ReturnType<typeof usePushStash>["mutateAsync"];
   refreshStashes: () => Promise<void>;
-  setError: (error: string | null) => void;
-  setSubmitting: (submitting: boolean) => void;
+  setResponseError: (error: string | null) => void;
 }
 
 async function submitStashPush(options: SubmitStashPushOptions): Promise<void> {
   if (!options.canSubmit) return;
-  options.setError(null);
+  options.setResponseError(null);
   const lease = options.coordinator.tryAcquire({ kind: "push" });
   if (!lease) {
-    options.setError(
+    options.setResponseError(
       options.coordinator.getBlockedReason() ?? "Another stash operation is in progress",
     );
     return;
   }
-  options.leaseRef.current = lease;
-  options.setSubmitting(true);
   const submittedName = options.name.trim() || null;
-  let result: GitOperationResponse | null = null;
   try {
-    result = await options.pushStash({
+    const result = await options.pushStash({
       data: {
         feature_id: options.featureId,
         message: submittedName,
         include_untracked: options.includeUntracked,
       },
     });
-    if (result.outcome === "completed") await options.refreshStashes();
-  } catch (caught) {
-    options.setError(apiErrorMessage(caught, "Could not stash changes."));
+    if (result.outcome === "conflicts") {
+      options.setResponseError(
+        `Stash creation unexpectedly reported conflicts: ${result.conflict_files.join(", ")}`,
+      );
+      return;
+    }
+    await options.refreshStashes();
+    toast.success(submittedName ? `Stashed changes as “${submittedName}”` : "Stashed changes");
+    options.onOpenChange(false);
+  } catch {
+    // React Query retains the generated mutation error for the inline alert.
   } finally {
-    options.leaseRef.current = null;
     options.coordinator.release(lease);
-    options.setSubmitting(false);
   }
-  handleStashResult({
-    result,
-    featureId: options.featureId,
-    submittedName,
-    onOpenChange: options.onOpenChange,
-    onCompleted: options.onCompleted,
-    setError: options.setError,
-  });
 }
 
 interface StashFormState {
   name: string;
   includeUntracked: boolean;
-  error: string | null;
-  submitting: boolean;
   setName: Dispatch<SetStateAction<string>>;
   setIncludeUntracked: Dispatch<SetStateAction<boolean>>;
-  setError: Dispatch<SetStateAction<string | null>>;
-  setSubmitting: Dispatch<SetStateAction<boolean>>;
 }
 
 function useStashFormState(open: boolean): StashFormState {
   const [name, setName] = useState("");
   const [includeUntracked, setIncludeUntracked] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   useEffect(() => {
     if (open) return;
     setName("");
     setIncludeUntracked(false);
-    setError(null);
   }, [open]);
   return useMemo(
     () => ({
       name,
       includeUntracked,
-      error,
-      submitting,
       setName,
       setIncludeUntracked,
-      setError,
-      setSubmitting,
     }),
-    [error, includeUntracked, name, submitting],
+    [includeUntracked, name],
   );
 }
 
@@ -342,53 +305,6 @@ function useHasStashableChanges(files: UncommittedFile[], includeUntracked: bool
     () => files.some((file) => file.status !== "untracked" || includeUntracked),
     [files, includeUntracked],
   );
-}
-
-function handleStashResult({
-  result,
-  setError,
-  ...completion
-}: {
-  result: GitOperationResponse | null;
-  featureId: number;
-  submittedName: string | null;
-  onOpenChange: (open: boolean) => void;
-  onCompleted?: StashChangesDialogCompleteHandler;
-  setError: (error: string) => void;
-}): void {
-  if (!result) return;
-  if (result.outcome === "conflicts") {
-    setError(`Stash creation unexpectedly reported conflicts: ${result.conflict_files.join(", ")}`);
-    return;
-  }
-  completeStashPush(completion);
-}
-
-function completeStashPush({
-  featureId,
-  submittedName,
-  onOpenChange,
-  onCompleted,
-}: {
-  featureId: number;
-  submittedName: string | null;
-  onOpenChange: (open: boolean) => void;
-  onCompleted?: StashChangesDialogCompleteHandler;
-}): void {
-  const completed: StashChangesDialogResult = {
-    outcome: "completed",
-    featureId,
-    name: submittedName,
-  };
-  toast.success(submittedName ? `Stashed changes as “${submittedName}”` : "Stashed changes");
-  onOpenChange(false);
-  try {
-    onCompleted?.(completed);
-  } catch (caught) {
-    toast.error("Stashed changes, but the follow-up action failed", {
-      description: apiErrorMessage(caught, "Could not complete the follow-up action."),
-    });
-  }
 }
 
 export default StashChangesDialog;

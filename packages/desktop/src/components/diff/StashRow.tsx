@@ -23,7 +23,7 @@ export interface StashRowProps {
   onConflicts?: StashConflictHandler;
   onOpenConflict?: StashConflictOpenHandler;
   onRefresh?: () => Promise<void>;
-  coordinator?: StashMutationCoordinator;
+  coordinator: StashMutationCoordinator;
   active?: boolean;
 }
 
@@ -47,7 +47,7 @@ export const StashRow = memo(function StashRow({
     onRefresh,
     coordinator,
   });
-  const blockedReason = actions.pendingOperation ? null : (coordinator?.blockedReason ?? null);
+  const blockedReason = actions.pendingOperation ? null : coordinator.blockedReason;
 
   const handleOpen = useCallback((): void => onOpen(stash), [onOpen, stash]);
   const handleApply = useCallback((): void => void actions.apply(), [actions]);
