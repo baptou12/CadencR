@@ -1,104 +1,119 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, renderHook } from "@/test-utils";
-import { useEditorStore } from "@/stores/editor-store";
+import { render, screen } from "@/test-utils";
 
 const mocks = vi.hoisted(() => ({
   changedFiles: { data: undefined as unknown, isError: false, error: null as unknown },
-  params: null as unknown,
+  useGetChangedFiles: vi.fn(),
   toastError: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
-
 vi.mock("@/api/generated", () => ({
   FileStageState: { conflicted: "conflicted" },
-  useGetChangedFiles: (params: unknown) => {
-    mocks.params = params;
+  useGetChangedFiles: (params: unknown, options: unknown) => {
+    mocks.useGetChangedFiles(params, options);
     return mocks.changedFiles;
   },
 }));
-vi.mock("@/components/diff/useGitDiffFileTreeModel", () => ({
-  resolvedStageState: (file: { stage_state?: string }) => file.stage_state ?? "not_applicable",
-}));
 
-import { useAutoConflictResolution } from "./useAutoConflictResolution";
+import {
+  ConfirmedConflictPathsProvider,
+  useActiveConflict,
+  useConfirmedConflictPaths,
+} from "./useAutoConflictResolution";
 
-const featureId = 3;
-
-function openTabs(paths: string[]): void {
-  const store = useEditorStore.getState();
-  store.initFeature(featureId);
-  for (const path of paths) store.openFile(featureId, "main", path);
+function ActiveConflict({ filePath, dirty }: { filePath: string; dirty: boolean }) {
+  const conflict = useActiveConflict(filePath, dirty);
+  return <output data-testid={filePath}>{conflict ? filePath : "ordinary"}</output>;
 }
-function tab(path: string) {
-  return useEditorStore
-    .getState()
-    .features[featureId].panes.main.tabs.find((t) => t.filePath === path);
+
+function Harness({ filePath, dirty = false }: { filePath: string; dirty?: boolean }) {
+  const conflicts = useConfirmedConflictPaths(3);
+  return (
+    <ConfirmedConflictPathsProvider conflicts={conflicts}>
+      <ActiveConflict filePath={filePath} dirty={dirty} />
+      <ActiveConflict filePath="other.ts" dirty={false} />
+    </ConfirmedConflictPathsProvider>
+  );
 }
 
 beforeEach(() => {
-  useEditorStore.setState({ features: {} });
   mocks.changedFiles.data = undefined;
   mocks.changedFiles.isError = false;
   mocks.changedFiles.error = null;
-  mocks.params = null;
+  mocks.useGetChangedFiles.mockReset();
   mocks.toastError.mockReset();
 });
 
-describe("useAutoConflictResolution", () => {
-  it("waits for backend status before touching any tab", () => {
-    openTabs(["a.ts"]);
-    renderHook(() => useAutoConflictResolution(featureId));
-    expect(tab("a.ts")?.resolveConflict ?? false).toBe(false);
-    expect(mocks.params).toEqual({ feature_id: featureId, mode: "worktree" });
+describe("confirmed conflict paths", () => {
+  it("uses one changed-files source for multiple active-path consumers", () => {
+    mocks.changedFiles.data = [
+      { file: "a.ts", status: "UU", stage_state: "conflicted", conflict_kind: "uu" },
+      { file: "other.ts", status: "M", stage_state: "unstaged" },
+    ];
+    render(<Harness filePath="a.ts" />);
+
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("a.ts");
+    expect(screen.getByTestId("other.ts")).toHaveTextContent("ordinary");
+    expect(mocks.useGetChangedFiles).toHaveBeenCalledTimes(1);
+    expect(mocks.useGetChangedFiles.mock.calls[0]?.[0]).toEqual({
+      feature_id: 3,
+      mode: "worktree",
+    });
+  });
+
+  it("matches unusual literal paths exactly", () => {
+    const literalPath = "odd:0|[conflict] -> name\npart.ts";
+    mocks.changedFiles.data = [
+      { file: literalPath, status: "UU", stage_state: "conflicted", conflict_kind: "uu" },
+    ];
+    const view = render(<Harness filePath={literalPath} />);
+    expect(view.container.querySelector("output")?.textContent).toBe(literalPath);
+  });
+
+  it("exits on watcher confirmation unless a dirty Result still needs protection", () => {
+    mocks.changedFiles.data = [
+      { file: "a.ts", status: "UU", stage_state: "conflicted", conflict_kind: "uu" },
+    ];
+    const view = render(<Harness filePath="a.ts" />);
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("a.ts");
+
+    view.rerender(<Harness filePath="a.ts" dirty />);
+    mocks.changedFiles.data = [];
+    view.rerender(<Harness filePath="a.ts" dirty />);
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("a.ts");
+
+    view.rerender(<Harness filePath="a.ts" dirty={false} />);
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("ordinary");
+  });
+
+  it("retains a dirty exact-path Result across an A to B to A tab switch", () => {
+    mocks.changedFiles.data = [
+      { file: "a.ts", status: "UU", stage_state: "conflicted", conflict_kind: "uu" },
+    ];
+    const view = render(<Harness filePath="a.ts" dirty />);
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("a.ts");
+
+    mocks.changedFiles.data = [];
+    view.rerender(<Harness filePath="a.ts" dirty />);
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("a.ts");
+
+    view.rerender(<Harness filePath="b.ts" />);
+    expect(screen.getByTestId("b.ts")).toHaveTextContent("ordinary");
+
+    view.rerender(<Harness filePath="a.ts" dirty />);
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("a.ts");
+
+    view.rerender(<Harness filePath="a.ts" dirty={false} />);
+    expect(screen.getByTestId("a.ts")).toHaveTextContent("ordinary");
   });
 
   it("surfaces conflict-detection failures", () => {
     mocks.changedFiles.isError = true;
     mocks.changedFiles.error = new Error("status failed");
-
-    renderHook(() => useAutoConflictResolution(featureId));
-
+    render(<Harness filePath="a.ts" />);
     expect(mocks.toastError).toHaveBeenCalledWith("Could not detect Git conflicts", {
       description: "status failed",
     });
-  });
-
-  it("drops only the backend-confirmed unmerged file into the resolver", () => {
-    openTabs(["a.ts", "b.ts"]);
-    mocks.changedFiles.data = [
-      { file: "a.ts", status: "UU", stage_state: "conflicted" },
-      { file: "b.ts", status: "M", stage_state: "unstaged" },
-    ];
-    renderHook(() => useAutoConflictResolution(featureId));
-    expect(tab("a.ts")?.resolveConflict).toBe(true);
-    expect(tab("b.ts")?.resolveConflict ?? false).toBe(false);
-  });
-
-  it("activates when an unusual literal conflicted path is opened after status is known", () => {
-    const literalPath = "odd:0|[conflict] -> name\npart.ts";
-    mocks.changedFiles.data = [
-      { file: literalPath, status: "UU", stage_state: "conflicted" },
-      { file: "name.ts", status: "M", stage_state: "unstaged" },
-    ];
-    const store = useEditorStore.getState();
-    store.initFeature(featureId);
-    renderHook(() => useAutoConflictResolution(featureId));
-
-    act(() => store.openFile(featureId, "main", literalPath));
-
-    expect(tab(literalPath)?.resolveConflict).toBe(true);
-    expect(tab("name.ts")).toBeUndefined();
-  });
-
-  it("clears the resolver once the file leaves the unmerged set", () => {
-    openTabs(["a.ts"]);
-    mocks.changedFiles.data = [{ file: "a.ts", status: "UU", stage_state: "conflicted" }];
-    const { rerender } = renderHook(() => useAutoConflictResolution(featureId));
-    expect(tab("a.ts")?.resolveConflict).toBe(true);
-
-    mocks.changedFiles.data = [];
-    rerender();
-    expect(tab("a.ts")?.resolveConflict).toBe(false);
   });
 });

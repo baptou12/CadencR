@@ -8,7 +8,6 @@ import { useGitUpdateRecoveryActions } from "./useGitUpdateRecoveryActions";
 interface GitActionPopoverContentProps {
   featureId: number;
   projectId: number;
-  computedAt: number;
   state: GitActionState;
   commitActivity?: CommitActivity;
   onPick: (action: GitAction) => void;
@@ -42,7 +41,6 @@ function RecoveryAwareGitActionPopover(props: GitActionPopoverContentProps): Rea
 
 function GitActionRecoveryPopover({
   featureId,
-  computedAt,
   state,
   commitActivity,
   onPick,
@@ -54,7 +52,6 @@ function GitActionRecoveryPopover({
     featureId,
     operation: recovery.operation,
     conflictCount: recovery.conflictCount,
-    computedAt,
   });
   const recoveryControls = useMemo<GitUpdateRecoveryControls>(
     () => ({

@@ -19,7 +19,6 @@
 mod branches;
 pub mod checkout;
 mod commit_push;
-mod conflict_content;
 mod default_branch;
 pub mod index;
 mod merge;
@@ -33,7 +32,6 @@ mod update_branch;
 pub use branches::list_branches;
 pub(crate) use checkout::resolve_ref as resolve_checkout_ref;
 pub use commit_push::{commit, get_uncommitted_files};
-pub use conflict_content::get_conflict_content;
 pub use default_branch::{resolve_default_branch, same_branch_identity};
 pub use merge::{merge_feature_branch, MergeFeatureBranchBody};
 pub use push::{push, push_input};
@@ -50,7 +48,7 @@ use crate::shared::git_cli::run_git_safe_refs;
 
 const SETTING_TARGET_BRANCH: &str = "target_branch";
 
-pub(super) fn validate_file_mutation_path(file_path: &str) -> Result<(), crate::error::AppError> {
+pub(crate) fn validate_file_mutation_path(file_path: &str) -> Result<(), crate::error::AppError> {
     if file_path.is_empty() {
         return Err(crate::error::AppError::BadRequest(
             "file path must not be empty".into(),
@@ -58,6 +56,9 @@ pub(super) fn validate_file_mutation_path(file_path: &str) -> Result<(), crate::
     }
     if file_path.contains('\0')
         || file_path.ends_with(std::path::MAIN_SEPARATOR)
+        || file_path
+            .split(std::path::MAIN_SEPARATOR)
+            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
         || Path::new(file_path).is_absolute()
         || Path::new(file_path)
             .components()
@@ -85,6 +86,28 @@ pub(crate) async fn remote_branch_exists(repo: &Path, branch: &str) -> bool {
     run_git_safe_refs(&["show-ref"], &["--verify", "--quiet"], &[&refname], repo)
         .await
         .is_ok()
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::validate_file_mutation_path;
+
+    #[test]
+    fn file_paths_preserve_literals_but_reject_revision_and_traversal_syntax() {
+        assert!(validate_file_mutation_path("src/literal[conflict] -> file.rs").is_ok());
+        for unsafe_path in [
+            "",
+            "../outside",
+            "/absolute",
+            "src//file.rs",
+            "src/./file.rs",
+        ] {
+            assert!(
+                validate_file_mutation_path(unsafe_path).is_err(),
+                "{unsafe_path:?}"
+            );
+        }
+    }
 }
 
 /// Best-effort recompute + WS broadcast after a successful write. Errors are

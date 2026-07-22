@@ -140,16 +140,12 @@ function localTargetBranchName(targetBranch: string): string {
 export function deriveGitAction(
   snapshot: GitStatusSnapshot | undefined,
   updatePending = false,
-  recoveryOperation: GitOperationKind | null = null,
-  recoveryConflictCount = 0,
   stashMutationBlockedReason: string | null = null,
 ): GitActionState {
   if (!snapshot) return LOADING_STATE;
 
-  const operation = snapshot.operation ?? recoveryOperation;
-  const operationConflictCount = snapshot.operation
-    ? (snapshot.conflict_count ?? 0)
-    : recoveryConflictCount;
+  const operation = snapshot.operation ?? null;
+  const operationConflictCount = snapshot.conflict_count ?? 0;
   const mutationBlockedReason = updatePending
     ? "Update request in progress"
     : operation
@@ -230,19 +226,10 @@ export function deriveGitAction(
 export function useGitAction(
   snapshot: GitStatusSnapshot | undefined,
   updatePending = false,
-  recoveryOperation: GitOperationKind | null = null,
-  recoveryConflictCount = 0,
   stashMutationBlockedReason: string | null = null,
 ): GitActionState {
   return useMemo(
-    () =>
-      deriveGitAction(
-        snapshot,
-        updatePending,
-        recoveryOperation,
-        recoveryConflictCount,
-        stashMutationBlockedReason,
-      ),
-    [snapshot, updatePending, recoveryOperation, recoveryConflictCount, stashMutationBlockedReason],
+    () => deriveGitAction(snapshot, updatePending, stashMutationBlockedReason),
+    [snapshot, stashMutationBlockedReason, updatePending],
   );
 }

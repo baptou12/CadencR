@@ -41,7 +41,10 @@ import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
-import { useAutoConflictResolution } from "./useAutoConflictResolution";
+import {
+  ConfirmedConflictPathsProvider,
+  useConfirmedConflictPaths,
+} from "./useAutoConflictResolution";
 
 interface FeatureEditorTabProps {
   featureId: number;
@@ -95,9 +98,7 @@ const FeatureEditorTab = memo(
     const editorViewsRef = useRef<Map<string, EditorView>>(new Map());
 
     useFileWatcher(projectPath);
-    // Open any Git-unmerged file straight into the conflict resolver, and clear
-    // it once the watcher confirms resolution — no "Resolve in Editor" click.
-    useAutoConflictResolution(featureId);
+    const confirmedConflicts = useConfirmedConflictPaths(featureId);
 
     const focusActiveEditor = useCallback((): void => {
       editorViewsRef.current.get(activePaneId)?.focus();
@@ -290,52 +291,54 @@ const FeatureEditorTab = memo(
     );
 
     return (
-      <div ref={rootRef} className="flex h-full">
-        <Dialog
-          open={leaveDialogOpen}
-          onOpenChange={(open) => {
-            if (!open) handleCancelLeave();
-          }}
-        >
-          <DialogContent showCloseButton={false}>
-            <DialogHeader>
-              <DialogTitle>Unsaved Changes</DialogTitle>
-              <DialogDescription>
-                You have unsaved changes in {dirtyCount} file{dirtyCount !== 1 ? "s" : ""}. Switch
-                tab anyway?
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={handleCancelLeave}>
-                Cancel
-              </Button>
-              <Button variant="outline" onClick={handleSwitchWithoutSaving}>
-                Switch Without Saving
-              </Button>
-              <Button onClick={() => void handleSaveAllAndSwitch()} disabled={isSavingAll}>
-                {isSavingAll ? "Saving…" : "Save All & Switch"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      <ConfirmedConflictPathsProvider conflicts={confirmedConflicts}>
+        <div ref={rootRef} className="flex h-full">
+          <Dialog
+            open={leaveDialogOpen}
+            onOpenChange={(open) => {
+              if (!open) handleCancelLeave();
+            }}
+          >
+            <DialogContent showCloseButton={false}>
+              <DialogHeader>
+                <DialogTitle>Unsaved Changes</DialogTitle>
+                <DialogDescription>
+                  You have unsaved changes in {dirtyCount} file{dirtyCount !== 1 ? "s" : ""}. Switch
+                  tab anyway?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={handleCancelLeave}>
+                  Cancel
+                </Button>
+                <Button variant="outline" onClick={handleSwitchWithoutSaving}>
+                  Switch Without Saving
+                </Button>
+                <Button onClick={() => void handleSaveAllAndSwitch()} disabled={isSavingAll}>
+                  {isSavingAll ? "Saving…" : "Save All & Switch"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-        {fileSearchOpen && (
-          <FileSearchDialog
-            projectId={projectId}
-            featureId={featureId}
-            open={fileSearchOpen}
-            onOpenChange={setFileSearchOpen}
+          {fileSearchOpen && (
+            <FileSearchDialog
+              projectId={projectId}
+              featureId={featureId}
+              open={fileSearchOpen}
+              onOpenChange={setFileSearchOpen}
+            />
+          )}
+
+          <EditorSidebarLayout
+            sidebarVisible={sidebarVisible}
+            sidebar={sidebar}
+            editor={editorPane}
+            onToggleSidebar={handleToggleSidebar}
+            activeFilePath={activeFilePath}
           />
-        )}
-
-        <EditorSidebarLayout
-          sidebarVisible={sidebarVisible}
-          sidebar={sidebar}
-          editor={editorPane}
-          onToggleSidebar={handleToggleSidebar}
-          activeFilePath={activeFilePath}
-        />
-      </div>
+        </div>
+      </ConfirmedConflictPathsProvider>
     );
   }),
 );

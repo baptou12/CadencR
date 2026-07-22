@@ -10,41 +10,39 @@ pub const LARGE_FILE_BYTES: u64 = 200_000;
 /// own heuristic).
 const BINARY_SNIFF_BYTES: usize = 8192;
 
-/// Derive size + binary + large flags from already-fetched file content and
-/// build the response item. We avoid extra `git cat-file -s` / `git show`
-/// roundtrips: the size is just `String::len()` and binary detection looks
-/// for a NUL byte in the first 8 KB of either side. NUL is a valid UTF-8
-/// codepoint so `String::from_utf8_lossy` (used upstream when reading via
-/// `git show`) preserves it.
-///
-/// `keep_large_content` controls whether oversized text content is kept in
-/// the response. The batch endpoint sets it to false (placeholders only).
-/// The single-file endpoint sets it to true: when the user clicks
-/// "Display diff" we always return the content, even past the threshold.
-/// Binary content is never returned regardless.
-pub fn classify_content(
+/// Derive content, size, binary, and large-file metadata from fetched bytes.
+/// Both single-file and batch endpoints use this path so invalid UTF-8 is
+/// consistently binary content rather than an empty text file.
+pub fn classify_content_bytes(
     file_path: String,
-    old_content: String,
-    new_content: String,
+    old_content: Vec<u8>,
+    new_content: Vec<u8>,
     keep_large_content: bool,
 ) -> FileContentBatchItem {
     let old_size = old_content.len() as u64;
     let new_size = new_content.len() as u64;
-    let is_binary = bytes_have_binary_marker(old_content.as_bytes())
-        || bytes_have_binary_marker(new_content.as_bytes());
+    let old_text = String::from_utf8(old_content);
+    let new_text = String::from_utf8(new_content);
+    let is_binary = old_text.is_err()
+        || new_text.is_err()
+        || old_text
+            .as_ref()
+            .is_ok_and(|content| bytes_have_binary_marker(content.as_bytes()))
+        || new_text
+            .as_ref()
+            .is_ok_and(|content| bytes_have_binary_marker(content.as_bytes()));
     let is_large = old_size.max(new_size) >= LARGE_FILE_BYTES;
-
     let drop_content = is_binary || (is_large && !keep_large_content);
-    let (old, new) = if drop_content {
+    let (old_content, new_content) = if drop_content {
         (None, None)
     } else {
-        (Some(old_content), Some(new_content))
+        (old_text.ok(), new_text.ok())
     };
 
     FileContentBatchItem {
         file_path,
-        old_content: old,
-        new_content: new,
+        old_content,
+        new_content,
         old_size,
         new_size,
         is_binary,
@@ -61,7 +59,12 @@ mod tests {
     use super::*;
 
     fn item(old: &str, new: &str, keep: bool) -> FileContentBatchItem {
-        classify_content("a.txt".into(), old.into(), new.into(), keep)
+        classify_content_bytes(
+            "a.txt".into(),
+            old.as_bytes().to_vec(),
+            new.as_bytes().to_vec(),
+            keep,
+        )
     }
 
     #[test]
@@ -102,6 +105,15 @@ mod tests {
         assert!(it.is_binary);
         assert!(it.old_content.is_none());
         assert!(it.new_content.is_none());
+    }
+
+    #[test]
+    fn classify_content_bytes_treats_invalid_utf8_as_binary() {
+        let item = classify_content_bytes("a.bin".into(), Vec::new(), vec![0xff, 0xfe], true);
+        assert!(item.is_binary);
+        assert_eq!(item.new_size, 2);
+        assert!(item.old_content.is_none());
+        assert!(item.new_content.is_none());
     }
 
     #[test]

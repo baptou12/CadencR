@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::domain::git::file_size::classify_content;
+use crate::domain::git::file_size::classify_content_bytes;
 use crate::domain::git::models::FileContentBatchItem;
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git_safe_refs, run_git_safe_refs_bytes};
@@ -27,33 +27,8 @@ fn resolve_worktree_file(
     Ok(Some(canonical_file))
 }
 
-/// Get file content at a given ref, or from working tree if ref is None.
-pub async fn get_file_content(
-    worktree_path: &Path,
-    file_path: &str,
-    ref_spec: Option<&str>,
-) -> Result<String, AppError> {
-    match ref_spec {
-        None => {
-            let canonical_file = resolve_worktree_file(worktree_path, file_path)?
-                .ok_or_else(|| AppError::BadRequest("File not found".into()))?;
-            Ok(tokio::fs::read_to_string(&canonical_file)
-                .await
-                .unwrap_or_default())
-        }
-        Some(r) => {
-            let show_arg = format!("{r}:{file_path}");
-            Ok(
-                run_git_safe_refs(&["show"], &[], &[&show_arg], worktree_path)
-                    .await
-                    .unwrap_or_default(),
-            )
-        }
-    }
-}
-
 /// Get exact file bytes at a ref, or from the working tree when `ref_spec` is
-/// `None`. Unlike [`get_file_content`], this never applies UTF-8 conversion.
+/// `None`. This never applies UTF-8 conversion.
 pub async fn get_file_bytes(
     worktree_path: &Path,
     file_path: &str,
@@ -131,10 +106,10 @@ pub async fn get_file_content_batch(
             let new_ref = new_ref.clone();
             async move {
                 let (old, new) = tokio::join!(
-                    get_file_content(&git_path, &file_path, Some(&old_ref)),
-                    get_file_content(&git_path, &file_path, new_ref.as_deref()),
+                    get_file_bytes(&git_path, &file_path, Some(&old_ref), usize::MAX),
+                    get_file_bytes(&git_path, &file_path, new_ref.as_deref(), usize::MAX),
                 );
-                classify_content(
+                classify_content_bytes(
                     file_path,
                     old.unwrap_or_default(),
                     new.unwrap_or_default(),

@@ -2,7 +2,6 @@ import { create } from "zustand";
 import type { EditorStore } from "./editor-store-types";
 import { createEditorTabActions } from "./editor-tab-actions";
 import { createEditorPaneActions } from "./editor-pane-actions";
-import { createEditorConflictActions } from "./editor-conflict-actions";
 
 // Public API surface — re-exported so consumers keep importing from
 // `@/stores/editor-store`. The implementation is split across sibling
@@ -21,6 +20,5 @@ export { defaultFeatureState } from "./editor-helpers";
 export const useEditorStore = create<EditorStore>((set, get) => ({
   features: {},
   ...createEditorTabActions(set, get),
-  ...createEditorConflictActions(set),
   ...createEditorPaneActions(set),
 }));

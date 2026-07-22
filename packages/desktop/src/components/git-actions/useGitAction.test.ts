@@ -86,8 +86,6 @@ describe("deriveGitAction", () => {
     const state = deriveGitAction(
       snapshot({ uncommitted_count: 1, unstaged_count: 1 }),
       false,
-      null,
-      0,
       "Pop stash@{0} in progress",
     );
 
@@ -196,12 +194,9 @@ describe("deriveGitAction", () => {
     expect(state.recovery?.abortDisabled).toBeNull();
   });
 
-  it("uses a just-returned conflict operation before its WS snapshot arrives", () => {
-    const state = deriveGitAction(snapshot(), false, "rebase", 1);
-
-    expect(state.recovery?.operation).toBe("rebase");
-    expect(state.recovery?.conflictCount).toBe(1);
-    expect(state.disabled.merge).toBe("Finish or abort the active rebase update first");
+  it("waits for canonical status before exposing recovery actions", () => {
+    const state = deriveGitAction(snapshot());
+    expect(state.recovery).toBeNull();
   });
 
   it("keeps merge enabled when committed branch changes exist with uncommitted source changes", () => {

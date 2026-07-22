@@ -1,9 +1,8 @@
 import type { ReactElement } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { render, screen, waitFor } from "@/test-utils";
-import { useGitUpdateRecoveryStore } from "./gitUpdateRecoveryStore";
 import { gitUpdateMutationKey, useGitUpdatePending } from "./useGitUpdatePending";
 
 interface PendingHarnessProps {
@@ -31,10 +30,6 @@ function PendingHarness({
     </>
   );
 }
-
-beforeEach(() => {
-  useGitUpdateRecoveryStore.setState({ byFeature: {} });
-});
 
 describe("useGitUpdatePending", () => {
   it("tracks only update mutations for the requested feature", async () => {

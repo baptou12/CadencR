@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { recordGitUpdateConflictOutcome } from "./gitUpdateConflictOutcome";
+import { describeGitUpdateConflictFiles } from "./gitUpdateMessages";
 import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 import { gitUpdateMutationKey } from "./useGitUpdatePending";
 
@@ -68,12 +68,8 @@ export default function UpdateBranchDialog({
         data: { feature_id: featureId, strategy },
       });
       if (result.outcome === "conflicts") {
-        recordGitUpdateConflictOutcome({
-          featureId,
-          operation: strategy,
-          conflictFiles: result.conflict_files,
-          computedAt: snapshot.computed_at,
-          statusOperation: snapshot.operation ?? null,
+        toast.warning("Update paused for conflicts", {
+          description: describeGitUpdateConflictFiles(result.conflict_files),
         });
         onOpenChange(false);
         return;

@@ -1,54 +1,36 @@
-import { useEffect, useMemo } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
-import { FileStageState, useGetChangedFiles } from "@/api/generated";
-import { useEditorStore } from "@/stores/editor-store";
-import type { EditorFeatureState } from "@/stores/editor-store-types";
-import { resolvedStageState } from "@/components/diff/useGitDiffFileTreeModel";
+import { FileStageState, useGetChangedFiles, type ChangedFileConflictKind } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 
-/**
- * A stable signal of which files are open and whether each is dirty — but NOT
- * their resolver flag. Reconciliation must re-run when a tab is opened or its
- * dirtiness changes, yet flipping `resolveConflict` (what reconcile itself
- * does) must not retrigger it, or the effect would loop.
- */
-function openTabsSignal(feature: EditorFeatureState | undefined): string {
-  if (!feature) return "";
-  const tabs: Array<[paneId: string, filePath: string, isDirty: boolean]> = [];
-  for (const [paneId, pane] of Object.entries(feature.panes)) {
-    for (const tab of pane.tabs) tabs.push([paneId, tab.filePath, tab.isDirty]);
-  }
-  // JSON encoding keeps unusual literal paths collision-free. A hand-built
-  // delimiter signal could make one path such as `a:0|b` indistinguishable
-  // from multiple tabs, preventing reconciliation on a legitimate open.
-  return JSON.stringify(tabs);
+interface ConfirmedConflict {
+  kind: ChangedFileConflictKind | undefined;
 }
 
+interface ConfirmedConflictPaths {
+  byPath: ReadonlyMap<string, ConfirmedConflict>;
+}
+
+const ConfirmedConflictPathsContext = createContext<ConfirmedConflictPaths | null>(null);
+
 /**
- * Drives automatic conflict resolution for a feature's editor. Whenever Git
- * (backend-confirmed, exact-path) reports a file as unmerged, opening it drops
- * straight into the resolver; once the watcher confirms it left the unmerged
- * set, the resolver clears. Mount once per feature at the editor-panel root so
- * a single `changed-files` subscription (shared with the Git tab) covers every
- * pane. See {@link EditorStore.reconcileConflictResolution}.
+ * One changed-files observer per mounted feature editor. Consumers derive the
+ * active path directly from this exact-path map instead of mirroring Git state
+ * into every editor tab.
  */
-export function useAutoConflictResolution(featureId: number): void {
+export function useConfirmedConflictPaths(featureId: number): ConfirmedConflictPaths {
   const changedFiles = useGetChangedFiles(
     { feature_id: featureId, mode: "worktree" },
     { query: { refetchOnMount: false, refetchOnWindowFocus: false } },
   );
-  const reconcile = useEditorStore((s) => s.reconcileConflictResolution);
-  const openSignal = useEditorStore((s) => openTabsSignal(s.features[featureId]));
-
-  const files = changedFiles.data;
-  const conflictedKey = useMemo(() => {
-    if (!files) return null;
-    return files
-      .filter((file) => resolvedStageState(file) === FileStageState.conflicted)
-      .map((file) => file.file)
-      .sort()
-      .join("\0");
-  }, [files]);
 
   useEffect(() => {
     if (!changedFiles.isError) return;
@@ -57,8 +39,46 @@ export function useAutoConflictResolution(featureId: number): void {
     });
   }, [changedFiles.error, changedFiles.isError]);
 
+  return useMemo(() => {
+    const byPath = new Map<string, ConfirmedConflict>();
+    for (const file of changedFiles.data ?? []) {
+      if (file.stage_state === FileStageState.conflicted) {
+        byPath.set(file.file, { kind: file.conflict_kind });
+      }
+    }
+    return { byPath };
+  }, [changedFiles.data]);
+}
+
+export function ConfirmedConflictPathsProvider({
+  conflicts,
+  children,
+}: {
+  conflicts: ConfirmedConflictPaths;
+  children: ReactNode;
+}): ReactNode {
+  return createElement(ConfirmedConflictPathsContext.Provider, { value: conflicts }, children);
+}
+
+/**
+ * Resolve one active path from watcher-confirmed changed-files. The sole local
+ * latch retains a dirty Result after Git clears the unmerged row, preventing a
+ * remount over unsaved edits; it disappears as soon as that Result is saved.
+ */
+export function useActiveConflict(
+  filePath: string | null,
+  isDirty: boolean,
+): ConfirmedConflict | null {
+  const conflicts = useContext(ConfirmedConflictPathsContext);
+  const confirmed = filePath ? (conflicts?.byPath.get(filePath) ?? null) : null;
+  const dirtyResultsByPath = useRef(new Map<string, ConfirmedConflict>());
+  const dirtyResult = filePath ? (dirtyResultsByPath.current.get(filePath) ?? null) : null;
+
   useEffect(() => {
-    if (conflictedKey == null) return;
-    reconcile(featureId, conflictedKey === "" ? [] : conflictedKey.split("\0"));
-  }, [featureId, conflictedKey, openSignal, reconcile]);
+    if (!filePath) return;
+    if (confirmed && isDirty) dirtyResultsByPath.current.set(filePath, confirmed);
+    else if (!isDirty) dirtyResultsByPath.current.delete(filePath);
+  }, [confirmed, filePath, isDirty]);
+
+  return confirmed ?? (isDirty ? dirtyResult : null);
 }

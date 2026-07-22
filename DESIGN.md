@@ -381,7 +381,7 @@ Three rows: head (file path + +/- stats + Viewed checkbox), body (diff hunks), f
 
 Review-first two-column grid: 200px file explorer + writable code area with tab strip and footer. The Editor supports focused edits, including resolving Git conflict markers, through the existing save/auto-save and formatting flows. It is not the primary surface for broad code authoring. Syntax tokens (`tok-kw`, `tok-str`, `tok-type`, `tok-prop`, `tok-comment`, `tok-num`, etc.) map to `--acc-*` accents.
 
-- **States:** Explorer item active/dim. Editor tab active. Large files begin behind the existing `Edit anyway` safety gate before becoming writable.
+- **States:** Explorer item active/dim. Editor tab active. Ordinary large files begin behind the existing `Edit anyway` safety gate before becoming writable.
 - **Tokens:** `--code-bg`, `--code-fg`, `--primary` (active explorer item via 28% mix), `--acc-pink`/`--acc-cyan`/`--acc-green`/`--acc-yellow` for syntax.
 - **When to use vs alternative:** Use Editor to inspect agent output, make a bounded correction, or resolve a conflict in the current worktree. Keep broad implementation work in the agent workflow or the user's dedicated external editor so Cadencr's product posture stays review-first.
 
@@ -391,26 +391,23 @@ The conflict resolver is an Editor mode for one unmerged worktree path. It reuse
 
 ##### Activation and anatomy
 
-- Opening a path that backend-confirmed Git status reports as an exact unmerged file activates the resolver automatically — there is no "Resolve in Editor" step. Watcher-confirmed resolution returns the tab to the ordinary editor. Ordinary files open normally; matching is exact-path only, so linked worktrees and literal paths stay safe.
+- Opening a path that backend-confirmed Git status reports as an exact unmerged file activates the resolver automatically — there is no "Resolve in Editor" step. Watcher-confirmed resolution returns a clean tab to the ordinary editor. A dirty Result keeps only a small exact-path latch in its pane, so switching to another tab and back cannot replace unsaved conflict edits after status clears; the latch disappears when that path is no longer dirty. Ordinary files open normally, and no Git state is mirrored into editor tabs.
 - No resolver header, footer, or comparison toolbar. There is exactly **one writable `Result` `EditorView`**; conflict regions and per-hunk actions live inline in CodeMirror. The Result is the whole surface — the tab strip already names the file.
-- Current vs Incoming regions are rendered as color-coded inline decorations (theme-owned cyan for the Current side, violet for the Incoming side; both defined in every theme, distinct from the reserved add/green and delete/red diff colors). The lazily-loaded CodeMirror merge view compares the evolving Result against its initial conflicted state; there is no source-comparison picker.
-- Missing sources are described as absent, never shown as empty documents.
+- The existing file-content endpoint supplies the worktree Result plus binary, large-file, and missing-content metadata. The resolver parses literal Git marker blocks directly from those Result bytes; it does not request Base/stage documents or a presentation/fingerprint contract.
+- Current vs Incoming marker regions are rendered as color-coded inline decorations (theme-owned cyan for Current and violet for Incoming, distinct from the reserved add/green and delete/red diff colors). A diff3 `|||||||` Base section, when present in the Result, receives a muted inline decoration but is not a separate document or accept source. There is no source-comparison picker, self-comparison view, or CodeMirror merge extension.
 
-Operation-aware side labels drive the inline accept actions (never generic Current/Incoming during rebase):
+Operation-aware marker labels drive the inline accept actions (never generic Current/Incoming during rebase):
 
-| Source  | Merge label     | Rebase label    | No operation context |
-| ------- | --------------- | --------------- | -------------------- |
-| Base    | Base            | Base            | Base                 |
-| Stage 2 | Current branch  | Rebased result  | Index stage 2        |
-| Stage 3 | Incoming branch | Replayed commit | Index stage 3        |
-| Result  | Result          | Result          | Result               |
+| Result marker side             | Merge label     | Rebase label    | No operation context |
+| ------------------------------ | --------------- | --------------- | -------------------- |
+| Current (`<<<<<<<` to divider) | Current branch  | Rebased result  | Index stage 2        |
+| Incoming (after `=======`)     | Incoming branch | Replayed commit | Index stage 3        |
 
 Supported text hunks offer `Accept Current branch` and `Accept Incoming branch` during merge, `Accept Rebased result` and `Accept Replayed commit` during rebase, plus `Accept both`. They edit only `Result` as one undoable transaction, dirty the buffer, and never Save or Stage immediately. `Accept both` applies stage 2 before stage 3. If a hunk no longer maps safely after manual edits, its action row is replaced inline by a short reason and manual editing is preserved rather than guessing.
 
 ##### States and actions
 
-- Binary, both-deleted, large, unsupported, unavailable, stale, and resolved cases use guidance or result-only editing instead of empty comparison panes.
-- Deleted-by-one-side conflicts show the surviving text and an explicit deletion state.
+- Binary, both-deleted, unsupported, unavailable, and deleted worktree Results use explicit guidance instead of fabricated empty source panes. Confirmed deletion conflict kinds offer `Stage deletion`; other unavailable Results require repository inspection before staging. Large text Results use the same one-buffer marker resolver: the single-file fetch already returns the explicitly opened content, and the resolver runs no source-comparison diff.
 - Save writes only `Result` bytes to the worktree and continues to show that staging is required. Stage is explicit, and the conflict UI remains until watcher-confirmed status removes the unmerged path.
 - The per-file Git banner owns explicit `Stage` and watcher-confirmed resolution; the operation-wide banner owns Continue and Abort, and Continue stays disabled until every conflict is staged. It is state-aware: while conflicts remain it wears the warm `--acc-orange` "paused on conflicts" identity, and once every conflict is staged it flips to the `--acc-green` "ready to continue" identity with Continue enabled — the two accents follow the documented in-progress/ready status semantics. Continue and Abort read as the operation Git itself is running (`Continue merge`/`Abort rebase`), never the internal "update" wording. The per-file banners stay visually subordinate to this one command bar — a quiet accent stripe rather than a stack of repeated alarm bands.
 - Loading, failures, and actions have visible progress or error states. Action groups are keyboard reachable with clear focus, disabled actions explain why, and updates use one polite status region.

@@ -126,23 +126,6 @@ vi.mock("@/api/generated", () => ({
     conflicted: "conflicted",
   },
   ConflictKind: { dd: "dd", au: "au", ud: "ud", ua: "ua", du: "du", aa: "aa", uu: "uu" },
-  ConflictFallbackReason: {
-    binary: "binary",
-    both_deleted: "both_deleted",
-    large: "large",
-    unavailable: "unavailable",
-  },
-  ConflictUnavailableReason: {
-    resolved: "resolved",
-    stale: "stale",
-    repository_unavailable: "repository_unavailable",
-  },
-  useGetConflictContent: vi.fn(() => ({
-    data: undefined,
-    isLoading: false,
-    isError: false,
-    error: null,
-  })),
   useGetChangedFiles: mocks.useGetChangedFilesMock,
   useGetFileBlobShas: mocks.useGetFileBlobShasMock,
   useGetFileContent: mocks.useGetFileContentMock,
@@ -268,6 +251,15 @@ describe("DiffViewer", () => {
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("Loading diff...")).toBeInTheDocument();
     expect(mocks.useTreeDisplaySettingMock).not.toHaveBeenCalled();
+  });
+
+  it("reuses the worktree changed-files cache for the uncommitted alias", () => {
+    render(<DiffViewer featureId={1} mode="uncommitted" />);
+
+    expect(mocks.useGetChangedFilesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ feature_id: 1, mode: "worktree" }),
+      expect.anything(),
+    );
   });
 
   it("keeps hook order stable when the file list resolves", () => {

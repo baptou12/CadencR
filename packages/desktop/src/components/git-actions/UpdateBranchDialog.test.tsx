@@ -3,7 +3,6 @@ import { within } from "@testing-library/react";
 
 import type { GitStatusSnapshot } from "@/api/generated";
 import { render, screen } from "@/test-utils";
-import { useGitUpdateRecoveryStore } from "./gitUpdateRecoveryStore";
 
 const mocks = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
@@ -52,7 +51,6 @@ beforeEach(() => {
   mocks.toastSuccess.mockReset();
   mocks.toastWarning.mockReset();
   mocks.isPending = false;
-  useGitUpdateRecoveryStore.setState({ byFeature: {} });
 });
 
 describe("UpdateBranchDialog", () => {
@@ -119,10 +117,9 @@ describe("UpdateBranchDialog", () => {
 
     expect(mocks.toastSuccess).toHaveBeenCalledWith("Updated feature/update-ui from origin/main");
     expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(useGitUpdateRecoveryStore.getState().byFeature[42]).toBeUndefined();
   });
 
-  it("routes a first conflict batch to recoverable Uncommitted UI", async () => {
+  it("toasts an HTTP-first conflict without creating canonical recovery state", async () => {
     mocks.mutateAsync.mockResolvedValueOnce({
       outcome: "conflicts",
       conflict_files: ["src/a.ts", "src/b.ts"],
@@ -140,12 +137,6 @@ describe("UpdateBranchDialog", () => {
 
     await user.click(screen.getByRole("button", { name: "Update branch" }));
 
-    expect(useGitUpdateRecoveryStore.getState().byFeature[42]).toMatchObject({
-      operation: "rebase",
-      conflictFiles: ["src/a.ts", "src/b.ts"],
-      conflictBatch: 1,
-      needsUncommittedView: true,
-    });
     expect(mocks.toastWarning).toHaveBeenCalledWith("Update paused for conflicts", {
       description: "src/a.ts, src/b.ts",
     });

@@ -9,7 +9,7 @@ const result = "before\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\nafte
 
 describe("conflictResolutionControls", () => {
   it("renders operation-aware actions inside CodeMirror and keeps them one-step undoable", () => {
-    const hunks = buildConflictHunks(result, "before\nours\nafter\n", "before\ntheirs\nafter\n");
+    const hunks = buildConflictHunks(result);
     let view: EditorView;
     view = new EditorView({
       state: EditorState.create({
@@ -52,7 +52,7 @@ describe("conflictResolutionControls", () => {
   });
 
   it("removes unsafe controls after an overlapping manual edit", () => {
-    const hunks = buildConflictHunks(result, "ours\n", "theirs\n");
+    const hunks = buildConflictHunks(result);
     const view = new EditorView({
       state: EditorState.create({
         doc: result,
@@ -75,12 +75,11 @@ describe("conflictResolutionControls", () => {
     view.destroy();
   });
 
-  it("explains an unsafe hunk inline instead of hiding it, offering no risky action", () => {
-    // Sources that don't contain the marker sides verbatim map imprecisely.
-    const hunks = buildConflictHunks(result, "unrelated\n", "different\n");
+  it("explains an ambiguous hunk inline instead of offering a risky action", () => {
+    const hunks = buildConflictHunks(result);
     const view = new EditorView({
       state: EditorState.create({
-        doc: result,
+        doc: `${result}${hunks[0].markerText}`,
         extensions: [
           conflictResolutionControls({
             hunks,
@@ -95,7 +94,7 @@ describe("conflictResolutionControls", () => {
     const actions = view.dom.querySelector(".cm-conflictActions");
     expect(actions?.classList.contains("cm-conflictActions-disabled")).toBe(true);
     expect(view.dom.querySelectorAll(".cm-conflictActionButton")).toHaveLength(0);
-    expect(view.dom.querySelector(".cm-conflictActionsReason")?.textContent).toMatch(/precise/);
+    expect(view.dom.querySelector(".cm-conflictActionsReason")?.textContent).toMatch(/ambiguous/);
     view.destroy();
   });
 });

@@ -79,7 +79,8 @@ vi.mock("@/stores/editor-store", () => ({
 // Auto conflict-resolution has its own unit test and needs the real store +
 // changed-files query; keep it out of this layout-focused suite.
 vi.mock("../useAutoConflictResolution", () => ({
-  useAutoConflictResolution: () => {},
+  useConfirmedConflictPaths: () => ({ byPath: new Map() }),
+  ConfirmedConflictPathsProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 vi.mock("../FileTree", () => ({

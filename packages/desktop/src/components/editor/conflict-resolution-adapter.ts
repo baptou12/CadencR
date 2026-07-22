@@ -7,7 +7,6 @@ export interface ConflictHunk {
   markerText: string;
   current: string;
   incoming: string;
-  precise: boolean;
 }
 
 export interface MappedConflictHunk extends ConflictHunk {
@@ -17,20 +16,14 @@ export interface MappedConflictHunk extends ConflictHunk {
 }
 
 /**
- * Cadencr-owned boundary around CodeMirror's merge diffing. Git marker parsing
- * stays here so the resolver UI never depends on merge-package internals.
+ * Parse the writable Result's literal Git marker blocks. Actions only apply
+ * while the complete marker text remains unique in the current buffer.
  */
-export function buildConflictHunks(
-  result: string,
-  currentSource: string,
-  incomingSource: string,
-): ConflictHunk[] {
+export function buildConflictHunks(result: string): ConflictHunk[] {
   const parsed = parseConflictMarkers(result);
   return parsed.map((hunk, index) => ({
     ...hunk,
     id: `conflict-${index + 1}`,
-    precise:
-      sourceContains(currentSource, hunk.current) && sourceContains(incomingSource, hunk.incoming),
   }));
 }
 
@@ -45,14 +38,6 @@ export function mapConflictHunk(documentText: string, hunk: ConflictHunk): Mappe
       from: null,
       to: null,
       disabledReason: "This marker block is ambiguous after overlapping edits.",
-    };
-  }
-  if (!hunk.precise) {
-    return {
-      ...hunk,
-      from: null,
-      to: null,
-      disabledReason: "The source mapping is not precise enough for a safe action.",
     };
   }
   return { ...hunk, from, to: from + hunk.markerText.length, disabledReason: null };
@@ -75,7 +60,7 @@ export function applyConflictChoice(
   return true;
 }
 
-interface ParsedHunk extends Omit<ConflictHunk, "id" | "precise"> {}
+interface ParsedHunk extends Omit<ConflictHunk, "id"> {}
 
 function parseConflictMarkers(result: string): ParsedHunk[] {
   const lines = result.match(/.*(?:\r\n|\n|\r|$)/g)?.filter(Boolean) ?? [];
@@ -105,8 +90,4 @@ function parseConflictMarkers(result: string): ParsedHunk[] {
     index = end;
   }
   return hunks;
-}
-
-function sourceContains(source: string, fragment: string): boolean {
-  return fragment.length === 0 || source.includes(fragment.replace(/(?:\r\n|\r)$/g, "\n"));
 }

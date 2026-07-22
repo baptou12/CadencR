@@ -5,7 +5,6 @@ import type { GitStatusSnapshot } from "@/api/generated";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { GitActionButton } from "./GitActionButton";
-import { useGitUpdateRecoveryStore } from "./gitUpdateRecoveryStore";
 import {
   resetStashMutationCoordinatorForTest,
   useStashMutationCoordinator,
@@ -78,7 +77,6 @@ beforeEach(() => {
   buttonMocks.updatePending = false;
   useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
   useCommitOutputStore.setState({ byFeature: {} });
-  useGitUpdateRecoveryStore.setState({ byFeature: {} });
   resetStashMutationCoordinatorForTest();
 });
 

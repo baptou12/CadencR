@@ -1,19 +1,16 @@
 import { type ReactElement, type ReactNode } from "react";
 import type { EditorView } from "@codemirror/view";
 import { Loader2Icon, TriangleAlertIcon } from "lucide-react";
-import {
-  ConflictFallbackReason,
-  ConflictUnavailableReason,
-  useGetConflictContent,
-} from "@/api/generated";
+import { ConflictKind, useGetFileContent, type ChangedFileConflictKind } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { useGitFileIndexActions } from "@/components/diff/useGitFileIndexActions";
+import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import ConflictResultResolver from "./ConflictResultResolver";
-import { textFromConflictContent } from "./ConflictResolverSurface";
 
 interface ConflictResolverEditorProps {
   filePath: string;
+  conflictKind: ChangedFileConflictKind | undefined;
   projectId: number;
   paneId: string;
   featureId: number;
@@ -21,15 +18,27 @@ interface ConflictResolverEditorProps {
 }
 
 export default function ConflictResolverEditor(props: ConflictResolverEditorProps): ReactElement {
-  const query = useGetConflictContent(
-    { feature_id: props.featureId, file_path: props.filePath },
+  const query = useGetFileContent(
+    { feature_id: props.featureId, file_path: props.filePath, mode: "uncommitted" },
     { query: { refetchOnWindowFocus: false, refetchOnReconnect: false } },
+  );
+  const operation = useGitStatusStore(
+    (state) => state.byFeature[props.featureId]?.operation ?? null,
   );
   const indexActions = useGitFileIndexActions(props.featureId);
 
-  if (query.isLoading)
-    return <ResolverMessage pending>Loading exact conflict content…</ResolverMessage>;
+  if (query.isLoading) return <ResolverMessage pending>Loading conflict result…</ResolverMessage>;
   if (query.isError) {
+    if (props.conflictKind === ConflictKind.dd) {
+      return (
+        <StageGuidanceMessage
+          filePath={props.filePath}
+          message="Both sides deleted this path. Stage the deletion to mark it resolved."
+          stageDeletion
+          indexActions={indexActions}
+        />
+      );
+    }
     return (
       <ResolverMessage
         error
@@ -44,46 +53,50 @@ export default function ConflictResolverEditor(props: ConflictResolverEditorProp
           </Button>
         }
       >
-        Could not load conflict content: {apiErrorMessage(query.error, "Unknown error")}
+        Could not load the conflict result: {apiErrorMessage(query.error, "Unknown error")}
       </ResolverMessage>
     );
   }
-  if (!query.data)
-    return <ResolverMessage error>No conflict response was returned.</ResolverMessage>;
-  if (query.data.outcome === "unavailable") {
+  if (!query.data) return <ResolverMessage error>No conflict result was returned.</ResolverMessage>;
+  if (query.data.is_binary) {
     return (
-      <UnavailableMessage
-        reason={query.data.reason}
-        isRetrying={query.isFetching}
-        onRetry={() => void query.refetch()}
-      />
-    );
-  }
-  const resultText = textFromConflictContent(query.data.snapshot.result);
-  if (resultText == null) {
-    if (query.data.snapshot.presentation.mode === "modify_delete") {
-      return (
-        <StageGuidanceMessage
-          filePath={props.filePath}
-          message="The worktree result is deleted. Stage the deletion to mark this conflict resolved."
-          stageDeletion
-          indexActions={indexActions}
-        />
-      );
-    }
-    return (
-      <GuidanceMessage
+      <StageGuidanceMessage
         filePath={props.filePath}
-        reason={
-          query.data.snapshot.presentation.mode === "guidance"
-            ? query.data.snapshot.presentation.reason
-            : ConflictFallbackReason.unavailable
-        }
+        message="Binary content cannot be resolved safely in the text editor. Choose the desired file externally, then stage it."
+        stageDeletion={false}
         indexActions={indexActions}
       />
     );
   }
-  return <ConflictResultResolver {...props} snapshot={query.data.snapshot} />;
+  if (query.data.new_content == null) {
+    const deleted =
+      props.conflictKind === ConflictKind.dd ||
+      props.conflictKind === ConflictKind.du ||
+      props.conflictKind === ConflictKind.ud;
+    return (
+      <StageGuidanceMessage
+        filePath={props.filePath}
+        message={
+          deleted
+            ? "The worktree result is deleted. Stage the deletion to mark this conflict resolved."
+            : "The conflict result is unavailable. Inspect the repository before staging."
+        }
+        stageDeletion={deleted}
+        indexActions={indexActions}
+      />
+    );
+  }
+  return (
+    <ConflictResultResolver
+      featureId={props.featureId}
+      filePath={props.filePath}
+      paneId={props.paneId}
+      projectId={props.projectId}
+      onEditorViewChange={props.onEditorViewChange}
+      initialContent={query.data.new_content}
+      operation={operation}
+    />
+  );
 }
 
 function ResolverMessage({
@@ -110,69 +123,6 @@ function ResolverMessage({
       <p>{children}</p>
       {action}
     </div>
-  );
-}
-
-function UnavailableMessage({
-  reason,
-  isRetrying,
-  onRetry,
-}: {
-  reason: ConflictUnavailableReason;
-  isRetrying: boolean;
-  onRetry: () => void;
-}): ReactElement {
-  const message = {
-    [ConflictUnavailableReason.resolved]:
-      "Git no longer reports this unmerged row. This tab will return to the normal editor once the status watcher confirms.",
-    [ConflictUnavailableReason.stale]:
-      "The conflict changed while its blobs were read. Reopen it after Git status refreshes.",
-    [ConflictUnavailableReason.repository_unavailable]:
-      "The repository is unavailable. No conflict bytes were assumed.",
-  }[reason];
-  const retryable = reason !== ConflictUnavailableReason.resolved;
-  return (
-    <ResolverMessage
-      error
-      action={
-        retryable ? (
-          <Button size="sm" variant="outline" disabled={isRetrying} onClick={onRetry}>
-            {isRetrying ? "Retrying…" : "Retry"}
-          </Button>
-        ) : undefined
-      }
-    >
-      {message}
-    </ResolverMessage>
-  );
-}
-
-function GuidanceMessage({
-  filePath,
-  reason,
-  indexActions,
-}: {
-  filePath: string;
-  reason: ConflictFallbackReason;
-  indexActions: ReturnType<typeof useGitFileIndexActions>;
-}): ReactElement {
-  const message = {
-    [ConflictFallbackReason.binary]:
-      "Binary content cannot be resolved safely in the text editor. Choose the desired file externally, then stage it.",
-    [ConflictFallbackReason.both_deleted]:
-      "Both sides deleted this path. Stage the deletion to mark it resolved.",
-    [ConflictFallbackReason.large]:
-      "This conflict is too large for the merge resolver. Resolve it in a suitable editor, then stage it.",
-    [ConflictFallbackReason.unavailable]:
-      "A source is missing or unsupported. Inspect the repository before staging.",
-  }[reason];
-  return (
-    <StageGuidanceMessage
-      filePath={filePath}
-      message={message}
-      stageDeletion={reason === ConflictFallbackReason.both_deleted}
-      indexActions={indexActions}
-    />
   );
 }
 

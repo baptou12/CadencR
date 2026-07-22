@@ -1,15 +1,20 @@
-import { memo, useEffect, type CSSProperties, type ReactElement } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Play, Undo2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
-import type { GitOperationKind } from "@/api/generated";
+import { FileStageState, useGetChangedFiles, type GitOperationKind } from "@/api/generated";
 import { Button } from "@/components/ui/button";
+import { apiErrorMessage } from "@/lib/api-errors";
+import { capitalize } from "@/lib/utils";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
-import {
-  effectiveGitUpdateConflictCount,
-  useGitUpdateRecoveryStore,
-  useSyncGitUpdateRecovery,
-} from "./gitUpdateRecoveryStore";
 import {
   gitOperationNoun,
   gitUpdateActionLabel,
@@ -34,39 +39,74 @@ export const GitUpdateRecoveryRegion = memo(function GitUpdateRecoveryRegion({
       return {
         operation: snapshot?.operation ?? null,
         conflictCount: snapshot?.conflict_count ?? 0,
-        computedAt: snapshot?.computed_at ?? 0,
       };
     }),
   );
-  const recovery = useGitUpdateRecoveryStore((state) => state.byFeature[featureId]);
-  useSyncGitUpdateRecovery(featureId, status.operation, status.computedAt);
-
-  useEffect(() => {
-    if (!recovery?.needsUncommittedView) return;
-    useGitUpdateRecoveryStore.getState().markUncommittedViewHandled(featureId);
-    onRequestUncommitted();
-  }, [featureId, onRequestUncommitted, recovery?.conflictBatch, recovery?.needsUncommittedView]);
-
-  const operation = status.operation ?? recovery?.operation ?? null;
-  if (!operation) return null;
-  const conflictCount = effectiveGitUpdateConflictCount(
+  const changedFiles = useGetChangedFiles(
+    { feature_id: featureId, mode: "worktree" },
+    {
+      query: {
+        enabled: status.operation !== null,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+      },
+    },
+  );
+  const conflictFiles = useMemo(
+    () =>
+      (changedFiles.data ?? [])
+        .filter((file) => file.stage_state === FileStageState.conflicted)
+        .map((file) => file.file),
+    [changedFiles.data],
+  );
+  const conflictBatch = useConfirmedConflictBatch(
     status.operation,
     status.conflictCount,
-    status.computedAt,
-    recovery,
+    onRequestUncommitted,
   );
 
+  if (!status.operation) return null;
   return (
     <GitUpdateRecoveryBanner
       featureId={featureId}
-      operation={operation}
-      conflictCount={conflictCount}
-      conflictFiles={recovery?.conflictFiles ?? []}
-      conflictBatch={recovery?.conflictBatch ?? 0}
-      computedAt={status.computedAt}
+      operation={status.operation}
+      conflictCount={status.conflictCount}
+      conflictFiles={conflictFiles}
+      conflictBatch={conflictBatch}
+      filesLoading={changedFiles.isLoading}
+      filesError={changedFiles.isError ? changedFiles.error : null}
     />
   );
 });
+
+function useConfirmedConflictBatch(
+  operation: GitOperationKind | null,
+  conflictCount: number,
+  onRequestUncommitted: () => void,
+): number {
+  const tracking = useRef({ operation: null as GitOperationKind | null, hadConflicts: false });
+  const [batch, setBatch] = useState(0);
+  useEffect(() => {
+    if (!operation) {
+      tracking.current = { operation: null, hadConflicts: false };
+      setBatch(0);
+      return;
+    }
+    if (tracking.current.operation !== operation) {
+      tracking.current = { operation, hadConflicts: false };
+      setBatch(0);
+    }
+    if (conflictCount === 0) {
+      tracking.current.hadConflicts = false;
+      return;
+    }
+    if (tracking.current.hadConflicts) return;
+    tracking.current.hadConflicts = true;
+    setBatch((current) => current + 1);
+    onRequestUncommitted();
+  }, [conflictCount, onRequestUncommitted, operation]);
+  return batch;
+}
 
 interface GitUpdateRecoveryBannerProps {
   featureId: number;
@@ -74,7 +114,8 @@ interface GitUpdateRecoveryBannerProps {
   conflictCount: number;
   conflictFiles: string[];
   conflictBatch: number;
-  computedAt: number;
+  filesLoading: boolean;
+  filesError: unknown;
 }
 
 export const GitUpdateRecoveryBanner = memo(function GitUpdateRecoveryBanner({
@@ -83,20 +124,13 @@ export const GitUpdateRecoveryBanner = memo(function GitUpdateRecoveryBanner({
   conflictCount,
   conflictFiles,
   conflictBatch,
-  computedAt,
+  filesLoading,
+  filesError,
 }: GitUpdateRecoveryBannerProps): ReactElement {
-  const actions = useGitUpdateRecoveryActions({
-    featureId,
-    operation,
-    conflictCount,
-    computedAt,
-  });
-  const operationLabel = operation === "rebase" ? "Rebase" : "Merge";
+  const actions = useGitUpdateRecoveryActions({ featureId, operation, conflictCount });
   const noun = gitOperationNoun(operation);
+  const operationLabel = capitalize(noun);
   const continueReason = gitUpdateContinueDisabledReason(conflictCount);
-  // Once every conflict is staged the operation is queued to finish: swap the
-  // warm "paused" identity for the ready/green one so the flip to an enabled
-  // Continue reads as clear forward momentum, not a lingering warning.
   const resolved = continueReason === null;
   const accent = resolved ? "var(--acc-green)" : "var(--acc-orange)";
 
@@ -122,9 +156,13 @@ export const GitUpdateRecoveryBanner = memo(function GitUpdateRecoveryBanner({
             {continueReason ??
               `All conflicts staged. Continue to finish the ${noun}, or abort to undo it.`}
           </p>
-          {conflictFiles.length > 0 && (
-            <ConflictBatch files={conflictFiles} batch={conflictBatch} resolved={resolved} />
-          )}
+          <ConflictBatch
+            files={conflictFiles}
+            batch={conflictBatch}
+            resolved={resolved}
+            loading={filesLoading}
+            error={filesError}
+          />
           {actions.error && (
             <p role="alert" className="mt-2 whitespace-pre-wrap text-xs text-destructive">
               {actions.error}
@@ -168,11 +206,31 @@ function ConflictBatch({
   files,
   batch,
   resolved,
+  loading,
+  error,
 }: {
   files: string[];
   batch: number;
   resolved: boolean;
-}): ReactElement {
+  loading: boolean;
+  error: unknown;
+}): ReactElement | null {
+  if (error) {
+    return (
+      <p role="alert" className="mt-2 text-xs text-destructive">
+        Could not load conflicting files: {apiErrorMessage(error, "Git status is unavailable")}
+      </p>
+    );
+  }
+  if (loading && files.length === 0) {
+    return (
+      <p role="status" className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="size-3 animate-spin" aria-hidden />
+        Loading conflicting files…
+      </p>
+    );
+  }
+  if (files.length === 0) return null;
   const visible = files.slice(0, MAX_CONFLICT_FILES);
   const overflow = files.length - visible.length;
   return (

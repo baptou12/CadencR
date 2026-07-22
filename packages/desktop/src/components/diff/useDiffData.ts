@@ -107,7 +107,7 @@ function useChangedFiles(
   const query = useGetChangedFiles(
     {
       feature_id: featureId,
-      mode,
+      mode: mode === "uncommitted" ? "worktree" : mode,
       target_branch: targetBranch,
       commit_sha: selectedCommit ?? undefined,
     },

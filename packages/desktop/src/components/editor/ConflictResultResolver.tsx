@@ -8,17 +8,19 @@ import {
   type RefObject,
 } from "react";
 import type { EditorView } from "@codemirror/view";
+import { EditorView as CodeMirrorView } from "@codemirror/view";
+import type { Extension } from "@codemirror/state";
 import { Loader2Icon } from "lucide-react";
-import type { ConflictContentSnapshot } from "@/api/generated";
+import type { GitOperationKind } from "@/api/generated";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useEditorLanguage } from "@/hooks/useEditorLanguage";
 import { useEditorStore } from "@/stores/editor-store";
-import ConflictUnifiedEditor from "./ConflictUnifiedEditor";
+import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { getLanguageExtension } from "./language-extensions";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import { useEditorFormat } from "./useEditorFormat";
 import { useEditorSave } from "./useEditorSave";
-import { conflictSourceLabels, textFromConflictContent } from "./ConflictResolverSurface";
+import { conflictResolutionControls } from "./conflict-resolution-extension";
 import {
   applyConflictChoice,
   buildConflictHunks,
@@ -32,34 +34,44 @@ interface ConflictResultResolverProps {
   paneId: string;
   projectId: number;
   filePath: string;
-  snapshot: ConflictContentSnapshot;
+  initialContent: string;
+  operation: GitOperationKind | null;
   onEditorViewChange?: (paneId: string, view: EditorView | null) => void;
 }
 
 export default function ConflictResultResolver(props: ConflictResultResolverProps): ReactElement {
-  const resultContent = textFromConflictContent(props.snapshot.result) ?? "";
-  const editor = useConflictResultEditor({ ...props, resultContent });
-  const labels = useMemo(
-    () => conflictSourceLabels(props.snapshot.operation),
-    [props.snapshot.operation],
+  const editor = useConflictResultEditor(props);
+  const labels = useMemo(() => conflictSourceLabels(props.operation), [props.operation]);
+  const extraExtensions = useMemo<Extension[]>(
+    () => [
+      conflictResolutionControls({
+        hunks: editor.hunks,
+        currentLabel: labels.current,
+        incomingLabel: labels.incoming,
+        onApply: editor.onApply,
+      }),
+      CodeMirrorView.contentAttributes.of({ "aria-label": "Writable Result" }),
+      resultEditorTheme,
+    ],
+    [editor.hunks, editor.onApply, labels.current, labels.incoming],
   );
   // One writable Result view, edited like any file. The conflict regions and
   // per-hunk actions live inline in CodeMirror — no toolbar, header, or footer.
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
-      <ConflictUnifiedEditor
-        initialContent={resultContent}
-        currentLabel={labels.stage2}
-        incomingLabel={labels.stage3}
-        hunks={editor.hunks}
-        language={editor.languageExtension}
-        vimMode={editor.vimEnabled}
-        viewRef={editor.viewRef}
-        onChange={editor.onChange}
-        onSave={editor.onSave}
-        onApply={editor.onApply}
-        onEditorViewChange={editor.onViewChange}
-      />
+      <div className="min-h-0 flex-1 overflow-hidden" aria-label="Writable Result">
+        <BaseCodeMirrorEditor
+          initialContent={props.initialContent}
+          language={editor.languageExtension}
+          vimMode={editor.vimEnabled}
+          editorViewRef={editor.viewRef}
+          onChange={editor.onChange}
+          onSave={editor.onSave}
+          onEditorViewChange={editor.onViewChange}
+          extraExtensions={extraExtensions}
+          className="h-full overflow-hidden"
+        />
+      </div>
       <ConflictEditorStatus isSaving={editor.isSaving} saveError={editor.saveError} />
       <p className="sr-only" aria-live="polite">
         {editor.announcement}
@@ -94,19 +106,16 @@ function useConflictResultEditor({
   paneId,
   projectId,
   filePath,
-  snapshot,
-  resultContent,
+  initialContent,
   onEditorViewChange,
-}: ConflictResultResolverProps & { resultContent: string }) {
+}: ConflictResultResolverProps) {
   const viewRef = useRef<EditorView | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapping = useConflictHunkMappings({
     paneId,
-    snapshot,
-    resultContent,
+    initialContent,
     viewRef,
     onEditorViewChange,
-    enabled: snapshot.presentation.mode !== "guidance",
   });
   const setDirty = useEditorStore((state) => state.setDirty);
   const language = useEditorLanguage(projectId, filePath);
@@ -124,7 +133,7 @@ function useConflictResultEditor({
     featureId,
     paneId,
     filePath,
-    content: resultContent,
+    content: initialContent,
     viewRef,
     beforeWrite,
   });
@@ -193,22 +202,13 @@ function useConflictSaveRegistration(
 
 function useConflictHunkMappings({
   paneId,
-  snapshot,
-  resultContent,
+  initialContent,
   viewRef,
   onEditorViewChange,
-  enabled,
-}: Pick<ConflictResultResolverProps, "paneId" | "snapshot" | "onEditorViewChange"> & {
-  resultContent: string;
+}: Pick<ConflictResultResolverProps, "paneId" | "initialContent" | "onEditorViewChange"> & {
   viewRef: RefObject<EditorView | null>;
-  enabled: boolean;
 }) {
-  const current = textFromConflictContent(snapshot.stage_2) ?? "";
-  const incoming = textFromConflictContent(snapshot.stage_3) ?? "";
-  const hunks = useMemo(
-    () => (enabled ? buildConflictHunks(resultContent, current, incoming) : []),
-    [current, enabled, incoming, resultContent],
-  );
+  const hunks = useMemo(() => buildConflictHunks(initialContent), [initialContent]);
   const [announcement, setAnnouncement] = useState("");
   const onApply = useCallback(
     (hunk: MappedConflictHunk, choice: ConflictChoice): void => {
@@ -235,3 +235,21 @@ function useConflictHunkMappings({
     [announcement, hunks, onApply, onViewChange],
   );
 }
+
+function conflictSourceLabels(operation: GitOperationKind | null): {
+  current: string;
+  incoming: string;
+} {
+  if (operation === "merge") {
+    return { current: "Current branch", incoming: "Incoming branch" };
+  }
+  if (operation === "rebase") {
+    return { current: "Rebased result", incoming: "Replayed commit" };
+  }
+  return { current: "Index stage 2", incoming: "Index stage 3" };
+}
+
+const resultEditorTheme = CodeMirrorView.theme({
+  "&": { height: "100%" },
+  ".cm-scroller": { overflow: "auto" },
+});

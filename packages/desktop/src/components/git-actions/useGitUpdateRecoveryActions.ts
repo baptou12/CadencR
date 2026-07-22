@@ -6,12 +6,9 @@ import {
   useContinueUpdateBranch,
   type GitOperationKind,
   type GitOperationResponse,
-  type GitStatusSnapshot,
 } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { useGitStatusStore } from "@/stores/useGitStatusStore";
-import { recordGitUpdateConflictOutcome } from "./gitUpdateConflictOutcome";
-import { markGitUpdateSettling } from "./gitUpdateRecoveryStore";
+import { describeGitUpdateConflictFiles } from "./gitUpdateMessages";
 import { gitUpdateMutationKey, useGitUpdatePending } from "./useGitUpdatePending";
 
 export type GitUpdateControlAction = "continue" | "abort";
@@ -20,7 +17,6 @@ interface UseGitUpdateRecoveryActionsOptions {
   featureId: number;
   operation: GitOperationKind | null;
   conflictCount: number;
-  computedAt: number;
 }
 
 export interface GitUpdateRecoveryActions {
@@ -35,7 +31,6 @@ export function useGitUpdateRecoveryActions({
   featureId,
   operation,
   conflictCount,
-  computedAt,
 }: UseGitUpdateRecoveryActionsOptions): GitUpdateRecoveryActions {
   const mutation = { mutationKey: gitUpdateMutationKey(featureId) };
   const { mutateAsync: continueBranch, isPending: continuePending } = useContinueUpdateBranch({
@@ -46,37 +41,25 @@ export function useGitUpdateRecoveryActions({
   const [error, setError] = useState<string | null>(null);
 
   const handleResponse = useCallback(
-    (
-      result: GitOperationResponse,
-      action: GitUpdateControlAction,
-      statusAtRequestStart: GitStatusSnapshot | undefined,
-    ): void => {
+    (result: GitOperationResponse, action: GitUpdateControlAction): void => {
       if (!operation) return;
       if (result.outcome === "conflicts") {
-        recordGitUpdateConflictOutcome({
-          featureId,
-          operation,
-          conflictFiles: result.conflict_files,
-          computedAt,
-          statusOperation: operation,
+        toast.warning("Update paused for conflicts", {
+          description: describeGitUpdateConflictFiles(result.conflict_files),
         });
         return;
       }
-      if (!operationClearedSinceRequest(featureId, statusAtRequestStart)) {
-        markGitUpdateSettling({ featureId, operation, computedAt });
-      }
       toast.success(action === "abort" ? "Update aborted" : "Update completed");
     },
-    [computedAt, featureId, operation],
+    [operation],
   );
 
   const continueUpdate = useCallback(async (): Promise<void> => {
     if (!operation || pending || conflictCount > 0) return;
     setError(null);
-    const statusAtRequestStart = useGitStatusStore.getState().byFeature[featureId];
     try {
       const result = await continueBranch({ data: { feature_id: featureId } });
-      handleResponse(result, "continue", statusAtRequestStart);
+      handleResponse(result, "continue");
     } catch (caught) {
       const message = apiErrorMessage(caught, "Could not continue the update.");
       setError(message);
@@ -87,10 +70,9 @@ export function useGitUpdateRecoveryActions({
   const abortUpdate = useCallback(async (): Promise<void> => {
     if (!operation || pending) return;
     setError(null);
-    const statusAtRequestStart = useGitStatusStore.getState().byFeature[featureId];
     try {
       const result = await abortBranch({ data: { feature_id: featureId } });
-      handleResponse(result, "abort", statusAtRequestStart);
+      handleResponse(result, "abort");
     } catch (caught) {
       const message = apiErrorMessage(caught, "Could not abort the update.");
       setError(message);
@@ -104,12 +86,4 @@ export function useGitUpdateRecoveryActions({
     () => ({ pending, pendingAction, error, continueUpdate, abortUpdate }),
     [abortUpdate, continueUpdate, error, pending, pendingAction],
   );
-}
-
-function operationClearedSinceRequest(
-  featureId: number,
-  statusAtRequestStart: GitStatusSnapshot | undefined,
-): boolean {
-  const latest = useGitStatusStore.getState().byFeature[featureId];
-  return latest !== undefined && latest !== statusAtRequestStart && latest.operation == null;
 }

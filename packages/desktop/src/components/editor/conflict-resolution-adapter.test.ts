@@ -21,7 +21,7 @@ describe("conflict resolution adapter", () => {
     ["both", "before\nours\ntheirs\nafter\n"],
   ] as const)("applies %s as one undoable transaction", (choice, expected) => {
     const view = viewFor();
-    const [hunk] = buildConflictHunks(result, "before\nours\nafter\n", "before\ntheirs\nafter\n");
+    const [hunk] = buildConflictHunks(result);
     expect(applyConflictChoice(view, hunk, choice)).toBe(true);
     expect(view.state.doc.toString()).toBe(expected);
     expect(undo(view)).toBe(true);
@@ -30,7 +30,7 @@ describe("conflict resolution adapter", () => {
   });
 
   it("maps edits outside a hunk but disables overlapping and ambiguous edits", () => {
-    const [hunk] = buildConflictHunks(result, "ours\n", "theirs\n");
+    const [hunk] = buildConflictHunks(result);
     expect(mapConflictHunk(`prefix\n${result}`, hunk).from).toBe(14);
     expect(mapConflictHunk(result.replace("ours", "manual"), hunk).disabledReason).toMatch(
       /edited/,
@@ -40,11 +40,11 @@ describe("conflict resolution adapter", () => {
     );
   });
 
-  it("reports an imprecise mapping so the resolver disables its actions", () => {
-    // Sources that do not contain the marker sides verbatim can't be mapped
-    // safely, so the hunk is flagged rather than offering a risky action.
-    const [hunk] = buildConflictHunks(result, "unrelated\n", "different\n");
-    expect(hunk.precise).toBe(false);
-    expect(mapConflictHunk(result, hunk).disabledReason).toMatch(/precise/);
+  it("parses diff3 base markers without needing speculative stage buffers", () => {
+    const diff3 = "<<<<<<< ours\ncurrent\n||||||| base\nbase\n=======\nincoming\n>>>>>>> theirs\n";
+    const [hunk] = buildConflictHunks(diff3);
+    expect(hunk.current).toBe("current\n");
+    expect(hunk.incoming).toBe("incoming\n");
+    expect(mapConflictHunk(diff3, hunk).disabledReason).toBeNull();
   });
 });

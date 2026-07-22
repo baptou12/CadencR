@@ -19,11 +19,6 @@ import {
 } from "./useGitAction";
 import { gitActionIcon } from "./GitActionPopover";
 import { useCommitSubmission } from "./useCommitSubmission";
-import {
-  effectiveGitUpdateConflictCount,
-  useGitUpdateRecoveryStore,
-  useSyncGitUpdateRecovery,
-} from "./gitUpdateRecoveryStore";
 import { useGitUpdatePending } from "./useGitUpdatePending";
 import { GitActionDialogs, type GitActionDialog } from "./GitActionDialogs";
 import { useGitActionShortcuts } from "./useGitActionShortcuts";
@@ -77,25 +72,10 @@ function useGitActionButtonState(featureId: number): {
   getStashMutationBlockedReason: () => string | null;
 } {
   const snapshot = useGitStatusStore(selectGitStatus(featureId));
-  const recovery = useGitUpdateRecoveryStore((store) => store.byFeature[featureId]);
   const updatePending = useGitUpdatePending(featureId);
-  useSyncGitUpdateRecovery(featureId, snapshot?.operation ?? null, snapshot?.computed_at ?? 0);
-  const recoveryOperation = snapshot?.operation ?? recovery?.operation ?? null;
-  const recoveryConflictCount = effectiveGitUpdateConflictCount(
-    snapshot?.operation ?? null,
-    snapshot?.conflict_count ?? 0,
-    snapshot?.computed_at ?? 0,
-    recovery,
-  );
   const { blockedReason: stashBlockedReason, getBlockedReason: getStashMutationBlockedReason } =
     useStashMutationCoordinator(featureId);
-  const state = useGitAction(
-    snapshot,
-    updatePending,
-    recoveryOperation,
-    recoveryConflictCount,
-    stashBlockedReason,
-  );
+  const state = useGitAction(snapshot, updatePending, stashBlockedReason);
   return useMemo(
     () => ({ snapshot, state, getStashMutationBlockedReason }),
     [getStashMutationBlockedReason, snapshot, state],
@@ -171,7 +151,6 @@ export const GitActionButton = memo(function GitActionButton({
         onPopoverOpenChange={setPopoverOpen}
         onOpenCommit={openCommit}
         onAction={runAction}
-        computedAt={snapshot?.computed_at ?? 0}
       />
       <GitActionDialogs
         activeDialog={activeDialog}
@@ -195,7 +174,6 @@ interface GitActionControlsProps {
   onPopoverOpenChange: (open: boolean) => void;
   onOpenCommit: () => void;
   onAction: (action: GitAction) => void;
-  computedAt: number;
 }
 
 function GitActionControls(props: GitActionControlsProps): ReactElement {
@@ -212,7 +190,6 @@ function MobileGitActionControl({
   onPopoverOpenChange,
   onOpenCommit,
   onAction,
-  computedAt,
 }: GitActionControlsProps): ReactElement {
   if (commitActivity) {
     return (
@@ -237,7 +214,6 @@ function MobileGitActionControl({
             <GitActionPopoverContent
               featureId={featureId}
               projectId={projectId}
-              computedAt={computedAt}
               state={state}
               commitActivity={commitActivity}
               onPick={onAction}
@@ -264,7 +240,6 @@ function MobileGitActionControl({
         <GitActionPopoverContent
           featureId={featureId}
           projectId={projectId}
-          computedAt={computedAt}
           state={state}
           onPick={onAction}
         />
@@ -282,7 +257,6 @@ function DesktopGitActionControl({
   onPopoverOpenChange,
   onOpenCommit,
   onAction,
-  computedAt,
 }: GitActionControlsProps): ReactElement {
   const primaryAction = commitActivity ? "commit" : state.primary;
   const PrimaryIcon = state.updatePending
@@ -330,7 +304,6 @@ function DesktopGitActionControl({
           <GitActionPopoverContent
             featureId={featureId}
             projectId={projectId}
-            computedAt={computedAt}
             state={state}
             commitActivity={commitActivity}
             onPick={onAction}

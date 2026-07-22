@@ -59,15 +59,6 @@ pub struct GetFileContentParams {
     pub target_branch: Option<String>,
 }
 
-/// Read the exact current unmerged index row and worktree result for one path.
-/// Phase 5B must validate the literal path against porcelain before reading
-/// index objects; these two fields are identity, not Git revision syntax.
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct GetConflictContentParams {
-    pub feature_id: i64,
-    pub file_path: String,
-}
-
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DiffImageSide {
@@ -332,28 +323,5 @@ mod tests {
         let control: GitOperationControlBody =
             serde_json::from_value(serde_json::json!({ "feature_id": 7 })).unwrap();
         assert_eq!(control.feature_id, 7);
-    }
-
-    #[test]
-    fn conflict_content_request_requires_both_identity_fields() {
-        let conflict: GetConflictContentParams = serde_json::from_value(serde_json::json!({
-            "feature_id": 7,
-            "file_path": "src/literal[conflict].rs"
-        }))
-        .unwrap();
-        assert_eq!(conflict.feature_id, 7);
-        assert_eq!(conflict.file_path, "src/literal[conflict].rs");
-        assert!(
-            serde_json::from_value::<GetConflictContentParams>(serde_json::json!({
-                "feature_id": 7
-            }))
-            .is_err()
-        );
-        assert!(
-            serde_json::from_value::<GetConflictContentParams>(serde_json::json!({
-                "file_path": "src/lib.rs"
-            }))
-            .is_err()
-        );
     }
 }

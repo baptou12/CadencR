@@ -38,9 +38,8 @@ describe("useOpenDiffFileInEditor", () => {
 
     const tab = useEditorStore.getState().features[featureId].panes.main.tabs[0];
     expect(tab).toMatchObject({ filePath: "src/conflict.ts", pendingGoToLine: 4 });
-    // Resolver mode is decided by backend-confirmed Git status
-    // (useAutoConflictResolution), never by the open call itself.
-    expect(tab.resolveConflict ?? false).toBe(false);
+    // Resolver mode is derived directly from backend-confirmed Git status,
+    // never stored by the open call itself.
     expect(mocks.activateFeatureTab).toHaveBeenCalledWith(featureId, "editor");
   });
 

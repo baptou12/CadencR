@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::app_state::AppState;
 use crate::domain::git::commands;
-use crate::domain::git::file_size::classify_content;
+use crate::domain::git::file_size::classify_content_bytes;
 use crate::domain::git::models::*;
 use crate::domain::git::repository;
 use crate::error::AppError;
@@ -166,6 +166,7 @@ pub async fn get_file_content(
     state: &AppState,
     params: GetFileContentParams,
 ) -> Result<FileContent, AppError> {
+    crate::domain::git::workflow_service::validate_file_mutation_path(&params.file_path)?;
     let git_path = resolve_feature_git_path(state, params.feature_id).await?;
     let git_path = match git_path {
         Some(p) => p,
@@ -191,18 +192,41 @@ pub async fn get_file_content(
     )
     .await?;
 
-    let (old_content, new_content) = tokio::join!(
-        commands::get_file_content(path, &params.file_path, Some(&old_ref)),
-        commands::get_file_content(path, &params.file_path, new_ref.as_deref()),
-    );
+    if new_ref.is_none() {
+        if let Ok(metadata) = tokio::fs::symlink_metadata(path.join(&params.file_path)).await {
+            if !metadata.file_type().is_file() {
+                return Err(AppError::BadRequest(
+                    "Unsupported worktree file type cannot be opened as text".into(),
+                ));
+            }
+        }
+    }
 
-    Ok(classify_content(
+    let (old_content, new_content) = tokio::join!(
+        commands::get_file_bytes(path, &params.file_path, Some(&old_ref), usize::MAX),
+        commands::get_file_bytes(path, &params.file_path, new_ref.as_deref(), usize::MAX),
+    );
+    // A missing Git-ref side is an addition/deletion. A missing worktree
+    // Result stays an explicit error so the UI can offer deletion guidance.
+    let old_content = old_content.unwrap_or_default();
+    let (new_content, new_missing) = match (new_ref.is_some(), new_content) {
+        (true, result) => (result.unwrap_or_default(), false),
+        (false, Ok(content)) => (content, false),
+        (false, Err(AppError::NotFound(_))) => (Vec::new(), true),
+        (false, Err(error)) => return Err(error),
+    };
+
+    let mut content: FileContent = classify_content_bytes(
         params.file_path,
-        old_content?,
-        new_content?,
+        old_content,
+        new_content,
         /* keep_large_content */ true,
     )
-    .into())
+    .into();
+    if new_missing {
+        content.new_content = None;
+    }
+    Ok(content)
 }
 
 pub async fn get_file_content_batch(

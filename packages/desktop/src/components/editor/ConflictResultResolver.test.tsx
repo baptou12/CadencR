@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { useEditorStore } from "@/stores/editor-store";
-import type { ConflictContentSnapshot } from "@/api/generated";
 
 const mocks = vi.hoisted(() => ({ save: vi.fn(), saveQuiet: vi.fn() }));
 
@@ -22,11 +21,19 @@ vi.mock("./useEditorSave", () => ({
   }),
 }));
 vi.mock("./editorSaveRegistry", () => ({ registerSave: vi.fn(), unregisterSave: vi.fn() }));
-vi.mock("./ConflictUnifiedEditor", () => ({
-  default: ({ onChange, onSave }: { onChange?: () => void; onSave?: () => void }) => (
+vi.mock("./BaseCodeMirrorEditor", () => ({
+  default: ({
+    initialContent,
+    onChange,
+    onSave,
+  }: {
+    initialContent?: string;
+    onChange?: (content: string) => void;
+    onSave?: () => void;
+  }) => (
     <div>
-      <div>CodeMirror unified merge view</div>
-      <button type="button" onClick={onChange}>
+      <output>{initialContent}</output>
+      <button type="button" onClick={() => onChange?.("edited Result")}>
         Edit Result
       </button>
       <button type="button" onClick={onSave}>
@@ -37,22 +44,6 @@ vi.mock("./ConflictUnifiedEditor", () => ({
 }));
 
 import ConflictResultResolver from "./ConflictResultResolver";
-
-const snapshot = {
-  file_path: "conflict.ts",
-  conflict_kind: "uu",
-  operation: "merge",
-  presentation: { mode: "three_way" },
-  base: { content: { state: "text", content: "base\n" } },
-  stage_2: { content: { state: "text", content: "ours\n" } },
-  stage_3: { content: { state: "text", content: "theirs\n" } },
-  result: {
-    content: {
-      state: "text",
-      content: "ours\n",
-    },
-  },
-} as ConflictContentSnapshot;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -65,25 +56,22 @@ beforeEach(() => {
   });
 });
 
-describe("ConflictResultResolver resolution boundary", () => {
-  it("renders as a file editor without resolver header or footer controls", async () => {
+describe("ConflictResultResolver", () => {
+  it("is one writable Result with no comparison or staging surface", async () => {
     const { user } = render(
       <ConflictResultResolver
         featureId={7}
         paneId="main"
         projectId={2}
         filePath="conflict.ts"
-        snapshot={snapshot}
+        initialContent={"<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\n"}
+        operation="merge"
       />,
     );
-    expect(await screen.findByText("CodeMirror unified merge view")).toBeInTheDocument();
-    // Reads as an ordinary file editor: no comparison toolbar, file header, or
-    // Save/Stage footer controls — resolution lives inline in CodeMirror.
+
+    expect(screen.getByLabelText("Writable Result")).toBeInTheDocument();
     expect(screen.queryByText("Compare Result with")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Incoming branch" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Resolve conflict.ts" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save Result" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Stage resolved file" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Stage/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Edit Result" }));
     expect(
@@ -94,30 +82,5 @@ describe("ConflictResultResolver resolution boundary", () => {
 
     await user.click(screen.getByRole("button", { name: "CodeMirror Save" }));
     expect(mocks.save).toHaveBeenCalledOnce();
-  });
-
-  it("keeps staging out of the file editor while conflict markers remain", async () => {
-    const unresolvedSnapshot = {
-      ...snapshot,
-      result: {
-        content: {
-          state: "text",
-          content: "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> topic\n",
-        },
-      },
-    } as ConflictContentSnapshot;
-    render(
-      <ConflictResultResolver
-        featureId={7}
-        paneId="main"
-        projectId={2}
-        filePath="conflict.ts"
-        snapshot={unresolvedSnapshot}
-      />,
-    );
-
-    expect(await screen.findByText("CodeMirror unified merge view")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Stage/ })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Resolve every marker block/)).not.toBeInTheDocument();
   });
 });
