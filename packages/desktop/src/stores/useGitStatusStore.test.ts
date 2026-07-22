@@ -69,6 +69,10 @@ describe("useGitStatusStore.setStatus", () => {
     const setStatus = useGitStatusStore.getState().setStatus;
     setStatus(
       snap({
+        update_target_branch: "origin/main",
+        ahead_of_update_target: 1,
+        behind_update_target: 3,
+        update_target_resolved: true,
         behind_target: 3,
         target_resolved: true,
         conflict_count: 1,
@@ -78,6 +82,10 @@ describe("useGitStatusStore.setStatus", () => {
     );
     setStatus(
       snap({
+        update_target_branch: "origin/release",
+        ahead_of_update_target: 0,
+        behind_update_target: 1,
+        update_target_resolved: true,
         behind_target: 0,
         target_resolved: false,
         conflict_count: 0,
@@ -87,6 +95,10 @@ describe("useGitStatusStore.setStatus", () => {
     );
 
     expect(useGitStatusStore.getState().byFeature[1]).toMatchObject({
+      update_target_branch: "origin/release",
+      ahead_of_update_target: 0,
+      behind_update_target: 1,
+      update_target_resolved: true,
       behind_target: 0,
       target_resolved: false,
       conflict_count: 0,

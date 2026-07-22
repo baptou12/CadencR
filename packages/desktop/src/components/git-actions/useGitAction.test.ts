@@ -3,7 +3,7 @@
  * action button. Each test names one row of the matrix.
  */
 import { describe, expect, it } from "vitest";
-import { deriveGitAction } from "./useGitAction";
+import { deriveGitAction, resolveGitUpdateSource } from "./useGitAction";
 import type { GitStatusSnapshot } from "@/api/generated";
 
 function snapshot(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot {
@@ -134,6 +134,50 @@ describe("deriveGitAction", () => {
     expect(state.primary).toBe("update");
     expect(state.disabled.update).toBeNull();
     expect(state.disabled.merge).toBe("Cannot merge a branch into itself");
+  });
+
+  it("enables Update for incoming commits on the current branch upstream", () => {
+    const currentMain = snapshot({
+      current_branch: "main",
+      target_branch: "main",
+      behind_remote: 3,
+      update_target_branch: "origin/main",
+      behind_update_target: 3,
+      update_target_resolved: true,
+    });
+
+    const state = deriveGitAction(currentMain);
+
+    expect(state.primary).toBe("update");
+    expect(state.disabled.update).toBeNull();
+    expect(resolveGitUpdateSource(currentMain)).toEqual({
+      branch: "origin/main",
+      ahead: 0,
+      behind: 3,
+      kind: "upstream",
+      resolved: true,
+    });
+  });
+
+  it("prefers incoming upstream commits over configured-target divergence", () => {
+    const state = snapshot({
+      ahead_of_remote: 1,
+      behind_remote: 2,
+      ahead_of_target: 4,
+      behind_target: 5,
+      update_target_branch: "origin/feature/x",
+      ahead_of_update_target: 1,
+      behind_update_target: 2,
+      update_target_resolved: true,
+    });
+
+    expect(resolveGitUpdateSource(state)).toEqual({
+      branch: "origin/feature/x",
+      ahead: 1,
+      behind: 2,
+      kind: "upstream",
+      resolved: true,
+    });
   });
 
   it("requires every clean-worktree count to be zero before Update", () => {

@@ -132,6 +132,42 @@ impl RepoFixture {
         self.git_project(&["branch", "-D", "remote-build"]);
     }
 
+    pub(super) fn create_current_branch_remote_only_tip(&self) {
+        self.git_project(&[
+            "remote",
+            "add",
+            "origin",
+            "https://example.com/repository.git",
+        ]);
+        self.git_feature(&["config", "branch.feature/test.remote", "origin"]);
+        self.git_feature(&[
+            "config",
+            "branch.feature/test.merge",
+            "refs/heads/feature/test",
+        ]);
+        self.git_project(&["checkout", "-q", "-b", "remote-feature", "feature/test"]);
+        self.commit_main_file("upstream-only.txt", "upstream\n", "upstream-only");
+        self.git_project(&[
+            "update-ref",
+            "refs/remotes/origin/feature/test",
+            "remote-feature",
+        ]);
+        self.git_project(&["checkout", "-q", "main"]);
+        self.git_project(&["branch", "-D", "remote-feature"]);
+    }
+
+    pub(super) fn create_tracked_target_remote_only_tip(&self) {
+        self.create_remote_only_tip();
+        self.git_project(&[
+            "remote",
+            "add",
+            "origin",
+            "https://example.com/repository.git",
+        ]);
+        self.git_project(&["config", "branch.main.remote", "origin"]);
+        self.git_project(&["config", "branch.main.merge", "refs/heads/main"]);
+    }
+
     pub(super) fn commit_feature_file(&self, path: &str, contents: &str, message: &str) {
         self.write_feature(path, contents);
         self.git_feature(&["add", path]);

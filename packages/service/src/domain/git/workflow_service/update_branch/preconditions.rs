@@ -5,7 +5,10 @@ use crate::domain::git::commands;
 use crate::domain::git::mutation_guard::GitMutationGuardError;
 use crate::domain::git::service::resolve_feature_git_path;
 use crate::error::AppError;
-use crate::shared::git_cli::{git_output_error, guard_positionals, run_git_output_with_env};
+use crate::shared::git_cli::{
+    git_output_error, git_ref_resolves_background, guard_positionals, run_git_output_with_env,
+    run_git_safe_refs_background,
+};
 
 use super::{detect_active_git_operation, operation_name};
 
@@ -53,6 +56,87 @@ pub(super) async fn require_clean_worktree(worktree: &Path) -> Result<(), AppErr
         ));
     }
     Ok(())
+}
+
+/// Select the exact source ref for Update without changing the configured
+/// comparison target. Incoming commits from the checked-out branch's upstream
+/// win first. Otherwise, when the configured target is a local branch whose
+/// own upstream has incoming commits, use that remote-tracking ref. The final
+/// fallback preserves the configured target verbatim.
+pub(crate) async fn resolve_update_target(
+    worktree: &Path,
+    current_ref: &str,
+    configured_target: &str,
+) -> Result<String, AppError> {
+    guard_positionals(&[current_ref, configured_target])?;
+    if let Some(upstream) = incoming_upstream_for_ref(worktree, current_ref).await? {
+        return Ok(upstream);
+    }
+    resolve_configured_update_target(worktree, current_ref, configured_target).await
+}
+
+/// Resolve only the configured-target portion of Update selection. Status uses
+/// this after consuming the checked-out branch's upstream directly from its
+/// porcelain snapshot, avoiding repeated Git probes on every watcher refresh.
+pub(crate) async fn resolve_configured_update_target(
+    worktree: &Path,
+    current_ref: &str,
+    configured_target: &str,
+) -> Result<String, AppError> {
+    guard_positionals(&[current_ref, configured_target])?;
+    if configured_target == current_ref
+        || current_ref.strip_prefix("refs/heads/") == Some(configured_target)
+    {
+        return Ok(configured_target.to_string());
+    }
+    if let Some(target_ref) = local_ref(worktree, configured_target).await? {
+        if target_ref != current_ref {
+            if let Some(upstream) = incoming_upstream_for_ref(worktree, &target_ref).await? {
+                return Ok(upstream);
+            }
+        }
+    }
+    Ok(configured_target.to_string())
+}
+
+async fn incoming_upstream_for_ref(
+    worktree: &Path,
+    local_ref: &str,
+) -> Result<Option<String>, AppError> {
+    let tracking = run_git_safe_refs_background(
+        &[
+            "for-each-ref",
+            "--format=%(upstream:short)%00%(upstream:trackshort)",
+        ],
+        &[],
+        &[local_ref],
+        worktree,
+    )
+    .await?;
+    let Some((upstream, track)) = tracking.trim_end().split_once('\0') else {
+        return Ok(None);
+    };
+    let has_incoming = matches!(track.trim(), "<" | "<>");
+
+    Ok(has_incoming.then(|| upstream.to_string()))
+}
+
+async fn local_ref(worktree: &Path, target: &str) -> Result<Option<String>, AppError> {
+    let target_commit = format!("{target}^{{commit}}");
+    if !git_ref_resolves_background(&target_commit, worktree).await? {
+        return Ok(None);
+    }
+    let symbolic = run_git_safe_refs_background(
+        &["rev-parse", "--symbolic-full-name"],
+        &[],
+        &[target],
+        worktree,
+    )
+    .await?;
+    let symbolic = symbolic.trim();
+    Ok(symbolic
+        .starts_with("refs/heads/")
+        .then(|| symbolic.to_string()))
 }
 
 pub(super) async fn validate_target(

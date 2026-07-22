@@ -170,6 +170,10 @@ mod tests {
         for field in [
             "behind_target",
             "target_resolved",
+            "update_target_branch",
+            "ahead_of_update_target",
+            "behind_update_target",
+            "update_target_resolved",
             "conflict_count",
             "operation",
             "shared_with",

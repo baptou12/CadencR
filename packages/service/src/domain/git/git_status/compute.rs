@@ -6,7 +6,9 @@ use crate::shared::git_cli::{git_ref_resolves_background, run_git_background};
 use super::parsing::{self, parse_porcelain_v2};
 use super::{GitStatusSnapshot, SharedFeatureRef};
 use crate::domain::git::host::{self, GitHost, RemoteInfo};
-use crate::domain::git::workflow_service::detect_active_git_operation;
+use crate::domain::git::workflow_service::{
+    detect_active_git_operation, resolve_configured_update_target,
+};
 
 /// Build a degraded snapshot for cases where we can't actually probe the
 /// worktree (path is missing, worktree is still being created, etc). The
@@ -27,6 +29,10 @@ fn empty_snapshot(feature_id: i64, target_branch: &str) -> GitStatusSnapshot {
         ahead_of_target: 0,
         behind_target: 0,
         target_resolved: false,
+        update_target_branch: None,
+        ahead_of_update_target: 0,
+        behind_update_target: 0,
+        update_target_resolved: false,
         conflict_count: 0,
         operation: None,
         has_remote: false,
@@ -70,13 +76,35 @@ async fn compute_status(
     )
     .await?;
     let parsed = parse_porcelain_v2(&porcelain);
-    let (ahead_of_remote, target_divergence, remote_info, operation) = tokio::join!(
+    let current_ref = format!("refs/heads/{}", parsed.current_branch);
+    let update_target = async {
+        if parsed.behind > 0 {
+            if let Some(upstream) = parsed.upstream.as_ref() {
+                return Ok::<String, AppError>(upstream.clone());
+            }
+        }
+        resolve_configured_update_target(repo, &current_ref, target_branch).await
+    };
+    let (ahead_of_remote, target_divergence, update_target, remote_info, operation) = tokio::join!(
         count_unpushed(repo, &parsed),
         resolve_target_divergence(repo, target_branch),
+        update_target,
         resolve_remote_info(repo),
         detect_active_git_operation(repo),
     );
     let target_divergence = target_divergence?;
+    let update_target = update_target?;
+    let update_divergence = if parsed.upstream.as_deref() == Some(update_target.as_str()) {
+        TargetDivergence {
+            ahead: parsed.ahead,
+            behind: parsed.behind,
+            resolved: true,
+        }
+    } else if update_target == target_branch {
+        target_divergence
+    } else {
+        resolve_target_divergence(repo, &update_target).await?
+    };
     let operation = operation?;
     let has_remote = remote_info.is_some();
     let (host, compare_url, action_label) =
@@ -95,6 +123,10 @@ async fn compute_status(
         ahead_of_target: target_divergence.ahead,
         behind_target: target_divergence.behind,
         target_resolved: target_divergence.resolved,
+        update_target_branch: Some(update_target),
+        ahead_of_update_target: update_divergence.ahead,
+        behind_update_target: update_divergence.behind,
+        update_target_resolved: update_divergence.resolved,
         conflict_count: parsed.conflict_count,
         operation,
         has_remote,
@@ -106,7 +138,7 @@ async fn compute_status(
     })
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct TargetDivergence {
     ahead: u32,
     behind: u32,
@@ -152,7 +184,7 @@ async fn resolve_target_divergence(
 /// not from any remote-tracking ref, i.e. exactly what a first
 /// `git push -u origin HEAD` would publish.
 async fn count_unpushed(repo: &Path, parsed: &parsing::ParsedPorcelain) -> u32 {
-    if parsed.has_upstream {
+    if parsed.upstream.is_some() {
         return parsed.ahead;
     }
     run_git_background(&["rev-list", "--count", "HEAD", "--not", "--remotes"], repo)
@@ -448,6 +480,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn current_upstream_drives_the_update_source_and_divergence() {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        run_git(
+            dir.path(),
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://example.com/repository.git",
+            ],
+        );
+        run_git(dir.path(), &["checkout", "-q", "-b", "feat"]);
+        run_git(dir.path(), &["config", "branch.feat.remote", "origin"]);
+        run_git(
+            dir.path(),
+            &["config", "branch.feat.merge", "refs/heads/feat"],
+        );
+        run_git(dir.path(), &["checkout", "-q", "-b", "remote-feat"]);
+        std::fs::write(dir.path().join("remote.txt"), "remote\n").unwrap();
+        run_git(dir.path(), &["add", "remote.txt"]);
+        run_git(dir.path(), &["commit", "-q", "-m", "remote"]);
+        run_git(
+            dir.path(),
+            &["update-ref", "refs/remotes/origin/feat", "remote-feat"],
+        );
+        run_git(dir.path(), &["checkout", "-q", "feat"]);
+        run_git(dir.path(), &["branch", "-D", "remote-feat"]);
+
+        let snap = compute_status(dir.path(), 1, "main").await.unwrap();
+        assert_eq!(snap.behind_remote, 1);
+        assert_eq!(snap.update_target_branch.as_deref(), Some("origin/feat"));
+        assert_eq!(snap.ahead_of_update_target, 0);
+        assert_eq!(snap.behind_update_target, 1);
+        assert!(snap.update_target_resolved);
+    }
+
+    #[tokio::test]
     async fn ahead_of_target_uses_remote_ref_when_picked_verbatim() {
         let dir = tempfile::tempdir().unwrap();
         init_repo(dir.path());
@@ -476,6 +546,29 @@ mod tests {
         assert_eq!(snap_local.ahead_of_target, 1);
         let snap_remote = compute_status(dir.path(), 1, "origin/main").await.unwrap();
         assert_eq!(snap_remote.ahead_of_target, 2);
+
+        run_git(
+            dir.path(),
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://example.com/repository.git",
+            ],
+        );
+        run_git(dir.path(), &["config", "branch.main.remote", "origin"]);
+        run_git(
+            dir.path(),
+            &["config", "branch.main.merge", "refs/heads/main"],
+        );
+        let snap_tracked_local = compute_status(dir.path(), 1, "main").await.unwrap();
+        assert_eq!(
+            snap_tracked_local.update_target_branch.as_deref(),
+            Some("origin/main")
+        );
+        assert_eq!(snap_tracked_local.ahead_of_update_target, 2);
+        assert_eq!(snap_tracked_local.behind_update_target, 1);
+        assert!(snap_tracked_local.update_target_resolved);
     }
 
     #[tokio::test]
