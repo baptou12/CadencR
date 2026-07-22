@@ -253,6 +253,15 @@ pub(super) async fn recompute_for_path(
     state: &AppState,
     expected_write_generation: Option<(Arc<AtomicU64>, u64)>,
 ) {
+    // Skip observer runs that begin while Cadencr owns the worktree mutation.
+    // The endpoint drops its permit before `confirm_after_write`, which emits
+    // the fresh snapshot afterward. An observer already in flight remains
+    // protected by `--no-optional-locks` and the update runner's bounded lock
+    // recovery; terminal-driven mutations keep the existing read protection.
+    if state.git_mutations.is_active_canonical(worktree_path) {
+        return;
+    }
+
     // Snapshot the subscriber list under the lock, then drop it before
     // running per-feature compute calls so we don't serialize on the slow
     // git call.

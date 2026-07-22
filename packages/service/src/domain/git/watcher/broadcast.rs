@@ -255,6 +255,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recompute_is_suppressed_during_a_foreground_mutation() {
+        let mut fixture = subscribed_fixture().await;
+        let permit = fixture
+            .state
+            .git_mutations
+            .try_acquire(&fixture.canonical)
+            .unwrap();
+
+        fixture
+            .registry
+            .recompute_now(&fixture.canonical, &fixture.state)
+            .await;
+        assert!(matches!(
+            fixture.rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+
+        drop(permit);
+        fixture
+            .registry
+            .confirm_after_write(&fixture.canonical, &fixture.state)
+            .await;
+        assert!(matches!(
+            fixture.rx.try_recv(),
+            Ok(Message::Text(text)) if text.contains("\"action\":\"status\"")
+        ));
+        fixture.registry.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn recompute_now_surfaces_refresh_failures_as_status_errors() {
         let mut fixture = subscribed_fixture().await;
         std::fs::remove_dir_all(fixture.canonical.join(".git")).unwrap();
