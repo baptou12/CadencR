@@ -1,12 +1,10 @@
-import { type ReactElement, useState } from "react";
-import {
-  normalizeContextWindow,
-  totalTokens,
-  type ContextUsageState,
-  usageRatio as computeUsageRatio,
-} from "@/types/agent";
+import { memo, type ReactElement, useState } from "react";
+import { normalizeContextWindow, totalTokens, type ContextUsageState } from "@/types/agent";
 import { cn } from "@/lib/utils";
-import { getContextUsageAppearance } from "@/lib/context-usage-appearance";
+import {
+  getContextUsageAppearance,
+  type ContextUsageAppearance,
+} from "@/lib/context-usage-appearance";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -22,77 +20,103 @@ export function ContextUsageBar({
   const [open, setOpen] = useState(false);
 
   if (!usage) return null;
-  if (normalizeContextWindow(usage.contextWindow) == null) return null;
+  const windowSize = normalizeContextWindow(usage.contextWindow);
+  if (windowSize == null) return null;
 
-  const ratio = computeUsageRatio(usage);
+  const used = totalTokens(usage);
+  const ratio = Math.min(1, used / windowSize);
+  const percent = Math.round(ratio * 100);
   const appearance = getContextUsageAppearance(ratio);
+  const usedFormatted = used.toLocaleString();
+  const windowFormatted = windowSize.toLocaleString();
+  const ariaLabel = `Context usage ${percent}%: ${usedFormatted} of ${windowFormatted} tokens`;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <div
-          tabIndex={0}
-          className={cn("flex items-center gap-2 px-3 py-1", className)}
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
+    <div className={cn("flex items-center gap-2 px-3 py-1", className)}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={ariaLabel}
+            className={cn(
+              "flex min-w-0 flex-1 cursor-help items-center gap-2 rounded-sm",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            )}
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => setOpen(false)}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setOpen(false)}
+          >
+            <ContextUsageMeter ratio={ratio} appearance={appearance} isStreaming={isStreaming} />
+            <span className="shrink-0 text-[10.5px] font-medium tabular-nums text-muted-foreground">
+              {percent}%
+            </span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          side="top"
+          sideOffset={8}
+          className="pointer-events-none w-auto min-w-[160px] p-3"
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          <div className="h-[3px] flex-1 rounded-full bg-border/80">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all duration-300",
-                isStreaming ? "context-usage-glow" : appearance.barClassName,
-              )}
-              data-context-usage-style="glow"
-              style={{
-                width: `${ratio * 100}%`,
-                backgroundColor: appearance.glowColor,
-                boxShadow: isStreaming
-                  ? `0 0 4px ${appearance.glowColor}, 0 0 10px color-mix(in srgb, ${appearance.glowColor} 75%, transparent), 0 0 16px color-mix(in srgb, ${appearance.glowColor} 45%, transparent)`
-                  : "none",
-              }}
-            />
-          </div>
-          <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
-            {Math.round(ratio * 100)}%
-          </span>
-          <PromptKeyboardHint />
-        </div>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        side="top"
-        className="pointer-events-none flex w-auto flex-col gap-2 p-3"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-        onCloseAutoFocus={(event) => event.preventDefault()}
-      >
-        <ContextUsageDetails usage={usage} />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function ContextUsageDetails({ usage }: { usage: ContextUsageState }): ReactElement {
-  const contextWindow = normalizeContextWindow(usage.contextWindow);
-  return (
-    <div className="flex flex-col gap-1.5">
-      <ContextUsageRow
-        label="Tokens used"
-        value={`${totalTokens(usage).toLocaleString()} / ${contextWindow?.toLocaleString() ?? "—"}`}
-      />
-      <ContextUsageRow label="Input" value={usage.inputTokens.toLocaleString()} />
-      <ContextUsageRow label="Output" value={usage.outputTokens.toLocaleString()} />
-      {usage.wasCompacted ? <ContextUsageRow label="Context compacted" value="Yes" /> : null}
+          <ContextUsageDetails usage={usage} />
+        </PopoverContent>
+      </Popover>
+      <PromptKeyboardHint />
     </div>
   );
 }
 
-function ContextUsageRow({ label, value }: { label: string; value: string }): ReactElement {
+const ContextUsageMeter = memo(function ContextUsageMeter({
+  ratio,
+  appearance,
+  isStreaming = false,
+  className,
+}: {
+  ratio: number;
+  appearance: ContextUsageAppearance;
+  isStreaming?: boolean;
+  className?: string;
+}): ReactElement {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
-      <span className="rounded bg-muted/60 px-2 py-1 font-mono text-[11px]">{value}</span>
+    <div className={cn("h-[3px] flex-1 rounded-full bg-border/80", className)}>
+      <div
+        className={cn(
+          "h-full rounded-full transition-[width,box-shadow] duration-150 ease-out",
+          isStreaming ? "context-usage-glow" : appearance.barClassName,
+        )}
+        data-context-usage-style="glow"
+        style={{
+          width: `${ratio * 100}%`,
+          backgroundColor: appearance.glowColor,
+          boxShadow: isStreaming
+            ? `0 0 4px ${appearance.glowColor}, 0 0 10px color-mix(in srgb, ${appearance.glowColor} 75%, transparent), 0 0 16px color-mix(in srgb, ${appearance.glowColor} 45%, transparent)`
+            : "none",
+        }}
+      />
+    </div>
+  );
+});
+
+function ContextUsageDetails({ usage }: { usage: ContextUsageState }): ReactElement {
+  const windowSize = normalizeContextWindow(usage.contextWindow);
+  const used = totalTokens(usage);
+  const ratio = windowSize == null ? 0 : Math.min(1, used / windowSize);
+  const appearance = getContextUsageAppearance(ratio);
+  const usedLabel = `${used.toLocaleString()} / ${windowSize?.toLocaleString() ?? "—"}`;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-medium text-foreground">Context</span>
+      <ContextUsageMeter ratio={ratio} appearance={appearance} className="h-1" />
+      <p className="font-mono text-[10.5px] tabular-nums text-muted-foreground">{usedLabel}</p>
+      {usage.wasCompacted ? (
+        <p className="border-t border-border pt-2 text-[10.5px] font-medium text-[var(--acc-orange)]">
+          Context compacted
+        </p>
+      ) : null}
     </div>
   );
 }
