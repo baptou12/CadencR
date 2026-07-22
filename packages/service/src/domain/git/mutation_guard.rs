@@ -47,6 +47,16 @@ impl GitMutationGuard {
             worktree_path: canonical_path,
         })
     }
+
+    /// Whether Cadencr owns a foreground mutation for this canonical worktree.
+    /// Watcher registry keys are already canonical, so this stays a lock-only
+    /// hot-path lookup without synchronous filesystem I/O.
+    pub fn is_active_canonical(&self, canonical_path: &Path) -> bool {
+        match self.active_worktrees.lock() {
+            Ok(active) => active.contains(canonical_path),
+            Err(poisoned) => poisoned.into_inner().contains(canonical_path),
+        }
+    }
 }
 
 /// RAII permit held for the full foreground Git command. Dropping it releases
@@ -125,13 +135,17 @@ mod tests {
     fn serializes_mutations_by_canonical_worktree_path() {
         let worktree = tempfile::tempdir().unwrap();
         let guard = Arc::new(GitMutationGuard::new());
+        let canonical = worktree.path().canonicalize().unwrap();
+        assert!(!guard.is_active_canonical(&canonical));
         let permit = guard.try_acquire(worktree.path()).unwrap();
+        assert!(guard.is_active_canonical(&canonical));
 
         let alias = worktree.path().join(".");
         let error = guard.try_acquire(&alias).unwrap_err();
         assert!(matches!(error, GitMutationGuardError::Busy { .. }));
 
         drop(permit);
+        assert!(!guard.is_active_canonical(&canonical));
         assert!(guard.try_acquire(&alias).is_ok());
     }
 

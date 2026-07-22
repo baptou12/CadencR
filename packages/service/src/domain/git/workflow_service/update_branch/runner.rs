@@ -1,3 +1,5 @@
+mod lock_recovery;
+
 use std::path::Path;
 
 use crate::domain::git::models::{GitOperationKind, GitOperationResponse, UpdateBranchStrategy};
@@ -5,6 +7,7 @@ use crate::error::AppError;
 use crate::shared::git_cli::{git_output_error, guard_positionals, run_git_output_with_env};
 
 use super::operation::detect_active_git_operation;
+use lock_recovery::invoke_with_index_lock_recovery;
 
 pub(super) async fn start(
     worktree: &Path,
@@ -25,10 +28,7 @@ pub(super) async fn continue_operation(
     worktree: &Path,
     operation: GitOperationKind,
 ) -> Result<GitOperationResponse, AppError> {
-    let args = match operation {
-        GitOperationKind::Rebase => ["rebase", "--continue"],
-        GitOperationKind::Merge => ["merge", "--continue"],
-    };
+    let args = control_args(operation, "--continue");
     run_recoverable(worktree, &args, operation).await
 }
 
@@ -36,10 +36,7 @@ pub(super) async fn abort(
     worktree: &Path,
     operation: GitOperationKind,
 ) -> Result<GitOperationResponse, AppError> {
-    let args = match operation {
-        GitOperationKind::Rebase => ["rebase", "--abort"],
-        GitOperationKind::Merge => ["merge", "--abort"],
-    };
+    let args = control_args(operation, "--abort");
     let output = invoke(worktree, &args).await?;
     if !output.status.success() {
         return Err(git_output_error(&args, &output));
@@ -52,12 +49,12 @@ async fn run_recoverable(
     args: &[&str],
     expected: GitOperationKind,
 ) -> Result<GitOperationResponse, AppError> {
-    let output = invoke(worktree, args).await?;
+    let (invoked_args, output) = invoke_with_index_lock_recovery(worktree, args, expected).await?;
     if output.status.success() {
         return Ok(GitOperationResponse::Completed);
     }
 
-    let primary = git_output_error(args, &output);
+    let primary = git_output_error(&invoked_args, &output);
     let active = detect_active_git_operation(worktree)
         .await
         .map_err(|inspection| inspection_error(&primary, inspection))?;
@@ -71,6 +68,10 @@ async fn run_recoverable(
         return Ok(GitOperationResponse::Conflicts { conflict_files });
     }
     Err(primary)
+}
+
+fn control_args(operation: GitOperationKind, action: &'static str) -> [&'static str; 2] {
+    [super::operation_name(operation), action]
 }
 
 async fn invoke(worktree: &Path, args: &[&str]) -> Result<std::process::Output, AppError> {
