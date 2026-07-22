@@ -33,7 +33,7 @@ pub async fn get_blame(
     if !is_path_tracked(&project_root, &relative).await {
         return Ok(BlameResponse { lines: vec![] });
     }
-    let output = crate::shared::git_cli::run_git_safe(
+    let output = crate::shared::git_cli::run_git_safe_background(
         &["blame"],
         &["--porcelain"],
         &[&relative],
@@ -52,7 +52,7 @@ pub async fn get_blame(
 /// treated as "not tracked" — we'd rather skip blame than surface a noisy
 /// error to the user.
 async fn is_path_tracked(cwd: &Path, relative: &str) -> bool {
-    let out = crate::shared::git_cli::run_git_safe(&["ls-files"], &[], &[relative], cwd)
+    let out = crate::shared::git_cli::run_git_safe_background(&["ls-files"], &[], &[relative], cwd)
         .await
         .unwrap_or_default();
     !out.trim().is_empty()

@@ -6,7 +6,9 @@ use std::path::Path;
 
 use crate::domain::git::models::GitStats;
 use crate::error::AppError;
-use crate::shared::git_cli::{guard_positionals, run_git_safe, run_git_safe_refs};
+use crate::shared::git_cli::{
+    guard_positionals, run_git_safe_background, run_git_safe_refs_background,
+};
 
 use super::untracked::{count_untracked_lines, synthesize_untracked_new_file_diff};
 use super::util::run_git_quiet;
@@ -127,8 +129,9 @@ pub async fn get_diff(
 /// without it, `git diff -- <new>` only sees the new path and reports the whole
 /// file as additions (`new file mode`).
 ///
-/// `run_git_safe` inserts the `--` separator and rejects a path that begins
-/// with `-`; refs (`target_branch`, `commit_sha`) are guarded against
+/// `run_git_safe_background` inserts the `--` separator, rejects a path that
+/// begins with `-`, and prevents this observational request from refreshing
+/// the real index. Refs (`target_branch`, `commit_sha`) are guarded against
 /// flag-injection separately. Git errors (e.g. a bad ref) propagate as an
 /// `AppError` so the HTTP response fails and the row shows its error state,
 /// rather than being swallowed into an empty "no hunks" diff.
@@ -154,7 +157,7 @@ pub async fn get_file_diff(
         // a `sha^..sha` probe whose errors we'd have to swallow to reach the
         // root-commit fallback. `-M` matches the rename detection the commit
         // changed-files listing uses, so file list and file diff agree.
-        return run_git_safe(
+        return run_git_safe_background(
             &["diff-tree", "--root", "-M", "-p", sha],
             &[],
             &paths,
@@ -167,7 +170,7 @@ pub async fn get_file_diff(
         let branch = target_branch.unwrap_or("main");
         guard_positionals(&[branch])?;
         let range = format!("{branch}...HEAD");
-        return run_git_safe(&["diff", &range], &[], &paths, worktree_path).await;
+        return run_git_safe_background(&["diff", &range], &[], &paths, worktree_path).await;
     }
 
     // Worktree / uncommitted mode: `diff HEAD` folds staged + unstaged changes
@@ -177,13 +180,13 @@ pub async fn get_file_diff(
     // A tracked file always appears here; only an empty diff can be an untracked
     // file (absent from HEAD), so we pay the extra `ls-files` probe + synthesis
     // in that case alone rather than for every tracked file.
-    let tracked = run_git_safe(&["diff", "HEAD"], &[], &paths, worktree_path).await?;
+    let tracked = run_git_safe_background(&["diff", "HEAD"], &[], &paths, worktree_path).await?;
     if !tracked.is_empty() {
         return Ok(tracked);
     }
 
     let new_only = [file_path];
-    let untracked = run_git_safe(
+    let untracked = run_git_safe_background(
         &["ls-files", "--others", "--exclude-standard"],
         &[],
         &new_only,
@@ -213,7 +216,7 @@ pub async fn get_file_diff(
 pub async fn get_commit_diff(worktree_path: &Path, commit_sha: &str) -> Result<String, AppError> {
     crate::shared::git_cli::guard_positionals(&[commit_sha])?;
     let diff_arg = format!("{commit_sha}^..{commit_sha}");
-    match run_git_safe_refs(&["diff"], &[], &[&diff_arg], worktree_path).await {
+    match run_git_safe_refs_background(&["diff"], &[], &[&diff_arg], worktree_path).await {
         Ok(stdout) => Ok(stdout),
         Err(_) => {
             // Fallback for root commits

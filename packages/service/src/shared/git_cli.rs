@@ -3,6 +3,13 @@ use tokio::process::Command;
 
 use crate::error::AppError;
 
+mod background;
+
+pub use background::{
+    git_ref_resolves_background, run_git_background, run_git_safe_background,
+    run_git_safe_refs_background,
+};
+
 /// Run a git command with the given arguments in the specified working directory.
 ///
 /// Prefer `run_git_safe` / `run_git_safe_refs` for new code — those validate
@@ -72,73 +79,6 @@ pub async fn run_git_with_env(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Run a **periodic / read-style** git command with `--no-optional-locks`
-/// so it can't race a concurrent user-initiated mutation (`git rebase`,
-/// `git commit`, etc.) for `.git/index.lock`.
-///
-/// Default-on `git status` (and `git diff`) refresh the index stat cache,
-/// briefly creating `.git/index.lock` to do so. When the watcher fires
-/// `git status` in response to fs events during a user-initiated
-/// `git rebase`, both processes race for the same lock file and rebase
-/// aborts with `Unable to create '...index.lock': File exists`.
-///
-/// **Use this for:** `status`, `diff`, `ls-files`, `show`, `rev-list`,
-/// `config --get`, and any other read issued from a polling / observational
-/// code path (the worktree watcher, UI cleanliness probes, post-commit
-/// snapshot refreshes).
-///
-/// **Do not use this for** state-changing commands (`commit`, `push`,
-/// `rebase`, `cherry-pick`, `reset`, `merge`, `fetch`, `stash`, …) — those
-/// keep default git semantics via [`run_git`] / [`run_git_capture`] so any
-/// required locks behave as users expect.
-///
-/// `--no-optional-locks` is the documented escape hatch (equivalent to
-/// setting `GIT_OPTIONAL_LOCKS=0` for that one invocation) — the same
-/// flag VS Code, JetBrains, GitHub Desktop, and lazygit use for this
-/// exact problem.
-pub async fn run_git_background(args: &[&str], cwd: &Path) -> Result<String, AppError> {
-    run_raw(&prepend_no_optional_locks(args), cwd).await
-}
-
-/// Resolve a ref without optional locks while distinguishing an absent ref
-/// (`rev-parse --verify --quiet` exits 1 with no stderr) from an actual Git or
-/// spawn failure. This avoids silently treating repository errors as normal
-/// unborn/missing-ref state.
-pub async fn git_ref_resolves_background(reference: &str, cwd: &Path) -> Result<bool, AppError> {
-    validate_positionals(&[reference])?;
-    let args = prepend_no_optional_locks(&["rev-parse", "--verify", "--quiet", reference]);
-    let output = Command::new("git")
-        .args(&args)
-        .current_dir(cwd)
-        .output()
-        .await
-        .map_err(|e| AppError::GitCommandError(format!("Failed to spawn git: {e}")))?;
-    if output.status.success() {
-        return Ok(true);
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if output.status.code() == Some(1) && stderr.trim().is_empty() {
-        return Ok(false);
-    }
-    Err(AppError::GitCommandError(format!(
-        "git {} failed: {}",
-        args.join(" "),
-        sanitize_git_stderr(stderr.trim())
-    )))
-}
-
-/// Build the arg list `["--no-optional-locks", ...args]`. Extracted from
-/// [`run_git_background`] so the prefix injection can be unit-tested
-/// without spinning up a `git` child — the integration race the wrapper
-/// guards against is multi-process and timing-dependent, so we test the
-/// thing we own (the args we hand to git) directly.
-fn prepend_no_optional_locks<'a>(args: &[&'a str]) -> Vec<&'a str> {
-    let mut prefixed: Vec<&'a str> = Vec::with_capacity(args.len() + 1);
-    prefixed.push("--no-optional-locks");
-    prefixed.extend_from_slice(args);
-    prefixed
-}
-
 /// Run a git command that operates on paths. Validates that no positional
 /// starts with `-` (which would be parsed as a flag) and inserts `--` between
 /// flags and positionals so the tokens cannot be reinterpreted as options.
@@ -154,12 +94,7 @@ pub async fn run_git_safe(
     cwd: &Path,
 ) -> Result<String, AppError> {
     validate_positionals(positionals)?;
-    let mut args: Vec<&str> =
-        Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len() + 1);
-    args.extend_from_slice(subcommand_args);
-    args.extend_from_slice(flags);
-    args.push("--");
-    args.extend_from_slice(positionals);
+    let args = safe_path_args(subcommand_args, flags, positionals);
     run_raw(&args, cwd).await
 }
 
@@ -176,11 +111,7 @@ pub async fn run_git_safe_refs(
     cwd: &Path,
 ) -> Result<String, AppError> {
     validate_positionals(positionals)?;
-    let mut args: Vec<&str> =
-        Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len());
-    args.extend_from_slice(subcommand_args);
-    args.extend_from_slice(flags);
-    args.extend_from_slice(positionals);
+    let args = safe_ref_args(subcommand_args, flags, positionals);
     run_raw(&args, cwd).await
 }
 
@@ -192,12 +123,33 @@ pub async fn run_git_safe_refs_bytes(
     cwd: &Path,
 ) -> Result<Vec<u8>, AppError> {
     validate_positionals(positionals)?;
-    let mut args: Vec<&str> =
-        Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len());
+    let args = safe_ref_args(subcommand_args, flags, positionals);
+    run_raw_bytes(&args, cwd).await
+}
+
+fn safe_path_args<'a>(
+    subcommand_args: &[&'a str],
+    flags: &[&'a str],
+    positionals: &[&'a str],
+) -> Vec<&'a str> {
+    let mut args = Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len() + 1);
+    args.extend_from_slice(subcommand_args);
+    args.extend_from_slice(flags);
+    args.push("--");
+    args.extend_from_slice(positionals);
+    args
+}
+
+fn safe_ref_args<'a>(
+    subcommand_args: &[&'a str],
+    flags: &[&'a str],
+    positionals: &[&'a str],
+) -> Vec<&'a str> {
+    let mut args = Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len());
     args.extend_from_slice(subcommand_args);
     args.extend_from_slice(flags);
     args.extend_from_slice(positionals);
-    run_raw_bytes(&args, cwd).await
+    args
 }
 
 fn validate_positionals(positionals: &[&str]) -> Result<(), AppError> {
@@ -363,64 +315,6 @@ mod tests {
         assert!(out.starts_with("error in ~/"), "{out}");
         assert!(!out.contains(home_str.as_ref()), "{out}");
     }
-
-    /// Regression test for the `git rebase` vs. watcher `index.lock`
-    /// race: `run_git_background` must hand git `--no-optional-locks` as
-    /// the very first arg so the read skips the optional stat-cache
-    /// refresh (and the brief `.git/index.lock` create/delete that goes
-    /// with it).
-    ///
-    /// The actual race is a multi-process timing window between two
-    /// concurrent git invocations and isn't reliably reproducible in a
-    /// single-process unit test (modern git silently skips the optional
-    /// refresh if it can't get the lock, so a held-lock fixture won't
-    /// fail the way the real race does). We test the thing we own — the
-    /// arg list — directly. The integration behavior is covered by the
-    /// manual repro in PR #28.
-    #[test]
-    fn run_git_background_prepends_no_optional_locks() {
-        let prefixed = prepend_no_optional_locks(&["status", "--porcelain=v2", "-b"]);
-        assert_eq!(
-            prefixed,
-            vec!["--no-optional-locks", "status", "--porcelain=v2", "-b"],
-            "background-read wrapper must inject the top-level flag before the subcommand"
-        );
-    }
-
-    #[test]
-    fn prepend_no_optional_locks_preserves_empty_arg_list() {
-        // Defensive: nothing in the codebase calls `run_git_background`
-        // with an empty arg slice today, but if it ever does the result
-        // must still be a well-formed top-level git invocation.
-        let prefixed = prepend_no_optional_locks(&[]);
-        assert_eq!(prefixed, vec!["--no-optional-locks"]);
-    }
-
-    #[tokio::test]
-    async fn ref_probe_distinguishes_missing_ref_from_repository_error() {
-        let repo = tempfile::tempdir().unwrap();
-        let status = std::process::Command::new("git")
-            .args(["init", "-q"])
-            .current_dir(repo.path())
-            .status()
-            .unwrap();
-        assert!(status.success());
-        assert!(!git_ref_resolves_background("HEAD", repo.path())
-            .await
-            .unwrap());
-
-        let not_repo = tempfile::tempdir().unwrap();
-        let error = git_ref_resolves_background("HEAD", not_repo.path())
-            .await
-            .unwrap_err();
-        assert!(matches!(error, AppError::GitCommandError(_)), "{error:?}");
-    }
-
-    // End-to-end coverage (real git binary, real repo) for the
-    // background-read path is provided by existing `compute_status_*`
-    // tests in `domain::git::git_status::compute` — those exercise
-    // `run_git_background` transitively after this migration. Keeping a
-    // duplicate smoke test here just to spawn git would add no signal.
 
     #[tokio::test]
     async fn run_git_safe_accepts_benign_positional() {
