@@ -41,6 +41,8 @@ export interface CadencrFileTreeHookOptions {
   composition?: FileTreeOptions["composition"];
   density?: FileTreeOptions["density"];
   stickyFolders?: boolean;
+  /** Render every file as a flat basename row while retaining its real path identity. */
+  filesOnly?: boolean;
   onSelectionChange?: FileTreeOptions["onSelectionChange"];
   renderRowDecoration?: FileTreeOptions["renderRowDecoration"];
   /** Forces Pierre to repaint rows when decoration-only state changes. */
@@ -88,6 +90,7 @@ export function useCadencrFileTree({
   composition,
   density,
   stickyFolders,
+  filesOnly = false,
   onSelectionChange,
   renderRowDecoration,
   rowDecorationVersion,
@@ -121,6 +124,7 @@ export function useCadencrFileTree({
       composition,
       density,
       stickyFolders,
+      filesOnly,
       onSelectionChange: (selectedPaths) => onSelectionChangeRef.current?.(selectedPaths),
       renderRowDecoration: (context) => renderRowDecorationRef.current?.(context) ?? null,
       icons: effectiveIconSet,
@@ -158,6 +162,10 @@ export function useCadencrFileTree({
   useEffect(() => {
     model.setIcons(effectiveIconSet);
   }, [model, effectiveIconSet]);
+
+  useEffect(() => {
+    model.setFilesOnly(filesOnly);
+  }, [filesOnly, model]);
 
   useGitignoredDimming(model, ignoredPathPrefixes);
 

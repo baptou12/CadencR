@@ -3,7 +3,8 @@ import { toast } from "sonner";
 import { useGetWorkspaceSetting } from "@/api/generated";
 import { useSetWorkspaceSettingWithCache } from "@/hooks/useSetWorkspaceSettingWithCache";
 import { apiErrorMessage } from "@/lib/api-errors";
-import type { GitDiffTreeDisplayMode } from "./gitDiffTreePresentation";
+
+export type GitDiffTreeDisplayMode = "tree" | "filenames";
 
 export const GIT_DIFF_TREE_DISPLAY_MODE_KEY = "git_diff_tree_display_mode";
 

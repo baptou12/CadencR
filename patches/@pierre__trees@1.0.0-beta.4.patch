@@ -1,13 +1,311 @@
+diff --git a/dist/model/FileTreeController.d.ts b/dist/model/FileTreeController.d.ts
+index 572676d400ea47de63f1529a758fdf932c9afdf1..a7765a1b6776ab72be1777186e2a9a23299d6da9 100644
+--- a/dist/model/FileTreeController.d.ts
++++ b/dist/model/FileTreeController.d.ts
+@@ -32,6 +32,7 @@ declare class FileTreeController implements FileTreeMutationHandle, FileTreeSear
+   getSelectedPaths(): readonly string[];
+   getSelectionVersion(): number;
+   getVisibleCount(): number;
++  getVisiblePaths(): readonly string[];
+   getVisibleRows(start: number, end: number): readonly FileTreeVisibleRow[];
+   getStickyRowCandidates(scrollTop: number, itemHeight: number): readonly FileTreeStickyRowCandidate[] | null;
+   /**
+@@ -88,6 +89,7 @@ declare class FileTreeController implements FileTreeMutationHandle, FileTreeSear
+    * coarse whole-tree reset path rather than a localized mutation fast path.
+    */
+   resetPaths(paths: readonly string[], options?: FileTreeResetOptions): void;
++  setFilesOnly(filesOnly: boolean): void;
+ }
+ //#endregion
+ export { FILE_TREE_RENAME_VIEW, FileTreeController };
 diff --git a/dist/model/FileTreeController.js b/dist/model/FileTreeController.js
-index 37c5d1ffedd5aff0258dec41b1b5cedb240aa3a6..f76e28c9f6f10b415c1dac5866c50f3e12476254 100644
+index 37c5d1ffedd5aff0258dec41b1b5cedb240aa3a6..7baf6a7be0e03b75451866cb1d8a260b3d0a8c32 100644
 --- a/dist/model/FileTreeController.js
 +++ b/dist/model/FileTreeController.js
-@@ -940,0 +941,8 @@ var FileTreeController = class {
+@@ -68,6 +68,8 @@ var FileTreeController = class {
+ 	#ancestorPathsByIndex = /* @__PURE__ */ new Map();
+ 	#focusedIndex = -1;
+ 	#focusedPath = null;
++	#filesOnly = false;
++	#filesOnlyCollapsedPaths = [];
+ 	#hasFullProjection = false;
+ 	#getParentIndexForVisibleRow = (_index) => -1;
+ 	#itemHandles = /* @__PURE__ */ new Map();
+@@ -107,7 +109,7 @@ var FileTreeController = class {
+ 	#visibleCount = 0;
+ 	#unsubscribe;
+ 	constructor(options) {
+-		const { dragAndDrop, fileTreeSearchMode, initialSearchQuery, initialSelectedPaths, renaming, onSearchChange, paths, preparedInput,...baseOptions } = options;
++		const { dragAndDrop, fileTreeSearchMode, filesOnly, initialSearchQuery, initialSelectedPaths, renaming, onSearchChange, paths, preparedInput,...baseOptions } = options;
+ 		const resolvedInput = resolveFileTreeInput({
+ 			paths,
+ 			preparedInput
+@@ -121,8 +123,13 @@ var FileTreeController = class {
+ 			this.#onRename = renaming.onRename;
+ 		}
+ 		this.#onSearchChange = onSearchChange;
++		this.#filesOnly = filesOnly === true;
+ 		this.#searchMode = fileTreeSearchMode ?? "hide-non-matches";
+ 		this.#store = this.#createStore(resolvedInput.paths, resolvedInput.preparedInput);
++		if (this.#filesOnly) {
++			this.#filesOnlyCollapsedPaths = this.#getAllKnownDirectoryPaths().filter((path) => !this.#store.isExpanded(path));
++			this.#setExpandedPaths(new Set(this.#getAllKnownDirectoryPaths()));
++		}
+ 		const resolvedInitialSelectedPaths = initialSelectedPaths?.map((path) => this.#resolveSelectionPath(path)).filter((resolved) => resolved != null) ?? [];
+ 		const initialFocusedPath = resolvedInitialSelectedPaths.at(-1) ?? null;
+ 		if (resolvedInitialSelectedPaths.length > 0) {
+@@ -237,6 +244,10 @@ var FileTreeController = class {
+ 	getVisibleCount() {
+ 		return this.#visibleCount;
+ 	}
++	getVisiblePaths() {
++		if (!this.#hasFullProjection && this.#searchVisibleIndices == null) this.#ensureFullProjection();
++		return [...this.#getCurrentVisiblePaths()];
++	}
+ 	getVisibleRows(start, end) {
+ 		if (end < start || this.#visibleCount === 0) return [];
+ 		const boundedStart = Math.max(0, start);
+@@ -298,7 +309,7 @@ var FileTreeController = class {
+ 		});
+ 	}
+ 	getStickyRowCandidates(scrollTop, itemHeight) {
+-		if (this.#searchVisibleIndices != null) return null;
++		if (this.#filesOnly || this.#searchVisibleIndices != null) return null;
+ 		if (this.#visibleCount === 0 || scrollTop <= 0 || itemHeight <= 0) return [];
+ 		const stickyRows = [];
+ 		for (let slotDepth = 0; slotDepth < this.#visibleCount; slotDepth += 1) {
+@@ -678,6 +689,7 @@ var FileTreeController = class {
+ 		this.#store = nextStore;
+ 		this.#itemHandles.clear();
+ 		this.#invalidateKnownPathCaches();
++		if (this.#filesOnly) this.#setExpandedPaths(new Set(this.#getAllKnownDirectoryPaths()));
+ 		const nextSelectedPaths = previousSelectedPaths.map((selectedPath) => nextStore.getPathInfo(selectedPath)?.path ?? null).filter((resolved) => resolved != null);
+ 		const selectionChanged = !arePathSetsEqual(this.#selectedPaths, nextSelectedPaths);
+ 		this.#selectedPaths = new Set(nextSelectedPaths);
+@@ -701,6 +713,23 @@ var FileTreeController = class {
+ 			visibleCountDelta: this.#visibleCount - previousVisibleCount
+ 		});
+ 	}
++	setFilesOnly(filesOnly) {
++		const nextFilesOnly = filesOnly === true;
++		if (this.#filesOnly === nextFilesOnly) return;
++		if (nextFilesOnly) {
++			this.#filesOnlyCollapsedPaths = this.#getAllKnownDirectoryPaths().filter((path) => !this.#store.isExpanded(path));
++			this.#setExpandedPaths(new Set(this.#getAllKnownDirectoryPaths()));
++		} else {
++			const expandedPaths = new Set(this.#getAllKnownDirectoryPaths());
++			for (const path of this.#filesOnlyCollapsedPaths) expandedPaths.delete(path);
++			this.#setExpandedPaths(expandedPaths);
++			this.#filesOnlyCollapsedPaths = [];
++		}
++		this.#filesOnly = nextFilesOnly;
++		if (this.#searchValue != null && this.#searchValue.length > 0) this.#refreshActiveSearchState();
++		this.#rebuildVisibleProjection(this.#focusedPath, true);
++		this.#emit();
++	}
+ 	#findNearestVisibleSiblingPath(path) {
+ 		this.#ensureFullProjection();
+ 		const parentPath = getImmediateParentPath(path);
+@@ -744,9 +773,9 @@ var FileTreeController = class {
+ 	}
+ 	#createVisibleRow(row, visibleIndex, projectionIndex, projection) {
+ 		return {
+-			ancestorPaths: projection.ancestorPaths,
+-			depth: row.depth,
+-			flattenedSegments: row.flattenedSegments?.map((segment) => ({
++			ancestorPaths: this.#filesOnly ? [] : projection.ancestorPaths,
++			depth: this.#filesOnly ? 0 : row.depth,
++			flattenedSegments: this.#filesOnly ? void 0 : row.flattenedSegments?.map((segment) => ({
+ 				isTerminal: segment.isTerminal,
+ 				name: segment.name,
+ 				path: segment.path
+@@ -758,11 +787,11 @@ var FileTreeController = class {
+ 			isFocused: projection.path === this.#focusedPath,
+ 			isSelected: this.#selectedPaths.has(projection.path),
+ 			kind: row.kind,
+-			level: row.depth,
++			level: this.#filesOnly ? 0 : row.depth,
+ 			name: row.name,
+ 			path: projection.path,
+-			posInSet: projection.posInSet ?? this.#projectionPosInSetByIndex[projectionIndex] ?? 0,
+-			setSize: projection.setSize ?? this.#projectionSetSizeByIndex[projectionIndex] ?? 0
++			posInSet: this.#filesOnly ? visibleIndex + 1 : projection.posInSet ?? this.#projectionPosInSetByIndex[projectionIndex] ?? 0,
++			setSize: this.#filesOnly ? this.#visibleCount : projection.setSize ?? this.#projectionSetSizeByIndex[projectionIndex] ?? 0
+ 		};
+ 	}
+ 	#createVisibleRowFromContext(context) {
+@@ -911,6 +940,10 @@ var FileTreeController = class {
+ 		return this.#getAllKnownDirectoryPaths().filter((path) => this.#store.isExpanded(path));
+ 	}
+ 	#restoreSearchExpandedPaths(keepSelectedOpen) {
++		if (this.#filesOnly) {
++			this.#setExpandedPaths(new Set(this.#getAllKnownDirectoryPaths()));
++			return;
++		}
+ 		const expandedPaths = new Set(this.#searchPreviousExpandedPaths ?? []);
+ 		if (keepSelectedOpen) for (const selectedPath of this.#selectedPaths) for (const ancestorPath of getAncestorDirectoryPaths(selectedPath)) expandedPaths.add(ancestorPath);
+ 		this.#setExpandedPaths(expandedPaths);
+@@ -931,34 +964,51 @@ var FileTreeController = class {
+ 	#syncSearchVisibilityState() {
+ 		if (this.#searchValue == null || this.#searchValue.length === 0) {
+ 			this.#searchMatchingPaths = [];
+-			this.#searchVisibleIndices = null;
+-			this.#searchVisiblePaths = null;
+-			this.#searchVisibleIndexByPath = null;
+-			this.#visibleCount = this.#storeVisibleCount;
++			if (this.#filesOnly) this.#setFilteredVisiblePaths((path) => !path.endsWith("/"));
++			else {
++				this.#searchVisibleIndices = null;
++				this.#searchVisiblePaths = null;
++				this.#searchVisibleIndexByPath = null;
++				this.#visibleCount = this.#storeVisibleCount;
++			}
++			return;
++		}
 +		if (this.#searchMode === "hide-non-matches" && this.#searchMatchPathSet.size === 0) {
 +			this.#searchMatchingPaths = [];
 +			this.#searchVisibleIndices = [];
 +			this.#searchVisiblePaths = [];
 +			this.#searchVisibleIndexByPath = /* @__PURE__ */ new Map();
 +			this.#visibleCount = 0;
-+			return;
-+		}
+ 			return;
+ 		}
+ 		const currentVisiblePaths = this.#projectionPaths;
+ 		this.#searchMatchingPaths = currentVisiblePaths.filter((path) => this.#searchMatchPathSet.has(path));
+ 		if (this.#searchMode !== "hide-non-matches" || this.#searchMatchPathSet.size === 0) {
++			if (this.#filesOnly) {
++				this.#setFilteredVisiblePaths((path) => !path.endsWith("/"));
++				return;
++			}
+ 			this.#searchVisibleIndices = null;
+ 			this.#searchVisiblePaths = null;
+ 			this.#searchVisibleIndexByPath = null;
+ 			this.#visibleCount = this.#storeVisibleCount;
+ 			return;
+ 		}
+-		const visibleIndices = [];
+-		const visiblePaths = [];
+-		const visibleIndexByPath = /* @__PURE__ */ new Map();
+-		for (const [index, path] of currentVisiblePaths.entries()) {
+-			if (this.#searchVisiblePathSet?.has(path) !== true) continue;
+-			visibleIndexByPath.set(path, visiblePaths.length);
+-			visibleIndices.push(index);
+-			visiblePaths.push(path);
+-		}
+-		this.#searchVisibleIndices = visibleIndices;
+-		this.#searchVisiblePaths = visiblePaths;
+-		this.#searchVisibleIndexByPath = visibleIndexByPath;
+-		this.#visibleCount = visiblePaths.length;
++		this.#setFilteredVisiblePaths((path) => this.#searchVisiblePathSet?.has(path) === true && (!this.#filesOnly || !path.endsWith("/")));
++		if (this.#filesOnly) this.#searchMatchingPaths = this.#searchVisiblePaths?.filter((path) => this.#searchMatchPathSet.has(path)) ?? [];
++	}
++	#setFilteredVisiblePaths(predicate) {
++		const entries = [];
++		for (const [index, path] of this.#projectionPaths.entries()) if (predicate(path)) entries.push({ index, path });
++		if (this.#filesOnly) entries.sort((left, right) => {
++			const leftName = left.path.slice(left.path.lastIndexOf("/") + 1).toLocaleLowerCase();
++			const rightName = right.path.slice(right.path.lastIndexOf("/") + 1).toLocaleLowerCase();
++			return leftName.localeCompare(rightName) || left.path.localeCompare(right.path);
++		});
++		this.#searchVisibleIndices = entries.map((entry) => entry.index);
++		this.#searchVisiblePaths = entries.map((entry) => entry.path);
++		this.#searchVisibleIndexByPath = new Map(entries.map((entry, index) => [entry.path, index]));
++		this.#visibleCount = entries.length;
+ 	}
+ 	#getCurrentVisiblePaths() {
+ 		return this.#searchVisiblePaths ?? this.#projectionPaths;
+@@ -971,8 +1021,7 @@ var FileTreeController = class {
+ 		return this.#searchVisibleIndices?.[index] ?? index;
+ 	}
+ 	#getVisibleIndexByPath(path) {
+-		const searchIndex = this.#searchVisibleIndexByPath?.get(path);
+-		if (searchIndex != null) return searchIndex;
++		if (this.#searchVisibleIndexByPath != null) return this.#searchVisibleIndexByPath.get(path) ?? -1;
+ 		return this.#store.getVisibleIndex(path) ?? -1;
+ 	}
+ 	#focusRelativeSearchMatch(direction) {
+@@ -1021,15 +1070,17 @@ var FileTreeController = class {
+ 		const matchingPathSet = /* @__PURE__ */ new Set();
+ 		let focusCandidate = null;
+ 		for (let index = 0; index < listedPaths.length; index += 1) {
+-			if (!listedPathsLowerCase[index].includes(searchValue)) continue;
+ 			const path = listedPaths[index];
++			if (this.#filesOnly && path.endsWith("/")) continue;
++			const searchPath = this.#filesOnly ? path.slice(path.lastIndexOf("/") + 1).toLocaleLowerCase() : listedPathsLowerCase[index];
++			if (!searchPath.includes(searchValue)) continue;
+ 			matchingPaths.push(path);
+ 			matchingPathSet.add(path);
+ 			focusCandidate ??= path;
+ 		}
+ 		const knownDirectoryPaths = this.#getAllKnownDirectoryPaths();
+ 		const knownDirectoryPathsLowerCase = this.#getAllKnownDirectoryPathsLowerCase();
+-		for (let index = 0; index < knownDirectoryPaths.length; index += 1) {
++		for (let index = 0; !this.#filesOnly && index < knownDirectoryPaths.length; index += 1) {
+ 			if (!knownDirectoryPathsLowerCase[index].includes(searchValue)) continue;
+ 			const path = knownDirectoryPaths[index];
+ 			if (matchingPathSet.has(path)) continue;
+@@ -1049,7 +1100,7 @@ var FileTreeController = class {
+ 				if (searchVisiblePathSet != null) searchVisiblePathSet.add(ancestorPath);
+ 			}
+ 		}
+-		this.#setExpandedPaths(expandedPaths);
++		this.#setExpandedPaths(this.#filesOnly ? new Set(this.#getAllKnownDirectoryPaths()) : expandedPaths);
+ 		return focusCandidate ?? this.#focusedPath;
+ 	}
+ 	#emit() {
+diff --git a/dist/model/publicTypes.d.ts b/dist/model/publicTypes.d.ts
+index 84a7e2d14f67c1aad8230f19a3426ab7403f378e..3127b7bc43ec4769e0775974c26879bfa765df39 100644
+--- a/dist/model/publicTypes.d.ts
++++ b/dist/model/publicTypes.d.ts
+@@ -54,6 +54,7 @@ type FileTreeInputOptions = {
+ type FileTreeControllerBehaviorOptions = FileTreeStoreOptions & {
+   dragAndDrop?: boolean | FileTreeDragAndDropConfig;
+   fileTreeSearchMode?: FileTreeSearchMode;
++  filesOnly?: boolean;
+   initialSearchQuery?: string | null;
+   initialSelectedPaths?: readonly FileTreePublicId[];
+   onSearchChange?: FileTreeSearchChangeListener;
+diff --git a/dist/render/FileTree.d.ts b/dist/render/FileTree.d.ts
+index 353bea857f295d33456213494ffb864565284768..fa722c22972600f65678e71ece4b3c880a08a550 100644
+--- a/dist/render/FileTree.d.ts
++++ b/dist/render/FileTree.d.ts
+@@ -13,6 +13,7 @@ declare class FileTree implements FileTreeMutationHandle, FileTreeSearchSessionH
+   getFocusedItem(): FileTreeItemHandle | null;
+   getFocusedPath(): string | null;
+   getSelectedPaths(): readonly string[];
++  getVisiblePaths(): readonly string[];
+   getComposition(): FileTreeCompositionOptions | undefined;
+   getItemHeight(): number;
+   getDensityFactor(): number;
+@@ -37,6 +38,7 @@ declare class FileTree implements FileTreeMutationHandle, FileTreeSearchSessionH
+   }): boolean;
+   remove(path: string, options?: FileTreeRemoveOptions): void;
+   resetPaths(paths: readonly string[], options?: FileTreeResetOptions): void;
++  setFilesOnly(filesOnly: boolean): void;
+   setComposition(composition?: FileTreeCompositionOptions): void;
+   setGitStatus(gitStatus?: FileTreeOptions['gitStatus']): void;
+   setIcons(icons?: FileTreeOptions['icons']): void;
+diff --git a/dist/render/FileTree.js b/dist/render/FileTree.js
+index 6db15e51b833192f79b71a15febe1612a4c185d0..b1838ea7e02ecd716cfd1047402c9129f649b0b6 100644
+--- a/dist/render/FileTree.js
++++ b/dist/render/FileTree.js
+@@ -150,6 +150,9 @@ var FileTree = class {
+ 	getSelectedPaths() {
+ 		return this.#controller.getSelectedPaths();
+ 	}
++	getVisiblePaths() {
++		return this.#controller.getVisiblePaths();
++	}
+ 	getComposition() {
+ 		return this.#composition;
+ 	}
+@@ -223,6 +226,9 @@ var FileTree = class {
+ 	resetPaths(paths, options) {
+ 		this.#controller.resetPaths(paths, options);
+ 	}
++	setFilesOnly(filesOnly) {
++		this.#controller.setFilesOnly(filesOnly);
++	}
+ 	setComposition(composition) {
+ 		this.#composition = composition;
+ 		const mountedTree = this.#getMountedTreeElements();

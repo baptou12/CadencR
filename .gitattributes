@@ -9,3 +9,7 @@
 *.png binary
 *.ico binary
 *.icns binary
+
+# Patch payloads include their own diff markers before upstream indentation;
+# do not treat those markers as source-code whitespace.
+patches/@pierre__trees@1.0.0-beta.4.patch -whitespace

@@ -69,10 +69,10 @@ describe("useGitDiffFileTreeModel display mode", () => {
     act(() => result.current.setDisplayMode("filenames"));
     const flatFocusedPath = result.current.model.getFocusedPath();
     expect(result.current.displayMode).toBe("filenames");
-    expect(flatFocusedPath).not.toContain("/");
+    expect(flatFocusedPath).toBe("src/nested/a.ts");
     expect(result.current.resolveFilePath(flatFocusedPath ?? "")).toBe("src/nested/a.ts");
     expect(result.current.activePath).toBe("src/nested/a.ts");
-    expect(result.current.model.getItem("src/")).toBeNull();
+    expect(result.current.model.getVisiblePaths()).toEqual(["src/nested/a.ts", "tests/a.ts"]);
 
     rerender({ currentFiles: [...files, changedFile("new/fresh.ts")] });
 
@@ -107,15 +107,82 @@ describe("useGitDiffFileTreeModel display mode", () => {
     });
 
     expect(movedPath).toBe("a/zeta.ts");
-    expect(result.current.model.getFocusedPath()).toBe("zeta.ts");
+    expect(result.current.model.getFocusedPath()).toBe("a/zeta.ts");
     expect(result.current.activePath).toBe("a/zeta.ts");
 
     act(() => {
       movedPath = result.current.navigation.moveSelection(-1);
     });
     expect(movedPath).toBe("z/alpha.ts");
-    expect(result.current.model.getFocusedPath()).toBe("alpha.ts");
+    expect(result.current.model.getFocusedPath()).toBe("z/alpha.ts");
     expect(result.current.activePath).toBe("z/alpha.ts");
+    unmount();
+  });
+
+  it("navigates a large virtualized list through the copy-safe visible-path seam", () => {
+    const files = Array.from({ length: 2_000 }, (_, index) =>
+      changedFile(`src/file-${String(index).padStart(4, "0")}.ts`),
+    );
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({
+        files,
+        viewedFiles: new Set(),
+        indexActions,
+        onSelectionChange: vi.fn(),
+      }),
+    );
+
+    act(() => result.current.setDisplayMode("filenames"));
+    expect(result.current.model.getFileTreeContainer()).toBeUndefined();
+    const visiblePaths = result.current.model.getVisiblePaths();
+    expect(visiblePaths).toHaveLength(2_000);
+    (visiblePaths as string[]).pop();
+    expect(result.current.model.getVisiblePaths()).toHaveLength(2_000);
+
+    act(() => result.current.navigation.selectPath("src/file-0000.ts"));
+    const getVisiblePaths = vi.spyOn(result.current.model, "getVisiblePaths");
+    let movedPath: string | null = null;
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(1);
+    });
+
+    expect(getVisiblePaths).toHaveBeenCalledOnce();
+    expect(movedPath).toBe("src/file-0001.ts");
+    expect(result.current.model.getFileTreeContainer()).toBeUndefined();
+    getVisiblePaths.mockRestore();
+    unmount();
+  });
+
+  it("renders duplicate basenames as flat labels while preserving literal row identities", async () => {
+    const files = [changedFile("src/index.ts"), changedFile("tests/index.ts")];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({
+        files,
+        viewedFiles: new Set(),
+        indexActions,
+        onSelectionChange: vi.fn(),
+      }),
+    );
+    act(() => result.current.setDisplayMode("filenames"));
+    const tree = render(<CadencrFileTree model={result.current.model} />);
+    const shadowRoot = result.current.model.getFileTreeContainer()?.shadowRoot;
+
+    await waitFor(() =>
+      expect(shadowRoot?.querySelectorAll('[data-item-type="file"]')).toHaveLength(2),
+    );
+    expect(shadowRoot?.querySelector('[data-item-path="src/index.ts"]')).toHaveAttribute(
+      "aria-label",
+      "index.ts",
+    );
+    expect(shadowRoot?.querySelector('[data-item-path="tests/index.ts"]')).toHaveAttribute(
+      "aria-label",
+      "index.ts",
+    );
+    expect(shadowRoot?.querySelector('[data-item-type="folder"]')).toBeNull();
+    expect(result.current.resolveFilePath("src/index.ts")).toBe("src/index.ts");
+    expect(result.current.resolveFilePath("index.ts")).toBeNull();
+
+    tree.unmount();
     unmount();
   });
 

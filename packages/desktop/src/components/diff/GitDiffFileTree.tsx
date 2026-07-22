@@ -22,7 +22,7 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Button } from "@/components/ui/button";
 import { copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
-import type { GitDiffTreeDisplayMode } from "./gitDiffTreePresentation";
+import type { GitDiffTreeDisplayMode } from "./useGitDiffTreeDisplaySetting";
 import { getGitFileActionAvailability, type GitFileIndexActions } from "./useGitFileIndexActions";
 import { isUnavailableDeleteConflict, resolvedStageState } from "./useGitDiffFileTreeModel";
 import { openGitFileInEditor } from "./gitFileEditorHandoff";

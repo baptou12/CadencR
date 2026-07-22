@@ -20,12 +20,10 @@ vi.mock("@/components/file-tree/CadencrFileTree", () => ({
 }));
 
 import { countUniqueConflicts, GitDiffFileTree, GitDiffTreeContextMenu } from "./GitDiffFileTree";
-import { buildGitDiffTreePresentation, buildGitDiffTreeShadowCss } from "./gitDiffTreePresentation";
 import {
   buildGitDiffTreePaths,
   buildGitDiffTreeStatus,
   gitDiffTreeDecoration,
-  statusFromChangedFile,
 } from "./useGitDiffFileTreeModel";
 
 function changedFile(overrides: Partial<ChangedFile> = {}): ChangedFile {
@@ -81,54 +79,6 @@ describe("Git diff Pierre inputs", () => {
       { path: "new.ts", status: "untracked" },
       { path: "renamed.ts", status: "renamed" },
     ]);
-  });
-
-  it("builds a flat, filename-only presentation without losing exact paths", () => {
-    const files = [
-      changedFile({ file: "src/index.ts" }),
-      changedFile({ file: "tests/index.ts", stage_state: FileStageState.staged }),
-    ];
-    const presentation = buildGitDiffTreePresentation({
-      files,
-      displayMode: "filenames",
-      statusFromFile: statusFromChangedFile,
-      hierarchicalPaths: buildGitDiffTreePaths(files),
-    });
-
-    expect(presentation.paths).toHaveLength(2);
-    expect(presentation.paths.every((path) => !path.includes("/"))).toBe(true);
-    expect(new Set(presentation.paths).size).toBe(2);
-    expect(presentation.labels.map(({ label }) => label)).toEqual(["index.ts", "index.ts"]);
-    for (const file of files) {
-      const treePath = presentation.treePathByFilePath.get(file.file);
-      expect(treePath).toBeDefined();
-      expect(presentation.filePathByTreePath.get(treePath ?? "")).toBe(file.file);
-    }
-    expect(presentation.gitStatus.map(({ path }) => path)).toEqual(presentation.paths);
-  });
-
-  it("uses plain basenames without generated CSS when filenames are unique", () => {
-    const files = [changedFile({ file: "src/a.ts" }), changedFile({ file: "tests/b.ts" })];
-    const presentation = buildGitDiffTreePresentation({
-      files,
-      displayMode: "filenames",
-      statusFromFile: statusFromChangedFile,
-      hierarchicalPaths: buildGitDiffTreePaths(files),
-    });
-
-    expect(presentation.paths).toEqual(["a.ts", "b.ts"]);
-    expect(presentation.labels).toEqual([]);
-  });
-
-  it("uses compact horizontal spacing and separates search from the top edge", () => {
-    const css = buildGitDiffTreeShadowCss([{ treePath: "index--abc.ts", label: "index.ts" }]);
-
-    expect(css).toContain("--trees-padding-inline-override: 4px");
-    expect(css).toContain("--trees-item-padding-x-override: 4px");
-    expect(css).toContain("--trees-level-gap-override: 4px");
-    expect(css).toContain("[data-file-tree-search-container] {");
-    expect(css).toContain("padding-top: 4px");
-    expect(css).toContain('content: "index.ts"');
   });
 
   it("renders accessible stage, conflict, viewed, pending, and error decorations", () => {
