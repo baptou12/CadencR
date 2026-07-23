@@ -62,6 +62,7 @@ export function FeatureRenameForm({
       <Input
         autoFocus
         value={value}
+        onFocus={(event) => event.currentTarget.select()}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Feature name"
         maxLength={120}
