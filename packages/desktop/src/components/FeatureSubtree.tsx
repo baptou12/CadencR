@@ -6,16 +6,18 @@ import { Button } from "@/components/ui/button";
 
 /**
  * Renders an active-feature subtree as a compact, IDE-style indent tree:
- * a chevron twisty on parents and a single left guide rail per nesting
- * level. ProjectFeatureRow reserves the twisty gutter on every row so
- * siblings stay aligned whether or not they have children.
+ * a chevron twisty on parents and an explicit depth passed to each row.
+ * ProjectFeatureRow applies that depth inside the full-width hover target,
+ * so siblings stay aligned without guide rails.
  */
 export function FeatureSubtree({
   node,
   renderFeature,
+  depth = 0,
 }: {
   node: FeatureTreeNode;
-  renderFeature: (feature: Feature, hierarchyControl?: ReactNode) => ReactNode;
+  renderFeature: (feature: Feature, hierarchyControl?: ReactNode, depth?: number) => ReactNode;
+  depth?: number;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
@@ -38,16 +40,16 @@ export function FeatureSubtree({
 
   return (
     <>
-      {renderFeature(node.feature, control)}
+      {renderFeature(node.feature, control, depth)}
       {expanded && hasChildren && (
-        <div data-feature-subtree-children={node.feature.id} className="relative ml-2 pl-2">
-          {/* Guide rail centered under the parent chevron:
-              pl-3 (12px) + half of w-2 (4px) = 16px from the row edge.
-              ml-2 (8px) + left-2 (8px) = 16px. Shallow indent so deep chains
-              don't march off to the right. */}
-          <span aria-hidden className="absolute inset-y-0 left-2 w-px bg-sidebar-border" />
+        <div data-feature-subtree-children={node.feature.id}>
           {node.children.map((child) => (
-            <FeatureSubtree key={child.feature.id} node={child} renderFeature={renderFeature} />
+            <FeatureSubtree
+              key={child.feature.id}
+              node={child}
+              renderFeature={renderFeature}
+              depth={depth + 1}
+            />
           ))}
         </div>
       )}

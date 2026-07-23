@@ -65,7 +65,11 @@ interface ProjectFeatureRowProps {
   onCloseActivity: (featureId: number, shellCount: number, browserCount: number) => void;
   /** Expand/collapse twisty rendered by FeatureSubtree. */
   hierarchyControl?: ReactNode;
+  /** Zero-based nesting depth; indentation stays inside the full-width row. */
+  hierarchyDepth?: number;
 }
+
+const FEATURE_NESTING_INDENT_PX = 16;
 
 /**
  * Memoized: rendered N times per project in the sidebar. A parent update
@@ -98,6 +102,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   onTogglePin,
   onCloseActivity,
   hierarchyControl,
+  hierarchyDepth = 0,
 }: ProjectFeatureRowProps): ReactElement {
   const startLabelEditOnMenuCloseRef = useRef(false);
   // Live status is the canonical 3-value enum: per-session entries pushed
@@ -158,6 +163,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           data-nav-type="feature"
           data-nav-id={String(feature.id)}
           data-nav-project-id={String(projectId)}
+          data-feature-depth={hierarchyDepth}
           className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-0.5 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none transition-colors hover:bg-sidebar-accent ${
             isActive ? "bg-sidebar-accent" : ""
           } ${isArchived ? "opacity-50" : ""}`}
@@ -179,6 +185,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           <div
             data-feature-hierarchy-gutter
             className="flex h-3 w-2 shrink-0 items-center justify-center"
+            style={{ marginInlineStart: hierarchyDepth * FEATURE_NESTING_INDENT_PX }}
           >
             {hierarchyControl}
           </div>
