@@ -5,5 +5,6 @@ pub mod repository;
 pub mod routes;
 pub mod run_registry;
 pub mod service;
+pub mod title;
 mod worktree_settings;
 mod worktree_validation;

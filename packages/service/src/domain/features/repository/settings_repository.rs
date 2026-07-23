@@ -1,4 +1,4 @@
-use sqlx::{AssertSqlSafe, SqlitePool};
+use sqlx::{AssertSqlSafe, Executor, Sqlite, SqlitePool};
 
 use super::super::models::{FeatureModelSettings, FeatureProviderSettings, FeatureSetting};
 use crate::domain::agents::runtime::{runtime_setting_key, validate_agent_type};
@@ -73,15 +73,29 @@ pub async fn set_feature_setting(
             .execute(pool)
             .await?;
     } else {
-        sqlx::query(
-            "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(feature_id)
-        .bind(key)
-        .bind(value)
-        .execute(pool)
-        .await?;
+        upsert_feature_setting(pool, feature_id, key, value).await?;
     }
+    Ok(())
+}
+
+pub(crate) async fn upsert_feature_setting<'e, E>(
+    executor: E,
+    feature_id: i64,
+    key: &str,
+    value: &str,
+) -> Result<(), AppError>
+where
+    E: Executor<'e, Database = Sqlite>,
+{
+    sqlx::query(
+        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?)
+         ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(feature_id)
+    .bind(key)
+    .bind(value)
+    .execute(executor)
+    .await?;
     Ok(())
 }
 

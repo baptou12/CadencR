@@ -151,7 +151,7 @@ pub async fn update_feature_title_handler(
     Path(id): Path<i64>,
     Json(body): Json<UpdateTitleRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
-    service::update_title(&state.write_pool, id, &body.title).await?;
+    service::update_title_manually(&state.write_pool, id, &body.title).await?;
     broadcast_title_update(&state, id, &body.title).await;
     Ok(Json(SuccessResponse { success: true }))
 }

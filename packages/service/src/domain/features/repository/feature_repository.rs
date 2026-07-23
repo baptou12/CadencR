@@ -1,6 +1,7 @@
 use sqlx::{AssertSqlSafe, SqlitePool};
 
 use super::super::models::{Feature, FeatureStatus};
+use super::super::title::{GeneratedTitlePolicy, MANUAL_TITLE_SETTING_KEY};
 use crate::error::AppError;
 
 const FEATURE_COLUMNS: &str = r#"f.id, f.project_id, f.title, f.status,
@@ -122,13 +123,61 @@ pub async fn get_max_session_num(pool: &SqlitePool, project_id: i64) -> Result<i
     Ok(row.and_then(|r| r.0).unwrap_or(0))
 }
 
-pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(), AppError> {
+pub async fn update_title_manually(
+    pool: &SqlitePool,
+    id: i64,
+    title: &str,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
     sqlx::query("UPDATE features SET title = ? WHERE id = ?")
         .bind(title)
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+    super::settings_repository::upsert_feature_setting(
+        &mut *tx,
+        id,
+        MANUAL_TITLE_SETTING_KEY,
+        "true",
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
+}
+
+/// Persist a generated title. Initial automatic naming preserves a manual
+/// rename that raced the provider; an explicit user-requested auto-name may
+/// intentionally replace it.
+pub async fn update_generated_title(
+    pool: &SqlitePool,
+    id: i64,
+    title: &str,
+    policy: GeneratedTitlePolicy,
+) -> Result<bool, AppError> {
+    let result = match policy {
+        GeneratedTitlePolicy::PreserveManualTitle => {
+            sqlx::query(
+                "UPDATE features SET title = ? WHERE id = ?
+                 AND NOT EXISTS(
+                     SELECT 1 FROM feature_settings fs
+                     WHERE fs.feature_id = features.id AND fs.key = ? AND fs.value = 'true'
+                 )",
+            )
+            .bind(title)
+            .bind(id)
+            .bind(MANUAL_TITLE_SETTING_KEY)
+            .execute(pool)
+            .await?
+        }
+        GeneratedTitlePolicy::ReplaceManualTitle => {
+            sqlx::query("UPDATE features SET title = ? WHERE id = ?")
+                .bind(title)
+                .bind(id)
+                .execute(pool)
+                .await?
+        }
+    };
+    Ok(result.rows_affected() > 0)
 }
 
 pub async fn update_status(
@@ -330,7 +379,87 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
+        sqlx::query(
+            r#"CREATE TABLE feature_settings (
+                feature_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (feature_id, key)
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         pool
+    }
+
+    #[tokio::test]
+    async fn update_title_marks_the_title_as_manually_set() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type)
+             VALUES (1, 1, 'Session 1', 'active', 'ws-session')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        update_title_manually(&pool, 1, "Session 42").await.unwrap();
+
+        let row: (String, String) = sqlx::query_as(
+            "SELECT f.title, fs.value
+             FROM features f
+             JOIN feature_settings fs ON fs.feature_id = f.id
+             WHERE f.id = 1 AND fs.key = ?",
+        )
+        .bind(MANUAL_TITLE_SETTING_KEY)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row, ("Session 42".to_string(), "true".to_string()));
+    }
+
+    #[tokio::test]
+    async fn generated_title_respects_manual_rename_policy() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type)
+             VALUES (1, 1, 'Session 1', 'active', 'ws-session')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        update_title_manually(&pool, 1, "Manual Name")
+            .await
+            .unwrap();
+
+        assert!(!update_generated_title(
+            &pool,
+            1,
+            "Implicit Name",
+            GeneratedTitlePolicy::PreserveManualTitle,
+        )
+        .await
+        .unwrap());
+        let title_after_implicit: (String,) =
+            sqlx::query_as("SELECT title FROM features WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(title_after_implicit.0, "Manual Name");
+        assert!(update_generated_title(
+            &pool,
+            1,
+            "Requested Name",
+            GeneratedTitlePolicy::ReplaceManualTitle,
+        )
+        .await
+        .unwrap());
+        let title: (String,) = sqlx::query_as("SELECT title FROM features WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(title.0, "Requested Name");
     }
 
     #[tokio::test]
