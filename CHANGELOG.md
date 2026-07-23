@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.8.0 - 2026-07-23
+
+Previous release: v0.7.2 - 2026-07-17
+
+### ✨ Added
+
+- [**Desktop**] Added a keyboard-first Git changes workflow with an easier file tree, flat and tree views, conflicts shown first, viewed progress, nearby unified/split controls, open-in-Editor actions, and per-file stage and unstage controls that protect unsaved and unresolved work.
+- [**Desktop**] Added complete stash controls to create named stashes with optional untracked files and to apply, pop, or drop existing stashes, with destructive confirmation, visible progress and errors, and direct conflict handoff back to the working changes.
+- [**Desktop**] Added branch Update controls that show the incoming branch and ahead/behind counts, offer merge or rebase, and keep conflicts recoverable; conflicted files can be opened in the Editor to accept the current side, incoming side, or both before continuing or aborting the update.
+- [**Desktop**] Added provider, model, and thinking-effort badges to sidebar conversations plus popovers for answering pending permission and question gates without opening the conversation, including command previews and suppression of redundant prompts for the active conversation.
+- [**Desktop**] Added project logo selection to onboarding and Project Settings by ranking tracked repository images into a thumbnail grid, with a native file picker for external images and automatic fallback to the project color when an icon is unavailable.
+- [**Desktop**] Added provider-aware model favorites to every model picker, with starred models grouped above the catalog, shared workspace persistence, search compatibility, and a rebindable `Cmd`/`Ctrl+S` shortcut while a picker is open.
+- [**Desktop**] Added token-usage details to the conversation context bar on hover or keyboard focus, including total, input, and output tokens plus whether the context has been compacted.
+- [**Desktop**] Added initial support for the Cursor agent with model and effort selection, collaboration and access modes, attachments, resumable conversations, plans, permissions, and Auto Review. The current Cursor ACP integration does not report context usage, omits details from some tools such as the file path for Read, does not expose a question tool, and provides limited sub-agent information; CadencR will surface more as Cursor makes it available through ACP.
+
+### 🔧 Changed
+
+- [**Desktop**] Introduced the Emerald Reserve visual identity and new CadencR Dark and CadencR Light themes across the desktop app, splash screen, generated icons, tool accents, and marketing site, with softer surfaces, clearer sidebar and app chrome, refreshed product captures, and consistent brand assets generated from one source.
+
+### 🐛 Fixed
+
+- [**Backend**] Fixed new worktrees forgetting the branch they were created from and later comparing or merging against `main`; the selected source branch now stays attached to the worktree.
+- [**Desktop**] Fixed mobile conversation layouts by keeping the composer and Send control visible above short or first-opened software keyboards, limiting desktop-only chassis styling to desktop widths, and adding reliable edge-swipe open and swipe-close gestures for the sidebar.
+- [**Desktop**] Fixed the slash-command and skill picker being cropped by the prompt composer, preserving the editor width while clamping the menu to the available space above the prompt.
+- [**Desktop**] Fixed unchecked checkboxes and switches having near-invisible borders in light themes, with clearer control edges and keyboard-focus rings while preserving dark-theme styling.
+- [**Desktop**] Fixed split-pane close controls overlapping tab labels or disappearing until hover in the CadencR themes.
+- [**Desktop**] Fixed intrusive browser-native hover text appearing over Bash and file-change tool rows.
+
 ## v0.7.2 - 2026-07-17
 
 Previous release: v0.7.1 - 2026-07-15

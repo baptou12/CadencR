@@ -25,7 +25,6 @@ pub(super) async fn spawn_acp_session(
     content: Value,
     config: RuntimeSpawnConfig,
 ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
-    super::mcp_config::merge_runtime_mcp_servers(&config.cwd, config.mcp_servers.as_ref()).await?;
     let binary = cursor_agent_sdk_rs::resolve_binary().await?;
     let mut command = cli_discovery::login_shell_exec_command(
         binary.as_os_str(),

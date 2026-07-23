@@ -51,6 +51,7 @@ The helper script creates the local tag only. The agent must push the tag explic
    - If the developer requests no news post, continue with changelog-only release notes and do not create a landing news file.
    - If the developer provides news copy, create a post under `packages/landing/src/content/news/` whose filename includes the release version, for example `cadencr-v0-2-0.mdx`.
    - The post should sell the release clearly while remaining accurate.
+   - Write the news post from the perspective that the release has already shipped. Use present or past release language such as `is available now` and link directly to the release. Never use staging language such as `once the release is live`, `will be available`, or `once publication finishes`.
    - Stop after `CHANGELOG.md` and any requested landing news post are modified. Show the drafted changelog section and news file path or changelog-only status, then ask the developer to confirm before continuing.
    - Wait for explicit developer confirmation before continuing to version bumps, security review, CI checks, release preparation commit, preflight, tagging, pushing, or asset polling.
 
