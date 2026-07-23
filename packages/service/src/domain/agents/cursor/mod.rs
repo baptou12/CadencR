@@ -2,13 +2,12 @@
 //!
 //! Cursor's `agent acp` subprocess speaks the same provider-neutral ACP
 //! transport as OpenCode. Cursor-specific behavior (authentication, extension
-//! methods, tool normalization, model discovery, and disk MCP config) remains
+//! methods, tool normalization, and model discovery) remains
 //! in this directory behind the two adapter traits.
 
 mod acp;
 mod catalog;
 mod commands;
-mod mcp_config;
 mod permissions;
 mod worktree_config;
 

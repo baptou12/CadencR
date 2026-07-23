@@ -1,0 +1,146 @@
+---
+title: "CadencR v0.8.0 starts simplifying Git"
+date: 2026-07-23
+summary: "CadencR v0.8.0 begins a broader effort to make Git easier to use, with staging, stash controls, guided branch updates, and conflict resolution alongside a major sidebar, theme, and brand refresh."
+author: "Raphaël - RLE - Le Minor"
+tags: ["release", "git", "desktop", "design"]
+---
+
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
+import conflictHelperScreenshot from "@/assets/news/v0.8.0/conflict-helper.png";
+import cursorScreenshot from "@/assets/news/v0.8.0/cursor.png";
+import gitTabSidebarScreenshot from "@/assets/news/v0.8.0/git-tab-sidebar.png";
+import newGitActionsScreenshot from "@/assets/news/v0.8.0/new-git-actions.png";
+import sidebarImprovementsScreenshot from "@/assets/news/v0.8.0/sidebar-improvements.png";
+import stashListScreenshot from "@/assets/news/v0.8.0/stash-list.png";
+
+<DocScreenshot
+  src={gitTabSidebarScreenshot}
+  alt="CadencR Git tab showing staged, unstaged, untracked, and conflicted files during a paused merge"
+  caption="The Git tab keeps repository state, file review, staging, and conflict recovery together."
+  bordered={false}
+  rounded
+/>
+
+CadencR v0.8.0 starts a broader effort to make everyday Git work easier.
+
+Agents can change a lot of code quickly, but reviewing and managing those changes should not require constantly switching to a terminal. This release brings more of the Git workflow into the workspace, with clearer actions and visible repository state from review through conflict resolution.
+
+It is the first step in a larger simplification effort. The goal is not to hide Git. It is to make the common path easier to follow and harder to get wrong.
+
+## Review and stage changes in one place
+
+The Changes view is easier to scan and navigate. You can switch between flat and tree layouts, keep conflicts at the top, open a file in the Editor, mark files as viewed, and move through the list with the keyboard.
+
+Staging is now part of that same review flow. Stage or unstage one file from the tree or its diff, switch between unified and split views beside the content, and see progress or errors where the action happened.
+
+CadencR also protects the work in front of you. It will not stage a file while its Editor changes are still unsaved, and unresolved conflicts stay on the path toward resolution rather than looking like ordinary staged changes.
+
+## Stashes become a complete workflow
+
+The Stashes view is no longer read-only. Create a named stash, choose whether to include untracked files, and apply, pop, or drop an existing stash from the same place where you inspect it.
+
+Dropping a stash requires confirmation, actions show their progress, and failures stay visible. If applying or popping a stash creates conflicts, CadencR takes you back to the affected changes so you can resolve them.
+
+<DocScreenshot
+  src={stashListScreenshot}
+  alt="CadencR Stashes view with controls to apply, pop, or drop each stash"
+  caption="Inspect every stash and apply, pop, or drop it without leaving the Git tab."
+  bordered={false}
+  rounded
+/>
+
+## Update a branch without guessing
+
+The new **Update branch** flow shows which branch will be brought into the current work and how far ahead or behind the two branches are. You can choose whether to merge or rebase before starting.
+
+If the update pauses on conflicts, the Git tab explains what is happening and keeps the recovery actions visible. Resolve and stage the affected files, then continue the update. If the update should not proceed, abort it and return to the previous state.
+
+<DocScreenshot
+  src={newGitActionsScreenshot}
+  alt="CadencR feature header menu with commit, stash, update, push, pull request, and merge actions"
+  caption="The feature header brings the Git actions available for the current repository state into one menu."
+  bordered={false}
+  rounded
+  maxWidthClass="mx-auto max-w-md"
+/>
+
+## Resolve conflicts in the Editor
+
+Conflicted text files can now open directly in the Editor. The current and incoming changes are visually separated, with actions to **Accept current**, **Accept incoming**, or **Accept both** for each conflict.
+
+Normal editing and undo remain available, and saving does not silently finish the operation. Stage the resolved file when it is ready, then continue the merge or rebase from the Git tab. Deleted files and files that cannot be edited as text receive specific guidance instead.
+
+<DocScreenshot
+  src={conflictHelperScreenshot}
+  alt="CadencR Editor showing current and incoming conflict blocks with resolution actions"
+  caption="Resolve each conflict in the Editor by accepting the current change, the incoming change, or both."
+  bordered={false}
+  rounded
+/>
+
+Together, these changes create a clearer Git path inside CadencR:
+
+**review → stage → update → resolve → continue**
+
+## A major interface and sidebar upgrade
+
+Git is the focus, but v0.8.0 is also one of CadencR's largest interface updates so far.
+
+The sidebar now shows which agent, model, and reasoning level each conversation is using. Pending permissions and questions can be answered without opening the conversation, and command previews make requested actions easier to understand.
+
+Projects can also use their own logos instead of relying only on color dots. Project Settings and onboarding suggest images found in the repository, while a native picker lets you choose another image. If an image is unavailable, the project safely falls back to its color.
+
+The collapsed sidebar has clearer controls, smoother transitions, and better alignment around macOS window controls. On mobile, edge swipes open the sidebar, swiping the drawer closes it, and the composer stays visible when the software keyboard appears.
+
+<DocScreenshot
+  src={sidebarImprovementsScreenshot}
+  alt="CadencR sidebar showing a project logo, agent details, model information, and conversation timing"
+  caption="Project logos and richer conversation details make the redesigned sidebar easier to scan."
+  bordered={false}
+  rounded
+/>
+
+## Emerald Reserve and the new CadencR themes
+
+Version 0.8.0 brings the **Emerald Reserve** identity into the product.
+
+The new **CadencR Dark** and **CadencR Light** themes introduce the default visual language: deep neutral surfaces, emerald highlights, clearer depth, and consistent colors for tools and status.
+
+The app mark, splash screen, desktop icons, social artwork, and marketing site now share the same identity. The landing site has also been refreshed with softer surfaces, more space, and updated product captures.
+
+This is more than a logo change. The app frame, sidebar, tabs, controls, themes, and public site now feel like parts of the same product.
+
+## More control with less interface noise
+
+Model pickers now let you star favorites and keep them above the full catalog. The conversation context bar can show total, input, and output token usage, including whether the context was compacted.
+
+Light-theme checkboxes and switches are easier to see and focus, split-pane close controls no longer overlap labels, and intrusive hover text has been removed from tool rows.
+
+## Cursor agent support, with current limitations
+
+CadencR v0.8.0 also adds initial support for the Cursor agent. Model and effort selection, collaboration and access modes, attachments, resumable conversations, plans, permissions, and Auto Review are available through the CadencR session interface.
+
+<DocScreenshot
+  src={cursorScreenshot}
+  alt="CadencR Cursor agent model picker showing starred models above the full model catalog"
+  caption="Cursor agent models use the same searchable picker, with starred favorites kept at the top."
+  bordered={false}
+  rounded
+  maxWidthClass="mx-auto max-w-md"
+/>
+
+The current Cursor ACP integration does not yet provide all the information CadencR normally uses:
+
+- Context usage is not available.
+- Some tools do not include enough detail. For example, Read may not report the file path.
+- Questions are not available through a question tool.
+- Sub-agent activity does not include the same level of detail as other integrations.
+
+CadencR will surface more of this information when future Cursor agent updates make it available through ACP. Until then, the interface will be explicit about what is missing rather than inventing details it did not receive.
+
+## Get CadencR v0.8.0
+
+For every feature and fix, read the changelog in the [v0.8.0 GitHub release notes](https://github.com/merkr-software/CadencR/releases/tag/v0.8.0).
+
+**CadencR v0.8.0 is available now.** [Download the release](https://github.com/merkr-software/CadencR/releases/tag/v0.8.0), or read the full changelog from the same page.

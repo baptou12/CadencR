@@ -4,18 +4,17 @@ use crate::domain::agents::adapter::{
     RuntimeAccessMode, RuntimePermissionDecision, RuntimePermissionRequest,
 };
 
-use super::normalize::mcp_input_from_permission_content;
-
 /// Cursor 2026.07.16 accepts `--auto-review` for `agent acp`, but its ACP
 /// session bootstrap does not copy that mode into the session metadata. It
 /// consequently asks the ACP host about ordinary shell allowlist misses and
-/// MCP calls. Keep the workaround provider-local: in Auto Review, preflight
-/// those ordinary requests after Cursor has applied its parser, sandbox,
-/// blocklist, delete-protection, hook, and team-policy checks. Requests carrying
-/// any stronger safety reason still reach the UI.
+/// MCP calls. Keep the workaround provider-local and fail closed: in Auto
+/// Review, preflight only ordinary shell allowlist misses after Cursor has
+/// applied its parser, sandbox, blocklist, delete-protection, hook, and
+/// team-policy checks. MCP, non-shell, and stronger safety requests still reach
+/// the UI because ACP does not expose a trustworthy classifier for them.
 pub(super) fn automatic_permission_decision(
     access_mode: Option<&RuntimeAccessMode>,
-    request: &RuntimePermissionRequest,
+    _request: &RuntimePermissionRequest,
     params: &Value,
 ) -> Option<RuntimePermissionDecision> {
     if access_mode != Some(&RuntimeAccessMode::AutoReview) {
@@ -24,12 +23,6 @@ pub(super) fn automatic_permission_decision(
     let tool_call = params.get("toolCall")?;
     match tool_call.get("kind").and_then(Value::as_str) {
         Some("execute") if has_only_allowlist_miss_reasons(tool_call) => {
-            Some(RuntimePermissionDecision::AllowOnce)
-        }
-        Some("other")
-            if request.tool_name.starts_with("mcp__")
-                && mcp_input_from_permission_content(params).is_some() =>
-        {
             Some(RuntimePermissionDecision::AllowOnce)
         }
         _ => None,
@@ -156,14 +149,14 @@ mod tests {
     }
 
     #[test]
-    fn auto_review_preflights_cursor_mcp_requests() {
+    fn auto_review_keeps_structured_mcp_requests_interactive() {
         assert_eq!(
             automatic_permission_decision(
                 Some(&RuntimeAccessMode::AutoReview),
                 &mcp_request(),
                 &mcp_params("```json\n{\"url\":\"https://google.com\"}\n```")
             ),
-            Some(RuntimePermissionDecision::AllowOnce)
+            None
         );
     }
 

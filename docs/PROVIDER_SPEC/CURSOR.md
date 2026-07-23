@@ -6,8 +6,8 @@ The adapter lives in `packages/service/src/domain/agents/cursor/` and starts
 the official Cursor Agent CLI as `agent acp`. Cursor ACP uses newline-delimited
 JSON-RPC 2.0 over stdio. Standard ACP traffic is handled by the shared
 `packages/service/src/domain/agents/acp/runtime/` layer; Cursor authentication,
-tool normalization, disk MCP configuration, model discovery, and `cursor/*`
-extension methods remain inside the Cursor adapter.
+tool normalization, model discovery, and `cursor/*` extension methods remain
+inside the Cursor adapter.
 
 The CLI binary/discovery boundary lives in
 `packages/cursor-agent-sdk-rs/`. Install and authenticate it with:
@@ -31,7 +31,7 @@ agent login
 | 8   | Thinking level changes                   | 🟡     | Cadencr advertises `clientCapabilities._meta.parameterizedModelPicker`, which unlocks Cursor's separate `fast` / thought-level (`effort` / `reasoning`) config options. Cold catalog still lists variant model ids; the adapter maps those onto base model + companion config updates. Live effort chips remain catalog-gated (`supports_effort: false`) until per-model levels are published. |
 | 9   | Model selection changes                  | ✅     | Account-scoped models come from `agent models`; changes use the opaque select values advertised by live `session/new` / `session/load` config options. Cursor's `composer-2.5-fast` catalog id maps to the advertised `composer-2.5[fast=true]` value.                                                                                  |
 | 10  | Permissions: yes / no / always / session | ✅     | Standard `session/request_permission` options map through the shared bridge. The independent access-mode axis supports Default, Full Access, and Auto Review through Cursor's official CLI flags. `cursor/ask_question` is bridged to Cadencr's question drawer; Composer may still omit emitting it for a given turn.               |
-| 11  | MCP                                      | 🟡     | Runtime MCP servers are passed through ACP and merged into `.cursor/mcp.json` without replacing user servers. Status remains `unknown`; team-dashboard MCP and hot swap are not available.                                                                                                                                            |
+| 11  | MCP                                      | 🟡     | Runtime MCP servers are passed through standard ACP session requests without writing credentials into project files. Status remains `unknown`; Cursor Agent must honor the ACP-provided servers, while team-dashboard MCP and hot swap are not available.                                                                            |
 | 12  | Plan approval                            | ✅     | `cursor/create_plan` synthesizes `ExitPlanMode`, opens Cadencr's plan gate, returns Cursor's accepted/rejected response schema, waits for the planning turn to end, then sends Cursor the execution follow-up in `agent` mode.                                                                                                                                                                       |
 | 13  | Context usage                            | ❌     | Cursor ACP does not currently expose authoritative per-turn token occupancy/context-window data; the adapter deliberately does not guess.                                                                                                                                                                                             |
 | 14  | Compaction                               | ✅     | Cadencr's `/compact` command invokes the live runtime compaction path, which sends Cursor's `/compress` prompt and emits a manual compact boundary on success. Typing `/compress` directly is an ordinary agent prompt, not Cadencr's compaction command.                                                                             |
@@ -155,15 +155,18 @@ upstream ACP bootstrap honors Auto Review.
 
 ## MCP behavior
 
-Cursor's ACP documentation requires MCP servers to exist in user/project
-`.cursor/mcp.json`. Before spawn, the adapter merges Cadencr's runtime stdio
-servers into the project file:
+Cadencr sends runtime MCP servers through the standard ACP `session/new` and
+`session/load` requests. Runtime credentials remain session-scoped and are
+never written into the repository's `.cursor/mcp.json`.
 
-- Existing top-level fields and user-owned servers are preserved.
-- Cadencr entries win only on the same server name.
-- Invalid JSON is a visible spawn error; it is never silently replaced.
-- The same servers are also sent in ACP `session/new` / `session/load` for
-  forward compatibility.
+Cursor Agent `2026.07.16-899851b` was validated end to end with an ACP-provided
+stdio server: the agent initialized it, listed its tools, requested permission,
+and called the selected tool without a project MCP file.
+
+Cursor continues to own any user or project MCP configuration created outside
+Cadencr. The adapter does not read, merge, or mutate those files. Until Cursor
+fully reports ACP-provided server state, Cadencr shows their status as
+`unknown`.
 
 ## Known upstream/contract limitations
 
