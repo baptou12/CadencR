@@ -91,37 +91,24 @@ pub async fn create_feature_with_worktree(
     .await?;
     let id = result.last_insert_rowid();
     if let Some(mode) = worktree_mode.as_deref() {
-        set_feature_setting_in_tx(&mut tx, id, "worktree_mode", mode).await?;
+        repository::upsert_feature_setting(&mut *tx, id, "worktree_mode", mode).await?;
     }
     if let Some(branch) = reuse_branch.as_deref() {
-        set_feature_setting_in_tx(&mut tx, id, "worktree_reuse_branch", branch).await?;
+        repository::upsert_feature_setting(&mut *tx, id, "worktree_reuse_branch", branch).await?;
     }
     if let Some(branch) = base_branch.as_deref() {
-        set_feature_setting_in_tx(&mut tx, id, "worktree_base_branch", branch).await?;
+        repository::upsert_feature_setting(&mut *tx, id, "worktree_base_branch", branch).await?;
     }
     tx.commit().await?;
     Ok(CreateFeatureResponse { id })
 }
 
-async fn set_feature_setting_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    feature_id: i64,
-    key: &str,
-    value: &str,
+pub async fn update_title_manually(
+    pool: &SqlitePool,
+    id: i64,
+    title: &str,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
-    )
-    .bind(feature_id)
-    .bind(key)
-    .bind(value)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(), AppError> {
-    repository::update_title(pool, id, title).await
+    repository::update_title_manually(pool, id, title).await
 }
 
 pub async fn update_status(

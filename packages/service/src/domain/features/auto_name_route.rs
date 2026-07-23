@@ -40,7 +40,7 @@ async fn run_auto_rename(
         .await?
         .ok_or_else(|| AppError::BadRequest("no user message available for auto-rename".into()))?;
     let senders = state.ws_feature_senders.get_senders(feature_id).await;
-    let title = auto_name::auto_name_feature_for_senders(
+    let title = auto_name::force_auto_name_feature_for_senders(
         state.write_pool.clone(),
         feature_id,
         user_input,

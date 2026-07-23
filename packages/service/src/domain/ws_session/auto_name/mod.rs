@@ -9,6 +9,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
 use crate::domain::agents::providers::runtime_adapter;
+use crate::domain::features::repository::update_generated_title;
+use crate::domain::features::title::GeneratedTitlePolicy;
 use crate::error::AppError;
 
 use super::protocol::{
@@ -17,6 +19,8 @@ use super::protocol::{
 
 mod drain;
 use drain::drain_text;
+mod title_state;
+pub use title_state::has_default_title;
 
 /// Send a `feature.updated` envelope over the given WebSocket sender.
 fn send_feature_updated(
@@ -79,24 +83,6 @@ pub async fn get_last_user_message(
     Ok(row.map(|(content,)| content))
 }
 
-/// Check if a feature still has its default auto-generated title (e.g. "Session 3" or "Untitled Feature").
-pub async fn has_default_title(pool: &SqlitePool, feature_id: i64) -> Result<bool, AppError> {
-    let row: Option<(String,)> = sqlx::query_as("SELECT title FROM features WHERE id = ?")
-        .bind(feature_id)
-        .fetch_optional(pool)
-        .await?;
-
-    Ok(match row {
-        Some((title,)) => is_default_title(&title),
-        None => false,
-    })
-}
-
-fn is_default_title(title: &str) -> bool {
-    let re = Regex::new(r"(?i)^Session \d+$").unwrap();
-    re.is_match(title) || title == "Untitled Feature"
-}
-
 /// Auto-name a feature using the user-selected provider + model.
 ///
 /// Emits `feature.autonaming { in_progress: true }` before spawning and
@@ -109,18 +95,53 @@ pub async fn auto_name_feature(
     cwd: String,
     ws_sender: mpsc::UnboundedSender<Message>,
 ) -> Option<String> {
-    auto_name_feature_for_senders(pool, feature_id, user_input, cwd, vec![ws_sender]).await
+    auto_name_feature_with_policy(
+        pool,
+        feature_id,
+        user_input,
+        cwd,
+        vec![ws_sender],
+        GeneratedTitlePolicy::PreserveManualTitle,
+    )
+    .await
 }
 
-pub async fn auto_name_feature_for_senders(
+pub async fn force_auto_name_feature_for_senders(
     pool: SqlitePool,
     feature_id: i64,
     user_input: String,
     cwd: String,
     ws_senders: Vec<mpsc::UnboundedSender<Message>>,
 ) -> Option<String> {
+    auto_name_feature_with_policy(
+        pool,
+        feature_id,
+        user_input,
+        cwd,
+        ws_senders,
+        GeneratedTitlePolicy::ReplaceManualTitle,
+    )
+    .await
+}
+
+async fn auto_name_feature_with_policy(
+    pool: SqlitePool,
+    feature_id: i64,
+    user_input: String,
+    cwd: String,
+    ws_senders: Vec<mpsc::UnboundedSender<Message>>,
+    title_policy: GeneratedTitlePolicy,
+) -> Option<String> {
     send_autonaming(&ws_senders, feature_id, true);
-    let result = run_auto_name(&pool, feature_id, user_input, cwd, &ws_senders).await;
+    let result = run_auto_name(
+        &pool,
+        feature_id,
+        user_input,
+        cwd,
+        &ws_senders,
+        title_policy,
+    )
+    .await;
     send_autonaming(&ws_senders, feature_id, false);
     result
 }
@@ -131,6 +152,7 @@ async fn run_auto_name(
     user_input: String,
     cwd: String,
     ws_senders: &[mpsc::UnboundedSender<Message>],
+    title_policy: GeneratedTitlePolicy,
 ) -> Option<String> {
     info!(feature_id, "auto-name: starting");
     // Fetch provider + model concurrently — both are independent SQL reads.
@@ -215,14 +237,19 @@ async fn run_auto_name(
     }
     debug!(feature_id, name = %name, "auto-name: extracted name, updating DB");
 
-    if let Err(e) = sqlx::query("UPDATE features SET title = ? WHERE id = ?")
-        .bind(&name)
-        .bind(feature_id)
-        .execute(pool)
-        .await
-    {
-        error!(feature_id, error = %e, "auto-name: DB update failed");
-        return None;
+    match update_generated_title(pool, feature_id, &name, title_policy).await {
+        Ok(false) => {
+            info!(
+                feature_id,
+                "auto-name: skipped generated title because the feature was manually renamed"
+            );
+            return None;
+        }
+        Ok(true) => {}
+        Err(error) => {
+            error!(feature_id, %error, "auto-name: DB update failed");
+            return None;
+        }
     }
 
     let payload = FeatureRenamedPayload {
