@@ -25,7 +25,7 @@ export function FeatureSubtree({
       type="button"
       variant="ghost"
       size="icon-xs"
-      className="size-3.5 rounded-sm text-muted-foreground/70 hover:text-foreground"
+      className="size-3 rounded-sm text-muted-foreground/70 hover:text-foreground"
       aria-label={expanded ? "Collapse child sessions" : "Expand child sessions"}
       onClick={(event) => {
         event.stopPropagation();
@@ -40,10 +40,10 @@ export function FeatureSubtree({
     <>
       {renderFeature(node.feature, control)}
       {expanded && hasChildren && (
-        <div data-feature-subtree-children={node.feature.id} className="relative ml-[11px] pl-2">
+        <div data-feature-subtree-children={node.feature.id} className="relative ml-2 pl-2">
           {/* Guide rail centered under the parent chevron:
-              pl-3 (12px) + half of size-3.5 (7px) = 19px from the row edge.
-              ml-[11px] + left-2 (8px) = 19px. Shallow indent so deep chains
+              pl-3 (12px) + half of w-2 (4px) = 16px from the row edge.
+              ml-2 (8px) + left-2 (8px) = 16px. Shallow indent so deep chains
               don't march off to the right. */}
           <span aria-hidden className="absolute inset-y-0 left-2 w-px bg-sidebar-border" />
           {node.children.map((child) => (

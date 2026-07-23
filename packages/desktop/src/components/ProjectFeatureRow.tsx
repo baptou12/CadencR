@@ -178,7 +178,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           <SidebarShortcutBadge ref={badgeRef} />
           <div
             data-feature-hierarchy-gutter
-            className="flex size-3.5 shrink-0 items-center justify-center"
+            className="flex h-3 w-2 shrink-0 items-center justify-center"
           >
             {hierarchyControl}
           </div>

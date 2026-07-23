@@ -300,8 +300,8 @@ describe("ProjectFeatures", () => {
 
     expect(parentGutter).not.toBeNull();
     expect(leafGutter).not.toBeNull();
-    expect(parentGutter).toHaveClass("size-3.5");
-    expect(leafGutter).toHaveClass("size-3.5");
+    expect(parentGutter).toHaveClass("w-2");
+    expect(leafGutter).toHaveClass("w-2");
     expect(
       within(parentGutter as HTMLElement).getByRole("button", {
         name: "Collapse child sessions",
