@@ -18,7 +18,6 @@ import {
   useGitDiffTreeDisplaySetting,
   type GitDiffTreeDisplayMode,
 } from "./useGitDiffTreeDisplaySetting";
-import type { GitFileIndexActions } from "./useGitFileIndexActions";
 
 type PierreGitStatus = NonNullable<FileTreeOptions["gitStatus"]>[number]["status"];
 
@@ -41,8 +40,6 @@ interface GitDiffFileTreeModelResult {
 
 interface UseGitDiffFileTreeModelOptions {
   files: readonly ChangedFile[];
-  viewedFiles: ReadonlySet<string>;
-  indexActions: GitFileIndexActions;
   onSelectionChange: (filePath: string) => void;
 }
 
@@ -120,41 +117,10 @@ export function isUnavailableDeleteConflict(file: ChangedFile): boolean {
   );
 }
 
-function stageStateDecoration(file: ChangedFile): string | null {
-  switch (resolvedStageState(file)) {
-    case FileStageState.untracked:
-      return "Untracked";
-    case FileStageState.unstaged:
-      return "Unstaged";
-    case FileStageState.staged:
-      return "Staged";
-    case FileStageState.both:
-      return "Staged + unstaged";
-    case FileStageState.conflicted:
-      return "Conflict";
-    default:
-      return null;
-  }
-}
-
-export function gitDiffTreeDecoration(
-  file: ChangedFile,
-  viewed: boolean,
-  indexActions: Pick<GitFileIndexActions, "pendingAction" | "pendingPath" | "error">,
-): FileTreeRowDecoration | null {
-  const parts: string[] = [];
-  const state = stageStateDecoration(file);
-  if (state) parts.push(state);
-  if (viewed) parts.push("Viewed");
-  if (indexActions.pendingPath === file.file) {
-    parts.push(indexActions.pendingAction === "stage" ? "Staging…" : "Unstaging…");
-  }
-  if (indexActions.error?.filePath === file.file) parts.push("Action failed");
-  if (parts.length === 0) return null;
-  const conflict = resolvedStageState(file) === FileStageState.conflicted;
-  const detail = conflict ? `Conflict: ${conflictKindLabel(file.conflict_kind)}.` : "";
-  const error = indexActions.error?.filePath === file.file ? ` ${indexActions.error.message}` : "";
-  return { text: parts.join(" · "), title: `${detail}${error}`.trim() || undefined };
+export function gitDiffTreeConflictDecoration(file: ChangedFile): FileTreeRowDecoration | null {
+  if (resolvedStageState(file) !== FileStageState.conflicted) return null;
+  const label = `Conflict: ${conflictKindLabel(file.conflict_kind)}`;
+  return { text: "Conflict", title: label };
 }
 
 function visibleFilePaths(model: FileTree, filePaths: ReadonlySet<string>): string[] {
@@ -214,8 +180,6 @@ function useActivePath(model: FileTree, filePaths: ReadonlySet<string>): string 
 
 export function useGitDiffFileTreeModel({
   files,
-  viewedFiles,
-  indexActions,
   onSelectionChange,
 }: UseGitDiffFileTreeModelOptions): GitDiffFileTreeModelResult {
   const {
@@ -238,6 +202,7 @@ export function useGitDiffFileTreeModel({
   );
   const conflictPathsRef = useRef(conflictPaths);
   conflictPathsRef.current = conflictPaths;
+  const conflictSortVersion = useMemo(() => [...conflictPaths].sort().join("\0"), [conflictPaths]);
   const conflictFirstSort = useMemo<FileTreeSortComparator>(
     () => (left, right) => {
       if (left.isDirectory !== right.isDirectory) return left.isDirectory ? -1 : 1;
@@ -259,9 +224,9 @@ export function useGitDiffFileTreeModel({
     ({ item }: { item: { kind: "directory" | "file"; path: string } }) => {
       if (item.kind === "directory") return null;
       const file = fileByPath.get(item.path);
-      return file ? gitDiffTreeDecoration(file, viewedFiles.has(file.file), indexActions) : null;
+      return file ? gitDiffTreeConflictDecoration(file) : null;
     },
-    [fileByPath, indexActions, viewedFiles],
+    [fileByPath],
   );
   const { model } = useCadencrFileTree({
     paths,
@@ -275,6 +240,7 @@ export function useGitDiffFileTreeModel({
     renaming: false,
     dragAndDrop: false,
     sort: conflictFirstSort,
+    pathResetVersion: conflictSortVersion,
     composition: {
       contextMenu: { enabled: true, triggerMode: "both", buttonVisibility: "when-needed" },
     },

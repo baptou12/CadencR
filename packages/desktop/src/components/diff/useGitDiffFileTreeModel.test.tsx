@@ -3,7 +3,6 @@ import type { FileTreeDirectoryHandle } from "@pierre/trees";
 import { describe, expect, it, vi } from "vitest";
 import { FileStageState, type ChangedFile } from "@/api/generated";
 import { CadencrFileTree } from "@/components/file-tree/CadencrFileTree";
-import type { GitFileIndexActions } from "./useGitFileIndexActions";
 
 vi.mock("@/hooks/useFileTreeIconSet", () => ({
   useFileTreeIconSet: () => ({ iconSet: "standard", setIconSet: vi.fn(), isLoading: false }),
@@ -24,15 +23,6 @@ vi.mock("./useGitDiffTreeDisplaySetting", async () => {
 
 import { sortChangedFilesForDiff, useGitDiffFileTreeModel } from "./useGitDiffFileTreeModel";
 
-const indexActions: GitFileIndexActions = {
-  stage: vi.fn(),
-  reset: vi.fn(),
-  isPending: false,
-  pendingAction: null,
-  pendingPath: null,
-  error: null,
-};
-
 function changedFile(file: string): ChangedFile {
   return {
     file,
@@ -44,14 +34,40 @@ function changedFile(file: string): ChangedFile {
 }
 
 describe("useGitDiffFileTreeModel display mode", () => {
+  it("updates stage state without resetting an unchanged path tree", () => {
+    const initialFile = changedFile("src/file.ts");
+    const { result, rerender, unmount } = renderHook(
+      ({ currentFile }: { currentFile: ChangedFile }) =>
+        useGitDiffFileTreeModel({
+          files: [currentFile],
+          onSelectionChange: vi.fn(),
+        }),
+      { initialProps: { currentFile: initialFile } },
+    );
+    const tree = render(<CadencrFileTree model={result.current.model} />);
+    const shadowRoot = result.current.model.getFileTreeContainer()?.shadowRoot;
+    expect(result.current.model.getItem("src/file.ts")).not.toBeNull();
+    const resetPaths = vi.spyOn(result.current.model, "resetPaths");
+
+    rerender({
+      currentFile: {
+        ...initialFile,
+        stage_state: FileStageState.staged,
+      },
+    });
+
+    expect(shadowRoot?.textContent).not.toMatch(/Staged|Unstaged/);
+    expect(resetPaths).not.toHaveBeenCalled();
+    tree.unmount();
+    unmount();
+  });
+
   it("preserves exact selection and deliberate directory collapse across modes", () => {
     const files = [changedFile("src/nested/a.ts"), changedFile("tests/a.ts")];
     const { result, rerender, unmount } = renderHook(
       ({ currentFiles }: { currentFiles: readonly ChangedFile[] }) =>
         useGitDiffFileTreeModel({
           files: currentFiles,
-          viewedFiles: new Set(),
-          indexActions,
           onSelectionChange: vi.fn(),
         }),
       { initialProps: { currentFiles: files } },
@@ -92,8 +108,6 @@ describe("useGitDiffFileTreeModel display mode", () => {
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
         files,
-        viewedFiles: new Set(),
-        indexActions,
         onSelectionChange: vi.fn(),
       }),
     );
@@ -126,8 +140,6 @@ describe("useGitDiffFileTreeModel display mode", () => {
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
         files,
-        viewedFiles: new Set(),
-        indexActions,
         onSelectionChange: vi.fn(),
       }),
     );
@@ -158,8 +170,6 @@ describe("useGitDiffFileTreeModel display mode", () => {
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
         files,
-        viewedFiles: new Set(),
-        indexActions,
         onSelectionChange: vi.fn(),
       }),
     );
@@ -195,8 +205,6 @@ describe("useGitDiffFileTreeModel display mode", () => {
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
         files,
-        viewedFiles: new Set(),
-        indexActions,
         onSelectionChange: vi.fn(),
       }),
     );
@@ -228,8 +236,6 @@ describe("useGitDiffFileTreeModel display mode", () => {
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
         files,
-        viewedFiles: new Set(),
-        indexActions,
         onSelectionChange: vi.fn(),
       }),
     );
@@ -270,8 +276,6 @@ describe("useGitDiffFileTreeModel display mode", () => {
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
         files,
-        viewedFiles: new Set(),
-        indexActions,
         onSelectionChange: vi.fn(),
       }),
     );

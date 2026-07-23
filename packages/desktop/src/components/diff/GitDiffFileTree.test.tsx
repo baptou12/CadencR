@@ -20,11 +20,7 @@ vi.mock("@/components/file-tree/CadencrFileTree", () => ({
 }));
 
 import { countUniqueConflicts, GitDiffFileTree, GitDiffTreeContextMenu } from "./GitDiffFileTree";
-import {
-  buildGitDiffTreePaths,
-  buildGitDiffTreeStatus,
-  gitDiffTreeDecoration,
-} from "./useGitDiffFileTreeModel";
+import { buildGitDiffTreePaths, buildGitDiffTreeStatus } from "./useGitDiffFileTreeModel";
 
 function changedFile(overrides: Partial<ChangedFile> = {}): ChangedFile {
   return {
@@ -79,41 +75,6 @@ describe("Git diff Pierre inputs", () => {
       { path: "new.ts", status: "untracked" },
       { path: "renamed.ts", status: "renamed" },
     ]);
-  });
-
-  it("renders accessible stage, conflict, viewed, pending, and error decorations", () => {
-    const file = changedFile({
-      file: "conflict.ts",
-      stage_state: FileStageState.conflicted,
-      conflict_kind: ConflictKind.uu,
-    });
-    const decoration = gitDiffTreeDecoration(file, true, {
-      pendingAction: "stage",
-      pendingPath: "conflict.ts",
-      error: { action: "stage", filePath: "conflict.ts", message: "index is busy" },
-    });
-
-    expect(decoration).toMatchObject({
-      text: "Conflict · Viewed · Staging… · Action failed",
-      title: "Conflict: both modified. index is busy",
-    });
-  });
-
-  it("drops the conflict decoration when backend state confirms the file is staged", () => {
-    const conflict = changedFile({
-      file: "conflict.ts",
-      stage_state: FileStageState.conflicted,
-      conflict_kind: ConflictKind.uu,
-    });
-    const resolved = changedFile({
-      file: "conflict.ts",
-      stage_state: FileStageState.staged,
-      conflict_kind: null,
-    });
-    const idle = { pendingAction: null, pendingPath: null, error: null } as const;
-
-    expect(gitDiffTreeDecoration(conflict, false, idle)).toMatchObject({ text: "Conflict" });
-    expect(gitDiffTreeDecoration(resolved, false, idle)).toMatchObject({ text: "Staged" });
   });
 
   it("counts unique typed conflict rows", () => {

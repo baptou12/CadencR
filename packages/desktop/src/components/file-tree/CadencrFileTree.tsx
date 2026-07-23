@@ -45,6 +45,8 @@ export interface CadencrFileTreeHookOptions {
   filesOnly?: boolean;
   /** Optional sort override; use a stable function (e.g. ref-backed) if it reads live state. */
   sort?: FileTreeOptions["sort"];
+  /** Force a path reset when stable sort inputs change without changing the paths themselves. */
+  pathResetVersion?: unknown;
   onSelectionChange?: FileTreeOptions["onSelectionChange"];
   renderRowDecoration?: FileTreeOptions["renderRowDecoration"];
   /** Forces Pierre to repaint rows when decoration-only state changes. */
@@ -67,6 +69,45 @@ export interface CadencrFileTreeHookOptions {
 
 export interface CadencrFileTreeHookResult {
   model: FileTreeModel;
+}
+
+function haveEqualPaths(previous: readonly string[], next: readonly string[]): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+  return previous.every((path, index) => path === next[index]);
+}
+
+function useFileTreePathUpdates({
+  model,
+  paths,
+  initialExpansion,
+  pathResetVersion,
+}: {
+  model: FileTreeModel;
+  paths: readonly string[];
+  initialExpansion: FileTreeOptions["initialExpansion"];
+  pathResetVersion: unknown;
+}): void {
+  const hasPopulatedPathsRef = useRef(paths.length > 0);
+  const expandFirstPopulationRef = useRef(initialExpansion === "open");
+  const appliedPathsRef = useRef(paths);
+  const appliedPathResetVersionRef = useRef(pathResetVersion);
+
+  useEffect(() => {
+    const pathsChanged = !haveEqualPaths(appliedPathsRef.current, paths);
+    const resetVersionChanged = !Object.is(appliedPathResetVersionRef.current, pathResetVersion);
+    appliedPathsRef.current = paths;
+    appliedPathResetVersionRef.current = pathResetVersion;
+    if (!pathsChanged && !resetVersionChanged) return;
+
+    const isFirstPopulation = !hasPopulatedPathsRef.current && paths.length > 0;
+    if (isFirstPopulation) hasPopulatedPathsRef.current = true;
+    startTransition(() => {
+      resetFileTreePathsPreservingState(model, paths, {
+        expandAllDirectories: isFirstPopulation && expandFirstPopulationRef.current,
+      });
+    });
+  }, [model, pathResetVersion, paths]);
 }
 
 /**
@@ -94,6 +135,7 @@ export function useCadencrFileTree({
   stickyFolders,
   filesOnly = false,
   sort,
+  pathResetVersion,
   onSelectionChange,
   renderRowDecoration,
   rowDecorationVersion,
@@ -104,8 +146,6 @@ export function useCadencrFileTree({
   const effectiveIconSet = iconSet ?? globalIconSet;
   const onSelectionChangeRef = useRef(onSelectionChange);
   const renderRowDecorationRef = useRef(renderRowDecoration);
-  const hasPopulatedPathsRef = useRef(paths.length > 0);
-  const expandFirstPopulationRef = useRef(initialExpansion === "open");
   onSelectionChangeRef.current = onSelectionChange;
   renderRowDecorationRef.current = renderRowDecoration;
 
@@ -142,18 +182,9 @@ export function useCadencrFileTree({
   const { model } = usePierreFileTree(initialOptions);
 
   // Update paths in-place on refetch. `resetPaths` on tens of thousands of
-  // paths is heavy → wrap in `startTransition`. It also clears expansion
-  // state, so preserve the current expansion overrides. If an `"open"` tree
-  // was created empty, apply that intent when its first async paths arrive.
-  useEffect(() => {
-    const isFirstPopulation = !hasPopulatedPathsRef.current && paths.length > 0;
-    if (isFirstPopulation) hasPopulatedPathsRef.current = true;
-    startTransition(() => {
-      resetFileTreePathsPreservingState(model, paths, {
-        expandAllDirectories: isFirstPopulation && expandFirstPopulationRef.current,
-      });
-    });
-  }, [model, paths]);
+  // paths is heavy, so the helper skips equivalent lists and preserves
+  // expansion when a real reset is required.
+  useFileTreePathUpdates({ model, paths, initialExpansion, pathResetVersion });
 
   // Diff/apply walks the model once; transition for the same reason.
   useEffect(() => {

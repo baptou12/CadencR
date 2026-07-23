@@ -81,4 +81,30 @@ describe("CadencrFileTree model contract", () => {
     );
     unmount();
   });
+
+  it("skips equivalent path resets while honoring an explicit reset version", () => {
+    const initialPaths = ["src/", "src/a.ts"] as const;
+    const { result, rerender, unmount } = renderHook(
+      ({ paths, pathResetVersion }: { paths: readonly string[]; pathResetVersion: string }) =>
+        useCadencrFileTree({
+          paths,
+          pathResetVersion,
+          iconSet: "standard",
+        }),
+      {
+        initialProps: {
+          paths: initialPaths as readonly string[],
+          pathResetVersion: "sort-1",
+        },
+      },
+    );
+    const resetPaths = vi.spyOn(result.current.model, "resetPaths");
+
+    rerender({ paths: [...initialPaths], pathResetVersion: "sort-1" });
+    expect(resetPaths).not.toHaveBeenCalled();
+
+    rerender({ paths: [...initialPaths], pathResetVersion: "sort-2" });
+    expect(resetPaths).toHaveBeenCalledOnce();
+    unmount();
+  });
 });

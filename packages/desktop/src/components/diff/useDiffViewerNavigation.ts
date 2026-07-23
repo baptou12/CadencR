@@ -226,8 +226,6 @@ export function useDiffViewerNavigation({
   );
   const tree = useGitDiffFileTreeModel({
     files: data.changedFiles,
-    viewedFiles: data.viewedFilesSet,
-    indexActions,
     onSelectionChange: revealFile,
   });
   useCollapseInitialization(data, setCollapsedFiles);

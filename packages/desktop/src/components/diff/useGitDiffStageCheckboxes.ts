@@ -1,12 +1,20 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { FileTree } from "@pierre/trees";
 import { FileStageState, type ChangedFile } from "@/api/generated";
 import { useFileTreeShadowStylesheet } from "@/components/file-tree/useFileTreeShadowStylesheet";
-import { getGitFileActionAvailability, type GitFileIndexActions } from "./useGitFileIndexActions";
+import {
+  getGitFileActionAvailability,
+  type GitFileIndexAction,
+  type GitFileIndexActions,
+} from "./useGitFileIndexActions";
 import { resolvedStageState } from "./useGitDiffFileTreeModel";
+import { useGitStageControlState, type GitStageControlState } from "./useGitStageControlState";
 
 const CHECKBOX_ATTR = "data-cadencr-stage-checkbox";
 const PATH_ATTR = "data-cadencr-stage-path";
+const LOADER_ATTR = "data-cadencr-stage-loader";
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const ROW_SELECTOR = "[data-item-path][data-item-type]";
 
 /** Search chrome + checkbox layout for the git diff file tree shadow root. */
 export const GIT_DIFF_TREE_SHADOW_CSS = `
@@ -14,11 +22,26 @@ export const GIT_DIFF_TREE_SHADOW_CSS = `
   padding: var(--trees-padding-inline);
   margin-bottom: 0;
 }
+[data-item-section="spacing-item"] {
+  border-inline-start-color: transparent !important;
+}
 [data-item-type="file"] {
   padding-inline-start: 2px;
 }
+[data-item-type="file"]::before {
+  content: "";
+  width: calc(13px + 10px);
+  flex: 0 0 calc(13px + 10px);
+}
+[data-item-type="file"]:has(> input[${CHECKBOX_ATTR}])::before {
+  display: none;
+}
+[data-item-type="file"]:has(> [${LOADER_ATTR}])::before {
+  display: none;
+}
 [${CHECKBOX_ATTR}] {
   appearance: auto;
+  box-sizing: border-box;
   width: 13px;
   height: 13px;
   margin: 0 6px 0 4px;
@@ -30,6 +53,40 @@ export const GIT_DIFF_TREE_SHADOW_CSS = `
 [${CHECKBOX_ATTR}]:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+[${LOADER_ATTR}] {
+  width: 13px;
+  height: 13px;
+  margin: 0 6px 0 4px;
+  flex: 0 0 13px;
+  align-self: center;
+  color: var(--trees-fg-muted);
+}
+[${LOADER_ATTR}] svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: cadencr-stage-spinner 800ms linear infinite;
+}
+[data-item-section="decoration"] > span {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  font-size: 0;
+  color: var(--trees-git-modified-color);
+}
+[data-item-section="decoration"] > span::before {
+  content: "";
+  width: 100%;
+  height: 100%;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+}
+@keyframes cadencr-stage-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 `;
 
@@ -52,65 +109,171 @@ function checkboxVisualState(stageState: ReturnType<typeof resolvedStageState>):
   };
 }
 
-function ensureCheckboxInput(row: HTMLElement, path: string): HTMLInputElement {
+function ensureCheckboxInput(row: HTMLElement): HTMLInputElement {
   let input = row.querySelector<HTMLInputElement>(`input[${CHECKBOX_ATTR}]`);
   if (input) return input;
   input = document.createElement("input");
   input.type = "checkbox";
   input.setAttribute(CHECKBOX_ATTR, "");
-  input.setAttribute("aria-label", `Stage ${path}`);
   const icon = row.querySelector('[data-item-section="icon"]');
   if (icon) icon.before(input);
   else row.prepend(input);
   return input;
 }
 
-function syncRowCheckbox(
+function stageActionLabel(path: string, action: GitFileIndexAction): string {
+  return `${action === "stage" ? "Staging" : "Unstaging"} ${path}`;
+}
+
+function createLoader(path: string, action: GitFileIndexAction): HTMLSpanElement {
+  const loader = document.createElement("span");
+  const label = stageActionLabel(path, action);
+  loader.setAttribute(LOADER_ATTR, "");
+  loader.setAttribute("role", "status");
+  loader.setAttribute("aria-label", label);
+  loader.title = label;
+
+  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const pathElement = document.createElementNS(SVG_NAMESPACE, "path");
+  pathElement.setAttribute("d", "M21 12a9 9 0 1 1-6.219-8.56");
+  svg.append(pathElement);
+  loader.append(svg);
+  return loader;
+}
+
+function ensureStageLoader(row: HTMLElement, path: string, action: GitFileIndexAction): void {
+  row.querySelector(`input[${CHECKBOX_ATTR}]`)?.remove();
+  const existing = row.querySelector<HTMLElement>(`:scope > [${LOADER_ATTR}]`);
+  const label = stageActionLabel(path, action);
+  if (existing) {
+    if (existing.getAttribute("aria-label") !== label) existing.setAttribute("aria-label", label);
+    if (existing.title !== label) existing.title = label;
+    return;
+  }
+  const loader = createLoader(path, action);
+  const icon = row.querySelector('[data-item-section="icon"]');
+  if (icon) icon.before(loader);
+  else row.prepend(loader);
+}
+
+function removeStageControl(row: HTMLElement): void {
+  row.querySelector(`input[${CHECKBOX_ATTR}]`)?.remove();
+  row.querySelector(`[${LOADER_ATTR}]`)?.remove();
+}
+
+function syncRowAdornments(
   row: HTMLElement,
   file: ChangedFile | undefined,
-  indexActions: GitFileIndexActions,
+  controlState: GitStageControlState,
 ): void {
   const path = row.getAttribute("data-item-path");
   if (!path || !file) {
-    row.querySelector(`input[${CHECKBOX_ATTR}]`)?.remove();
+    removeStageControl(row);
     return;
   }
   const stageState = resolvedStageState(file);
   const visual = checkboxVisualState(stageState);
   if (!visual) {
-    row.querySelector(`input[${CHECKBOX_ATTR}]`)?.remove();
+    removeStageControl(row);
     return;
   }
 
-  const input = ensureCheckboxInput(row, path);
-  input.setAttribute(PATH_ATTR, path);
-  const pendingHere =
-    indexActions.pendingPath === path &&
-    (indexActions.pendingAction === "stage" || indexActions.pendingAction === "reset");
+  const pendingAction = controlState.pendingAction;
+  if (controlState.pendingPath === path && pendingAction) {
+    ensureStageLoader(row, path, pendingAction);
+    return;
+  }
+
+  row.querySelector(`[${LOADER_ATTR}]`)?.remove();
+  const input = ensureCheckboxInput(row);
+  if (input.getAttribute(PATH_ATTR) !== path) input.setAttribute(PATH_ATTR, path);
+  const label = `Stage ${path}`;
+  if (input.getAttribute("aria-label") !== label) input.setAttribute("aria-label", label);
   const availability = getGitFileActionAvailability(stageState);
   const canToggle =
     (visual.checked && availability.canReset) || (!visual.checked && availability.canStage);
-  const disabled = indexActions.isPending || pendingHere || !canToggle;
+  const disabled = controlState.isBusy || !canToggle;
   if (input.disabled !== disabled) input.disabled = disabled;
   if (input.checked !== visual.checked) input.checked = visual.checked;
   if (input.indeterminate !== visual.indeterminate) input.indeterminate = visual.indeterminate;
 }
 
-function syncAllFileRows(
+function syncAllStageRows(
   shadowRoot: ShadowRoot,
   byPath: ReadonlyMap<string, ChangedFile>,
-  indexActions: GitFileIndexActions,
+  controlState: GitStageControlState,
 ): void {
-  for (const row of shadowRoot.querySelectorAll<HTMLElement>('[data-item-type="file"]')) {
-    const path = row.getAttribute("data-item-path");
-    syncRowCheckbox(row, path ? byPath.get(path) : undefined, indexActions);
+  for (const row of shadowRoot.querySelectorAll<HTMLElement>(ROW_SELECTOR)) {
+    syncStageRow(row, byPath, controlState);
   }
+}
+
+function syncStageRow(
+  row: HTMLElement,
+  byPath: ReadonlyMap<string, ChangedFile>,
+  controlState: GitStageControlState,
+): void {
+  const path = row.getAttribute("data-item-path");
+  const file = row.getAttribute("data-item-type") === "file" && path ? byPath.get(path) : undefined;
+  syncRowAdornments(row, file, controlState);
 }
 
 function shadowRootOf(model: FileTree): ShadowRoot | null {
   const getContainer = model.getFileTreeContainer;
   if (typeof getContainer !== "function") return null;
   return getContainer.call(model)?.shadowRoot ?? null;
+}
+
+function collectRowsFromMutations(records: readonly MutationRecord[]): Set<HTMLElement> {
+  const rows = new Set<HTMLElement>();
+  for (const record of records) {
+    if (record.type === "attributes" && record.target instanceof HTMLElement) {
+      if (record.target.matches(ROW_SELECTOR)) rows.add(record.target);
+      continue;
+    }
+    for (const node of record.addedNodes) {
+      if (!(node instanceof Element)) continue;
+      if (node instanceof HTMLElement && node.matches(ROW_SELECTOR)) rows.add(node);
+      node.querySelectorAll<HTMLElement>(ROW_SELECTOR).forEach((row) => rows.add(row));
+      const containingRow = node.closest<HTMLElement>(ROW_SELECTOR);
+      if (
+        containingRow?.querySelector(`[${LOADER_ATTR}]`) &&
+        containingRow.querySelector(`input[${CHECKBOX_ATTR}]`)
+      ) {
+        rows.add(containingRow);
+      }
+    }
+  }
+  return rows;
+}
+
+function observeStageCheckboxRows(
+  shadowRoot: ShadowRoot,
+  syncRow: (row: HTMLElement) => void,
+): () => void {
+  const observer = new MutationObserver((records) => {
+    const rows = collectRowsFromMutations(records);
+    shadowRoot
+      .querySelectorAll<HTMLElement>(
+        `${ROW_SELECTOR}:has(> [${LOADER_ATTR}]):has(> input[${CHECKBOX_ATTR}])`,
+      )
+      .forEach((row) => rows.add(row));
+    for (const row of rows) syncRow(row);
+  });
+  observer.observe(shadowRoot, {
+    attributes: true,
+    attributeFilter: ["data-item-path"],
+    childList: true,
+    subtree: true,
+  });
+  return () => observer.disconnect();
 }
 
 function bindStageCheckboxEvents(
@@ -155,9 +318,9 @@ function bindStageCheckboxEvents(
 }
 
 /**
- * Injects native stage checkboxes into Pierre file rows (shadow DOM) and keeps
- * them in sync with Git stage state. Pierre virtualizes rows, so sync runs on
- * every model notification.
+ * Injects stage controls into Pierre file rows (shadow DOM) and keeps them in
+ * sync with Git state. The shadow observer covers rows recycled by Pierre's
+ * viewport without rescanning every rendered row.
  */
 export function useGitDiffStageCheckboxes(
   model: FileTree,
@@ -170,22 +333,31 @@ export function useGitDiffStageCheckboxes(
     "data-cadencr-git-diff-tree",
     enabled ? GIT_DIFF_TREE_SHADOW_CSS : GIT_DIFF_TREE_SEARCH_CSS,
   );
-  const fileByPathRef = useRef(new Map<string, ChangedFile>());
+  const fileByPath = useMemo(() => new Map(files.map((file) => [file.file, file])), [files]);
+  const controlState = useGitStageControlState(indexActions, fileByPath, enabled);
+  const fileByPathRef = useRef<ReadonlyMap<string, ChangedFile>>(fileByPath);
+  const controlStateRef = useRef(controlState);
   const actionsRef = useRef(indexActions);
-  fileByPathRef.current = new Map(files.map((file) => [file.file, file]));
+  fileByPathRef.current = fileByPath;
+  controlStateRef.current = controlState;
   actionsRef.current = indexActions;
 
   useEffect(() => {
     if (!enabled) {
       shadowRootOf(model)
-        ?.querySelectorAll(`input[${CHECKBOX_ATTR}]`)
+        ?.querySelectorAll(`input[${CHECKBOX_ATTR}], [${LOADER_ATTR}]`)
         .forEach((node) => node.remove());
       return;
     }
 
     const sync = (): void => {
       const shadowRoot = shadowRootOf(model);
-      if (shadowRoot) syncAllFileRows(shadowRoot, fileByPathRef.current, actionsRef.current);
+      if (shadowRoot) {
+        syncAllStageRows(shadowRoot, fileByPathRef.current, controlStateRef.current);
+      }
+    };
+    const syncRow = (row: HTMLElement): void => {
+      syncStageRow(row, fileByPathRef.current, controlStateRef.current);
     };
 
     let detachShadow: (() => void) | null = null;
@@ -199,14 +371,17 @@ export function useGitDiffStageCheckboxes(
       }
       detachShadow = bindStageCheckboxEvents(shadowRoot, fileByPathRef, actionsRef);
       sync();
+      const stopObservingRows = observeStageCheckboxRows(shadowRoot, syncRow);
+      const detachEvents = detachShadow;
+      detachShadow = () => {
+        stopObservingRows();
+        detachEvents();
+      };
     };
 
     attach();
-    const unsubscribe =
-      typeof model.subscribe === "function" ? model.subscribe(sync) : () => undefined;
     return () => {
       if (rafId !== 0) cancelAnimationFrame(rafId);
-      unsubscribe();
       detachShadow?.();
     };
   }, [enabled, model]);
@@ -214,6 +389,6 @@ export function useGitDiffStageCheckboxes(
   useEffect(() => {
     if (!enabled) return;
     const shadowRoot = shadowRootOf(model);
-    if (shadowRoot) syncAllFileRows(shadowRoot, fileByPathRef.current, indexActions);
-  }, [enabled, files, indexActions, model]);
+    if (shadowRoot) syncAllStageRows(shadowRoot, fileByPath, controlState);
+  }, [controlState, enabled, fileByPath, model]);
 }
