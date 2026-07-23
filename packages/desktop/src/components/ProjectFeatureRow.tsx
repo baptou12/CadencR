@@ -63,7 +63,7 @@ interface ProjectFeatureRowProps {
   onUnarchive: (featureId: number) => void;
   onTogglePin: (featureId: number, pinned: boolean) => void;
   onCloseActivity: (featureId: number, shellCount: number, browserCount: number) => void;
-  /** Expand/collapse twisty (or an alignment spacer) rendered by FeatureSubtree. */
+  /** Expand/collapse twisty rendered by FeatureSubtree. */
   hierarchyControl?: ReactNode;
 }
 
@@ -176,7 +176,12 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           }}
         >
           <SidebarShortcutBadge ref={badgeRef} />
-          {hierarchyControl}
+          <div
+            data-feature-hierarchy-gutter
+            className="flex size-3.5 shrink-0 items-center justify-center"
+          >
+            {hierarchyControl}
+          </div>
 
           {/* Live status icon driven by the per-session backend store. The
               column keeps its width even when empty so the title never shifts
