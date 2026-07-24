@@ -104,6 +104,18 @@ pub(super) fn spawn_event_loop(
                         return;
                     }
                 }
+                Ok(AppServerEvent::TransportError { message }) => {
+                    if closing.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    tracing::warn!(%message, "Codex app-server transport failed");
+                    let _ = tx
+                        .send(Err(RuntimeError::new(format!(
+                            "Codex app-server transport failed: {message}"
+                        ))))
+                        .await;
+                    return;
+                }
                 Ok(AppServerEvent::ProcessExited { status, signal }) => {
                     if closing.load(Ordering::SeqCst) {
                         return;

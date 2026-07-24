@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -19,7 +19,6 @@ pub(crate) struct Inner {
     pub(crate) stderr_task: StdMutex<Option<JoinHandle<()>>>,
     pub(crate) reaper_task: StdMutex<Option<JoinHandle<()>>>,
     pub(crate) kill_tx: StdMutex<Option<oneshot::Sender<()>>>,
-    pub(crate) exit_sent: Arc<AtomicBool>,
     pub(crate) client_info: AppServerClientInfo,
     pub(crate) request_timeout: Duration,
 }

@@ -29,28 +29,24 @@ pub(crate) fn mcp_server_status_list_params(cursor: Value) -> Value {
     })
 }
 
-pub(crate) fn decode_inbound_message(message: Value) -> InboundMessage {
-    if let Some(method) = message.get("method").and_then(Value::as_str) {
-        let params = message.get("params").cloned().unwrap_or(Value::Null);
-        return if let Some(id) = message.get("id").filter(|id| !id.is_null()).cloned() {
-            InboundMessage::Event(AppServerEvent::ServerRequest {
-                id,
-                method: method.to_string(),
-                params,
-            })
+pub(crate) fn decode_inbound_message(mut message: Value) -> InboundMessage {
+    let Some(object) = message.as_object_mut() else {
+        return InboundMessage::Ignore;
+    };
+    if let Some(Value::String(method)) = object.remove("method") {
+        let params = object.remove("params").unwrap_or(Value::Null);
+        return if let Some(id) = object.remove("id").filter(|id| !id.is_null()) {
+            InboundMessage::Event(AppServerEvent::ServerRequest { id, method, params })
         } else {
-            InboundMessage::Event(AppServerEvent::Notification {
-                method: method.to_string(),
-                params,
-            })
+            InboundMessage::Event(AppServerEvent::Notification { method, params })
         };
     }
 
-    let Some(id) = message.get("id").and_then(Value::as_u64) else {
+    let Some(id) = object.get("id").and_then(Value::as_u64) else {
         return InboundMessage::Ignore;
     };
 
-    let result = if let Some(error) = message.get("error") {
+    let result = if let Some(error) = object.remove("error") {
         Err(SdkError::Rpc {
             code: error.get("code").and_then(Value::as_i64).unwrap_or(-32000),
             message: error
@@ -60,7 +56,7 @@ pub(crate) fn decode_inbound_message(message: Value) -> InboundMessage {
                 .to_string(),
         })
     } else {
-        Ok(message.get("result").cloned().unwrap_or(Value::Null))
+        Ok(object.remove("result").unwrap_or(Value::Null))
     };
     InboundMessage::Response { id, result }
 }

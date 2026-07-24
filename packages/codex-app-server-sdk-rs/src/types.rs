@@ -34,6 +34,9 @@ pub enum AppServerEvent {
         method: String,
         params: Value,
     },
+    TransportError {
+        message: String,
+    },
     ProcessExited {
         status: Option<i32>,
         signal: Option<i32>,

@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde_json::Value;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdout};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, BufReader};
+use tokio::process::{Child, ChildStderr};
 use tokio::sync::{broadcast, oneshot};
 use tokio::task::JoinHandle;
 
@@ -18,11 +17,13 @@ pub(crate) type PendingMap = HashMap<u64, oneshot::Sender<Result<Value, SdkError
 pub(crate) struct ReaderState {
     pub(crate) pending: Arc<StdMutex<PendingMap>>,
     pub(crate) events: broadcast::Sender<AppServerEvent>,
-    pub(crate) exit_sent: Arc<AtomicBool>,
     pub(crate) max_line_bytes: usize,
 }
 
-pub(crate) fn spawn_reader(state: ReaderState, stdout: ChildStdout) -> JoinHandle<()> {
+pub(crate) fn spawn_reader<R>(state: ReaderState, stdout: R) -> JoinHandle<()>
+where
+    R: AsyncRead + Send + Unpin + 'static,
+{
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         loop {
@@ -42,15 +43,20 @@ pub(crate) fn spawn_reader(state: ReaderState, stdout: ChildStdout) -> JoinHandl
                     }
                     Err(error) => tracing::warn!(%error, "failed to parse codex app-server line"),
                 },
-                Ok(None) => break,
+                Ok(None) => {
+                    report_transport_error(
+                        &state,
+                        SdkError::Protocol("app-server stdout closed".to_string()),
+                    );
+                    return;
+                }
                 Err(error) => {
                     tracing::warn!(%error, "codex app-server stdout read failed");
-                    break;
+                    report_transport_error(&state, error);
+                    return;
                 }
             }
         }
-
-        send_process_exited(&state.pending, &state.events, &state.exit_sent, None, None);
     })
 }
 
@@ -75,7 +81,6 @@ pub(crate) fn spawn_reaper(
     mut kill_rx: oneshot::Receiver<()>,
     pending: Arc<StdMutex<PendingMap>>,
     events: broadcast::Sender<AppServerEvent>,
-    exit_sent: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let status = tokio::select! {
@@ -87,17 +92,11 @@ pub(crate) fn spawn_reaper(
         };
         match status {
             Ok(status) => {
-                send_process_exited(
-                    &pending,
-                    &events,
-                    &exit_sent,
-                    status.code(),
-                    exit_signal(&status),
-                );
+                send_process_exited(&pending, &events, status.code(), exit_signal(&status));
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to reap codex app-server process");
-                send_process_exited(&pending, &events, &exit_sent, None, None);
+                send_process_exited(&pending, &events, None, None);
             }
         }
     })
@@ -125,23 +124,48 @@ fn handle_message(state: &ReaderState, message: Value) {
 fn send_process_exited(
     pending: &Arc<StdMutex<PendingMap>>,
     events: &broadcast::Sender<AppServerEvent>,
-    exit_sent: &AtomicBool,
     status: Option<i32>,
     signal: Option<i32>,
 ) {
-    if exit_sent.swap(true, Ordering::SeqCst) {
-        return;
-    }
     drain_pending_process_exited(pending);
     let _ = events.send(AppServerEvent::ProcessExited { status, signal });
 }
 
 fn drain_pending_process_exited(pending: &Arc<StdMutex<PendingMap>>) {
+    drain_pending_with(pending, || SdkError::ProcessExited);
+}
+
+fn drain_pending_with(pending: &Arc<StdMutex<PendingMap>>, make_error: impl Fn() -> SdkError) {
     if let Ok(mut pending) = pending.lock() {
         for (_, tx) in pending.drain() {
-            let _ = tx.send(Err(SdkError::ProcessExited));
+            let _ = tx.send(Err(make_error()));
         }
     }
+}
+
+fn report_transport_error(state: &ReaderState, error: SdkError) {
+    let message = match error {
+        SdkError::Protocol(message) => {
+            drain_pending_with(&state.pending, || SdkError::Protocol(message.clone()));
+            message
+        }
+        SdkError::Io(error) => {
+            let kind = error.kind();
+            let detail = error.to_string();
+            drain_pending_with(&state.pending, || {
+                SdkError::Io(std::io::Error::new(kind, detail.clone()))
+            });
+            format!("io error: {detail}")
+        }
+        error => {
+            let message = error.to_string();
+            drain_pending_with(&state.pending, || SdkError::Protocol(message.clone()));
+            message
+        }
+    };
+    let _ = state
+        .events
+        .send(AppServerEvent::TransportError { message });
 }
 
 async fn read_bounded_line<R>(
@@ -163,16 +187,17 @@ where
 
         let newline = available.iter().position(|byte| *byte == b'\n');
         let take = newline.unwrap_or(available.len());
-        bytes.extend_from_slice(&available[..take]);
         let found_newline = newline.is_some();
         let consume = newline.map_or(take, |position| position + 1);
-        reader.consume(consume);
 
-        if bytes.len() > max_line_bytes {
+        if bytes.len().saturating_add(take) > max_line_bytes {
+            reader.consume(consume);
             return Err(SdkError::Protocol(format!(
                 "app-server line exceeded {max_line_bytes} bytes"
             )));
         }
+        bytes.extend_from_slice(&available[..take]);
+        reader.consume(consume);
         if found_newline {
             break;
         }
@@ -199,16 +224,17 @@ fn exit_signal(_status: &std::process::ExitStatus) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex as StdMutex};
 
     use serde_json::{json, Value};
-    use tokio::io::BufReader;
+    use tokio::io::{AsyncWriteExt, BufReader};
     use tokio::sync::{broadcast, oneshot};
 
     use super::{
-        drain_pending_process_exited, handle_message, read_bounded_line, ReaderState, SdkError,
+        drain_pending_process_exited, handle_message, read_bounded_line, spawn_reader, ReaderState,
+        SdkError,
     };
+    use crate::client::DEFAULT_MAX_LINE_BYTES;
     use crate::types::AppServerEvent;
 
     type PendingMap = Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Value, SdkError>>>>>;
@@ -220,7 +246,6 @@ mod tests {
             ReaderState {
                 pending: Arc::clone(&pending),
                 events,
-                exit_sent: Arc::new(AtomicBool::new(false)),
                 max_line_bytes: 1024,
             },
             event_rx,
@@ -245,6 +270,60 @@ mod tests {
             .await
             .expect_err("line should exceed limit");
         assert!(error.to_string().contains("exceeded"));
+    }
+
+    #[tokio::test]
+    async fn default_limit_accepts_base64_screenshot_sized_messages() {
+        let frame = vec![b'a'; 10 * 1024 * 1024];
+        let mut reader = BufReader::new(frame.as_slice());
+
+        let decoded = read_bounded_line(&mut reader, DEFAULT_MAX_LINE_BYTES)
+            .await
+            .expect("image-sized JSONL frame should fit within the default limit")
+            .expect("reader should return the frame");
+
+        assert_eq!(decoded.len(), frame.len());
+    }
+
+    #[tokio::test]
+    async fn oversized_frame_reports_transport_error_without_claiming_process_exit() {
+        let (mut state, mut event_rx, pending) = reader_state();
+        state.max_line_bytes = 3;
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert(9, tx);
+        let (reader, mut writer) = tokio::io::duplex(64);
+        let reader_task = spawn_reader(state, reader);
+
+        writer.write_all(b"abcdef\n").await.unwrap();
+        drop(writer);
+
+        let AppServerEvent::TransportError { message } = event_rx.recv().await.unwrap() else {
+            panic!("expected transport error event");
+        };
+        assert_eq!(message, "app-server line exceeded 3 bytes");
+        assert_eq!(
+            rx.await.unwrap().unwrap_err().to_string(),
+            "app-server protocol error: app-server line exceeded 3 bytes"
+        );
+        reader_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stdout_eof_reports_transport_error() {
+        let (state, mut event_rx, pending) = reader_state();
+        let (tx, rx) = oneshot::channel();
+        pending.lock().unwrap().insert(9, tx);
+
+        spawn_reader(state, tokio::io::empty()).await.unwrap();
+
+        let AppServerEvent::TransportError { message } = event_rx.recv().await.unwrap() else {
+            panic!("expected transport error event");
+        };
+        assert_eq!(message, "app-server stdout closed");
+        assert_eq!(
+            rx.await.unwrap().unwrap_err().to_string(),
+            "app-server protocol error: app-server stdout closed"
+        );
     }
 
     #[tokio::test]

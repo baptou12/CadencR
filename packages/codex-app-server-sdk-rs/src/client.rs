@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -20,7 +20,10 @@ use crate::types::{
 };
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-const DEFAULT_MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
+// `view_image` results contain base64-encoded image data in one JSONL frame.
+// Keep the transport bounded while leaving room for normal high-resolution
+// screenshots, whose encoded payloads can exceed 8 MiB.
+pub(crate) const DEFAULT_MAX_LINE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct CodexAppServerClient {
@@ -69,7 +72,6 @@ impl CodexAppServerClient {
             .ok_or_else(|| SdkError::Protocol("missing app-server stderr".to_string()))?;
         let (events, _) = broadcast::channel(512);
         let pending = Arc::new(StdMutex::new(HashMap::new()));
-        let exit_sent = Arc::new(AtomicBool::new(false));
         let max_line_bytes = options.max_line_bytes.unwrap_or(DEFAULT_MAX_LINE_BYTES);
         let (kill_tx, kill_rx) = oneshot::channel();
         let inner = Arc::new(Inner {
@@ -82,7 +84,6 @@ impl CodexAppServerClient {
             stderr_task: StdMutex::new(None),
             reaper_task: StdMutex::new(None),
             kill_tx: StdMutex::new(Some(kill_tx)),
-            exit_sent: Arc::clone(&exit_sent),
             client_info: options.client_info,
             request_timeout: options.request_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT),
         });
@@ -90,7 +91,6 @@ impl CodexAppServerClient {
             ReaderState {
                 pending: Arc::clone(&inner.pending),
                 events: inner.events.clone(),
-                exit_sent: Arc::clone(&inner.exit_sent),
                 max_line_bytes,
             },
             stdout,
@@ -109,13 +109,7 @@ impl CodexAppServerClient {
             .reaper_task
             .lock()
             .map_err(|_| SdkError::Protocol("reaper task lock poisoned".to_string()))?
-            .replace(spawn_reaper(
-                child,
-                kill_rx,
-                pending,
-                inner.events.clone(),
-                exit_sent,
-            ));
+            .replace(spawn_reaper(child, kill_rx, pending, inner.events.clone()));
         Ok(Self { inner })
     }
 
