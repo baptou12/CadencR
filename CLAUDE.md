@@ -1,56 +1,74 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-Cadencr is a desktop IDE that wraps multiple AI coding agents (Claude Code, OpenCode, Codex) behind a unified workspace.
-
-## Monorepo Structure
-
-pnpm workspaces + Turborepo. TypeScript frontend, Rust backend, and several Rust SDKs.
+Cadencr is a desktop IDE that wraps multiple AI coding agents (Claude Code, Codex, Cursor, OpenCode) behind a unified workspace. pnpm workspaces + Turborepo; React/Electron frontend, Rust backend, Rust SDKs.
 
 | Package | Stack | Purpose |
 |---|---|---|
 | `packages/desktop/` | Electron + React | Desktop shell and frontend (`@cadencr/desktop`) |
-| `packages/service/` | Rust (axum, utoipa) | Backend API server; runs as Electron sidecar in packaged builds |
-| `packages/claude-agent-sdk-rs/` | Rust | SDK for Claude Code agents |
-| `packages/codex-app-server-sdk-rs/` | Rust | SDK for Codex agents |
-| `packages/opencode-sdk-rs/` | Rust | SDK for OpenCode agents |
+| `packages/service/` | Rust (axum, utoipa) | Backend API; runs as the Electron sidecar in packaged builds |
+| `packages/*-sdk-rs/` | Rust | Per-provider SDKs (`claude-agent`, `codex-app-server`, `cursor-agent`, `opencode`) — transport only |
 | `packages/cli-discovery/` | Rust | Detects locally installed agent CLIs |
-| `packages/landing/` | Next.js | Marketing site, docs, roadmap |
+| `packages/brand/` | TS | Brand source of truth; generates icons and social assets |
+| `packages/landing/` | Astro | Marketing site, docs, roadmap |
 
-## Agent Providers
+Frontend path alias: `@` → `packages/desktop/src/`. Frontend ↔ backend is HTTP (Axios, generated client) for requests and a WebSocket for streaming updates.
 
-Cadencr is provider-neutral by design. Each supported agent (Claude Code, OpenCode, Codex) has its own Rust SDK in `packages/*-sdk-rs/` that handles transport/protocol details only. Provider-specific business logic lives in adapters inside `packages/service/`; shared frontend and backend code consumes provider-neutral types and catalog data — never branch on provider identity in generic code.
+## Gotchas
 
-## Workflow
+**Never run bare `cargo`.** Use `pnpm rust -- <args>` (or `node scripts/cargo-env.mjs cargo …`). The wrapper pins `CARGO_TARGET_DIR` to this worktree and strips `RUSTC_WRAPPER`/`SCCACHE_*`; bare cargo triggers a cold rebuild and mixes artifacts across branches.
 
-Requires `pnpm`, Node `>=22.18.0 <23.0.0`, and `cargo-watch` for `pnpm dev`.
+**`pnpm start` is not an alias for `pnpm dev`.** `start` is desktop-only: it builds the service binary once and never runs it, so the frontend talks to nothing unless a service is already up. `pnpm dev` runs both (plus the landing site). The first `pnpm dev` in a fresh worktree cold-builds the whole Rust tree — `pnpm dev:precompile` does that ahead of time.
+
+**Dev needs both `.env` files.** Debug builds of the service hard-fail without `packages/service/.env` (`CADENCR_DB_PATH`, `CADENCR_RUST_PORT`, `CADENCR_FRONTEND_PORT`, `CADENCR_AUTH_TOKEN`). `CADENCR_AUTH_TOKEN` must equal desktop's `VITE_API_TOKEN` or every request 401s — the client sends it as the `X-Cadencr-Token` header, not `Authorization`. Defaults: `1420` frontend, `5005` service.
+
+**sqlx runs queries at runtime, not compile time.** The service uses `sqlx::query(...)` exclusively — no `query!`/`query_as!` macros, no `DATABASE_URL` needed to build, no `.sqlx/` offline dir. Don't introduce the macros.
+
+**Warnings are errors.** The Cargo workspace denies `dead_code`, `unused_imports`, and `unused_variables`, so scaffolding an unused helper breaks the build.
+
+**A new Rust endpoint takes three edits, not one.** It stays invisible to the frontend until it is (1) merged into `build_api_routes()` in `packages/service/src/api/mod.rs`, (2) listed in `paths(...)` / `components(schemas(...))` in `packages/service/src/api/openapi.rs`, and (3) picked up by `pnpm --filter @cadencr/desktop run generate:api` — commit the regenerated `packages/desktop/src/api/generated/index.ts`. Hook-name overrides live in `packages/desktop/orval.transformer.cjs`.
+
+**One error shape.** Handlers return `AppError` (`packages/service/src/error.rs`), serialized as `{error, code}` with a stable SCREAMING_SNAKE code; `sqlx::Error` converts automatically. Don't invent new shapes.
+
+**One WS envelope.** Every message in both directions is `WsEnvelope { id, domain, action, ref, payload }` (`packages/service/src/domain/ws_session/protocol.rs`); replies echo `ref`. Stream payloads carry a monotonic `seq` — the frontend detects gaps and resyncs (`packages/desktop/src/stores/ws-*.ts`).
+
+**Adding a provider is one registry edit.** `static ADAPTERS` in `packages/service/src/domain/agents/providers/mod.rs`. SDK crates carry transport only; provider-specific behavior belongs in that provider's adapter.
+
+**Check `packages/service/src/shared/` first** (`git_cli`, `worktree_paths`, `slug`, `db`, `env`) before writing a backend helper.
+
+**Generated files are never hand-edited:** `packages/desktop/src/routes/routeTree.gen.ts` (TanStack Router) and `packages/desktop/src/api/generated/index.ts` (orval — committed). `packages/service/openapi.json` is derived and gitignored.
+
+**New dependencies are gated.** `pnpm-workspace.yaml` sets a strict `minimumReleaseAge` (14 days) plus `blockExoticSubdeps` and `trustPolicy: no-downgrade` — a freshly published package is rejected unless added to `minimumReleaseAgeExclude`.
+
+**Editing `.claude/rules/*.md` requires `pnpm build:agents-md`.** Pre-commit runs it with `--check` and hard-fails on a stale `AGENTS.md` (the Codex/OpenCode mirror).
+
+**Remote access needs a pre-built renderer.** Vite's dev server can't serve it: set `CADENCR_RENDERER_DIR=../desktop/out/renderer` and rebuild after every frontend change.
+
+## Commands
 
 ```bash
-pnpm dev                                  # frontend + service via Turborepo (alias: pnpm start)
-pnpm build                                # build the desktop app
-pnpm test                                 # vitest (frontend) + cargo test (Rust)
-pnpm lint                                 # oxlint
-pnpm format                               # oxfmt + cargo fmt
-pnpm --filter @cadencr/desktop ts-check   # TypeScript type-check
-pnpm --filter @cadencr/desktop knip       # unused-export detection
+pnpm dev            # frontend + service (+ landing); needs cargo-watch
+pnpm start          # desktop only — no service watcher
+pnpm rust -- test   # any cargo command (never bare `cargo`)
+pnpm build          # build the desktop app
+pnpm test           # turbo test (vitest + cargo test) plus scripts/*.test.mjs
+pnpm lint           # oxlint + cargo check
+pnpm format         # oxfmt + cargo fmt
+pnpm --filter @cadencr/desktop ts-check
+pnpm --filter @cadencr/desktop knip   # unused exports
 ```
 
-Target a single package: `pnpm --filter @cadencr/desktop <task>`. Frontend/service ports are configured via `packages/desktop/.env` and `packages/service/.env` (defaults `1420` / `5005`).
-
-## Architecture
-
-Electron desktop shell with a React frontend. The backend is the Rust API server in `packages/service/`, spawned as a sidecar in production; in dev `pnpm dev` runs it alongside the frontend via Turborepo. Frontend ↔ backend communication is HTTP (Axios) for requests and WebSocket (Zustand store) for streaming updates. Folder selection uses Electron native dialogs through the preload bridge.
-
-Frontend path alias: `@` → `packages/desktop/src/` (for example `import { foo } from "@/lib/foo"`).
+Node `>=22.18.0 <23.0.0`. Pre-commit runs `format:check lint ts-check test knip` across the workspace, so `knip` is not optional.
 
 ## Definition of done
 
-Before claiming a task complete:
+- **Checks pass:** `ts-check`, `lint`, and the relevant tests.
+- **Verified in the running app.** Any behavior change must be exercised against a live `pnpm dev`: real API calls for backend changes, real UI interaction for frontend changes. "It compiles", "tests pass", and "the code looks right" are not done.
 
-- **Checks pass.** Run `pnpm --filter @cadencr/desktop ts-check`, `pnpm lint`, and the relevant tests — vitest for the frontend, `cargo test` for Rust.
-- **Verified end-to-end in the running app.** Any behavior change must be exercised against a live `pnpm dev` instance: for backend/API changes, make real API calls against the dev server; for frontend changes, drive the UI via the qa skill, the Cadencr browser MCP, or devtools. "It compiles", "tests pass", and "the code looks right" are not done. (If the Rust API surface changed, also regenerate and commit the client — see "Project-specific workflows" below.)
+Use the `qa` skill to drive the UI, and `finish-job` to simplify, check coverage, and prepare a commit.
 
-## Project-specific workflows
+## Going deeper
 
-**Regenerating the API client.** After changing the Rust API surface (utoipa attributes / new handlers), run `pnpm --filter @cadencr/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/desktop/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/desktop/orval.transformer.cjs`.
+- `DESIGN.md` — source of truth for desktop visual design (tokens, themes, typography, component anatomy). Read before user-facing visual work.
+- `docs/REWIND_AND_FORK.md`, `docs/PROVIDER_SPEC/` — subsystem specs. `CONTRIBUTING.md` — contribution workflow.
+- Skills: `db`, `qa`, `release`, `migration-safety`, `keyboard-shortcuts`, `finish-job`.
+- `.claude/rules/*.md` — path-scoped rules that load automatically when you touch matching files.

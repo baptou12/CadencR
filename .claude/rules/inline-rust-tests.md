@@ -3,4 +3,4 @@ paths:
   - "**/*.rs"
 ---
 
-In Rust source files, keep unit tests inline with the code they cover. Do not create or expand dedicated sibling test files like `tests.rs` just to hold unit tests for a module. If a Rust module needs more room, split production code into smaller modules or files, but keep each module’s unit tests in the same source file behind `#[cfg(test)]`.
+Keep Rust unit tests inline, behind `#[cfg(test)]` in the file they cover — no sibling `tests.rs`. If a module needs more room, split the production code into smaller modules and keep each one's tests with it. Integration tests live in `packages/service/tests/`.

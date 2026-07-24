@@ -6,47 +6,71 @@ The `## Rules` section below is **auto-generated** from `.claude/rules/*.md` —
 
 ## Monorepo Structure
 
-pnpm workspaces + Turborepo. TypeScript frontend, Rust backend, and several Rust SDKs.
+Cadencr is a desktop IDE that wraps multiple AI coding agents (Claude Code, Codex, Cursor, OpenCode) behind a unified workspace. pnpm workspaces + Turborepo; React/Electron frontend, Rust backend, Rust SDKs.
 
 | Package | Stack | Purpose |
 |---|---|---|
 | `packages/desktop/` | Electron + React | Desktop shell and frontend (`@cadencr/desktop`) |
-| `packages/service/` | Rust (axum, utoipa) | Backend API server; runs as Electron sidecar in packaged builds |
-| `packages/claude-agent-sdk-rs/` | Rust | SDK for Claude Code agents |
-| `packages/codex-app-server-sdk-rs/` | Rust | SDK for Codex agents |
-| `packages/opencode-sdk-rs/` | Rust | SDK for OpenCode agents |
+| `packages/service/` | Rust (axum, utoipa) | Backend API; runs as the Electron sidecar in packaged builds |
+| `packages/*-sdk-rs/` | Rust | Per-provider SDKs (`claude-agent`, `codex-app-server`, `cursor-agent`, `opencode`) — transport only |
 | `packages/cli-discovery/` | Rust | Detects locally installed agent CLIs |
-| `packages/landing/` | Next.js | Marketing site, docs, roadmap |
+| `packages/brand/` | TS | Brand source of truth; generates icons and social assets |
+| `packages/landing/` | Astro | Marketing site, docs, roadmap |
 
-## Agent Providers
+Frontend path alias: `@` → `packages/desktop/src/`. Frontend ↔ backend is HTTP (Axios, generated client) for requests and a WebSocket for streaming updates.
 
-Cadencr is provider-neutral by design. Each supported agent (Claude Code, OpenCode, Codex) has its own Rust SDK in `packages/*-sdk-rs/` that handles transport/protocol details only. Provider-specific business logic lives in adapters inside `packages/service/`; shared frontend and backend code consumes provider-neutral types and catalog data — never branch on provider identity in generic code.
+## Gotchas
 
-## Workflow
+**Never run bare `cargo`.** Use `pnpm rust -- <args>` (or `node scripts/cargo-env.mjs cargo …`). The wrapper pins `CARGO_TARGET_DIR` to this worktree and strips `RUSTC_WRAPPER`/`SCCACHE_*`; bare cargo triggers a cold rebuild and mixes artifacts across branches.
 
-Requires `pnpm`, Node `>=22.18.0 <23.0.0`, and `cargo-watch` for `pnpm dev`.
+**`pnpm start` is not an alias for `pnpm dev`.** `start` is desktop-only: it builds the service binary once and never runs it, so the frontend talks to nothing unless a service is already up. `pnpm dev` runs both (plus the landing site). The first `pnpm dev` in a fresh worktree cold-builds the whole Rust tree — `pnpm dev:precompile` does that ahead of time.
+
+**Dev needs both `.env` files.** Debug builds of the service hard-fail without `packages/service/.env` (`CADENCR_DB_PATH`, `CADENCR_RUST_PORT`, `CADENCR_FRONTEND_PORT`, `CADENCR_AUTH_TOKEN`). `CADENCR_AUTH_TOKEN` must equal desktop's `VITE_API_TOKEN` or every request 401s — the client sends it as the `X-Cadencr-Token` header, not `Authorization`. Defaults: `1420` frontend, `5005` service.
+
+**sqlx runs queries at runtime, not compile time.** The service uses `sqlx::query(...)` exclusively — no `query!`/`query_as!` macros, no `DATABASE_URL` needed to build, no `.sqlx/` offline dir. Don't introduce the macros.
+
+**Warnings are errors.** The Cargo workspace denies `dead_code`, `unused_imports`, and `unused_variables`, so scaffolding an unused helper breaks the build.
+
+**A new Rust endpoint takes three edits, not one.** It stays invisible to the frontend until it is (1) merged into `build_api_routes()` in `packages/service/src/api/mod.rs`, (2) listed in `paths(...)` / `components(schemas(...))` in `packages/service/src/api/openapi.rs`, and (3) picked up by `pnpm --filter @cadencr/desktop run generate:api` — commit the regenerated `packages/desktop/src/api/generated/index.ts`. Hook-name overrides live in `packages/desktop/orval.transformer.cjs`.
+
+**One error shape.** Handlers return `AppError` (`packages/service/src/error.rs`), serialized as `{error, code}` with a stable SCREAMING_SNAKE code; `sqlx::Error` converts automatically. Don't invent new shapes.
+
+**One WS envelope.** Every message in both directions is `WsEnvelope { id, domain, action, ref, payload }` (`packages/service/src/domain/ws_session/protocol.rs`); replies echo `ref`. Stream payloads carry a monotonic `seq` — the frontend detects gaps and resyncs (`packages/desktop/src/stores/ws-*.ts`).
+
+**Adding a provider is one registry edit.** `static ADAPTERS` in `packages/service/src/domain/agents/providers/mod.rs`. SDK crates carry transport only; provider-specific behavior belongs in that provider's adapter.
+
+**Check `packages/service/src/shared/` first** (`git_cli`, `worktree_paths`, `slug`, `db`, `env`) before writing a backend helper.
+
+**Generated files are never hand-edited:** `packages/desktop/src/routes/routeTree.gen.ts` (TanStack Router) and `packages/desktop/src/api/generated/index.ts` (orval — committed). `packages/service/openapi.json` is derived and gitignored.
+
+**New dependencies are gated.** `pnpm-workspace.yaml` sets a strict `minimumReleaseAge` (14 days) plus `blockExoticSubdeps` and `trustPolicy: no-downgrade` — a freshly published package is rejected unless added to `minimumReleaseAgeExclude`.
+
+**Editing `.claude/rules/*.md` requires `pnpm build:agents-md`.** Pre-commit runs it with `--check` and hard-fails on a stale `AGENTS.md`.
+
+**Remote access needs a pre-built renderer.** Vite's dev server can't serve it: set `CADENCR_RENDERER_DIR=../desktop/out/renderer` and rebuild after every frontend change.
+
+## Commands
+
+Requires `pnpm` and Node `>=22.18.0 <23.0.0`; `pnpm dev` needs `cargo-watch`.
 
 ```bash
-pnpm dev                                  # frontend + service via Turborepo (alias: pnpm start)
-pnpm build                                # build the desktop app
-pnpm test                                 # vitest (frontend) + cargo test (Rust)
-pnpm lint                                 # oxlint
-pnpm format                               # oxfmt + cargo fmt
-pnpm --filter @cadencr/desktop ts-check   # TypeScript type-check
-pnpm --filter @cadencr/desktop knip       # unused-export detection
+pnpm dev            # frontend + service (+ landing)
+pnpm start          # desktop only — no service watcher
+pnpm rust -- test   # any cargo command (never bare `cargo`)
+pnpm build          # build the desktop app
+pnpm test           # turbo test (vitest + cargo test) plus scripts/*.test.mjs
+pnpm lint           # oxlint + cargo check
+pnpm format         # oxfmt + cargo fmt
+pnpm --filter @cadencr/desktop ts-check
+pnpm --filter @cadencr/desktop knip   # unused exports
 ```
 
-Target a single package: `pnpm --filter @cadencr/desktop <task>`. Frontend/service ports are configured via `packages/desktop/.env` and `packages/service/.env` (defaults `1420` / `5005`).
+Pre-commit runs `format:check lint ts-check test knip` across the workspace, so `knip` is not optional.
 
-## Architecture
+## Definition of done
 
-Electron desktop shell with a React frontend. The backend is the Rust API server in `packages/service/`, spawned as a sidecar in production; in dev `pnpm dev` runs it alongside the frontend via Turborepo. Frontend ↔ backend communication is HTTP (Axios) for requests and WebSocket (Zustand store) for streaming updates. Folder selection uses Electron native dialogs through the preload bridge.
-
-Frontend path alias: `@` → `packages/desktop/src/` (for example `import { foo } from "@/lib/foo"`).
-
-## Project-specific workflows
-
-**Regenerating the API client.** After changing the Rust API surface (utoipa attributes / new handlers), run `pnpm --filter @cadencr/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/desktop/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/desktop/orval.transformer.cjs`.
+- **Checks pass:** `ts-check`, `lint`, and the relevant tests.
+- **Verified in the running app.** Any behavior change must be exercised against a live `pnpm dev`: real API calls for backend changes, real UI interaction for frontend changes. "It compiles", "tests pass", and "the code looks right" are not done.
 
 ## Scoped Rules
 
@@ -87,118 +111,83 @@ For agents that do not support project slash commands natively, treat these as s
 ### components
 _Applies to: `packages/desktop/src/components/**`_
 
-shadcn/ui components go in `ui/` subdirectory (new-york style, neutral base). Custom components go directly in `components/`.
+shadcn/ui primitives live in the `ui/` subdirectory (new-york style, neutral base); everything else goes directly in `components/`. Don't hand-roll a button, dialog, dropdown, or input — check `ui/` first.
 
 ### database
 _Applies to: `packages/service/src/shared/db.rs`, `packages/service/src/shared/migrate.rs`, `packages/service/migrations/**`_
 
-Schema migrations are managed by sqlx in the Rust service (`packages/service/migrations/`). New migrations use timestamp-based naming: `YYYYMMDDHHMMSS_description.sql`. They are embedded at compile time via `sqlx::migrate!()` and run automatically on server startup. Migrations are non-reversible (plain `.sql`, not `.up.sql`/`.down.sql`).
+Migrations live in `packages/service/migrations/`, named `YYYYMMDDHHMMSS_description.sql`. They are plain, non-reversible `.sql` (no `.up`/`.down`), embedded via `sqlx::migrate!()` and run on server startup — so a released migration can never be edited, only followed by another one. For destructive changes, schema rebuilds, FK edits, or data cleanup, use the `migration-safety` skill.
 
 ### design-system
 _Applies to: `packages/desktop/**`_
 
-`DESIGN.md` is the source of truth for Cadencr Desktop visual design: tokens, themes, typography, layout states, component anatomy, iconography, and UI self-audit checks.
-
-- Before changing frontend UI, layout, styling, design tokens, icons, or user-facing visual behavior under `packages/desktop/`, read `DESIGN.md` and preserve its constraints.
-- Do not load or summarize `DESIGN.md` for non-visual changes under `packages/desktop/`.
-- If implementation and `DESIGN.md` conflict, pause and surface the mismatch instead of silently inventing a new visual rule.
+`DESIGN.md` (repo root) is the source of truth for Cadencr Desktop visual design: tokens, themes, typography, layout states, component anatomy, and iconography. Read it before changing user-facing UI, styling, or design tokens. If the implementation contradicts it, surface the mismatch instead of inventing a new visual rule.
 
 ### error-handling
 
-Never swallow errors silently. Every error must be surfaced to the user — no empty catch blocks, no `catch (_) {}`, no logging-only without user-visible feedback. On the frontend, show a toast or inline error message. On the backend, return a meaningful error response. A no-op error handler is always wrong.
+Never swallow errors silently — no empty catch blocks, no `catch (_) {}`, no log-only handling. Surface every error to the user: a toast or inline message on the frontend, a meaningful error response on the backend.
 
 ### explicit-state
 _Applies to: `**/*.tsx`, `**/*.ts`_
 
-Every async operation must have visible loading state. If the app is loading, fetching, or processing, the user must see a loader, skeleton, or progress indicator. Users should never stare at a seemingly frozen screen. An unacknowledged wait is a UX bug.
+Every async operation needs visible loading state — a loader, skeleton, or progress indicator. An unacknowledged wait reads as a frozen app.
 
 ### file-size
 
-Max 400 lines per file — past that, split into modules/components so files stay reviewable.
-(test files exempt; enforced by oxlint `max-lines` — see .oxlintrc.json. Rust `.rs` files are checked by the PostToolUse hook in .claude/settings.json.)
+Max 400 lines per file and 100 lines per function — past that, split into modules/components or smaller named functions. Test files are exempt.
+(oxlint `max-lines` / `max-lines-per-function` enforce this for TS — see .oxlintrc.json; a PostToolUse hook in .claude/settings.json checks `.rs` files. The service stays under the limit with a `foo.rs` + sibling `foo/` directory layout.)
 
 ### frontend-performance
 _Applies to: `packages/desktop/src/**`_
 
-These rules apply to frontend code under `packages/desktop/src/`. The app is an IDE; technical users expect IDE-level responsiveness. Performance is a hard constraint, not an afterthought — think about render cost, subscription scope, main-thread work, and redundant network calls *before* writing the change.
+This is an IDE; users expect IDE-level responsiveness. Treat a perf regression on a hot path (agent stream, terminal, editor, long lists) as a correctness bug.
 
-#### Mandatory practices
+- **Always select from Zustand stores.** `useFooStore()` with no selector subscribes the consumer to every mutation, on every session. Select the slice you read — `useFooStore((s) => s.fieldA)` — and reach for `useFooStore.getState()` for actions that shouldn't drive renders.
+- **Stabilize hook return values.** A hook that returns a fresh object literal each render breaks every downstream `useMemo` and `React.memo`. Wrap the return in `useMemo`, or split state and actions into separate hooks.
+- **`React.memo` hot-path components** and keep their props stable (`useCallback` for callbacks, `useMemo` for objects/arrays). Anything mounted next to a streaming source or kept alive in a hidden tab qualifies.
+- **Virtualize any list whose size scales with user data** — chat, logs, file trees, diff lists — with `react-virtuoso` or `@tanstack/react-virtual`.
+- **Bound main-thread work.** Cache, gate by viewport, or offload synchronous parsing, highlighting, and markdown rendering at mount. Code-split heavy modules (CodeMirror, grammars, decoders) behind dynamic `import()` or `React.lazy`.
+- **Gate layout reads** (`scrollHeight`, `getBoundingClientRect`) — never on every render or every resize event.
 
-- **Always select from Zustand stores.** Never call a store hook without a selector (`useFooStore()` subscribes the consumer to every mutation, on every session). Always select the slice you actually read: `useFooStore((s) => s.fieldA)`. Read actions outside the render flow via `useFooStore.getState()` when they don't need to drive UI updates.
-- **Stabilize hook return values.** A custom hook that returns a fresh object literal each render breaks every downstream `useMemo` and `React.memo`. Wrap the return in `useMemo` keyed on the primitive fields it depends on, or split state and actions into separate hooks.
-- **`React.memo` hot-path components.** Anything mounted next to a streaming source (agent stream, terminal, editor, long list) or kept alive in a hidden tab must be memoized. Verify props are stable — callbacks via `useCallback`, objects/arrays via `useMemo`.
-- **Virtualize long lists.** Rendering hundreds of DOM nodes for a chat, log, file tree, or diff list is a bug. Use `react-virtuoso` or `@tanstack/react-virtual`. The agent stream, file trees, search results, and any list whose size scales with user data must be windowed.
-- **Bound main-thread work.** Synchronous parsing, syntax highlighting, or markdown rendering at mount must be cached, gated by viewport, or offloaded (`requestIdleCallback`, Web Worker). No unbounded synchronous work on first paint.
-- **Lazy-load heavy modules.** Editors (CodeMirror), syntax-highlighting grammars, image/video decoders, and any module > 100 KB gzipped must be code-split via dynamic `import()` or `React.lazy`.
-
-#### Forbidden patterns
-
-- Subscribing a hot component to an entire store (no selector), or returning the raw store from a wrapper hook.
-- Returning a fresh object literal from a custom hook without `useMemo`.
-- Passing freshly-built objects, arrays, or arrow functions as props through a streaming or list-rendering parent — they defeat memoization on every descendant.
-- Adding a new tab, panel, or component under the agent/editor/terminal area without auditing how often it re-renders during streaming.
-- Running heavy computation inside the render body. Move it to `useMemo`, an effect, or off-thread.
-- Triggering layout reads (`scrollHeight`, `getBoundingClientRect`, etc.) on every render or every resize event without gating.
-
-When in doubt, profile first. Don't speculate; don't ignore. A perf regression on a hot path is treated like a correctness bug.
-
-### function-size
-
-Max 100 lines per function — past that, split into smaller, well-named functions so logic stays readable.
-(test files exempt; enforced by oxlint `max-lines-per-function` — see .oxlintrc.json.)
+Before adding a tab, panel, or component under the agent/editor/terminal area, check how often it re-renders during streaming.
 
 ### inline-rust-tests
 _Applies to: `**/*.rs`_
 
-In Rust source files, keep unit tests inline with the code they cover. Do not create or expand dedicated sibling test files like `tests.rs` just to hold unit tests for a module. If a Rust module needs more room, split production code into smaller modules or files, but keep each module’s unit tests in the same source file behind `#[cfg(test)]`.
+Keep Rust unit tests inline, behind `#[cfg(test)]` in the file they cover — no sibling `tests.rs`. If a module needs more room, split the production code into smaller modules and keep each one's tests with it. Integration tests live in `packages/service/tests/`.
 
 ### keyboard-shortcuts
 _Applies to: `**/*.tsx`_
 
-When adding a new user-facing feature, ask whether it needs a keyboard shortcut. Power users rely on keyboard navigation — don't ship a feature that can only be triggered by mouse if it could reasonably have a keybinding.
+Power users drive this app from the keyboard, so a feature that can only be triggered by mouse is incomplete if a binding would make sense. When adding one, use the `keyboard-shortcuts` skill — the registry pipeline has non-QWERTY (`e.code` vs `e.key`) and help-modal requirements that are easy to get wrong.
 
 ### no-optimistic-updates
 _Applies to: `packages/desktop/src/**`_
 
-Do NOT use optimistic updates in the frontend. Everything runs locally — there is no latency to hide. Optimistic updates create multiple sources of truth and add unnecessary complexity.
+No optimistic updates. Everything runs locally — there is no latency to hide, and optimism creates a second source of truth. Zustand state changes only when the backend confirms via a WebSocket event; never set status inside an action dispatcher (`startPlan()`, `approvePlan()`, …).
 
-The Zustand store state must be the single source of truth. Only update store state when the backend confirms a change via WebSocket events. Never set state optimistically in action dispatchers (e.g., don't set status in `startPlan()`, `approvePlan()`, etc. — wait for the backend WebSocket event).
-
-Session/agent status has exactly one canonical source: `useSessionStatusStore` (`@/stores/session-status-store`), populated only by the backend `session_status.update` / `session_status.snapshot` envelopes (`LiveAgentStatus`: `"idle" | "agent" | "question"`). Read "is the agent working?" from there — never re-derive or track it separately.
+Session/agent status has exactly one source: `useSessionStatusStore` (`@/stores/session-status-store`), populated only by `session_status.update` / `session_status.snapshot` (`LiveAgentStatus`: `"idle" | "agent" | "question"`). Read "is the agent working?" from there — never re-derive or track it separately.
 
 ### provider-boundaries
 _Applies to: `packages/service/src/**`, `packages/desktop/src/**`, `packages/*-sdk-rs/src/**`_
 
-Do not scatter provider-specific logic across shared codepaths.
+Cadencr is provider-neutral by design — don't scatter provider-specific logic across shared codepaths.
 
-- Provider SDKs are only for provider communication details.
-- Provider adapters are where provider-specific business logic should live on the backend.
-- Shared backend runtime, workflow, and API code should consume unified adapter interfaces and provider-neutral types.
-- Shared frontend components, hooks, and stores should consume provider-neutral catalog/config data instead of hardcoded provider branches.
-- If a provider needs special handling, extract it into a dedicated provider file or folder rather than adding another provider-specific conditional in generic code.
+- `packages/*-sdk-rs/` crates carry transport and protocol details only.
+- Provider-specific business logic belongs in that provider's backend adapter (`packages/service/src/domain/agents/providers/`).
+- Shared backend runtime, workflow, and API code consumes the unified adapter interface and provider-neutral types.
+- Shared frontend components, hooks, and stores consume provider-neutral catalog/config data — no hardcoded provider branches.
 
-### reusability
-
-Search for existing code before writing new. Check the likely homes first:
-- UI primitives: `packages/desktop/src/components/ui/` (shadcn) — don't hand-roll a button, dialog, dropdown, input, etc.
-- Feature components, hooks, and helpers: `packages/desktop/src/components/`, `hooks/`, `lib/`, `stores/`.
-- Backend shared logic: `packages/service/src/shared/` (git_cli, worktree_paths, slug, db, env).
-
-Grep/glob for a similar utility, helper, hook, or component before adding one. Duplicate code is a bug — extract shared logic instead of copying.
+When a provider needs special handling, extract it into a dedicated provider file or folder rather than adding another conditional to generic code.
 
 ### routes
 _Applies to: `packages/desktop/src/routes/**`_
 
 Do not edit `routeTree.gen.ts` — it is auto-generated by TanStack Router from the file-based routes.
 
-### simplicity
-
-Keep code simple. Prefer the straightforward, obvious implementation over the clever one — complexity is the cost you pay later to maintain it. If an approach feels complex, find a simpler way before writing it. If you can't explain the approach in one sentence, it's too complicated.
-
 ### strict-typing
 _Applies to: `**/*.ts`, `**/*.tsx`_
 
-Never use `any` — use `unknown` and narrow with type guards; prefer explicit types and Zod schemas at boundaries.
-(enforced by oxlint `typescript/no-explicit-any` — see .oxlintrc.json.)
+Never use `any` — use `unknown` and narrow with type guards, and validate external boundaries with Zod. (`typescript/no-explicit-any` is a hard oxlint error, so this fails the build, not just review.)
 
 <!-- end:rules -->
