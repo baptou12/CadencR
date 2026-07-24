@@ -1,20 +1,14 @@
 /**
  * Single source of truth for agent status on the frontend.
  *
- * The store mirrors the per-session entries the backend pushes on
- * `app/session_status.*` envelopes. Every UI surface that displays
- * "agent is working / asking / idle" reads from here:
- *
+ * Mirrors per-session `app/session_status.*` envelopes. Every UI surface
+ * displaying "agent is working / asking / idle" reads from here:
  * - the sidebar (`ProjectFeatureRow`) via `useFeatureStatus(featureId)`
  *   which aggregates per-session entries on the fly;
  * - the conversation badge (`AgentSession`) and the input bar's
  *   "disabled while running" check (`AgentPromptBar`) via
  *   `useSessionStatus(sessionId)`;
- * - the unified-agents sidebar button counter (`UnifiedAgentsSidebarLink`)
- *   and the unified-agents grid header counter (`UnifiedAgentsView`)
- *   via `useLiveWorkingCount(sessionDbIds)`;
- * - the unified-agents "Recent" filter (`UnifiedAgentsViewData`) via
- *   `useLiveActiveSessionIds()`.
+ * - unified-agent counters and filters via their narrow selectors.
  *
  * `ws-session-store.sessions[id].lifecycle` is a separate WS-driven
  * concept (turn-level state machine) used for cross-feature concerns
@@ -22,7 +16,6 @@
  * agents". It is NOT the live status — only this store is.
  *
  * Wire-format contract with the backend (`domain::session_status`):
- *
  * - `session_status.update` carries a monotonic global `seq`. We reject
  *   any update whose seq is <= the seq we already applied for that
  *   session — that closes the "old event arrives after new one" race.
@@ -30,12 +23,10 @@
  *   the backend built it. We merge per-session: an entry is only
  *   overwritten if its current seq is <= the snapshot's seq, so a fresh
  *   live update can't be wiped by a lag-recovery snapshot.
- *
  * Reducers and validators live in `./session-status-handlers` to keep
  * this file focused on the WS lifecycle and Zustand wiring.
  *
- * Conforms to `frontend-performance.md`: every consumer reads via a
- * narrow selector and never subscribes to the whole store.
+ * Every consumer reads via a narrow selector.
  */
 import { create } from "zustand";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
@@ -63,6 +54,8 @@ import {
   handleAppEnvelope,
   notifyTransition,
 } from "@/stores/session-status-handlers";
+import { hydratePrStatuses } from "@/stores/pr-status-hydration";
+import { subscribeForgeStatus } from "@/stores/forge-visibility";
 
 const APP_WS_SOURCE = "app-ws";
 
@@ -167,6 +160,7 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
       // reconnect and not to scribble on the current `store.ws` (which may
       // already be a freshly-created replacement — see Strict Mode race).
       let intentionalClose = false;
+      let unsubscribeForgeVisibility = (): void => {};
 
       ws.addEventListener("open", () => {
         resetReconnectState(APP_WS_SOURCE);
@@ -188,6 +182,11 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         // JSON settings files (or changes made on another device) refresh this
         // client's settings without a manual reload.
         ws.send(JSON.stringify(createEnvelope("app", "subscribe.settings_events", {})));
+        // PR/MR status is global rather than tied to an opened Git pane: every
+        // sidebar row needs updates. The subscription also sends an immediate
+        // cache snapshot; HTTP hydration covers cold-start and reconnect races.
+        unsubscribeForgeVisibility = subscribeForgeStatus(ws);
+        void hydratePrStatuses();
         // Host-only: subscribe to remote device-connection events so a phone
         // pairing/connecting shows a "Device connected" toast. Remote browsers
         // skip this so a device never toasts for its own connection.
@@ -201,6 +200,7 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
       // `store.ws` with a new instance. Both store mutations are gated
       // by an instance check (`get().ws === ws`).
       ws.addEventListener("close", () => {
+        unsubscribeForgeVisibility();
         if (get().ws === ws) {
           set({ isConnected: false, ws: null });
         }

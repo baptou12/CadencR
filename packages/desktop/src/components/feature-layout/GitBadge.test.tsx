@@ -88,4 +88,16 @@ describe("pickIndicator", () => {
     });
     expect(ind?.tooltip).toBe("2 commits pushed, ahead of target");
   });
+
+  it("suppresses the ready-to-open indicator when an open proposal already exists", () => {
+    expect(
+      pickIndicator({
+        uncommitted: 0,
+        aheadOfRemote: 0,
+        aheadOfTarget: 2,
+        targetBranch: "origin/main",
+        hasOpenPr: true,
+      }),
+    ).toBeNull();
+  });
 });

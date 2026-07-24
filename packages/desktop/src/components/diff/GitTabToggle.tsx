@@ -1,13 +1,15 @@
 import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-export type GitViewMode = "uncommitted" | "vs-target" | "graph" | "branches" | "stashes";
+export type GitViewMode = "uncommitted" | "vs-target" | "pr" | "graph" | "branches" | "stashes";
 
 interface GitTabToggleProps {
   value: GitViewMode;
   onChange: (value: GitViewMode) => void;
   /** Branch shown in the "vs <branch>" label; falls back to "vs target". */
   targetBranch?: string;
+  prLabel?: string;
+  prAttention?: boolean;
   disabled?: boolean;
 }
 
@@ -20,6 +22,8 @@ export const GitTabToggle = memo(function GitTabToggle({
   value,
   onChange,
   targetBranch,
+  prLabel = "PR",
+  prAttention = false,
   disabled = false,
 }: GitTabToggleProps) {
   const targetLabel = useMemo(
@@ -44,6 +48,13 @@ export const GitTabToggle = memo(function GitTabToggle({
         disabled={disabled}
         label={targetLabel}
         onClick={() => onChange("vs-target")}
+      />
+      <ToggleButton
+        active={value === "pr"}
+        attention={prAttention}
+        disabled={disabled}
+        label={prLabel}
+        onClick={() => onChange("pr")}
       />
       <ToggleButton
         active={value === "graph"}
@@ -71,10 +82,11 @@ interface ToggleButtonProps {
   active: boolean;
   disabled: boolean;
   label: string;
+  attention?: boolean;
   onClick: () => void;
 }
 
-function ToggleButton({ active, disabled, label, onClick }: ToggleButtonProps) {
+function ToggleButton({ active, attention = false, disabled, label, onClick }: ToggleButtonProps) {
   return (
     <button
       type="button"
@@ -91,7 +103,10 @@ function ToggleButton({ active, disabled, label, onClick }: ToggleButtonProps) {
           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
       )}
     >
-      {label}
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {attention && <span className="size-1.5 rounded-full bg-[var(--acc-orange)]" aria-hidden />}
+      </span>
     </button>
   );
 }

@@ -9,7 +9,7 @@
  * none are, `primary` is `null` and the main button is disabled.
  */
 import { useMemo } from "react";
-import type { GitOperationKind, GitStatusSnapshot } from "@/api/generated";
+import type { GitOperationKind, GitStatusSnapshot, PrSummary } from "@/api/generated";
 import { gitUpdateContinueDisabledReason } from "./gitUpdateMessages";
 
 export type GitAction = "commit" | "stash" | "update" | "push" | "pr" | "merge";
@@ -79,7 +79,8 @@ function derivePushDisabled(snapshot: GitStatusSnapshot): string | null {
   return null;
 }
 
-function derivePrDisabled(snapshot: GitStatusSnapshot): string | null {
+function derivePrDisabled(snapshot: GitStatusSnapshot, existingPr?: PrSummary): string | null {
+  if (existingPr) return null;
   if (snapshot.uncommitted_count > 0) return "Commit your changes first";
   if (snapshot.ahead_of_remote > 0) return "Push your commits first";
   if (!snapshot.has_remote) return "No remote configured";
@@ -177,6 +178,7 @@ export function deriveGitAction(
   snapshot: GitStatusSnapshot | undefined,
   updatePending = false,
   stashMutationBlockedReason: string | null = null,
+  existingPr?: PrSummary,
 ): GitActionState {
   if (!snapshot) return LOADING_STATE;
 
@@ -211,7 +213,9 @@ export function deriveGitAction(
     };
   }
 
-  const compareLabel = snapshot.action_label ?? "Open PR";
+  const compareLabel = existingPr
+    ? `View ${existingPr.pr_label} ${existingPr.number}`
+    : (snapshot.action_label ?? "Open PR");
   const disabled: Record<GitAction, string | null> = {
     commit: mutationBlockedReason ?? deriveCommitDisabled(snapshot),
     stash: mutationBlockedReason ?? stashMutationBlockedReason ?? deriveStashDisabled(snapshot),
@@ -219,7 +223,7 @@ export function deriveGitAction(
     push: mutationBlockedReason ?? derivePushDisabled(snapshot),
     // Opening an existing compare URL does not mutate Git, so keep it
     // available while an update request or recovery operation is active.
-    pr: derivePrDisabled(snapshot),
+    pr: derivePrDisabled(snapshot, existingPr),
     merge: mutationBlockedReason ?? deriveMergeDisabled(snapshot),
   };
 
@@ -263,9 +267,10 @@ export function useGitAction(
   snapshot: GitStatusSnapshot | undefined,
   updatePending = false,
   stashMutationBlockedReason: string | null = null,
+  existingPr?: PrSummary,
 ): GitActionState {
   return useMemo(
-    () => deriveGitAction(snapshot, updatePending, stashMutationBlockedReason),
-    [snapshot, stashMutationBlockedReason, updatePending],
+    () => deriveGitAction(snapshot, updatePending, stashMutationBlockedReason, existingPr),
+    [existingPr, snapshot, stashMutationBlockedReason, updatePending],
   );
 }

@@ -1,5 +1,6 @@
 import { memo, useState, type ReactElement } from "react";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
+import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 
 interface GitBadgeProps {
   featureId: number;
@@ -35,6 +36,7 @@ export const GitBadge = memo(function GitBadge({
   // counts change (per frontend-performance.md). Other features streaming
   // status updates won't touch this subscription.
   const snapshot = useGitStatusStore(selectGitStatus(featureId));
+  const prStatus = usePrStatusStore(selectPrStatus(featureId));
   const branch = snapshot?.current_branch ?? gitBranch ?? null;
   const uncommitted = snapshot?.uncommitted_count ?? 0;
   const aheadOfRemote = snapshot?.ahead_of_remote ?? 0;
@@ -46,6 +48,7 @@ export const GitBadge = memo(function GitBadge({
     aheadOfRemote,
     aheadOfTarget,
     targetBranch,
+    hasOpenPr: prStatus?.pr != null,
   });
 
   return (
@@ -90,8 +93,9 @@ export function pickIndicator(args: {
   aheadOfRemote: number;
   aheadOfTarget: number;
   targetBranch: string | null;
+  hasOpenPr?: boolean;
 }): IndicatorState | null {
-  const { uncommitted, aheadOfRemote, aheadOfTarget, targetBranch } = args;
+  const { uncommitted, aheadOfRemote, aheadOfTarget, targetBranch, hasOpenPr = false } = args;
 
   if (uncommitted > 0) {
     return {
@@ -111,7 +115,7 @@ export function pickIndicator(args: {
       tooltip: `${pluralize(aheadOfRemote, "commit", "commits")} not pushed yet`,
     };
   }
-  if (aheadOfTarget > 0) {
+  if (aheadOfTarget > 0 && !hasOpenPr) {
     return {
       glyph: "↑",
       count: aheadOfTarget,

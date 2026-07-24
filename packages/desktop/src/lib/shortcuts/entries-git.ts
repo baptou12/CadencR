@@ -100,6 +100,13 @@ export const GIT_SHORTCUTS = [
     aliases: ["git", "compare", "target"],
   },
   {
+    id: "git-show-pull-request",
+    keys: ["mod", "shift", "r"],
+    description: "Show pull request or merge request",
+    scope: "diff-viewer",
+    aliases: ["git", "review", "pull request", "merge request"],
+  },
+  {
     // On macOS the native application menu retains its standard Hide role.
     // Electron delivers renderer keydown first; this scoped handler consumes
     // the chord only while the Git pane owns focus and otherwise yields to Hide.

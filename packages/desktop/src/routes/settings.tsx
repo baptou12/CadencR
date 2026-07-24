@@ -9,6 +9,7 @@ import {
   Code2,
   Files,
   GitMerge,
+  GitPullRequest,
   Globe,
   History,
   Info,
@@ -28,6 +29,7 @@ import { BrowserSection } from "@/components/settings/BrowserSection";
 import { McpSection } from "@/components/settings/McpSection";
 import { InterfaceSection } from "@/components/settings/InterfaceSection";
 import { GitSection } from "@/components/settings/GitSection";
+import { ForgeSection } from "@/components/settings/ForgeSection";
 import { ProvidersSection } from "@/components/settings/ProvidersSection";
 import { AboutSection } from "@/components/settings/AboutSection";
 import { AgentVerbositySettings } from "@/components/settings/AgentVerbositySettings";
@@ -108,7 +110,14 @@ const NAV_GROUPS: SettingsNavGroup[] = [
   },
   {
     label: "Source Control",
-    items: [{ id: "git", label: "Git", icon: <GitMerge className="size-4" /> }],
+    items: [
+      { id: "git", label: "Git", icon: <GitMerge className="size-4" /> },
+      {
+        id: "forges",
+        label: "Forges",
+        icon: <GitPullRequest className="size-4" />,
+      },
+    ],
   },
   {
     label: "Providers",
@@ -225,6 +234,7 @@ function SettingsPage() {
           <McpSection />
           <RuntimeSettingsSection />
           <GitSection />
+          <ForgeSection />
           <ProvidersSection />
           <AboutSection />
 

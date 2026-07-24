@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   handleGitEnvelope,
   parseGitStatusSnapshot,
+  parsePrStatusSnapshot,
   resetGitInvalidationSchedulingForTest,
 } from "./ws-git-status-handler";
 import { useGitStatusStore } from "./useGitStatusStore";
@@ -19,6 +20,7 @@ import { selectPushOutput, selectPushRunning, usePushOutputStore } from "./usePu
 import { queryClient } from "@/lib/queryClient";
 import { getGetFileBlobShasQueryKey, getListStashesQueryKey } from "@/api/generated";
 import { getInvalidatePredicate } from "@/test-utils";
+import { usePrStatusStore } from "./usePrStatusStore";
 
 const validSnapshot = {
   feature_id: 7,
@@ -38,11 +40,34 @@ const validSnapshot = {
   computed_at: 1_700_000_000_000,
 };
 
+const validPrSnapshot = {
+  feature_id: 7,
+  fetched_at: 1_700_000_000_001,
+  auth_required: false,
+  error: null,
+  pr: {
+    number: 42,
+    title: "Forge integration",
+    body_markdown: "Ready",
+    state: "open",
+    url: "https://github.com/org/repo/pull/42",
+    source_branch: "feature/foo",
+    target_branch: "main",
+    head_sha: "a".repeat(40),
+    review_state: "pending",
+    author: { username: "octocat", display_name: null, avatar_url: null },
+    updated_at: "2026-07-23T10:00:00Z",
+    pr_label: "PR",
+  },
+  ci: { state: "passing", checks: [] },
+} as const;
+
 beforeEach(() => {
   resetGitInvalidationSchedulingForTest();
   useGitStatusStore.setState({ byFeature: {}, errorByFeature: {} });
   useCommitOutputStore.setState({ byFeature: {} });
   usePushOutputStore.setState({ byFeature: {} });
+  usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
   vi.mocked(toast.error).mockClear();
 });
 
@@ -66,7 +91,63 @@ describe("parseGitStatusSnapshot", () => {
   });
 });
 
+describe("parsePrStatusSnapshot", () => {
+  it("accepts the neutral forge payload and rejects malformed timestamps", () => {
+    expect(parsePrStatusSnapshot(validPrSnapshot)).toEqual(validPrSnapshot);
+    expect(parsePrStatusSnapshot({ ...validPrSnapshot, fetched_at: "later" })).toBeNull();
+  });
+
+  it("rejects malformed nested PR and CI data", () => {
+    expect(parsePrStatusSnapshot({ ...validPrSnapshot, pr: [] })).toBeNull();
+    expect(
+      parsePrStatusSnapshot({
+        ...validPrSnapshot,
+        ci: { state: "unknown", checks: [] },
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("handleGitEnvelope", () => {
+  it("writes the first PR status without invalidating queries", () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+
+    handleGitEnvelope("pr_status", validPrSnapshot as unknown as Record<string, unknown>);
+
+    expect(usePrStatusStore.getState().byFeature[7]).toEqual(validPrSnapshot);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("invalidates comments only when the pull request was updated", () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    usePrStatusStore
+      .getState()
+      .setStatus(validPrSnapshot as unknown as import("@/api/generated").PrStatusSnapshot);
+
+    handleGitEnvelope("pr_status", {
+      ...validPrSnapshot,
+      fetched_at: validPrSnapshot.fetched_at + 1,
+      pr: {
+        ...validPrSnapshot.pr,
+        updated_at: "2026-07-23T10:01:00Z",
+      },
+    } as unknown as Record<string, unknown>);
+
+    const predicate = getInvalidatePredicate(spy.mock.calls[0]?.[0]);
+    expect(predicate({ queryKey: ["/api/git/pr/comments", { feature_id: 7 }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/git/pr", { feature_id: 7 }] })).toBe(false);
+    expect(predicate({ queryKey: ["/api/git/pr", { feature_id: 8 }] })).toBe(false);
+  });
+
+  it("surfaces malformed pull request updates", () => {
+    handleGitEnvelope("pr_status", {
+      ...validPrSnapshot,
+      ci: { state: "invalid", checks: [] },
+    } as unknown as Record<string, unknown>);
+
+    expect(toast.error).toHaveBeenCalledWith("Invalid pull request status update received.");
+  });
+
   it("writes the first valid status into the store without invalidating git queries", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 

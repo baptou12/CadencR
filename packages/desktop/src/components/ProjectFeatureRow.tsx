@@ -25,6 +25,8 @@ import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
 import { useIsFeatureUnread } from "@/stores/unread-store";
+import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
+import { CiStatusDot, FeaturePrChip } from "@/components/PrStatusIndicators";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",
@@ -108,6 +110,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   // Blue dot: the agent finished while this conversation wasn't open. Only
   // meaningful when idle — a working/asking agent already shows its own icon.
   const isUnread = useIsFeatureUnread(feature.id);
+  const prStatus = usePrStatusStore(selectPrStatus(feature.id));
   const isActive = activeFeatureId === feature.id;
   const { data: gitStats } = useGetStats(
     { feature_id: feature.id, mode: "worktree" },
@@ -127,7 +130,8 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
   const hasLabel = !!feature.label;
   const hasActivity = shellCount > 0 || browserCount > 0;
-  const showMetaLine = isEditingLabel || hasLabel || hasStats || hasActivity;
+  const showMetaLine =
+    isEditingLabel || hasLabel || hasStats || hasActivity || prStatus?.pr != null;
   const isArchived = feature.status === "archived";
   const isPinned = feature.is_pinned;
   const archiveActionLabel = isArchived ? "Delete" : "Archive";
@@ -181,7 +185,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           {/* Live status icon driven by the per-session backend store. The
               column keeps its width even when empty so the title never shifts
               as the agent's status changes. */}
-          <div className="flex w-3.5 shrink-0 items-center justify-center">
+          <div className="relative flex w-3.5 shrink-0 items-center justify-center">
             {liveStatus === "agent" && <BotIcon className="size-3.5 animate-pulse text-blue-500" />}
             {liveStatus === "question" && (
               <SidebarPendingGatePopover
@@ -196,6 +200,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
                 aria-label="Unread agent messages"
               />
             )}
+            <CiStatusDot snapshot={prStatus} className="absolute -bottom-0.5 -right-0.5" />
           </div>
 
           {/* Name + optional metadata sub-line (stats) */}
@@ -253,6 +258,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
                     className="text-[11px] leading-tight"
                   />
                 )}
+                <FeaturePrChip snapshot={prStatus} />
                 <FeatureActivityIndicators shellCount={shellCount} browserCount={browserCount} />
               </div>
             )}

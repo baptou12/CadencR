@@ -41,12 +41,14 @@ describe("shortcut registry", () => {
     expect({
       uncommitted: shortcutKeys("git-show-uncommitted"),
       target: shortcutKeys("git-show-vs-target"),
+      pullRequest: shortcutKeys("git-show-pull-request"),
       commits: shortcutKeys("git-show-commits"),
       branches: shortcutKeys("git-show-branches"),
       stashes: shortcutKeys("git-show-stashes"),
     }).toEqual({
       uncommitted: ["mod", "u"],
       target: ["mod", "t"],
+      pullRequest: ["mod", "shift", "r"],
       commits: ["mod", "h"],
       branches: ["mod", "l"],
       stashes: ["mod", "s"],

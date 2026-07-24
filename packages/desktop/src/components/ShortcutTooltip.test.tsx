@@ -2,6 +2,12 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@/test-utils";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 
+function tooltipContent(): HTMLElement {
+  const content = document.querySelector<HTMLElement>('[data-slot="tooltip-content"]');
+  expect(content).not.toBeNull();
+  return content!;
+}
+
 describe("ShortcutTooltip", () => {
   it("renders children", () => {
     render(
@@ -29,10 +35,10 @@ describe("ShortcutTooltip", () => {
     );
     const wrapper = screen.getByText("Btn").parentElement!;
     fireEvent.mouseEnter(wrapper);
-    expect(screen.getByText("My label")).toBeInTheDocument();
+    expect(tooltipContent()).toHaveTextContent("My label");
 
     fireEvent.mouseLeave(wrapper);
-    expect(screen.queryByText("My label")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
   });
 
   it("renders without a keys row when keys is empty or omitted", () => {
@@ -43,7 +49,7 @@ describe("ShortcutTooltip", () => {
     );
     const wrapper = screen.getByText("Btn").parentElement!;
     fireEvent.mouseEnter(wrapper);
-    const bubble = screen.getByText("No keys").parentElement!;
+    const bubble = tooltipContent();
     expect(bubble.querySelector("kbd")).toBeNull();
   });
 
@@ -65,11 +71,8 @@ describe("ShortcutTooltip", () => {
     );
     fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
 
-    const bubble = screen.getByText("Above").parentElement!;
-    // The new portal model uses inline `position: fixed` and a translateY
-    // of -100% to lift the bubble above the trigger.
-    expect(bubble.style.position).toBe("fixed");
-    expect(bubble.style.transform).toContain("-100%");
+    const bubble = tooltipContent();
+    expect(bubble).toHaveAttribute("data-side", "top");
   });
 
   it("positions tooltip below the trigger by default", () => {
@@ -80,13 +83,11 @@ describe("ShortcutTooltip", () => {
     );
     fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
 
-    const bubble = screen.getByText("Below").parentElement!;
-    expect(bubble.style.position).toBe("fixed");
-    // Below mode keeps the Y translate at 0; alignRight/Left only changes X.
-    expect(bubble.style.transform).toContain(", 0");
+    const bubble = tooltipContent();
+    expect(bubble).toHaveAttribute("data-side", "bottom");
   });
 
-  it("positions the bubble vertically centered when toRight is set", () => {
+  it("positions the bubble to the right when toRight is set", () => {
     render(
       <ShortcutTooltip label="Side" keys={["cmd", "B"]} toRight>
         <button>Btn</button>
@@ -94,12 +95,8 @@ describe("ShortcutTooltip", () => {
     );
     fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
 
-    const bubble = screen.getByText("Side").parentElement!;
-    expect(bubble.style.position).toBe("fixed");
-    // toRight uses translateY(-50%) so the bubble vertically centers on the
-    // trigger; translateX stays at 0 (no horizontal alignment shift).
-    expect(bubble.style.transform).toContain("-50%");
-    expect(bubble.style.transform).toContain("0");
+    const bubble = tooltipContent();
+    expect(bubble).toHaveAttribute("data-side", "right");
   });
 
   it("portals the bubble outside the wrapper so ancestor overflow can't clip it", () => {
@@ -110,9 +107,20 @@ describe("ShortcutTooltip", () => {
     );
     const wrapper = screen.getByText("Btn").parentElement!;
     fireEvent.mouseEnter(wrapper);
-    const bubble = screen.getByText("Portaled").parentElement!;
+    const bubble = tooltipContent();
     // The bubble lives directly under `document.body`, not inside the wrapper.
     expect(wrapper.contains(bubble)).toBe(false);
-    expect(bubble.parentElement).toBe(document.body);
+    expect(bubble.parentElement?.parentElement).toBe(document.body);
+  });
+
+  it("caps the portal content to the viewport width", () => {
+    render(
+      <ShortcutTooltip label="Contained">
+        <button>Btn</button>
+      </ShortcutTooltip>,
+    );
+    fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
+
+    expect(tooltipContent()).toHaveClass("max-w-[calc(100vw-1rem)]");
   });
 });

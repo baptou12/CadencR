@@ -7,6 +7,7 @@ type GitViewShortcutId = Extract<
   ShortcutId,
   | "git-show-uncommitted"
   | "git-show-vs-target"
+  | "git-show-pull-request"
   | "git-show-commits"
   | "git-show-branches"
   | "git-show-stashes"
@@ -35,6 +36,7 @@ function useGitViewCommand(
 export function useGitViewShortcuts(onChange: (view: GitViewMode) => void, enabled: boolean): void {
   useGitViewCommand("git-show-uncommitted", "uncommitted", onChange, enabled);
   useGitViewCommand("git-show-vs-target", "vs-target", onChange, enabled);
+  useGitViewCommand("git-show-pull-request", "pr", onChange, enabled);
   useGitViewCommand("git-show-commits", "graph", onChange, enabled);
   useGitViewCommand("git-show-branches", "branches", onChange, enabled);
   useGitViewCommand("git-show-stashes", "stashes", onChange, enabled);
