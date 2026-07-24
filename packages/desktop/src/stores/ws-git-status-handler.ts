@@ -9,11 +9,21 @@
  * and never silently no-ops.
  */
 import { toast } from "sonner";
-import type { GitStatusSnapshot } from "@/api/generated";
+import {
+  CiState,
+  PrState,
+  ReviewState,
+  type CiRollup,
+  type ForgeUser,
+  type GitStatusSnapshot,
+  type PrStatusSnapshot,
+  type PrSummary,
+} from "@/api/generated";
 import { queryClient } from "@/lib/queryClient";
 import { gitStatusSnapshotsEqual, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { usePushOutputStore } from "@/stores/usePushOutputStore";
+import { usePrStatusStore } from "@/stores/usePrStatusStore";
 
 /** URL prefixes for every cached query that may need refreshing when a
  *  worktree's git state changes. Orval keys all start with the URL string.
@@ -40,6 +50,10 @@ const GIT_STATUS_INVALIDATION_PREFIXES = [
 ] as const;
 
 export function handleGitEnvelope(action: string, payload: Record<string, unknown>): void {
+  if (action === "pr_status") {
+    handlePrStatusEnvelope(payload);
+    return;
+  }
   if (action === "status") {
     const snapshot = parseGitStatusSnapshot(payload);
     if (!snapshot) return;
@@ -120,6 +134,28 @@ export function handleGitEnvelope(action: string, payload: Record<string, unknow
     if (featureId == null || success == null) return;
     usePushOutputStore.getState().complete(featureId, success);
   }
+}
+
+function handlePrStatusEnvelope(payload: Record<string, unknown>): void {
+  const snapshot = parsePrStatusSnapshot(payload);
+  if (!snapshot) {
+    toast.error("Invalid pull request status update received.");
+    return;
+  }
+  const existing = usePrStatusStore.getState().byFeature[snapshot.feature_id];
+  usePrStatusStore.getState().setStatus(snapshot);
+  if (!shouldInvalidatePrComments(existing, snapshot)) return;
+  void queryClient.invalidateQueries({
+    predicate: (query) => {
+      const head = query.queryKey[0];
+      return (
+        typeof head === "string" &&
+        head.startsWith("/api/git/pr/comments") &&
+        queryParamsMatchFeature(query.queryKey[1], snapshot.feature_id)
+      );
+    },
+    refetchType: "active",
+  });
 }
 
 function getGitInvalidationPrefixes(
@@ -247,4 +283,68 @@ export function parseGitStatusSnapshot(payload: Record<string, unknown>): GitSta
     return null;
   }
   return payload as unknown as GitStatusSnapshot;
+}
+
+export function parsePrStatusSnapshot(payload: Record<string, unknown>): PrStatusSnapshot | null {
+  if (
+    typeof payload.feature_id !== "number" ||
+    typeof payload.fetched_at !== "number" ||
+    typeof payload.auth_required !== "boolean"
+  ) {
+    return null;
+  }
+  if (payload.error != null && typeof payload.error !== "string") return null;
+  if (payload.pr != null && !isPrSummary(payload.pr)) return null;
+  if (payload.ci != null && !isCiRollup(payload.ci)) return null;
+  return payload as unknown as PrStatusSnapshot;
+}
+
+function shouldInvalidatePrComments(
+  existing: PrStatusSnapshot | undefined,
+  incoming: PrStatusSnapshot,
+): boolean {
+  if (!existing?.pr || !incoming.pr) return false;
+  return (
+    existing.pr.number !== incoming.pr.number || existing.pr.updated_at !== incoming.pr.updated_at
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isForgeUser(value: unknown): value is ForgeUser {
+  if (!isRecord(value) || typeof value.username !== "string") return false;
+  if (value.display_name != null && typeof value.display_name !== "string") return false;
+  return value.avatar_url == null || typeof value.avatar_url === "string";
+}
+
+function isPrSummary(value: unknown): value is PrSummary {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.number === "number" &&
+    typeof value.title === "string" &&
+    typeof value.body_markdown === "string" &&
+    Object.values(PrState).includes(value.state as never) &&
+    typeof value.url === "string" &&
+    typeof value.source_branch === "string" &&
+    typeof value.target_branch === "string" &&
+    typeof value.head_sha === "string" &&
+    Object.values(ReviewState).includes(value.review_state as never) &&
+    isForgeUser(value.author) &&
+    typeof value.updated_at === "string" &&
+    typeof value.pr_label === "string"
+  );
+}
+
+function isCiRollup(value: unknown): value is CiRollup {
+  if (!isRecord(value) || !Object.values(CiState).includes(value.state as never)) return false;
+  if (!Array.isArray(value.checks)) return false;
+  return value.checks.every(
+    (check) =>
+      isRecord(check) &&
+      typeof check.name === "string" &&
+      Object.values(CiState).includes(check.state as never) &&
+      (check.url == null || typeof check.url === "string"),
+  );
 }

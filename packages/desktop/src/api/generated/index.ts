@@ -264,6 +264,29 @@ export interface CheckoutValidateBody {
   project_id: number;
 }
 
+export type CiCheckUrl = string | null;
+
+export interface CiCheck {
+  name: string;
+  state: CiState;
+  url?: CiCheckUrl;
+}
+
+export interface CiRollup {
+  checks: CiCheck[];
+  state: CiState;
+}
+
+export type CiState = (typeof CiState)[keyof typeof CiState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const CiState = {
+  none: "none",
+  running: "running",
+  passing: "passing",
+  failing: "failing",
+} as const;
+
 export interface ClaudeCodeSuccessResponse {
   ok: boolean;
 }
@@ -297,6 +320,24 @@ on a session's runtime channel. The full catalog is sent every time
  */
 export interface CommandsUpdatedPayload {
   commands: SlashCommandPayload[];
+}
+
+export type CommentThreadFile = string | null;
+
+/**
+ * @minimum 0
+ */
+export type CommentThreadLine = number | null;
+
+export type CommentThreadResolved = boolean | null;
+
+export interface CommentThread {
+  comments: PrComment[];
+  file?: CommentThreadFile;
+  id: string;
+  /** @minimum 0 */
+  line?: CommentThreadLine;
+  resolved?: CommentThreadResolved;
 }
 
 export interface CommitBody {
@@ -1015,6 +1056,89 @@ export interface FileTreeEntry {
   path: string;
 }
 
+export type ForgeAuthSource = (typeof ForgeAuthSource)[keyof typeof ForgeAuthSource];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ForgeAuthSource = {
+  stored: "stored",
+  cli: "cli",
+} as const;
+
+export type ForgeAuthStatusApiBaseUrl = string | null;
+
+export type ForgeAuthStatusError = string | null;
+
+export type ForgeAuthStatusSource = null | ForgeAuthSource;
+
+export type ForgeAuthStatusUsername = string | null;
+
+export type ForgeAuthStatusValidatedUser = null | ForgeUser;
+
+export interface ForgeAuthStatus {
+  api_base_url?: ForgeAuthStatusApiBaseUrl;
+  /** Whether this host kind supports opt-in token reuse from an installed CLI. */
+  cli_auth_available: boolean;
+  error?: ForgeAuthStatusError;
+  hostname: string;
+  kind: GitHost;
+  source?: ForgeAuthStatusSource;
+  /** Whether an explicit token is persisted in the owner-only forge secret file. */
+  token_present: boolean;
+  use_cli_auth: boolean;
+  username?: ForgeAuthStatusUsername;
+  /** Whether manual API-token authentication also requires a username. */
+  username_required: boolean;
+  validated_user?: ForgeAuthStatusValidatedUser;
+}
+
+export type ForgeHostConfigApiBaseUrl = string | null;
+
+export type ForgeHostConfigUsername = string | null;
+
+export interface ForgeHostConfig {
+  api_base_url?: ForgeHostConfigApiBaseUrl;
+  kind: GitHost;
+  use_cli_auth?: boolean;
+  username?: ForgeHostConfigUsername;
+}
+
+export interface ForgeTokenDeleteResponse {
+  deleted: boolean;
+}
+
+export type ForgeTokenRequestApiBaseUrl = string | null;
+
+/**
+ * Manual API token. Omit when opting into `gh` / `glab` CLI reuse.
+ */
+export type ForgeTokenRequestToken = string | null;
+
+/**
+ * Bitbucket Cloud API-token username (normally the Atlassian account email).
+ */
+export type ForgeTokenRequestUsername = string | null;
+
+export interface ForgeTokenRequest {
+  api_base_url?: ForgeTokenRequestApiBaseUrl;
+  hostname: string;
+  kind: GitHost;
+  /** Manual API token. Omit when opting into `gh` / `glab` CLI reuse. */
+  token?: ForgeTokenRequestToken;
+  use_cli_auth?: boolean;
+  /** Bitbucket Cloud API-token username (normally the Atlassian account email). */
+  username?: ForgeTokenRequestUsername;
+}
+
+export type ForgeUserAvatarUrl = string | null;
+
+export type ForgeUserDisplayName = string | null;
+
+export interface ForgeUser {
+  avatar_url?: ForgeUserAvatarUrl;
+  display_name?: ForgeUserDisplayName;
+  username: string;
+}
+
 export type FormatRequestFeatureId = number | null;
 
 export interface FormatRequest {
@@ -1647,6 +1771,63 @@ export interface PermissionRespondPayload {
   updated_input?: unknown;
 }
 
+export type PrCommentUrl = string | null;
+
+export interface PrComment {
+  author: ForgeUser;
+  body_markdown: string;
+  created_at: string;
+  url?: PrCommentUrl;
+}
+
+export interface PrCommentsResponse {
+  feature_id: number;
+  fetched_at: number;
+  threads: CommentThread[];
+}
+
+export type PrState = (typeof PrState)[keyof typeof PrState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PrState = {
+  open: "open",
+  draft: "draft",
+  merged: "merged",
+  closed: "closed",
+} as const;
+
+export type PrStatusSnapshotCi = null | CiRollup;
+
+export type PrStatusSnapshotError = string | null;
+
+export type PrStatusSnapshotPr = null | PrSummary;
+
+export interface PrStatusSnapshot {
+  auth_required: boolean;
+  ci?: PrStatusSnapshotCi;
+  error?: PrStatusSnapshotError;
+  feature_id: number;
+  fetched_at: number;
+  pr?: PrStatusSnapshotPr;
+}
+
+export interface PrSummary {
+  author: ForgeUser;
+  body_markdown: string;
+  head_sha: string;
+  /** @minimum 0 */
+  number: number;
+  /** Provider-neutral display noun. Values are currently `PR` and `MR`. */
+  pr_label: string;
+  review_state: ReviewState;
+  source_branch: string;
+  state: PrState;
+  target_branch: string;
+  title: string;
+  updated_at: string;
+  url: string;
+}
+
 export type ProfileChangedPayloadModel = string | null;
 
 export interface ProfileChangedPayload {
@@ -2033,6 +2214,16 @@ export interface RetryWorktreeBody {
   feature_id: number;
   project_id: number;
 }
+
+export type ReviewState = (typeof ReviewState)[keyof typeof ReviewState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ReviewState = {
+  approved: "approved",
+  changes_requested: "changes_requested",
+  pending: "pending",
+  none: "none",
+} as const;
 
 /**
  * Response for starting an asynchronous run. Output and exit code are streamed
@@ -3076,6 +3267,10 @@ export type ListFilesParams = {
   feature_id: number;
 };
 
+export type DeleteForgeTokenParams = {
+  hostname: string;
+};
+
 export type HasUncommittedChangesParams = {
   project_id: number;
   feature_id: number;
@@ -3088,6 +3283,14 @@ export type CheckMergeConflictsParams = {
 
 export type GetOriginalBranchParams = {
   project_id: number;
+  feature_id: number;
+};
+
+export type GetPrParams = {
+  feature_id: number;
+};
+
+export type GetPrCommentsParams = {
   feature_id: number;
 };
 
@@ -9370,6 +9573,191 @@ export function useListFiles<
   return query;
 }
 
+export const getForgeAuthStatus = (signal?: AbortSignal) => {
+  return customInstance<ForgeAuthStatus[]>({
+    url: `/api/git/forge/auth-status`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetForgeAuthStatusQueryKey = () => {
+  return [`/api/git/forge/auth-status`] as const;
+};
+
+export const getGetForgeAuthStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getForgeAuthStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getForgeAuthStatus>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetForgeAuthStatusQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getForgeAuthStatus>>> = ({ signal }) =>
+    getForgeAuthStatus(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getForgeAuthStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetForgeAuthStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getForgeAuthStatus>>
+>;
+export type GetForgeAuthStatusQueryError = ErrorType<unknown>;
+
+export function useGetForgeAuthStatus<
+  TData = Awaited<ReturnType<typeof getForgeAuthStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getForgeAuthStatus>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetForgeAuthStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const putForgeToken = (forgeTokenRequest: ForgeTokenRequest) => {
+  return customInstance<ForgeAuthStatus>({
+    url: `/api/git/forge/token`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: forgeTokenRequest,
+  });
+};
+
+export const getPutForgeTokenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putForgeToken>>,
+    TError,
+    { data: ForgeTokenRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof putForgeToken>>,
+  TError,
+  { data: ForgeTokenRequest },
+  TContext
+> => {
+  const mutationKey = ["putForgeToken"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof putForgeToken>>,
+    { data: ForgeTokenRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return putForgeToken(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PutForgeTokenMutationResult = NonNullable<Awaited<ReturnType<typeof putForgeToken>>>;
+export type PutForgeTokenMutationBody = ForgeTokenRequest;
+export type PutForgeTokenMutationError = ErrorType<unknown>;
+
+export const usePutForgeToken = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putForgeToken>>,
+    TError,
+    { data: ForgeTokenRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof putForgeToken>>,
+  TError,
+  { data: ForgeTokenRequest },
+  TContext
+> => {
+  const mutationOptions = getPutForgeTokenMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const deleteForgeToken = (params: DeleteForgeTokenParams) => {
+  return customInstance<ForgeTokenDeleteResponse>({
+    url: `/api/git/forge/token`,
+    method: "DELETE",
+    params,
+  });
+};
+
+export const getDeleteForgeTokenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteForgeToken>>,
+    TError,
+    { params: DeleteForgeTokenParams },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteForgeToken>>,
+  TError,
+  { params: DeleteForgeTokenParams },
+  TContext
+> => {
+  const mutationKey = ["deleteForgeToken"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteForgeToken>>,
+    { params: DeleteForgeTokenParams }
+  > = (props) => {
+    const { params } = props ?? {};
+
+    return deleteForgeToken(params);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteForgeTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteForgeToken>>
+>;
+
+export type DeleteForgeTokenMutationError = ErrorType<unknown>;
+
+export const useDeleteForgeToken = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteForgeToken>>,
+    TError,
+    { params: DeleteForgeTokenParams },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteForgeToken>>,
+  TError,
+  { params: DeleteForgeTokenParams },
+  TContext
+> => {
+  const mutationOptions = getDeleteForgeTokenMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const hasUncommittedChanges = (
   params: HasUncommittedChangesParams,
   signal?: AbortSignal,
@@ -9748,6 +10136,150 @@ export function useGetOriginalBranch<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetOriginalBranchQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const getPr = (params: GetPrParams, signal?: AbortSignal) => {
+  return customInstance<PrStatusSnapshot>({ url: `/api/git/pr`, method: "GET", params, signal });
+};
+
+export const getGetPrQueryKey = (params?: GetPrParams) => {
+  return [`/api/git/pr`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetPrQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPr>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetPrParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getPr>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPrQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPr>>> = ({ signal }) =>
+    getPr(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPr>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPrQueryResult = NonNullable<Awaited<ReturnType<typeof getPr>>>;
+export type GetPrQueryError = ErrorType<unknown>;
+
+export function useGetPr<TData = Awaited<ReturnType<typeof getPr>>, TError = ErrorType<unknown>>(
+  params: GetPrParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getPr>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPrQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const getPrStatuses = (signal?: AbortSignal) => {
+  return customInstance<PrStatusSnapshot[]>({ url: `/api/git/pr-statuses`, method: "GET", signal });
+};
+
+export const getGetPrStatusesQueryKey = () => {
+  return [`/api/git/pr-statuses`] as const;
+};
+
+export const getGetPrStatusesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPrStatuses>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getPrStatuses>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPrStatusesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPrStatuses>>> = ({ signal }) =>
+    getPrStatuses(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPrStatuses>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPrStatusesQueryResult = NonNullable<Awaited<ReturnType<typeof getPrStatuses>>>;
+export type GetPrStatusesQueryError = ErrorType<unknown>;
+
+export function useGetPrStatuses<
+  TData = Awaited<ReturnType<typeof getPrStatuses>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof getPrStatuses>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPrStatusesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const getPrComments = (params: GetPrCommentsParams, signal?: AbortSignal) => {
+  return customInstance<PrCommentsResponse>({
+    url: `/api/git/pr/comments`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetPrCommentsQueryKey = (params?: GetPrCommentsParams) => {
+  return [`/api/git/pr/comments`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetPrCommentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPrComments>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetPrCommentsParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getPrComments>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPrCommentsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPrComments>>> = ({ signal }) =>
+    getPrComments(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPrComments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPrCommentsQueryResult = NonNullable<Awaited<ReturnType<typeof getPrComments>>>;
+export type GetPrCommentsQueryError = ErrorType<unknown>;
+
+export function useGetPrComments<
+  TData = Awaited<ReturnType<typeof getPrComments>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetPrCommentsParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getPrComments>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPrCommentsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

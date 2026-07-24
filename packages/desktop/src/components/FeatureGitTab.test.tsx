@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@/test-utils";
 import { FeatureGitTab } from "./FeatureGitTab";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
+import { usePrStatusStore } from "@/stores/usePrStatusStore";
 import type { StashConflictOutcome } from "./diff/stash-contracts";
 
 const mocks = vi.hoisted(() => ({
@@ -83,6 +84,9 @@ vi.mock("./diff/StashesView", () => ({
 vi.mock("./diff/DiffViewer", () => ({ DiffViewer: () => null }));
 vi.mock("./diff/GitGraphView", () => ({ GitGraphView: () => null }));
 vi.mock("./diff/GitBranchesView", () => ({ GitBranchesView: () => null }));
+vi.mock("./FeaturePrView", () => ({
+  FeaturePrView: () => <div>Pull request view</div>,
+}));
 
 describe("FeatureGitTab stash conflicts", () => {
   beforeEach(() => {
@@ -90,6 +94,7 @@ describe("FeatureGitTab stash conflicts", () => {
     mocks.shortcutCallbacks.clear();
     mocks.settingPending = false;
     useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
+    usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
     useGitStatusStore.getState().setStatus({
       feature_id: 9,
       current_branch: "feature/stash",
@@ -141,6 +146,24 @@ describe("FeatureGitTab stash conflicts", () => {
       "aria-selected",
       "true",
     );
+  });
+
+  it("persists the PR view through the same confirmed shortcut transition", () => {
+    render(<FeatureGitTab featureId={9} projectId={3} />);
+    const event = new KeyboardEvent("keydown", {
+      key: "R",
+      metaKey: true,
+      shiftKey: true,
+      cancelable: true,
+    });
+
+    act(() => mocks.shortcutCallbacks.get("git-show-pull-request")?.(event));
+
+    expect(mocks.setFeatureSetting).toHaveBeenCalledWith({
+      id: 9,
+      data: { key: "git_view_mode", value: "pr" },
+    });
+    expect(screen.getByText("Pull request view")).toBeInTheDocument();
   });
 
   it("shows a visible pending state while a Git view transition is being saved", () => {

@@ -52,6 +52,14 @@ describe("GitTabToggle", () => {
     expect(onChange).toHaveBeenCalledWith("branches");
   });
 
+  it("renders the backend-provided proposal label and reports the PR view", () => {
+    const onChange = vi.fn();
+    render(<GitTabToggle value="uncommitted" onChange={onChange} prLabel="MR" prAttention />);
+    const prTab = screen.getByRole("tab", { name: "MR" });
+    fireEvent.click(prTab);
+    expect(onChange).toHaveBeenCalledWith("pr");
+  });
+
   it("disables both tabs when disabled is true", () => {
     render(<GitTabToggle value="uncommitted" onChange={vi.fn()} targetBranch="main" disabled />);
     expect(screen.getByRole("tab", { name: "Uncommitted" })).toBeDisabled();

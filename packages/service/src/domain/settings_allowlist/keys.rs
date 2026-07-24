@@ -114,6 +114,9 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // Global changed-files list layout: "tree" keeps directories while
     // "filenames" shows a compact flat list. Defaults to "tree" when unset.
     "git_diff_tree_display_mode",
+    // JSON map of forge hostname → kind/API/auth-source configuration. Tokens
+    // never live here; they are stored separately in an owner-only file.
+    crate::domain::git::forge::FORGE_HOSTS_SETTING,
     // Where agent-finished notifications appear: "native" (system banner),
     // "in_app" (Sonner toast inside Cadencr), or "off". Mirrors
     // NOTIFICATION_MODE_KEY in packages/desktop/src/lib/notification-mode.ts.

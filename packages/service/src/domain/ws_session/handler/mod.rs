@@ -18,6 +18,7 @@
 mod access;
 mod active_turns;
 mod app;
+mod app_forge;
 mod claude_access;
 mod commands;
 mod connection;

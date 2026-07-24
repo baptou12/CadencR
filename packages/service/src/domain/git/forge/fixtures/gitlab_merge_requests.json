@@ -1,0 +1,20 @@
+[
+  {
+    "id": 9001,
+    "iid": 23,
+    "title": "Add forge integration",
+    "description": "GitLab fixture body",
+    "draft": true,
+    "work_in_progress": false,
+    "web_url": "https://gitlab.com/acme/repo/-/merge_requests/23",
+    "source_branch": "feature/forge",
+    "target_branch": "main",
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "author": {
+      "username": "tanuki",
+      "name": "Tanuki",
+      "avatar_url": "https://gitlab.com/uploads/avatar.png"
+    },
+    "updated_at": "2026-07-23T10:00:00Z"
+  }
+]

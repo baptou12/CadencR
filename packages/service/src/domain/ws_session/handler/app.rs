@@ -17,6 +17,12 @@ pub(super) async fn handle_app_action(
         }
         "subscribe.feature_events" => handle_subscribe_feature_events(sender, app_state).await,
         "subscribe.settings_events" => handle_subscribe_settings_events(sender, app_state).await,
+        "subscribe.forge_status" => {
+            super::app_forge::subscribe_forge_status(envelope, sender, app_state).await
+        }
+        "forge_visibility" => {
+            super::app_forge::update_forge_visibility(envelope, sender, app_state).await
+        }
         "subscribe.remote_events" => handle_subscribe_remote_events(sender, app_state).await,
         "subscribe.file_watcher" => {
             handle_subscribe_file_watcher(envelope, sender, app_state).await

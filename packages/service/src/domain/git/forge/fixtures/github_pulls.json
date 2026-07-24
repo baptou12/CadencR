@@ -1,0 +1,25 @@
+[
+  {
+    "number": 17,
+    "title": "Add forge integration",
+    "body": "GitHub fixture body",
+    "draft": false,
+    "html_url": "https://github.com/acme/repo/pull/17",
+    "head": {
+      "ref": "feature/forge",
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "repo": { "full_name": "acme/repo" }
+    },
+    "base": {
+      "ref": "main",
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "repo": { "full_name": "acme/repo" }
+    },
+    "user": {
+      "login": "octocat",
+      "name": "Octo Cat",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1"
+    },
+    "updated_at": "2026-07-23T10:00:00Z"
+  }
+]

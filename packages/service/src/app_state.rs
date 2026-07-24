@@ -10,6 +10,9 @@ use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::feature_events::FeatureEventBroadcaster;
 use crate::domain::features::run_registry::FeatureRunRegistry;
 use crate::domain::gate_registry::GateRegistry;
+use crate::domain::git::forge::{
+    ForgeActivityTracker, ForgeAuthStore, ForgeHttp, ForgeStatusCache, PrStatusSnapshot,
+};
 use crate::domain::git::mutation_guard::GitMutationGuard;
 use crate::domain::git::push_sessions::PushSessionRegistry;
 use crate::domain::git::watcher::GitWatcherRegistry;
@@ -129,6 +132,18 @@ pub struct AppState {
     /// Per-worktree filesystem watchers driving real-time `git.status`
     /// envelopes. Refcounted by WS subscriptions; see `domain::git::watcher`.
     pub git_watcher: Arc<GitWatcherRegistry>,
+    /// Process-wide PR/MR detection cache, populated by the forge poller and
+    /// read by both the sidebar bootstrap endpoint and on-demand PR routes.
+    pub forge_status: Arc<ForgeStatusCache>,
+    /// Shared conditional-GET/rate-limit transport for all forge adapters.
+    pub forge_http: Arc<ForgeHttp>,
+    /// Owner-only token-file access for forge authentication.
+    pub forge_auth: Arc<ForgeAuthStore>,
+    /// Global PR-status updates. Every app WebSocket subscribes once so the
+    /// sidebar receives status for features whose Git pane was never opened.
+    pub forge_events_tx: broadcast::Sender<PrStatusSnapshot>,
+    /// Tracks focused/visible app sockets so background forge polling can pause.
+    pub forge_activity: Arc<ForgeActivityTracker>,
     /// Single-flight owner for foreground Git mutations, keyed by canonical
     /// worktree path. Index, stash, and update-branch handlers share it.
     #[allow(dead_code)] // Phase 0 ownership boundary; mutation handlers arrive later.
@@ -215,6 +230,7 @@ impl AppState {
         let (file_change_tx, _) = broadcast::channel(16);
         let (settings_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
+        let (forge_events_tx, _) = broadcast::channel(64);
         // VAPID keys live next to the other remote secrets. Failure here is
         // non-fatal — fall back to an ephemeral key so the loopback server still
         // boots; push just won't survive a restart until the file is writable.
@@ -249,6 +265,11 @@ impl AppState {
             custom_action_scheduler: CustomActionScheduler::new(),
             custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
             git_watcher: Arc::new(GitWatcherRegistry::new()),
+            forge_status: Arc::new(ForgeStatusCache::default()),
+            forge_http: Arc::new(ForgeHttp::default()),
+            forge_auth: Arc::new(ForgeAuthStore::default()),
+            forge_events_tx,
+            forge_activity: Arc::new(ForgeActivityTracker::default()),
             git_mutations: Arc::new(GitMutationGuard::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
@@ -277,6 +298,7 @@ impl AppState {
         let (file_change_tx, _) = broadcast::channel(16);
         let (settings_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
+        let (forge_events_tx, _) = broadcast::channel(64);
         Self {
             read_pool: pool.clone(),
             write_pool: pool,
@@ -304,6 +326,11 @@ impl AppState {
             custom_action_scheduler: CustomActionScheduler::new(),
             custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
             git_watcher: Arc::new(GitWatcherRegistry::new()),
+            forge_status: Arc::new(ForgeStatusCache::default()),
+            forge_http: Arc::new(ForgeHttp::default()),
+            forge_auth: Arc::new(ForgeAuthStore::default()),
+            forge_events_tx,
+            forge_activity: Arc::new(ForgeActivityTracker::default()),
             git_mutations: Arc::new(GitMutationGuard::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),

@@ -24,6 +24,7 @@ import { GitActionDialogs, type GitActionDialog } from "./GitActionDialogs";
 import { useGitActionShortcuts } from "./useGitActionShortcuts";
 import { GitActionPopoverContent } from "./GitActionPopoverContent";
 import { useStashMutationCoordinator } from "../diff/useStashMutationCoordinator";
+import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 
 const GIT_ACTION_BUTTON_CLASS =
   "border-border/80 bg-muted/20 text-xs text-foreground hover:bg-muted/35 disabled:opacity-100 disabled:bg-muted/20 disabled:text-muted-foreground";
@@ -69,16 +70,18 @@ function useOpenCompare(
 function useGitActionButtonState(featureId: number): {
   snapshot: GitStatusSnapshot | undefined;
   state: GitActionState;
+  prUrl: string | undefined;
   getStashMutationBlockedReason: () => string | null;
 } {
   const snapshot = useGitStatusStore(selectGitStatus(featureId));
+  const pr = usePrStatusStore(selectPrStatus(featureId))?.pr ?? undefined;
   const updatePending = useGitUpdatePending(featureId);
   const { blockedReason: stashBlockedReason, getBlockedReason: getStashMutationBlockedReason } =
     useStashMutationCoordinator(featureId);
-  const state = useGitAction(snapshot, updatePending, stashBlockedReason);
+  const state = useGitAction(snapshot, updatePending, stashBlockedReason, pr);
   return useMemo(
-    () => ({ snapshot, state, getStashMutationBlockedReason }),
-    [getStashMutationBlockedReason, snapshot, state],
+    () => ({ snapshot, state, prUrl: pr?.url, getStashMutationBlockedReason }),
+    [getStashMutationBlockedReason, pr?.url, snapshot, state],
   );
 }
 
@@ -86,7 +89,8 @@ export const GitActionButton = memo(function GitActionButton({
   featureId,
   projectId,
 }: GitActionButtonProps): ReactElement | null {
-  const { snapshot, state, getStashMutationBlockedReason } = useGitActionButtonState(featureId);
+  const { snapshot, state, prUrl, getStashMutationBlockedReason } =
+    useGitActionButtonState(featureId);
   const isMobile = useIsMobile();
   const [activeDialog, setActiveDialog] = useState<GitActionDialog>(null);
   const commitOpen = activeDialog === "commit";
@@ -107,7 +111,7 @@ export const GitActionButton = memo(function GitActionButton({
   const openCommit = useCallback(() => setActiveDialog("commit"), []);
   const openPopover = useCallback(() => setPopoverOpen(true), []);
   const openPush = useCallback(() => setActiveDialog("push"), []);
-  const runOpenCompare = useOpenCompare(featureId, snapshot?.compare_url);
+  const runOpenCompare = useOpenCompare(featureId, prUrl ?? snapshot?.compare_url);
 
   const runAction = useCallback(
     (action: GitAction) => {

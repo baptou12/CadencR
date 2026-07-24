@@ -7,6 +7,7 @@
 
 use std::path::Path;
 
+use crate::domain::git::refs::normalize_branch_identity;
 use crate::error::AppError;
 use crate::shared::git_cli::run_git_safe_refs;
 
@@ -24,7 +25,7 @@ pub async fn resolve_default_branch(repo: &Path) -> Result<String, AppError> {
 
     for candidate in &["origin/main", "origin/master"] {
         if remote_branch_exists(repo, candidate).await {
-            return Ok(normalize_branch_identity(candidate));
+            return Ok(normalize_branch_identity(candidate).to_string());
         }
     }
 
@@ -42,22 +43,11 @@ pub fn same_branch_identity(left: &str, right: &str) -> bool {
     normalize_branch_identity(left) == normalize_branch_identity(right)
 }
 
-/// Normalize common Git ref labels into a local branch identity.
-pub fn normalize_branch_identity(branch: &str) -> String {
-    let trimmed = branch.trim();
-    trimmed
-        .strip_prefix("refs/heads/")
-        .or_else(|| trimmed.strip_prefix("refs/remotes/origin/"))
-        .or_else(|| trimmed.strip_prefix("origin/"))
-        .unwrap_or(trimmed)
-        .to_string()
-}
-
 async fn resolve_origin_head(repo: &Path) -> Option<String> {
     let stdout = run_git_safe_refs(&["symbolic-ref"], &[], &["refs/remotes/origin/HEAD"], repo)
         .await
         .ok()?;
-    let branch = normalize_branch_identity(stdout.trim());
+    let branch = normalize_branch_identity(stdout.trim()).to_string();
     if branch.is_empty() {
         None
     } else {

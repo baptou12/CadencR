@@ -172,14 +172,8 @@ pub async fn get_commit_url(
         Some(p) => p,
         None => return Ok(unavailable),
     };
-    let url = run_git_background(
-        &["config", "--get", "remote.origin.url"],
-        Path::new(&git_path),
-    )
-    .await
-    .ok();
-    let commit_url = url
-        .and_then(|u| host::detect_remote(u.trim()))
+    let commit_url = host::detect_origin_remote(Path::new(&git_path))
+        .await
         .and_then(|info| host::commit_url(&info, sha));
     Ok(match commit_url {
         Some(url) => CommitUrlResponse {

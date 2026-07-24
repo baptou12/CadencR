@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { deriveGitAction, resolveGitUpdateSource } from "./useGitAction";
-import type { GitStatusSnapshot } from "@/api/generated";
+import type { GitStatusSnapshot, PrSummary } from "@/api/generated";
 
 function snapshot(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot {
   return {
@@ -28,6 +28,23 @@ function snapshot(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot
     action_label: "Open PR",
     computed_at: 0,
     ...overrides,
+  };
+}
+
+function pullRequest(): PrSummary {
+  return {
+    number: 42,
+    title: "Forge integration",
+    body_markdown: "",
+    state: "open",
+    url: "https://github.com/x/y/pull/42",
+    source_branch: "feature/x",
+    target_branch: "main",
+    head_sha: "a".repeat(40),
+    review_state: "pending",
+    author: { username: "octocat", display_name: null, avatar_url: null },
+    updated_at: "2026-07-23T10:00:00Z",
+    pr_label: "PR",
   };
 }
 
@@ -267,6 +284,15 @@ describe("deriveGitAction", () => {
     expect(state.label).toBe("Open MR");
     expect(state.disabled.pr).toBeNull();
     expect(state.disabled.merge).toBeNull();
+  });
+
+  it("opens an existing proposal even when the branch has nothing left to compare", () => {
+    const state = deriveGitAction(snapshot(), false, null, pullRequest());
+
+    expect(state.primary).toBe("pr");
+    expect(state.label).toBe("View PR 42");
+    expect(state.compareLabel).toBe("View PR 42");
+    expect(state.disabled.pr).toBeNull();
   });
 
   it("primary=merge when compare is unavailable but target has commits to merge", () => {

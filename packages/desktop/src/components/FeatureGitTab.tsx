@@ -26,6 +26,9 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { GitUpdateRecoveryRegion } from "./git-actions/GitUpdateRecoveryBanner";
 import { useGitKeyboardController } from "./diff/useGitKeyboardController";
 import { useGitViewShortcuts } from "./diff/useGitViewShortcuts";
+import { FeaturePrView } from "./FeaturePrView";
+import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
+import { usePrAttention } from "./diff/usePrAttention";
 
 const GIT_VIEW_MODE_SETTING = "git_view_mode";
 const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
@@ -41,7 +44,12 @@ interface FeatureGitTabProps {
 
 function isGitViewMode(v: string | undefined): v is GitViewMode {
   return (
-    v === "uncommitted" || v === "vs-target" || v === "graph" || v === "branches" || v === "stashes"
+    v === "uncommitted" ||
+    v === "vs-target" ||
+    v === "pr" ||
+    v === "graph" ||
+    v === "branches" ||
+    v === "stashes"
   );
 }
 
@@ -116,6 +124,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   // watcher advances `computed_at` for an agent file write; changed-files and
   // per-file diff queries already subscribe to their own cache updates below.
   const targetBranch = useGitStatusStore(selectGitTargetBranch(featureId));
+  const prStatus = usePrStatusStore(selectPrStatus(featureId));
 
   // The file-list collapse state lives here (alongside the new top toolbar)
   // so we can render the toggle next to the view-mode segmented control —
@@ -144,10 +153,12 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   const isGraph = viewMode === "graph";
   const isBranches = viewMode === "branches";
   const isStashes = viewMode === "stashes";
+  const isPr = viewMode === "pr";
+  const prAttention = usePrAttention(prStatus, isPr);
   // The graph and stashes views carry their own per-row stats and drive their
   // own list body — they don't use the shared diff toolbar, file-list collapse,
   // or diff-wide stats query.
-  const isListView = isGraph || isBranches || isStashes;
+  const isListView = isGraph || isBranches || isStashes || isPr;
   const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
   const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
   // Stats are byte-identical for "worktree" and "uncommitted" on the backend, so
@@ -219,6 +230,8 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           value={viewMode}
           onChange={handleViewModeChange}
           targetBranch={targetBranch}
+          prLabel={prStatus?.pr?.pr_label ?? "PR"}
+          prAttention={prAttention}
           disabled={setFeatureSetting.isPending}
         />
         {setFeatureSetting.isPending && (
@@ -240,7 +253,9 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       </div>
       {isListView && recoveryRegion}
       <div className="min-h-0 flex-1 overflow-hidden">
-        {isGraph ? (
+        {isPr ? (
+          <FeaturePrView featureId={featureId} />
+        ) : isGraph ? (
           <GitGraphView
             featureId={featureId}
             registerNavigationAdapter={registerNavigationAdapter}
@@ -270,7 +285,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           />
         )}
       </div>
-      {shouldRender && (
+      {shouldRender && !isPr && (
         <div className="border-t px-4 py-3 flex justify-end">
           <ShortcutTooltip label={buttonLabel} keys={["cmd", "enter"]} above>
             <Button variant="outline" size="sm" disabled={disabled} onClick={() => void send()}>
