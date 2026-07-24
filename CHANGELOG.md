@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.8.1 - 2026-07-24
+
+Previous release: v0.8.0 - 2026-07-23
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed Git change-tree stage and unstage controls flickering, disappearing, or resetting tree state during refreshes and long-list scrolling; per-file loaders now remain visible until backend Git state confirms each checkbox transition.
+- [**Desktop**] Fixed root conversation provider icons being offset when some sessions had children, while keeping nested rows and their hover targets full width and expressing hierarchy through consistent internal indentation.
+- [**provider:opencode**] Fixed OpenCode provider icons appearing as a solid block in the sidebar or a squashed pale rectangle in model selectors by replacing the broken assets with theme-readable versions of the official logomark.
+- [**provider:codex**] Fixed high-resolution image results crashing Codex conversations when app-server frames exceeded the previous transport limit; image-sized payloads now remain bounded but supported, and genuine transport failures are reported accurately instead of being misidentified as process exits.
+
 ## v0.8.0 - 2026-07-23
 
 Previous release: v0.7.2 - 2026-07-17
