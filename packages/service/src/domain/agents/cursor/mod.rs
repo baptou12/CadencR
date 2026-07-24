@@ -95,6 +95,36 @@ impl AgentRuntimeAdapter for CursorAdapter {
         true
     }
 
+    /// Auto Review's approval behavior is a host-side preflight, so a live
+    /// session can adopt an access-mode change immediately (see
+    /// `CursorAcpAdapter::update_access_mode`). Only the sandbox/`--force`
+    /// launch flags still need a respawn — see `access_mode_change_needs_respawn`.
+    fn applies_access_mode_in_place(&self) -> bool {
+        true
+    }
+
+    /// Only a change that flips Cursor's sandbox launch flags (into or out of
+    /// Full Access) needs a respawn. Default <-> Auto Review keep the same
+    /// launch flags and are fully handled in place by the host-side preflight.
+    fn access_mode_change_needs_respawn(
+        &self,
+        from: Option<&RuntimeAccessMode>,
+        to: &RuntimeAccessMode,
+    ) -> bool {
+        // Keep in lockstep with `acp::cursor_acp_args`, the other place that maps
+        // an access mode to sandbox launch flags. Exhaustive on purpose: a new
+        // `RuntimeAccessMode` must consciously declare whether it launches
+        // sandboxless here (like it must there) rather than silently defaulting
+        // to "sandboxed, no respawn" and mismatching the flags Cursor spawned with.
+        fn launches_sandboxless(mode: Option<&RuntimeAccessMode>) -> bool {
+            match mode {
+                Some(RuntimeAccessMode::FullAccess) => true,
+                Some(RuntimeAccessMode::Default | RuntimeAccessMode::AutoReview) | None => false,
+            }
+        }
+        launches_sandboxless(from) != launches_sandboxless(Some(to))
+    }
+
     fn access_mode_setting_key(&self) -> Option<&'static str> {
         Some(ACCESS_MODE_SETTING_KEY)
     }
@@ -136,7 +166,26 @@ mod tests {
             adapter.access_mode_setting_key(),
             Some("cursor_access_mode")
         );
-        assert!(!adapter.applies_access_mode_in_place());
+        assert!(adapter.applies_access_mode_in_place());
+        // Default <-> Auto Review keep the same sandbox launch flags: no
+        // respawn, the host-side preflight adopts the change live.
+        assert!(!adapter.access_mode_change_needs_respawn(
+            Some(&RuntimeAccessMode::Default),
+            &RuntimeAccessMode::AutoReview
+        ));
+        assert!(!adapter.access_mode_change_needs_respawn(
+            Some(&RuntimeAccessMode::AutoReview),
+            &RuntimeAccessMode::Default
+        ));
+        // Into/out of Full Access flips the sandbox flag and needs a respawn.
+        assert!(adapter.access_mode_change_needs_respawn(
+            Some(&RuntimeAccessMode::AutoReview),
+            &RuntimeAccessMode::FullAccess
+        ));
+        assert!(adapter.access_mode_change_needs_respawn(
+            Some(&RuntimeAccessMode::FullAccess),
+            &RuntimeAccessMode::Default
+        ));
     }
 
     #[test]

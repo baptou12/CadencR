@@ -282,10 +282,27 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     }
 
     /// Whether a live runtime can apply an access-mode change without a
-    /// respawn. Providers launched with CLI flags (Cursor) return false;
-    /// app-server providers with a live policy hook (Codex) return true.
+    /// respawn. Providers with a live policy hook (Codex's app server, Cursor's
+    /// host-side Auto Review preflight) return true; providers whose whole
+    /// access mode lives in process launch flags return false.
     fn applies_access_mode_in_place(&self) -> bool {
         false
+    }
+
+    /// Whether switching the access mode from `from` to `to` still needs a
+    /// runtime respawn to fully take effect — e.g. because it flips a process
+    /// launch flag (Cursor's sandbox / `--force`) that a live hook can't
+    /// change. Returning `false` lets the orchestrator skip the respawn when
+    /// [`applies_access_mode_in_place`] already covers the whole change.
+    ///
+    /// The default returns `true` so respawn-based providers keep their
+    /// current behavior; `from` is the mode the runtime was last spawned with.
+    fn access_mode_change_needs_respawn(
+        &self,
+        _from: Option<&RuntimeAccessMode>,
+        _to: &RuntimeAccessMode,
+    ) -> bool {
+        true
     }
 
     async fn configured_access_mode(
