@@ -55,8 +55,8 @@ export function AccessModePopover({
           <div className="text-sm font-semibold">{providerConfig.providerLabel} access mode</div>
           <p className="mt-1 text-muted-foreground">
             This conversation is using {activeCopy?.label ?? activeMode.label}. Pick a mode below to
-            update the global default for new {providerConfig.providerLabel} conversations. Existing
-            conversations keep their stored access mode.
+            switch it for this conversation and set the default for new{" "}
+            {providerConfig.providerLabel} conversations.
           </p>
         </div>
         <div className="space-y-1.5">

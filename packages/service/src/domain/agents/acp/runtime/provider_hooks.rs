@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimeMcpServerStatus,
+    RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimeMcpServerStatus,
     RuntimePermissionDecision, RuntimePermissionMode, RuntimePermissionRequest,
     RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSlashCommand, RuntimeUsage,
 };
@@ -231,6 +231,16 @@ pub trait AcpProviderHooks: Send + Sync {
     fn permission_response_kind(&self, _request_id: &str) -> RuntimePermissionResponseKind {
         RuntimePermissionResponseKind::Normal
     }
+
+    /// Apply an access/autonomy change to the live session's in-memory state.
+    ///
+    /// Providers whose access mode drives a *host-side* permission decision
+    /// (Cursor's Auto Review preflights allowlist misses inside
+    /// [`automatic_permission_decision`]) update their stored mode here so the
+    /// change takes effect on the current turn without respawning. The default
+    /// is a no-op for providers whose access mode is encoded purely in process
+    /// launch flags — those rely on the runtime respawn path instead.
+    fn update_access_mode(&self, _mode: RuntimeAccessMode) {}
 
     /// Provider opt-in: refine the MCP server statuses negotiated at
     /// spawn. Generic ACP only knows the configured catalog, so providers

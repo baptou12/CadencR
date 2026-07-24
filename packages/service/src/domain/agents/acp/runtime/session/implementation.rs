@@ -17,8 +17,9 @@ use tokio::task::JoinHandle;
 
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
-    AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus, RuntimeMessageRx,
-    RuntimePermissionMode, RuntimePermissionResponse, RuntimePermissionResponseKind,
+    AgentRuntimeSession, RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus,
+    RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionResponse,
+    RuntimePermissionResponseKind,
 };
 
 use super::super::apply_model_config::apply_model_config;
@@ -336,6 +337,15 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             &mode_id,
         )
         .await
+    }
+
+    async fn set_access_mode(&self, mode: RuntimeAccessMode) -> Result<(), RuntimeError> {
+        // Apply the change to the provider's in-memory access state so any
+        // host-side permission decision (Cursor's Auto Review preflight) takes
+        // effect on the current turn. Launch-flag-encoded parts of the access
+        // mode still ride the runtime respawn path.
+        self.hooks.update_access_mode(mode);
+        Ok(())
     }
 
     async fn respond_permission(

@@ -24,7 +24,12 @@ use super::permission_policy;
 const AUTH_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(super) struct CursorAcpAdapter {
-    access_mode: Option<RuntimeAccessMode>,
+    /// Live access mode driving the host-side Auto Review preflight in
+    /// [`automatic_permission_decision`]. Held behind a `Mutex` so a
+    /// mid-conversation `access_mode.set` (via [`Self::update_access_mode`])
+    /// changes approval behavior on the current turn instead of only on the
+    /// next respawn. The sandbox/`--force` launch flags still ride the respawn.
+    access_mode: Mutex<Option<RuntimeAccessMode>>,
     plan_requests: Mutex<std::collections::HashSet<String>>,
     model_config: Mutex<CursorModelConfigState>,
 }
@@ -32,7 +37,7 @@ pub(super) struct CursorAcpAdapter {
 impl CursorAcpAdapter {
     pub(super) fn new(access_mode: Option<RuntimeAccessMode>) -> Self {
         Self {
-            access_mode,
+            access_mode: Mutex::new(access_mode),
             plan_requests: Mutex::new(std::collections::HashSet::new()),
             model_config: Mutex::new(CursorModelConfigState::default()),
         }
@@ -185,7 +190,12 @@ impl AcpProviderHooks for CursorAcpAdapter {
         request: &RuntimePermissionRequest,
         params: &Value,
     ) -> Option<RuntimePermissionDecision> {
-        permission_policy::automatic_permission_decision(self.access_mode.as_ref(), request, params)
+        let access_mode = lock_mutex(&self.access_mode).clone();
+        permission_policy::automatic_permission_decision(access_mode.as_ref(), request, params)
+    }
+
+    fn update_access_mode(&self, mode: RuntimeAccessMode) {
+        *lock_mutex(&self.access_mode) = Some(mode);
     }
 
     fn permission_response_kind(&self, request_id: &str) -> RuntimePermissionResponseKind {
@@ -224,13 +234,71 @@ mod tests {
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::adapter::{
-        RuntimeContentBlock, RuntimePermissionDecision, RuntimePermissionMode,
-        RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeStreamEvent,
+        RuntimeAccessMode, RuntimeContentBlock, RuntimePermissionDecision, RuntimePermissionMode,
+        RuntimePermissionRequest, RuntimePermissionResponse, RuntimePermissionResponseKind,
+        RuntimeStreamEvent,
     };
     use agent_client_protocol::schema::v1::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };
     use serde_json::json;
+
+    fn allowlist_miss_request(command: &str) -> RuntimePermissionRequest {
+        RuntimePermissionRequest {
+            request_id: "permission-1".to_string(),
+            tool_use_id: Some("tool-1".to_string()),
+            tool_name: "Bash".to_string(),
+            tool_input: json!({ "command": command }),
+            description: Some(format!("`{command}`")),
+            pattern: None,
+            preview: Some(command.to_string()),
+            options: Vec::new(),
+        }
+    }
+
+    fn allowlist_miss_params(command: &str) -> serde_json::Value {
+        json!({
+            "toolCall": {
+                "title": format!("`{command}`"),
+                "kind": "execute",
+                "content": [{
+                    "type": "content",
+                    "content": { "type": "text", "text": format!("Not in allowlist: {command}") }
+                }]
+            }
+        })
+    }
+
+    /// The whole point of the fix: a mid-conversation `access_mode.set` reaches
+    /// the live adapter through `update_access_mode`, so the very next host-side
+    /// preflight reflects the new mode without waiting for a respawn.
+    #[test]
+    fn update_access_mode_flips_live_preflight_decision() {
+        let command = "printf cursor-acp-auto-review";
+        let adapter = CursorAcpAdapter::new(Some(RuntimeAccessMode::AutoReview));
+        let request = allowlist_miss_request(command);
+        let params = allowlist_miss_params(command);
+
+        // Auto Review preflights the allowlist miss.
+        assert_eq!(
+            adapter.automatic_permission_decision(&request, &params),
+            Some(RuntimePermissionDecision::AllowOnce)
+        );
+
+        // Switching to Default live must stop auto-approving immediately.
+        adapter.update_access_mode(RuntimeAccessMode::Default);
+        assert_eq!(
+            adapter.automatic_permission_decision(&request, &params),
+            None
+        );
+
+        // And switching back re-enables the preflight on the same live adapter.
+        adapter.update_access_mode(RuntimeAccessMode::AutoReview);
+        assert_eq!(
+            adapter.automatic_permission_decision(&request, &params),
+            Some(RuntimePermissionDecision::AllowOnce)
+        );
+    }
 
     #[test]
     fn model_config_hooks_map_parameterized_catalog_ids() {

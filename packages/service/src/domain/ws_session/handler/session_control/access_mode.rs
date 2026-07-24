@@ -189,8 +189,19 @@ async fn update_cached_access_mode(
     let Some(handle) = sessions.get_mut(&db_session_id) else {
         return;
     };
+    // When the live runtime already adopted the whole change in place and its
+    // launch flags are unchanged (Cursor Default <-> Auto Review), advance
+    // `spawned_access_mode` too so the next prompt doesn't force a redundant
+    // respawn. Launch-flag changes (Full Access) leave `spawned` stale so the
+    // respawn path still re-launches with the right flags.
+    let needs_respawn = runtime_adapter(&handle.runtime_provider).is_none_or(|adapter| {
+        adapter.access_mode_change_needs_respawn(handle.spawned_access_mode.as_ref(), &access_mode)
+    });
     handle.desired_access_mode = Some(access_mode.clone());
     handle.config.access_mode = Some(access_mode.clone());
+    if !needs_respawn {
+        handle.spawned_access_mode = Some(access_mode.clone());
+    }
     if let QueryState::Pending(options) = &mut handle.state {
         options.access_mode = Some(access_mode);
     }
