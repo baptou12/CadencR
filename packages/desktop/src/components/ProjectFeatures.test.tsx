@@ -250,11 +250,15 @@ describe("ProjectFeatures", () => {
       />,
     );
 
-    // The child renders inside the parent's indented, guide-railed subtree.
+    // The row stays full width while its content carries the nesting depth.
     const childRow = screen.getByText("Feature Two").closest("[role=button]");
     const childrenWrap = childRow?.closest("[data-feature-subtree-children='1']");
-    expect(childrenWrap).not.toBeNull();
-    expect(childrenWrap?.querySelector(".bg-sidebar-border")).not.toBeNull();
+    expect(childrenWrap).toBeInTheDocument();
+    expect(childrenWrap?.querySelector(".bg-sidebar-border")).not.toBeInTheDocument();
+    expect(childRow).toHaveAttribute("data-feature-depth", "1");
+    expect(childRow?.querySelector("[data-feature-hierarchy-gutter]")).toHaveStyle({
+      marginInlineStart: "16px",
+    });
 
     // The parent exposes an expand/collapse twisty for its subtree.
     const parentRow = screen.getByText("Feature One").closest("[role=button]");
@@ -273,6 +277,39 @@ describe("ProjectFeatures", () => {
 
     // Active-row color is the shared `bg-sidebar-accent` — identical at every depth.
     expect(childRow).toHaveClass("bg-sidebar-accent");
+  });
+
+  it("reserves the hierarchy gutter for every root feature", () => {
+    vi.mocked(useListFeatures).mockReturnValueOnce({
+      data: [
+        mockFeatures[0],
+        { ...mockFeatures[1], spawned_by_feature_id: 1, spawn_link_type: "spawned" },
+        mockFeatures[2],
+      ],
+    } as ReturnType<typeof useListFeatures>);
+
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    const parentRow = screen.getByText("Feature One").closest("[role=button]");
+    const leafRow = screen.getByText("Session One").closest("[role=button]");
+    const parentGutter = parentRow?.querySelector("[data-feature-hierarchy-gutter]");
+    const leafGutter = leafRow?.querySelector("[data-feature-hierarchy-gutter]");
+
+    expect(parentGutter).toHaveClass("w-2");
+    expect(leafGutter).toHaveClass("w-2");
+    expect(
+      within(parentGutter as HTMLElement).getByRole("button", {
+        name: "Collapse child sessions",
+      }),
+    ).toBeInTheDocument();
+    expect(leafGutter).toBeEmptyDOMElement();
   });
 
   it("nests an active handoff child under its active parent", () => {

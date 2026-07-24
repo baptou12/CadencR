@@ -6,18 +6,18 @@ import { Button } from "@/components/ui/button";
 
 /**
  * Renders an active-feature subtree as a compact, IDE-style indent tree:
- * a chevron twisty on parents, a matching spacer on leaves for alignment,
- * and a single left guide rail per nesting level. Rows are visually
- * identical at every depth — only the left indent changes.
+ * a chevron twisty on parents and an explicit depth passed to each row.
+ * ProjectFeatureRow applies that depth inside the full-width hover target,
+ * so siblings stay aligned without guide rails.
  */
 export function FeatureSubtree({
   node,
   renderFeature,
-  withinTree = false,
+  depth = 0,
 }: {
   node: FeatureTreeNode;
-  renderFeature: (feature: Feature, hierarchyControl?: ReactNode) => ReactNode;
-  withinTree?: boolean;
+  renderFeature: (feature: Feature, hierarchyControl?: ReactNode, depth?: number) => ReactNode;
+  depth?: number;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
@@ -27,7 +27,7 @@ export function FeatureSubtree({
       type="button"
       variant="ghost"
       size="icon-xs"
-      className="size-3.5 rounded-sm text-muted-foreground/70 hover:text-foreground"
+      className="size-3 rounded-sm text-muted-foreground/70 hover:text-foreground"
       aria-label={expanded ? "Collapse child sessions" : "Expand child sessions"}
       onClick={(event) => {
         event.stopPropagation();
@@ -36,26 +36,19 @@ export function FeatureSubtree({
     >
       {expanded ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
     </Button>
-  ) : withinTree ? (
-    <span className="size-3.5 shrink-0" aria-hidden />
   ) : null;
 
   return (
     <>
-      {renderFeature(node.feature, control)}
+      {renderFeature(node.feature, control, depth)}
       {expanded && hasChildren && (
-        <div data-feature-subtree-children={node.feature.id} className="relative ml-[11px] pl-2">
-          {/* Guide rail centered under the parent chevron:
-              pl-3 (12px) + half of size-3.5 (7px) = 19px from the row edge.
-              ml-[11px] + left-2 (8px) = 19px. Shallow indent so deep chains
-              don't march off to the right. */}
-          <span aria-hidden className="absolute inset-y-0 left-2 w-px bg-sidebar-border" />
+        <div data-feature-subtree-children={node.feature.id}>
           {node.children.map((child) => (
             <FeatureSubtree
               key={child.feature.id}
               node={child}
               renderFeature={renderFeature}
-              withinTree
+              depth={depth + 1}
             />
           ))}
         </div>

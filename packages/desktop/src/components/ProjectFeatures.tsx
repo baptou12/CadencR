@@ -284,7 +284,7 @@ export function ProjectFeatures({
     [closeFeatureActivity, projectId],
   );
 
-  const renderFeature = (feature: Feature, hierarchyControl?: ReactNode) => (
+  const renderFeature = (feature: Feature, hierarchyControl?: ReactNode, hierarchyDepth = 0) => (
     <ProjectFeatureRow
       key={feature.id}
       feature={feature}
@@ -311,6 +311,7 @@ export function ProjectFeatures({
       onTogglePin={handleTogglePin}
       onCloseActivity={handleCloseActivity}
       hierarchyControl={hierarchyControl}
+      hierarchyDepth={hierarchyDepth}
     />
   );
 
