@@ -197,10 +197,7 @@ async fn count_unpushed(repo: &Path, parsed: &parsing::ParsedPorcelain) -> u32 {
 /// Read `remote.origin.url` and feed it to `host::detect_remote`. Returns
 /// `None` when there's no `origin` remote (fresh repo, detached clone, etc).
 async fn resolve_remote_info(repo: &Path) -> Option<RemoteInfo> {
-    let url = run_git_background(&["config", "--get", "remote.origin.url"], repo)
-        .await
-        .ok()?;
-    host::detect_remote(url.trim())
+    host::detect_origin_remote(repo).await
 }
 
 /// Bundle the provider-derived fields. `compare_url` is `None` when:

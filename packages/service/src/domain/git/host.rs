@@ -1,16 +1,20 @@
 //! Provider detection for git remote URLs.
 //!
-//! This module is the **only** place in the backend that knows about specific
-//! git hosting providers (GitHub, GitLab, Bitbucket). Every other code path
-//! consumes `GitHost` / `RemoteInfo` / `compare_url` / `pr_label` and stays
-//! provider-neutral, per `.claude/rules/provider-boundaries.md`.
+//! This module is the shared entry point for classifying remotes and building
+//! browser URLs. Provider API behavior lives in the dedicated sibling
+//! `forge/` adapters; every other code path consumes the neutral types here,
+//! per `.claude/rules/provider-boundaries.md`.
+
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::shared::git_cli::run_git_background;
+
 /// Known git hosting providers. `Other` is the fallback for self-hosted
 /// installations whose URL we cannot confidently classify.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum GitHost {
     GitHub,
     GitLab,
@@ -27,6 +31,7 @@ pub enum GitHost {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RemoteInfo {
     pub host: GitHost,
+    pub hostname: String,
     pub web_base: String,
     pub owner: String,
     pub repo: String,
@@ -64,10 +69,19 @@ pub fn detect_remote(url: &str) -> Option<RemoteInfo> {
 
     Some(RemoteInfo {
         host,
+        hostname: hostname.to_string(),
         web_base,
         owner,
         repo,
     })
+}
+
+/// Read and classify the repository's `origin` remote.
+pub async fn detect_origin_remote(repo: &Path) -> Option<RemoteInfo> {
+    let url = run_git_background(&["config", "--get", "remote.origin.url"], repo)
+        .await
+        .ok()?;
+    detect_remote(url.trim())
 }
 
 /// Build the provider-specific compare/PR URL.

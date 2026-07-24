@@ -395,4 +395,5 @@ pub fn git_router() -> Router<AppState> {
             "/api/git/uncommitted-files",
             get(get_uncommitted_files_handler),
         )
+        .merge(super::forge::routes::forge_router())
 }

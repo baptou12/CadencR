@@ -705,6 +705,7 @@ dependencies = [
  "nucleo-matcher",
  "opencode-sdk-rs",
  "openssl",
+ "percent-encoding",
  "portable-pty",
  "rand 0.10.2",
  "rcgen",
