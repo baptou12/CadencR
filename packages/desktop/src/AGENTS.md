@@ -7,60 +7,47 @@ These rules apply to frontend source under `packages/desktop/src/`.
 ### explicit-state
 _Applies to: `**/*.tsx`, `**/*.ts`_
 
-Every async operation must have visible loading state. If the app is loading, fetching, or processing, the user must see a loader, skeleton, or progress indicator. Users should never stare at a seemingly frozen screen. An unacknowledged wait is a UX bug.
+Every async operation needs visible loading state — a loader, skeleton, or progress indicator. An unacknowledged wait reads as a frozen app.
 
 ### frontend-performance
 _Applies to: `packages/desktop/src/**`_
 
-These rules apply to frontend code under `packages/desktop/src/`. The app is an IDE; technical users expect IDE-level responsiveness. Performance is a hard constraint, not an afterthought — think about render cost, subscription scope, main-thread work, and redundant network calls *before* writing the change.
+This is an IDE; users expect IDE-level responsiveness. Treat a perf regression on a hot path (agent stream, terminal, editor, long lists) as a correctness bug.
 
-#### Mandatory practices
+- **Always select from Zustand stores.** `useFooStore()` with no selector subscribes the consumer to every mutation, on every session. Select the slice you read — `useFooStore((s) => s.fieldA)` — and reach for `useFooStore.getState()` for actions that shouldn't drive renders.
+- **Stabilize hook return values.** A hook that returns a fresh object literal each render breaks every downstream `useMemo` and `React.memo`. Wrap the return in `useMemo`, or split state and actions into separate hooks.
+- **`React.memo` hot-path components** and keep their props stable (`useCallback` for callbacks, `useMemo` for objects/arrays). Anything mounted next to a streaming source or kept alive in a hidden tab qualifies.
+- **Virtualize any list whose size scales with user data** — chat, logs, file trees, diff lists — with `react-virtuoso` or `@tanstack/react-virtual`.
+- **Bound main-thread work.** Cache, gate by viewport, or offload synchronous parsing, highlighting, and markdown rendering at mount. Code-split heavy modules (CodeMirror, grammars, decoders) behind dynamic `import()` or `React.lazy`.
+- **Gate layout reads** (`scrollHeight`, `getBoundingClientRect`) — never on every render or every resize event.
 
-- **Always select from Zustand stores.** Never call a store hook without a selector (`useFooStore()` subscribes the consumer to every mutation, on every session). Always select the slice you actually read: `useFooStore((s) => s.fieldA)`. Read actions outside the render flow via `useFooStore.getState()` when they don't need to drive UI updates.
-- **Stabilize hook return values.** A custom hook that returns a fresh object literal each render breaks every downstream `useMemo` and `React.memo`. Wrap the return in `useMemo` keyed on the primitive fields it depends on, or split state and actions into separate hooks.
-- **`React.memo` hot-path components.** Anything mounted next to a streaming source (agent stream, terminal, editor, long list) or kept alive in a hidden tab must be memoized. Verify props are stable — callbacks via `useCallback`, objects/arrays via `useMemo`.
-- **Virtualize long lists.** Rendering hundreds of DOM nodes for a chat, log, file tree, or diff list is a bug. Use `react-virtuoso` or `@tanstack/react-virtual`. The agent stream, file trees, search results, and any list whose size scales with user data must be windowed.
-- **Bound main-thread work.** Synchronous parsing, syntax highlighting, or markdown rendering at mount must be cached, gated by viewport, or offloaded (`requestIdleCallback`, Web Worker). No unbounded synchronous work on first paint.
-- **Lazy-load heavy modules.** Editors (CodeMirror), syntax-highlighting grammars, image/video decoders, and any module > 100 KB gzipped must be code-split via dynamic `import()` or `React.lazy`.
-
-#### Forbidden patterns
-
-- Subscribing a hot component to an entire store (no selector), or returning the raw store from a wrapper hook.
-- Returning a fresh object literal from a custom hook without `useMemo`.
-- Passing freshly-built objects, arrays, or arrow functions as props through a streaming or list-rendering parent — they defeat memoization on every descendant.
-- Adding a new tab, panel, or component under the agent/editor/terminal area without auditing how often it re-renders during streaming.
-- Running heavy computation inside the render body. Move it to `useMemo`, an effect, or off-thread.
-- Triggering layout reads (`scrollHeight`, `getBoundingClientRect`, etc.) on every render or every resize event without gating.
-
-When in doubt, profile first. Don't speculate; don't ignore. A perf regression on a hot path is treated like a correctness bug.
+Before adding a tab, panel, or component under the agent/editor/terminal area, check how often it re-renders during streaming.
 
 ### keyboard-shortcuts
 _Applies to: `**/*.tsx`_
 
-When adding a new user-facing feature, ask whether it needs a keyboard shortcut. Power users rely on keyboard navigation — don't ship a feature that can only be triggered by mouse if it could reasonably have a keybinding.
+Power users drive this app from the keyboard, so a feature that can only be triggered by mouse is incomplete if a binding would make sense. When adding one, use the `keyboard-shortcuts` skill — the registry pipeline has non-QWERTY (`e.code` vs `e.key`) and help-modal requirements that are easy to get wrong.
 
 ### no-optimistic-updates
 _Applies to: `packages/desktop/src/**`_
 
-Do NOT use optimistic updates in the frontend. Everything runs locally — there is no latency to hide. Optimistic updates create multiple sources of truth and add unnecessary complexity.
+No optimistic updates. Everything runs locally — there is no latency to hide, and optimism creates a second source of truth. Zustand state changes only when the backend confirms via a WebSocket event; never set status inside an action dispatcher (`startPlan()`, `approvePlan()`, …).
 
-The Zustand store state must be the single source of truth. Only update store state when the backend confirms a change via WebSocket events. Never set state optimistically in action dispatchers (e.g., don't set status in `startPlan()`, `approvePlan()`, etc. — wait for the backend WebSocket event).
-
-Session/agent status has exactly one canonical source: `useSessionStatusStore` (`@/stores/session-status-store`), populated only by the backend `session_status.update` / `session_status.snapshot` envelopes (`LiveAgentStatus`: `"idle" | "agent" | "question"`). Read "is the agent working?" from there — never re-derive or track it separately.
+Session/agent status has exactly one source: `useSessionStatusStore` (`@/stores/session-status-store`), populated only by `session_status.update` / `session_status.snapshot` (`LiveAgentStatus`: `"idle" | "agent" | "question"`). Read "is the agent working?" from there — never re-derive or track it separately.
 
 ### provider-boundaries
 _Applies to: `packages/service/src/**`, `packages/desktop/src/**`, `packages/*-sdk-rs/src/**`_
 
-Do not scatter provider-specific logic across shared codepaths.
+Cadencr is provider-neutral by design — don't scatter provider-specific logic across shared codepaths.
 
-- Provider SDKs are only for provider communication details.
-- Provider adapters are where provider-specific business logic should live on the backend.
-- Shared backend runtime, workflow, and API code should consume unified adapter interfaces and provider-neutral types.
-- Shared frontend components, hooks, and stores should consume provider-neutral catalog/config data instead of hardcoded provider branches.
-- If a provider needs special handling, extract it into a dedicated provider file or folder rather than adding another provider-specific conditional in generic code.
+- `packages/*-sdk-rs/` crates carry transport and protocol details only.
+- Provider-specific business logic belongs in that provider's backend adapter (`packages/service/src/domain/agents/providers/`).
+- Shared backend runtime, workflow, and API code consumes the unified adapter interface and provider-neutral types.
+- Shared frontend components, hooks, and stores consume provider-neutral catalog/config data — no hardcoded provider branches.
+
+When a provider needs special handling, extract it into a dedicated provider file or folder rather than adding another conditional to generic code.
 
 ### strict-typing
 _Applies to: `**/*.ts`, `**/*.tsx`_
 
-Never use `any` — use `unknown` and narrow with type guards; prefer explicit types and Zod schemas at boundaries.
-(enforced by oxlint `typescript/no-explicit-any` — see .oxlintrc.json.)
+Never use `any` — use `unknown` and narrow with type guards, and validate external boundaries with Zod. (`typescript/no-explicit-any` is a hard oxlint error, so this fails the build, not just review.)

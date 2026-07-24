@@ -5,4 +5,4 @@ paths:
   - "packages/service/migrations/**"
 ---
 
-Schema migrations are managed by sqlx in the Rust service (`packages/service/migrations/`). New migrations use timestamp-based naming: `YYYYMMDDHHMMSS_description.sql`. They are embedded at compile time via `sqlx::migrate!()` and run automatically on server startup. Migrations are non-reversible (plain `.sql`, not `.up.sql`/`.down.sql`).
+Migrations live in `packages/service/migrations/`, named `YYYYMMDDHHMMSS_description.sql`. They are plain, non-reversible `.sql` (no `.up`/`.down`), embedded via `sqlx::migrate!()` and run on server startup — so a released migration can never be edited, only followed by another one. For destructive changes, schema rebuilds, FK edits, or data cleanup, use the `migration-safety` skill.

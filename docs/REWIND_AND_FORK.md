@@ -253,7 +253,7 @@ checkpoints subsystem, HTTP layer, DB, and frontend are all provider-neutral.
 
 ## 6. Data model
 
-New migration (follow `.claude/rules/migration-safety` — additive, no destructive
+New migration (follow the `migration-safety` skill — additive, no destructive
 rebuilds):
 
 ```sql

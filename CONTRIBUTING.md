@@ -95,7 +95,7 @@ pnpm rust:storage
 
 ## Project Conventions
 
-The full ruleset for code style, file/function size limits, and architectural boundaries lives in [`.claude/rules/`](./.claude/rules/) and is mirrored into [`AGENTS.md`](./AGENTS.md) / [`CLAUDE.md`](./CLAUDE.md). Read those before opening a PR.
+The full ruleset for code style, file/function size limits, and architectural boundaries lives in [`.claude/rules/`](./.claude/rules/). Claude Code loads those files directly (each rule's `paths:` frontmatter scopes it to the files it applies to); for Codex and OpenCode they are mirrored into the auto-generated `## Rules` section of [`AGENTS.md`](./AGENTS.md) by `pnpm build:agents-md`. Read them before opening a PR.
 
 The three rules contributors hit most often:
 

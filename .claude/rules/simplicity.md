@@ -1,1 +1,0 @@
-Keep code simple. Prefer the straightforward, obvious implementation over the clever one — complexity is the cost you pay later to maintain it. If an approach feels complex, find a simpler way before writing it. If you can't explain the approach in one sentence, it's too complicated.
