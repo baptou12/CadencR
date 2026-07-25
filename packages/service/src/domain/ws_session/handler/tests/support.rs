@@ -358,6 +358,18 @@ pub(crate) async fn init_session_with_payload(
     app_state: &AppState,
     payload: SessionInitPayload,
 ) -> String {
+    init_session_and_get_response(tx, rx, sdk_sessions, app_state, payload)
+        .await
+        .session_id
+}
+
+pub(crate) async fn init_session_and_get_response(
+    tx: &WsSender,
+    rx: &mut mpsc::UnboundedReceiver<Message>,
+    sdk_sessions: &SdkSessions,
+    app_state: &AppState,
+    payload: SessionInitPayload,
+) -> SessionInitializedPayload {
     let envelope = make_envelope("session", "init", serde_json::to_value(payload).unwrap());
     dispatch_envelope(envelope, tx, sdk_sessions, app_state).await;
 
@@ -365,8 +377,7 @@ pub(crate) async fn init_session_with_payload(
     if let Message::Text(text) = msg {
         let env: WsEnvelope = serde_json::from_str(&text).unwrap();
         assert_eq!(env.action, "initialized");
-        let payload: SessionInitializedPayload = serde_json::from_value(env.payload).unwrap();
-        payload.session_id
+        serde_json::from_value(env.payload).unwrap()
     } else {
         panic!("expected text message");
     }
