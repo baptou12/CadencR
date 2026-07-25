@@ -54,6 +54,19 @@ describe("scrollbar CSS", () => {
     );
   });
 
+  it("keeps the sidebar worktree group off palette tokens that collide with --sidebar", () => {
+    // `--muted` IS `--sidebar` in cadencr-light (#eff0f2 both) and one step
+    // from it in cadencr-dark, so a muted/accent fill leaves the grouping
+    // invisible in exactly the themes that need it. The fill must stay a
+    // foreground wash; the rim reuses the sidebar's own hairline token.
+    const groupRule = indexCss.match(/@utility worktree-group\s*{[^}]*}/s)?.[0] ?? "";
+    expect(groupRule).toMatch(
+      /background-color:\s*color-mix\(in oklab, var\(--sidebar-foreground\)[^)]*\);/,
+    );
+    expect(groupRule).toMatch(/border-color:\s*var\(--sidebar-border\);/);
+    expect(groupRule).not.toMatch(/var\(--(muted|sidebar|sidebar-accent|accent|card)\)/);
+  });
+
   it("keeps Dracula hover and active accents subdued", () => {
     expect(themeCss).toMatch(
       /:root\[data-theme="dracula"\]\s*{[^}]*--accent:\s*oklch\(0\.34 0\.032 277\.821\);/s,

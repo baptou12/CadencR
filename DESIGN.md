@@ -420,7 +420,8 @@ Supported text hunks offer `Accept Current branch` and `Accept Incoming branch` 
 - **Structure:** `.cds-sidebar > [.cds-sidebar-header, .cds-sidebar-nav, .cds-sidebar-scroll, .cds-sidebar-footer]`.
 - **Project group:** `.cds-project-group > [.cds-project-row, .cds-feature-list]`. The feature list has a left rail (`border-left: 1px solid var(--sidebar-border)`).
 - **Active feature:** `.cds-feature-row.active` gets a `--primary` 18% mix bg + a `.cds-active-rail` 2px primary bar at left:-11px.
-- **Tokens:** `--sidebar`, `--sidebar-border`, `--accent` (hover bg), `--primary`/`--primary-glow` (active state), `--muted-foreground` (eyebrows + counts), `--acc-green`/`--acc-pink`/`--acc-orange` (project dots).
+- **Worktree group:** conversations sharing one worktree are banded into `.worktree-group` — a `--sidebar-border` rim plus a 5% `--sidebar-foreground` wash. This is the one sidebar surface that does *not* take the neutral `--accent` wash: `--accent` is spoken for by row hover, and a group must never read as a hovered or selected row. The rim carries the grouping; the fill stays below the hover tint. Palette tokens are unusable here — `--muted` equals `--sidebar` in CadencR Light.
+- **Tokens:** `--sidebar`, `--sidebar-border`, `--accent` (hover bg), `--primary`/`--primary-glow` (active state), `--muted-foreground` (eyebrows + counts), `--acc-green`/`--acc-pink`/`--acc-orange` (project dots), `--sidebar-foreground` (text + the worktree-group wash).
 - **When to use vs alternative:** The sidebar is global navigation. Per-pane navigation goes in the tab strip, not here.
 
 ### TopBar

@@ -14,7 +14,9 @@ export function WorktreeGroup({
   renderFeature,
 }: WorktreeGroupProps): ReactElement {
   return (
-    <div className="worktree-group flex flex-col gap-0.5 rounded-md border border-transparent bg-muted/30 p-1">
+    // `worktree-group` (index.css) owns the fill and rim color so themes can
+    // swap the material — a `bg-*`/`border-*` utility here would lose to it.
+    <div className="worktree-group flex flex-col gap-0.5 rounded-md border p-1">
       <div
         className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
         title={label}
