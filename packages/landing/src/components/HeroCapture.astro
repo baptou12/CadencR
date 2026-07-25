@@ -1,0 +1,191 @@
+---
+/**
+ * 00 — the product, live, on both screens at once.
+ *
+ * The desktop capture and the phone capture are the same session recorded at
+ * the same moment, so the composition argues the remote story instead of
+ * claiming it: the agent runs on the Mac, the phone is a second window onto it.
+ * Everything here exists to keep that claim true — the sync script below, and
+ * the byte gating that stops a phone from paying for the Mac's capture.
+ */
+import { getImage } from "astro:assets";
+import heroImage from "@/assets/hero.png";
+
+const base = import.meta.env.BASE_URL;
+
+// The source capture is 4336px wide; the frame never exceeds ~950 CSS px, so
+// emit a right-sized WebP instead of shipping the raw 2.4 MB PNG.
+const heroPoster = await getImage({ src: heroImage, width: 1440, format: "webp", quality: 78 });
+---
+{/* `media` on <source> gates the download itself (verified in Safari, Chrome,
+    and Firefox), so a phone never fetches the 5.5 MB desktop capture — it
+    loads the 906 KB portrait one and nothing else. The rem breakpoint matches
+    Tailwind's `md` (48rem) exactly, including when the root font size is
+    scaled up and `md:` no longer lands on 768 physical px. */}
+<figure class="relative mx-auto max-w-[1100px]">
+  <div class="monitor-light pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 sm:-inset-x-8" aria-hidden="true"></div>
+
+  {/* The Mac gives up ~11% of its width so the phone can be big enough to read
+      as the same session rather than as a decorative sliver, and the two
+      overlap so they read as one desk rather than two exhibits. */}
+  <div class="relative md:mb-[4%]">
+    <div
+      class="hero-mac frame hero-seat hidden overflow-hidden rounded-xl md:block md:w-[82%] lg:w-[84%]"
+      style={`--hero-poster: url("${heroPoster.src}")`}
+    >
+      <video
+        class="block h-auto w-full"
+        style="aspect-ratio: 2080 / 1304"
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="metadata"
+        data-hero-desktop
+        aria-label="CadencR on macOS: the agent streams a plan while the project list and Git panel stay in view"
+      >
+        {/* AV1 first (Chrome, Firefox, M3+ Safari); H.264 fallback for Safari
+            on hardware without AV1 decode. The codec strings are read off the
+            files' own av1C/avcC boxes — a level declared lower than the stream
+            actually is makes a device claim it can play what it then has to
+            drop to software decode for, instead of cleanly taking the fallback
+            below. Re-check these whenever the captures are re-encoded. */}
+        <source
+          src={`${base}hero.av1.mp4`}
+          media="(min-width: 48rem)"
+          type='video/mp4; codecs="av01.0.12M.08"'
+        />
+        <source
+          src={`${base}hero.h264.mp4`}
+          media="(min-width: 48rem)"
+          type='video/mp4; codecs="avc1.640032"'
+        />
+      </video>
+    </div>
+
+    {/* Below md this is the hero capture, full width; from md it becomes the
+        phone on the desk, overlapping the Mac's bottom-right corner. See the
+        styles below for how its edge is staged. */}
+    <div
+      class="hero-phone mx-auto w-full max-w-[286px] md:absolute md:bottom-0 md:right-0 md:mx-0 md:w-[25%] md:max-w-none md:translate-y-[7%] lg:w-[23%]"
+    >
+      <video
+        class="block h-auto w-full"
+        style="aspect-ratio: 860 / 1800"
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="metadata"
+        data-hero-phone
+        aria-label="The same CadencR session open on a phone over the local network: the same agent stream, steerable from the same composer"
+      >
+        <source src={`${base}hero.mobile.av1.mp4`} type='video/mp4; codecs="av01.0.08M.08"' />
+        <source src={`${base}hero.mobile.h264.mp4`} type='video/mp4; codecs="avc1.640028"' />
+      </video>
+    </div>
+  </div>
+
+  <figcaption class="fig-caption justify-center [text-wrap:balance]">
+    00 · one live session — running on your Mac, open on your phone, over your own network
+  </figcaption>
+</figure>
+
+<script>
+  // The two captures are the same session at the same moment, and they only
+  // make that argument while they agree. Three things pull them apart: the Mac
+  // capture is 6x the bytes so the phone starts first; browsers pause
+  // offscreen autoplaying video and resume the two at different moments; and
+  // the encodes differ by 100ms, so independent `loop`s slip a little further
+  // every lap.
+  //
+  // Close a big gap by seeking, because it means something actually broke (a
+  // lap boundary, a resume) and it is worth one cut to fix. Close a small one
+  // by running the phone a few percent fast or slow instead — a seek on a
+  // playing video snaps to the nearest keyframe, so correcting drift that way
+  // lands short and re-seeks, which reads as a stutter and is worse than the
+  // drift it set out to fix.
+  const mac = document.querySelector<HTMLVideoElement>("[data-hero-desktop]");
+  const phone = document.querySelector<HTMLVideoElement>("[data-hero-phone]");
+
+  if (mac && phone) {
+    const SEEK_ABOVE = 0.5;
+    const LOCKED_WITHIN = 0.04;
+    const MAX_NUDGE = 0.08;
+
+    mac.addEventListener("timeupdate", () => {
+      // Never touch a video that is still starting up: seeking one that has a
+      // pending autoplay aborts it and strands it on frame one. Below md this
+      // never runs at all — no <source> matches, so the Mac stays silent and
+      // the phone just loops on its own.
+      if (mac.readyState < 3 || phone.readyState < 3 || mac.paused || phone.paused) {
+        phone.playbackRate = 1;
+        return;
+      }
+
+      const gap = mac.currentTime - phone.currentTime;
+      if (Math.abs(gap) > SEEK_ABOVE) {
+        phone.currentTime = mac.currentTime;
+        phone.playbackRate = 1;
+      } else {
+        phone.playbackRate =
+          Math.abs(gap) < LOCKED_WITHIN ? 1 : 1 + Math.max(-MAX_NUDGE, Math.min(MAX_NUDGE, gap));
+      }
+    });
+  }
+</script>
+
+<style>
+  /* The hero capture is the one object seated with an emerald-tinted shadow. */
+  .hero-seat,
+  .hero-seat:hover {
+    box-shadow: var(--shadow-emerald-seat);
+  }
+
+  /* The still frame sits behind the video rather than on the `poster`
+     attribute: a poster downloads even when the <video> is display:none, so on
+     a phone the desktop still would cost ~135 KB for something never shown. As
+     a background of the md-only wrapper it is simply never fetched. */
+  .hero-mac {
+    background-image: var(--hero-poster);
+    background-size: cover;
+    background-position: top center;
+  }
+
+  /* The capture arrives with a device frame already drawn into it: a hairline
+     outline on a rounded rect, with dead near-black filling the corners
+     outside that curve. Wrapping that in a bezel of our own produced two
+     rounded borders at two radii with a gap between them, which is what read
+     as a stray translucent outline around the phone.
+     So crop the recorded frame off instead and draw the edge here. The 1.05
+     scale trims the ~3% margin where the outline and the dead corners live —
+     enough to clear them, little enough to keep the composer and the tab row
+     intact (1.08 starts eating both). The radius is a percentage pair so it
+     stays circular at any rendered size rather than going oval on a 1:2 box. */
+  .hero-phone {
+    overflow: hidden;
+    border-radius: 5% / 2.39%;
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--color-foreground) 18%, transparent),
+      var(--shadow-emerald-seat);
+  }
+  .hero-phone video {
+    transform: scale(1.05);
+  }
+
+  /* Below md the phone *is* the hero capture and carries the emerald seat.
+     From md the Mac reclaims that role and the phone lifts off it on a neutral
+     shadow — the Jewel-Light Rule allows exactly one emerald-tinted object per
+     view. Deep and tight: over a capture as busy as the Mac's, the shadow is
+     what sets the phone in front, so it does the work a bezel would. The
+     hairline stays either way — dark-on-dark, it is the only thing that gives
+     the device an edge at all. */
+  @media (min-width: 48rem) {
+    .hero-phone {
+      box-shadow:
+        0 0 0 1px color-mix(in oklch, var(--color-foreground) 18%, transparent),
+        0 2px 6px rgb(0 0 0 / 0.5),
+        0 24px 56px -12px rgb(0 0 0 / 0.78);
+    }
+  }
+</style>

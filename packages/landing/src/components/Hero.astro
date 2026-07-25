@@ -5,7 +5,7 @@ import Button from "@/components/ui/Button.astro";
 import Wrap from "@/components/ui/Wrap.astro";
 import { DISPLAY_VERSION } from "@/lib/downloads";
 import { getCollection, type CollectionEntry } from "astro:content";
-import heroImage from "@/assets/hero.png";
+import HeroCapture from "@/components/HeroCapture.astro";
 
 const base = import.meta.env.BASE_URL;
 // Fully-qualified tap form so it works without a separate `brew tap` step.
@@ -129,31 +129,10 @@ const [latestNews] = (await getCollection("news")).sort(
     </Wrap>
   </div>
 
-  <!-- 00 — the product, live. -->
   <Wrap class="py-12 sm:py-16">
-    <figure class="hero-rise hero-rise-5 relative mx-auto max-w-[1040px]">
-      <div class="monitor-light pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 sm:-inset-x-8" aria-hidden="true"></div>
-      <div class="frame hero-seat overflow-hidden rounded-xl">
-        <video
-          class="block h-auto w-full"
-          poster={heroImage.src}
-          autoplay
-          muted
-          loop
-          playsinline
-          preload="metadata"
-          aria-label="CadencR desktop app in action: streaming agent output, the project list, and an inline diff"
-        >
-          {/* AV1 first (Chrome, Firefox, M3+ Safari); H.264 fallback for
-              Safari/iOS on hardware without AV1 decode. */}
-          <source src={`${base}hero.av1.mp4`} type='video/mp4; codecs="av01.0.05M.08"' />
-          <source src={`${base}hero.h264.mp4`} type='video/mp4; codecs="avc1.640028"' />
-        </video>
-      </div>
-      <figcaption class="fig-caption justify-center">
-        00 · live capture, real session · open source · no telemetry · Apache-2.0
-      </figcaption>
-    </figure>
+    <div class="hero-rise hero-rise-5">
+      <HeroCapture />
+    </div>
   </Wrap>
 </section>
 
@@ -230,12 +209,6 @@ const [latestNews] = (await getCollection("news")).sort(
   .hero-brew-error {
     box-shadow: inset 0 0 0 1px var(--color-destructive);
     color: var(--color-destructive);
-  }
-
-  /* The hero capture is the one object seated with an emerald-tinted shadow. */
-  .hero-seat,
-  .hero-seat:hover {
-    box-shadow: var(--shadow-emerald-seat);
   }
 
   /* Staggered entrance: one quiet rise-and-settle sequence. */
