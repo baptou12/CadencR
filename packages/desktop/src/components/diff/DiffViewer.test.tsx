@@ -181,7 +181,7 @@ vi.mock("./PatchDiffView", () => ({
     mocks.patchDiffViewMock(props),
 }));
 
-import { DiffViewer } from "./DiffViewer";
+import { DiffViewer, visibleReviewThread } from "./DiffViewer";
 
 /** Default: the changed-files list contains one modified file. */
 function withFooFile(): void {
@@ -677,5 +677,20 @@ describe("DiffViewer patch rendering", () => {
 
     expect(mocks.useGetFileContentMock).not.toHaveBeenCalled();
     expect(screen.getByTestId("patch-diff-view")).toHaveAttribute("data-patch", singleFileDiff);
+  });
+});
+
+describe("visibleReviewThread", () => {
+  it("waits for a lazy annotation to have layout before completing a jump", () => {
+    const container = document.createElement("div");
+    const annotation = document.createElement("section");
+    annotation.dataset.reviewThreadId = "thread-1";
+    container.appendChild(annotation);
+
+    annotation.getBoundingClientRect = () => ({ width: 0, height: 0 }) as DOMRect;
+    expect(visibleReviewThread(container, "thread-1")).toBeNull();
+
+    annotation.getBoundingClientRect = () => ({ width: 320, height: 120 }) as DOMRect;
+    expect(visibleReviewThread(container, "thread-1")).toBe(annotation);
   });
 });

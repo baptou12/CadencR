@@ -1,37 +1,23 @@
-import { memo, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
-import { Button } from "@/components/ui/button";
-import { SendIcon, Loader2Icon, PanelLeft, PanelLeftClose } from "lucide-react";
-import { ShortcutTooltip } from "@/components/ShortcutTooltip";
-import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { DiffViewer } from "./diff/DiffViewer";
-import { GitGraphView } from "./diff/GitGraphView";
-import { GitBranchesView } from "./diff/GitBranchesView";
-import { StashesView } from "./diff/StashesView";
-import { GitTabToggle, type GitViewMode } from "./diff/GitTabToggle";
-import { NumStat } from "@/components/NumStat";
-import type { DiffMode } from "./diff/useDiffData";
+import { memo, useCallback, useMemo } from "react";
+import type { GitViewMode } from "./diff/GitTabToggle";
+import { useListDiffComments, type CommentThread, type PrSummary } from "@/api/generated";
 import {
-  useListDiffComments,
-  useGetFeatureSettings,
-  useSetFeatureSetting,
-  useGetStats,
-  getGetFeatureSettingsQueryKey,
-} from "@/api/generated";
-import { useSendPendingComments } from "@/hooks/useSendPendingComments";
+  useSendPendingComments,
+  type UseSendPendingCommentsResult,
+} from "@/hooks/useSendPendingComments";
+import { usePrReviewThreads, type PrReviewThreads } from "@/hooks/usePrReviewThreads";
+import { GitTabLayout } from "./diff/GitTabLayout";
+import type { GitSendCommentsBarProps } from "./diff/GitSendCommentsBar";
+import { useGitTabPanes } from "./diff/useGitTabPanes";
+import { useGitTabReviews, type GitTabReviews } from "./diff/useGitTabReviews";
+import { useGitTabShortcuts } from "./diff/useGitTabShortcuts";
+import { useGitTabViewState } from "./diff/useGitTabViewState";
 import { selectGitTargetBranch, useGitStatusStore } from "@/stores/useGitStatusStore";
-import { apiErrorMessage } from "@/lib/api-errors";
 import { GitUpdateRecoveryRegion } from "./git-actions/GitUpdateRecoveryBanner";
 import { useGitKeyboardController } from "./diff/useGitKeyboardController";
 import { useGitViewShortcuts } from "./diff/useGitViewShortcuts";
-import { FeaturePrView } from "./FeaturePrView";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 import { usePrAttention } from "./diff/usePrAttention";
-
-const GIT_VIEW_MODE_SETTING = "git_view_mode";
-const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
 
 interface FeatureGitTabProps {
   featureId: number;
@@ -42,15 +28,66 @@ interface FeatureGitTabProps {
   onSendComments?: (message: string) => void;
 }
 
-function isGitViewMode(v: string | undefined): v is GitViewMode {
-  return (
-    v === "uncommitted" ||
-    v === "vs-target" ||
-    v === "pr" ||
-    v === "graph" ||
-    v === "branches" ||
-    v === "stashes"
+function useSendBarProps(
+  drafts: UseSendPendingCommentsResult,
+  reviews: ReturnType<typeof useGitTabReviews>,
+  isPr: boolean,
+): GitSendCommentsBarProps {
+  return useMemo(
+    () => ({
+      drafts:
+        drafts.shouldRender && !isPr
+          ? {
+              label: drafts.buttonLabel,
+              disabled: drafts.disabled,
+              sending: drafts.sending,
+              onSend: () => void drafts.send(),
+            }
+          : undefined,
+      reviews: reviews.canSend
+        ? {
+            selectedCount: reviews.selectedCount,
+            totalCount: reviews.unresolved.length,
+            disabled: reviews.sendDisabled,
+            onSend: reviews.sendSelected,
+          }
+        : undefined,
+    }),
+    [drafts, isPr, reviews],
   );
+}
+
+function useFeatureGitReviews(
+  featureId: number,
+  viewMode: GitViewMode,
+  pr: PrSummary | null | undefined,
+  onSendComments: ((message: string) => void) | undefined,
+): { reviewThreads: PrReviewThreads; reviews: GitTabReviews } {
+  const visible = (viewMode === "pr" || viewMode === "vs-target") && pr != null;
+  const reviewThreads = usePrReviewThreads(featureId, visible);
+  const reviews = useGitTabReviews(viewMode, pr, onSendComments, reviewThreads);
+  return useMemo(() => ({ reviewThreads, reviews }), [reviewThreads, reviews]);
+}
+
+function useFeatureGitShortcuts(
+  enabled: boolean,
+  view: ReturnType<typeof useGitTabViewState>,
+  panes: ReturnType<typeof useGitTabPanes>,
+  drafts: UseSendPendingCommentsResult,
+  reviews: GitTabReviews,
+): void {
+  useGitTabShortcuts({
+    enabled,
+    toggleFileList: view.toggleFileList,
+    isFileListCollapseLoading: view.isFileListCollapseLoading,
+    isPr: panes.isPr,
+    sendDrafts: () => void drafts.send(),
+    sendReviewThreads: reviews.sendSelected,
+    canSendReviewThreads: reviews.canSend && !reviews.sendDisabled,
+    previousReview: reviews.previousThread,
+    nextReview: reviews.nextThread,
+    canNavigateReviews: view.viewMode === "vs-target" && reviews.targetCount > 0,
+  });
 }
 
 export const FeatureGitTab = memo(function FeatureGitTab({
@@ -60,53 +97,15 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   hotkeysEnabled = true,
   onSendComments,
 }: FeatureGitTabProps) {
-  const queryClient = useQueryClient();
   const { data: comments = [] } = useListDiffComments(featureId);
   const pendingComments = useMemo(() => comments.filter((c) => c.status === "pending"), [comments]);
   const registerNavigationAdapter = useGitKeyboardController(hotkeysEnabled);
   const fallbackViewMode: GitViewMode = diffMode === "branch" ? "vs-target" : "uncommitted";
 
-  // Per-feature persisted toggle. The local mirror advances only after the
-  // backend confirms the setting mutation; the persisted query remains the
-  // reload/cross-tab source of truth.
-  const { data: settingsData } = useGetFeatureSettings(featureId);
-  const persistedViewMode = useMemo<GitViewMode>(() => {
-    const raw = settingsData?.find((s) => s.key === GIT_VIEW_MODE_SETTING)?.value;
-    return isGitViewMode(raw) ? raw : fallbackViewMode;
-  }, [fallbackViewMode, settingsData]);
-
-  const [viewMode, setViewMode] = useState<GitViewMode>(persistedViewMode);
-  useEffect(() => {
-    setViewMode(persistedViewMode);
-  }, [persistedViewMode]);
-
-  const setFeatureSetting = useSetFeatureSetting({
-    mutation: {
-      onSuccess: (_response, variables) => {
-        const confirmed = variables.data.value;
-        if (isGitViewMode(confirmed)) setViewMode(confirmed);
-        queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
-      },
-      onError: (err: unknown) => {
-        const message = apiErrorMessage(err, "Unknown error");
-        toast.error(`Could not save Git view setting: ${message}`);
-      },
-    },
-  });
-
-  const handleViewModeChange = useCallback(
-    (next: GitViewMode) => {
-      if (next === viewMode) return;
-      setFeatureSetting.mutate({
-        id: featureId,
-        data: { key: GIT_VIEW_MODE_SETTING, value: next },
-      });
-    },
-    [featureId, setFeatureSetting, viewMode],
-  );
+  const view = useGitTabViewState(featureId, fallbackViewMode);
   const handleRequestUncommitted = useCallback(
-    () => handleViewModeChange("uncommitted"),
-    [handleViewModeChange],
+    () => view.setViewMode("uncommitted"),
+    [view.setViewMode],
   );
   const recoveryRegion = useMemo(
     () => (
@@ -117,217 +116,76 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     ),
     [featureId, handleRequestUncommitted],
   );
-  useGitViewShortcuts(handleViewModeChange, hotkeysEnabled && !setFeatureSetting.isPending);
+  useGitViewShortcuts(view.setViewMode, hotkeysEnabled && !view.isSavingViewMode);
 
   // Only the target branch affects this component's query parameters. Selecting
   // the full live snapshot would re-render the entire Git tab whenever the
   // watcher advances `computed_at` for an agent file write; changed-files and
-  // per-file diff queries already subscribe to their own cache updates below.
+  // per-file diff queries already subscribe to their own cache updates.
   const targetBranch = useGitStatusStore(selectGitTargetBranch(featureId));
   const prStatus = usePrStatusStore(selectPrStatus(featureId));
-
-  // The file-list collapse state lives here (alongside the new top toolbar)
-  // so we can render the toggle next to the view-mode segmented control —
-  // the user's specific request was to move the button up here. `DiffViewer`
-  // accepts the controlled props and skips its own internal rail / tree
-  // collapse buttons so there's a single source of truth.
-  const {
-    value: persistedFileListCollapsed,
-    setValue: persistFileListCollapsed,
-    isLoading: isFileListCollapseLoading,
-  } = useDebouncedSetting(GIT_SIDEBAR_COLLAPSED_SETTING, 0);
-  const fileListCollapsed = persistedFileListCollapsed === "true";
-  const setFileListCollapsed = useCallback(
-    (collapsed: boolean): void => {
-      persistFileListCollapsed(String(collapsed));
-    },
-    [persistFileListCollapsed],
+  const panes = useGitTabPanes(featureId, view.viewMode, targetBranch);
+  const prAttention = usePrAttention(prStatus, panes.isPr);
+  const { reviewThreads, reviews } = useFeatureGitReviews(
+    featureId,
+    view.viewMode,
+    prStatus?.pr,
+    onSendComments,
   );
-  const handleToggleFileListCollapsed = useCallback((): void => {
-    setFileListCollapsed(!fileListCollapsed);
-  }, [fileListCollapsed, setFileListCollapsed]);
-
-  // Translate the active toggle into the diff endpoints' `mode` parameter.
-  // "uncommitted" hits the working-tree path on the server (alias of the legacy
-  // "worktree" mode); "vs-target" pins the diff to the resolved target branch.
-  const isGraph = viewMode === "graph";
-  const isBranches = viewMode === "branches";
-  const isStashes = viewMode === "stashes";
-  const isPr = viewMode === "pr";
-  const prAttention = usePrAttention(prStatus, isPr);
-  // The graph and stashes views carry their own per-row stats and drive their
-  // own list body — they don't use the shared diff toolbar, file-list collapse,
-  // or diff-wide stats query.
-  const isListView = isGraph || isBranches || isStashes || isPr;
-  const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
-  const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
-  // Stats are byte-identical for "worktree" and "uncommitted" on the backend, so
-  // label the working-tree stats query "worktree" — the value ProjectFeatureRow
-  // and the prefetch use — to share one cache entry instead of firing a
-  // duplicate under the "uncommitted" key when the Git tab is open.
-  const statsMode = viewMode === "vs-target" ? "branch" : "worktree";
-  // The list views have their own per-row stats — skip the diff-wide stats
-  // query entirely while one is active so we don't fire a wasted request.
-  const statsQuery = useGetStats(
-    {
-      feature_id: featureId,
-      mode: statsMode,
-      target_branch: diffTargetBranch,
-    },
-    { query: { enabled: !isListView } },
-  );
-
-  const { send, sending, buttonLabel, disabled, shouldRender } = useSendPendingComments({
+  const drafts = useSendPendingComments({
     featureId,
     pendingComments,
     onSend: onSendComments,
     verb: "Send",
   });
-
-  useScopedGlobalShortcutById(
-    "diff-toggle-sidebar",
-    (e) => {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      if (e.repeat) return;
-      handleToggleFileListCollapsed();
+  const handleViewReviewThread = useCallback(
+    (thread: CommentThread): void => {
+      reviews.focusThread(thread);
+      view.setViewMode("vs-target");
     },
-    "git",
-    { enabled: hotkeysEnabled && !isFileListCollapseLoading },
+    [reviews.focusThread, view.setViewMode],
   );
+  const send = useSendBarProps(drafts, reviews, panes.isPr);
 
-  useScopedGlobalShortcutById(
-    "diff-send-comments",
-    (e) => {
-      e.preventDefault();
-      void send();
-    },
-    "git",
-    { enabled: hotkeysEnabled },
-  );
+  useFeatureGitShortcuts(hotkeysEnabled, view, panes, drafts, reviews);
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        {!isListView && (
-          <button
-            type="button"
-            onClick={handleToggleFileListCollapsed}
-            disabled={isFileListCollapseLoading}
-            aria-pressed={!fileListCollapsed}
-            aria-label={fileListCollapsed ? "Expand file list" : "Collapse file list"}
-            title={fileListCollapsed ? "Expand file list" : "Collapse file list"}
-            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {fileListCollapsed ? (
-              <PanelLeft className="h-4 w-4" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" />
-            )}
-          </button>
-        )}
-        <GitTabToggle
-          value={viewMode}
-          onChange={handleViewModeChange}
-          targetBranch={targetBranch}
-          prLabel={prStatus?.pr?.pr_label}
-          prAttention={prAttention}
-          disabled={setFeatureSetting.isPending}
-        />
-        {setFeatureSetting.isPending && (
-          <span
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
-            role="status"
-          >
-            <Loader2Icon className="size-3 animate-spin" aria-hidden /> Saving view…
-          </span>
-        )}
-        {!isListView && (
-          <GitToolbarNumStat
-            isLoading={statsQuery.isLoading}
-            isError={statsQuery.isError}
-            additions={statsQuery.data?.insertions}
-            deletions={statsQuery.data?.deletions}
-          />
-        )}
-      </div>
-      {isListView && recoveryRegion}
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {isPr ? (
-          <FeaturePrView featureId={featureId} />
-        ) : isGraph ? (
-          <GitGraphView
-            featureId={featureId}
-            registerNavigationAdapter={registerNavigationAdapter}
-          />
-        ) : isBranches ? (
-          <GitBranchesView
-            key={`${projectId}:${featureId}`}
-            featureId={featureId}
-            projectId={projectId}
-            registerNavigationAdapter={registerNavigationAdapter}
-          />
-        ) : isStashes ? (
-          <StashesView
-            featureId={featureId}
-            onConflicts={handleRequestUncommitted}
-            registerNavigationAdapter={registerNavigationAdapter}
-          />
-        ) : (
-          <DiffViewer
-            featureId={featureId}
-            mode={effectiveDiffMode}
-            targetBranch={diffTargetBranch}
-            fileListCollapsed={fileListCollapsed}
-            onFileListCollapsedChange={setFileListCollapsed}
-            registerNavigationAdapter={registerNavigationAdapter}
-            afterToolbar={recoveryRegion}
-          />
-        )}
-      </div>
-      {shouldRender && !isPr && (
-        <div className="border-t px-4 py-3 flex justify-end">
-          <ShortcutTooltip label={buttonLabel} keys={["cmd", "enter"]} above>
-            <Button variant="outline" size="sm" disabled={disabled} onClick={() => void send()}>
-              {sending ? (
-                <Loader2Icon className="mr-2 size-4 animate-spin" />
-              ) : (
-                <SendIcon className="mr-2 size-4" />
-              )}
-              {buttonLabel}
-            </Button>
-          </ShortcutTooltip>
-        </div>
-      )}
-    </div>
-  );
-});
-
-interface GitToolbarNumStatProps {
-  isLoading: boolean;
-  isError: boolean;
-  additions: number | undefined;
-  deletions: number | undefined;
-}
-
-function GitToolbarNumStat({
-  isLoading,
-  isError,
-  additions,
-  deletions,
-}: GitToolbarNumStatProps): ReactElement {
-  if (isLoading) {
-    return <span className="text-xs text-muted-foreground animate-pulse">Loading stats…</span>;
-  }
-  if (isError) {
-    return <span className="text-xs text-destructive">Stats unavailable</span>;
-  }
-  return (
-    <NumStat
-      additions={additions}
-      deletions={deletions}
-      hideZero={false}
-      className="text-xs shrink-0"
+    <GitTabLayout
+      reviews={reviews}
+      recoveryRegion={recoveryRegion}
+      toolbar={{
+        viewMode: view.viewMode,
+        onViewModeChange: view.setViewMode,
+        targetBranch,
+        prLabel: prStatus?.pr?.pr_label,
+        prAttention,
+        isSavingView: view.isSavingViewMode,
+        isListView: panes.isListView,
+        fileListCollapsed: view.fileListCollapsed,
+        isFileListCollapseLoading: view.isFileListCollapseLoading,
+        onToggleFileList: view.toggleFileList,
+        stats: panes.stats,
+      }}
+      body={{
+        viewMode: view.viewMode,
+        featureId,
+        projectId,
+        diffMode: panes.diffMode,
+        diffTargetBranch: panes.diffTargetBranch,
+        fileListCollapsed: view.fileListCollapsed,
+        onFileListCollapsedChange: view.setFileListCollapsed,
+        onRequestUncommitted: handleRequestUncommitted,
+        registerNavigationAdapter,
+        recoveryRegion,
+        reviewThreads,
+        remoteThreadLinesByFile: reviews.remoteThreadLinesByFile,
+        reviewCountsByFile: reviews.reviewCountsByFile,
+        reviewTarget: reviews.activeTarget,
+        selectedReviewThreadIds: reviews.selectedThreadIds,
+        onReviewThreadSelectedChange: reviews.canSend ? reviews.setThreadSelected : undefined,
+        onViewReviewThread: handleViewReviewThread,
+      }}
+      send={send}
     />
   );
-}
+});

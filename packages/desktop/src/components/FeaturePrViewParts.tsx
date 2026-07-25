@@ -6,19 +6,12 @@ import {
   ExternalLinkIcon,
   GitPullRequestIcon,
   Loader2Icon,
-  MessageSquareIcon,
   XCircleIcon,
 } from "lucide-react";
-import { memo, useCallback, useState, type ReactElement } from "react";
+import { useCallback, useState, type ReactElement } from "react";
 import { formatDistanceToNowStrict } from "date-fns";
-import {
-  type CiCheck,
-  type CiState,
-  type CommentThread,
-  type PrStatusSnapshot,
-} from "@/api/generated";
+import { type CiCheck, type CiState, type PrStatusSnapshot } from "@/api/generated";
 import { Markdown } from "@/components/Markdown";
-import { Badge } from "@/components/ui/badge";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { openExternalUrl } from "@/lib/open-external";
@@ -37,66 +30,6 @@ const CI_STATE_TEXT: Record<CiState, string> = {
   passing: "text-[var(--acc-green)]",
   failing: "text-[var(--acc-red)]",
 };
-
-export const PrCommentThread = memo(function PrCommentThread({
-  thread,
-}: {
-  thread: CommentThread;
-}): ReactElement {
-  const context = thread.file
-    ? `${thread.file}${thread.line != null ? `:${thread.line}` : ""}`
-    : null;
-  return (
-    <article
-      className={cn(
-        "mx-4 mb-3 overflow-hidden rounded-md border border-border bg-card",
-        thread.resolved && "opacity-70",
-      )}
-    >
-      {(context || thread.resolved != null) && (
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-[11px]">
-          <span
-            className="min-w-0 truncate font-mono text-muted-foreground"
-            title={context ?? undefined}
-          >
-            {context ?? "Review thread"}
-          </span>
-          {thread.resolved != null && (
-            <Badge
-              variant="outline"
-              className={cn(
-                "shrink-0 rounded-md px-1.5 py-0 text-[10px] font-medium capitalize",
-                thread.resolved
-                  ? "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10 text-[var(--acc-green)]"
-                  : "border-[var(--acc-orange)]/40 bg-[var(--acc-orange)]/10 text-[var(--acc-orange)]",
-              )}
-            >
-              {thread.resolved ? "resolved" : "open"}
-            </Badge>
-          )}
-        </div>
-      )}
-      <div className="divide-y divide-border">
-        {thread.comments.map((comment, index) => (
-          <div key={`${comment.created_at}:${index}`} className="space-y-2 px-3 py-2.5">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-              <AuthorInitials name={comment.author.display_name ?? comment.author.username} />
-              <span className="truncate font-medium text-foreground">
-                {comment.author.display_name ?? comment.author.username}
-              </span>
-              <span className="shrink-0 tabular-nums">{relativeTime(comment.created_at)}</span>
-            </div>
-            <Markdown
-              content={comment.body_markdown}
-              cacheKey={`${thread.id}:${comment.created_at}:${index}`}
-              className="max-w-prose text-[13px] leading-relaxed"
-            />
-          </div>
-        ))}
-      </div>
-    </article>
-  );
-});
 
 export function AuthorInitials({ name }: { name: string }): ReactElement {
   const initials =
@@ -285,42 +218,6 @@ export function PrDescription({ status }: { status: PrStatusSnapshot }): ReactEl
         </p>
       )}
     </section>
-  );
-}
-
-export function CommentsHeader({
-  commentsLoading,
-  commentsError,
-  commentCount,
-}: {
-  commentsLoading: boolean;
-  commentsError: string | undefined;
-  commentCount: number;
-}): ReactElement {
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2">
-        <MessageSquareIcon className="size-3.5 text-muted-foreground" aria-hidden />
-        <h3 className="text-[12.5px] font-semibold tracking-tight">Comments</h3>
-        {!commentsLoading && !commentsError && (
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            {commentCount} {commentCount === 1 ? "thread" : "threads"}
-          </span>
-        )}
-        {commentsLoading && (
-          <span
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
-            role="status"
-          >
-            <Loader2Icon className="size-3 animate-spin" aria-hidden /> Loading…
-          </span>
-        )}
-      </div>
-      {commentsError && <PrViewError message={commentsError} compact />}
-      {!commentsLoading && !commentsError && commentCount === 0 && (
-        <p className="pb-2 text-[12.5px] text-muted-foreground">No comments yet.</p>
-      )}
-    </div>
   );
 }
 

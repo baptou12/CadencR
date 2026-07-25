@@ -41,6 +41,7 @@ interface GitDiffFileTreeModelResult {
 interface UseGitDiffFileTreeModelOptions {
   files: readonly ChangedFile[];
   onSelectionChange: (filePath: string) => void;
+  reviewCountsByFile?: ReadonlyMap<string, number>;
 }
 
 export function buildGitDiffTreePaths(files: readonly Pick<ChangedFile, "file">[]): string[] {
@@ -123,6 +124,21 @@ export function gitDiffTreeConflictDecoration(file: ChangedFile): FileTreeRowDec
   return { text: "Conflict", title: label };
 }
 
+function reviewDecoration(
+  count: number,
+  conflict: FileTreeRowDecoration | null,
+): FileTreeRowDecoration | null {
+  if (count === 0) return conflict;
+  const reviewLabel = `${count} open review ${count === 1 ? "thread" : "threads"}`;
+  if (conflict) {
+    return {
+      text: `Conflict · ${count}`,
+      title: `${conflict.title}; ${reviewLabel}`,
+    };
+  }
+  return { text: `${count} open`, title: reviewLabel };
+}
+
 function visibleFilePaths(model: FileTree, filePaths: ReadonlySet<string>): string[] {
   return model.getVisiblePaths().filter((path) => filePaths.has(path));
 }
@@ -178,19 +194,7 @@ function useActivePath(model: FileTree, filePaths: ReadonlySet<string>): string 
   return selectedPaths.findLast((path) => filePaths.has(path)) ?? null;
 }
 
-export function useGitDiffFileTreeModel({
-  files,
-  onSelectionChange,
-}: UseGitDiffFileTreeModelOptions): GitDiffFileTreeModelResult {
-  const {
-    displayMode,
-    setDisplayMode,
-    isPending: isDisplayModePending,
-  } = useGitDiffTreeDisplaySetting();
-  const paths = useMemo(() => buildGitDiffTreePaths(files), [files]);
-  const gitStatus = useMemo(() => buildGitDiffTreeStatus(files), [files]);
-  const fileByPath = useMemo(() => new Map(files.map((file) => [file.file, file])), [files]);
-  const filePaths = useMemo(() => new Set(fileByPath.keys()), [fileByPath]);
+function useConflictSort(files: readonly ChangedFile[]) {
   const conflictPaths = useMemo(
     () =>
       new Set(
@@ -202,8 +206,8 @@ export function useGitDiffFileTreeModel({
   );
   const conflictPathsRef = useRef(conflictPaths);
   conflictPathsRef.current = conflictPaths;
-  const conflictSortVersion = useMemo(() => [...conflictPaths].sort().join("\0"), [conflictPaths]);
-  const conflictFirstSort = useMemo<FileTreeSortComparator>(
+  const version = useMemo(() => [...conflictPaths].sort().join("\0"), [conflictPaths]);
+  const comparator = useMemo<FileTreeSortComparator>(
     () => (left, right) => {
       if (left.isDirectory !== right.isDirectory) return left.isDirectory ? -1 : 1;
       const leftConflict = conflictPathsRef.current.has(left.path) ? 0 : 1;
@@ -213,6 +217,24 @@ export function useGitDiffFileTreeModel({
     },
     [],
   );
+  return { comparator, version };
+}
+
+export function useGitDiffFileTreeModel({
+  files,
+  onSelectionChange,
+  reviewCountsByFile,
+}: UseGitDiffFileTreeModelOptions): GitDiffFileTreeModelResult {
+  const {
+    displayMode,
+    setDisplayMode,
+    isPending: isDisplayModePending,
+  } = useGitDiffTreeDisplaySetting();
+  const paths = useMemo(() => buildGitDiffTreePaths(files), [files]);
+  const gitStatus = useMemo(() => buildGitDiffTreeStatus(files), [files]);
+  const fileByPath = useMemo(() => new Map(files.map((file) => [file.file, file])), [files]);
+  const filePaths = useMemo(() => new Set(fileByPath.keys()), [fileByPath]);
+  const conflictSort = useConflictSort(files);
   const handleSelectionChange = useCallback(
     (selectedPaths: readonly string[]): void => {
       const selectedPath = selectedPaths.findLast((path) => filePaths.has(path));
@@ -224,9 +246,12 @@ export function useGitDiffFileTreeModel({
     ({ item }: { item: { kind: "directory" | "file"; path: string } }) => {
       if (item.kind === "directory") return null;
       const file = fileByPath.get(item.path);
-      return file ? gitDiffTreeConflictDecoration(file) : null;
+      const conflict = file ? gitDiffTreeConflictDecoration(file) : null;
+      const reviewCount =
+        displayMode === "filenames" ? (reviewCountsByFile?.get(item.path) ?? 0) : 0;
+      return reviewDecoration(reviewCount, conflict);
     },
-    [fileByPath],
+    [displayMode, fileByPath, reviewCountsByFile],
   );
   const { model } = useCadencrFileTree({
     paths,
@@ -239,8 +264,8 @@ export function useGitDiffFileTreeModel({
     stickyFolders: true,
     renaming: false,
     dragAndDrop: false,
-    sort: conflictFirstSort,
-    pathResetVersion: conflictSortVersion,
+    sort: conflictSort.comparator,
+    pathResetVersion: conflictSort.version,
     composition: {
       contextMenu: { enabled: true, triggerMode: "both", buttonVisibility: "when-needed" },
     },

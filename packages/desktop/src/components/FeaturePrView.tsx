@@ -12,23 +12,23 @@ import { Virtuoso } from "react-virtuoso";
 import { useNavigate } from "@tanstack/react-router";
 import {
   useGetPr,
-  useGetPrComments,
   type CommentThread,
   type PrStatusSnapshot,
   type ReviewState,
 } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DEFAULT_PR_COMMENT_FILTER, type PrCommentFilter } from "@/components/PrCommentsFilter";
+import type { PrReviewThreads } from "@/hooks/usePrReviewThreads";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { openPullRequestExternally } from "@/lib/open-pull-request";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 import { cn } from "@/lib/utils";
+import { CommentsHeader, PrCommentThread } from "@/components/FeaturePrComments";
 import {
   AuthorInitials,
   ChecksPanel,
-  CommentsHeader,
   EmptyState,
-  PrCommentThread,
   PrDescription,
   PrEmptyIcon,
   PrViewError,
@@ -43,6 +43,10 @@ import {
 
 interface FeaturePrViewProps {
   featureId: number;
+  reviews: PrReviewThreads;
+  selectedThreadIds?: ReadonlySet<string>;
+  onThreadSelectedChange?: (threadId: string, selected: boolean) => void;
+  onViewThread?: (thread: CommentThread) => void;
 }
 
 export function reviewStateLabel(reviewState: ReviewState): string | null {
@@ -60,6 +64,10 @@ function reviewTone(reviewState: ReviewState): PrIndicatorTone {
 
 export const FeaturePrView = memo(function FeaturePrView({
   featureId,
+  reviews,
+  selectedThreadIds,
+  onThreadSelectedChange,
+  onViewThread,
 }: FeaturePrViewProps): ReactElement {
   const cached = usePrStatusStore(selectPrStatus(featureId));
   const summaryQuery = useGetPr(
@@ -67,11 +75,7 @@ export const FeaturePrView = memo(function FeaturePrView({
     { query: { enabled: cached === undefined, retry: false } },
   );
   const status = cached ?? summaryQuery.data;
-  const commentsQuery = useGetPrComments(
-    { feature_id: featureId },
-    { query: { enabled: status?.pr != null, retry: false } },
-  );
-  const threads = commentsQuery.data?.threads ?? [];
+  const [filter, setFilter] = useState<PrCommentFilter>(DEFAULT_PR_COMMENT_FILTER);
 
   if (summaryQuery.isLoading && !status) return <PrViewLoading />;
   if (summaryQuery.isError && !status) {
@@ -88,13 +92,18 @@ export const FeaturePrView = memo(function FeaturePrView({
   return (
     <PrTimeline
       status={status}
-      threads={threads}
-      commentsLoading={commentsQuery.isLoading}
-      commentsError={
-        commentsQuery.isError
-          ? apiErrorMessage(commentsQuery.error, "Could not load comments")
-          : undefined
-      }
+      threads={filter === "unresolved" ? reviews.unresolved : reviews.threads}
+      unresolvedCount={reviews.unresolvedCount}
+      totalCount={reviews.threads.length}
+      filter={filter}
+      onFilterChange={setFilter}
+      commentsLoading={reviews.isLoading}
+      commentsRefreshing={reviews.isRefreshing}
+      commentsError={reviews.errorMessage}
+      onCommentsRetry={reviews.retry}
+      selectedThreadIds={selectedThreadIds}
+      onThreadSelectedChange={onThreadSelectedChange}
+      onViewThread={onViewThread}
     />
   );
 });
@@ -110,6 +119,22 @@ function wheelPixels(deltaY: number, deltaMode: number, viewportHeight: number):
   return deltaY;
 }
 
+interface PrTimelineProps {
+  status: PrStatusSnapshot;
+  threads: CommentThread[];
+  unresolvedCount: number;
+  totalCount: number;
+  filter: PrCommentFilter;
+  onFilterChange: (next: PrCommentFilter) => void;
+  commentsLoading: boolean;
+  commentsRefreshing: boolean;
+  commentsError: string | undefined;
+  onCommentsRetry: () => void;
+  selectedThreadIds?: ReadonlySet<string>;
+  onThreadSelectedChange?: (threadId: string, selected: boolean) => void;
+  onViewThread?: (thread: CommentThread) => void;
+}
+
 /**
  * Identity (title, state, author, branches) and the check rollup stay pinned
  * above the scroller — reading the 40th comment thread shouldn't cost you the
@@ -120,14 +145,18 @@ function wheelPixels(deltaY: number, deltaMode: number, viewportHeight: number):
 function PrTimeline({
   status,
   threads,
+  unresolvedCount,
+  totalCount,
+  filter,
+  onFilterChange,
   commentsLoading,
+  commentsRefreshing,
   commentsError,
-}: {
-  status: PrStatusSnapshot;
-  threads: CommentThread[];
-  commentsLoading: boolean;
-  commentsError: string | undefined;
-}): ReactElement {
+  onCommentsRetry,
+  selectedThreadIds,
+  onThreadSelectedChange,
+  onViewThread,
+}: PrTimelineProps): ReactElement {
   const [scrolledPastTop, setScrolledPastTop] = useState(false);
   const scrollerRef = useRef<HTMLElement | null>(null);
   const handleScrollerRef = useCallback((element: HTMLElement | Window | null) => {
@@ -141,8 +170,19 @@ function PrTimeline({
     scroller.scrollTop += wheelPixels(event.deltaY, event.deltaMode, scroller.clientHeight);
   }, []);
   const itemContent = useCallback(
-    (_index: number, thread: CommentThread) => <PrCommentThread thread={thread} />,
-    [],
+    (_index: number, thread: CommentThread) => (
+      <PrCommentThread
+        thread={thread}
+        selected={selectedThreadIds?.has(thread.id) ?? false}
+        onSelectedChange={
+          onThreadSelectedChange
+            ? (selected) => onThreadSelectedChange(thread.id, selected)
+            : undefined
+        }
+        onViewThread={onViewThread}
+      />
+    ),
+    [onThreadSelectedChange, onViewThread, selectedThreadIds],
   );
   const components = useMemo(
     () => ({
@@ -151,13 +191,32 @@ function PrTimeline({
           <PrDescription status={status} />
           <CommentsHeader
             commentsLoading={commentsLoading}
+            commentsRefreshing={commentsRefreshing}
             commentsError={commentsError}
+            onRetry={onCommentsRetry}
             commentCount={threads.length}
+            unresolvedCount={unresolvedCount}
+            totalCount={totalCount}
+            filter={filter}
+            onFilterChange={onFilterChange}
+            selectionEnabled={onThreadSelectedChange != null && unresolvedCount > 0}
           />
         </div>
       ),
     }),
-    [commentsError, commentsLoading, status, threads.length],
+    [
+      commentsError,
+      commentsLoading,
+      commentsRefreshing,
+      filter,
+      onCommentsRetry,
+      onFilterChange,
+      onThreadSelectedChange,
+      status,
+      threads.length,
+      totalCount,
+      unresolvedCount,
+    ],
   );
   const handleAtTopStateChange = useCallback((atTop: boolean) => setScrolledPastTop(!atTop), []);
   return (

@@ -3,6 +3,7 @@ import { FileStageState, type ChangedFile } from "@/api/generated";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import { firstChangedNewLine } from "@/lib/diff-line";
 import { type FileDiffSection, hasTextHunks } from "@/lib/parse-unified-diff";
+import type { PrThreadLine } from "@/lib/pr-review-threads";
 import { LARGE_DIFF_BYTES, isLargeDiffByLines } from "@/lib/diff-thresholds";
 import { isImageFile } from "@/lib/file-language";
 import { DiffFileHeader } from "./DiffFileHeader";
@@ -42,6 +43,11 @@ export interface DiffFileBlockProps {
   isViewedPending: boolean;
   showViewedCheckbox: boolean;
   commentLines?: CommentLineData[];
+  /** Unresolved forge review threads anchored to this file. */
+  remoteThreadLines?: PrThreadLine[];
+  activeReviewThreadId?: string | null;
+  selectedReviewThreadIds?: ReadonlySet<string>;
+  onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
   activeWidget?: ActiveWidget | null;
   commentCallbacks?: CommentCallbacks;
   onToggleFile: (fileName: string) => void;
@@ -96,6 +102,10 @@ interface DiffFileBodyProps {
   forceDisplay: boolean;
   onDisplayLargeDiff: () => void;
   commentLines?: CommentLineData[];
+  remoteThreadLines?: PrThreadLine[];
+  activeReviewThreadId?: string | null;
+  selectedReviewThreadIds?: ReadonlySet<string>;
+  onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
   activeWidget?: ActiveWidget | null;
   commentCallbacks?: CommentCallbacks;
   onAddLineComment?: (lineNumber: number, side: CommentSide) => void;
@@ -121,6 +131,10 @@ function DiffFileBodyImpl({
   forceDisplay,
   onDisplayLargeDiff,
   commentLines,
+  remoteThreadLines,
+  activeReviewThreadId,
+  selectedReviewThreadIds,
+  onReviewThreadSelectedChange,
   activeWidget,
   commentCallbacks,
   onAddLineComment,
@@ -184,6 +198,10 @@ function DiffFileBodyImpl({
       patch={patch}
       mode={diffMode}
       commentLines={commentLines}
+      remoteThreadLines={remoteThreadLines}
+      activeReviewThreadId={activeReviewThreadId}
+      selectedReviewThreadIds={selectedReviewThreadIds}
+      onReviewThreadSelectedChange={onReviewThreadSelectedChange}
       activeWidget={activeWidget}
       commentCallbacks={commentCallbacks}
       themeAppearance={themeAppearance}
@@ -271,6 +289,10 @@ function ExpandedDiffFileBlock(props: DiffFileBlockProps) {
     isVisible,
     diffMode,
     commentLines,
+    remoteThreadLines,
+    activeReviewThreadId,
+    selectedReviewThreadIds,
+    onReviewThreadSelectedChange,
     activeWidget,
     commentCallbacks,
     onAddComment,
@@ -295,6 +317,11 @@ function ExpandedDiffFileBlock(props: DiffFileBlockProps) {
   const patch = section?.hunks[0] ?? "";
   const [shownPatch, setShownPatch] = useState(patch);
   const [forceDisplay, setForceDisplay] = useState(false);
+  const reviewNeedsDisplay =
+    activeReviewThreadId != null &&
+    remoteThreadLines?.some((line) =>
+      line.threads.some((thread) => thread.id === activeReviewThreadId),
+    ) === true;
   // Reset the opt-in when the underlying patch changes so a newly-huge revision
   // of the same file re-gates to the placeholder instead of auto-rendering.
   // Done during render (not in an effect) so the stale `forceDisplay` never
@@ -329,9 +356,13 @@ function ExpandedDiffFileBlock(props: DiffFileBlockProps) {
           diffMode={diffMode}
           additions={additions}
           deletions={deletions}
-          forceDisplay={forceDisplay}
+          forceDisplay={forceDisplay || reviewNeedsDisplay}
           onDisplayLargeDiff={onDisplayLargeDiff}
           commentLines={commentLines}
+          remoteThreadLines={remoteThreadLines}
+          activeReviewThreadId={activeReviewThreadId}
+          selectedReviewThreadIds={selectedReviewThreadIds}
+          onReviewThreadSelectedChange={onReviewThreadSelectedChange}
           activeWidget={activeWidget}
           commentCallbacks={commentCallbacks}
           onAddLineComment={onAddComment ? onAddLineComment : undefined}

@@ -1,5 +1,6 @@
-import { memo, useMemo, useRef, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
+import type { PrThreadLine, ReviewNavigationTarget } from "@/lib/pr-review-threads";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useTheme } from "@/hooks/useTheme";
 import { GIT_DIFF_VIEW_MODE_KEY, parseGitDiffViewMode } from "@/lib/git-diff-view-mode";
@@ -13,7 +14,9 @@ import { useGitFileIndexActions } from "./useGitFileIndexActions";
 import { useGitFileListCollapse, type GitFileListCollapseState } from "./useGitFileListCollapse";
 import { useDiffViewerComments } from "./useDiffViewerComments";
 import { useDiffViewerNavigation } from "./useDiffViewerNavigation";
+import type { DiffViewerNavigationState } from "./useDiffViewerNavigation";
 import type { GitNavigationAdapterRegistrar } from "./gitNavigation";
+import { scrollReviewThreadToCenter } from "./scroll-to-review-thread";
 
 interface DiffViewerProps {
   featureId: number;
@@ -25,6 +28,17 @@ interface DiffViewerProps {
   onOpenFileInEditor?: OpenDiffInEditor;
   registerNavigationAdapter?: GitNavigationAdapterRegistrar;
   afterToolbar?: ReactNode;
+  /**
+   * Unresolved forge review threads keyed by file path. Only the branch diff
+   * passes them: a review is written against the proposal's diff, so anchoring
+   * those lines onto an unrelated working-tree diff would point at the wrong
+   * rows.
+   */
+  remoteThreadLinesByFile?: Map<string, PrThreadLine[]>;
+  reviewCountsByFile?: ReadonlyMap<string, number>;
+  reviewTarget?: ReviewNavigationTarget | null;
+  selectedReviewThreadIds?: ReadonlySet<string>;
+  onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
 }
 
 type DiffData = ReturnType<typeof useDiffData>;
@@ -40,6 +54,11 @@ interface LoadedDiffViewerProps {
   themeId: ThemeId;
   openFileInEditor?: OpenDiffInEditor;
   registerNavigationAdapter?: GitNavigationAdapterRegistrar;
+  remoteThreadLinesByFile?: Map<string, PrThreadLine[]>;
+  reviewCountsByFile?: ReadonlyMap<string, number>;
+  reviewTarget?: ReviewNavigationTarget | null;
+  selectedReviewThreadIds?: ReadonlySet<string>;
+  onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
 }
 
 function DiffViewerMessage({ children, error = false }: { children: ReactNode; error?: boolean }) {
@@ -91,33 +110,29 @@ const DiffViewerLayout = memo(function DiffViewerLayout({
   );
 });
 
-function LoadedDiffViewer({
-  featureId,
-  mode,
-  targetBranch,
-  data,
-  fileList,
-  diffMode,
-  themeAppearance,
-  themeId,
-  openFileInEditor,
-  registerNavigationAdapter,
-}: LoadedDiffViewerProps) {
-  const indexActions = useGitFileIndexActions(featureId);
-  const diffAreaRef = useRef<HTMLDivElement>(null);
-  const indexMutable =
-    (mode === "uncommitted" || mode === "worktree") && data.selectedCommit === null;
-  const navigation = useDiffViewerNavigation({
-    featureId,
+function useLoadedDiffContent(
+  props: LoadedDiffViewerProps,
+  diffAreaRef: RefObject<HTMLDivElement | null>,
+  navigation: DiffViewerNavigationState,
+  comments: ReturnType<typeof useDiffViewerComments>,
+  indexActions: ReturnType<typeof useGitFileIndexActions>,
+  indexMutable: boolean,
+): ReactNode {
+  const {
     data,
-    indexActions,
-    diffAreaRef,
-    onOpenFileInEditor: openFileInEditor,
-    indexMutable,
-    registerNavigationAdapter,
-  });
-  const comments = useDiffViewerComments(featureId, data);
-  const content = useMemo(
+    diffMode,
+    featureId,
+    mode,
+    onReviewThreadSelectedChange,
+    openFileInEditor,
+    remoteThreadLinesByFile,
+    reviewTarget,
+    selectedReviewThreadIds,
+    targetBranch,
+    themeAppearance,
+    themeId,
+  } = props;
+  return useMemo(
     () => (
       <DiffContent
         diffAreaRef={diffAreaRef}
@@ -132,6 +147,10 @@ function LoadedDiffViewer({
         viewedFilesSet={data.viewedFilesSet}
         isViewedPending={data.markViewed.isPending || data.unmarkViewed.isPending}
         commentLinesByFile={comments.commentLinesByFile}
+        remoteThreadLinesByFile={remoteThreadLinesByFile}
+        activeReviewThreadId={reviewTarget?.threadId}
+        selectedReviewThreadIds={selectedReviewThreadIds}
+        onReviewThreadSelectedChange={onReviewThreadSelectedChange}
         activeCommentWidget={comments.activeCommentWidget}
         memoizedActiveWidget={comments.activeWidget}
         commentCallbacks={comments.callbacks}
@@ -155,11 +174,52 @@ function LoadedDiffViewer({
       indexMutable,
       mode,
       navigation,
+      onReviewThreadSelectedChange,
       openFileInEditor,
+      remoteThreadLinesByFile,
+      reviewTarget?.threadId,
+      selectedReviewThreadIds,
       targetBranch,
       themeAppearance,
       themeId,
     ],
+  );
+}
+
+function LoadedDiffViewer(props: LoadedDiffViewerProps) {
+  const {
+    featureId,
+    mode,
+    data,
+    fileList,
+    openFileInEditor,
+    registerNavigationAdapter,
+    reviewCountsByFile,
+    reviewTarget,
+  } = props;
+  const indexActions = useGitFileIndexActions(featureId);
+  const diffAreaRef = useRef<HTMLDivElement>(null);
+  const indexMutable =
+    (mode === "uncommitted" || mode === "worktree") && data.selectedCommit === null;
+  const navigation = useDiffViewerNavigation({
+    featureId,
+    data,
+    indexActions,
+    diffAreaRef,
+    onOpenFileInEditor: openFileInEditor,
+    indexMutable,
+    reviewCountsByFile,
+    registerNavigationAdapter,
+  });
+  useReviewThreadJump(reviewTarget, navigation, diffAreaRef);
+  const comments = useDiffViewerComments(featureId, data);
+  const content = useLoadedDiffContent(
+    props,
+    diffAreaRef,
+    navigation,
+    comments,
+    indexActions,
+    indexMutable,
   );
   const tree = useMemo(
     () => (
@@ -183,6 +243,57 @@ function LoadedDiffViewer({
   return <DiffViewerLayout data={data} fileList={fileList} tree={tree} content={content} />;
 }
 
+function useReviewThreadJump(
+  target: ReviewNavigationTarget | null | undefined,
+  navigation: DiffViewerNavigationState,
+  diffAreaRef: RefObject<HTMLDivElement | null>,
+): void {
+  const selectPath = navigation.tree.navigation.selectPath;
+  const revealFile = navigation.revealFile;
+  const cancelRevealScroll = navigation.cancelRevealScroll;
+  useEffect(() => {
+    if (!target) return;
+    selectPath(target.filePath);
+    revealFile(target.filePath);
+    let frame = 0;
+    let attempts = 0;
+    let cancelThreadScroll = (): void => {};
+    const findAndFocus = (): void => {
+      const container = diffAreaRef.current;
+      const element = visibleReviewThread(container, target.threadId);
+      if (container && element) {
+        cancelRevealScroll();
+        cancelThreadScroll = scrollReviewThreadToCenter(container, target.threadId);
+        element.focus({ preventScroll: true });
+        return;
+      }
+      attempts += 1;
+      // The outer diff virtualizer can continue reconciling estimated file
+      // heights after its first jump. Re-issue the intent periodically rather
+      // than accepting a mounted-but-zero-size annotation as a finished jump.
+      if (attempts % 12 === 0) revealFile(target.filePath);
+      if (attempts < 180) frame = requestAnimationFrame(findAndFocus);
+    };
+    frame = requestAnimationFrame(findAndFocus);
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelRevealScroll();
+      cancelThreadScroll();
+    };
+  }, [cancelRevealScroll, diffAreaRef, revealFile, selectPath, target]);
+}
+
+export function visibleReviewThread(
+  container: HTMLElement | null,
+  threadId: string,
+): HTMLElement | null {
+  const selector = `[data-review-thread-id="${CSS.escape(threadId)}"]`;
+  const element = container?.querySelector<HTMLElement>(selector) ?? null;
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 ? element : null;
+}
+
 function DiffViewerImpl({
   featureId,
   mode,
@@ -193,6 +304,11 @@ function DiffViewerImpl({
   onOpenFileInEditor,
   registerNavigationAdapter,
   afterToolbar,
+  remoteThreadLinesByFile,
+  reviewCountsByFile,
+  reviewTarget,
+  selectedReviewThreadIds,
+  onReviewThreadSelectedChange,
 }: DiffViewerProps) {
   const contextOpenFileInEditor = useOpenDiffInEditor();
   const openFileInEditor = onOpenFileInEditor ?? contextOpenFileInEditor;
@@ -230,6 +346,11 @@ function DiffViewerImpl({
         themeId={theme.id}
         openFileInEditor={openFileInEditor}
         registerNavigationAdapter={registerNavigationAdapter}
+        remoteThreadLinesByFile={remoteThreadLinesByFile}
+        reviewCountsByFile={reviewCountsByFile}
+        reviewTarget={reviewTarget}
+        selectedReviewThreadIds={selectedReviewThreadIds}
+        onReviewThreadSelectedChange={onReviewThreadSelectedChange}
       />
     );
   }

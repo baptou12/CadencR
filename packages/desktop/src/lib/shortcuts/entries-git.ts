@@ -74,9 +74,30 @@ export const GIT_SHORTCUTS = [
   {
     id: "diff-send-comments",
     keys: ["mod", "enter"],
-    description: "Send pending Git comments",
+    description: "Send local Git comments or review feedback",
     scope: "diff-viewer",
     aliases: ["git", "review"],
+  },
+  {
+    id: "diff-send-review-comments",
+    keys: ["mod", "shift", "enter"],
+    description: "Send selected review feedback",
+    scope: "diff-viewer",
+    aliases: ["git", "review", "pull request", "merge request"],
+  },
+  {
+    id: "git-next-review-thread",
+    keys: ["mod", "shift", "j"],
+    description: "Jump to next open review thread",
+    scope: "diff-viewer",
+    aliases: ["git", "review", "next"],
+  },
+  {
+    id: "git-previous-review-thread",
+    keys: ["mod", "shift", "k"],
+    description: "Jump to previous open review thread",
+    scope: "diff-viewer",
+    aliases: ["git", "review", "previous"],
   },
   {
     id: "git-open-in-editor",

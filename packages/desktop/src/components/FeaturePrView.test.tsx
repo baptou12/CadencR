@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
 import type { PrStatusSnapshot } from "@/api/generated";
+import type { PrReviewThreads } from "@/hooks/usePrReviewThreads";
 import { usePrStatusStore } from "@/stores/usePrStatusStore";
 import { FeaturePrView, reviewStateLabel } from "./FeaturePrView";
 
@@ -40,6 +41,26 @@ function snapshot(): PrStatusSnapshot {
   };
 }
 
+const REVIEWS: PrReviewThreads = {
+  threads: [],
+  unresolved: [],
+  unresolvedCount: 0,
+  unresolvedLinesByFile: new Map(),
+  navigationTargets: [],
+  summary: {
+    total: 0,
+    anchored: 0,
+    general: 0,
+    outdated: 0,
+    automated: 0,
+    byFile: new Map(),
+  },
+  isLoading: false,
+  isRefreshing: false,
+  errorMessage: undefined,
+  retry: () => undefined,
+};
+
 describe("FeaturePrView pinned band", () => {
   beforeEach(() => {
     usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
@@ -47,7 +68,7 @@ describe("FeaturePrView pinned band", () => {
   });
 
   it("forwards a wheel gesture over the pinned band to the thread scroller", () => {
-    render(<FeaturePrView featureId={42} />);
+    render(<FeaturePrView featureId={42} reviews={REVIEWS} />);
     const band = screen.getByRole("heading", { name: "Pinned band" }).closest("div.shrink-0")!;
     const scroller = band.nextElementSibling as HTMLElement;
 
@@ -57,7 +78,7 @@ describe("FeaturePrView pinned band", () => {
   });
 
   it("scales a line-mode wheel delta, which would otherwise scroll ~3px", () => {
-    render(<FeaturePrView featureId={42} />);
+    render(<FeaturePrView featureId={42} reviews={REVIEWS} />);
     const band = screen.getByRole("heading", { name: "Pinned band" }).closest("div.shrink-0")!;
     const scroller = band.nextElementSibling as HTMLElement;
 
