@@ -333,3 +333,50 @@ async fn test_opencode_init_clears_stored_effort_when_model_does_not_support_it(
             .unwrap();
     assert_eq!(persisted, None);
 }
+
+#[tokio::test]
+async fn init_preserves_spawned_effort_over_workspace_default_payload() {
+    let app_state = make_test_app_state().await;
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let feature_id = 1i64;
+
+    let db_id = sqlx::query(
+        "INSERT INTO agent_sessions \
+         (feature_id, agent_type, status, model, runtime_provider, thinking_effort) \
+         VALUES (?, 'session', 'paused', 'gpt-5.6-sol', 'codex_cli', 'xhigh')",
+    )
+    .bind(feature_id)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+
+    let payload = init_session_and_get_response(
+        &tx,
+        &mut rx,
+        &sdk_sessions,
+        &app_state,
+        SessionInitPayload {
+            provider: Some("codex_cli".to_string()),
+            model: Some("gpt-5.6-sol".to_string()),
+            thinking_effort: Some("medium".to_string()),
+            permission_mode: None,
+            system_prompt: None,
+            cwd: Some("/tmp/test".to_string()),
+            feature_id: Some(feature_id),
+        },
+    )
+    .await;
+    assert_eq!(payload.session_id, db_id.to_string());
+    assert_eq!(payload.thinking_effort.as_deref(), Some("xhigh"));
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&db_id).unwrap();
+    assert_eq!(handle.desired_thinking_effort.as_deref(), Some("xhigh"));
+    assert_eq!(handle.config.thinking_effort.as_deref(), Some("xhigh"));
+    let QueryState::Pending(options) = &handle.state else {
+        panic!("expected pending session before first prompt");
+    };
+    assert_eq!(options.thinking_effort.as_deref(), Some("xhigh"));
+}

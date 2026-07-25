@@ -13,7 +13,12 @@ pub(super) async fn resolve(
     payload_thinking_effort: Option<String>,
     stored_thinking_effort: Option<String>,
 ) -> (Option<String>, bool) {
-    let effective_thinking_effort = match payload_thinking_effort.or(stored_thinking_effort.clone())
+    // A persisted conversation-level effort is authoritative. The frontend
+    // initializes with the workspace's current per-model default, which may
+    // differ from an explicit effort already pinned by MCP spawn (or by a
+    // previous effort.set). Only use that payload for a conversation that has
+    // not anchored its own effort yet.
+    let effective_thinking_effort = match stored_thinking_effort.clone().or(payload_thinking_effort)
     {
         Some(effort) => Some(effort),
         None => workspace_default(app_state, effective_provider, effective_model).await,
