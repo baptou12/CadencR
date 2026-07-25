@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { useOperationToasts } from "@/hooks/useOperationToasts";
+import { GlobalOperationToasts } from "@/components/GlobalOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useVisualViewportHeight } from "@/hooks/useVisualViewportHeight";
@@ -79,7 +79,6 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
-  useOperationToasts();
   useRemotePairingToast();
   useThemeSync();
   useConnectionWatchdog();
@@ -377,6 +376,7 @@ function RootLayout() {
             </RootErrorBoundary>
           </AppShell>
           <SuspendedBanner />
+          <GlobalOperationToasts />
           <RootOverlays
             commandPaletteOpen={commandPaletteOpen}
             setCommandPaletteOpen={setCommandPaletteOpen}
