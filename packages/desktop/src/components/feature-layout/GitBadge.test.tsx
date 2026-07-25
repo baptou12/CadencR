@@ -73,7 +73,9 @@ describe("pickIndicator", () => {
     // Tooltip names the target so the user can immediately tell which
     // branch this is "ahead of" — solves the original confusion where
     // `↑1` after a push was ambiguous.
-    expect(ind?.tooltip).toBe("1 commit pushed, ahead of origin/main — ready to open a PR");
+    expect(ind?.tooltip).toBe(
+      "1 commit pushed, ahead of origin/main — ready to open a pull request",
+    );
   });
 
   it("falls back to a generic 'ahead of target' phrasing when target is unknown", () => {

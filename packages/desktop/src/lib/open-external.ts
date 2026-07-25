@@ -1,0 +1,20 @@
+import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
+import { desktopBridge } from "@/lib/desktop-bridge";
+
+/**
+ * Hand `url` to the OS browser, surfacing a failure as a toast.
+ *
+ * Never rejects: every caller is a fire-and-forget "open this in my browser"
+ * affordance, so the failure belongs in front of the user, not in a `catch` at
+ * each call site.
+ */
+export async function openExternalUrl(url: string, failureMessage: string): Promise<void> {
+  try {
+    await desktopBridge.openExternal(url);
+  } catch (error) {
+    toast.error(failureMessage, {
+      description: apiErrorMessage(error, "External link failed"),
+    });
+  }
+}

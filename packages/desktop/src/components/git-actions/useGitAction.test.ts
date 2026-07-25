@@ -25,7 +25,7 @@ function snapshot(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot
     has_remote: true,
     host: "GitHub",
     compare_url: "https://github.com/x/y/compare/main...feature/x",
-    action_label: "Open PR",
+    action_label: "Open pull request",
     computed_at: 0,
     ...overrides,
   };
@@ -44,7 +44,7 @@ function pullRequest(): PrSummary {
     review_state: "pending",
     author: { username: "octocat", display_name: null, avatar_url: null },
     updated_at: "2026-07-23T10:00:00Z",
-    pr_label: "PR",
+    pr_label: "Pull request",
   };
 }
 
@@ -279,9 +279,11 @@ describe("deriveGitAction", () => {
   });
 
   it("primary=pr when clean, pushed, and ahead of target with provider compare URL", () => {
-    const state = deriveGitAction(snapshot({ ahead_of_target: 4, action_label: "Open MR" }));
+    const state = deriveGitAction(
+      snapshot({ ahead_of_target: 4, action_label: "Open merge request" }),
+    );
     expect(state.primary).toBe("pr");
-    expect(state.label).toBe("Open MR");
+    expect(state.label).toBe("Open merge request");
     expect(state.disabled.pr).toBeNull();
     expect(state.disabled.merge).toBeNull();
   });
@@ -290,8 +292,8 @@ describe("deriveGitAction", () => {
     const state = deriveGitAction(snapshot(), false, null, pullRequest());
 
     expect(state.primary).toBe("pr");
-    expect(state.label).toBe("View PR 42");
-    expect(state.compareLabel).toBe("View PR 42");
+    expect(state.label).toBe("View pull request #42");
+    expect(state.compareLabel).toBe("View pull request #42");
     expect(state.disabled.pr).toBeNull();
   });
 
@@ -394,7 +396,7 @@ describe("deriveGitAction", () => {
     expect(state.primary).toBe("commit");
   });
 
-  it("falls back to 'Open PR' for compareLabel when action_label is missing", () => {
+  it("falls back to 'Open pull request' for compareLabel when action_label is missing", () => {
     const state = deriveGitAction(
       snapshot({
         ahead_of_target: 1,
@@ -406,9 +408,9 @@ describe("deriveGitAction", () => {
     // compareLabel is the per-action label rendered in the popover, even when
     // backend didn't ship action_label — the frontend is provider-neutral and
     // uses a generic fallback.
-    expect(state.compareLabel).toBe("Open PR");
+    expect(state.compareLabel).toBe("Open pull request");
     expect(state.primary).toBe("pr");
-    expect(state.label).toBe("Open PR");
+    expect(state.label).toBe("Open pull request");
   });
 
   it("PR disabled whenever compare_url is missing, regardless of host", () => {

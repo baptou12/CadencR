@@ -8,8 +8,8 @@ import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { getCompareUrl, type GitStatusSnapshot } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { desktopBridge } from "@/lib/desktop-bridge";
-import { apiErrorMessage, toastError } from "@/lib/api-errors";
+import { toastError } from "@/lib/api-errors";
+import { openExternalUrl } from "@/lib/open-external";
 import { cn } from "@/lib/utils";
 import {
   useGitAction,
@@ -34,16 +34,6 @@ interface GitActionButtonProps {
   projectId: number;
 }
 
-async function openExternal(url: string): Promise<void> {
-  try {
-    await desktopBridge.openExternal(url);
-  } catch (error) {
-    toast.error("Couldn't open compare URL.", {
-      description: apiErrorMessage(error, String(error)),
-    });
-  }
-}
-
 function useOpenCompare(
   featureId: number,
   compareUrl: string | null | undefined,
@@ -63,7 +53,7 @@ function useOpenCompare(
       toast.error("Compare URL not available for this remote.");
       return;
     }
-    await openExternal(url);
+    await openExternalUrl(url, "Couldn't open compare URL.");
   }, [compareUrl, featureId]);
 }
 

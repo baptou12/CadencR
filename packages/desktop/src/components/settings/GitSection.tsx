@@ -1,11 +1,16 @@
 import { GitDiffViewSettings } from "./GitDiffViewSettings";
+import { GitRemotesSettings } from "./GitRemotesSettings";
 import { GitSettings } from "./GitSettings";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsSection } from "./SettingsSection";
 
 export function GitSection(): React.JSX.Element {
   return (
-    <SettingsSection id="git" title="Git" subtitle="Header actions defaults">
+    <SettingsSection
+      id="git"
+      title="Git"
+      subtitle="Header actions · Diff layout · Remote connections"
+    >
       <SettingsCard
         padded
         title="Merge strategy"
@@ -26,6 +31,7 @@ export function GitSection(): React.JSX.Element {
       >
         <GitDiffViewSettings />
       </SettingsCard>
+      <GitRemotesSettings />
     </SettingsSection>
   );
 }

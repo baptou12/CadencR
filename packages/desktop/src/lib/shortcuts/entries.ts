@@ -249,7 +249,7 @@ const APP_SHORTCUTS = [
   {
     id: "git-pr",
     keys: ["mod", "shift", "o"],
-    description: "Open compare / PR dialog",
+    description: "Open compare / pull request dialog",
     scope: "feature",
   },
 

@@ -61,7 +61,7 @@ describe("useGitViewShortcuts", () => {
   it.each([
     ["u", "KeyU", "uncommitted"],
     ["t", "KeyT", "vs-target"],
-    ["R", "KeyR", "pr"],
+    ["p", "KeyP", "pr"],
     ["h", "KeyH", "graph"],
     ["l", "KeyL", "branches"],
     ["s", "KeyS", "stashes"],
@@ -73,7 +73,7 @@ describe("useGitViewShortcuts", () => {
       </FeatureLayoutProvider>,
     );
 
-    const event = dispatchMod(key, code, expected === "pr" ? { shiftKey: true } : {});
+    const event = dispatchMod(key, code);
 
     expect(onChange).toHaveBeenCalledWith(expected);
     expect(event.defaultPrevented).toBe(true);

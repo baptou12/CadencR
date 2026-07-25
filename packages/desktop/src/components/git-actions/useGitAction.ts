@@ -10,7 +10,11 @@
  */
 import { useMemo } from "react";
 import type { GitOperationKind, GitStatusSnapshot, PrSummary } from "@/api/generated";
+import { prNoun } from "@/lib/open-pull-request";
 import { gitUpdateContinueDisabledReason } from "./gitUpdateMessages";
+
+/** Used until the backend names the host's own action ("Open merge request"). */
+const DEFAULT_COMPARE_LABEL = "Open pull request";
 
 export type GitAction = "commit" | "stash" | "update" | "push" | "pr" | "merge";
 export type PrimaryGitAction = Exclude<GitAction, "stash">;
@@ -29,7 +33,7 @@ export interface GitActionState {
   label: string;
   /** Per-action reason. `null` = enabled, `string` = disabled-because reason. */
   disabled: Record<GitAction, string | null>;
-  /** Compare-URL label (provider-aware, falls back to "Open PR"). */
+  /** Compare-URL label (provider-aware, falls back to "Open pull request"). */
   compareLabel: string;
   /** Request state is local UI state; Git status still comes only from backend snapshots. */
   updatePending: boolean;
@@ -58,7 +62,7 @@ const LOADING_STATE: GitActionState = {
     pr: "Loading…",
     merge: "Loading…",
   },
-  compareLabel: "Open PR",
+  compareLabel: DEFAULT_COMPARE_LABEL,
   updatePending: false,
   recovery: null,
 };
@@ -207,15 +211,15 @@ export function deriveGitAction(
         pr: reason,
         merge: reason,
       },
-      compareLabel: snapshot.action_label ?? "Open PR",
+      compareLabel: snapshot.action_label ?? DEFAULT_COMPARE_LABEL,
       updatePending,
       recovery: null,
     };
   }
 
   const compareLabel = existingPr
-    ? `View ${existingPr.pr_label} ${existingPr.number}`
-    : (snapshot.action_label ?? "Open PR");
+    ? `View ${prNoun(existingPr)} #${existingPr.number}`
+    : (snapshot.action_label ?? DEFAULT_COMPARE_LABEL);
   const disabled: Record<GitAction, string | null> = {
     commit: mutationBlockedReason ?? deriveCommitDisabled(snapshot),
     stash: mutationBlockedReason ?? stashMutationBlockedReason ?? deriveStashDisabled(snapshot),

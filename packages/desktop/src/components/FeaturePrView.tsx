@@ -1,7 +1,14 @@
 import { ExternalLinkIcon, Loader2Icon } from "lucide-react";
-import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type WheelEvent,
+} from "react";
 import { Virtuoso } from "react-virtuoso";
-import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import {
   useGetPr,
@@ -13,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { openPullRequestExternally } from "@/lib/open-pull-request";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 import { cn } from "@/lib/utils";
 import {
@@ -69,7 +76,9 @@ export const FeaturePrView = memo(function FeaturePrView({
   if (summaryQuery.isLoading && !status) return <PrViewLoading />;
   if (summaryQuery.isError && !status) {
     return (
-      <PrViewError message={apiErrorMessage(summaryQuery.error, "Could not load PR status")} />
+      <PrViewError
+        message={apiErrorMessage(summaryQuery.error, "Could not load pull request status")}
+      />
     );
   }
   if (status?.auth_required) return <ForgeConnectEmptyState />;
@@ -90,6 +99,24 @@ export const FeaturePrView = memo(function FeaturePrView({
   );
 });
 
+/**
+ * A wheel delta in the scroller's own units. Browsers report lines (Firefox) or
+ * pages as readily as pixels, and treating a 3-line scroll as 3px would leave
+ * the band feeling dead — the very thing forwarding the gesture is there to fix.
+ */
+function wheelPixels(deltaY: number, deltaMode: number, viewportHeight: number): number {
+  if (deltaMode === 1) return deltaY * 16;
+  if (deltaMode === 2) return deltaY * viewportHeight;
+  return deltaY;
+}
+
+/**
+ * Identity (title, state, author, branches) and the check rollup stay pinned
+ * above the scroller — reading the 40th comment thread shouldn't cost you the
+ * answer to "which PR is this, and is it green?". Only the description and the
+ * threads scroll. The checks list folds itself away as soon as you leave the
+ * top so the pinned band stays a band, and unfolds when you come back.
+ */
 function PrTimeline({
   status,
   threads,
@@ -101,6 +128,18 @@ function PrTimeline({
   commentsLoading: boolean;
   commentsError: string | undefined;
 }): ReactElement {
+  const [scrolledPastTop, setScrolledPastTop] = useState(false);
+  const scrollerRef = useRef<HTMLElement | null>(null);
+  const handleScrollerRef = useCallback((element: HTMLElement | Window | null) => {
+    scrollerRef.current = element instanceof HTMLElement ? element : null;
+  }, []);
+  // The band is pinned, not scrollable, so a wheel gesture over it would
+  // otherwise land nowhere and read as a frozen pane.
+  const handleBandWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    const scroller = scrollerRef.current;
+    if (!scroller || event.deltaY === 0) return;
+    scroller.scrollTop += wheelPixels(event.deltaY, event.deltaMode, scroller.clientHeight);
+  }, []);
   const itemContent = useCallback(
     (_index: number, thread: CommentThread) => <PrCommentThread thread={thread} />,
     [],
@@ -108,48 +147,38 @@ function PrTimeline({
   const components = useMemo(
     () => ({
       Header: () => (
-        <PrOverview
-          status={status}
-          commentsLoading={commentsLoading}
-          commentsError={commentsError}
-          commentCount={threads.length}
-        />
+        <div className="space-y-4 px-4 pb-4 pt-3">
+          <PrDescription status={status} />
+          <CommentsHeader
+            commentsLoading={commentsLoading}
+            commentsError={commentsError}
+            commentCount={threads.length}
+          />
+        </div>
       ),
     }),
     [commentsError, commentsLoading, status, threads.length],
   );
+  const handleAtTopStateChange = useCallback((atTop: boolean) => setScrolledPastTop(!atTop), []);
   return (
-    <Virtuoso
-      className="h-full"
-      data={threads}
-      components={components}
-      itemContent={itemContent}
-      increaseViewportBy={400}
-    />
-  );
-}
-
-function PrOverview({
-  status,
-  commentsLoading,
-  commentsError,
-  commentCount,
-}: {
-  status: PrStatusSnapshot;
-  commentsLoading: boolean;
-  commentsError: string | undefined;
-  commentCount: number;
-}): ReactElement {
-  return (
-    <div className="space-y-4 p-4">
-      {status.error && <PrViewError message={status.error} compact />}
-      <PrHeader status={status} />
-      <ChecksPanel status={status} />
-      <PrDescription status={status} />
-      <CommentsHeader
-        commentsLoading={commentsLoading}
-        commentsError={commentsError}
-        commentCount={commentCount}
+    <div className="flex h-full min-h-0 flex-col">
+      <div
+        className="shrink-0 space-y-3 border-b border-border bg-card/40 px-4 py-3"
+        onWheel={handleBandWheel}
+      >
+        {status.error && <PrViewError message={status.error} compact />}
+        <PrHeader status={status} />
+        <ChecksPanel status={status} collapsedByScroll={scrolledPastTop} />
+      </div>
+      <Virtuoso
+        className="min-h-0 flex-1"
+        data={threads}
+        components={components}
+        itemContent={itemContent}
+        increaseViewportBy={400}
+        atTopThreshold={8}
+        atTopStateChange={handleAtTopStateChange}
+        scrollerRef={handleScrollerRef}
       />
     </div>
   );
@@ -162,16 +191,9 @@ function PrHeader({ status }: { status: PrStatusSnapshot }): ReactElement {
   const [opening, setOpening] = useState(false);
   const handleOpen = useCallback(async (): Promise<void> => {
     setOpening(true);
-    try {
-      await desktopBridge.openExternal(pr.url);
-    } catch (error) {
-      toast.error(`Could not open ${pr.pr_label}.`, {
-        description: apiErrorMessage(error, "External link failed"),
-      });
-    } finally {
-      setOpening(false);
-    }
-  }, [pr.pr_label, pr.url]);
+    await openPullRequestExternally(pr);
+    setOpening(false);
+  }, [pr]);
   const branchTitle = `${pr.source_branch} → ${pr.target_branch}`;
 
   return (
@@ -190,7 +212,7 @@ function PrHeader({ status }: { status: PrStatusSnapshot }): ReactElement {
             </Badge>
           )}
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            {pr.pr_label} {pr.number}
+            {pr.pr_label} #{pr.number}
           </span>
         </div>
         <h2 className="text-base font-semibold leading-snug text-balance text-foreground">
@@ -240,16 +262,16 @@ function ForgeConnectEmptyState(): ReactElement {
   const navigate = useNavigate();
   return (
     <EmptyState
-      title="Connect this forge"
+      title="Connect this remote"
       description="Add an API token before Cadencr can load pull requests, checks, and comments."
       icon={<PrEmptyIcon />}
       action={
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void navigate({ to: "/settings", search: { section: "forges" } })}
+          onClick={() => void navigate({ to: "/settings", search: { section: "git" } })}
         >
-          Open Forge settings
+          Open Git settings
         </Button>
       }
     />

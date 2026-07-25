@@ -12,9 +12,12 @@ import type { ShortcutKey } from "./registry";
 
 function detectIsMac(): boolean {
   if (typeof navigator === "undefined") return true;
+  // `||`, not `??`: some Chromium builds expose `userAgentData.platform` as an
+  // empty string rather than omitting it, and `??` would keep that empty value
+  // and mis-detect macOS as Windows/Linux — rendering "Ctrl" for every ⌘.
   const platform =
-    (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ??
-    navigator.platform ??
+    (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ||
+    navigator.platform ||
     "";
   // Case-insensitive: Chromium's `userAgentData.platform` reports "macOS" while
   // the older `navigator.platform` reports "MacIntel".

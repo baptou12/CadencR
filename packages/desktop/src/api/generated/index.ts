@@ -1817,7 +1817,9 @@ export interface PrSummary {
   head_sha: string;
   /** @minimum 0 */
   number: number;
-  /** Provider-neutral display noun. Values are currently `PR` and `MR`. */
+  /** Provider-neutral display noun. Values are currently `Pull request` and
+`Merge request` — spelled out, because the abbreviations read as jargon
+in the UI surfaces that show them (Git sub-tab, sidebar menu, header). */
   pr_label: string;
   review_state: ReviewState;
   source_branch: string;

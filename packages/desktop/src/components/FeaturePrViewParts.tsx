@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useState, type ReactElement } from "react";
 import { formatDistanceToNowStrict } from "date-fns";
-import { toast } from "sonner";
 import {
   type CiCheck,
   type CiState,
@@ -22,8 +21,7 @@ import { Markdown } from "@/components/Markdown";
 import { Badge } from "@/components/ui/badge";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiErrorMessage } from "@/lib/api-errors";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { openExternalUrl } from "@/lib/open-external";
 import { cn } from "@/lib/utils";
 
 const CI_STATE_LABEL: Record<CiState, string> = {
@@ -201,8 +199,30 @@ export function PrEmptyIcon(): ReactElement {
   return <GitPullRequestIcon className="size-5" aria-hidden />;
 }
 
-export function ChecksPanel({ status }: { status: PrStatusSnapshot }): ReactElement {
-  const [checksOpen, setChecksOpen] = useState(true);
+/**
+ * `collapsedByScroll` folds the list while the pane is scrolled away from the
+ * top, so the pinned header band stays compact. A manual toggle overrides that
+ * for the current scroll state only — scrolling back to the top (or away again)
+ * hands control back to the automatic behavior, which is what makes the
+ * fold/unfold feel like part of the scroll rather than a setting you fought.
+ */
+export function ChecksPanel({
+  status,
+  collapsedByScroll = false,
+}: {
+  status: PrStatusSnapshot;
+  collapsedByScroll?: boolean;
+}): ReactElement {
+  // Adjusting state during render is React's documented way to reset state when
+  // a prop changes: every scroll-state flip drops the manual override, so the
+  // automatic fold/unfold resumes instead of replaying an old click forever.
+  const [lastScrollState, setLastScrollState] = useState(collapsedByScroll);
+  const [override, setOverride] = useState<boolean | null>(null);
+  if (lastScrollState !== collapsedByScroll) {
+    setLastScrollState(collapsedByScroll);
+    setOverride(null);
+  }
+  const checksOpen = override ?? !collapsedByScroll;
   const ciState = status.ci?.state ?? "none";
   const checkCount = status.ci?.checks.length ?? 0;
   const summary =
@@ -218,7 +238,7 @@ export function ChecksPanel({ status }: { status: PrStatusSnapshot }): ReactElem
         type="button"
         className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent/40"
         aria-expanded={checksOpen}
-        onClick={() => setChecksOpen((open) => !open)}
+        onClick={() => setOverride(!checksOpen)}
       >
         <span className="inline-flex min-w-0 items-center gap-2">
           <CiStateIcon state={ciState} />
@@ -309,15 +329,8 @@ function CiCheckRow({ check }: { check: CiCheck }): ReactElement {
   const handleOpen = useCallback(async (): Promise<void> => {
     if (!check.url) return;
     setOpening(true);
-    try {
-      await desktopBridge.openExternal(check.url);
-    } catch (error) {
-      toast.error("Could not open check.", {
-        description: apiErrorMessage(error, "External link failed"),
-      });
-    } finally {
-      setOpening(false);
-    }
+    await openExternalUrl(check.url, "Could not open check.");
+    setOpening(false);
   }, [check.url]);
   const rowClass = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px]";
   const content = (
