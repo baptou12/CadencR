@@ -10,11 +10,10 @@ use crate::domain::git::host;
 use crate::domain::git::models::{
     CommitGraphResponse, CommitUrlResponse, GetCommitGraphParams, GetCommitUrlParams,
 };
-use crate::domain::git::repository;
 use crate::error::AppError;
 use crate::shared::git_cli::run_git_background;
 
-use super::{resolve_feature_git_path, SETTING_WORKTREE_BRANCH};
+use super::resolve_feature_git_path;
 
 /// Map a resolved target ref to its *local* branch when one exists. The shared
 /// `resolve_target_branch` fallback prefers `origin/<name>` (the remote tip),
@@ -50,12 +49,20 @@ pub async fn get_commit_graph(
 
     let selected_branch =
         validate_selected_branch(params.branch.as_deref(), params.branch_is_local)?;
-    let (tips, current_branch, target_for_view) = if let Some(branch) = selected_branch {
-        let branch_ref = resolve_branch_ref(path, &branch).await?;
-        (vec![branch_ref], None, None)
+    let scope = if let Some(branch) = selected_branch {
+        GraphScope {
+            tips: vec![resolve_branch_ref(path, &branch).await?],
+            current_branch: None,
+            target_for_view: None,
+        }
     } else {
         default_graph_scope(state, params.feature_id, path).await?
     };
+    let GraphScope {
+        tips,
+        current_branch,
+        target_for_view,
+    } = scope;
 
     // Fetch one extra row to detect whether more commits exist past this page.
     let fetched = commands::get_commit_graph(path, &tips, params.skip, params.limit + 1).await?;
@@ -122,26 +129,33 @@ async fn resolve_branch_ref(path: &Path, branch: &SelectedBranch) -> Result<Stri
     Ok(format!("{prefix}/{}", branch.name))
 }
 
+/// What the graph is drawn over: the revisions to walk plus the two branch
+/// names the view labels itself with.
+struct GraphScope {
+    tips: Vec<String>,
+    current_branch: Option<String>,
+    target_for_view: Option<String>,
+}
+
 async fn default_graph_scope(
     state: &AppState,
     feature_id: i64,
     path: &Path,
-) -> Result<(Vec<String>, Option<String>, Option<String>), AppError> {
-    let branch_setting =
-        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_BRANCH)
-            .await?;
-    let current_branch = match branch_setting {
-        Some(branch) => Some(branch),
-        None => commands::get_current_branch(path).await?,
-    };
-
-    let resolved =
-        crate::domain::git::workflow_service::resolve_target_branch(state, feature_id, path)
-            .await
-            .unwrap_or_else(|_| "main".to_string());
+) -> Result<GraphScope, AppError> {
+    // The graph must be drawn from the branch it labels itself with, so a
+    // feature whose worktree is gone keeps showing its own history. Resolving
+    // the feature's scope and the target branch are independent, and each is
+    // several git spawns, so they run concurrently.
+    let (feature, resolved) = tokio::join!(
+        super::resolve_feature_scope(&state.read_pool, feature_id, path),
+        crate::domain::git::workflow_service::resolve_target_branch(state, feature_id, path),
+    );
+    let feature = feature?;
+    let current_branch = feature.branch;
+    let resolved = resolved.unwrap_or_else(|_| "main".to_string());
     let local_target = prefer_local_target(path, &resolved).await;
 
-    let mut tips = vec!["HEAD".to_string()];
+    let mut tips = vec![feature.revision];
     let on_target = current_branch.as_deref() == Some(local_target.as_str());
     let target_for_view = if !on_target
         && crate::domain::git::workflow_service::local_branch_exists(path, &local_target).await
@@ -151,7 +165,11 @@ async fn default_graph_scope(
     } else {
         None
     };
-    Ok((tips, current_branch, target_for_view))
+    Ok(GraphScope {
+        tips,
+        current_branch,
+        target_for_view,
+    })
 }
 
 /// Resolve the browser URL for a single commit on the feature's remote, so the

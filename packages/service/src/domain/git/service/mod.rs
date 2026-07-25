@@ -8,6 +8,7 @@ use crate::error::AppError;
 mod blame;
 mod branch;
 mod diff;
+mod feature_branch;
 mod graph;
 mod image;
 mod stash;
@@ -16,6 +17,7 @@ mod worktree;
 pub use blame::*;
 pub use branch::*;
 pub use diff::*;
+pub use feature_branch::*;
 pub use graph::*;
 pub use image::*;
 pub use stash::*;
@@ -27,6 +29,10 @@ pub use worktree::*;
 
 pub(super) const SETTING_WORKTREE_PATH: &str = "worktree_path";
 pub(super) const SETTING_WORKTREE_BRANCH: &str = "worktree_branch";
+/// Branch created by the worktree-free "From branch" flow. Separate from
+/// `worktree_branch` because the UI reads that key as "this feature has a
+/// worktree" — see [`feature_branch`].
+pub const SETTING_FEATURE_BRANCH: &str = "feature_branch";
 pub(super) const SETTING_TARGET_BRANCH: &str = "target_branch";
 
 // ---------------------------------------------------------------------------
@@ -126,19 +132,22 @@ pub async fn resolve_feature_git_path(
     Ok(Some(project_path))
 }
 
-/// Helper to get project path + worktree branch for merge/conflict/delete operations.
+/// Helper to get project path + the feature's own branch for
+/// merge/conflict/delete operations.
+///
+/// Deliberately only the *recorded* branch: these operations delete and merge
+/// refs, so a feature that merely follows whatever the project has checked out
+/// ("On branch" mode) must keep erroring rather than offering to delete the
+/// branch the user is standing on.
 pub(super) async fn get_project_and_branch(
     state: &AppState,
     project_id: i64,
     feature_id: i64,
 ) -> Result<(String, String), AppError> {
     let project_path = repository::get_project_path(&state.read_pool, project_id).await?;
-    let branch =
-        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_BRANCH)
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound("No worktree branch found for this feature".into())
-            })?;
+    let branch = feature_branch::recorded_feature_branch(&state.read_pool, feature_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("No branch recorded for this feature".into()))?;
     Ok((project_path, branch))
 }
 

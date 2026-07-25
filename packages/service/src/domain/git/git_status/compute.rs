@@ -237,7 +237,7 @@ mod tests {
         let info = host::detect_remote("git@github.com:owner/repo.git").unwrap();
         let (h, url, label) = derive_provider_fields(Some(&info), "main", "feat");
         assert_eq!(h, Some(GitHost::GitHub));
-        assert_eq!(label.as_deref(), Some("Open PR"));
+        assert_eq!(label.as_deref(), Some("Open pull request"));
         assert!(url.unwrap().contains("compare/main...feat"));
     }
 
@@ -446,7 +446,7 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("compare/main...main"));
-        assert_eq!(snap.action_label.as_deref(), Some("Open PR"));
+        assert_eq!(snap.action_label.as_deref(), Some("Open pull request"));
     }
 
     #[tokio::test]

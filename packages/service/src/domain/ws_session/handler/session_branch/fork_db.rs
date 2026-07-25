@@ -111,6 +111,11 @@ pub(super) async fn create_forked_feature(
 
 /// Share the source worktree verbatim. Provisioning then short-circuits on the
 /// existing path instead of attempting a second `git worktree add`.
+///
+/// `feature_branch` travels with it for the same reason `worktree_branch` does:
+/// a fork works on the source's branch rather than getting its own, so without
+/// it a forked worktree-free feature falls back to whatever the shared project
+/// checkout has on HEAD.
 async fn copy_worktree_settings(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     new_feature_id: i64,
@@ -119,10 +124,12 @@ async fn copy_worktree_settings(
     sqlx::query(
         "INSERT INTO feature_settings (feature_id, key, value) \
          SELECT ?, key, value FROM feature_settings \
-         WHERE feature_id = ? AND (key LIKE 'worktree%' OR key = 'skip_worktree')",
+         WHERE feature_id = ? \
+         AND (key LIKE 'worktree%' OR key = 'skip_worktree' OR key = ?)",
     )
     .bind(new_feature_id)
     .bind(source_feature_id)
+    .bind(crate::domain::git::service::SETTING_FEATURE_BRANCH)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -320,6 +327,44 @@ mod tests {
         assert_eq!(kind, "session_generated");
         assert_eq!(src_feature, 9);
         assert_eq!(src_msg, 3);
+    }
+
+    /// A worktree-free "From branch" feature records its branch under
+    /// `feature_branch`. The fork works on that same branch, so losing the key
+    /// would leave the fork resolving whatever the shared checkout has on HEAD.
+    #[tokio::test]
+    async fn fork_of_a_worktree_free_feature_keeps_its_branch_binding() {
+        let pool = pool_with_source_feature().await;
+        sqlx::raw_sql(
+            "DELETE FROM feature_settings WHERE feature_id = 9 AND key LIKE 'worktree%';
+             INSERT INTO feature_settings (feature_id, key, value) VALUES
+                (9, 'skip_worktree', 'true'),
+                (9, 'feature_branch', 'feature/from-branch');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let fork = create_forked_feature(&pool, 1, 9, 3, "q2", None)
+            .await
+            .unwrap();
+
+        let branch: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'feature_branch'",
+        )
+        .bind(fork.new_feature_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(branch.as_deref(), Some("feature/from-branch"));
+        let skip: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'skip_worktree'",
+        )
+        .bind(fork.new_feature_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(skip.as_deref(), Some("true"));
     }
 
     #[tokio::test]

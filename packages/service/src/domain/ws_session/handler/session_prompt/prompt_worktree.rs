@@ -86,7 +86,13 @@ pub(super) async fn prepare_branch_provisioning(
         )
         .await?;
     } else if let Some(branch) = new_project_branch {
-        create_project_branch_for_feature(app_state, feature_id, branch.base.as_deref()).await?;
+        create_project_branch_for_feature(
+            app_state,
+            write_pool,
+            feature_id,
+            branch.base.as_deref(),
+        )
+        .await?;
     }
     Ok(true)
 }
@@ -95,17 +101,25 @@ pub(super) async fn prepare_branch_provisioning(
 /// (now auto-named) feature in the project folder. No worktree is involved, so
 /// the agent's cwd stays the project dir and nothing else changes — the git
 /// status watcher picks up the moved HEAD just like any agent-driven branch
-/// switch. `create_project_branch` derives the name from the feature title and
-/// persists no `worktree_*` settings, so the feature is never treated as having
-/// a worktree.
+/// switch. `create_project_branch` derives the name from the feature title,
+/// records it as `feature_branch`, and persists no `worktree_*` settings, so
+/// the feature stays bound to its branch without being treated as having a
+/// worktree.
 async fn create_project_branch_for_feature(
     app_state: &AppState,
+    write_pool: &sqlx::SqlitePool,
     feature_id: i64,
     base: Option<&str>,
 ) -> Result<(), String> {
     let project_id = worktree::get_project_id_for_feature(&app_state.read_pool, feature_id).await?;
-    let branch =
-        worktree::create_project_branch(&app_state.read_pool, feature_id, project_id, base).await?;
+    let branch = worktree::create_project_branch(
+        &app_state.read_pool,
+        write_pool,
+        feature_id,
+        project_id,
+        base,
+    )
+    .await?;
     info!(feature_id, %branch, "created project-path branch for 'from branch' prompt");
     Ok(())
 }

@@ -391,6 +391,6 @@ mod tests {
         assert_eq!(pulls.len(), 1);
         assert_eq!(pulls[0].number, 17);
         assert_eq!(pulls[0].source_branch, "feature/forge");
-        assert_eq!(pulls[0].pr_label, "PR");
+        assert_eq!(pulls[0].pr_label, "Pull request");
     }
 }

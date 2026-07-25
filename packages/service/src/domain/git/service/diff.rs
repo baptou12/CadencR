@@ -7,7 +7,7 @@ use crate::domain::git::models::*;
 use crate::domain::git::repository;
 use crate::error::AppError;
 
-use super::{resolve_feature_git_path, SETTING_WORKTREE_BRANCH};
+use super::resolve_feature_git_path;
 
 pub async fn get_branch(
     state: &AppState,
@@ -271,23 +271,15 @@ pub async fn get_commit_log(
     };
     let path = Path::new(&git_path);
 
-    let branch_setting = repository::get_feature_setting(
-        &state.read_pool,
-        params.feature_id,
-        SETTING_WORKTREE_BRANCH,
-    )
-    .await?;
-    let branch_name = match branch_setting {
-        Some(b) => b,
-        None => match commands::get_current_branch(path).await? {
-            Some(b) => b,
-            None => {
-                return Ok(CommitLogResponse {
-                    commits: vec![],
-                    is_on_base_branch: true,
-                })
-            }
-        },
+    // The revision is only `HEAD` while the feature's own branch is the one
+    // checked out here — a removed worktree or a moved project checkout would
+    // otherwise list a different branch's commits under this feature.
+    let scope = super::resolve_feature_scope(&state.read_pool, params.feature_id, path).await?;
+    let Some(branch_name) = scope.branch else {
+        return Ok(CommitLogResponse {
+            commits: vec![],
+            is_on_base_branch: true,
+        });
     };
 
     // Use the same target-branch resolution as the status snapshot so the
@@ -301,15 +293,17 @@ pub async fn get_commit_log(
             .await
             .unwrap_or_else(|_| "main".to_string());
 
+    let head_rev = &scope.revision;
+
     if branch_name == base_branch {
-        let commits = commands::get_recent_commits(path, params.limit).await?;
+        let commits = commands::get_recent_commits(path, params.limit, head_rev).await?;
         return Ok(CommitLogResponse {
             commits,
             is_on_base_branch: true,
         });
     }
 
-    let commits = commands::get_commit_log(path, &base_branch).await?;
+    let commits = commands::get_commit_log(path, &base_branch, head_rev).await?;
     Ok(CommitLogResponse {
         commits,
         is_on_base_branch: false,
@@ -353,6 +347,7 @@ pub async fn list_files(
 #[cfg(test)]
 mod tests {
     use super::super::test_support::setup_diff_refs_schema;
+    use super::super::SETTING_WORKTREE_BRANCH;
     use super::*;
 
     /// An explicit `target_branch` from the caller must win over any fallback.

@@ -161,9 +161,9 @@ pub fn commit_url(info: &RemoteInfo, sha: &str) -> Option<String> {
 /// Provider-specific label for the "open the proposal page" action.
 pub fn pr_label(host: &GitHost) -> &'static str {
     match host {
-        GitHost::GitHub => "Open PR",
-        GitHost::GitLab => "Open MR",
-        GitHost::Bitbucket => "Open PR",
+        GitHost::GitHub => "Open pull request",
+        GitHost::GitLab => "Open merge request",
+        GitHost::Bitbucket => "Open pull request",
         GitHost::Other => "Open compare",
     }
 }
@@ -404,9 +404,9 @@ mod tests {
 
     #[test]
     fn pr_label_per_host() {
-        assert_eq!(pr_label(&GitHost::GitHub), "Open PR");
-        assert_eq!(pr_label(&GitHost::GitLab), "Open MR");
-        assert_eq!(pr_label(&GitHost::Bitbucket), "Open PR");
+        assert_eq!(pr_label(&GitHost::GitHub), "Open pull request");
+        assert_eq!(pr_label(&GitHost::GitLab), "Open merge request");
+        assert_eq!(pr_label(&GitHost::Bitbucket), "Open pull request");
         assert_eq!(pr_label(&GitHost::Other), "Open compare");
     }
 }

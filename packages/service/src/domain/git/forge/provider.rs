@@ -46,7 +46,9 @@ pub struct PrSummary {
     pub review_state: ReviewState,
     pub author: ForgeUser,
     pub updated_at: String,
-    /// Provider-neutral display noun. Values are currently `PR` and `MR`.
+    /// Provider-neutral display noun. Values are currently `Pull request` and
+    /// `Merge request` — spelled out, because the abbreviations read as jargon
+    /// in the UI surfaces that show them (Git sub-tab, sidebar menu, header).
     pub pr_label: String,
 }
 
@@ -254,7 +256,7 @@ pub trait ForgeProvider: Send + Sync {
 
 pub fn proposal_noun(host: GitHost) -> &'static str {
     match host {
-        GitHost::GitLab => "MR",
-        GitHost::GitHub | GitHost::Bitbucket | GitHost::Other => "PR",
+        GitHost::GitLab => "Merge request",
+        GitHost::GitHub | GitHost::Bitbucket | GitHost::Other => "Pull request",
     }
 }
