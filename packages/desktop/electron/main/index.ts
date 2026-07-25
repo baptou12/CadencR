@@ -55,8 +55,6 @@ async function prepareRuntime(): Promise<void> {
       onStatus: (update: SidecarStatusUpdate) => splash?.setPhase(update.phase, update.detail),
     });
   } else {
-    const dotenvPath = loadDevEnv();
-    console.info(`Loaded env from ${dotenvPath}`);
     sidecar = createDevSidecarHandle();
   }
   if (!app.isPackaged && browserBridge)
@@ -179,6 +177,10 @@ function wireMainProcess(): void {
 }
 
 async function bootstrap(): Promise<void> {
+  if (!app.isPackaged) {
+    const dotenvPath = loadDevEnv();
+    console.info(`Loaded env from ${dotenvPath}`);
+  }
   installCsp();
   browserBridge = await startBrowserBridgeServer({
     dispatch: (toolName, args, featureId) => {
