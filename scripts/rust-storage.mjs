@@ -3,17 +3,10 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CARGO_LAST_USED_FILE, createCargoEnv } from "./cargo-env.mjs";
+import { gitCommonDir, listGitWorktrees } from "./git-worktrees.mts";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = dirname(dirname(scriptPath));
-
-export function parseWorktreeList(output) {
-  return output
-    .split("\0\0")
-    .map((record) => record.split("\0").find((field) => field.startsWith("worktree ")))
-    .filter(Boolean)
-    .map((field) => field.slice("worktree ".length));
-}
 
 export function parseAge(value) {
   const match = /^(\d+)([dh])$/.exec(value);
@@ -48,13 +41,8 @@ function run(command, args, options = {}) {
   return result.stdout ?? "";
 }
 
-function listWorktrees() {
-  return parseWorktreeList(run("git", ["worktree", "list", "--porcelain", "-z"]));
-}
-
 function mainCheckoutRoot() {
-  const commonDir = run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim();
-  return dirname(commonDir);
+  return dirname(gitCommonDir(repoRoot));
 }
 
 function lstatIfExists(path) {
@@ -109,7 +97,7 @@ export function collectDirectoryStats(root) {
 }
 
 function targetEntries() {
-  return listWorktrees().map((worktree) => ({
+  return listGitWorktrees(repoRoot).map((worktree) => ({
     worktree,
     target: join(worktree, "target"),
     ...collectDirectoryStats(join(worktree, "target")),

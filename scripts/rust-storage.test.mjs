@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { CARGO_LAST_USED_FILE } from "./cargo-env.mjs";
+import { parseWorktreeList } from "./git-worktrees.mts";
 import {
   collectDirectoryStats,
   parseAge,
   parseCleanArgs,
   parsePruneArgs,
-  parseWorktreeList,
   selectPruneCandidates,
 } from "./rust-storage.mjs";
 
