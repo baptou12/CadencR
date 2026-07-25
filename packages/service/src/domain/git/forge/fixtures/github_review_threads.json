@@ -1,0 +1,80 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "Y3Vyc29yOnYyOpHOAA"
+          },
+          "nodes": [
+            {
+              "id": "PRRT_kwDOAbcDef4A1a2b",
+              "isResolved": false,
+              "isOutdated": false,
+              "path": "packages/service/src/main.rs",
+              "line": 42,
+              "originalLine": 40,
+              "diffSide": "RIGHT",
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                },
+                "nodes": [
+                  {
+                    "body": "This unwrap can panic when the config file is missing.",
+                    "createdAt": "2026-07-20T09:14:00Z",
+                    "url": "https://github.com/acme/repo/pull/17#discussion_r1000001",
+                    "author": {
+                      "login": "reviewer-one",
+                      "avatarUrl": "https://avatars.example/u/1",
+                      "name": "Reviewer One"
+                    }
+                  },
+                  {
+                    "body": "Agreed, switching to `?`.",
+                    "createdAt": "2026-07-20T10:02:00Z",
+                    "url": "https://github.com/acme/repo/pull/17#discussion_r1000002",
+                    "author": {
+                      "login": "author-two",
+                      "avatarUrl": "https://avatars.example/u/2",
+                      "name": null
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_kwDOAbcDef4A1a2c",
+              "isResolved": true,
+              "isOutdated": false,
+              "path": "packages/desktop/src/App.tsx",
+              "line": 7,
+              "originalLine": 7,
+              "diffSide": "LEFT",
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false,
+                  "endCursor": null
+                },
+                "nodes": [
+                  {
+                    "body": "Nit: stale import.",
+                    "createdAt": "2026-07-19T16:30:00Z",
+                    "url": "https://github.com/acme/repo/pull/17#discussion_r1000003",
+                    "author": {
+                      "login": "reviewer-one",
+                      "avatarUrl": "https://avatars.example/u/1",
+                      "name": "Reviewer One"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

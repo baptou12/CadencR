@@ -11,7 +11,7 @@ pub(super) struct PullRepo {
 pub(super) async fn resolve_pull_repo(ctx: &ForgeContext) -> Result<PullRepo, ForgeError> {
     let full_name = format!("{}/{}", ctx.remote.owner, ctx.remote.repo);
     let url = format!("{}/repos/{full_name}", ctx.api_base_url);
-    let repo: GitHubRepo = ctx.http.get_json(github_get(ctx, &url)).await?;
+    let repo: GitHubRepo = ctx.http.request_json(github_get(ctx, &url)).await?;
     if repo.fork {
         if let Some(parent) = repo.parent {
             return Ok(PullRepo {

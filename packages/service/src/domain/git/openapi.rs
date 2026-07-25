@@ -118,6 +118,7 @@ use super::{models, routes};
         super::forge::CiCheck,
         super::forge::CiRollup,
         super::forge::PrComment,
+        super::forge::ThreadSide,
         super::forge::CommentThread,
         super::forge::PrCommentsResponse,
         super::forge::PrStatusSnapshot,

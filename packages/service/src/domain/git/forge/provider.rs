@@ -97,12 +97,30 @@ pub struct PrComment {
     pub url: Option<String>,
 }
 
+/// Which side of a diff a review thread's `line` counts on. Mirrors GitHub's
+/// `LEFT`/`RIGHT`, GitLab's `old_line`/`new_line`, and Bitbucket's
+/// `inline.from`/`inline.to`, so the desktop diff can anchor a remote thread to
+/// the same row the forge shows it on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadSide {
+    Old,
+    New,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CommentThread {
     pub id: String,
+    /// `None` when the forge has no notion of resolution for this thread (a
+    /// top-level PR comment, or a GitLab note nobody marked resolvable). Only
+    /// `Some(false)` means "the forge says this is still open".
     pub resolved: Option<bool>,
+    /// The thread is pinned to a revision that has since been rewritten, so its
+    /// file/line no longer point at the current diff.
+    pub outdated: bool,
     pub file: Option<String>,
     pub line: Option<u64>,
+    pub side: Option<ThreadSide>,
     pub comments: Vec<PrComment>,
 }
 

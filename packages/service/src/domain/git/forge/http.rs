@@ -51,7 +51,21 @@ impl ForgeHttp {
         self.client.get(url)
     }
 
-    pub async fn get_json<T: DeserializeOwned>(
+    pub fn post(&self, url: &str) -> RequestBuilder {
+        self.client.post(url)
+    }
+
+    /// Executes a forge request and decodes its JSON response. The request
+    /// builder owns the HTTP method, so REST GETs and GraphQL POSTs share the
+    /// same rate-limit, error, and conditional-response policy.
+    pub async fn request_json<T: DeserializeOwned>(
+        &self,
+        builder: RequestBuilder,
+    ) -> Result<T, ForgeError> {
+        self.execute_json(builder).await
+    }
+
+    async fn execute_json<T: DeserializeOwned>(
         &self,
         builder: RequestBuilder,
     ) -> Result<T, ForgeError> {
