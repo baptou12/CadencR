@@ -18,6 +18,8 @@ pub const ORCHESTRATION_SKILL_PREFIX: &str = "cadencr:";
 
 /// Shared boundary prepended to every expanded workflow.
 const PORTABLE_WORKFLOW_BOUNDARY: &str = include_str!("prompts/workflow_boundary.md");
+/// Additional boundary for workflows that can receive a pushed child completion.
+const CHILD_COMPLETION_BOUNDARY: &str = include_str!("prompts/child_completion_boundary.md");
 
 /// One virtual orchestration skill, surfaced as `/cadencr:<name>`.
 pub struct OrchestrationSkill {
@@ -27,6 +29,8 @@ pub struct OrchestrationSkill {
     pub description: &'static str,
     /// Prompt body expanded into the outgoing message when the skill runs.
     pub body: &'static str,
+    /// Whether this workflow can receive a pushed child final message.
+    includes_child_completion_boundary: bool,
 }
 
 impl OrchestrationSkill {
@@ -41,10 +45,12 @@ impl OrchestrationSkill {
     /// slash-command convention); with no arguments the placeholder collapses
     /// to empty.
     fn expand(&self, args: &str) -> String {
-        format!(
-            "{PORTABLE_WORKFLOW_BOUNDARY}\n\n{}",
-            self.body.replace("$ARGUMENTS", args.trim())
-        )
+        let body = self.body.replace("$ARGUMENTS", args.trim());
+        if self.includes_child_completion_boundary {
+            format!("{PORTABLE_WORKFLOW_BOUNDARY}\n\n{CHILD_COMPLETION_BOUNDARY}\n\n{body}")
+        } else {
+            format!("{PORTABLE_WORKFLOW_BOUNDARY}\n\n{body}")
+        }
     }
 }
 
@@ -77,28 +83,33 @@ pub fn expand_prompt(text: &str) -> Cow<'_, str> {
 pub const ORCHESTRATION_SKILLS: &[OrchestrationSkill] = &[
     OrchestrationSkill {
         name: "review",
-        description: "Spawn a reviewer session on this worktree and relay its findings",
+        description: "Spawn an independent reviewer session on this worktree",
         body: include_str!("prompts/review.md"),
+        includes_child_completion_boundary: true,
     },
     OrchestrationSkill {
         name: "rescue",
         description: "Hand this stuck conversation to a fresh model for an unblock suggestion",
         body: include_str!("prompts/rescue.md"),
+        includes_child_completion_boundary: true,
     },
     OrchestrationSkill {
         name: "status",
         description: "Render the live tree of spawned Cadencr sessions and any blocked gates",
         body: include_str!("prompts/status.md"),
+        includes_child_completion_boundary: false,
     },
     OrchestrationSkill {
         name: "parallelize",
         description: "Fan out independent sub-tasks into isolated Cadencr worktrees",
         body: include_str!("prompts/parallelize.md"),
+        includes_child_completion_boundary: true,
     },
     OrchestrationSkill {
         name: "handoff",
         description: "Transfer this work to a successor session with a self-contained brief",
         body: include_str!("prompts/handoff.md"),
+        includes_child_completion_boundary: true,
     },
 ];
 
@@ -129,6 +140,7 @@ mod tests {
             assert!(expanded.contains("Do not search the filesystem for CadencR's installation"));
             assert!(expanded.contains("Inter-agent messages steer an active target turn"));
             assert!(expanded.contains("Do **not** poll"));
+            assert!(!expanded.contains("## Child completion ownership"));
         }
     }
 
@@ -141,11 +153,8 @@ mod tests {
         ] {
             let invocation = format!("/cadencr:{name} {arguments}");
             let expanded = expand_prompt(&invocation);
-            let expected = format!(
-                "{PORTABLE_WORKFLOW_BOUNDARY}\n\n{}",
-                skill_body(name).replace("$ARGUMENTS", arguments)
-            );
-            assert_eq!(expanded, expected, "skill {name}");
+            assert!(expanded.contains(arguments), "skill {name}");
+            assert!(!expanded.contains("$ARGUMENTS"), "skill {name}");
         }
     }
 
@@ -161,6 +170,26 @@ mod tests {
 
         assert!(spawn < link);
         assert!(expanded.contains("not successful until both"));
+    }
+
+    #[test]
+    fn followed_skills_get_the_shared_child_completion_boundary() {
+        for name in ["review", "rescue", "parallelize", "handoff"] {
+            let invocation = format!("/cadencr:{name}");
+            let expanded = expand_prompt(&invocation);
+            assert!(expanded.contains("## Child completion ownership"));
+            assert!(
+                expanded.contains("visible to the user in this conversation"),
+                "{name} must recognize that the child reply is already visible"
+            );
+            assert!(expanded.contains(
+                "Do not repeat, paraphrase, reformat, summarize, or quote the child's final"
+            ));
+        }
+
+        let review = expand_prompt("/cadencr:review");
+        assert!(review.contains("ask the user what they want to do"));
+        assert!(review.contains("with the review"));
     }
 
     #[test]

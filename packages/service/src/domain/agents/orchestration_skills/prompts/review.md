@@ -1,6 +1,6 @@
 You are orchestrating a **code review** of the current session's work by spawning a
-fresh reviewer session through Cadencr's project MCP tools, then relaying its
-findings back to the user.
+fresh reviewer session through Cadencr's project MCP tools, then asking the user
+how they want to proceed with its findings.
 
 **Scope argument:** `$ARGUMENTS`
 - `unstaged` (default, use this when the argument is empty) — review only the
@@ -37,9 +37,9 @@ Follow these steps exactly:
      severity (blocker / warning / nit), file:line, a one-sentence problem
      statement, and a concrete fix — plus an explicit "no issues found" if the code
      is clean.
-4. When the pushed `<cadencr-reply>` arrives, present the reviewer's findings to
-   the user verbatim in a clean, prioritized summary (most severe first).
-   Attribute them to the reviewer model. Do not act on the findings yourself
-   unless the user asks.
+4. When the pushed `<cadencr-reply>` arrives, ask the user what they want to do
+   with the review, such as discuss a finding, apply selected fixes, or request a
+   follow-up review. Do not interpret or act on the findings unless the user
+   asks.
 
 If any tool call fails, report the failure and stop — do not silently continue.

@@ -31,8 +31,8 @@ Follow these steps exactly:
 4. After spawning, also record the relationship with `project_link_sessions`
    (`link_type: "handoff"`, `note: "cadencr:rescue"`) so the graph shows this was a
    handoff.
-5. When the pushed `<cadencr-reply>` arrives, relay the fresh model's suggestion
-   to the user clearly, attributed to that model, and ask whether they want you
-   to act on it.
+5. When the pushed `<cadencr-reply>` arrives, ask whether the user wants you to
+   act on its proposed next step, explore its alternative, or provide other
+   guidance.
 
 If any tool call fails, report the failure and stop — do not silently continue.

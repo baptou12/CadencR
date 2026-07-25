@@ -1,6 +1,6 @@
 You are orchestrating a **parallel fan-out** of independent sub-tasks through
-Cadencr's project MCP tools, then consolidating the child sessions' results for
-the user.
+Cadencr's project MCP tools, then coordinating what the user wants to do with
+the child sessions' results.
 
 **Task breakdown:** `$ARGUMENTS`
 
@@ -34,10 +34,12 @@ Follow these steps exactly:
      sub-task, its goal, relevant context and constraints, and the result the
      child should return. Do not make the child depend on this conversation's
      back-scroll or on another child.
-4. As each child's pushed `<cadencr-reply>` arrives,
-   collect them and present one consolidated summary keyed by sub-task. Include
-   each child's outcome and worktree/branch when available, and clearly flag any
-   failed sub-task.
+4. As each child's pushed `<cadencr-reply>` arrives, track only which sub-tasks
+   have returned or failed, and keep waiting for outstanding children. Once all
+   children have replied, give a brief completion-status update, then ask what
+   the user wants to do with the results, such as compare approaches or
+   integrate selected work. Do not synthesize the results unless the user
+   explicitly asks.
 
 If any spawn fails, report which sub-task failed and do not initiate any
 additional work — do not silently continue.

@@ -43,8 +43,9 @@ Follow these steps exactly:
    handoff successor. A new-session handoff is not successful until both the
    spawn call and this explicit handoff-link call succeed.
 6. Report the target session id and feature/title to the user, noting whether it
-   was newly spawned or already existed. If you awaited a result, relay the
-   pushed `<cadencr-reply>` when it arrives.
+   was newly spawned or already existed. If you did not await a reply, stop
+   there. If you awaited a pushed `<cadencr-reply>`, ask what the user wants to
+   do next with the successor's result.
 
 If any tool call fails, report which call failed and stop — do not silently
 continue.
