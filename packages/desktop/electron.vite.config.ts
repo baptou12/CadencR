@@ -7,13 +7,12 @@ import { loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-vite-plugin";
-import { rendererCsp } from "./electron/main/csp";
+import {
+  rendererCsp,
+  resolveRendererCspDevelopment,
+  type RendererCspDevelopmentEndpoints,
+} from "./electron/main/csp";
 import pkg from "./package.json" with { type: "json" };
-
-function parsePort(value: string | undefined, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : fallback;
-}
 
 const excalidrawFontsDir = path.join(
   path.dirname(createRequire(import.meta.url).resolve("@excalidraw/excalidraw")),
@@ -59,7 +58,10 @@ function excalidrawFontsPlugin(): Plugin {
   };
 }
 
-function cspMetaPlugin(isProduction: boolean): Plugin {
+function cspMetaPlugin(
+  isProduction: boolean,
+  developmentEndpoints: RendererCspDevelopmentEndpoints,
+): Plugin {
   return {
     name: "cadencr-csp-meta",
     transformIndexHtml: () => [
@@ -67,7 +69,7 @@ function cspMetaPlugin(isProduction: boolean): Plugin {
         tag: "meta",
         attrs: {
           "http-equiv": "Content-Security-Policy",
-          content: rendererCsp(isProduction),
+          content: rendererCsp(isProduction, developmentEndpoints),
         },
         injectTo: "head",
       },
@@ -77,7 +79,7 @@ function cspMetaPlugin(isProduction: boolean): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "VITE_");
-  const frontendPort = parsePort(env.VITE_FRONTEND_PORT, 1420);
+  const development = resolveRendererCspDevelopment(env);
   return {
     main: {
       plugins: [externalizeDepsPlugin()],
@@ -101,7 +103,7 @@ export default defineConfig(({ mode }) => {
       envPrefix: "VITE_",
       server: {
         host: "127.0.0.1",
-        port: frontendPort,
+        port: development.frontendPort,
         strictPort: true,
       },
       define: {
@@ -116,7 +118,7 @@ export default defineConfig(({ mode }) => {
         react(),
         tailwindcss(),
         excalidrawFontsPlugin(),
-        cspMetaPlugin(mode === "production"),
+        cspMetaPlugin(mode === "production", development),
         TanStackRouterVite({
           routesDirectory: "src/routes",
           generatedRouteTree: "src/routeTree.gen.ts",

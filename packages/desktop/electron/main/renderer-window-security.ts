@@ -1,11 +1,12 @@
 import path from "node:path";
 import { app, session, shell, type WebContents } from "electron";
-import { rendererCsp } from "./csp";
+import { rendererCsp, resolveRendererCspDevelopment } from "./csp";
 import { approvedExternalUrl, isAllowedNavigationUrl, isLoopbackDevUrl } from "./navigation";
 import { packagedRendererDir } from "./sidecar";
 
 export function installCsp(): void {
-  const csp = rendererCsp(app.isPackaged);
+  const development = resolveRendererCspDevelopment(process.env);
+  const csp = rendererCsp(app.isPackaged, development);
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {

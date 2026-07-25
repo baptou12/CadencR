@@ -1,10 +1,62 @@
-export function rendererCsp(isPackaged: boolean): string {
+export interface RendererCspDevelopmentEndpoints {
+  apiUrl: string;
+  rendererUrl: string;
+}
+
+interface RendererCspDevelopmentEnvironment {
+  ELECTRON_RENDERER_URL?: string;
+  VITE_API_URL?: string;
+  VITE_FRONTEND_PORT?: string;
+}
+
+interface ResolvedRendererCspDevelopment extends RendererCspDevelopmentEndpoints {
+  frontendPort: number;
+}
+
+const DEFAULT_DEVELOPMENT_API_URL = "http://127.0.0.1:5005";
+const DEFAULT_DEVELOPMENT_FRONTEND_PORT = 1420;
+const SIDECAR_URL = "http://127.0.0.1:5004";
+
+export function resolveRendererCspDevelopment(
+  environment: RendererCspDevelopmentEnvironment,
+): ResolvedRendererCspDevelopment {
+  const parsedFrontendPort = Number(environment.VITE_FRONTEND_PORT);
+  const frontendPort =
+    Number.isInteger(parsedFrontendPort) && parsedFrontendPort > 0 && parsedFrontendPort <= 65535
+      ? parsedFrontendPort
+      : DEFAULT_DEVELOPMENT_FRONTEND_PORT;
+  return {
+    apiUrl: environment.VITE_API_URL ?? DEFAULT_DEVELOPMENT_API_URL,
+    rendererUrl: environment.ELECTRON_RENDERER_URL ?? `http://127.0.0.1:${frontendPort}`,
+    frontendPort,
+  };
+}
+
+function connectSources(rawUrl: string): string[] {
+  const httpUrl = new URL(rawUrl);
+  if (httpUrl.protocol !== "http:" && httpUrl.protocol !== "https:") {
+    throw new Error(`CSP connect URL must use http:// or https://: ${rawUrl}`);
+  }
+  const websocketUrl = new URL(httpUrl.origin);
+  websocketUrl.protocol = httpUrl.protocol === "https:" ? "wss:" : "ws:";
+  return [httpUrl.origin, websocketUrl.origin];
+}
+
+export function rendererCsp(
+  isPackaged: boolean,
+  developmentEndpoints: RendererCspDevelopmentEndpoints = resolveRendererCspDevelopment({}),
+): string {
   const scriptSrc = isPackaged
     ? "script-src 'self'"
     : "script-src 'self' 'unsafe-eval' 'unsafe-inline'";
-  const connectSrc = isPackaged
-    ? "connect-src 'self' http://127.0.0.1:5004 ws://127.0.0.1:5004"
-    : "connect-src 'self' http://127.0.0.1:5004 http://127.0.0.1:5005 http://127.0.0.1:1420 ws://127.0.0.1:5004 ws://127.0.0.1:5005 ws://127.0.0.1:1420";
+  const connectUrls = connectSources(SIDECAR_URL);
+  if (!isPackaged) {
+    connectUrls.push(
+      ...connectSources(developmentEndpoints.apiUrl),
+      ...connectSources(developmentEndpoints.rendererUrl),
+    );
+  }
+  const connectSrc = `connect-src 'self' ${[...new Set(connectUrls)].join(" ")}`;
   return [
     "default-src 'self'",
     scriptSrc,
