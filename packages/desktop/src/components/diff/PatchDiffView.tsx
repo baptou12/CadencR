@@ -13,7 +13,6 @@ import {
   VirtualizedFileDiff as PierreVirtualizedFileDiff,
   areOptionsEqual,
   getSingularPatch,
-  type AnnotationSide,
   type DiffLineAnnotation,
   type FileDiffMetadata,
   type FileDiffOptions,
@@ -23,29 +22,35 @@ import {
 } from "@pierre/diffs";
 import { renderDiffChildren, templateRender, useVirtualizer } from "@pierre/diffs/react";
 import { parseUnifiedDiff } from "@/lib/parse-unified-diff";
+import type { PrThreadLine } from "@/lib/pr-review-threads";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 
 import { DIFF_UNSAFE_CSS } from "./patch-diff-css";
-import { CommentExtendLine, CommentWidgetLine } from "./DiffCommentWidget";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
+import {
+  buildLineAnnotations,
+  getCommentTarget,
+  renderAnnotation,
+  type CommentAnnotationMetadata,
+  type CommentSide,
+} from "./patch-diff-annotations";
 import { ensurePierreThemesRegistered, getPierreThemeName } from "./pierre-theme";
 
 export type PatchDiffMode = "unified" | "split";
-export type CommentSide = "old" | "new";
 export type PatchHunkSeparators = Exclude<HunkSeparators, "custom">;
-
-interface CommentAnnotationMetadata {
-  comments: CommentLineData["comments"];
-  isActive: boolean;
-  callbacks: CommentCallbacks;
-}
+export type { CommentSide };
 
 export interface PatchDiffViewProps {
   patch: string;
   mode: PatchDiffMode;
   className?: string;
   commentLines?: CommentLineData[];
+  /** Unresolved review threads the forge is hosting for this file. */
+  remoteThreadLines?: PrThreadLine[];
+  activeReviewThreadId?: string | null;
+  selectedReviewThreadIds?: ReadonlySet<string>;
+  onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
   activeWidget?: ActiveWidget | null;
   commentCallbacks?: CommentCallbacks;
   onAddComment?: (lineNumber: number, side: CommentSide) => void;
@@ -235,75 +240,44 @@ function SafePatchDiff<LAnnotation>({
   );
 }
 
-function fromAnnotationSide(side: AnnotationSide | undefined): CommentSide {
-  return side === "deletions" ? "old" : "new";
-}
-
-function getCommentTarget(range: SelectedLineRange): { lineNumber: number; side: CommentSide } {
-  return {
-    lineNumber: range.start,
-    side: fromAnnotationSide(range.side ?? range.endSide),
-  };
-}
-
-function toAnnotationSide(side: CommentSide | undefined): AnnotationSide {
-  return side === "old" ? "deletions" : "additions";
-}
-
-function buildLineAnnotations(
-  commentLines: CommentLineData[] | undefined,
-  activeWidget: ActiveWidget | null | undefined,
-  callbacks: CommentCallbacks | undefined,
-): DiffLineAnnotation<CommentAnnotationMetadata>[] | undefined {
-  if (!callbacks) return undefined;
-  const annotations: DiffLineAnnotation<CommentAnnotationMetadata>[] = [];
-
-  for (const line of commentLines ?? []) {
-    if (line.comments.length === 0 || activeWidget?.lineNumber === line.lineNumber) continue;
-    for (const side of ["new", "old"] as const) {
-      const comments = line.comments.filter((comment) => comment.side === side);
-      if (comments.length === 0) continue;
-      annotations.push({
-        side: toAnnotationSide(side),
-        lineNumber: line.lineNumber,
-        metadata: { comments, isActive: false, callbacks },
-      });
-    }
-  }
-
-  if (activeWidget) {
-    const existing = commentLines
-      ?.find((line) => line.lineNumber === activeWidget.lineNumber)
-      ?.comments.filter((comment) => comment.side === (activeWidget.side ?? "new"));
-    annotations.push({
-      side: toAnnotationSide(activeWidget.side),
-      lineNumber: activeWidget.lineNumber,
-      metadata: { comments: existing ?? [], isActive: true, callbacks },
-    });
-  }
-
-  return annotations.length > 0 ? annotations : undefined;
-}
-
-function renderAnnotation(annotation: DiffLineAnnotation<CommentAnnotationMetadata>): ReactNode {
-  const { callbacks, comments, isActive } = annotation.metadata;
-  if (isActive) {
-    return (
-      <CommentWidgetLine
-        comments={comments}
-        onSubmit={(content) => callbacks.onSubmit(annotation.lineNumber, content)}
-        onClose={callbacks.onClose}
-        onEdit={callbacks.onEdit}
-        onDelete={callbacks.onDelete}
-      />
-    );
-  }
-  return (
-    <CommentExtendLine
-      comments={comments}
-      onEdit={callbacks.onEdit}
-      onDelete={callbacks.onDelete}
-    />
+function usePatchLineAnnotations({
+  commentLines,
+  remoteThreadLines,
+  activeReviewThreadId,
+  selectedReviewThreadIds,
+  onReviewThreadSelectedChange,
+  activeWidget,
+  commentCallbacks,
+}: Pick<
+  PatchDiffViewProps,
+  | "commentLines"
+  | "remoteThreadLines"
+  | "activeReviewThreadId"
+  | "selectedReviewThreadIds"
+  | "onReviewThreadSelectedChange"
+  | "activeWidget"
+  | "commentCallbacks"
+>): DiffLineAnnotation<CommentAnnotationMetadata>[] | undefined {
+  return useMemo(
+    () =>
+      buildLineAnnotations({
+        commentLines,
+        remoteThreadLines,
+        activeWidget,
+        callbacks: commentCallbacks,
+        activeReviewThreadId,
+        selectedReviewThreadIds,
+        onReviewThreadSelectedChange,
+      }),
+    [
+      activeReviewThreadId,
+      activeWidget,
+      commentCallbacks,
+      commentLines,
+      onReviewThreadSelectedChange,
+      remoteThreadLines,
+      selectedReviewThreadIds,
+    ],
   );
 }
 
@@ -312,6 +286,10 @@ function PatchDiffViewImpl({
   mode,
   className,
   commentLines,
+  remoteThreadLines,
+  activeReviewThreadId,
+  selectedReviewThreadIds,
+  onReviewThreadSelectedChange,
   activeWidget,
   commentCallbacks,
   onAddComment,
@@ -327,10 +305,15 @@ function PatchDiffViewImpl({
   ensurePierreThemesRegistered();
   const virtualizer = useVirtualizer();
   const filePatches = useMemo(() => getRenderableFilePatches(patch), [patch]);
-  const lineAnnotations = useMemo(
-    () => buildLineAnnotations(commentLines, activeWidget, commentCallbacks),
-    [commentLines, activeWidget, commentCallbacks],
-  );
+  const lineAnnotations = usePatchLineAnnotations({
+    commentLines,
+    remoteThreadLines,
+    activeReviewThreadId,
+    selectedReviewThreadIds,
+    onReviewThreadSelectedChange,
+    activeWidget,
+    commentCallbacks,
+  });
   const handleAddComment = useCallback(
     (range: SelectedLineRange): void => {
       const target = getCommentTarget(range);

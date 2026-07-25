@@ -329,7 +329,14 @@ export type CommentThreadFile = string | null;
  */
 export type CommentThreadLine = number | null;
 
+/**
+ * `None` when the forge has no notion of resolution for this thread (a
+top-level PR comment, or a GitLab note nobody marked resolvable). Only
+`Some(false)` means "the forge says this is still open".
+ */
 export type CommentThreadResolved = boolean | null;
+
+export type CommentThreadSide = null | ThreadSide;
 
 export interface CommentThread {
   comments: PrComment[];
@@ -337,7 +344,14 @@ export interface CommentThread {
   id: string;
   /** @minimum 0 */
   line?: CommentThreadLine;
+  /** The thread is pinned to a revision that has since been rewritten, so its
+file/line no longer point at the current diff. */
+  outdated: boolean;
+  /** `None` when the forge has no notion of resolution for this thread (a
+top-level PR comment, or a GitLab note nobody marked resolvable). Only
+`Some(false)` means "the forge says this is still open". */
   resolved?: CommentThreadResolved;
+  side?: CommentThreadSide;
 }
 
 export interface CommitBody {
@@ -2695,6 +2709,20 @@ while leaving a busy one alone. */
   foreground_active: boolean;
   pty_id: string;
 }
+
+/**
+ * Which side of a diff a review thread's `line` counts on. Mirrors GitHub's
+`LEFT`/`RIGHT`, GitLab's `old_line`/`new_line`, and Bitbucket's
+`inline.from`/`inline.to`, so the desktop diff can anchor a remote thread to
+the same row the forge shows it on.
+ */
+export type ThreadSide = (typeof ThreadSide)[keyof typeof ThreadSide];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThreadSide = {
+  old: "old",
+  new: "new",
+} as const;
 
 export type TrashPathRequestFeatureId = number | null;
 

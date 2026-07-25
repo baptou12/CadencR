@@ -34,6 +34,27 @@ function changedFile(file: string): ChangedFile {
 }
 
 describe("useGitDiffFileTreeModel display mode", () => {
+  it("shows open-thread counts only on rows in filenames mode", async () => {
+    const files = [changedFile("src/nested/a.ts"), changedFile("src/nested/b.ts")];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({
+        files,
+        onSelectionChange: vi.fn(),
+        reviewCountsByFile: new Map([["src/nested/a.ts", 2]]),
+      }),
+    );
+    const tree = render(<CadencrFileTree model={result.current.model} />);
+    const shadowRoot = result.current.model.getFileTreeContainer()?.shadowRoot;
+
+    expect(shadowRoot?.textContent).not.toContain("2 open");
+    act(() => result.current.setDisplayMode("filenames"));
+    await waitFor(() => expect(shadowRoot?.textContent).toContain("2 open"));
+    expect(shadowRoot?.querySelector('[data-item-type="folder"]')).toBeNull();
+
+    tree.unmount();
+    unmount();
+  });
+
   it("updates stage state without resetting an unchanged path tree", () => {
     const initialFile = changedFile("src/file.ts");
     const { result, rerender, unmount } = renderHook(

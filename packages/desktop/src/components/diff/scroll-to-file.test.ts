@@ -96,6 +96,34 @@ describe("scrollFileToTop", () => {
     expect(scrollTop).toBe(150);
   });
 
+  it("keeps tracking a far jump while a large diff reconciles many file heights", () => {
+    const container = document.createElement("div");
+    const el = document.createElement("div");
+    el.setAttribute("data-file", "src/far-away.ts");
+    container.appendChild(el);
+    let scrollTop = 0;
+    let measuredTop = 1_000;
+    Object.defineProperty(container, "scrollTop", {
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+      configurable: true,
+    });
+    container.getBoundingClientRect = () => rect(0);
+    el.getBoundingClientRect = () => rect(measuredTop - scrollTop);
+
+    scrollFileToTop(container, "src/far-away.ts");
+    for (let index = 0; index < 30; index += 1) {
+      tick();
+      measuredTop += 25;
+    }
+    tick();
+
+    expect(scrollTop).toBe(measuredTop);
+    expect(frames.size).toBeGreaterThan(0);
+  });
+
   it("bails out within a couple frames when the file is absent", () => {
     const { container, getScrollTop } = makeContainer("src/a.ts", 100);
     scrollFileToTop(container, "does/not/exist.ts");
@@ -133,5 +161,16 @@ describe("scrollFileToTop", () => {
     tick();
 
     expect(scrollTop).toBe(200); // landed on the second target, not the first
+  });
+
+  it("can hand control to exact review-thread alignment", () => {
+    const { container, getScrollTop } = makeContainer("src/a.ts", 100);
+    const cancel = scrollFileToTop(container, "src/a.ts");
+
+    cancel();
+    tick();
+
+    expect(getScrollTop()).toBe(0);
+    expect(frames.size).toBe(0);
   });
 });

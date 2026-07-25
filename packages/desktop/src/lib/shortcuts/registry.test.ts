@@ -55,6 +55,13 @@ describe("shortcut registry", () => {
     });
   });
 
+  it("keeps local drafts and remote review feedback on explicit Git chords", () => {
+    expect(shortcutKeys("diff-send-comments")).toEqual(["mod", "enter"]);
+    expect(shortcutKeys("diff-send-review-comments")).toEqual(["mod", "shift", "enter"]);
+    expect(shortcutKeys("git-next-review-thread")).toEqual(["mod", "shift", "j"]);
+    expect(shortcutKeys("git-previous-review-thread")).toEqual(["mod", "shift", "k"]);
+  });
+
   it("removes the superseded Ctrl-based diff shortcut identifiers", () => {
     const ids = new Set(SHORTCUTS.map((shortcut) => shortcut.id));
     expect(ids).not.toContain("diff-next-file");

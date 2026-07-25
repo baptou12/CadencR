@@ -1,12 +1,12 @@
-use std::collections::BTreeMap;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use super::provider::{
     proposal_noun, CiCheck, CiRollup, CiState, CommentThread, ForgeAuthContext, ForgeContext,
-    ForgeError, ForgeProvider, ForgeUser, PrComment, PrState, PrSummary, ReviewState,
+    ForgeError, ForgeProvider, ForgeUser, PrState, PrSummary, ReviewState,
 };
+
+mod comments;
 
 pub struct BitbucketProvider;
 
@@ -18,7 +18,7 @@ impl ForgeProvider for BitbucketProvider {
             ctx.api_base_url, ctx.remote.owner, ctx.remote.repo
         );
         let response: BitbucketPage<BitbucketPull> =
-            ctx.http.get_json(bitbucket_get(ctx, &url)?).await?;
+            ctx.http.request_json(bitbucket_get(ctx, &url)?).await?;
         Ok(response
             .values
             .into_iter()
@@ -31,7 +31,7 @@ impl ForgeProvider for BitbucketProvider {
             "{}/repositories/{}/{}/pullrequests/{pr_number}",
             ctx.api_base_url, ctx.remote.owner, ctx.remote.repo
         );
-        let pull: BitbucketPull = ctx.http.get_json(bitbucket_get(ctx, &url)?).await?;
+        let pull: BitbucketPull = ctx.http.request_json(bitbucket_get(ctx, &url)?).await?;
         Ok(map_pull(pull, ctx.remote.host))
     }
 
@@ -41,7 +41,7 @@ impl ForgeProvider for BitbucketProvider {
             ctx.api_base_url, ctx.remote.owner, ctx.remote.repo, pr.head_sha
         );
         let response: BitbucketPage<BitbucketBuildStatus> =
-            ctx.http.get_json(bitbucket_get(ctx, &url)?).await?;
+            ctx.http.request_json(bitbucket_get(ctx, &url)?).await?;
         let checks = response
             .values
             .into_iter()
@@ -62,47 +62,7 @@ impl ForgeProvider for BitbucketProvider {
         ctx: &ForgeContext,
         pr_number: u64,
     ) -> Result<Vec<CommentThread>, ForgeError> {
-        let url = format!(
-            "{}/repositories/{}/{}/pullrequests/{pr_number}/comments?pagelen=100",
-            ctx.api_base_url, ctx.remote.owner, ctx.remote.repo
-        );
-        let response: BitbucketPage<BitbucketComment> =
-            ctx.http.get_json(bitbucket_get(ctx, &url)?).await?;
-        let mut threads = BTreeMap::<u64, CommentThread>::new();
-        for comment in response
-            .values
-            .into_iter()
-            .filter(|comment| !comment.deleted)
-        {
-            let root = comment
-                .parent
-                .as_ref()
-                .map(|parent| parent.id)
-                .unwrap_or(comment.id);
-            let entry = threads.entry(root).or_insert_with(|| CommentThread {
-                id: format!("bitbucket-{root}"),
-                resolved: None,
-                file: comment
-                    .inline
-                    .as_ref()
-                    .and_then(|inline| inline.path.clone()),
-                line: comment
-                    .inline
-                    .as_ref()
-                    .and_then(|inline| inline.to.or(inline.from)),
-                comments: Vec::new(),
-            });
-            entry.comments.push(PrComment {
-                author: map_user(comment.user),
-                body_markdown: comment.content.raw,
-                created_at: comment.created_on,
-                url: comment
-                    .links
-                    .and_then(|links| links.html)
-                    .map(|link| link.href),
-            });
-        }
-        Ok(threads.into_values().collect())
+        comments::fetch(ctx, pr_number).await
     }
 
     async fn validate_token(&self, ctx: &ForgeAuthContext) -> Result<ForgeUser, ForgeError> {
@@ -121,12 +81,15 @@ impl ForgeProvider for BitbucketProvider {
             .http
             .get(&url)
             .basic_auth(username, Some(&ctx.credentials.token));
-        let user: BitbucketUser = ctx.http.get_json(request).await?;
+        let user: BitbucketUser = ctx.http.request_json(request).await?;
         Ok(map_user(user))
     }
 }
 
-fn bitbucket_get(ctx: &ForgeContext, url: &str) -> Result<reqwest::RequestBuilder, ForgeError> {
+pub(super) fn bitbucket_get(
+    ctx: &ForgeContext,
+    url: &str,
+) -> Result<reqwest::RequestBuilder, ForgeError> {
     let username = ctx
         .credentials
         .username
@@ -186,7 +149,7 @@ fn map_pull(pull: BitbucketPull, host: crate::domain::git::host::GitHost) -> PrS
     }
 }
 
-fn map_user(user: BitbucketUser) -> ForgeUser {
+pub(super) fn map_user(user: BitbucketUser) -> ForgeUser {
     ForgeUser {
         username: user
             .nickname
@@ -210,9 +173,9 @@ fn bitbucket_ci_state(state: &str) -> CiState {
 
 #[derive(Deserialize)]
 #[serde(bound(deserialize = "T: Deserialize<'de>"))]
-struct BitbucketPage<T> {
+pub(super) struct BitbucketPage<T> {
     #[serde(default)]
-    values: Vec<T>,
+    pub(super) values: Vec<T>,
 }
 
 #[derive(Deserialize)]
@@ -256,7 +219,7 @@ struct BitbucketCommit {
 }
 
 #[derive(Deserialize)]
-struct BitbucketUser {
+pub(super) struct BitbucketUser {
     display_name: String,
     nickname: Option<String>,
     username: Option<String>,
@@ -264,14 +227,14 @@ struct BitbucketUser {
 }
 
 #[derive(Deserialize)]
-struct BitbucketLinks {
-    html: Option<BitbucketLink>,
+pub(super) struct BitbucketLinks {
+    pub(super) html: Option<BitbucketLink>,
     avatar: Option<BitbucketLink>,
 }
 
 #[derive(Deserialize)]
-struct BitbucketLink {
-    href: String,
+pub(super) struct BitbucketLink {
+    pub(super) href: String,
 }
 
 #[derive(Deserialize)]
@@ -280,37 +243,6 @@ struct BitbucketBuildStatus {
     name: Option<String>,
     key: Option<String>,
     url: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct BitbucketComment {
-    id: u64,
-    parent: Option<BitbucketCommentParent>,
-    user: BitbucketUser,
-    content: BitbucketContent,
-    created_on: String,
-    #[serde(default)]
-    deleted: bool,
-    inline: Option<BitbucketInline>,
-    links: Option<BitbucketLinks>,
-}
-
-#[derive(Deserialize)]
-struct BitbucketCommentParent {
-    id: u64,
-}
-
-#[derive(Deserialize)]
-struct BitbucketContent {
-    #[serde(default)]
-    raw: String,
-}
-
-#[derive(Deserialize)]
-struct BitbucketInline {
-    path: Option<String>,
-    from: Option<u64>,
-    to: Option<u64>,
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use super::provider::{
     proposal_noun, CiCheck, CiRollup, CiState, CommentThread, ForgeAuthContext, ForgeContext,
-    ForgeError, ForgeProvider, ForgeUser, PrComment, PrState, PrSummary, ReviewState,
+    ForgeError, ForgeProvider, ForgeUser, PrComment, PrState, PrSummary, ReviewState, ThreadSide,
 };
 
 pub struct GitLabProvider;
@@ -17,7 +17,8 @@ impl ForgeProvider for GitLabProvider {
             "{}/projects/{project}/merge_requests?state=opened&per_page=100",
             ctx.api_base_url
         );
-        let response: Vec<GitLabMergeRequest> = ctx.http.get_json(gitlab_get(ctx, &url)).await?;
+        let response: Vec<GitLabMergeRequest> =
+            ctx.http.request_json(gitlab_get(ctx, &url)).await?;
         Ok(response
             .into_iter()
             .map(|request| map_merge_request(request, ctx.remote.host))
@@ -30,7 +31,7 @@ impl ForgeProvider for GitLabProvider {
             "{}/projects/{project}/merge_requests/{pr_number}",
             ctx.api_base_url
         );
-        let request: GitLabMergeRequest = ctx.http.get_json(gitlab_get(ctx, &url)).await?;
+        let request: GitLabMergeRequest = ctx.http.request_json(gitlab_get(ctx, &url)).await?;
         Ok(map_merge_request(request, ctx.remote.host))
     }
 
@@ -40,8 +41,10 @@ impl ForgeProvider for GitLabProvider {
             "{}/projects/{project}/merge_requests/{}/pipelines?per_page=1",
             ctx.api_base_url, pr.number
         );
-        let pipelines: Vec<GitLabPipeline> =
-            ctx.http.get_json(gitlab_get(ctx, &pipelines_url)).await?;
+        let pipelines: Vec<GitLabPipeline> = ctx
+            .http
+            .request_json(gitlab_get(ctx, &pipelines_url))
+            .await?;
         let Some(pipeline) = pipelines.into_iter().next() else {
             return Ok(CiRollup::from_checks(Vec::new()));
         };
@@ -49,7 +52,7 @@ impl ForgeProvider for GitLabProvider {
             "{}/projects/{project}/pipelines/{}/jobs?per_page=100",
             ctx.api_base_url, pipeline.id
         );
-        let jobs: Vec<GitLabJob> = ctx.http.get_json(gitlab_get(ctx, &jobs_url)).await?;
+        let jobs: Vec<GitLabJob> = ctx.http.request_json(gitlab_get(ctx, &jobs_url)).await?;
         let mut checks = jobs
             .into_iter()
             .map(|job| CiCheck {
@@ -78,7 +81,8 @@ impl ForgeProvider for GitLabProvider {
             "{}/projects/{project}/merge_requests/{pr_number}/discussions?per_page=100",
             ctx.api_base_url
         );
-        let discussions: Vec<GitLabDiscussion> = ctx.http.get_json(gitlab_get(ctx, &url)).await?;
+        let discussions: Vec<GitLabDiscussion> =
+            ctx.http.request_json(gitlab_get(ctx, &url)).await?;
         let mut threads = discussions
             .into_iter()
             .filter_map(|discussion| map_discussion(ctx, pr_number, discussion))
@@ -98,7 +102,7 @@ impl ForgeProvider for GitLabProvider {
             .http
             .get(&url)
             .header("PRIVATE-TOKEN", &ctx.credentials.token);
-        let user: GitLabUser = ctx.http.get_json(request).await?;
+        let user: GitLabUser = ctx.http.request_json(request).await?;
         Ok(map_user(user))
     }
 }
@@ -175,7 +179,15 @@ fn map_discussion(
             .clone()
             .or_else(|| position.old_path.clone())
     });
-    let line = first_position.and_then(|position| position.new_line.or(position.old_line));
+    // GitLab reports both sides on a single position; whichever line it filled
+    // in is the row it draws the discussion on.
+    let (line, side) = first_position.map_or((None, None), |position| match position.new_line {
+        Some(new_line) => (Some(new_line), Some(ThreadSide::New)),
+        None => (
+            position.old_line,
+            position.old_line.map(|_| ThreadSide::Old),
+        ),
+    });
     let comments = notes
         .into_iter()
         .map(|note| PrComment {
@@ -191,8 +203,12 @@ fn map_discussion(
     Some(CommentThread {
         id: discussion.id,
         resolved,
+        // GitLab drops `position` from notes whose diff was rewritten, so a
+        // thread that still carries one is by definition still current.
+        outdated: false,
         file,
         line,
+        side,
         comments,
     })
 }

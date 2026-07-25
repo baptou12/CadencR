@@ -2,6 +2,7 @@ import { memo, useMemo, type RefObject } from "react";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
 import type { ChangedFile } from "@/api/generated";
 import { useInViewport } from "@/hooks/useInViewport";
+import type { PrThreadLine } from "@/lib/pr-review-threads";
 import type { DiffMode } from "./useDiffData";
 import { DiffFileBlock, type DiffFileBlockProps } from "./DiffFileBlock";
 import { DiffVirtualizer } from "./DiffVirtualizer";
@@ -51,6 +52,11 @@ interface DiffContentProps {
   viewedFilesSet: Set<string>;
   isViewedPending: boolean;
   commentLinesByFile: Map<string, CommentLineData[]>;
+  /** Unresolved forge review threads per file; absent outside the branch diff. */
+  remoteThreadLinesByFile?: Map<string, PrThreadLine[]>;
+  activeReviewThreadId?: string | null;
+  selectedReviewThreadIds?: ReadonlySet<string>;
+  onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
   activeCommentWidget: ActiveCommentWidget | null;
   memoizedActiveWidget: ActiveWidget | null;
   commentCallbacks: CommentCallbacks;
@@ -77,6 +83,10 @@ function DiffContentImpl({
   viewedFilesSet,
   isViewedPending,
   commentLinesByFile,
+  remoteThreadLinesByFile,
+  activeReviewThreadId,
+  selectedReviewThreadIds,
+  onReviewThreadSelectedChange,
   activeCommentWidget,
   memoizedActiveWidget,
   commentCallbacks,
@@ -93,34 +103,46 @@ function DiffContentImpl({
   return (
     <>
       <DiffVirtualizer scrollRef={diffAreaRef}>
-        {orderedFiles.map((file) => (
-          <DiffRow
-            key={file.file}
-            scrollRef={diffAreaRef}
-            featureId={featureId}
-            mode={mode}
-            targetBranch={targetBranch}
-            commitSha={selectedCommit}
-            file={file}
-            diffMode={diffMode}
-            isCollapsed={collapsedFiles.has(file.file)}
-            isFocused={file.file === activeFilePath}
-            isFileViewed={viewedFilesSet.has(file.file)}
-            isViewedPending={isViewedPending}
-            showViewedCheckbox={!selectedCommit}
-            commentLines={commentLinesByFile.get(file.file)}
-            activeWidget={activeCommentWidget?.filePath === file.file ? memoizedActiveWidget : null}
-            commentCallbacks={commentCallbacks}
-            onToggleFile={onToggleFile}
-            onMarkViewedFile={onMarkViewedFile}
-            onUnmarkViewedFile={onUnmarkViewedFile}
-            onOpenFileInEditor={onOpenFileInEditor}
-            indexActions={indexActions}
-            onAddComment={onAddComment}
-            themeAppearance={themeAppearance}
-            themeId={themeId}
-          />
-        ))}
+        {orderedFiles.map((file) => {
+          const remoteThreadLines = remoteThreadLinesByFile?.get(file.file);
+          const hasRemoteThreads = (remoteThreadLines?.length ?? 0) > 0;
+          return (
+            <DiffRow
+              key={file.file}
+              scrollRef={diffAreaRef}
+              featureId={featureId}
+              mode={mode}
+              targetBranch={targetBranch}
+              commitSha={selectedCommit}
+              file={file}
+              diffMode={diffMode}
+              isCollapsed={collapsedFiles.has(file.file)}
+              isFocused={file.file === activeFilePath}
+              isFileViewed={viewedFilesSet.has(file.file)}
+              isViewedPending={isViewedPending}
+              showViewedCheckbox={!selectedCommit}
+              commentLines={commentLinesByFile.get(file.file)}
+              remoteThreadLines={remoteThreadLines}
+              activeReviewThreadId={hasRemoteThreads ? activeReviewThreadId : undefined}
+              selectedReviewThreadIds={hasRemoteThreads ? selectedReviewThreadIds : undefined}
+              onReviewThreadSelectedChange={
+                hasRemoteThreads ? onReviewThreadSelectedChange : undefined
+              }
+              activeWidget={
+                activeCommentWidget?.filePath === file.file ? memoizedActiveWidget : null
+              }
+              commentCallbacks={commentCallbacks}
+              onToggleFile={onToggleFile}
+              onMarkViewedFile={onMarkViewedFile}
+              onUnmarkViewedFile={onUnmarkViewedFile}
+              onOpenFileInEditor={onOpenFileInEditor}
+              indexActions={indexActions}
+              onAddComment={onAddComment}
+              themeAppearance={themeAppearance}
+              themeId={themeId}
+            />
+          );
+        })}
       </DiffVirtualizer>
       {isViewedPending && (
         <span className="sr-only" role="status">

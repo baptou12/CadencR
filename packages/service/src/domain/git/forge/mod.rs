@@ -68,7 +68,7 @@ pub(crate) mod test_support {
     use std::sync::Arc;
 
     use axum::extract::{OriginalUri, State};
-    use axum::routing::get;
+    use axum::routing::{get, post};
     use axum::{Json, Router};
     use serde_json::Value;
 
@@ -89,6 +89,7 @@ pub(crate) mod test_support {
         }
 
         let app = Router::new()
+            .route("/graphql", post(fixture))
             .fallback(get(fixture))
             .with_state(Arc::new(routes));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -108,6 +109,8 @@ pub(crate) mod test_support {
             "github_pulls" => include_str!("fixtures/github_pulls.json"),
             "gitlab_merge_requests" => include_str!("fixtures/gitlab_merge_requests.json"),
             "bitbucket_pullrequests" => include_str!("fixtures/bitbucket_pullrequests.json"),
+            "bitbucket_comments" => include_str!("fixtures/bitbucket_comments.json"),
+            "github_review_threads" => include_str!("fixtures/github_review_threads.json"),
             _ => panic!("unknown fixture"),
         };
         serde_json::from_str(raw).expect("valid recorded forge fixture")
@@ -130,5 +133,38 @@ pub(crate) mod test_support {
             },
             http: Arc::new(ForgeHttp::default()),
         }
+    }
+
+    #[tokio::test]
+    async fn fixture_server_enforces_rest_and_graphql_methods() {
+        let mut routes = HashMap::new();
+        routes.insert("/rest".into(), serde_json::json!({ "ok": true }));
+        routes.insert("/graphql".into(), serde_json::json!({ "data": {} }));
+        let base = json_fixture_server(routes).await;
+        let client = reqwest::Client::new();
+
+        assert!(client
+            .get(format!("{base}/rest"))
+            .send()
+            .await
+            .expect("REST GET")
+            .status()
+            .is_success());
+        assert_eq!(
+            client
+                .post(format!("{base}/rest"))
+                .send()
+                .await
+                .expect("REST POST")
+                .status(),
+            reqwest::StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert!(client
+            .post(format!("{base}/graphql"))
+            .send()
+            .await
+            .expect("GraphQL POST")
+            .status()
+            .is_success());
     }
 }

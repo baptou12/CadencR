@@ -31,6 +31,7 @@ interface UseDiffViewerNavigationOptions {
   diffAreaRef: RefObject<HTMLDivElement | null>;
   onOpenFileInEditor?: (filePath: string) => void;
   indexMutable: boolean;
+  reviewCountsByFile?: ReadonlyMap<string, number>;
   registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
@@ -39,6 +40,8 @@ export interface DiffViewerNavigationState {
   collapsedFiles: Set<string>;
   expandedFiles: Set<string>;
   activeFilePath: string | null;
+  revealFile: (filePath: string) => void;
+  cancelRevealScroll: () => void;
   toggleFile: (filePath: string) => void;
   markFileViewed: (filePath: string) => void;
   unmarkFileViewed: (filePath: string) => void;
@@ -202,16 +205,12 @@ function useFocusedFileEditorOpener(
   );
 }
 
-export function useDiffViewerNavigation({
-  featureId,
-  data,
-  indexActions,
-  diffAreaRef,
-  onOpenFileInEditor,
-  indexMutable,
-  registerNavigationAdapter,
-}: UseDiffViewerNavigationOptions): DiffViewerNavigationState {
-  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+function useFileReveal(
+  diffAreaRef: RefObject<HTMLDivElement | null>,
+  setCollapsedFiles: Dispatch<SetStateAction<Set<string>>>,
+): { revealFile: (filePath: string) => void; cancelRevealScroll: () => void } {
+  const cancelRevealScrollRef = useRef<() => void>(() => {});
+  const cancelRevealScroll = useCallback((): void => cancelRevealScrollRef.current(), []);
   const revealFile = useCallback(
     (filePath: string): void => {
       setCollapsedFiles((previous) => {
@@ -220,13 +219,33 @@ export function useDiffViewerNavigation({
         next.delete(filePath);
         return next;
       });
-      if (diffAreaRef.current) scrollFileToTop(diffAreaRef.current, filePath);
+      cancelRevealScroll();
+      if (diffAreaRef.current) {
+        cancelRevealScrollRef.current = scrollFileToTop(diffAreaRef.current, filePath);
+      }
     },
-    [diffAreaRef],
+    [cancelRevealScroll, diffAreaRef, setCollapsedFiles],
   );
+  useEffect(() => cancelRevealScroll, [cancelRevealScroll]);
+  return useMemo(() => ({ revealFile, cancelRevealScroll }), [cancelRevealScroll, revealFile]);
+}
+
+export function useDiffViewerNavigation({
+  featureId,
+  data,
+  indexActions,
+  diffAreaRef,
+  onOpenFileInEditor,
+  indexMutable,
+  reviewCountsByFile,
+  registerNavigationAdapter,
+}: UseDiffViewerNavigationOptions): DiffViewerNavigationState {
+  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+  const { revealFile, cancelRevealScroll } = useFileReveal(diffAreaRef, setCollapsedFiles);
   const tree = useGitDiffFileTreeModel({
     files: data.changedFiles,
     onSelectionChange: revealFile,
+    reviewCountsByFile,
   });
   useCollapseInitialization(data, setCollapsedFiles);
   const fileByPath = useMemo(
@@ -283,10 +302,21 @@ export function useDiffViewerNavigation({
       collapsedFiles,
       expandedFiles,
       activeFilePath: tree.activePath,
+      revealFile,
+      cancelRevealScroll,
       toggleFile,
       markFileViewed,
       unmarkFileViewed,
     }),
-    [collapsedFiles, expandedFiles, markFileViewed, toggleFile, tree, unmarkFileViewed],
+    [
+      cancelRevealScroll,
+      collapsedFiles,
+      expandedFiles,
+      markFileViewed,
+      revealFile,
+      toggleFile,
+      tree,
+      unmarkFileViewed,
+    ],
   );
 }
