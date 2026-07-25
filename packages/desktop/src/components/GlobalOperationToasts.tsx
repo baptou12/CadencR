@@ -3,6 +3,27 @@ import { useIsFetching, useIsMutating, useQueryClient } from "@tanstack/react-qu
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+/**
+ * Hosts the global in-flight-operation toast as a childless leaf.
+ *
+ * The hook below subscribes to `useIsFetching()` / `useIsMutating()` —
+ * two `useSyncExternalStore` counters over the whole query cache. They tick on
+ * *every* request the app makes, so the component that owns them re-renders
+ * twice per request (0 → 1 → 0). This hook used to be called directly from
+ * `RootLayout`, which put the entire application under those two counters:
+ * measured at 927 component re-renders per tick, ~1 850 per request, for a
+ * hook whose only output is a toast. Loading a page of conversation history
+ * cost two full-app re-renders; a phone opening the app fires 20–30 requests a
+ * second.
+ *
+ * Rendering it here instead confines the subscription to this leaf, which
+ * renders nothing. Keep it that way: it must never take children.
+ */
+export function GlobalOperationToasts(): null {
+  useOperationToasts();
+  return null;
+}
+
 const TOAST_ID = "global-ops";
 
 /** Maps React Query keys to friendly, non-technical labels */
@@ -20,7 +41,13 @@ function humanizeKey(key: string): string {
 }
 
 function extractOperationKey(queryKey: readonly unknown[]): string | null {
-  // React Query keys are arrays like [["git", "getStats"], { input: ... }]
+  // Expects tRPC-shaped keys — `[["git", "getStats"], { input: … }]`.
+  // NOTE: every query in the app is orval-generated and keyed
+  // `["/api/git/stats", params]`, i.e. `first` is a string, so this returns
+  // `null` for all of them and the toast below never renders. Left as-is
+  // because making it fire is a product decision, not a perf fix: matching on
+  // the URL shape would also need `EXCLUDED_PREFIXES` rewritten to `/api/…`,
+  // or every git/settings poll would raise a toast.
   const first = queryKey[0];
   if (Array.isArray(first) && first.length >= 2 && typeof first[0] === "string") {
     const key = first.join(".");
@@ -30,7 +57,7 @@ function extractOperationKey(queryKey: readonly unknown[]): string | null {
   return null;
 }
 
-export function useOperationToasts() {
+function useOperationToasts(): void {
   const queryClient = useQueryClient();
   const fetchCount = useIsFetching();
   const mutateCount = useIsMutating();
