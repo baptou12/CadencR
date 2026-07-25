@@ -48,7 +48,7 @@ describe("shortcut registry", () => {
     }).toEqual({
       uncommitted: ["mod", "u"],
       target: ["mod", "t"],
-      pullRequest: ["mod", "shift", "r"],
+      pullRequest: ["mod", "p"],
       commits: ["mod", "h"],
       branches: ["mod", "l"],
       stashes: ["mod", "s"],

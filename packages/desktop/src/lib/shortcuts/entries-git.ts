@@ -100,8 +100,12 @@ export const GIT_SHORTCUTS = [
     aliases: ["git", "compare", "target"],
   },
   {
+    // ⌘P joins the rest of the ⌘-letter Git view family. It collides with the
+    // editor's fuzzy-find and the agent's model picker by combo, but those live
+    // in different scopes — same deliberate overlap as ⌘T (vs-target /
+    // thinking effort) and ⌘S (stashes / save).
     id: "git-show-pull-request",
-    keys: ["mod", "shift", "r"],
+    keys: ["mod", "p"],
     description: "Show pull request or merge request",
     scope: "diff-viewer",
     aliases: ["git", "review", "pull request", "merge request"],

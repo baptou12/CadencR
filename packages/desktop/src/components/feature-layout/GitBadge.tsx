@@ -121,7 +121,7 @@ export function pickIndicator(args: {
       count: aheadOfTarget,
       colorClass: "text-blue-400",
       tooltip: targetBranch
-        ? `${pluralize(aheadOfTarget, "commit", "commits")} pushed, ahead of ${targetBranch} — ready to open a PR`
+        ? `${pluralize(aheadOfTarget, "commit", "commits")} pushed, ahead of ${targetBranch} — ready to open a pull request`
         : `${pluralize(aheadOfTarget, "commit", "commits")} pushed, ahead of target`,
     };
   }

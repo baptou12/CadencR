@@ -77,9 +77,17 @@ pub async fn merge_feature_branch(
 
     // Merging consumes the committed branch ref only. Uncommitted files in the
     // source worktree are intentionally allowed and remain unmerged there.
-    let source_branch = commands::get_current_branch(source_repo)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("source worktree is in detached HEAD".into()))?;
+    //
+    // The feature's recorded branch, not the live checkout: a worktree-free
+    // feature resolves to the project directory, whose HEAD may have moved to
+    // another branch since — merging that would take the wrong changes.
+    let source_branch = crate::domain::git::service::resolve_feature_branch(
+        &state.read_pool,
+        feature_id,
+        source_repo,
+    )
+    .await?
+    .ok_or_else(|| AppError::BadRequest("source worktree is in detached HEAD".into()))?;
     let project_id = resolve_project_id(state, feature_id, body.project_id).await?;
     let project_path = repository::get_project_path(&state.read_pool, project_id).await?;
     let project_repo = Path::new(&project_path);

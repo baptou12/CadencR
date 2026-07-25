@@ -1,32 +1,16 @@
 import { memo, useCallback, useRef, type ReactElement, type ReactNode } from "react";
-import {
-  TrashIcon,
-  ArchiveIcon,
-  BotIcon,
-  GlobeIcon,
-  GitBranchIcon,
-  TerminalIcon,
-  PinIcon,
-  PinOffIcon,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { useGetStats, type Feature, type FeatureWorktreeInfo } from "@/api/generated";
-import { FeatureLabelChip } from "@/components/FeatureLabelChip";
-import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
-import { NumStat } from "@/components/NumStat";
+import type { Feature, FeatureWorktreeInfo } from "@/api/generated";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
-import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
-import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
 import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMenu";
-import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
+import {
+  FeatureRowActions,
+  FeatureRowMetaLine,
+  FeatureRowStatusIcon,
+  FeatureRowTitleLine,
+} from "@/components/ProjectFeatureRowParts";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
-import { useFeatureStatus } from "@/stores/session-status-selectors";
-import { useIsFeatureUnread } from "@/stores/unread-store";
-import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
-import { CiStatusDot, FeaturePrChip } from "@/components/PrStatusIndicators";
+import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",
@@ -107,40 +91,18 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   hierarchyDepth = 0,
 }: ProjectFeatureRowProps): ReactElement {
   const startLabelEditOnMenuCloseRef = useRef(false);
-  // Live status is the canonical 3-value enum: per-session entries pushed
-  // by the backend, aggregated here per-feature. `useShallow` inside the
-  // hook ensures this row only re-renders when its own feature's
-  // (status, kind) actually changes.
-  const { status: liveStatus } = useFeatureStatus(feature.id);
-  // Blue dot: the agent finished while this conversation wasn't open. Only
-  // meaningful when idle — a working/asking agent already shows its own icon.
-  const isUnread = useIsFeatureUnread(feature.id);
-  const prStatus = usePrStatusStore(selectPrStatus(feature.id));
-  const isActive = activeFeatureId === feature.id;
-  const { data: gitStats } = useGetStats(
-    { feature_id: feature.id, mode: "worktree" },
-    {
-      query: {
-        // Limit fan-out: fetch only for live worktrees or the active row (which
-        // the Git tab is already fetching). Other rows reuse the cache.
-        enabled: hasLiveWorktree || isActive,
-        refetchInterval: 5 * 60 * 1000,
-        retry: false,
-      },
-    },
-  );
-
-  const prefetchFeature = useFeaturePrefetch(feature.id, projectId);
+  const {
+    liveStatus,
+    isUnread,
+    prStatus,
+    gitStats,
+    isActive,
+    isArchived,
+    isPinned,
+    prefetchFeature,
+  } = useProjectFeatureRowState(feature, projectId, activeFeatureId, hasLiveWorktree);
   const { navRef, badgeRef } = useNavShortcutHint<HTMLDivElement>();
-  const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
-  const hasLabel = !!feature.label;
   const hasActivity = shellCount > 0 || browserCount > 0;
-  const showMetaLine =
-    isEditingLabel || hasLabel || hasStats || hasActivity || prStatus?.pr != null;
-  const isArchived = feature.status === "archived";
-  const isPinned = feature.is_pinned;
-  const archiveActionLabel = isArchived ? "Delete" : "Archive";
-  const pinActionLabel = isPinned ? "Unpin" : "Pin";
   const markStartLabelEditAfterMenuClose = (): void => {
     startLabelEditOnMenuCloseRef.current = true;
   };
@@ -194,125 +156,48 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
             {hierarchyControl}
           </div>
 
-          {/* Live status icon driven by the per-session backend store. The
-              column keeps its width even when empty so the title never shifts
-              as the agent's status changes. */}
-          <div className="relative flex w-3.5 shrink-0 items-center justify-center">
-            {liveStatus === "agent" && <BotIcon className="size-3.5 animate-pulse text-blue-500" />}
-            {liveStatus === "question" && (
-              <SidebarPendingGatePopover
-                featureId={feature.id}
-                allowAutoOpen={!isActive}
-                onOpenConversation={handleOpenConversation}
-              />
-            )}
-            {liveStatus === "idle" && isUnread && (
-              <span
-                className="size-2 rounded-full bg-blue-500"
-                aria-label="Unread agent messages"
-              />
-            )}
-            <CiStatusDot snapshot={prStatus} className="absolute -bottom-0.5 -right-0.5" />
+          <FeatureRowStatusIcon
+            featureId={feature.id}
+            liveStatus={liveStatus}
+            isActive={isActive}
+            isUnread={isUnread}
+            onOpenConversation={handleOpenConversation}
+          />
+
+          {/* Name + optional metadata sub-line (stats). The check-run signal
+              rides the PR chip's glow on the second line — it used to be a dot
+              anchored here, which overlapped that chip. */}
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <FeatureRowTitleLine
+              feature={feature}
+              liveTitle={liveTitle}
+              isAutoNaming={isAutoNaming}
+              isArchived={isArchived}
+              hasWorktree={hasWorktree}
+            />
+            <FeatureRowMetaLine
+              feature={feature}
+              prStatus={prStatus}
+              gitStats={gitStats}
+              shellCount={shellCount}
+              browserCount={browserCount}
+              isEditingLabel={isEditingLabel}
+              labelDraft={labelDraft}
+              labelSuggestions={labelSuggestions}
+              isSavingLabel={isSavingLabel}
+              onLabelDraftChange={onLabelDraftChange}
+              onSaveLabel={onSaveLabel}
+              onCancelLabelEdit={onCancelLabelEdit}
+            />
           </div>
 
-          {/* Name + optional metadata sub-line (stats) */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <SidebarProviderBadge
-                providerId={feature.runtime_provider}
-                modelId={feature.model_session}
-                thinkingEffort={feature.thinking_effort}
-              />
-              {hasWorktree && (
-                <GitBranchIcon
-                  className="size-3 shrink-0 text-muted-foreground"
-                  aria-label="Has worktree"
-                />
-              )}
-              {isAutoNaming ? (
-                <Skeleton className="h-4 w-32 min-w-0" />
-              ) : (
-                <span className={`min-w-0 truncate ${isArchived ? "text-muted-foreground" : ""}`}>
-                  {liveTitle ?? feature.title}
-                </span>
-              )}
-            </div>
-            {showMetaLine && (
-              <div
-                data-feature-meta-line
-                className="flex min-w-0 items-center gap-2 text-[11px] leading-tight"
-              >
-                {isEditingLabel ? (
-                  <FeatureLabelEditor
-                    value={labelDraft}
-                    suggestions={labelSuggestions}
-                    isSaving={isSavingLabel}
-                    trigger={
-                      feature.label ? (
-                        <FeatureLabelChip label={feature.label} />
-                      ) : (
-                        <span className="rounded border border-dashed border-border px-1.5 py-0 font-mono text-[10.5px] leading-4 text-muted-foreground">
-                          Set label
-                        </span>
-                      )
-                    }
-                    onChange={onLabelDraftChange}
-                    onSave={(override) => onSaveLabel(feature.id, override)}
-                    onCancel={onCancelLabelEdit}
-                  />
-                ) : (
-                  <FeatureLabelChip label={feature.label} />
-                )}
-                {hasStats && (
-                  <NumStat
-                    additions={gitStats.insertions}
-                    deletions={gitStats.deletions}
-                    className="text-[11px] leading-tight"
-                  />
-                )}
-                <FeaturePrChip snapshot={prStatus} />
-                <FeatureActivityIndicators shellCount={shellCount} browserCount={browserCount} />
-              </div>
-            )}
-          </div>
-
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            {!isArchived && (
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-pressed={isPinned}
-                className={`size-6 shrink-0 p-0 hover:text-foreground transition-none ${
-                  isPinned
-                    ? "text-foreground"
-                    : "text-muted-foreground opacity-0 group-hover/feature:opacity-100"
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onTogglePin(feature.id, !isPinned);
-                }}
-              >
-                {isPinned ? <PinOffIcon className="size-3.5" /> : <PinIcon className="size-3.5" />}
-                <span className="sr-only">{pinActionLabel}</span>
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground opacity-0 group-hover/feature:opacity-100 transition-none"
-              onClick={(e) => {
-                e.stopPropagation();
-                onArchiveOrDelete(feature.id);
-              }}
-            >
-              {isArchived ? (
-                <TrashIcon className="size-3.5" />
-              ) : (
-                <ArchiveIcon className="size-3.5" />
-              )}
-              <span className="sr-only">{archiveActionLabel}</span>
-            </Button>
-          </div>
+          <FeatureRowActions
+            featureId={feature.id}
+            isArchived={isArchived}
+            isPinned={isPinned}
+            onTogglePin={onTogglePin}
+            onArchiveOrDelete={onArchiveOrDelete}
+          />
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
@@ -324,13 +209,12 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           feature={feature}
           liveTitle={liveTitle}
           worktree={worktree}
+          pullRequest={prStatus?.pr}
           isArchived={isArchived}
           isPinned={isPinned}
           hasActivity={hasActivity}
           shellCount={shellCount}
           browserCount={browserCount}
-          archiveActionLabel={archiveActionLabel}
-          pinActionLabel={pinActionLabel}
           onNavigate={onNavigate}
           onTogglePin={onTogglePin}
           onStartLabelEditAfterMenuClose={markStartLabelEditAfterMenuClose}
@@ -342,58 +226,6 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
     </ContextMenu>
   );
 });
-
-function FeatureActivityIndicators({
-  shellCount,
-  browserCount,
-}: {
-  shellCount: number;
-  browserCount: number;
-}): ReactElement | null {
-  if (shellCount <= 0 && browserCount <= 0) return null;
-  return (
-    <span data-feature-activity-indicators className="inline-flex shrink-0 items-center gap-1">
-      <FeatureActivityBadge
-        count={shellCount}
-        labelSingular="shell command running"
-        labelPlural="shell commands running"
-        icon={<TerminalIcon className="size-3" />}
-      />
-      <FeatureActivityBadge
-        count={browserCount}
-        labelSingular="browser tab open"
-        labelPlural="browser tabs open"
-        icon={<GlobeIcon className="size-3" />}
-      />
-    </span>
-  );
-}
-
-function FeatureActivityBadge({
-  count,
-  labelSingular,
-  labelPlural,
-  icon,
-}: {
-  count: number;
-  labelSingular: string;
-  labelPlural: string;
-  icon: ReactElement;
-}): ReactElement | null {
-  if (count <= 0) return null;
-  const label = `${count} ${count === 1 ? labelSingular : labelPlural}`;
-  return (
-    <Badge
-      variant="outline"
-      aria-label={label}
-      title={label}
-      className="h-5 gap-0.5 rounded border-border/60 bg-background/40 px-1 font-mono text-[10px] leading-none text-muted-foreground"
-    >
-      {icon}
-      <span>{count}</span>
-    </Badge>
-  );
-}
 
 export function shouldIgnoreFeatureRowKeyDown(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;

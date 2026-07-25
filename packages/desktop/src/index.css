@@ -229,6 +229,48 @@ body,
   animation: unified-agent-focus-flash 200ms ease-out 1;
 }
 
+/* Sidebar pull/merge-request chip whose checks are still running: a breathing
+ * halo. Only this one transient state glows — a settled verdict is already
+ * carried by the chip's border and fill, and a permanent glow on every row
+ * would read as noise in a dense list.
+ *
+ * The halo is a static shadow on a pseudo-element whose *opacity* breathes:
+ * animating box-shadow geometry repaints every frame, and several rows with
+ * live check runs would each hold a permanent repaint loop next to the agent
+ * stream. Opacity composites instead. */
+@keyframes pr-chip-breathe {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@utility pr-chip-checks-running {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: 0 0 8px 1px color-mix(in oklab, var(--acc-orange) 55%, transparent);
+    animation: pr-chip-breathe 2.4s ease-in-out infinite;
+    will-change: opacity;
+    pointer-events: none;
+  }
+}
+
+/* Motion off: drop the halo entirely rather than letting the global
+ * `animation-duration: 0.001ms` kill-switch freeze it on a random frame. The
+ * chip's orange tone already says "checks running" without any motion. */
+html[data-animations="off"] .pr-chip-checks-running::after {
+  animation-name: none;
+  opacity: 0;
+}
+
 /* Aurora's light surface makes black drops read heavy — soften the drop. */
 :root[data-theme="aurora"] .unified-agent-active {
   --unified-agent-drop: 0 1px 2px rgb(0 0 0 / 0.06), 0 6px 16px -8px rgb(0 0 0 / 0.12);

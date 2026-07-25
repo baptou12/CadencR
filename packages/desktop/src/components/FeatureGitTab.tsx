@@ -230,7 +230,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           value={viewMode}
           onChange={handleViewModeChange}
           targetBranch={targetBranch}
-          prLabel={prStatus?.pr?.pr_label ?? "PR"}
+          prLabel={prStatus?.pr?.pr_label}
           prAttention={prAttention}
           disabled={setFeatureSetting.isPending}
         />

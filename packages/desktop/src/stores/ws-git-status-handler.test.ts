@@ -36,7 +36,7 @@ const validSnapshot = {
   has_remote: true,
   host: "GitHub" as const,
   compare_url: "https://github.com/org/repo/compare/main...feature/foo",
-  action_label: "Open PR",
+  action_label: "Open pull request",
   computed_at: 1_700_000_000_000,
 };
 
@@ -57,7 +57,7 @@ const validPrSnapshot = {
     review_state: "pending",
     author: { username: "octocat", display_name: null, avatar_url: null },
     updated_at: "2026-07-23T10:00:00Z",
-    pr_label: "PR",
+    pr_label: "Pull request",
   },
   ci: { state: "passing", checks: [] },
 } as const;

@@ -103,15 +103,22 @@ pub async fn ensure_worktree(
 }
 
 /// Create a new branch forked from `base` (or the project's current HEAD),
-/// checked out in the **project path itself** — no worktree, no setup script,
-/// no `worktree_*` settings persisted. This backs the "From branch" UX, which
-/// is deliberately worktree-free: the agent runs in the project folder exactly
-/// like "On branch", just on a freshly forked branch. Called from the prompt
-/// send flow *after* auto-naming (see `prepare_branch_provisioning`) so the
-/// branch name reflects the prompt-derived feature title, matching how the
-/// worktree path names its branch. Returns the new branch name.
+/// checked out in the **project path itself** — no worktree and no setup
+/// script. This backs the "From branch" UX, which is deliberately
+/// worktree-free: the agent runs in the project folder exactly like
+/// "On branch", just on a freshly forked branch. Called from the prompt send
+/// flow *after* auto-naming (see `prepare_branch_provisioning`) so the branch
+/// name reflects the prompt-derived feature title, matching how the worktree
+/// path names its branch. Returns the new branch name.
+///
+/// The name is recorded under `feature_branch` — never `worktree_branch`,
+/// which the UI reads as "this feature has a worktree". Without that record
+/// nothing remembers which branch the conversation is bound to, and every git
+/// surface falls back to whatever the shared project checkout has at HEAD
+/// (see `git::service::feature_branch`).
 pub async fn create_project_branch(
     read_pool: &SqlitePool,
+    write_pool: &SqlitePool,
     feature_id: i64,
     project_id: i64,
     base: Option<&str>,
@@ -119,6 +126,13 @@ pub async fn create_project_branch(
     let project_dir = get_project_directory(read_pool, project_id).await?;
     let branch = new_branch::derive_branch_name(read_pool, feature_id, project_id).await?;
     new_branch::create_branch_in_project(&project_dir, &branch, base).await?;
+    set_setting(
+        write_pool,
+        feature_id,
+        crate::domain::git::service::SETTING_FEATURE_BRANCH,
+        &branch,
+    )
+    .await?;
     Ok(branch)
 }
 

@@ -1,5 +1,5 @@
 import { memo, useCallback, useRef, type ReactElement } from "react";
-import { BotIcon, PinOffIcon } from "lucide-react";
+import { PinOffIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProjectBadge } from "@/components/ProjectBadge";
@@ -8,8 +8,8 @@ import { useFeatureStatus } from "@/stores/session-status-selectors";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useIsFeatureUnread } from "@/stores/unread-store";
 import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
+import { FeatureRowStatusIcon } from "@/components/ProjectFeatureRowParts";
 import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
-import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
 import type { Feature } from "@/api/generated";
 
 interface PinnedConversationRowProps {
@@ -72,20 +72,13 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
     >
       <ProjectBadge projectId={feature.project_id} />
 
-      {/* Live status icon driven by the per-session backend store. */}
-      <div className="flex w-3.5 shrink-0 items-center justify-center">
-        {liveStatus === "agent" && <BotIcon className="size-3.5 animate-pulse text-blue-500" />}
-        {liveStatus === "question" && (
-          <SidebarPendingGatePopover
-            featureId={feature.id}
-            allowAutoOpen={!isActive}
-            onOpenConversation={handleOpenConversation}
-          />
-        )}
-        {liveStatus === "idle" && isUnread && (
-          <span className="size-2 rounded-full bg-blue-500" aria-label="Unread agent messages" />
-        )}
-      </div>
+      <FeatureRowStatusIcon
+        featureId={feature.id}
+        liveStatus={liveStatus}
+        isActive={isActive}
+        isUnread={isUnread}
+        onOpenConversation={handleOpenConversation}
+      />
 
       <SidebarProviderBadge
         providerId={feature.runtime_provider}

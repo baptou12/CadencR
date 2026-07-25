@@ -101,8 +101,9 @@ fn parse_graph_log(output: &str) -> Vec<CommitGraphEntry> {
     commits
 }
 
-/// Paginated commit graph over the union of `tips` (e.g. `HEAD` and the local
-/// target branch). Returns up to `limit` commits starting at `skip`.
+/// Paginated commit graph over the union of `tips` (e.g. the feature's own
+/// revision and the local target branch). Returns up to `limit` commits
+/// starting at `skip`.
 pub async fn get_commit_graph(
     repo_path: &Path,
     tips: &[String],
@@ -122,11 +123,14 @@ pub async fn get_commit_graph(
     ];
     let tip_refs: Vec<&str> = tips.iter().map(String::as_str).collect();
     guard_positionals(&tip_refs)?;
-    args.extend(tip_refs);
+    args.extend(tip_refs.iter().copied());
     let stdout = run_git_quiet(&args, repo_path).await;
     let mut commits = parse_graph_log(&stdout);
 
-    let unpushed = get_unpushed_shas(repo_path).await;
+    // Painted over every tip drawn, not just the feature's own: the graph shows
+    // the target branch too, and a commit sitting unpushed on `main` must not
+    // read as pushed merely because it isn't on this feature's branch.
+    let unpushed = get_unpushed_shas(repo_path, &tip_refs).await;
     for c in commits.iter_mut() {
         c.is_pushed = match &unpushed {
             None => false,
@@ -284,6 +288,21 @@ mod tests {
             .unwrap();
         assert!(feature_only.iter().any(|c| c.message == "feat"));
         assert!(!feature_only.iter().any(|c| c.message == "main work"));
+
+        // Push only the feature branch. Every drawn tip is painted, so the
+        // commit that exists only on `main` still reports as unpushed — it used
+        // to read as pushed because the split was computed from one tip.
+        run_git(
+            &["update-ref", "refs/remotes/origin/feature/x", "feature/x"],
+            path,
+        )
+        .await
+        .unwrap();
+        let painted = get_commit_graph(path, &tips, 0, 50).await.unwrap();
+        let pushed = |m: &str| painted.iter().find(|c| c.message == m).unwrap().is_pushed;
+        assert!(pushed("feat"), "the pushed feature tip");
+        assert!(pushed("base"), "shared ancestor rode along");
+        assert!(!pushed("main work"), "unpushed on the target tip");
     }
 
     #[tokio::test]

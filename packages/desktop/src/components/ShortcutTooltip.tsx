@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { KbdShortcut } from "@/components/KbdShortcut";
+import { focusFollowedKeyboardNavigation } from "@/lib/focus-navigation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { cn } from "@/lib/utils";
@@ -69,6 +70,16 @@ export function ShortcutTooltip({
     setVisible(false);
   }
 
+  /**
+   * Only focus the user navigated to counts as intent. Panes restore focus to
+   * their active tab trigger on mount, and plain `onFocus` turned that into a
+   * tooltip hanging open over the content with the cursor nowhere near it.
+   */
+  function handleFocus(): void {
+    if (!focusFollowedKeyboardNavigation()) return;
+    handleMouseEnter();
+  }
+
   const side = toRight ? "right" : above ? "top" : "bottom";
   const align = alignRight ? "end" : alignLeft ? "start" : "center";
 
@@ -80,7 +91,7 @@ export function ShortcutTooltip({
             className={cn("relative inline-flex", className)}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
-            onFocus={handleMouseEnter}
+            onFocus={handleFocus}
             onBlur={handleMouseLeave}
           >
             {children}

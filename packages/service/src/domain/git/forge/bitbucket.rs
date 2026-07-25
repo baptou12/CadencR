@@ -344,6 +344,6 @@ mod tests {
         assert_eq!(pulls.len(), 1);
         assert_eq!(pulls[0].number, 9);
         assert_eq!(pulls[0].head_sha, "b".repeat(40));
-        assert_eq!(pulls[0].pr_label, "PR");
+        assert_eq!(pulls[0].pr_label, "Pull request");
     }
 }

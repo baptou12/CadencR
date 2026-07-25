@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@/test-utils";
+import { focusFollowedKeyboardNavigation } from "@/lib/focus-navigation";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 
 function tooltipContent(): HTMLElement {
@@ -9,6 +10,12 @@ function tooltipContent(): HTMLElement {
 }
 
 describe("ShortcutTooltip", () => {
+  // Reading consumes any recorded keyboard-navigation intent, so a case that
+  // pressed Tab can't leak that intent into the next one.
+  beforeEach(() => {
+    focusFollowedKeyboardNavigation();
+  });
+
   it("renders children", () => {
     render(
       <ShortcutTooltip label="Test" keys={["cmd", "K"]}>
@@ -38,6 +45,48 @@ describe("ShortcutTooltip", () => {
     expect(tooltipContent()).toHaveTextContent("My label");
 
     fireEvent.mouseLeave(wrapper);
+    expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
+  });
+
+  it("ignores programmatic focus so a restored tab focus can't pop the bubble", () => {
+    render(
+      <ShortcutTooltip label="Git" keys={["cmd", "shift", "G"]}>
+        <button>Git</button>
+      </ShortcutTooltip>,
+    );
+    const trigger = screen.getByText("Git");
+
+    trigger.focus();
+    fireEvent.focus(trigger);
+
+    expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
+  });
+
+  it("shows the bubble when the user tabbed to the trigger", () => {
+    render(
+      <ShortcutTooltip label="Git" keys={["cmd", "shift", "G"]}>
+        <button>Git</button>
+      </ShortcutTooltip>,
+    );
+    const trigger = screen.getByText("Git");
+
+    fireEvent.keyDown(window, { key: "Tab" });
+    fireEvent.focus(trigger);
+
+    expect(tooltipContent()).toHaveTextContent("Git");
+  });
+
+  it("ignores focus a pane shortcut moved for us", () => {
+    render(
+      <ShortcutTooltip label="Git" keys={["cmd", "shift", "G"]}>
+        <button>Git</button>
+      </ShortcutTooltip>,
+    );
+    const trigger = screen.getByText("Git");
+
+    fireEvent.keyDown(window, { key: "g", metaKey: true, shiftKey: true });
+    fireEvent.focus(trigger);
+
     expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
   });
 

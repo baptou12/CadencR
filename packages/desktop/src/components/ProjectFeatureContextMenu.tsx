@@ -5,6 +5,7 @@ import {
   ArrowRightIcon,
   FolderGit2Icon,
   GitBranchIcon,
+  GitPullRequestIcon,
   PinIcon,
   PinOffIcon,
   TagIcon,
@@ -14,21 +15,23 @@ import {
 } from "lucide-react";
 import { ContextMenuSeparator } from "@/components/ui/context-menu";
 import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
-import type { Feature, FeatureWorktreeInfo } from "@/api/generated";
+import type { Feature, FeatureWorktreeInfo, PrSummary } from "@/api/generated";
 import { closeFeatureActivityNoun } from "@/lib/feature-activity-close";
 import { copyToClipboard } from "@/lib/clipboard";
+import { openPullRequestActionLabel, openPullRequestExternally } from "@/lib/open-pull-request";
+import { archiveActionLabel, pinActionLabel } from "@/components/ProjectFeatureRowParts";
 
 interface ProjectFeatureContextMenuProps {
   feature: Feature;
   liveTitle: string | undefined;
   worktree: FeatureWorktreeInfo | undefined;
+  /** Open proposal on the feature's branch, when the forge poller found one. */
+  pullRequest: PrSummary | null | undefined;
   isArchived: boolean;
   isPinned: boolean;
   hasActivity: boolean;
   shellCount: number;
   browserCount: number;
-  archiveActionLabel: string;
-  pinActionLabel: string;
   onNavigate: (feature: Feature) => void;
   onTogglePin: (featureId: number, pinned: boolean) => void;
   onStartLabelEditAfterMenuClose: () => void;
@@ -41,13 +44,12 @@ export function ProjectFeatureContextMenu({
   feature,
   liveTitle,
   worktree,
+  pullRequest,
   isArchived,
   isPinned,
   hasActivity,
   shellCount,
   browserCount,
-  archiveActionLabel,
-  pinActionLabel,
   onNavigate,
   onTogglePin,
   onStartLabelEditAfterMenuClose,
@@ -68,7 +70,7 @@ export function ProjectFeatureContextMenu({
           icon={isPinned ? PinOffIcon : PinIcon}
           onSelect={() => onTogglePin(feature.id, !isPinned)}
         >
-          {pinActionLabel}
+          {pinActionLabel(isPinned)}
         </ContextMenuActionItem>
       )}
       <ContextMenuActionItem icon={TagIcon} onSelect={onStartLabelEditAfterMenuClose}>
@@ -83,6 +85,14 @@ export function ProjectFeatureContextMenu({
         </ContextMenuActionItem>
       )}
       <ContextMenuSeparator />
+      {pullRequest && (
+        <ContextMenuActionItem
+          icon={GitPullRequestIcon}
+          onSelect={() => void openPullRequestExternally(pullRequest)}
+        >
+          {`${openPullRequestActionLabel(pullRequest)} #${pullRequest.number}`}
+        </ContextMenuActionItem>
+      )}
       <ContextMenuActionItem
         icon={GitBranchIcon}
         disabled={!branch}
@@ -115,7 +125,7 @@ export function ProjectFeatureContextMenu({
         variant="destructive"
         onSelect={() => onArchiveOrDelete(feature.id)}
       >
-        {archiveActionLabel}
+        {archiveActionLabel(isArchived)}
       </ContextMenuActionItem>
     </>
   );

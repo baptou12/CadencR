@@ -60,6 +60,17 @@ describe("GitTabToggle", () => {
     expect(onChange).toHaveBeenCalledWith("pr");
   });
 
+  it("reveals the tab's keyboard shortcut on hover", () => {
+    render(<GitTabToggle value="uncommitted" onChange={vi.fn()} prLabel="Pull request" />);
+
+    fireEvent.mouseEnter(screen.getByRole("tab", { name: "Pull request" }).parentElement!);
+
+    const tip = document.querySelector<HTMLElement>('[data-slot="tooltip-content"]')!;
+    expect(tip).toHaveTextContent("Pull request status, checks, and comments");
+    // ⌘P — the binding registered for `git-show-pull-request`.
+    expect(tip).toHaveTextContent("P");
+  });
+
   it("disables both tabs when disabled is true", () => {
     render(<GitTabToggle value="uncommitted" onChange={vi.fn()} targetBranch="main" disabled />);
     expect(screen.getByRole("tab", { name: "Uncommitted" })).toBeDisabled();

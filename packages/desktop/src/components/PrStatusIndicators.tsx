@@ -1,14 +1,7 @@
 import { GitPullRequestIcon } from "lucide-react";
-import type { CiState, PrStatusSnapshot } from "@/api/generated";
+import type { PrStatusSnapshot, PrSummary } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { cn } from "@/lib/utils";
-
-const CI_STYLE: Record<CiState, string> = {
-  none: "bg-muted-foreground/50",
-  running: "bg-[var(--acc-orange)] animate-pulse",
-  passing: "bg-[var(--acc-green)]",
-  failing: "bg-[var(--acc-red)]",
-};
 
 export type PrIndicatorTone = "blocked" | "danger" | "merged" | "neutral" | "ready";
 
@@ -42,15 +35,18 @@ export function prIndicatorTone(snapshot: PrStatusSnapshot | undefined): PrIndic
   if (!pr) return "neutral";
   if (pr.state === "merged") return "merged";
   if (pr.state === "closed") return "neutral";
+  // Red outranks orange: a failing check run is the one thing the user has to
+  // act on, and "awaiting review" is the most common state to be in while it
+  // fails. The sidebar has no second slot left to say it in.
+  if (snapshot.error || snapshot.ci?.state === "failing") return "danger";
   if (
     pr.state === "draft" ||
     pr.review_state === "changes_requested" ||
     pr.review_state === "pending" ||
-    snapshot?.ci?.state === "running"
+    snapshot.ci?.state === "running"
   ) {
     return "blocked";
   }
-  if (snapshot.error || snapshot.ci?.state === "failing") return "danger";
   return "ready";
 }
 
@@ -70,49 +66,42 @@ export function prStatusLabel(snapshot: PrStatusSnapshot): string {
   } else if (details.length === 0) {
     details.push("no blockers reported");
   }
-  return `${pr.pr_label} ${pr.number} · ${details.join(" · ")}`;
+  return `${pr.pr_label} #${pr.number} · ${details.join(" · ")}`;
 }
 
-export function CiStatusDot({
+/**
+ * The sidebar row's forge slot. Normally the proposal chip; when a host lookup
+ * failed before any proposal was found there is no chip to tint, so the error
+ * still surfaces as a dot rather than disappearing.
+ */
+export function FeaturePrIndicator({
   snapshot,
-  className,
 }: {
   snapshot: PrStatusSnapshot | undefined;
-  className?: string;
 }): React.JSX.Element | null {
-  if (snapshot?.error) {
+  if (!snapshot?.pr) {
+    if (!snapshot?.error) return null;
     return (
       <span
-        className={cn(
-          "size-1.5 rounded-full bg-[var(--acc-red)] ring-1 ring-background",
-          className,
-        )}
+        className="size-1.5 shrink-0 rounded-full bg-[var(--acc-red)] ring-1 ring-background"
         aria-label={`Forge status error: ${snapshot.error}`}
         title={snapshot.error}
       />
     );
   }
-  const state = snapshot?.ci?.state;
-  if (!state || state === "none") return null;
-  const label = `Checks ${state}`;
-  return (
-    <span
-      className={cn("size-1.5 rounded-full ring-1 ring-background", CI_STYLE[state], className)}
-      aria-label={label}
-      title={label}
-    />
-  );
+  return <FeaturePrChip snapshot={snapshot} pr={snapshot.pr} />;
 }
 
-export function FeaturePrChip({
+function FeaturePrChip({
   snapshot,
+  pr,
 }: {
-  snapshot: PrStatusSnapshot | undefined;
-}): React.JSX.Element | null {
-  const pr = snapshot?.pr;
-  if (!pr) return null;
+  snapshot: PrStatusSnapshot;
+  pr: PrSummary;
+}): React.JSX.Element {
   const label = prStatusLabel(snapshot);
   const tone = prIndicatorTone(snapshot);
+  const running = snapshot.ci?.state === "running";
   return (
     <ShortcutTooltip label={label} toRight className="shrink-0">
       <span
@@ -120,6 +109,9 @@ export function FeaturePrChip({
           "inline-flex h-5 max-w-full shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] font-medium leading-none tabular-nums",
           PR_CHIP_SURFACE[tone],
           PR_ICON_STYLE[tone],
+          // A live check run is the one state worth a halo, and it breathes so
+          // it reads as "still working". Settled verdicts stay flat.
+          running && "pr-chip-checks-running",
         )}
         aria-label={label}
       >

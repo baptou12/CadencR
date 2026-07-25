@@ -36,10 +36,10 @@ fn parse_git_log(output: &str) -> Vec<CommitLogEntry> {
     commits
 }
 
-/// Set of SHAs reachable from `HEAD` but not from any remote-tracking ref —
-/// i.e. the commits that haven't been pushed *anywhere*. Returns `None` only
-/// on a hard git error (broken repo, no HEAD); a clean repo with no remotes
-/// at all reports `Some(<every commit on HEAD>)` and the caller correctly
+/// Set of SHAs reachable from any of `revs` but not from any remote-tracking
+/// ref — i.e. the commits that haven't been pushed *anywhere*. Returns `None`
+/// only on a hard git error (broken repo, no HEAD); a clean repo with no remotes
+/// at all reports `Some(<every commit on revs>)` and the caller correctly
 /// flags them all as unpushed.
 ///
 /// **Why not `origin/{branch}..HEAD`?** That older approach made two
@@ -55,14 +55,22 @@ fn parse_git_log(output: &str) -> Vec<CommitLogEntry> {
 /// or computed the wrong delta (commits stayed orange after a successful
 /// push, even across an app restart — the bug the user reported).
 ///
-/// `git rev-list HEAD --not --remotes` answers the actual question
+/// `git rev-list <revs> --not --remotes` answers the actual question
 /// (regardless of remote name or branch-name mapping) and matches the
 /// behavior `count_unpushed` in `git_status` already uses for the
 /// no-upstream snapshot path. **Argument order matters**: `--not` flips
-/// the polarity of every ref token that *follows*, so `HEAD` must come
+/// the polarity of every ref token that *follows*, so `revs` must come
 /// first (positive) and `--remotes` after `--not` (negative).
-pub(super) async fn get_unpushed_shas(repo_path: &Path) -> Option<HashSet<String>> {
-    match run_git(&["rev-list", "HEAD", "--not", "--remotes"], repo_path).await {
+///
+/// `revs` is every revision the caller is about to paint — the feature's own
+/// tip rather than always `HEAD` (so a feature reading a branch it no longer
+/// has checked out still gets that branch's split), plus any other tip whose
+/// commits appear in the same view.
+pub(super) async fn get_unpushed_shas(repo_path: &Path, revs: &[&str]) -> Option<HashSet<String>> {
+    let mut args = vec!["rev-list"];
+    args.extend_from_slice(revs);
+    args.extend_from_slice(&["--not", "--remotes"]);
+    match run_git(&args, repo_path).await {
         Ok(stdout) => Some(
             stdout
                 .trim()
@@ -88,11 +96,15 @@ fn apply_pushed_status(commits: &mut [CommitLogEntry], unpushed: Option<&HashSet
 }
 
 /// Get commit log for a feature branch relative to a base branch.
+///
+/// `head_rev` is the feature's own tip — `HEAD` only when its branch is the one
+/// checked out at `worktree_path`. See `service::resolve_feature_revision`.
 pub async fn get_commit_log(
     worktree_path: &Path,
     base_branch: &str,
+    head_rev: &str,
 ) -> Result<Vec<CommitLogEntry>, AppError> {
-    let range = format!("{base_branch}..HEAD");
+    let range = format!("{base_branch}..{head_rev}");
     let format_arg = format!("\x1e%H%n%h%n%s%n%an%n%ai%n%b");
     let stdout = run_git_quiet(
         &[
@@ -106,26 +118,28 @@ pub async fn get_commit_log(
     .await;
 
     let mut commits = parse_git_log(&stdout);
-    let unpushed = get_unpushed_shas(worktree_path).await;
+    let unpushed = get_unpushed_shas(worktree_path, &[head_rev]).await;
     apply_pushed_status(&mut commits, unpushed.as_ref());
     Ok(commits)
 }
 
-/// Get recent commits on the current branch.
+/// Get recent commits on `rev` — the feature's own branch, which is `HEAD` only
+/// when that branch is the one checked out at `repo_path`.
 pub async fn get_recent_commits(
     repo_path: &Path,
     limit: i64,
+    rev: &str,
 ) -> Result<Vec<CommitLogEntry>, AppError> {
     let format_arg = format!("\x1e%H%n%h%n%s%n%an%n%ai%n%b");
     let limit_arg = format!("-{limit}");
     let stdout = run_git_quiet(
-        &["log", &format!("--format={format_arg}"), &limit_arg],
+        &["log", rev, &format!("--format={format_arg}"), &limit_arg],
         repo_path,
     )
     .await;
 
     let mut commits = parse_git_log(&stdout);
-    let unpushed = get_unpushed_shas(repo_path).await;
+    let unpushed = get_unpushed_shas(repo_path, &[rev]).await;
     apply_pushed_status(&mut commits, unpushed.as_ref());
     Ok(commits)
 }
@@ -181,7 +195,7 @@ mod tests {
         let head = head.trim().to_string();
 
         // No remote-tracking ref yet → every commit is unpushed.
-        let unpushed = get_unpushed_shas(path).await.unwrap();
+        let unpushed = get_unpushed_shas(path, &["HEAD"]).await.unwrap();
         assert!(
             unpushed.contains(&head),
             "with no remote refs, HEAD should be reported as unpushed"
@@ -195,7 +209,7 @@ mod tests {
             .await
             .unwrap();
 
-        let unpushed = get_unpushed_shas(path).await.unwrap();
+        let unpushed = get_unpushed_shas(path, &["HEAD"]).await.unwrap();
         assert!(
             !unpushed.contains(&head),
             "after a remote-tracking ref reaches HEAD, the commit must be \

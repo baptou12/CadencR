@@ -5,10 +5,8 @@ use futures::{stream, StreamExt};
 
 use crate::app_state::AppState;
 use crate::domain::git::host::{detect_origin_remote, RemoteInfo};
-use crate::domain::git::refs::normalize_branch_identity;
-use crate::domain::git::{repository as git_repository, service};
+use crate::domain::git::service;
 use crate::error::AppError;
-use crate::shared::git_cli::run_git_background;
 
 #[derive(Debug, Clone)]
 pub struct FeatureForgeTarget {
@@ -79,23 +77,15 @@ async fn try_resolve_feature_target(
         .ok_or_else(|| {
             AppError::NotFound(format!("No repository found for feature {feature_id}"))
         })?;
-    let configured_branch =
-        git_repository::get_feature_setting(&state.read_pool, feature_id, "worktree_branch")
-            .await?;
-    let branch = match configured_branch.filter(|value| !value.trim().is_empty()) {
-        Some(branch) => Some(normalize_branch_identity(&branch).to_string()),
-        None => current_branch(Path::new(&path)).await,
-    };
+    // The branch the feature is *bound to*, not whatever the resolved
+    // repository happens to have checked out: a feature whose worktree was
+    // removed, or one created by the worktree-free "From branch" flow, both
+    // resolve to the project directory, whose HEAD is usually the default
+    // branch. Matching PRs against that would report the wrong proposal.
+    let branch =
+        service::resolve_feature_branch(&state.read_pool, feature_id, Path::new(&path)).await?;
     let remote = remote_for_path(Path::new(&path)).await;
     Ok((branch, remote))
-}
-
-async fn current_branch(path: &Path) -> Option<String> {
-    let branch = run_git_background(&["branch", "--show-current"], path)
-        .await
-        .ok()?;
-    let branch = branch.trim();
-    (!branch.is_empty()).then(|| branch.to_string())
 }
 
 async fn remote_for_path(path: &Path) -> Option<RemoteInfo> {

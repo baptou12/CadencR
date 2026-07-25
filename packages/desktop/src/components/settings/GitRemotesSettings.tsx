@@ -21,12 +21,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SettingsCard } from "@/components/settings/SettingsCard";
-import { SettingsSection } from "@/components/settings/SettingsSection";
+import { SettingsHeading } from "@/components/settings/SettingsHeading";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { queryClient } from "@/lib/queryClient";
 import { refreshPrStatusesAfterAuth } from "@/stores/pr-status-hydration";
 
-export function ForgeSection(): ReactElement {
+/**
+ * Remote-host connections inside the Git settings section. Connecting a host
+ * is what turns on pull request / merge request status, checks, and comments —
+ * it isn't a separate concern from Git, so it renders as a group under "Git"
+ * rather than a top-level section of its own.
+ */
+export function GitRemotesSettings(): ReactElement {
   const statusQuery = useGetForgeAuthStatus({ query: { retry: false } });
   const saveToken = usePutForgeToken();
   const deleteToken = useDeleteForgeToken();
@@ -79,12 +85,11 @@ export function ForgeSection(): ReactElement {
   };
 
   return (
-    <SettingsSection
-      id="forges"
-      title="Forges"
-      subtitle="Pull requests · checks · comments"
-      description="Tokens are stored locally in an owner-only secret file, never in workspace settings."
-    >
+    <div className="space-y-3">
+      <SettingsHeading
+        title="Remote connections"
+        description="Connect the host behind each project's origin remote to show pull request and merge request status, checks, and comments. Tokens are stored locally in an owner-only secret file, never in workspace settings."
+      />
       {statusQuery.isLoading && (
         <SettingsCard padded>
           <p className="inline-flex items-center gap-2 text-sm text-muted-foreground" role="status">
@@ -96,7 +101,7 @@ export function ForgeSection(): ReactElement {
         <SettingsCard padded tone="danger">
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm text-destructive">
-              {apiErrorMessage(statusQuery.error, "Could not load forge settings")}
+              {apiErrorMessage(statusQuery.error, "Could not load remote connections")}
             </p>
             <Button variant="outline" size="sm" onClick={refreshForgeAuthStatus}>
               <RefreshCwIcon className="mr-1.5 size-3.5" aria-hidden /> Retry
@@ -121,7 +126,7 @@ export function ForgeSection(): ReactElement {
           onDisconnect={disconnect}
         />
       ))}
-    </SettingsSection>
+    </div>
   );
 }
 
@@ -174,7 +179,7 @@ function ForgeHostCard({
       description={
         status.validated_user
           ? `Connected as ${status.validated_user.username} via ${status.source ?? "token"}`
-          : "Connect to enable pull request detection for this host."
+          : "Connect to detect pull requests and merge requests on this host."
       }
       action={
         status.validated_user ? (
@@ -248,7 +253,7 @@ function ForgeHostControls({
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
-        <LabeledControl label="Forge kind">
+        <LabeledControl label="Provider">
           <Select
             value={kind}
             onValueChange={(value) => onKindChange(value as GitHost)}
@@ -270,7 +275,7 @@ function ForgeHostControls({
           <Input
             value={apiBaseUrl}
             onChange={(event) => onApiBaseUrlChange(event.target.value)}
-            placeholder="https://forge.example/api/…"
+            placeholder="https://git.example.com/api/…"
             disabled={disabled}
           />
         </LabeledControl>
@@ -301,7 +306,9 @@ function ForgeHostControls({
       {status.cli_auth_available && (
         <label className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
           <span>
-            <span className="block text-sm font-medium">Reuse installed forge CLI token</span>
+            <span className="block text-sm font-medium">
+              Reuse the installed provider CLI token
+            </span>
             <span className="block text-xs text-muted-foreground">
               Opt in to the authenticated local CLI when no stored token exists.
             </span>

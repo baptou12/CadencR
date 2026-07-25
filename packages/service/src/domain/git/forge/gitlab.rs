@@ -329,6 +329,6 @@ mod tests {
         assert_eq!(pulls.len(), 1);
         assert_eq!(pulls[0].number, 23);
         assert_eq!(pulls[0].state, PrState::Draft);
-        assert_eq!(pulls[0].pr_label, "MR");
+        assert_eq!(pulls[0].pr_label, "Merge request");
     }
 }
