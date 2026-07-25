@@ -7,7 +7,9 @@ import { isIos } from "@/lib/is-ios";
 import { isAutoScrollPinSuppressed } from "@/lib/agent-scroll-suppression";
 import {
   canScroll,
+  pinToBottom,
   MAX_VIEWPORT_FILL_PAGES,
+  PIN_EPSILON_PX,
   type HistoryAnchor,
   type UseAgentSessionScrollResult,
 } from "./agent-session-scroll-utils";
@@ -109,7 +111,7 @@ export function useAgentSessionScroll({
   const pinScrollerToEnd = useCallback((): void => {
     const el = scrollerElRef.current;
     if (!el || !stickRef.current) return;
-    el.scrollTop = el.scrollHeight;
+    pinToBottom(el);
   }, []);
 
   const pinToEnd = useCallback((): void => {
@@ -149,7 +151,7 @@ export function useAgentSessionScroll({
     if (scrollHeightDelta <= 0) return;
 
     const targetScrollTop = anchor.scrollTop + scrollHeightDelta;
-    if (Math.abs(el.scrollTop - targetScrollTop) <= 1) return;
+    if (Math.abs(el.scrollTop - targetScrollTop) <= PIN_EPSILON_PX) return;
 
     el.scrollTop = targetScrollTop;
     lastScrollTopRef.current = targetScrollTop;

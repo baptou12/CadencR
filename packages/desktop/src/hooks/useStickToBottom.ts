@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   canScroll,
   isVerticalScrollbarPointer,
+  pinToBottom,
 } from "@/components/agent-session/agent-session-scroll-utils";
 import { isResizing } from "@/lib/resize-coordinator";
 
@@ -51,7 +52,7 @@ export function useStickToBottom(active: boolean): StickToBottomHandles {
   const pin = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    pinToBottom(el);
     lastScrollTopRef.current = el.scrollTop;
   }, []);
 

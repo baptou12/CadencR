@@ -1,9 +1,11 @@
 import { useCallback, useRef } from "react";
 import { isAutoScrollPinSuppressed } from "@/lib/agent-scroll-suppression";
+import { isIos } from "@/lib/is-ios";
 import { isResizing } from "@/lib/resize-coordinator";
 import {
   canScroll,
   isVerticalScrollbarPointer,
+  pinToBottom,
   HISTORY_SCROLL_TOP_PX,
   type ScrollRef,
 } from "./agent-session-scroll-utils";
@@ -172,17 +174,44 @@ export function useAgentSessionScrollInput({
  * scroll during a drag), so it never fights a scrolled-up reader or a resize.
  * Degrades to the (one-frame-late) `followOutput` behaviour if Virtuoso's DOM
  * contract changes and the item list can't be found.
+ *
+ * ## Never on iOS
+ *
+ * Writing an absolute `scrollTop` fights Virtuoso's iOS path, which corrects
+ * position through a CSS "deviation" offset instead of a direct scroll (the
+ * same reason `captureHistoryAnchor` skips iOS). The two form a closed loop:
+ * our write emits a `scroll` event → Virtuoso re-renders and re-applies its
+ * correction → that commit mutates the observed list → the observer fires and
+ * we write again. It never converges, because the list's height oscillates
+ * between the two states, so no value-comparison guard can break it. Left
+ * running it pegs the main thread and eventually trips React's nested-update
+ * guard (error #185). `followOutput` keeps iOS pinned, one frame later.
  */
 function observeListGrowth(
   scroller: HTMLElement,
   stickRef: React.MutableRefObject<boolean>,
   observerRef: React.MutableRefObject<MutationObserver | null>,
 ): void {
+  if (isIos()) return;
   const list = scroller.querySelector<HTMLElement>('[data-testid="virtuoso-item-list"]');
   if (!list) return;
+  let lastScrollHeight = scroller.scrollHeight;
   const observer = new MutationObserver(() => {
+    // Cheap guards before any geometry: this fires on every mutation batch, and
+    // reading `scrollHeight` forces a synchronous layout of the whole
+    // transcript. A reader who scrolled up during a stream hits this path ~10
+    // times a second and must not pay for it. Bailing before the read also
+    // leaves `lastScrollHeight` behind, so growth that lands mid-suppression is
+    // still pending and the first eligible mutation catches up.
     if (!stickRef.current || isAutoScrollPinSuppressed() || isResizing()) return;
-    scroller.scrollTop = scroller.scrollHeight;
+    // Growth is the only thing worth re-pinning for. Reacting to every mutation
+    // instead would fight a scroll that has not disengaged bottom-stick yet —
+    // Virtuoso re-renders on scroll, and that re-render is itself a mutation.
+    const scrollHeight = scroller.scrollHeight;
+    const grew = scrollHeight > lastScrollHeight;
+    lastScrollHeight = scrollHeight;
+    if (!grew) return;
+    pinToBottom(scroller);
   });
   observer.observe(list, { childList: true, subtree: true, characterData: true });
   observerRef.current = observer;
