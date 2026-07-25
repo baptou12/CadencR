@@ -23,9 +23,14 @@ const WINDOW: Duration = Duration::from_secs(60);
 /// Pairing-code attempts per IP per window. A code is single-use and expires in
 /// ~120s, so a legitimate device needs only one or two attempts.
 const PAIR_LIMIT: u32 = 5;
-/// All other remote requests per IP per window. Generous enough for an active
-/// session (polling + WS handshakes) yet still a ceiling on scripted abuse.
-const GENERAL_LIMIT: u32 = 300;
+/// All other remote requests per IP per window, counted *before* auth (this
+/// layer wraps `remote_auth_middleware`), so SPA assets and rejected tokens
+/// count too. A phone opening the app bursts well past a "reasonable" steady
+/// rate — hashed chunks and fonts, agent catalog, per-project settings, git
+/// stats, WS handshakes — and tripping this only produced 429s the client
+/// retried into. Sized as a runaway backstop rather than a traffic policy;
+/// pairing brute-force is bounded separately by `PAIR_LIMIT`.
+const GENERAL_LIMIT: u32 = 6000;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Bucket {
@@ -124,6 +129,25 @@ mod tests {
         assert!(
             limiter.check(ip(1), Bucket::Pair, now).is_err(),
             "6th pair attempt is limited"
+        );
+    }
+
+    /// The general bucket has to absorb a phone's cold-open burst (SPA assets
+    /// plus a few hundred API calls) without shedding; only a runaway loop
+    /// should reach it.
+    #[test]
+    fn general_bucket_absorbs_a_client_burst_then_trips() {
+        let limiter = RateLimiter::default();
+        let now = Instant::now();
+        for i in 0..GENERAL_LIMIT {
+            assert!(
+                limiter.check(ip(1), Bucket::General, now).is_ok(),
+                "request {i} is within the general limit"
+            );
+        }
+        assert!(
+            limiter.check(ip(1), Bucket::General, now).is_err(),
+            "the general bucket still has a ceiling"
         );
     }
 
