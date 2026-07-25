@@ -229,6 +229,17 @@ body,
   animation: unified-agent-focus-flash 200ms ease-out 1;
 }
 
+/* Sidebar worktree group ("these conversations share one worktree"). The fill
+ * can't be a palette token: `--muted` equals `--sidebar` in cadencr-light and
+ * is one step from it in cadencr-dark, so the former `bg-muted/30` vanished
+ * exactly where the grouping matters. A foreground wash contrasts with any
+ * sidebar surface, and the rim reuses the sidebar's own hairline. The fill
+ * stays under the row hover/active tint so a group never reads as selected. */
+@utility worktree-group {
+  background-color: color-mix(in oklab, var(--sidebar-foreground) 5%, transparent);
+  border-color: var(--sidebar-border);
+}
+
 /* Sidebar pull/merge-request chip whose checks are still running: a breathing
  * halo. Only this one transient state glows — a settled verdict is already
  * carried by the chip's border and fill, and a permanent glow on every row
