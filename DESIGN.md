@@ -467,6 +467,7 @@ The dot's color is the meaning. Do not introduce a fourth color without register
 - **Orange chip** = "in progress" / dev-pill. Bound to `warning` / `--acc-orange`.
 - **Cyan path** = file reference. Bound to `info` / `--acc-cyan` (`--ic-file-fg`).
 - **Pink chip** = mention / `@thing`. Bound to `--ic-fg` (`--acc-pink` in Dracula).
+- **Yellow chip** = checks green, humans still waiting (a proposal whose CI reports passing and whose review threads are unresolved). Bound to `--acc-yellow`. Distinct from the orange "in progress" chip on purpose: nothing is running or failing, the ball is in the author's court. A repo with no CI at all keeps its check-driven chip — the count is only looked up for a reported pass, so "no checks" stays neutral rather than yellow.
 
 **Semantic colors are token-owned.** Do not infer meaning from hue alone. Emerald Reserve intentionally uses green for brand primary while file changes use a distinct leaf green; components must consume `--primary`, `--acc-green`, `--acc-red`, and the block tokens by role. A non-semantic surface uses the neutral `--accent` wash, not a copied hex.
 

@@ -12,7 +12,7 @@ import { AuthorInitials, relativeTime } from "@/components/FeaturePrViewParts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { openExternalUrl } from "@/lib/open-external";
-import { threadExternalHost } from "@/lib/pr-review-threads";
+import { threadExternalHost, threadLocation } from "@/lib/pr-review-threads";
 import { cn } from "@/lib/utils";
 
 /**
@@ -159,13 +159,13 @@ function ReviewThreadHeader({
         <label
           htmlFor={selectionId}
           className="-my-1.5 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5"
-          title="Include this review thread when sending to the agent"
+          title="Send this thread to the agent"
         >
           <Checkbox
             id={selectionId}
             checked={selected}
             onCheckedChange={(checked) => onSelectedChange(checked === true)}
-            aria-label={`Select ${thread.file ?? "review"}${thread.line != null ? `:${thread.line}` : ""} thread for the agent`}
+            aria-label={`Send ${threadLocation(thread) ?? "this general comment"} to the agent`}
             className="mr-0.5"
           />
           <MessageSquareIcon className="size-3 shrink-0 !text-[var(--editor-blue)]" aria-hidden />

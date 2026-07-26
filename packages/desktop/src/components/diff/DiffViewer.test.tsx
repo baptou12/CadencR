@@ -28,6 +28,7 @@ const fooSection: FileDiffSection = {
 };
 
 const mocks = vi.hoisted(() => {
+  const scrollFileToTopMock = vi.fn(() => vi.fn());
   const useGetChangedFilesMock = vi.fn(
     () =>
       ({ data: [] as unknown[], isLoading: false }) as {
@@ -103,8 +104,13 @@ const mocks = vi.hoisted(() => {
     useDebouncedSettingMock,
     shortcutCallbacks,
     toastInfo,
+    scrollFileToTopMock,
   };
 });
+
+vi.mock("./scroll-to-file", () => ({
+  scrollFileToTop: mocks.scrollFileToTopMock,
+}));
 
 vi.mock("sonner", () => ({
   toast: { info: mocks.toastInfo, success: vi.fn(), error: vi.fn() },
@@ -519,6 +525,45 @@ describe("DiffViewer", () => {
     expect(mocks.resetMutate).not.toHaveBeenCalled();
   });
 
+  it("scrolls to the newly selected file exactly once per move", () => {
+    // The tree's selection listener already scrolls, so the adapter must not
+    // scroll again: a second call cancels the animation the first one started
+    // and re-registers the identical scroll. Asserting "once" rather than
+    // ">= 1" is the whole point — this is the regression that hides.
+    const adapter = createAdapterCapture();
+    mocks.useGetChangedFilesMock.mockReturnValue({
+      data: [fooFile, { ...fooFile, file: "src/bar.ts" }],
+      isLoading: false,
+    });
+    render(
+      <DiffViewer featureId={21} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
+    );
+    mocks.scrollFileToTopMock.mockClear();
+
+    act(() => adapter.current?.moveSelection(1));
+
+    expect(adapter.current?.getActiveItem()).toBe("src/bar.ts");
+    expect(mocks.scrollFileToTopMock).toHaveBeenCalledTimes(1);
+    expect(mocks.scrollFileToTopMock).toHaveBeenCalledWith(expect.anything(), "src/bar.ts");
+  });
+
+  it("still scrolls when a clamped move re-selects the same file", () => {
+    // At either end `moveSelection` returns the path it was already on, so the
+    // tree never re-selects and never notifies — the adapter has to scroll.
+    const adapter = createAdapterCapture();
+    withFooFile();
+    render(
+      <DiffViewer featureId={22} mode="uncommitted" registerNavigationAdapter={adapter.register} />,
+    );
+
+    act(() => adapter.current?.moveSelection(1));
+    mocks.scrollFileToTopMock.mockClear();
+    act(() => adapter.current?.moveSelection(1));
+
+    expect(adapter.current?.getActiveItem()).toBe("src/foo.ts");
+    expect(mocks.scrollFileToTopMock).toHaveBeenCalledWith(expect.anything(), "src/foo.ts");
+  });
+
   it("navigates VS Target while keeping index mutations unavailable", () => {
     const adapter = createAdapterCapture();
     withFooFile();
@@ -654,6 +699,39 @@ describe("DiffViewer", () => {
 
     await vi.waitFor(() => expect(screen.queryByTestId("patch-diff-view")).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Expand src/foo.ts" })).toBeInTheDocument();
+  });
+
+  it("scans past a collapsed file without opening it, and opens it on demand", async () => {
+    withFooFile();
+    mocks.useGetFileBlobShasMock.mockReturnValue({
+      data: [{ file_path: "src/foo.ts", sha: "sha" }],
+    });
+    mocks.useListDiffViewedMock.mockReturnValue({
+      data: [{ id: 1, feature_id: 1, file_path: "src/foo.ts", blob_sha: "sha", viewed_at: "now" }],
+    });
+    const adapter = createAdapterCapture();
+
+    render(
+      <DiffViewer featureId={1} mode="worktree" registerNavigationAdapter={adapter.register} />,
+    );
+    await vi.waitFor(() =>
+      expect(screen.getByRole("button", { name: "Expand src/foo.ts" })).toBeInTheDocument(),
+    );
+
+    // `j`/`k` are a scan: the diff scrolls to the file, but a file the user
+    // collapsed (or marked viewed) stays shut.
+    act(() => {
+      adapter.current?.moveSelection(1);
+    });
+    expect(screen.getByRole("button", { name: "Expand src/foo.ts" })).toBeInTheDocument();
+
+    // `l` is the explicit open.
+    act(() => {
+      adapter.current?.open();
+    });
+    await vi.waitFor(() =>
+      expect(screen.getByRole("button", { name: "Collapse src/foo.ts" })).toBeInTheDocument(),
+    );
   });
 
   it("does not emit nested button warnings for file headers", () => {

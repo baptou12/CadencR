@@ -62,7 +62,7 @@ describe("useGitViewShortcuts", () => {
     ["u", "KeyU", "uncommitted"],
     ["t", "KeyT", "vs-target"],
     ["p", "KeyP", "pr"],
-    ["h", "KeyH", "graph"],
+    ["y", "KeyY", "graph"],
     ["l", "KeyL", "branches"],
     ["s", "KeyS", "stashes"],
   ] as const)("maps Mod+%s to %s", (key, code, expected) => {
@@ -83,8 +83,9 @@ describe("useGitViewShortcuts", () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
 
-    dispatchMod("t", "KeyY");
-    dispatchMod("y", "KeyT");
+    // ⌘Z is unbound in this scope, so only the produced-letter match can fire.
+    dispatchMod("t", "KeyZ");
+    dispatchMod("z", "KeyT");
 
     expect(onChange).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenCalledWith("vs-target");

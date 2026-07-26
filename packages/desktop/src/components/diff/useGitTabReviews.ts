@@ -31,6 +31,7 @@ export interface GitTabReviews {
   selectedThreadIds: ReadonlySet<string>;
   selectedCount: number;
   setThreadSelected: (threadId: string, selected: boolean) => void;
+  setAllThreadsSelected: (selected: boolean) => void;
   sendSelected: () => void;
   sendDisabled: boolean;
   canSend: boolean;
@@ -93,9 +94,29 @@ function useReviewThreadSelection(unresolved: readonly CommentThread[]) {
     (): void => setSelectedThreadIds((previous) => (previous.size === 0 ? previous : new Set())),
     [],
   );
+  /**
+   * Select-all covers the unresolved threads, which is exactly the set the
+   * send action can act on — a resolved thread has no checkbox to tick, so
+   * including it would make the header read "all" while the count disagreed.
+   */
+  const setAllSelected = useCallback(
+    (selected: boolean): void =>
+      setSelectedThreadIds((previous) => {
+        if (!selected) return previous.size === 0 ? previous : new Set();
+        if (previous.size === unresolvedIds.size) return previous;
+        return new Set(unresolvedIds);
+      }),
+    [unresolvedIds],
+  );
   return useMemo(
-    () => ({ selectedThreadIds, selectedThreads, setThreadSelected, clearSelection }),
-    [clearSelection, selectedThreadIds, selectedThreads, setThreadSelected],
+    () => ({
+      selectedThreadIds,
+      selectedThreads,
+      setThreadSelected,
+      setAllSelected,
+      clearSelection,
+    }),
+    [clearSelection, selectedThreadIds, selectedThreads, setAllSelected, setThreadSelected],
   );
 }
 
@@ -153,6 +174,7 @@ export function useGitTabReviews(
       selectedThreadIds: selection.selectedThreadIds,
       selectedCount: selection.selectedThreads.length,
       setThreadSelected: selection.setThreadSelected,
+      setAllThreadsSelected: selection.setAllSelected,
       sendSelected,
       sendDisabled,
       canSend,

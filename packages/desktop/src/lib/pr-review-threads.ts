@@ -185,9 +185,21 @@ function asBullet(label: string, body: string): string {
   return [`- **${label}:** ${first}`, ...rest.map((line) => `  ${line}`)].join("\n");
 }
 
+/**
+ * Where a thread points, as `file:line`, or `null` when it hangs off the
+ * proposal itself rather than a hunk.
+ *
+ * Shared so the PR pane, the diff annotation, and the agent briefing all name
+ * the same thread the same way — they drifted into three spellings once.
+ */
+export function threadLocation(thread: CommentThread): string | null {
+  if (!thread.file) return null;
+  return thread.line != null ? `${thread.file}:${thread.line}` : thread.file;
+}
+
 function threadHeading(thread: CommentThread): string {
-  if (!thread.file) return "### General discussion";
-  const location = thread.line != null ? `${thread.file}:${thread.line}` : thread.file;
+  const location = threadLocation(thread);
+  if (!location) return "### General discussion";
   const sideNote = thread.side === "old" ? " (on the removed side)" : "";
   const outdatedNote = thread.outdated ? " — outdated, the diff moved since" : "";
   return `### ${location}${sideNote}${outdatedNote}`;

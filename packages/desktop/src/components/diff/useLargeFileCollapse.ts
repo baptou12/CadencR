@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { isLargeDiffByLines } from "@/lib/diff-thresholds";
 
 /** Minimal per-file shape the auto-collapse rule reads from the changed-files list. */
@@ -33,4 +33,35 @@ export function useCollapseLargeFilesOnLoad(
 
     setCollapsedFiles((prev) => new Set([...prev, ...largeFiles]));
   }, [files, setCollapsedFiles]);
+}
+
+export function useCollapseActions(
+  setCollapsedFiles: Dispatch<SetStateAction<Set<string>>>,
+  scanSelection: <T>(run: () => T) => T,
+  selectPath: (filePath: string) => boolean,
+): { collapseFile: (filePath: string) => void; toggleFile: (filePath: string) => void } {
+  const collapseFile = useCallback(
+    (filePath: string): void => {
+      setCollapsedFiles((previous) =>
+        previous.has(filePath) ? previous : new Set([...previous, filePath]),
+      );
+    },
+    [setCollapsedFiles],
+  );
+  const toggleFile = useCallback(
+    (filePath: string): void => {
+      // Scanned, not revealed: letting the selection open the file first would
+      // queue an expand ahead of this toggle, so collapsing worked and
+      // expanding cancelled itself out.
+      scanSelection(() => selectPath(filePath));
+      setCollapsedFiles((previous) => {
+        const next = new Set(previous);
+        if (next.has(filePath)) next.delete(filePath);
+        else next.add(filePath);
+        return next;
+      });
+    },
+    [scanSelection, selectPath, setCollapsedFiles],
+  );
+  return { collapseFile, toggleFile };
 }

@@ -112,6 +112,32 @@ describe("useGitTabReviews selection", () => {
     await waitFor(() => expect(result.current.selectedCount).toBe(0));
   });
 
+  it("takes and drops every unresolved thread at once", () => {
+    const { result } = renderHook(() => useGitTabReviews("pr", PR, vi.fn(), reviewThreads()));
+
+    expect(result.current.unresolved).toHaveLength(2);
+
+    act(() => result.current.setAllThreadsSelected(true));
+    expect(result.current.selectedCount).toBe(2);
+    expect(result.current.sendDisabled).toBe(false);
+
+    act(() => result.current.setAllThreadsSelected(false));
+    expect(result.current.selectedCount).toBe(0);
+  });
+
+  it("preserves selection identity for no-op select-all calls", () => {
+    const { result } = renderHook(() => useGitTabReviews("pr", PR, vi.fn(), reviewThreads()));
+
+    const emptySelection = result.current.selectedThreadIds;
+    act(() => result.current.setAllThreadsSelected(false));
+    expect(result.current.selectedThreadIds).toBe(emptySelection);
+
+    act(() => result.current.setAllThreadsSelected(true));
+    const allSelected = result.current.selectedThreadIds;
+    act(() => result.current.setAllThreadsSelected(true));
+    expect(result.current.selectedThreadIds).toBe(allSelected);
+  });
+
   it("preserves selection identity for no-op updates", () => {
     const { result } = renderHook(() => useGitTabReviews("pr", PR, vi.fn(), reviewThreads()));
 

@@ -28,6 +28,7 @@ export interface GitTabBodyProps {
   reviewTarget: ReviewNavigationTarget | null;
   selectedReviewThreadIds: ReadonlySet<string>;
   onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
+  onAllReviewThreadsSelectedChange?: (selected: boolean) => void;
   onViewReviewThread: (thread: CommentThread) => void;
 }
 
@@ -49,6 +50,7 @@ export const GitTabBody = memo(function GitTabBody({
   reviewTarget,
   selectedReviewThreadIds,
   onReviewThreadSelectedChange,
+  onAllReviewThreadsSelectedChange,
   onViewReviewThread,
 }: GitTabBodyProps): ReactElement {
   if (viewMode === "pr") {
@@ -58,6 +60,7 @@ export const GitTabBody = memo(function GitTabBody({
         reviews={reviewThreads}
         selectedThreadIds={selectedReviewThreadIds}
         onThreadSelectedChange={onReviewThreadSelectedChange}
+        onAllThreadsSelectedChange={onAllReviewThreadsSelectedChange}
         onViewThread={onViewReviewThread}
       />
     );

@@ -1,13 +1,5 @@
 import { ExternalLinkIcon, Loader2Icon } from "lucide-react";
-import {
-  memo,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-  type WheelEvent,
-} from "react";
+import { memo, useCallback, useRef, useState, type ReactElement, type WheelEvent } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -24,17 +16,21 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { openPullRequestExternally } from "@/lib/open-pull-request";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 import { cn } from "@/lib/utils";
-import { CommentsHeader, PrCommentThread } from "@/components/FeaturePrComments";
+import { PrCommentThread } from "@/components/FeaturePrComments";
 import {
   AuthorInitials,
   ChecksPanel,
   EmptyState,
-  PrDescription,
   PrEmptyIcon,
   PrViewError,
   PrViewLoading,
   relativeTime,
 } from "@/components/FeaturePrViewParts";
+import {
+  TIMELINE_COMPONENTS,
+  useTimelineContext,
+  type TimelineHeaderSource,
+} from "@/components/PrTimelineSlots";
 import {
   PR_TONE_BADGE,
   prIndicatorTone,
@@ -46,6 +42,7 @@ interface FeaturePrViewProps {
   reviews: PrReviewThreads;
   selectedThreadIds?: ReadonlySet<string>;
   onThreadSelectedChange?: (threadId: string, selected: boolean) => void;
+  onAllThreadsSelectedChange?: (selected: boolean) => void;
   onViewThread?: (thread: CommentThread) => void;
 }
 
@@ -67,6 +64,7 @@ export const FeaturePrView = memo(function FeaturePrView({
   reviews,
   selectedThreadIds,
   onThreadSelectedChange,
+  onAllThreadsSelectedChange,
   onViewThread,
 }: FeaturePrViewProps): ReactElement {
   const cached = usePrStatusStore(selectPrStatus(featureId));
@@ -103,6 +101,7 @@ export const FeaturePrView = memo(function FeaturePrView({
       onCommentsRetry={reviews.retry}
       selectedThreadIds={selectedThreadIds}
       onThreadSelectedChange={onThreadSelectedChange}
+      onAllThreadsSelectedChange={onAllThreadsSelectedChange}
       onViewThread={onViewThread}
     />
   );
@@ -119,19 +118,7 @@ function wheelPixels(deltaY: number, deltaMode: number, viewportHeight: number):
   return deltaY;
 }
 
-interface PrTimelineProps {
-  status: PrStatusSnapshot;
-  threads: CommentThread[];
-  unresolvedCount: number;
-  totalCount: number;
-  filter: PrCommentFilter;
-  onFilterChange: (next: PrCommentFilter) => void;
-  commentsLoading: boolean;
-  commentsRefreshing: boolean;
-  commentsError: string | undefined;
-  onCommentsRetry: () => void;
-  selectedThreadIds?: ReadonlySet<string>;
-  onThreadSelectedChange?: (threadId: string, selected: boolean) => void;
+interface PrTimelineProps extends TimelineHeaderSource {
   onViewThread?: (thread: CommentThread) => void;
 }
 
@@ -142,88 +129,34 @@ interface PrTimelineProps {
  * threads scroll. The checks list folds itself away as soon as you leave the
  * top so the pinned band stays a band, and unfolds when you come back.
  */
-function PrTimeline({
-  status,
-  threads,
-  unresolvedCount,
-  totalCount,
-  filter,
-  onFilterChange,
-  commentsLoading,
-  commentsRefreshing,
-  commentsError,
-  onCommentsRetry,
-  selectedThreadIds,
-  onThreadSelectedChange,
-  onViewThread,
-}: PrTimelineProps): ReactElement {
+function PrTimeline(props: PrTimelineProps): ReactElement {
   const [scrolledPastTop, setScrolledPastTop] = useState(false);
-  const scrollerRef = useRef<HTMLElement | null>(null);
-  const handleScrollerRef = useCallback((element: HTMLElement | Window | null) => {
-    scrollerRef.current = element instanceof HTMLElement ? element : null;
-  }, []);
-  // The band is pinned, not scrollable, so a wheel gesture over it would
-  // otherwise land nowhere and read as a frozen pane.
-  const handleBandWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
-    const scroller = scrollerRef.current;
-    if (!scroller || event.deltaY === 0) return;
-    scroller.scrollTop += wheelPixels(event.deltaY, event.deltaMode, scroller.clientHeight);
-  }, []);
+  const band = usePinnedBandWheel();
+  const { selectedThreadIds, onThreadSelectedChange, onViewThread, status, threads } = props;
+  const listContext = useTimelineContext(props);
   const itemContent = useCallback(
     (_index: number, thread: CommentThread) => (
-      <PrCommentThread
-        thread={thread}
-        selected={selectedThreadIds?.has(thread.id) ?? false}
-        onSelectedChange={
-          onThreadSelectedChange
-            ? (selected) => onThreadSelectedChange(thread.id, selected)
-            : undefined
-        }
-        onViewThread={onViewThread}
-      />
+      <div className="pb-3">
+        <PrCommentThread
+          thread={thread}
+          selected={selectedThreadIds?.has(thread.id) ?? false}
+          onSelectedChange={
+            onThreadSelectedChange
+              ? (selected) => onThreadSelectedChange(thread.id, selected)
+              : undefined
+          }
+          onViewThread={onViewThread}
+        />
+      </div>
     ),
     [onThreadSelectedChange, onViewThread, selectedThreadIds],
-  );
-  const components = useMemo(
-    () => ({
-      Header: () => (
-        <div className="space-y-4 px-4 pb-4 pt-3">
-          <PrDescription status={status} />
-          <CommentsHeader
-            commentsLoading={commentsLoading}
-            commentsRefreshing={commentsRefreshing}
-            commentsError={commentsError}
-            onRetry={onCommentsRetry}
-            commentCount={threads.length}
-            unresolvedCount={unresolvedCount}
-            totalCount={totalCount}
-            filter={filter}
-            onFilterChange={onFilterChange}
-            selectionEnabled={onThreadSelectedChange != null && unresolvedCount > 0}
-          />
-        </div>
-      ),
-    }),
-    [
-      commentsError,
-      commentsLoading,
-      commentsRefreshing,
-      filter,
-      onCommentsRetry,
-      onFilterChange,
-      onThreadSelectedChange,
-      status,
-      threads.length,
-      totalCount,
-      unresolvedCount,
-    ],
   );
   const handleAtTopStateChange = useCallback((atTop: boolean) => setScrolledPastTop(!atTop), []);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div
         className="shrink-0 space-y-3 border-b border-border bg-card/40 px-4 py-3"
-        onWheel={handleBandWheel}
+        onWheel={band.onWheel}
       >
         {status.error && <PrViewError message={status.error} compact />}
         <PrHeader status={status} />
@@ -232,15 +165,37 @@ function PrTimeline({
       <Virtuoso
         className="min-h-0 flex-1"
         data={threads}
-        components={components}
+        context={listContext}
+        components={TIMELINE_COMPONENTS}
         itemContent={itemContent}
         increaseViewportBy={400}
         atTopThreshold={8}
         atTopStateChange={handleAtTopStateChange}
-        scrollerRef={handleScrollerRef}
+        scrollerRef={band.scrollerRef}
       />
     </div>
   );
+}
+
+/**
+ * The pinned band is not scrollable, so a wheel gesture over it would land
+ * nowhere and read as a frozen pane. Forwarding it to the list's scroller keeps
+ * the whole pane feeling like one surface.
+ */
+function usePinnedBandWheel(): {
+  scrollerRef: (element: HTMLElement | Window | null) => void;
+  onWheel: (event: WheelEvent<HTMLDivElement>) => void;
+} {
+  const scroller = useRef<HTMLElement | null>(null);
+  const scrollerRef = useCallback((element: HTMLElement | Window | null) => {
+    scroller.current = element instanceof HTMLElement ? element : null;
+  }, []);
+  const onWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    const element = scroller.current;
+    if (!element || event.deltaY === 0) return;
+    element.scrollTop += wheelPixels(event.deltaY, event.deltaMode, element.clientHeight);
+  }, []);
+  return { scrollerRef, onWheel };
 }
 
 function PrHeader({ status }: { status: PrStatusSnapshot }): ReactElement {
@@ -273,6 +228,12 @@ function PrHeader({ status }: { status: PrStatusSnapshot }): ReactElement {
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             {pr.pr_label} #{pr.number}
           </span>
+          <span aria-hidden className="text-[11px] text-border">
+            ·
+          </span>
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+            updated {relativeTime(pr.updated_at)}
+          </span>
         </div>
         <h2 className="text-base font-semibold leading-snug text-balance text-foreground">
           {pr.title}
@@ -293,10 +254,6 @@ function PrHeader({ status }: { status: PrStatusSnapshot }): ReactElement {
             </span>
             <span className="shrink-0 truncate">{pr.target_branch}</span>
           </span>
-          <span aria-hidden className="text-border">
-            ·
-          </span>
-          <span className="shrink-0 tabular-nums">updated {relativeTime(pr.updated_at)}</span>
         </div>
       </div>
       <Button

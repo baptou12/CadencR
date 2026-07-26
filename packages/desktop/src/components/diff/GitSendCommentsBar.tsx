@@ -37,10 +37,10 @@ export function GitSendCommentsBar({
       {reviews && (
         <>
           <span className="mr-auto text-xs tabular-nums text-muted-foreground" aria-live="polite">
-            {reviews.selectedCount} of {reviews.totalCount} review{" "}
-            {reviews.totalCount === 1 ? "thread" : "threads"} selected
+            {reviews.selectedCount} of {reviews.totalCount}{" "}
+            {reviews.totalCount === 1 ? "thread" : "threads"} picked for the agent
           </span>
-          <ShortcutTooltip label="Send selected review threads" keys={reviewKeys} above>
+          <ShortcutTooltip label="Send picked threads to the agent" keys={reviewKeys} above>
             <span className="inline-flex">
               <Button size="sm" disabled={reviews.disabled} onClick={reviews.onSend}>
                 <SendIcon className="mr-2 size-4" aria-hidden />

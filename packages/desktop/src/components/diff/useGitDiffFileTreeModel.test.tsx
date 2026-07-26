@@ -124,7 +124,10 @@ describe("useGitDiffFileTreeModel display mode", () => {
     unmount();
   });
 
-  it("moves through Pierre's filename presentation order instead of API order", () => {
+  // Pierre sorts these rows by basename ("alpha.ts" before "zeta.ts"), while
+  // the diff pane renders them by full path ("a/zeta.ts" first). Navigation
+  // has to follow the diff, or `j` scrolls the pane upwards.
+  it("moves through the diff pane's order, not Pierre's presentation order", () => {
     const files = [changedFile("a/zeta.ts"), changedFile("z/alpha.ts")];
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
@@ -134,27 +137,46 @@ describe("useGitDiffFileTreeModel display mode", () => {
     );
 
     act(() => result.current.setDisplayMode("filenames"));
-    act(() => result.current.navigation.selectPath("z/alpha.ts"));
+    act(() => result.current.navigation.selectPath("a/zeta.ts"));
 
     let movedPath: string | null = null;
     act(() => {
       movedPath = result.current.navigation.moveSelection(1);
     });
 
-    expect(movedPath).toBe("a/zeta.ts");
-    expect(result.current.model.getFocusedPath()).toBe("a/zeta.ts");
-    expect(result.current.activePath).toBe("a/zeta.ts");
+    expect(movedPath).toBe("z/alpha.ts");
+    expect(result.current.model.getFocusedPath()).toBe("z/alpha.ts");
+    expect(result.current.activePath).toBe("z/alpha.ts");
 
     act(() => {
       movedPath = result.current.navigation.moveSelection(-1);
     });
-    expect(movedPath).toBe("z/alpha.ts");
-    expect(result.current.model.getFocusedPath()).toBe("z/alpha.ts");
-    expect(result.current.activePath).toBe("z/alpha.ts");
+    expect(movedPath).toBe("a/zeta.ts");
+    expect(result.current.model.getFocusedPath()).toBe("a/zeta.ts");
+    expect(result.current.activePath).toBe("a/zeta.ts");
     unmount();
   });
 
-  it("navigates a large virtualized list through the copy-safe visible-path seam", () => {
+  it("clamps at the ends of the diff instead of wrapping", () => {
+    const files = [changedFile("a.ts"), changedFile("b.ts")];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({ files, onSelectionChange: vi.fn() }),
+    );
+
+    act(() => result.current.navigation.selectPath("a.ts"));
+    let movedPath: string | null = null;
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(-1);
+    });
+
+    // Still "handled" so the key never falls through to the tree's type-ahead
+    // search, which is what used to hijack the next `j`/`k`.
+    expect(movedPath).toBe("a.ts");
+    expect(result.current.activePath).toBe("a.ts");
+    unmount();
+  });
+
+  it("navigates a large virtualized list without projecting Pierre's rows", () => {
     const files = Array.from({ length: 2_000 }, (_, index) =>
       changedFile(`src/file-${String(index).padStart(4, "0")}.ts`),
     );
@@ -179,7 +201,9 @@ describe("useGitDiffFileTreeModel display mode", () => {
       movedPath = result.current.navigation.moveSelection(1);
     });
 
-    expect(getVisiblePaths).toHaveBeenCalledOnce();
+    // With no search query to scope the walk, moving never has to ask Pierre
+    // to materialize its full row projection.
+    expect(getVisiblePaths).not.toHaveBeenCalled();
     expect(movedPath).toBe("src/file-0001.ts");
     expect(result.current.model.getFileTreeContainer()).toBeUndefined();
     getVisiblePaths.mockRestore();
@@ -292,7 +316,7 @@ describe("useGitDiffFileTreeModel display mode", () => {
     unmount();
   });
 
-  it("skips files hidden by collapsed directories in Pierre tree order", () => {
+  it("reaches files hidden by a collapsed directory, opening the way", () => {
     const files = [changedFile("a/alpha.ts"), changedFile("b/beta.ts"), changedFile("root.ts")];
     const { result, unmount } = renderHook(() =>
       useGitDiffFileTreeModel({
@@ -311,9 +335,38 @@ describe("useGitDiffFileTreeModel display mode", () => {
       movedPath = result.current.navigation.moveSelection(1);
     });
 
-    expect(movedPath).toBe("root.ts");
-    expect(result.current.model.getFocusedPath()).toBe("root.ts");
-    expect(result.current.activePath).toBe("root.ts");
+    // The file is in the diff, so `j` must land on it — a collapsed folder is
+    // a view of the tree, not a filter on the changed-file set.
+    expect(movedPath).toBe("b/beta.ts");
+    expect((result.current.model.getItem("b/") as FileTreeDirectoryHandle).isExpanded()).toBe(true);
+    expect(result.current.model.getSelectedPaths()).toEqual(["b/beta.ts"]);
+    unmount();
+  });
+
+  it("announces the new selection before moveSelection returns", () => {
+    // `useDiffNavigationAdapter` relies on this: it lets the selection listener
+    // do the scrolling instead of scrolling again itself. If the notification
+    // ever became async, the scan flag would be back to false by the time it
+    // arrived and `j` would *open* files instead of scanning past them.
+    const onSelectionChange = vi.fn();
+    const files = [changedFile("a.ts"), changedFile("b.ts")];
+    const { result, unmount } = renderHook(() =>
+      useGitDiffFileTreeModel({ files, onSelectionChange }),
+    );
+
+    act(() => result.current.navigation.selectPath("a.ts"));
+    onSelectionChange.mockClear();
+
+    let calledSynchronously = 0;
+    let movedPath: string | null = null;
+    act(() => {
+      movedPath = result.current.navigation.moveSelection(1);
+      calledSynchronously = onSelectionChange.mock.calls.length;
+    });
+
+    expect(movedPath).toBe("b.ts");
+    expect(calledSynchronously).toBe(1);
+    expect(onSelectionChange).toHaveBeenCalledWith("b.ts");
     unmount();
   });
 

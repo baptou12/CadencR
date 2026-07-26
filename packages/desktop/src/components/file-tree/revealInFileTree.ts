@@ -40,19 +40,7 @@ export function revealInFileTree(
     return false;
   }
 
-  // Walk forward so each parent exists before we look up its child:
-  // "src/components/Foo.tsx" → query "src/", then "src/components/".
-  let cursor = "";
-  const segments = fsPath.split("/");
-  for (let i = 0; i < segments.length - 1; i++) {
-    cursor = cursor ? `${cursor}/${segments[i]}` : segments[i];
-    const dir = model.getItem(`${cursor}/`);
-    if (dir == null || !dir.isDirectory()) continue;
-    // `isDirectory(): true` is a literal-typed method, not a TS predicate,
-    // so narrow explicitly to reach `expand`/`isExpanded`.
-    const handle = dir as FileTreeDirectoryHandle;
-    if (!handle.isExpanded()) handle.expand();
-  }
+  expandFileTreeAncestors(model, fsPath);
 
   requestAnimationFrame(() => {
     // The row may have disappeared between the rAF schedule and fire
@@ -61,6 +49,35 @@ export function revealInFileTree(
     model.scrollToPath(fsPath, { focus: true, offset: "nearest" });
   });
   return true;
+}
+
+/**
+ * Expand every collapsed ancestor folder of `fsPath` in place, so the file's
+ * row becomes one of the model's visible paths and can take focus.
+ *
+ * Returns `true` when at least one folder was expanded — the caller then owes
+ * the render a frame before `scrollToPath`, since pierre captures the target's
+ * `visibleIndex` at call time and silently drops a request that points past
+ * the not-yet-recomputed virtual row list.
+ */
+export function expandFileTreeAncestors(model: FileTreeModel, fsPath: string): boolean {
+  // Walk forward so each parent exists before we look up its child:
+  // "src/components/Foo.tsx" → query "src/", then "src/components/".
+  let cursor = "";
+  let expandedAny = false;
+  const segments = fsPath.split("/");
+  for (let i = 0; i < segments.length - 1; i++) {
+    cursor = cursor ? `${cursor}/${segments[i]}` : segments[i];
+    const dir = model.getItem(`${cursor}/`);
+    if (dir == null || !dir.isDirectory()) continue;
+    // `isDirectory(): true` is a literal-typed method, not a TS predicate,
+    // so narrow explicitly to reach `expand`/`isExpanded`.
+    const handle = dir as FileTreeDirectoryHandle;
+    if (handle.isExpanded()) continue;
+    handle.expand();
+    expandedAny = true;
+  }
+  return expandedAny;
 }
 
 /**

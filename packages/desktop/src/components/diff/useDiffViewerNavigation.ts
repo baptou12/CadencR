@@ -17,7 +17,8 @@ import {
   type SetStateAction,
 } from "react";
 import { useDiffData } from "./useDiffData";
-import { useCollapseLargeFilesOnLoad } from "./useLargeFileCollapse";
+import { useScannableSelection } from "./useDiffSelectionActions";
+import { useCollapseActions, useCollapseLargeFilesOnLoad } from "./useLargeFileCollapse";
 import { scrollFileToTop } from "./scroll-to-file";
 import { openGitFileInEditor } from "./gitFileEditorHandoff";
 import type { GitNavigationAdapterRegistrar, GitNavigationAdapter } from "./gitNavigation";
@@ -58,6 +59,8 @@ interface DiffNavigationAdapterState {
   indexMutable: boolean;
   diffAreaRef: RefObject<HTMLDivElement | null>;
   revealFile: (filePath: string) => void;
+  scrollToFile: (filePath: string) => void;
+  scanSelection: <T>(run: () => T) => T;
   collapseFile: (filePath: string) => void;
   markFileViewed: (filePath: string) => void;
   unmarkFileViewed: (filePath: string) => void;
@@ -86,11 +89,19 @@ function useDiffNavigationAdapter(state: DiffNavigationAdapterState): GitNavigat
   return useMemo<GitNavigationAdapter>(
     () => ({
       getActiveItem: () => stateRef.current.tree.getActivePath(),
+      // Moving is a scan, not an open: the diff scrolls to the file but its
+      // collapsed state is left exactly as the user set it. `l` opens.
       moveSelection: (offset) => {
         const current = stateRef.current;
-        const path = current.tree.moveSelection(offset);
+        // The scroll comes from the selection listener inside `scanSelection`,
+        // which pierre fires synchronously. Scrolling again here would cancel
+        // the animation it just started and re-register the same one. The one
+        // case the listener misses is a clamped move at either end, where the
+        // path does not change and so nothing is re-selected.
+        const before = current.tree.getActivePath();
+        const path = current.scanSelection(() => current.tree.moveSelection(offset));
         if (!path) return false;
-        current.revealFile(path);
+        if (path === before) current.scrollToFile(path);
         return true;
       },
       open: () => {
@@ -205,12 +216,29 @@ function useFocusedFileEditorOpener(
   );
 }
 
+interface FileReveal {
+  /** Bring a file into view and open it — the answer to a click or `l`. */
+  revealFile: (filePath: string) => void;
+  /** Bring a file into view and leave its collapsed state alone. */
+  scrollToFile: (filePath: string) => void;
+  cancelRevealScroll: () => void;
+}
+
 function useFileReveal(
   diffAreaRef: RefObject<HTMLDivElement | null>,
   setCollapsedFiles: Dispatch<SetStateAction<Set<string>>>,
-): { revealFile: (filePath: string) => void; cancelRevealScroll: () => void } {
+): FileReveal {
   const cancelRevealScrollRef = useRef<() => void>(() => {});
   const cancelRevealScroll = useCallback((): void => cancelRevealScrollRef.current(), []);
+  const scrollToFile = useCallback(
+    (filePath: string): void => {
+      cancelRevealScroll();
+      if (diffAreaRef.current) {
+        cancelRevealScrollRef.current = scrollFileToTop(diffAreaRef.current, filePath);
+      }
+    },
+    [cancelRevealScroll, diffAreaRef],
+  );
   const revealFile = useCallback(
     (filePath: string): void => {
       setCollapsedFiles((previous) => {
@@ -219,15 +247,15 @@ function useFileReveal(
         next.delete(filePath);
         return next;
       });
-      cancelRevealScroll();
-      if (diffAreaRef.current) {
-        cancelRevealScrollRef.current = scrollFileToTop(diffAreaRef.current, filePath);
-      }
+      scrollToFile(filePath);
     },
-    [cancelRevealScroll, diffAreaRef, setCollapsedFiles],
+    [scrollToFile, setCollapsedFiles],
   );
   useEffect(() => cancelRevealScroll, [cancelRevealScroll]);
-  return useMemo(() => ({ revealFile, cancelRevealScroll }), [cancelRevealScroll, revealFile]);
+  return useMemo(
+    () => ({ revealFile, scrollToFile, cancelRevealScroll }),
+    [cancelRevealScroll, revealFile, scrollToFile],
+  );
 }
 
 export function useDiffViewerNavigation({
@@ -241,10 +269,14 @@ export function useDiffViewerNavigation({
   registerNavigationAdapter,
 }: UseDiffViewerNavigationOptions): DiffViewerNavigationState {
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
-  const { revealFile, cancelRevealScroll } = useFileReveal(diffAreaRef, setCollapsedFiles);
+  const { revealFile, scrollToFile, cancelRevealScroll } = useFileReveal(
+    diffAreaRef,
+    setCollapsedFiles,
+  );
+  const { scanSelection, handleTreeSelection } = useScannableSelection(revealFile, scrollToFile);
   const tree = useGitDiffFileTreeModel({
     files: data.changedFiles,
-    onSelectionChange: revealFile,
+    onSelectionChange: handleTreeSelection,
     reviewCountsByFile,
   });
   useCollapseInitialization(data, setCollapsedFiles);
@@ -254,22 +286,10 @@ export function useDiffViewerNavigation({
   );
   const openFocusedFileInEditor = useFocusedFileEditorOpener(fileByPath, onOpenFileInEditor);
 
-  const collapseFile = useCallback((filePath: string): void => {
-    setCollapsedFiles((previous) =>
-      previous.has(filePath) ? previous : new Set([...previous, filePath]),
-    );
-  }, []);
-  const toggleFile = useCallback(
-    (filePath: string): void => {
-      tree.navigation.selectPath(filePath);
-      setCollapsedFiles((previous) => {
-        const next = new Set(previous);
-        if (next.has(filePath)) next.delete(filePath);
-        else next.add(filePath);
-        return next;
-      });
-    },
-    [tree.navigation],
+  const { collapseFile, toggleFile } = useCollapseActions(
+    setCollapsedFiles,
+    scanSelection,
+    tree.navigation.selectPath,
   );
   const { markFileViewed, unmarkFileViewed } = useViewedFileActions(
     featureId,
@@ -289,6 +309,8 @@ export function useDiffViewerNavigation({
     indexMutable,
     diffAreaRef,
     revealFile,
+    scrollToFile,
+    scanSelection,
     collapseFile,
     markFileViewed,
     unmarkFileViewed,
