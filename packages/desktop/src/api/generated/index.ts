@@ -1816,6 +1816,17 @@ export type PrStatusSnapshotError = string | null;
 
 export type PrStatusSnapshotPr = null | PrSummary;
 
+/**
+ * How many review threads the forge still reports as open.
+
+`None` means "not looked up", not "zero" — the poller only pays for the
+extra round trip when the checks are green, because that is the only
+state where the count changes what the sidebar shows. Consumers must
+treat `None` as unknown and fall back to the check-driven tone.
+ * @minimum 0
+ */
+export type PrStatusSnapshotUnresolvedThreads = number | null;
+
 export interface PrStatusSnapshot {
   auth_required: boolean;
   ci?: PrStatusSnapshotCi;
@@ -1823,6 +1834,16 @@ export interface PrStatusSnapshot {
   feature_id: number;
   fetched_at: number;
   pr?: PrStatusSnapshotPr;
+  /**
+   * How many review threads the forge still reports as open.
+
+`None` means "not looked up", not "zero" — the poller only pays for the
+extra round trip when the checks are green, because that is the only
+state where the count changes what the sidebar shows. Consumers must
+treat `None` as unknown and fall back to the check-driven tone.
+   * @minimum 0
+   */
+  unresolved_threads?: PrStatusSnapshotUnresolvedThreads;
 }
 
 export interface PrSummary {

@@ -139,15 +139,38 @@ pub struct PrStatusSnapshot {
     pub fetched_at: i64,
     pub error: Option<String>,
     pub auth_required: bool,
+    /// How many review threads the forge still reports as open.
+    ///
+    /// `None` means "not looked up", not "zero" — the poller only pays for the
+    /// extra round trip when the checks are green, because that is the only
+    /// state where the count changes what the sidebar shows. Consumers must
+    /// treat `None` as unknown and fall back to the check-driven tone.
+    #[serde(default)]
+    pub unresolved_threads: Option<u32>,
 }
 
 impl PrStatusSnapshot {
+    /// A snapshot for a feature the poller could not ask a forge about — no
+    /// remote, no branch, or the request never got off the ground.
+    pub fn unpolled(feature_id: i64, error: Option<String>, auth_required: bool) -> Self {
+        Self {
+            feature_id,
+            pr: None,
+            ci: None,
+            fetched_at: chrono::Utc::now().timestamp_millis(),
+            error,
+            auth_required,
+            unresolved_threads: None,
+        }
+    }
+
     pub fn semantic_eq(&self, other: &Self) -> bool {
         self.feature_id == other.feature_id
             && self.pr == other.pr
             && self.ci == other.ci
             && self.error == other.error
             && self.auth_required == other.auth_required
+            && self.unresolved_threads == other.unresolved_threads
     }
 }
 
@@ -276,5 +299,39 @@ pub fn proposal_noun(host: GitHost) -> &'static str {
     match host {
         GitHost::GitLab => "Merge request",
         GitHost::GitHub | GitHost::Bitbucket | GitHost::Other => "Pull request",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_poll_of_unchanged_state_is_not_worth_broadcasting() {
+        let first = PrStatusSnapshot::unpolled(7, None, false);
+        let second = PrStatusSnapshot::unpolled(7, None, false);
+
+        // `fetched_at` advances on every poll and must not count, or the
+        // sidebar would re-render once a minute forever.
+        assert_ne!(first.fetched_at, 0);
+        assert!(first.semantic_eq(&second));
+    }
+
+    #[test]
+    fn a_thread_count_change_alone_still_reaches_the_sidebar() {
+        // The count is the only thing that moves when a reviewer resolves the
+        // last thread on an already-green PR. If `semantic_eq` ignored it the
+        // chip would keep saying "unresolved" until something else changed.
+        let resolved = PrStatusSnapshot {
+            unresolved_threads: Some(0),
+            ..PrStatusSnapshot::unpolled(7, None, false)
+        };
+        let outstanding = PrStatusSnapshot {
+            unresolved_threads: Some(2),
+            ..PrStatusSnapshot::unpolled(7, None, false)
+        };
+
+        assert!(!resolved.semantic_eq(&outstanding));
+        assert!(!resolved.semantic_eq(&PrStatusSnapshot::unpolled(7, None, false)));
     }
 }
