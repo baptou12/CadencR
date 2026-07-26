@@ -1,0 +1,51 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, within } from "@testing-library/react";
+import { FontSelector } from "./FontSelector";
+
+const setFamily = vi.fn();
+let monoState = {
+  family: null as string | null,
+  resolved: "monospace",
+  setFamily,
+  isLoading: false,
+};
+let systemState = { fonts: ["Fira Code", "JetBrains Mono"], isLoading: false, error: false };
+const toastError = vi.fn();
+
+vi.mock("@/lib/fonts/mono-font-setting", () => ({ useMonoFont: () => monoState }));
+vi.mock("@/lib/fonts/useSystemFonts", () => ({ useSystemFonts: () => systemState }));
+vi.mock("sonner", () => ({ toast: { error: (m: string) => toastError(m) } }));
+
+beforeEach(() => {
+  setFamily.mockClear();
+  toastError.mockClear();
+  monoState = { family: null, resolved: "monospace", setFamily, isLoading: false };
+  systemState = { fonts: ["Fira Code", "JetBrains Mono"], isLoading: false, error: false };
+});
+
+describe("FontSelector", () => {
+  it("renders the preview in the resolved font", () => {
+    monoState.resolved = `"Fira Code", monospace`;
+    render(<FontSelector />);
+    const preview = screen.getByTestId("mono-font-preview");
+    expect(preview).toHaveStyle({ fontFamily: `"Fira Code", monospace` });
+  });
+
+  it("lists detected fonts each rendered in their own family and persists a choice", () => {
+    render(<FontSelector />);
+    fireEvent.click(screen.getByRole("combobox"));
+    const option = screen.getByRole("option", { name: /Fira Code/ });
+    expect(option).toHaveStyle({ fontFamily: `"Fira Code"` });
+    fireEvent.click(option);
+    expect(setFamily).toHaveBeenCalledWith("Fira Code");
+  });
+
+  it("shows a warning and toasts once when detection fails", () => {
+    systemState = { fonts: [], isLoading: false, error: true };
+    render(<FontSelector />);
+    expect(screen.getByText(/detection unavailable/i)).toBeInTheDocument();
+    expect(toastError).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("combobox"));
+    expect(within(screen.getByRole("listbox")).getByText(/Default/)).toBeInTheDocument();
+  });
+});
