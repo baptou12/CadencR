@@ -48,6 +48,26 @@ export function extractPairingCode(input: string): string | null {
   return trimmed;
 }
 
+function PairingScannerScreen({
+  onDetect,
+  onCancel,
+}: {
+  onDetect: (text: string) => void;
+  onCancel: () => void;
+}): ReactNode {
+  return (
+    <Suspense
+      fallback={
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black">
+          <Loader2 className="size-6 animate-spin text-white" aria-hidden />
+        </div>
+      }
+    >
+      <QrPairingScanner onDetect={onDetect} onCancel={onCancel} />
+    </Suspense>
+  );
+}
+
 function PairingScreen(): ReactNode {
   const [value, setValue] = useState("");
   const [pairing, setPairing] = useState(false);
@@ -81,18 +101,10 @@ function PairingScreen(): ReactNode {
 
   if (scanning) {
     return (
-      <Suspense
-        fallback={
-          <div className="fixed inset-0 z-50 grid place-items-center bg-black">
-            <Loader2 className="size-6 animate-spin text-white" aria-hidden />
-          </div>
-        }
-      >
-        <QrPairingScanner
-          onDetect={(text) => void runPair(text)}
-          onCancel={() => setScanning(false)}
-        />
-      </Suspense>
+      <PairingScannerScreen
+        onDetect={(text) => void runPair(text)}
+        onCancel={() => setScanning(false)}
+      />
     );
   }
 
