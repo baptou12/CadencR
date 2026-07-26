@@ -27,6 +27,70 @@ interface MenuPosition {
   y: number;
 }
 
+function TerminalContextMenuContent({
+  paneId,
+  canClose,
+  menu,
+  runAction,
+  onSplit,
+  onClose,
+  onCopy,
+  onPaste,
+}: Omit<TerminalPaneContextMenuProps, "children" | "onOpen"> & {
+  menu: MenuPosition;
+  runAction: (action: () => void) => void;
+}): ReactNode {
+  return (
+    <div
+      role="menu"
+      className="fixed z-50 min-w-[12rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+      style={{ top: menu.y, left: menu.x }}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <ContextMenuActionButton
+        icon={SplitSquareHorizontalIcon}
+        shortcutId="terminal-split-h"
+        onSelect={() => runAction(() => onSplit(paneId, "horizontal"))}
+      >
+        Split horizontally
+      </ContextMenuActionButton>
+      <ContextMenuActionButton
+        icon={SplitSquareVerticalIcon}
+        shortcutId="terminal-split-v"
+        onSelect={() => runAction(() => onSplit(paneId, "vertical"))}
+      >
+        Split vertically
+      </ContextMenuActionButton>
+      <ContextMenuActionButton
+        icon={XIcon}
+        shortcutId="terminal-close"
+        disabled={!canClose}
+        onSelect={() => runAction(() => onClose(paneId))}
+      >
+        Close
+      </ContextMenuActionButton>
+      <div role="separator" className="-mx-1 my-1 h-px bg-border" />
+      <ContextMenuActionButton
+        icon={ClipboardPasteIcon}
+        shortcutKeys={["mod", "v"]}
+        onSelect={() => runAction(() => onPaste(paneId))}
+      >
+        Paste
+      </ContextMenuActionButton>
+      <ContextMenuActionButton
+        icon={ClipboardCopyIcon}
+        shortcutKeys={["mod", "c"]}
+        onSelect={() => runAction(() => onCopy(paneId))}
+      >
+        Copy
+      </ContextMenuActionButton>
+    </div>
+  );
+}
+
 export function TerminalPaneContextMenu({
   paneId,
   canClose,
@@ -88,53 +152,16 @@ export function TerminalPaneContextMenu({
       </div>
       {menu &&
         createPortal(
-          <div
-            role="menu"
-            className="fixed z-50 min-w-[12rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-            style={{ top: menu.y, left: menu.x }}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-          >
-            <ContextMenuActionButton
-              icon={SplitSquareHorizontalIcon}
-              shortcutId="terminal-split-h"
-              onSelect={() => runAction(() => onSplit(paneId, "horizontal"))}
-            >
-              Split horizontally
-            </ContextMenuActionButton>
-            <ContextMenuActionButton
-              icon={SplitSquareVerticalIcon}
-              shortcutId="terminal-split-v"
-              onSelect={() => runAction(() => onSplit(paneId, "vertical"))}
-            >
-              Split vertically
-            </ContextMenuActionButton>
-            <ContextMenuActionButton
-              icon={XIcon}
-              shortcutId="terminal-close"
-              disabled={!canClose}
-              onSelect={() => runAction(() => onClose(paneId))}
-            >
-              Close
-            </ContextMenuActionButton>
-            <div role="separator" className="-mx-1 my-1 h-px bg-border" />
-            <ContextMenuActionButton
-              icon={ClipboardPasteIcon}
-              shortcutKeys={["mod", "v"]}
-              onSelect={() => runAction(() => onPaste(paneId))}
-            >
-              Paste
-            </ContextMenuActionButton>
-            <ContextMenuActionButton
-              icon={ClipboardCopyIcon}
-              shortcutKeys={["mod", "c"]}
-              onSelect={() => runAction(() => onCopy(paneId))}
-            >
-              Copy
-            </ContextMenuActionButton>
-          </div>,
+          <TerminalContextMenuContent
+            paneId={paneId}
+            canClose={canClose}
+            menu={menu}
+            runAction={runAction}
+            onSplit={onSplit}
+            onClose={onClose}
+            onCopy={onCopy}
+            onPaste={onPaste}
+          />,
           document.body,
         )}
     </>
