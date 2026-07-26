@@ -142,6 +142,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // Master switch for fluid UI animations. When unset the frontend falls back
     // to the OS `prefers-reduced-motion` media query. Stored as "true" / "false".
     "animations_enabled",
+    // Monospace font family for the terminal, editor, and code snippets.
+    // A missing value means "Default" (see DEFAULT_MONO_STACK in
+    // packages/desktop/src/lib/fonts/constants.ts). Stored as the raw family
+    // name. Global choice, so workspace-scoped.
+    "mono_font_family",
     // Global agent stream verbosity. One of the AGENT_VERBOSITY_MODES values
     // in packages/desktop/src/lib/agent-verbosity.ts (currently "maximal" |
     // "auto_collapse" | "collapsed" | "compact"). The frontend is the source
