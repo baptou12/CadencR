@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Match pnpm's 14-day minimumReleaseAge policy. Dependabot security
+    # updates are not subject to cooldowns and can still open immediately.
+    cooldown:
+      default-days: 14
     groups:
       # Group only minor/patch bumps together. Major (breaking) updates get
       # their own PRs so risky migrations (e.g. react-query v5, TypeScript
