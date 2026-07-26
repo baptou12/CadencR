@@ -53,6 +53,110 @@ function displayUrl(url: string): string {
   return url === "about:blank" ? "" : url;
 }
 
+type BrowserTabActions = Pick<
+  BrowserWorkspaceModel,
+  "navigate" | "newTab" | "activateTab" | "closeTab" | "closeActiveTab"
+>;
+
+function useBrowserTabActions(
+  activeTab: BrowserTabMetadata | null,
+  mode: CookieMode,
+  scopeId: number,
+  runForActive: BrowserWorkspaceModel["runForActive"],
+  setUrlInput: (url: string) => void,
+  focusUrlBar: () => void,
+  setDismissedError: (error: string | null) => void,
+): BrowserTabActions {
+  const navigate = useCallback(
+    async (url: string): Promise<void> => {
+      setDismissedError(null);
+      if (!activeTab) {
+        try {
+          await desktopBridge.createBrowserTab(url, PROFILE_ID[mode], scopeId);
+        } catch (error) {
+          showBrowserError(error, "Could not open a new tab");
+        }
+        return;
+      }
+      await runForActive((tab) =>
+        desktopBridge.navigateBrowserTab(tab.id, url).then(() => undefined),
+      );
+    },
+    [activeTab, mode, runForActive, scopeId, setDismissedError],
+  );
+  const newTab = useCallback(async (): Promise<void> => {
+    try {
+      await desktopBridge.createBrowserTab(undefined, PROFILE_ID[mode], scopeId);
+      setUrlInput("");
+      requestAnimationFrame(focusUrlBar);
+    } catch (error) {
+      showBrowserError(error, "Could not open a new tab");
+    }
+  }, [focusUrlBar, mode, scopeId, setUrlInput]);
+  const activateTab = useCallback(
+    (tabId: string): void => void desktopBridge.activateBrowserTab(tabId).catch(reportBrowserError),
+    [],
+  );
+  const closeTab = useCallback(
+    (tabId: string): void => void desktopBridge.closeBrowserTab(tabId).catch(reportBrowserError),
+    [],
+  );
+  const closeActiveTab = useCallback((): void => {
+    if (activeTab) closeTab(activeTab.id);
+  }, [activeTab, closeTab]);
+  return useMemo(
+    () => ({ navigate, newTab, activateTab, closeTab, closeActiveTab }),
+    [activateTab, closeActiveTab, closeTab, navigate, newTab],
+  );
+}
+
+type BrowserPageActions = Pick<
+  BrowserWorkspaceModel,
+  "back" | "forward" | "reload" | "stop" | "zoomIn" | "zoomOut" | "devTools"
+>;
+
+function useBrowserPageActions(
+  runForActive: BrowserWorkspaceModel["runForActive"],
+): BrowserPageActions {
+  const bridgeAction = useCallback(
+    (action: (tabId: string) => Promise<void>): void => void runForActive((tab) => action(tab.id)),
+    [runForActive],
+  );
+  const back = useCallback(
+    () => bridgeAction((tabId) => desktopBridge.browserBack(tabId)),
+    [bridgeAction],
+  );
+  const forward = useCallback(
+    () => bridgeAction((tabId) => desktopBridge.browserForward(tabId)),
+    [bridgeAction],
+  );
+  const reload = useCallback(
+    () => bridgeAction((tabId) => desktopBridge.browserReload(tabId)),
+    [bridgeAction],
+  );
+  const stop = useCallback(
+    () => bridgeAction((tabId) => desktopBridge.browserStop(tabId)),
+    [bridgeAction],
+  );
+  const zoomIn = useCallback(
+    () => bridgeAction((tabId) => desktopBridge.browserZoomIn(tabId)),
+    [bridgeAction],
+  );
+  const zoomOut = useCallback(
+    () => bridgeAction((tabId) => desktopBridge.browserZoomOut(tabId)),
+    [bridgeAction],
+  );
+  const devTools = useCallback(
+    (): void =>
+      void runForActive((tab) => desktopBridge.toggleBrowserDevTools(tab.id).then(() => undefined)),
+    [runForActive],
+  );
+  return useMemo(
+    () => ({ back, forward, reload, stop, zoomIn, zoomOut, devTools }),
+    [back, devTools, forward, reload, stop, zoomIn, zoomOut],
+  );
+}
+
 export function useBrowserWorkspaceModel(
   defaultMode: CookieMode,
   scopeId: number,
@@ -97,107 +201,44 @@ export function useBrowserWorkspaceModel(
     input.select();
   }, []);
 
-  const navigate = useCallback(
-    async (url: string): Promise<void> => {
-      setDismissedError(null);
-      // With every tab closed there is nothing to navigate — open a fresh tab
-      // pointed at the typed URL instead of silently doing nothing.
-      if (!activeTab) {
-        try {
-          await desktopBridge.createBrowserTab(url, PROFILE_ID[mode], scopeId);
-        } catch (error) {
-          showBrowserError(error, "Could not open a new tab");
-        }
-        return;
-      }
-      await runForActive((tab) =>
-        desktopBridge.navigateBrowserTab(tab.id, url).then(() => undefined),
-      );
-    },
-    [activeTab, mode, runForActive, scopeId],
+  const tabActions = useBrowserTabActions(
+    activeTab,
+    mode,
+    scopeId,
+    runForActive,
+    setUrlInput,
+    focusUrlBar,
+    setDismissedError,
   );
-
-  const newTab = useCallback(async (): Promise<void> => {
-    try {
-      await desktopBridge.createBrowserTab(undefined, PROFILE_ID[mode], scopeId);
-      setUrlInput("");
-      // Focus after the create round-trips so the freshly mounted tab owns the
-      // address bar and the user can type a URL immediately.
-      requestAnimationFrame(focusUrlBar);
-    } catch (error) {
-      showBrowserError(error, "Could not open a new tab");
-    }
-  }, [focusUrlBar, mode, scopeId]);
-
-  const activateTab = useCallback(
-    (tabId: string): void => void desktopBridge.activateBrowserTab(tabId).catch(reportBrowserError),
-    [],
-  );
-  const closeTab = useCallback(
-    (tabId: string): void => void desktopBridge.closeBrowserTab(tabId).catch(reportBrowserError),
-    [],
-  );
-  const closeActiveTab = useCallback((): void => {
-    if (activeTab) closeTab(activeTab.id);
-  }, [activeTab, closeTab]);
-
-  const back = useCallback(
-    (): void => void runForActive((tab) => desktopBridge.browserBack(tab.id)),
-    [runForActive],
-  );
-  const forward = useCallback(
-    (): void => void runForActive((tab) => desktopBridge.browserForward(tab.id)),
-    [runForActive],
-  );
-  const reload = useCallback(
-    (): void => void runForActive((tab) => desktopBridge.browserReload(tab.id)),
-    [runForActive],
-  );
-  const stop = useCallback(
-    (): void => void runForActive((tab) => desktopBridge.browserStop(tab.id)),
-    [runForActive],
-  );
-  const zoomIn = useCallback(
-    (): void => void runForActive((tab) => desktopBridge.browserZoomIn(tab.id)),
-    [runForActive],
-  );
-  const zoomOut = useCallback(
-    (): void => void runForActive((tab) => desktopBridge.browserZoomOut(tab.id)),
-    [runForActive],
-  );
-  const devTools = useCallback(
-    (): void =>
-      void runForActive((tab) => desktopBridge.toggleBrowserDevTools(tab.id).then(() => undefined)),
-    [runForActive],
-  );
+  const pageActions = useBrowserPageActions(runForActive);
   const clearError = useCallback((): void => {
     if (state.error) setDismissedError(state.error);
   }, [state.error]);
 
   return useBrowserModelValue({
     activeTab,
-    activateTab,
-    back,
+    activateTab: tabActions.activateTab,
+    back: pageActions.back,
     clearError,
-    closeActiveTab,
-    closeTab,
-    devTools,
+    closeActiveTab: tabActions.closeActiveTab,
+    closeTab: tabActions.closeTab,
+    devTools: pageActions.devTools,
     focusUrlBar,
-    forward,
+    forward: pageActions.forward,
     loading,
     mode,
-    navigate,
-    newTab,
+    navigate: tabActions.navigate,
+    newTab: tabActions.newTab,
     pending,
-    reload,
+    reload: pageActions.reload,
     runForActive,
     setMode,
     setUrlEditing,
     setUrlInput,
     state: visibleState,
-    stop,
-    zoomIn,
-    zoomOut,
+    stop: pageActions.stop,
+    zoomIn: pageActions.zoomIn,
+    zoomOut: pageActions.zoomOut,
     urlInput,
     urlInputRef,
     viewportRef,

@@ -71,6 +71,16 @@ function filterOrigins(origins: string[], query: string): string[] {
   return [...prefix, ...substring].slice(0, MAX_SUGGESTIONS);
 }
 
+function useSuggestionOverlay(
+  onOpenChange: ((open: boolean) => void) | undefined,
+  open: boolean,
+): void {
+  useLayoutEffect(() => {
+    onOpenChange?.(open);
+  }, [onOpenChange, open]);
+  useLayoutEffect(() => () => onOpenChange?.(false), [onOpenChange]);
+}
+
 function BrowserAddressBarImpl(props: BrowserAddressBarProps): ReactElement {
   const { urlInput, pending, activeTab, knownOrigins, inputRef } = props;
   const { onUrlChange, onUrlEditingChange, onNavigate, onBack, onForward, onReload, onStop } =
@@ -90,13 +100,7 @@ function BrowserAddressBarImpl(props: BrowserAddressBarProps): ReactElement {
   const hasSuggestions = suggestions.length > 0;
   const suggestionsOpen = open && hasSuggestions;
 
-  useLayoutEffect(() => {
-    onSuggestionOverlayOpenChange?.(suggestionsOpen);
-  }, [onSuggestionOverlayOpenChange, suggestionsOpen]);
-  useLayoutEffect(
-    () => () => onSuggestionOverlayOpenChange?.(false),
-    [onSuggestionOverlayOpenChange],
-  );
+  useSuggestionOverlay(onSuggestionOverlayOpenChange, suggestionsOpen);
 
   function openDropdown(): void {
     setOpen(true);

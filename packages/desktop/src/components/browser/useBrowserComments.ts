@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { toast } from "sonner";
 import {
   desktopBridge,
@@ -52,6 +61,146 @@ export interface BrowserCommentsController {
   send: () => void;
 }
 
+function useBrowserBadgeActions(): {
+  clearBadges: (tabId: string) => void;
+  removeBadge: (tabId: string, anchorId: string) => void;
+} {
+  const clearBadges = useCallback((tabId: string): void => {
+    void desktopBridge
+      .clearBrowserCommentBadges(tabId)
+      .catch((error: unknown) => showBrowserError(error, "Could not clear Browser badges"));
+  }, []);
+  const removeBadge = useCallback((tabId: string, anchorId: string): void => {
+    void desktopBridge
+      .removeBrowserCommentBadge(tabId, anchorId)
+      .catch((error: unknown) => showBrowserError(error, "Could not update Browser badges"));
+  }, []);
+  return useMemo(() => ({ clearBadges, removeBadge }), [clearBadges, removeBadge]);
+}
+
+function useBadgeClickDraft(
+  commentsRef: MutableRefObject<BrowserComment[]>,
+  draftRef: MutableRefObject<BrowserCommentDraft | null>,
+  setDraft: Dispatch<SetStateAction<BrowserCommentDraft | null>>,
+): void {
+  useEffect(
+    () =>
+      desktopBridge.onBrowserCommentBadgeClick(({ anchorId, box }) => {
+        if (draftRef.current) return;
+        const index = commentsRef.current.findIndex((comment) => comment.id === anchorId);
+        if (index < 0) return;
+        const comment = commentsRef.current[index];
+        setDraft({
+          id: comment.id,
+          context: comment.context,
+          initialText: comment.text,
+          box: box ?? comment.context.element.boundingBox,
+          includeScreenshot: comment.includeScreenshot,
+          editing: true,
+          number: index + 1,
+        });
+      }),
+    [commentsRef, draftRef, setDraft],
+  );
+}
+
+function useCommentCollectionActions(
+  comments: BrowserComment[],
+  commentsRef: MutableRefObject<BrowserComment[]>,
+  clearBadges: (tabId: string) => void,
+  onSend: UseBrowserCommentsArgs["onSend"],
+  setComments: Dispatch<SetStateAction<BrowserComment[]>>,
+  setDraft: Dispatch<SetStateAction<BrowserCommentDraft | null>>,
+): Pick<BrowserCommentsController, "discardAll" | "send"> {
+  const discardAll = useCallback((): void => {
+    for (const tabId of new Set(commentsRef.current.map((comment) => comment.context.tabId))) {
+      clearBadges(tabId);
+    }
+    setComments([]);
+    setDraft(null);
+  }, [clearBadges, commentsRef, setComments, setDraft]);
+  const send = useCallback((): void => {
+    if (comments.length === 0) return;
+    const images = comments
+      .filter((comment) => comment.includeScreenshot)
+      .map((comment) => ({ base64: comment.context.screenshotPngBase64, mimeType: "image/png" }));
+    onSend(formatComments(comments), images.length > 0 ? images : undefined);
+    for (const tabId of new Set(comments.map((comment) => comment.context.tabId))) {
+      clearBadges(tabId);
+    }
+    setComments([]);
+    setDraft(null);
+    toast.success(
+      comments.length === 1
+        ? "Browser comment sent to the active agent."
+        : `${comments.length} browser comments sent to the active agent.`,
+    );
+  }, [clearBadges, comments, onSend, setComments, setDraft]);
+  return useMemo(() => ({ discardAll, send }), [discardAll, send]);
+}
+
+function useCommentDraftActions(
+  commentsRef: MutableRefObject<BrowserComment[]>,
+  includeScreenshotDefault: MutableRefObject<boolean>,
+  removeBadge: (tabId: string, anchorId: string) => void,
+  setComments: Dispatch<SetStateAction<BrowserComment[]>>,
+  setDraft: Dispatch<SetStateAction<BrowserCommentDraft | null>>,
+): Pick<
+  BrowserCommentsController,
+  "saveDraft" | "cancelDraft" | "toggleDraftScreenshot" | "removeComment"
+> {
+  const saveDraft = useCallback((text: string): void => {
+    setDraft((current) => {
+      if (!current) return null;
+      includeScreenshotDefault.current = current.includeScreenshot;
+      setComments((previous) =>
+        previous.some((comment) => comment.id === current.id)
+          ? previous.map((comment) =>
+              comment.id === current.id
+                ? { ...comment, text, includeScreenshot: current.includeScreenshot }
+                : comment,
+            )
+          : [
+              ...previous,
+              {
+                id: current.id,
+                context: current.context,
+                text,
+                includeScreenshot: current.includeScreenshot,
+              },
+            ],
+      );
+      return null;
+    });
+  }, []);
+  const cancelDraft = useCallback((): void => {
+    setDraft((current) => {
+      if (current && !commentsRef.current.some((comment) => comment.id === current.id)) {
+        removeBadge(current.context.tabId, current.id);
+      }
+      return null;
+    });
+  }, [commentsRef, removeBadge, setDraft]);
+  const toggleDraftScreenshot = useCallback((): void => {
+    setDraft((current) =>
+      current ? { ...current, includeScreenshot: !current.includeScreenshot } : current,
+    );
+  }, [setDraft]);
+  const removeComment = useCallback(
+    (id: string): void => {
+      const comment = commentsRef.current.find((candidate) => candidate.id === id);
+      setComments((previous) => previous.filter((candidate) => candidate.id !== id));
+      setDraft((current) => (current?.id === id ? null : current));
+      if (comment) removeBadge(comment.context.tabId, id);
+    },
+    [commentsRef, removeBadge, setComments, setDraft],
+  );
+  return useMemo(
+    () => ({ saveDraft, cancelDraft, toggleDraftScreenshot, removeComment }),
+    [cancelDraft, removeComment, saveDraft, toggleDraftScreenshot],
+  );
+}
+
 /**
  * Collects element-anchored comments before sending them to the agent as one
  * message. Picking an element pins a numbered badge to it on the page and opens
@@ -73,17 +222,7 @@ export function useBrowserComments(args: UseBrowserCommentsArgs): BrowserComment
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
-  const clearBadges = useCallback((tabId: string): void => {
-    void desktopBridge
-      .clearBrowserCommentBadges(tabId)
-      .catch((error: unknown) => showBrowserError(error, "Could not clear Browser badges"));
-  }, []);
-
-  const removeBadge = useCallback((tabId: string, anchorId: string): void => {
-    void desktopBridge
-      .removeBrowserCommentBadge(tabId, anchorId)
-      .catch((error: unknown) => showBrowserError(error, "Could not update Browser badges"));
-  }, []);
+  const { clearBadges, removeBadge } = useBrowserBadgeActions();
 
   const addComment = useCallback((): void => {
     if (picking) return;
@@ -103,111 +242,33 @@ export function useBrowserComments(args: UseBrowserCommentsArgs): BrowserComment
     }).finally(() => setPicking(false));
   }, [picking, runForActive]);
 
-  const saveDraft = useCallback((text: string): void => {
-    setDraft((current) => {
-      if (!current) return null;
-      includeScreenshotDefault.current = current.includeScreenshot;
-      setComments((prev) =>
-        prev.some((c) => c.id === current.id)
-          ? prev.map((c) =>
-              c.id === current.id
-                ? { ...c, text, includeScreenshot: current.includeScreenshot }
-                : c,
-            )
-          : [
-              ...prev,
-              {
-                id: current.id,
-                context: current.context,
-                text,
-                includeScreenshot: current.includeScreenshot,
-              },
-            ],
-      );
-      return null;
-    });
-  }, []);
-
-  const cancelDraft = useCallback((): void => {
-    setDraft((current) => {
-      // A never-saved pick leaves an orphan badge on the page — drop it.
-      if (current && !commentsRef.current.some((c) => c.id === current.id)) {
-        removeBadge(current.context.tabId, current.id);
-      }
-      return null;
-    });
-  }, [removeBadge]);
-
-  const toggleDraftScreenshot = useCallback((): void => {
-    setDraft((current) =>
-      current ? { ...current, includeScreenshot: !current.includeScreenshot } : current,
-    );
-  }, []);
-
-  const removeComment = useCallback(
-    (id: string): void => {
-      const comment = commentsRef.current.find((c) => c.id === id);
-      setComments((prev) => prev.filter((c) => c.id !== id));
-      setDraft((current) => (current?.id === id ? null : current));
-      if (comment) removeBadge(comment.context.tabId, id);
-    },
-    [removeBadge],
+  const draftActions = useCommentDraftActions(
+    commentsRef,
+    includeScreenshotDefault,
+    removeBadge,
+    setComments,
+    setDraft,
   );
 
-  // Reopen a saved comment when its on-page badge is clicked, positioning the
-  // form at the element's freshly-measured rect (it may have moved since pick).
-  useEffect(() => {
-    return desktopBridge.onBrowserCommentBadgeClick(({ anchorId, box }) => {
-      if (draftRef.current) return; // a composer is already open
-      const index = commentsRef.current.findIndex((c) => c.id === anchorId);
-      if (index < 0) return;
-      const comment = commentsRef.current[index];
-      setDraft({
-        id: comment.id,
-        context: comment.context,
-        initialText: comment.text,
-        box: box ?? comment.context.element.boundingBox,
-        includeScreenshot: comment.includeScreenshot,
-        editing: true,
-        number: index + 1,
-      });
-    });
-  }, []);
-
-  const discardAll = useCallback((): void => {
-    for (const tabId of new Set(commentsRef.current.map((c) => c.context.tabId))) {
-      clearBadges(tabId);
-    }
-    setComments([]);
-    setDraft(null);
-  }, [clearBadges]);
-
-  const send = useCallback((): void => {
-    if (comments.length === 0) return;
-    const images = comments
-      .filter((c) => c.includeScreenshot)
-      .map((c) => ({ base64: c.context.screenshotPngBase64, mimeType: "image/png" }));
-    onSend(formatComments(comments), images.length > 0 ? images : undefined);
-    for (const tabId of new Set(comments.map((c) => c.context.tabId))) clearBadges(tabId);
-    setComments([]);
-    setDraft(null);
-    toast.success(
-      comments.length === 1
-        ? "Browser comment sent to the active agent."
-        : `${comments.length} browser comments sent to the active agent.`,
-    );
-  }, [comments, clearBadges, onSend]);
-
-  return {
+  useBadgeClickDraft(commentsRef, draftRef, setDraft);
+  const collectionActions = useCommentCollectionActions(
     comments,
-    draft,
-    picking,
-    addComment,
-    saveDraft,
-    cancelDraft,
-    toggleDraftScreenshot,
-    removeComment,
-    discardAll,
-    send,
-  };
+    commentsRef,
+    clearBadges,
+    onSend,
+    setComments,
+    setDraft,
+  );
+
+  return useMemo(
+    () => ({
+      comments,
+      draft,
+      picking,
+      addComment,
+      ...draftActions,
+      ...collectionActions,
+    }),
+    [addComment, collectionActions, comments, draft, draftActions, picking],
+  );
 }
