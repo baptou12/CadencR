@@ -138,16 +138,64 @@ pub struct PrStatusSnapshot {
     pub ci: Option<CiRollup>,
     pub fetched_at: i64,
     pub error: Option<String>,
-    pub auth_required: bool,
+    /// The forge cannot be reached until the user finishes connecting it — no
+    /// token, no provider kind, no API base URL, or a token the forge rejected.
+    ///
+    /// `error` carries the specific reason. Kept separate from a transient
+    /// failure (rate limit, network, unexpected response) because only this
+    /// state is worth turning into an onboarding prompt: retrying will never
+    /// clear it, and offering "connect a provider" for a 500 would be wrong.
+    pub setup_required: bool,
+    /// How many review threads the forge still reports as open.
+    ///
+    /// `None` means "not looked up", not "zero" — the poller only pays for the
+    /// extra round trip when the checks are green, because that is the only
+    /// state where the count changes what the sidebar shows. Consumers must
+    /// treat `None` as unknown and fall back to the check-driven tone.
+    #[serde(default)]
+    pub unresolved_threads: Option<u32>,
 }
 
 impl PrStatusSnapshot {
+    /// A snapshot for a feature the poller could not ask a forge about — no
+    /// remote, no branch, or the request never got off the ground.
+    pub fn unpolled(feature_id: i64, error: Option<String>, setup_required: bool) -> Self {
+        Self {
+            feature_id,
+            pr: None,
+            ci: None,
+            fetched_at: chrono::Utc::now().timestamp_millis(),
+            error,
+            setup_required,
+            unresolved_threads: None,
+        }
+    }
+
+    /// Whether a freshly polled snapshot says anything new. Gates the WebSocket
+    /// broadcast, so a field missing here is an update the UI never sees.
+    ///
+    /// Destructured rather than written as a field list: adding a field to
+    /// `PrStatusSnapshot` then fails to compile here, which is how the
+    /// `unresolved_threads` omission should have been caught. Mirrored by
+    /// `prStatusSnapshotsEqual` in `usePrStatusStore.ts`.
     pub fn semantic_eq(&self, other: &Self) -> bool {
-        self.feature_id == other.feature_id
-            && self.pr == other.pr
-            && self.ci == other.ci
-            && self.error == other.error
-            && self.auth_required == other.auth_required
+        let Self {
+            feature_id,
+            pr,
+            ci,
+            // Advances on every poll whether or not anything changed; comparing
+            // it would rebroadcast the whole sidebar once a minute, forever.
+            fetched_at: _,
+            error,
+            setup_required,
+            unresolved_threads,
+        } = self;
+        *feature_id == other.feature_id
+            && *pr == other.pr
+            && *ci == other.ci
+            && *error == other.error
+            && *setup_required == other.setup_required
+            && *unresolved_threads == other.unresolved_threads
     }
 }
 
@@ -244,6 +292,19 @@ pub enum ForgeError {
     Response(String),
 }
 
+impl ForgeError {
+    /// Whether the user has to change something in Settings before this call
+    /// can ever succeed — an expired token, an unsupported CLI, a remote whose
+    /// provider was never chosen.
+    ///
+    /// Same partition as [`forge_to_app_error`](super::auth::forge_to_app_error):
+    /// the two variants that answer a request with 4xx are exactly the ones a
+    /// retry will not fix.
+    pub fn is_setup_failure(&self) -> bool {
+        matches!(self, Self::Authentication(_) | Self::Configuration(_))
+    }
+}
+
 impl fmt::Display for ForgeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
@@ -276,5 +337,62 @@ pub fn proposal_noun(host: GitHost) -> &'static str {
     match host {
         GitHost::GitLab => "Merge request",
         GitHost::GitHub | GitHost::Bitbucket | GitHost::Other => "Pull request",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_poll_of_unchanged_state_is_not_worth_broadcasting() {
+        let first = PrStatusSnapshot::unpolled(7, None, false);
+        let second = PrStatusSnapshot::unpolled(7, None, false);
+
+        // `fetched_at` advances on every poll and must not count, or the
+        // sidebar would re-render once a minute forever.
+        assert_ne!(first.fetched_at, 0);
+        assert!(first.semantic_eq(&second));
+    }
+
+    #[test]
+    fn only_failures_the_user_can_fix_in_settings_ask_them_to_connect() {
+        // Drives the PR pane's choice between an onboarding prompt and a plain
+        // error, so a misfiled variant would tell the user to reconnect a forge
+        // that is merely rate-limited.
+        assert!(ForgeError::Authentication("token expired".into()).is_setup_failure());
+        assert!(ForgeError::Configuration("choose a provider".into()).is_setup_failure());
+        assert!(!ForgeError::RateLimited("slow down".into()).is_setup_failure());
+        assert!(!ForgeError::Http("connection reset".into()).is_setup_failure());
+        assert!(!ForgeError::Response("unexpected body".into()).is_setup_failure());
+    }
+
+    #[test]
+    fn a_setup_prompt_and_a_transient_error_are_different_snapshots() {
+        // Both have no PR and an error string; only `setup_required` separates
+        // "connect your forge" from "the forge is having a bad day", so it has
+        // to reach the sidebar rather than being collapsed as unchanged.
+        let needs_setup = PrStatusSnapshot::unpolled(7, Some("add a token".into()), true);
+        let transient = PrStatusSnapshot::unpolled(7, Some("add a token".into()), false);
+
+        assert!(!needs_setup.semantic_eq(&transient));
+    }
+
+    #[test]
+    fn a_thread_count_change_alone_still_reaches_the_sidebar() {
+        // The count is the only thing that moves when a reviewer resolves the
+        // last thread on an already-green PR. If `semantic_eq` ignored it the
+        // chip would keep saying "unresolved" until something else changed.
+        let resolved = PrStatusSnapshot {
+            unresolved_threads: Some(0),
+            ..PrStatusSnapshot::unpolled(7, None, false)
+        };
+        let outstanding = PrStatusSnapshot {
+            unresolved_threads: Some(2),
+            ..PrStatusSnapshot::unpolled(7, None, false)
+        };
+
+        assert!(!resolved.semantic_eq(&outstanding));
+        assert!(!resolved.semantic_eq(&PrStatusSnapshot::unpolled(7, None, false)));
     }
 }

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
 import type { PrStatusSnapshot } from "@/api/generated";
-import { FeaturePrIndicator, prIndicatorTone } from "./PrStatusIndicators";
+import { FeaturePrIndicator, prIndicatorTone, prStatusLabel } from "./PrStatusIndicators";
 
 function snapshot(
   overrides: Partial<PrStatusSnapshot> = {},
   prOverrides: Partial<NonNullable<PrStatusSnapshot["pr"]>> = {},
 ): PrStatusSnapshot {
   return {
-    auth_required: false,
+    setup_required: false,
     feature_id: 20,
     fetched_at: 1,
     error: null,
@@ -65,6 +65,37 @@ describe("prIndicatorTone", () => {
     ).toBe("danger");
     expect(prIndicatorTone(snapshot({ error: "Bad credentials" }))).toBe("danger");
   });
+
+  it("uses yellow when the checks are green but reviewers are still waiting", () => {
+    expect(prIndicatorTone(snapshot({ unresolved_threads: 2 }))).toBe("unresolved");
+    // Outranks the review-state blockers: green checks plus open threads is a
+    // different call to action than "nobody has looked yet".
+    expect(
+      prIndicatorTone(snapshot({ unresolved_threads: 1 }, { review_state: "changes_requested" })),
+    ).toBe("unresolved");
+  });
+
+  it("treats an unknown thread count as unknown rather than zero", () => {
+    // The poller only looks the count up for green PRs, so `undefined` must not
+    // read as "nothing left to answer" and flip the chip to ready-blue early.
+    expect(prIndicatorTone(snapshot({ unresolved_threads: undefined }))).toBe("ready");
+    expect(prIndicatorTone(snapshot({ unresolved_threads: 0 }))).toBe("ready");
+  });
+
+  it("keeps failing checks and drafts ahead of unresolved threads", () => {
+    expect(
+      prIndicatorTone(snapshot({ ci: { state: "failing", checks: [] }, unresolved_threads: 3 })),
+    ).toBe("danger");
+    expect(prIndicatorTone(snapshot({ unresolved_threads: 3 }, { state: "draft" }))).toBe(
+      "blocked",
+    );
+  });
+
+  it("names the outstanding threads in the chip tooltip", () => {
+    expect(prStatusLabel(snapshot({ unresolved_threads: 2 }))).toContain("2 unresolved threads");
+    expect(prStatusLabel(snapshot({ unresolved_threads: 1 }))).toContain("1 unresolved thread");
+    expect(prStatusLabel(snapshot())).not.toContain("unresolved");
+  });
 });
 
 describe("FeaturePrIndicator", () => {
@@ -100,5 +131,21 @@ describe("FeaturePrIndicator", () => {
     render(<FeaturePrIndicator snapshot={snapshot({ pr: null, error: "Bad credentials" })} />);
 
     expect(screen.getByLabelText("Forge status error: Bad credentials")).toBeInTheDocument();
+  });
+
+  it("stays silent about a forge the user never connected", () => {
+    // The reason is written for the PR pane's onboarding prompt. Painting it as
+    // a red dot here would mark every row on a fresh install as broken.
+    const { container } = render(
+      <FeaturePrIndicator
+        snapshot={snapshot({
+          pr: null,
+          setup_required: true,
+          error: "Add an API token for github.com to load pull requests, checks, and comments.",
+        })}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
   });
 });

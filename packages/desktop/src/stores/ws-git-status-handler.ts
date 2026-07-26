@@ -289,7 +289,7 @@ export function parsePrStatusSnapshot(payload: Record<string, unknown>): PrStatu
   if (
     typeof payload.feature_id !== "number" ||
     typeof payload.fetched_at !== "number" ||
-    typeof payload.auth_required !== "boolean"
+    typeof payload.setup_required !== "boolean"
   ) {
     return null;
   }

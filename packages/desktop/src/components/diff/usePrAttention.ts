@@ -46,6 +46,6 @@ export function prAttentionSignal(status: PrStatusSnapshot | undefined): string 
         }
       : null,
     error: status.error ?? null,
-    authRequired: status.auth_required,
+    setupRequired: status.setup_required,
   });
 }

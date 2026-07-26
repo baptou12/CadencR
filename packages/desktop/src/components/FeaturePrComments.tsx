@@ -16,16 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { openExternalUrl } from "@/lib/open-external";
-import { isThreadAnchored, threadExternalHost } from "@/lib/pr-review-threads";
+import { isThreadAnchored, threadExternalHost, threadLocation } from "@/lib/pr-review-threads";
+import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 import { cn } from "@/lib/utils";
 
-/**
- * One review thread in the PR timeline.
- *
- * The header line carries everything that decides whether the thread still
- * needs work: where it points, whether the diff has moved out from under it,
- * and whether the forge considers it settled.
- */
+/** One review thread in the PR timeline. */
 export const PrCommentThread = memo(function PrCommentThread({
   thread,
   selected = false,
@@ -37,72 +32,26 @@ export const PrCommentThread = memo(function PrCommentThread({
   onSelectedChange?: (selected: boolean) => void;
   onViewThread?: (thread: CommentThread) => void;
 }): ReactElement {
-  const context = thread.file
-    ? `${thread.file}${thread.line != null ? `:${thread.line}` : ""}${
-        thread.side === "old" ? " (removed side)" : ""
-      }`
-    : null;
   const selectable = thread.resolved !== true && onSelectedChange != null;
-  const selectionId = useId();
-  const contextLabel = (
-    <span className="min-w-0 truncate font-mono text-muted-foreground" title={context ?? undefined}>
-      {context ?? "Review thread"}
-    </span>
-  );
   return (
     <article
       data-selected={selected || undefined}
       className={cn(
-        "mx-4 mb-3 overflow-hidden rounded-md border bg-card transition-[border-color,box-shadow]",
+        // Gap below each card is the row wrapper's padding, not a margin here:
+        // Virtuoso measures item wrappers with `getBoundingClientRect`, which
+        // excludes margins, so a margin would leave the list short by one gap
+        // per card — and the last card flush against the bottom edge.
+        "mx-4 overflow-hidden rounded-md border bg-card transition-[border-color,box-shadow]",
         selected ? "border-primary/60 ring-1 ring-primary/20" : "border-border",
         thread.resolved && "opacity-70",
       )}
     >
-      {(context || thread.resolved != null || selectable) && (
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-[11px]">
-          {selectable ? (
-            <label
-              htmlFor={selectionId}
-              className="-my-1.5 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5"
-              title="Include this review thread when sending to the agent"
-            >
-              <Checkbox
-                id={selectionId}
-                checked={selected}
-                onCheckedChange={(checked) => onSelectedChange(checked === true)}
-                aria-label={`Select ${context ? `${context} ` : ""}review thread for the agent`}
-                className="mr-0.5"
-              />
-              {contextLabel}
-            </label>
-          ) : (
-            contextLabel
-          )}
-          <span className="flex shrink-0 items-center gap-1">
-            {thread.outdated && (
-              <Badge
-                variant="outline"
-                className="rounded-md px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
-                title="The diff moved since this comment was written, so its line no longer points at the current code"
-              >
-                outdated
-              </Badge>
-            )}
-            {thread.resolved != null && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  "rounded-md px-1.5 py-0 text-[10px] font-medium capitalize",
-                  thread.resolved
-                    ? "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10 text-[var(--acc-green)]"
-                    : "border-[var(--acc-orange)]/40 bg-[var(--acc-orange)]/10 text-[var(--acc-orange)]",
-                )}
-              >
-                {thread.resolved ? "resolved" : "open"}
-              </Badge>
-            )}
-          </span>
-        </div>
+      {(thread.file || thread.resolved != null || selectable) && (
+        <ThreadHeader
+          thread={thread}
+          selected={selected}
+          onSelectedChange={selectable ? onSelectedChange : undefined}
+        />
       )}
       <div className="divide-y divide-border">
         {thread.comments.map((comment, index) => (
@@ -126,6 +75,79 @@ export const PrCommentThread = memo(function PrCommentThread({
     </article>
   );
 });
+
+/**
+ * The line that decides whether a thread still needs work: where it points,
+ * whether the diff has moved out from under it, whether the forge considers it
+ * settled — and, when it is still open, the box that hands it to the agent.
+ */
+function ThreadHeader({
+  thread,
+  selected,
+  onSelectedChange,
+}: {
+  thread: CommentThread;
+  selected: boolean;
+  onSelectedChange?: (selected: boolean) => void;
+}): ReactElement {
+  const selectionId = useId();
+  const location = threadLocation(thread);
+  const context = location && thread.side === "old" ? `${location} (removed side)` : location;
+  const contextLabel = (
+    <span className="min-w-0 truncate font-mono text-muted-foreground" title={context ?? undefined}>
+      {context ?? "General comment"}
+    </span>
+  );
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-[11px]">
+      {onSelectedChange ? (
+        <label
+          htmlFor={selectionId}
+          className="-my-1.5 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5"
+          title="Send this thread to the agent"
+        >
+          <Checkbox
+            id={selectionId}
+            checked={selected}
+            onCheckedChange={(checked) => onSelectedChange(checked === true)}
+            aria-label={`Send ${context ?? "this general comment"} to the agent`}
+            className="mr-0.5"
+          />
+          {contextLabel}
+        </label>
+      ) : (
+        contextLabel
+      )}
+      <span className="flex shrink-0 items-center gap-1">
+        {thread.outdated && (
+          <Badge
+            variant="outline"
+            className="rounded-md px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
+            title="The diff moved since this comment was written, so its line no longer points at the current code"
+          >
+            outdated
+          </Badge>
+        )}
+        {thread.resolved != null && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "rounded-md px-1.5 py-0 text-[10px] font-medium capitalize",
+              // Not PR_TONE_BADGE: that map is keyed by *proposal* state, and a
+              // resolved thread borrowing the "merged" key would tie two
+              // unrelated meanings to one token. Same colours, different idea.
+              thread.resolved
+                ? "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10 text-[var(--acc-green)]"
+                : "border-[var(--acc-orange)]/40 bg-[var(--acc-orange)]/10 text-[var(--acc-orange)]",
+            )}
+          >
+            {thread.resolved ? "resolved" : "open"}
+          </Badge>
+        )}
+      </span>
+    </div>
+  );
+}
 
 function ThreadActions({
   thread,
@@ -167,18 +189,7 @@ function ThreadActions({
   );
 }
 
-export function CommentsHeader({
-  commentsLoading,
-  commentsRefreshing,
-  commentsError,
-  onRetry,
-  commentCount,
-  unresolvedCount,
-  totalCount,
-  filter,
-  onFilterChange,
-  selectionEnabled = false,
-}: {
+export interface CommentsHeaderProps {
   commentsLoading: boolean;
   commentsRefreshing: boolean;
   commentsError: string | undefined;
@@ -190,7 +201,24 @@ export function CommentsHeader({
   filter: PrCommentFilter;
   onFilterChange: (next: PrCommentFilter) => void;
   selectionEnabled?: boolean;
-}): ReactElement {
+  selectedCount?: number;
+  onAllSelectedChange?: (selected: boolean) => void;
+}
+
+export function CommentsHeader({
+  commentsLoading,
+  commentsRefreshing,
+  commentsError,
+  onRetry,
+  commentCount,
+  unresolvedCount,
+  totalCount,
+  filter,
+  onFilterChange,
+  selectionEnabled = false,
+  selectedCount = 0,
+  onAllSelectedChange,
+}: CommentsHeaderProps): ReactElement {
   const showFilter = !commentsLoading && !commentsError && totalCount > 0;
   return (
     <div className="space-y-2">
@@ -214,11 +242,12 @@ export function CommentsHeader({
           />
         )}
       </div>
-      {selectionEnabled && (
-        <p className="text-[11.5px] leading-relaxed text-muted-foreground">
-          Check the review threads you want to send to the agent, then click{" "}
-          <span className="font-medium text-foreground">Send X threads</span> below.
-        </p>
+      {selectionEnabled && onAllSelectedChange && (
+        <SelectAllThreads
+          unresolvedCount={unresolvedCount}
+          selectedCount={selectedCount}
+          onAllSelectedChange={onAllSelectedChange}
+        />
       )}
       {commentsError && (
         <CommentsError
@@ -234,6 +263,60 @@ export function CommentsHeader({
             : "Nothing unresolved — every review thread on this proposal is resolved."}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The head of the checkable list: one control that takes every unresolved
+ * thread at once, and the running count so the developer can see what the send
+ * button is about to carry without scrolling back down to it.
+ *
+ * The label names the effect, not the object — the checkbox column exists only
+ * to build the agent's payload, so the header says so and every row below
+ * inherits the meaning. Tri-state on purpose: after ticking a few threads by
+ * hand, a plain unchecked box would read as "nothing selected".
+ */
+function SelectAllThreads({
+  unresolvedCount,
+  selectedCount,
+  onAllSelectedChange,
+}: {
+  unresolvedCount: number;
+  selectedCount: number;
+  onAllSelectedChange: (selected: boolean) => void;
+}): ReactElement {
+  const selectAllId = useId();
+  const allSelected = selectedCount === unresolvedCount;
+  const checked: boolean | "indeterminate" = allSelected
+    ? true
+    : selectedCount > 0
+      ? "indeterminate"
+      : false;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <label
+        htmlFor={selectAllId}
+        className="-my-1 flex cursor-pointer items-center gap-2 py-1 text-[11.5px] font-medium text-foreground"
+        title={
+          allSelected
+            ? "Clear every thread"
+            : `Send all ${unresolvedCount} unresolved threads to the agent`
+        }
+      >
+        <Checkbox
+          id={selectAllId}
+          checked={checked}
+          onCheckedChange={() => onAllSelectedChange(!allSelected)}
+          aria-label={`Send all ${unresolvedCount} unresolved threads to the agent`}
+        />
+        Send all to agent
+      </label>
+      <span className="text-[11.5px] leading-relaxed text-muted-foreground" aria-live="polite">
+        {selectedCount > 0
+          ? `${selectedCount} of ${unresolvedCount} picked — send from the bar below.`
+          : "Or tick individual threads to choose what the agent works on."}
+      </span>
     </div>
   );
 }
@@ -264,7 +347,9 @@ function CommentsError({
       <Button
         variant="ghost"
         size="xs"
-        onClick={() => void navigate({ to: "/settings", search: { section: "git" } })}
+        onClick={() =>
+          void navigate({ to: "/settings", search: { section: FORGE_SETTINGS_ANCHOR } })
+        }
       >
         <Settings2Icon className="size-3" aria-hidden />
         Git settings

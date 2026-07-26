@@ -49,7 +49,7 @@ describe("shortcut registry", () => {
       uncommitted: ["mod", "u"],
       target: ["mod", "t"],
       pullRequest: ["mod", "p"],
-      commits: ["mod", "h"],
+      commits: ["mod", "y"],
       branches: ["mod", "l"],
       stashes: ["mod", "s"],
     });

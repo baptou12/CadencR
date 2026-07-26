@@ -75,11 +75,32 @@ describe("CommentsHeader", () => {
         filter="unresolved"
         onFilterChange={vi.fn()}
         selectionEnabled
+        onAllSelectedChange={vi.fn()}
       />,
     );
 
     expect(
-      screen.getByText(/Check the review threads you want to send to the agent/),
-    ).toHaveTextContent("Send X threads");
+      screen.getByRole("checkbox", { name: /send all 2 unresolved threads to the agent/i }),
+    ).toBeVisible();
+    expect(screen.getByText(/Or tick individual threads/)).toBeVisible();
+  });
+
+  it("leaves the select-all control out when the caller cannot act on it", () => {
+    render(
+      <CommentsHeader
+        commentsLoading={false}
+        commentsRefreshing={false}
+        commentsError={undefined}
+        onRetry={vi.fn()}
+        commentCount={2}
+        unresolvedCount={2}
+        totalCount={2}
+        filter="unresolved"
+        onFilterChange={vi.fn()}
+        selectionEnabled
+      />,
+    );
+
+    expect(screen.queryByRole("checkbox")).toBeNull();
   });
 });

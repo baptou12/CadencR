@@ -24,6 +24,7 @@ import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsHeading } from "@/components/settings/SettingsHeading";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { queryClient } from "@/lib/queryClient";
+import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 import { refreshPrStatusesAfterAuth } from "@/stores/pr-status-hydration";
 
 /**
@@ -85,7 +86,10 @@ export function GitRemotesSettings(): ReactElement {
   };
 
   return (
-    <div className="space-y-3">
+    // The PR pane's "Connect a provider" button deep-links straight here rather
+    // than to the top of the Git section, which opens on merge strategy.
+    // `scroll-mt-6` matches `SettingsSection` so the heading clears the top edge.
+    <div id={FORGE_SETTINGS_ANCHOR} className="scroll-mt-6 space-y-3">
       <SettingsHeading
         title="Remote connections"
         description="Connect the host behind each project's origin remote to show pull request and merge request status, checks, and comments. Tokens are stored locally in an owner-only secret file, never in workspace settings."

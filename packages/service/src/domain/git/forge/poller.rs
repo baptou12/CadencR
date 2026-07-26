@@ -4,12 +4,17 @@ use std::time::{Duration, Instant};
 use futures::{stream, StreamExt};
 use tracing::{info, warn};
 
+mod targets;
+mod unresolved_threads;
+
+use self::targets::target_without_repo_snapshot;
+use self::unresolved_threads::unresolved_thread_counts;
 use super::auth::{host_configs, resolve_credentials};
 use super::provider::{
     CiRollup, ForgeContext, ForgeError, ForgeHostConfig, ForgeProvider, PrState, PrStatusSnapshot,
     PrSummary,
 };
-use super::repository::{active_feature_targets, FeatureForgeTarget};
+use super::repository::active_feature_targets;
 use super::{api_base_url, effective_kind, provider_for};
 use crate::app_state::AppState;
 use crate::domain::git::host::{GitHost, RemoteInfo};
@@ -19,6 +24,8 @@ use crate::error::AppError;
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 const RUNNING_CI_POLL_INTERVAL: Duration = Duration::from_secs(30);
 const BITBUCKET_POLL_INTERVAL: Duration = Duration::from_secs(120);
+/// How many per-PR forge lookups a single repo group runs at once.
+const PR_FANOUT: usize = 4;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct RepoKey {
@@ -119,41 +126,6 @@ async fn refresh(
     Ok(())
 }
 
-fn target_without_repo_snapshot(target: &FeatureForgeTarget) -> Option<PrStatusSnapshot> {
-    let fetched_at = chrono::Utc::now().timestamp_millis();
-    if let Some(error) = &target.error {
-        return Some(PrStatusSnapshot {
-            feature_id: target.feature_id,
-            pr: None,
-            ci: None,
-            fetched_at,
-            error: Some(error.clone()),
-            auth_required: false,
-        });
-    }
-    if target.remote.is_none() {
-        return Some(PrStatusSnapshot {
-            feature_id: target.feature_id,
-            pr: None,
-            ci: None,
-            fetched_at,
-            error: None,
-            auth_required: false,
-        });
-    }
-    if target.branch.is_none() {
-        return Some(PrStatusSnapshot {
-            feature_id: target.feature_id,
-            pr: None,
-            ci: None,
-            fetched_at,
-            error: Some("Could not determine the feature branch".into()),
-            auth_required: false,
-        });
-    }
-    None
-}
-
 async fn should_poll(
     state: &AppState,
     group: &RepoGroup,
@@ -188,25 +160,27 @@ async fn poll_interval(state: &AppState, group: &RepoGroup) -> Duration {
 }
 
 async fn refresh_group(state: &AppState, group: RepoGroup) {
+    let hostname = &group.remote.hostname;
     let Some(provider) = provider_for(group.kind) else {
         publish_group_error(
             state,
             &group,
-            "Choose a forge kind for this remote in Settings".into(),
-            false,
+            &ForgeError::Configuration(format!(
+                "Choose which provider {hostname} runs so Cadencr knows which API to call."
+            )),
         )
         .await;
         return;
     };
-    let api_base_url = match api_base_url(&group.remote.hostname, group.kind, group.config.as_ref())
-    {
+    let api_base_url = match api_base_url(hostname, group.kind, group.config.as_ref()) {
         Some(url) => url,
         None => {
             publish_group_error(
                 state,
                 &group,
-                "Configure an API base URL for this forge".into(),
-                false,
+                &ForgeError::Configuration(format!(
+                    "Set an API base URL for {hostname} before Cadencr can reach its API."
+                )),
             )
             .await;
             return;
@@ -214,7 +188,7 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
     };
     let credentials = match resolve_credentials(
         &state.forge_auth,
-        &group.remote.hostname,
+        hostname,
         group.kind,
         group.config.as_ref(),
     )
@@ -222,11 +196,18 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
     {
         Ok(Some(credentials)) => credentials,
         Ok(None) => {
-            publish_group_error(state, &group, String::new(), true).await;
+            publish_group_error(
+                state,
+                &group,
+                &ForgeError::Authentication(format!(
+                    "Add an API token for {hostname} to load pull requests, checks, and comments."
+                )),
+            )
+            .await;
             return;
         }
         Err(error) => {
-            publish_group_error(state, &group, error.to_string(), false).await;
+            publish_group_error(state, &group, &error).await;
             return;
         }
     };
@@ -239,7 +220,9 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
     let prs = match provider.list_open_prs(&context).await {
         Ok(prs) => prs,
         Err(error) => {
-            publish_group_error(state, &group, error.to_string(), false).await;
+            // The first real call is where an expired or wrongly-scoped token
+            // surfaces, so this arm carries onboarding failures too.
+            publish_group_error(state, &group, &error).await;
             return;
         }
     };
@@ -251,7 +234,7 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
         .filter(|pr| matches!(pr.state, PrState::Open | PrState::Draft))
         .map(|pr| (pr.number, pr.clone()))
         .collect::<HashMap<_, _>>();
-    let ci_by_pr = stream::iter(unique_prs.into_values())
+    let ci_by_pr = stream::iter(unique_prs.values().cloned())
         .map(|pr| {
             let context = &context;
             async move {
@@ -259,9 +242,11 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
                 (number, provider.ci_rollup(context, &pr).await)
             }
         })
-        .buffer_unordered(4)
+        .buffer_unordered(PR_FANOUT)
         .collect::<HashMap<u64, Result<CiRollup, ForgeError>>>()
         .await;
+    let unresolved_by_pr =
+        unresolved_thread_counts(provider, &context, &unique_prs, &ci_by_pr).await;
     let fetched_at = chrono::Utc::now().timestamp_millis();
     for (feature_id, _) in &group.features {
         let pr = matches.get(feature_id).cloned().flatten();
@@ -269,6 +254,20 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
             Some(Ok(ci)) => (Some(ci.clone()), None),
             Some(Err(error)) => (None, Some(error.to_string())),
             None => (None, None),
+        };
+        // The thread count is an enrichment, not part of the PR's health, so a
+        // failed lookup stays out of `error`: that field is the top branch of
+        // the frontend's tone picker, and a rate-limited count would paint a
+        // green PR red. `None` already means "unknown" and falls back to the
+        // check-driven tone. The user still sees the real failure the moment
+        // they open the PR pane, which fetches threads itself.
+        let unresolved_threads = match pr.as_ref().and_then(|pr| unresolved_by_pr.get(&pr.number)) {
+            Some(Ok(count)) => Some(*count),
+            Some(Err(error)) => {
+                warn!("unresolved thread count failed for feature {feature_id}: {error}");
+                None
+            }
+            None => None,
         };
         publish(
             state,
@@ -278,7 +277,8 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
                 ci,
                 fetched_at,
                 error: detail_errors.get(feature_id).cloned().or(ci_error),
-                auth_required: false,
+                setup_required: false,
+                unresolved_threads,
             },
         )
         .await;
@@ -369,24 +369,18 @@ fn matched_prs(group: &RepoGroup, prs: &[PrSummary]) -> HashMap<i64, Option<PrSu
         .collect()
 }
 
-async fn publish_group_error(
-    state: &AppState,
-    group: &RepoGroup,
-    error: String,
-    auth_required: bool,
-) {
-    let fetched_at = chrono::Utc::now().timestamp_millis();
+/// Report one group-wide failure against every feature in the group.
+///
+/// Takes the `ForgeError` rather than a message plus a flag: whether the user
+/// can fix this in Settings is a property of the error, and asking it here keeps
+/// the answer from drifting between call sites.
+async fn publish_group_error(state: &AppState, group: &RepoGroup, error: &ForgeError) {
+    let setup_required = error.is_setup_failure();
+    let detail = error.to_string();
     for (feature_id, _) in &group.features {
         publish(
             state,
-            PrStatusSnapshot {
-                feature_id: *feature_id,
-                pr: None,
-                ci: None,
-                fetched_at,
-                error: (!error.is_empty()).then(|| error.clone()),
-                auth_required,
-            },
+            PrStatusSnapshot::unpolled(*feature_id, Some(detail.clone()), setup_required),
         )
         .await;
     }

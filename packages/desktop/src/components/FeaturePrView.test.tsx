@@ -1,9 +1,16 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
-import type { PrStatusSnapshot } from "@/api/generated";
+import type { CommentThread, PrStatusSnapshot } from "@/api/generated";
 import type { PrReviewThreads } from "@/hooks/usePrReviewThreads";
 import { usePrStatusStore } from "@/stores/usePrStatusStore";
 import { FeaturePrView, reviewStateLabel } from "./FeaturePrView";
+
+const navigateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return { ...actual, useNavigate: () => navigateMock };
+});
 
 describe("reviewStateLabel", () => {
   it("hides the provider's absence-of-review sentinel", () => {
@@ -19,7 +26,7 @@ describe("reviewStateLabel", () => {
 
 function snapshot(): PrStatusSnapshot {
   return {
-    auth_required: false,
+    setup_required: false,
     feature_id: 42,
     fetched_at: 1,
     error: null,
@@ -85,5 +92,187 @@ describe("FeaturePrView pinned band", () => {
     fireEvent.wheel(band, { deltaY: 3, deltaMode: 1 });
 
     expect(scroller.scrollTop).toBe(48);
+  });
+});
+
+describe("FeaturePrView forge onboarding", () => {
+  beforeEach(() => {
+    navigateMock.mockClear();
+    usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
+  });
+
+  function renderUnconnected(error: string | null): void {
+    usePrStatusStore.getState().setStatus({
+      ...snapshot(),
+      pr: undefined,
+      ci: undefined,
+      setup_required: true,
+      error,
+    });
+    render(<FeaturePrView featureId={42} reviews={REVIEWS} />);
+  }
+
+  it("sends the user to the forge card instead of the top of Git settings", () => {
+    // The Git section opens on merge strategy, so landing there leaves the
+    // remote-connections card several scrolls below the fold.
+    renderUnconnected("Add an API token for github.com to load pull requests.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a provider" }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/settings",
+      search: { section: "git-remotes" },
+    });
+  });
+
+  it("explains which host needs what, using the reason the backend gave", () => {
+    renderUnconnected(
+      "Choose which provider git.acme.test runs so Cadencr knows which API to call.",
+    );
+
+    expect(screen.getByText(/git\.acme\.test/)).toBeVisible();
+  });
+
+  it("still offers the button when the backend sent no reason", () => {
+    renderUnconnected(null);
+
+    expect(screen.getByRole("button", { name: "Connect a provider" })).toBeVisible();
+    expect(screen.getByText(/can't reach the forge behind this remote/)).toBeVisible();
+  });
+
+  it("leaves a transient failure as an error, with nothing to connect", () => {
+    // A rate limit is not an onboarding problem: offering "connect a provider"
+    // for an already-connected forge sends the user to fix what isn't broken.
+    usePrStatusStore.getState().setStatus({
+      ...snapshot(),
+      pr: undefined,
+      ci: undefined,
+      setup_required: false,
+      error: "API rate limit exceeded",
+    });
+    render(<FeaturePrView featureId={42} reviews={REVIEWS} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("API rate limit exceeded");
+    expect(screen.queryByRole("button", { name: "Connect a provider" })).toBeNull();
+  });
+});
+
+function unresolvedThread(id: string): CommentThread {
+  return {
+    id,
+    resolved: false,
+    outdated: false,
+    file: `src/${id}.ts`,
+    line: 4,
+    side: "new",
+    comments: [
+      {
+        author: { username: "reviewer", display_name: null, avatar_url: null },
+        body_markdown: `Please fix ${id}`,
+        created_at: "2026-07-24T00:00:00Z",
+        url: null,
+      },
+    ],
+  };
+}
+
+function reviewsWith(threads: CommentThread[]): PrReviewThreads {
+  return {
+    ...REVIEWS,
+    threads,
+    unresolved: threads,
+    unresolvedCount: threads.length,
+    summary: { ...REVIEWS.summary, total: threads.length, anchored: threads.length },
+  };
+}
+
+describe("FeaturePrView select-all", () => {
+  const threads = [unresolvedThread("one"), unresolvedThread("two")];
+
+  beforeEach(() => {
+    usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
+    usePrStatusStore.getState().setStatus(snapshot());
+  });
+
+  function renderWith(selected: string[], onAll = vi.fn()) {
+    render(
+      <FeaturePrView
+        featureId={42}
+        reviews={reviewsWith(threads)}
+        selectedThreadIds={new Set(selected)}
+        onThreadSelectedChange={vi.fn()}
+        onAllThreadsSelectedChange={onAll}
+      />,
+    );
+    return screen.getByRole("checkbox", { name: /send all 2 unresolved threads to the agent/i });
+  }
+
+  it("takes every unresolved thread from an empty selection", () => {
+    const onAll = vi.fn();
+    fireEvent.click(renderWith([], onAll));
+    expect(onAll).toHaveBeenCalledWith(true);
+  });
+
+  it("reads as partial while some threads are checked", () => {
+    expect(renderWith(["one"])).toHaveAttribute("data-state", "indeterminate");
+    expect(screen.getByText("1 of 2 picked — send from the bar below.")).toBeVisible();
+  });
+
+  it("clears the selection when every thread is already checked", () => {
+    const onAll = vi.fn();
+    const checkbox = renderWith(["one", "two"], onAll);
+
+    expect(checkbox).toHaveAttribute("data-state", "checked");
+    fireEvent.click(checkbox);
+    expect(onAll).toHaveBeenCalledWith(false);
+  });
+
+  it("stays out of the way when nothing can be selected", () => {
+    render(
+      <FeaturePrView
+        featureId={42}
+        reviews={REVIEWS}
+        onThreadSelectedChange={vi.fn()}
+        onAllThreadsSelectedChange={vi.fn()}
+      />,
+    );
+    // No name filter: an empty unresolved list must render no checkbox at all,
+    // and matching on the old label would have passed for the wrong reason.
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
+  it("keeps the checkbox mounted across a selection change, so focus survives", () => {
+    // Virtuoso's Header used to be rebuilt whenever the selection changed. A
+    // fresh function identity is a new component type to React, so the whole
+    // header subtree remounted and the checkbox lost focus on every tick —
+    // ticking two boxes in a row from the keyboard was impossible.
+    const name = /send all 2 unresolved threads to the agent/i;
+    const { rerender } = render(
+      <FeaturePrView
+        featureId={42}
+        reviews={reviewsWith(threads)}
+        selectedThreadIds={new Set<string>()}
+        onThreadSelectedChange={vi.fn()}
+        onAllThreadsSelectedChange={vi.fn()}
+      />,
+    );
+    const before = screen.getByRole("checkbox", { name });
+    before.focus();
+    expect(document.activeElement).toBe(before);
+
+    rerender(
+      <FeaturePrView
+        featureId={42}
+        reviews={reviewsWith(threads)}
+        selectedThreadIds={new Set(["one"])}
+        onThreadSelectedChange={vi.fn()}
+        onAllThreadsSelectedChange={vi.fn()}
+      />,
+    );
+
+    const after = screen.getByRole("checkbox", { name });
+    expect(after).toBe(before);
+    expect(document.activeElement).toBe(after);
+    expect(after).toHaveAttribute("data-state", "indeterminate");
   });
 });

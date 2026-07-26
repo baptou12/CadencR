@@ -3,7 +3,7 @@ import type { PrStatusSnapshot, PrSummary } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { cn } from "@/lib/utils";
 
-export type PrIndicatorTone = "blocked" | "danger" | "merged" | "neutral" | "ready";
+export type PrIndicatorTone = "blocked" | "danger" | "merged" | "neutral" | "ready" | "unresolved";
 
 const PR_ICON_STYLE: Record<PrIndicatorTone, string> = {
   blocked: "text-[var(--acc-orange)]",
@@ -11,6 +11,7 @@ const PR_ICON_STYLE: Record<PrIndicatorTone, string> = {
   merged: "text-[var(--acc-green)]",
   neutral: "text-muted-foreground",
   ready: "text-blue-400",
+  unresolved: "text-[var(--acc-yellow)]",
 };
 
 const PR_CHIP_SURFACE: Record<PrIndicatorTone, string> = {
@@ -19,6 +20,7 @@ const PR_CHIP_SURFACE: Record<PrIndicatorTone, string> = {
   merged: "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10",
   neutral: "border-border/70 bg-background/50",
   ready: "border-blue-400/40 bg-blue-400/10",
+  unresolved: "border-[var(--acc-yellow)]/40 bg-[var(--acc-yellow)]/10",
 };
 
 /** Semantic surface classes for PR state / review chips in the PR pane. */
@@ -28,6 +30,7 @@ export const PR_TONE_BADGE: Record<PrIndicatorTone, string> = {
   merged: "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10 text-[var(--acc-green)]",
   neutral: "border-border bg-muted/40 text-muted-foreground",
   ready: "border-blue-400/40 bg-blue-400/10 text-blue-400",
+  unresolved: "border-[var(--acc-yellow)]/40 bg-[var(--acc-yellow)]/10 text-[var(--acc-yellow)]",
 };
 
 export function prIndicatorTone(snapshot: PrStatusSnapshot | undefined): PrIndicatorTone {
@@ -39,8 +42,18 @@ export function prIndicatorTone(snapshot: PrStatusSnapshot | undefined): PrIndic
   // act on, and "awaiting review" is the most common state to be in while it
   // fails. The sidebar has no second slot left to say it in.
   if (snapshot.error || snapshot.ci?.state === "failing") return "danger";
+  // A draft is still being written, so unanswered feedback on it is expected
+  // rather than a call to action.
+  if (pr.state === "draft") return "blocked";
+  // Yellow is the "the machines are happy, the humans are not" state: green
+  // checks used to read as ready-to-merge blue even with reviewers still
+  // waiting on replies, which is the one case where the chip actively misled.
+  // `unresolved_threads` is undefined when the poller never looked — unknown,
+  // not zero — so an absent count correctly falls through to the checks.
+  if (snapshot.ci?.state === "passing" && (snapshot.unresolved_threads ?? 0) > 0) {
+    return "unresolved";
+  }
   if (
-    pr.state === "draft" ||
     pr.review_state === "changes_requested" ||
     pr.review_state === "pending" ||
     snapshot.ci?.state === "running"
@@ -63,9 +76,12 @@ export function prStatusLabel(snapshot: PrStatusSnapshot): string {
 
   if (snapshot.ci && snapshot.ci.state !== "none") {
     details.push(`checks ${snapshot.ci.state}`);
-  } else if (details.length === 0) {
-    details.push("no blockers reported");
   }
+  const unresolved = snapshot.unresolved_threads ?? 0;
+  if (unresolved > 0) {
+    details.push(`${unresolved} unresolved ${unresolved === 1 ? "thread" : "threads"}`);
+  }
+  if (details.length === 0) details.push("no blockers reported");
   return `${pr.pr_label} #${pr.number} · ${details.join(" · ")}`;
 }
 
@@ -73,6 +89,11 @@ export function prStatusLabel(snapshot: PrStatusSnapshot): string {
  * The sidebar row's forge slot. Normally the proposal chip; when a host lookup
  * failed before any proposal was found there is no chip to tint, so the error
  * still surfaces as a dot rather than disappearing.
+ *
+ * A forge that was never connected is not one of those failures and gets no dot:
+ * on a fresh install every row would carry one, which is noise rather than news
+ * — the same reason the poller stays quiet about a feature with no remote. The
+ * PR pane is where that state is worth a word, and there it comes with a button.
  */
 export function FeaturePrIndicator({
   snapshot,
@@ -80,7 +101,7 @@ export function FeaturePrIndicator({
   snapshot: PrStatusSnapshot | undefined;
 }): React.JSX.Element | null {
   if (!snapshot?.pr) {
-    if (!snapshot?.error) return null;
+    if (!snapshot?.error || snapshot.setup_required) return null;
     return (
       <span
         className="size-1.5 shrink-0 rounded-full bg-[var(--acc-red)] ring-1 ring-background"

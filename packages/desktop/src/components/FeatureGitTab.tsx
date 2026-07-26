@@ -90,6 +90,28 @@ function useFeatureGitShortcuts(
   });
 }
 
+/**
+ * The body's review slice: what the diff annotates, and what the developer can
+ * hand to the agent. Selection callbacks drop out entirely when the forge is
+ * not sendable, which is what keeps the checkboxes off a read-only view.
+ */
+function reviewBodyProps(
+  reviews: GitTabReviews,
+  reviewThreads: PrReviewThreads,
+  onViewReviewThread: (thread: CommentThread) => void,
+) {
+  return {
+    reviewThreads,
+    remoteThreadLinesByFile: reviews.remoteThreadLinesByFile,
+    reviewCountsByFile: reviews.reviewCountsByFile,
+    reviewTarget: reviews.activeTarget,
+    selectedReviewThreadIds: reviews.selectedThreadIds,
+    onReviewThreadSelectedChange: reviews.canSend ? reviews.setThreadSelected : undefined,
+    onAllReviewThreadsSelectedChange: reviews.canSend ? reviews.setAllThreadsSelected : undefined,
+    onViewReviewThread,
+  };
+}
+
 export const FeatureGitTab = memo(function FeatureGitTab({
   featureId,
   projectId,
@@ -177,13 +199,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
         onRequestUncommitted: handleRequestUncommitted,
         registerNavigationAdapter,
         recoveryRegion,
-        reviewThreads,
-        remoteThreadLinesByFile: reviews.remoteThreadLinesByFile,
-        reviewCountsByFile: reviews.reviewCountsByFile,
-        reviewTarget: reviews.activeTarget,
-        selectedReviewThreadIds: reviews.selectedThreadIds,
-        onReviewThreadSelectedChange: reviews.canSend ? reviews.setThreadSelected : undefined,
-        onViewReviewThread: handleViewReviewThread,
+        ...reviewBodyProps(reviews, reviewThreads, handleViewReviewThread),
       }}
       send={send}
     />

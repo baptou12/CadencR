@@ -14,6 +14,7 @@ import {
   type FileStageState as FileStageStateValue,
 } from "@/api/generated";
 import { useCadencrFileTree } from "@/components/file-tree/CadencrFileTree";
+import { expandFileTreeAncestors } from "@/components/file-tree/revealInFileTree";
 import {
   useGitDiffTreeDisplaySetting,
   type GitDiffTreeDisplayMode,
@@ -82,13 +83,27 @@ export function conflictSortRank(file: ChangedFile): 0 | 1 {
   return resolvedStageState(file) === FileStageState.conflicted ? 0 : 1;
 }
 
+/**
+ * Memoized by array identity: the diff pane and the file tree both need this
+ * order for the same `changedFiles` array, and the git watcher invalidates that
+ * query about once a second during a rebase — sorting a few thousand paths
+ * twice per refetch is main-thread time nobody asked for.
+ *
+ * Callers only read the result, so handing them the same array is safe.
+ */
+const diffOrderCache = new WeakMap<readonly ChangedFile[], ChangedFile[]>();
+
 /** Flat-list ordering: conflicted files first, then path name. */
 export function sortChangedFilesForDiff(files: readonly ChangedFile[]): ChangedFile[] {
-  return [...files].sort((left, right) => {
+  const cached = diffOrderCache.get(files);
+  if (cached) return cached;
+  const ordered = [...files].sort((left, right) => {
     const byConflict = conflictSortRank(left) - conflictSortRank(right);
     if (byConflict !== 0) return byConflict;
     return left.file.localeCompare(right.file);
   });
+  diffOrderCache.set(files, ordered);
+  return ordered;
 }
 
 export function conflictKindLabel(kind: ConflictKindValue | null | undefined): string {
@@ -139,10 +154,6 @@ function reviewDecoration(
   return { text: `${count} open`, title: reviewLabel };
 }
 
-function visibleFilePaths(model: FileTree, filePaths: ReadonlySet<string>): string[] {
-  return model.getVisiblePaths().filter((path) => filePaths.has(path));
-}
-
 function selectGitDiffTreePath(model: FileTree, filePath: string): boolean {
   const item = model.getItem(filePath);
   if (item == null || item.isDirectory()) return false;
@@ -150,48 +161,114 @@ function selectGitDiffTreePath(model: FileTree, filePath: string): boolean {
     if (selectedPath !== filePath) model.getItem(selectedPath)?.deselect();
   }
   item.select();
-  item.focus();
-  model.scrollToPath(filePath, { focus: true, offset: "nearest" });
+  const settle = (): void => {
+    // `scrollToPath` does the focusing; the row may also have gone away while a
+    // rAF was pending, in which case there is nothing left to aim at.
+    if (model.getItem(filePath) == null) return;
+    model.scrollToPath(filePath, { focus: true, offset: "nearest" });
+  };
+  // A file inside a collapsed folder has no row to focus, and pierre resolves
+  // the scroll to the nearest *visible* ancestor instead — which then reads
+  // back as the focused path and derails the next move. Open the way first.
+  if (expandFileTreeAncestors(model, filePath)) requestAnimationFrame(settle);
+  else settle();
   return true;
 }
 
-function useNavigationAdapter(model: FileTree, filePaths: ReadonlySet<string>) {
-  const filePathsRef = useRef(filePaths);
-  filePathsRef.current = filePaths;
-  return useMemo<GitDiffTreeNavigationAdapter>(
-    () => ({
-      getActivePath: () => {
-        const path = model.getFocusedPath() ?? model.getSelectedPaths().at(-1) ?? null;
-        return path && filePathsRef.current.has(path) ? path : null;
-      },
-      selectPath: (filePath) =>
-        filePathsRef.current.has(filePath) && selectGitDiffTreePath(model, filePath),
+/**
+ * The paths `j`/`k` step through, in the order the diff pane renders them.
+ *
+ * Order comes from the diff, never the tree: the two disagree by construction,
+ * since the tree groups folders and sorts rows by basename while the diff list
+ * is a flat full-path sort. Walking tree rows therefore scrolls the diff pane
+ * backwards and forwards at random. `j`/`k` exist to move down the diff, so the
+ * diff's order wins and the tree selection follows along.
+ *
+ * A collapsed folder does not remove its files from the walk — they are still
+ * in the diff, and the row is expanded into view on arrival. A search does
+ * scope it: the query is an explicit "only these", and stepping onto a row the
+ * user just filtered away would be answering a question they didn't ask.
+ */
+function navigableOrder(model: FileTree, orderedPaths: readonly string[]): readonly string[] {
+  if (model.getSearchValue().trim().length === 0) return orderedPaths;
+  const visible = new Set(model.getVisiblePaths());
+  return orderedPaths.filter((path) => visible.has(path));
+}
+
+/**
+ * Keyboard navigation over the diff's file list, projected onto the tree.
+ */
+function useNavigationAdapter(
+  model: FileTree,
+  filePaths: ReadonlySet<string>,
+  orderedPaths: readonly string[],
+) {
+  const pathsRef = useRef({ filePaths, orderedPaths });
+  pathsRef.current = { filePaths, orderedPaths };
+  // Last resort for when the tree reports neither a selection nor a focus —
+  // clicking away drops both, and `j` should still resume where it left off.
+  const activePathRef = useRef<string | null>(null);
+  return useMemo<GitDiffTreeNavigationAdapter>(() => {
+    const resolveActivePath = (): string | null => {
+      const { filePaths: files } = pathsRef.current;
+      const live = pickActivePath(model.getSelectedPaths(), model.getFocusedPath(), files);
+      if (live != null) return live;
+      const remembered = activePathRef.current;
+      return remembered != null && files.has(remembered) ? remembered : null;
+    };
+    const select = (filePath: string): boolean => {
+      if (!selectGitDiffTreePath(model, filePath)) return false;
+      activePathRef.current = filePath;
+      return true;
+    };
+    return {
+      getActivePath: resolveActivePath,
+      selectPath: (filePath) => pathsRef.current.filePaths.has(filePath) && select(filePath),
       moveSelection: (offset) => {
-        const paths = visibleFilePaths(model, filePathsRef.current);
-        if (paths.length === 0) return null;
-        const active = model.getFocusedPath() ?? model.getSelectedPaths().at(-1) ?? null;
-        const currentIndex = active == null ? -1 : paths.indexOf(active);
+        const order = navigableOrder(model, pathsRef.current.orderedPaths);
+        if (order.length === 0) return null;
+        const active = resolveActivePath();
+        const currentIndex = active == null ? -1 : order.indexOf(active);
+        // No selection yet: `j` starts at the top of the diff, `k` at the end.
         const nextIndex =
-          currentIndex < 0 ? (offset === 1 ? 0 : paths.length - 1) : currentIndex + offset;
-        const nextPath = paths[Math.max(0, Math.min(paths.length - 1, nextIndex))];
-        if (!nextPath) return null;
-        selectGitDiffTreePath(model, nextPath);
-        return nextPath;
+          currentIndex < 0 ? (offset === 1 ? 0 : order.length - 1) : currentIndex + offset;
+        // Clamping rather than wrapping keeps the ends of the list quiet, and
+        // still reports the move as handled so the key never falls through to
+        // the tree's type-ahead search.
+        const nextPath = order[Math.max(0, Math.min(order.length - 1, nextIndex))];
+        return nextPath && select(nextPath) ? nextPath : null;
       },
       focusActive: () => {
-        const path = model.getFocusedPath() ?? model.getSelectedPaths().at(-1) ?? null;
-        return path ? selectGitDiffTreePath(model, path) : false;
+        const path = resolveActivePath();
+        return path != null && select(path);
       },
-    }),
-    [model],
-  );
+    };
+  }, [model]);
+}
+
+/**
+ * Which file the diff treats as current, from a selection and focus snapshot.
+ *
+ * Selection wins over focus. `select()` updates it synchronously, whereas focus
+ * can be a frame behind — a file inside a collapsed folder is focused from a
+ * `requestAnimationFrame` — can sit on a folder row, and is dropped entirely
+ * when the tree loses DOM focus. Reading focus first meant a second `j` fired
+ * inside that frame re-landed on the row the user had just left.
+ */
+function pickActivePath(
+  selectedPaths: readonly string[],
+  focusedPath: string | null | undefined,
+  filePaths: ReadonlySet<string>,
+): string | null {
+  const selected = selectedPaths.findLast((path) => filePaths.has(path));
+  if (selected != null) return selected;
+  return focusedPath != null && filePaths.has(focusedPath) ? focusedPath : null;
 }
 
 function useActivePath(model: FileTree, filePaths: ReadonlySet<string>): string | null {
   const selectedPaths = useFileTreeSelection(model);
   const focusedPath = useFileTreeSelector(model, (current) => current.getFocusedPath());
-  if (focusedPath && filePaths.has(focusedPath)) return focusedPath;
-  return selectedPaths.findLast((path) => filePaths.has(path)) ?? null;
+  return pickActivePath(selectedPaths, focusedPath, filePaths);
 }
 
 function useConflictSort(files: readonly ChangedFile[]) {
@@ -234,6 +311,12 @@ export function useGitDiffFileTreeModel({
   const gitStatus = useMemo(() => buildGitDiffTreeStatus(files), [files]);
   const fileByPath = useMemo(() => new Map(files.map((file) => [file.file, file])), [files]);
   const filePaths = useMemo(() => new Set(fileByPath.keys()), [fileByPath]);
+  // Mirrors `DiffContent`'s render order so keyboard navigation moves down the
+  // diff pane rather than down the tree.
+  const orderedPaths = useMemo(
+    () => sortChangedFilesForDiff(files).map((file) => file.file),
+    [files],
+  );
   const conflictSort = useConflictSort(files);
   const handleSelectionChange = useCallback(
     (selectedPaths: readonly string[]): void => {
@@ -274,7 +357,7 @@ export function useGitDiffFileTreeModel({
     rowDecorationVersion: renderRowDecoration,
   });
   const activePath = useActivePath(model, filePaths);
-  const navigation = useNavigationAdapter(model, filePaths);
+  const navigation = useNavigationAdapter(model, filePaths, orderedPaths);
   const resolveFilePath = useCallback(
     (treePath: string) => (filePaths.has(treePath) ? treePath : null),
     [filePaths],

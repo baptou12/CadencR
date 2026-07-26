@@ -132,11 +132,14 @@ export const GIT_SHORTCUTS = [
     aliases: ["git", "review", "pull request", "merge request"],
   },
   {
-    // On macOS the native application menu retains its standard Hide role.
-    // Electron delivers renderer keydown first; this scoped handler consumes
-    // the chord only while the Git pane owns focus and otherwise yields to Hide.
+    // ⌘Y for "histor**y**". Not ⌘H: that is the system-wide Hide role on
+    // macOS, which the window manager claims before the renderer ever sees
+    // the keydown, so the binding could never fire there. ⌘Y is redo on
+    // Windows/Linux and collides with `plan-approve` / `perm-allow-once`, but
+    // all three are scope-gated: this one only binds while the diff viewer has
+    // focus, where neither redo nor an approval prompt is reachable.
     id: "git-show-commits",
-    keys: ["mod", "h"],
+    keys: ["mod", "y"],
     description: "Show Git Commits",
     scope: "diff-viewer",
     aliases: ["git", "history", "graph"],

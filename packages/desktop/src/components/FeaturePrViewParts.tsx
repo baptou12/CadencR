@@ -102,11 +102,18 @@ export function PrViewError({
 export function EmptyState({
   title,
   description,
+  detail,
   action,
   icon,
 }: {
   title: string;
   description: string;
+  /**
+   * Verbatim explanation from a forge, shown under the description. Clamped
+   * because it is not always a sentence — a rejected request can come back as a
+   * page of JSON, which would otherwise read as the card's own copy.
+   */
+  detail?: string | null;
   action?: ReactElement;
   icon?: ReactElement;
 }): ReactElement {
@@ -121,6 +128,11 @@ export function EmptyState({
           <p className="text-[12.5px] leading-relaxed text-pretty text-muted-foreground">
             {description}
           </p>
+          {detail ? (
+            <p className="line-clamp-3 text-[11.5px] leading-relaxed text-pretty text-muted-foreground/70">
+              {detail}
+            </p>
+          ) : null}
         </div>
         {action ? <div className="pt-1">{action}</div> : null}
       </div>
