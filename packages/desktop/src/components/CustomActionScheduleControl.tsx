@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -54,6 +54,53 @@ function intervalToUnitValue(intervalSeconds: number): UnitValue {
 }
 
 const DEFAULT_DRAFT: UnitValue = { value: 5, unit: "minutes" };
+
+function ScheduleIntervalEditor({
+  draft,
+  setDraft,
+  commit,
+}: {
+  draft: UnitValue;
+  setDraft: Dispatch<SetStateAction<UnitValue>>;
+  commit: (next: UnitValue) => void;
+}): React.ReactElement {
+  return (
+    <div className="flex items-center gap-2 text-xs" aria-label="Schedule interval">
+      <span className="text-foreground/70">Every</span>
+      <Input
+        type="number"
+        min={1}
+        step={1}
+        value={String(draft.value)}
+        onChange={(event) => {
+          const parsed = Number(event.target.value);
+          if (Number.isFinite(parsed) && parsed > 0) {
+            setDraft((current) => ({ ...current, value: parsed }));
+          }
+        }}
+        onBlur={() => commit(draft)}
+        className="h-8 w-16 text-xs no-spinner"
+      />
+      <Select
+        value={draft.unit}
+        onValueChange={(value) => {
+          const next = { ...draft, unit: value as Unit };
+          setDraft(next);
+          commit(next);
+        }}
+      >
+        <SelectTrigger size="sm" className="h-8 w-[7rem] text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="seconds">seconds</SelectItem>
+          <SelectItem value="minutes">minutes</SelectItem>
+          <SelectItem value="hours">hours</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 export function CustomActionScheduleControl({
   actionId,
@@ -124,41 +171,7 @@ export function CustomActionScheduleControl({
       </div>
 
       {enabled ? (
-        <div className="flex items-center gap-2 text-xs" aria-label="Schedule interval">
-          <span className="text-foreground/70">Every</span>
-          <Input
-            type="number"
-            min={1}
-            step={1}
-            value={String(draft.value)}
-            onChange={(e) => {
-              const parsed = Number(e.target.value);
-              if (Number.isFinite(parsed) && parsed > 0) {
-                setDraft((d) => ({ ...d, value: parsed }));
-              }
-            }}
-            onBlur={() => commit(draft)}
-            className="h-8 w-16 text-xs no-spinner"
-          />
-          <Select
-            value={draft.unit}
-            onValueChange={(v) => {
-              const unit = v as Unit;
-              const next = { ...draft, unit };
-              setDraft(next);
-              commit(next);
-            }}
-          >
-            <SelectTrigger size="sm" className="h-8 w-[7rem] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="seconds">seconds</SelectItem>
-              <SelectItem value="minutes">minutes</SelectItem>
-              <SelectItem value="hours">hours</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <ScheduleIntervalEditor draft={draft} setDraft={setDraft} commit={commit} />
       ) : (
         <p className="text-xs text-muted-foreground italic">
           Manual only. Toggle on to run on a recurring schedule.
