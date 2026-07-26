@@ -42,7 +42,7 @@ export function McpToggleList(): React.JSX.Element {
         icon={<Search className="size-4" />}
         iconTint="green"
         label="Workspace memory for agents"
-        description="Expose the cadencr-workspace MCP so agents can search and read conversation history across all Cadencr projects. Takes effect on the next agent turn."
+        description="Expose the cadencr-workspace MCP so agents can search conversation history and message sessions across all Cadencr projects. Takes effect on the next agent turn."
         checked={workspaceMcp.enabled}
         onCheckedChange={workspaceMcp.setEnabled}
         disabled={workspaceMcp.isLoading}

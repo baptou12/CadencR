@@ -2,6 +2,7 @@ pub mod browser;
 pub mod project;
 mod project_gate_schema;
 mod project_schema;
+mod send_message_schema;
 pub mod workspace;
 
 use std::sync::Arc;
@@ -55,7 +56,7 @@ impl std::str::FromStr for AgentType {
 pub fn cadencr_mcp_required_tools(server_name: &str) -> &'static [&'static str] {
     match server_name {
         "cadencr-project" => &["project_spawn_session", "project_link_sessions"],
-        "cadencr-workspace" => &["workspace_list_projects"],
+        "cadencr-workspace" => &["workspace_list_projects", "workspace_send_session_message"],
         _ => &[],
     }
 }
@@ -134,7 +135,7 @@ mod tests {
         );
         assert_eq!(
             cadencr_mcp_required_tools("cadencr-workspace"),
-            &["workspace_list_projects"]
+            &["workspace_list_projects", "workspace_send_session_message"]
         );
     }
 

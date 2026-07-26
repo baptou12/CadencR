@@ -7,9 +7,11 @@ use cadencr_service::domain::settings_store::global_write_content;
 use tower::ServiceExt;
 
 use support::mcp_control::{
-    latest_codex_permission_mode, seed_recent_send_audits, seed_send_target_session,
+    latest_codex_permission_mode, project_cross_project_send_message_request,
+    seed_cross_project_send_target, seed_recent_send_audits, seed_send_target_session,
     seed_spawn_chain, seeded_control_pool, send_message_request, send_message_request_with_link,
     spawn_request, spawn_request_from_body, spawn_request_with_link,
+    workspace_cross_project_send_message_request,
 };
 
 static SETTINGS_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -248,6 +250,74 @@ async fn project_send_message_ignores_legacy_write_policy_setting() {
         .await
         .unwrap();
     assert_eq!(queued_count, 1);
+}
+
+#[tokio::test]
+async fn project_send_message_still_rejects_cross_project_targets() {
+    let pool = seeded_control_pool().await;
+    seed_cross_project_send_target(&pool, "running").await;
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(project_cross_project_send_message_request("next_turn"))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let queue_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_session_message_queue WHERE target_session_id = 999",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(queue_count, 0);
+}
+
+#[tokio::test]
+async fn workspace_send_message_queues_cross_project_follow_up_and_audits_workspace_tool() {
+    let pool = seeded_control_pool().await;
+    seed_cross_project_send_target(&pool, "running").await;
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+
+    let response = app
+        .oneshot(workspace_cross_project_send_message_request("next_turn"))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let queue: (i64, i64, String) = sqlx::query_as(
+        "SELECT source_session_id, target_session_id, content
+         FROM agent_session_message_queue WHERE target_session_id = 999",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(queue, (777, 999, "Please validate delivery.".into()));
+    let link: (i64, i64, String) = sqlx::query_as(
+        "SELECT source_session_id, target_session_id, link_type
+         FROM agent_session_links WHERE target_session_id = 999",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(link, (777, 999, "messaged".into()));
+    let audit: (String, String, i64, i64, String) = sqlx::query_as(
+        "SELECT server_name, tool_name, source_project_id, target_project_id, status
+         FROM mcp_tool_audit_log WHERE tool_name = 'workspace_send_session_message'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit,
+        (
+            "cadencr-workspace".into(),
+            "workspace_send_session_message".into(),
+            7,
+            8,
+            "ok".into()
+        )
+    );
 }
 
 #[tokio::test]

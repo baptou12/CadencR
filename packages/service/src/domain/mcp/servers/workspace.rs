@@ -26,12 +26,13 @@ impl WorkspaceServer {
     }
 }
 
-const WORKSPACE_TOOL_NAMES: [&str; 5] = [
+const WORKSPACE_TOOL_NAMES: [&str; 6] = [
     "workspace_list_projects",
     "workspace_read_session",
     "workspace_read_sessions",
     "workspace_session_graph",
     "workspace_recent_activity",
+    "workspace_send_session_message",
 ];
 
 fn make_tool(name: &'static str, description: &'static str, schema: serde_json::Value) -> Tool {
@@ -58,6 +59,9 @@ fn tool_description(name: &str) -> &'static str {
             "Read the spawn/reference/message graph between CadencR sessions."
         }
         "workspace_recent_activity" => "Read recent CadencR activity across projects.",
+        "workspace_send_session_message" => {
+            "Send a provenance-tracked message to a session in any CadencR project. Delivery steers the active target turn by default; request next_turn explicitly only when delayed handling is intentional."
+        }
         _ => "Search CadencR workspace history.",
     }
 }
@@ -115,6 +119,9 @@ fn tool_schema(name: &str) -> serde_json::Value {
                 "snippet_chars": { "type": "number" }
             }
         }),
+        "workspace_send_session_message" => super::send_message_schema::schema(
+            "Target session id in any CadencR project, including a cross-project worker.",
+        ),
         _ => json!({ "type": "object", "properties": {} }),
     };
     document_schema(name, schema)
@@ -264,6 +271,41 @@ mod tests {
 
         assert_eq!(schema["properties"]["limit"]["type"], "number");
         assert_eq!(schema["properties"]["snippet_chars"]["type"], "number");
+    }
+
+    #[test]
+    fn workspace_send_message_schema_supports_cross_project_follow_up_options() {
+        let tools = tools();
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == "workspace_send_session_message")
+            .expect("workspace_send_session_message tool");
+        let schema = serde_json::to_value(&tool.input_schema).expect("schema json");
+
+        let required = schema["required"].as_array().expect("required fields");
+        assert!(required.iter().any(|value| value == "target_session_id"));
+        assert!(required.iter().any(|value| value == "message"));
+        assert_eq!(
+            schema["properties"]["delivery"]["default"],
+            "steer_current_turn"
+        );
+        let reply_modes = schema["properties"]["reply"]["enum"]
+            .as_array()
+            .expect("reply modes");
+        assert!(reply_modes.iter().any(|value| value == "on_turn_end"));
+        assert!(schema["properties"]["target_session_id"]["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("any CadencR project")));
+        assert!(
+            schema["properties"]["link_to_current_session"]["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("messaged session link"))
+        );
+        assert!(tool
+            .description
+            .as_deref()
+            .unwrap()
+            .contains("any CadencR project"));
     }
 
     #[test]

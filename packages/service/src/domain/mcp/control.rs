@@ -89,7 +89,11 @@ pub fn control_router() -> Router<AppState> {
         )
         .route(
             "/internal/mcp/project/send-message",
-            post(send_message::send_message_handler),
+            post(send_message::project_send_message_handler),
+        )
+        .route(
+            "/internal/mcp/workspace/send-message",
+            post(send_message::workspace_send_message_handler),
         )
         .route(
             "/internal/mcp/project/spawn-session",

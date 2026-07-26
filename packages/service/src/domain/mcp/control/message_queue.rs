@@ -16,6 +16,8 @@ use std::sync::OnceLock;
 use tokio::sync::Notify;
 
 static QUEUE_WORKER_NOTIFY: OnceLock<Notify> = OnceLock::new();
+const QUEUED_MESSAGE_DELIVERY_NOTE: &str = "delivered from queued session message";
+const QUEUED_MESSAGE_FAILURE_NOTE: &str = "queued session message delivery failure";
 
 fn worker_notify() -> &'static Notify {
     QUEUE_WORKER_NOTIFY.get_or_init(Notify::new)
@@ -159,7 +161,7 @@ async fn surface_delivery_failure(
         source.session_id,
         &target,
         &content,
-        "queued project_send_session_message delivery failure",
+        QUEUED_MESSAGE_FAILURE_NOTE,
         notification_uuid,
     )
     .await?;
@@ -188,7 +190,7 @@ async fn deliver_message(
             target_session_id,
             &source,
             &message.content,
-            "delivered from queued project_send_session_message",
+            QUEUED_MESSAGE_DELIVERY_NOTE,
             message_uuid,
         )
         .await?;
@@ -213,12 +215,15 @@ async fn deliver_message(
 #[cfg(test)]
 mod tests {
     use super::persistence::{enqueue_message, seed_queue_fixture};
-    use super::{drain_idle_queues_once, drain_next_queued_message};
+    use super::{
+        drain_idle_queues_once, drain_next_queued_message, QUEUED_MESSAGE_DELIVERY_NOTE,
+        QUEUED_MESSAGE_FAILURE_NOTE,
+    };
     use crate::app_state::AppState;
     use crate::shared::migrate::{run_migrations, MigrationContext};
 
     #[tokio::test]
-    async fn failed_queue_delivery_persists_origin_and_marks_error() {
+    async fn failed_cross_project_queue_delivery_uses_neutral_provenance_and_marks_error() {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         run_migrations(&MigrationContext {
             pool: &pool,
@@ -228,6 +233,14 @@ mod tests {
         .await
         .unwrap();
         seed_queue_fixture(&pool).await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (8, 'Other', '/tmp/other')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE features SET project_id = 8 WHERE id = 43")
+            .execute(&pool)
+            .await
+            .unwrap();
         let state = AppState::with_pool(pool.clone());
 
         let error = drain_next_queued_message(&state, 43, 888)
@@ -241,8 +254,8 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(status, "error");
-        let origin: (String, i64, i64, i64) = sqlx::query_as(
-            "SELECT origin_kind, source_session_id, source_feature_id, source_project_id
+        let origin: (String, i64, i64, i64, String) = sqlx::query_as(
+            "SELECT origin_kind, source_session_id, source_feature_id, source_project_id, note
              FROM agent_message_origins
              JOIN agent_messages ON agent_messages.id = agent_message_origins.message_id
              WHERE agent_messages.session_id = 888",
@@ -250,15 +263,26 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(origin, ("session_generated".into(), 777, 42, 7));
-        let notification: String = sqlx::query_scalar(
-            "SELECT content FROM agent_messages
+        assert_eq!(
+            origin,
+            (
+                "session_generated".into(),
+                777,
+                42,
+                7,
+                QUEUED_MESSAGE_DELIVERY_NOTE.into()
+            )
+        );
+        let notification: (String, String) = sqlx::query_as(
+            "SELECT content, note FROM agent_messages
+             JOIN agent_message_origins ON agent_message_origins.message_id = agent_messages.id
              WHERE session_id = 777 AND content LIKE '<cadencr-delivery-error%'",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert!(notification.contains("queue-id=\"1\""));
+        assert!(notification.0.contains("queue-id=\"1\""));
+        assert_eq!(notification.1, QUEUED_MESSAGE_FAILURE_NOTE);
     }
 
     #[tokio::test]
@@ -280,7 +304,7 @@ mod tests {
             888,
             &source,
             "already persisted",
-            "delivered from queued project_send_session_message",
+            QUEUED_MESSAGE_DELIVERY_NOTE,
             message_uuid,
         )
         .await

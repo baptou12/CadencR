@@ -5,22 +5,24 @@ use serde::{Deserialize, Serialize};
 mod persistence;
 #[path = "send_message_audit.rs"]
 mod send_audit;
+#[path = "send_message_budget.rs"]
+mod send_budget;
 
 use self::persistence::{insert_message_link, persist_immediate_message, ImmediateMessageRequest};
 use self::send_audit::{audit_send_message, audit_send_message_error};
+use self::send_budget::ensure_send_budget;
 use super::generated_message::dispatch_generated_prompt;
 use super::message_queue::enqueue_message;
 use super::scope::resolve_session_scope;
 use super::send_message_modes::{delivery_mode, reply_mode, DeliveryMode, ReplyMode};
 use crate::app_state::AppState;
 use crate::domain::feature_events::FeatureEventAction;
+use crate::domain::mcp::send_message_tool::SendMessageTool;
 use crate::domain::sessions::message_dispatch::{self, DispatchClaim};
 use crate::domain::sessions::models::AgentMessageOrigin;
 use crate::domain::sessions::user_messages::PersistedUserMessage;
 use crate::domain::ws_session::handler::session_prompt::publish_user_message;
 use crate::error::AppError;
-
-const MAX_SEND_MESSAGES_PER_SOURCE_PER_HOUR: i64 = 20;
 
 #[derive(Debug, Deserialize)]
 pub(super) struct SendMessageRequest {
@@ -48,9 +50,24 @@ pub(super) struct SendMessageResponse {
     delivery: &'static str,
 }
 
-pub(super) async fn send_message_handler(
+pub(super) async fn project_send_message_handler(
     State(state): State<AppState>,
     Json(body): Json<SendMessageRequest>,
+) -> Result<Json<SendMessageResponse>, AppError> {
+    send_message(state, body, SendMessageTool::Project).await
+}
+
+pub(super) async fn workspace_send_message_handler(
+    State(state): State<AppState>,
+    Json(body): Json<SendMessageRequest>,
+) -> Result<Json<SendMessageResponse>, AppError> {
+    send_message(state, body, SendMessageTool::Workspace).await
+}
+
+async fn send_message(
+    state: AppState,
+    body: SendMessageRequest,
+    tool: SendMessageTool,
 ) -> Result<Json<SendMessageResponse>, AppError> {
     let started_at = std::time::Instant::now();
     let message = validated_message(&body.message)?;
@@ -63,21 +80,21 @@ pub(super) async fn send_message_handler(
             "source_session_id does not belong to source_feature_id".to_string(),
         ));
     }
-    if source.project_id != target.project_id {
+    if !tool.allows_cross_project() && source.project_id != target.project_id {
         return Err(AppError::BadRequest(
             "target session does not belong to current project".to_string(),
         ));
     }
-    if let Err(error) = ensure_send_budget(&state, &source).await {
+    if let Err(error) = ensure_send_budget(&state, &source, tool).await {
         let message = error.to_string();
-        audit_send_message_error(&state, &source, &target, &message, started_at).await?;
+        audit_send_message_error(&state, &source, &target, tool, &message, started_at).await?;
         return Err(error);
     }
 
     let delivery = match delivery_mode(body.delivery.as_deref()) {
         Ok(mode) => mode,
         Err(message) => {
-            audit_send_message_error(&state, &source, &target, &message, started_at).await?;
+            audit_send_message_error(&state, &source, &target, tool, &message, started_at).await?;
             return Err(AppError::BadRequest(message));
         }
     };
@@ -85,24 +102,10 @@ pub(super) async fn send_message_handler(
     let target_is_active = target.is_active();
     if target_is_active && delivery == DeliveryMode::RejectIfActive {
         let message = "target session is busy".to_string();
-        audit_send_message_error(&state, &source, &target, &message, started_at).await?;
+        audit_send_message_error(&state, &source, &target, tool, &message, started_at).await?;
         return Err(AppError::BadRequest(message));
     }
-    if target_is_active && delivery == DeliveryMode::NextTurn {
-        return queue_busy_message(QueueBusyRequest {
-            state: &state,
-            source: &source,
-            target: &target,
-            body: &body,
-            message,
-            message_uuid,
-            reply,
-            started_at,
-        })
-        .await;
-    }
-
-    let (persisted_message, origin) = persist_immediate_message(ImmediateMessageRequest {
+    let request = ResolvedSendRequest {
         state: &state,
         source: &source,
         target: &target,
@@ -110,57 +113,104 @@ pub(super) async fn send_message_handler(
         message_uuid,
         source_note: body.source_note.as_deref(),
         link_to_current_session: body.link_to_current_session.unwrap_or(true),
-        await_reply: reply == ReplyMode::OnTurnEnd,
+        reply,
+        tool,
+        started_at,
+    };
+    if target_is_active && delivery == DeliveryMode::NextTurn {
+        return queue_busy_message(request).await;
+    }
+    send_immediate_message(request).await
+}
+
+struct ResolvedSendRequest<'a> {
+    state: &'a AppState,
+    source: &'a super::scope::SessionScope,
+    target: &'a super::scope::SessionScope,
+    message: &'a str,
+    message_uuid: uuid::Uuid,
+    source_note: Option<&'a str>,
+    link_to_current_session: bool,
+    reply: ReplyMode,
+    tool: SendMessageTool,
+    started_at: std::time::Instant,
+}
+
+async fn send_immediate_message(
+    request: ResolvedSendRequest<'_>,
+) -> Result<Json<SendMessageResponse>, AppError> {
+    let (persisted_message, origin) = persist_immediate_message(ImmediateMessageRequest {
+        state: request.state,
+        source: request.source,
+        target: request.target,
+        message: request.message,
+        message_uuid: request.message_uuid,
+        source_note: request.source_note,
+        link_to_current_session: request.link_to_current_session,
+        await_reply: request.reply == ReplyMode::OnTurnEnd,
     })
     .await?;
 
-    publish_generated_user_message(&state, target.feature_id, &persisted_message, origin).await?;
+    publish_generated_user_message(
+        request.state,
+        request.target.feature_id,
+        &persisted_message,
+        origin,
+    )
+    .await?;
     if persisted_message.inserted {
-        state
-            .feature_events_tx
-            .emit(target.feature_id, None, FeatureEventAction::Reordered);
+        request.state.feature_events_tx.emit(
+            request.target.feature_id,
+            None,
+            FeatureEventAction::Reordered,
+        );
     }
     if let Err(error) = dispatch_immediate_message_once(
-        &state,
-        &target,
-        message,
-        message_uuid,
+        request.state,
+        request.target,
+        request.message,
+        request.message_uuid,
         persisted_message.id,
-        reply,
+        request.reply,
     )
     .await
     {
-        audit_send_message_error(&state, &source, &target, &error.to_string(), started_at).await?;
+        audit_send_message_error(
+            request.state,
+            request.source,
+            request.target,
+            request.tool,
+            &error.to_string(),
+            request.started_at,
+        )
+        .await?;
         return Err(error);
     }
     let response = SendMessageResponse {
         message_id: Some(persisted_message.id),
         queue_id: None,
-        target_session_id: target.session_id,
-        message_uuid: message_uuid.to_string(),
-        delivery: if target_is_active {
+        target_session_id: request.target.session_id,
+        message_uuid: request.message_uuid.to_string(),
+        delivery: if request.target.is_active() {
             "steered_current_turn"
         } else {
             "started_turn"
         },
     };
-    audit_send_message(&state, &source, &target, &response, started_at).await?;
+    audit_send_message(
+        request.state,
+        request.source,
+        request.target,
+        request.tool,
+        &response,
+        request.started_at,
+    )
+    .await?;
     Ok(Json(response))
 }
 
-struct QueueBusyRequest<'a> {
-    state: &'a AppState,
-    source: &'a super::scope::SessionScope,
-    target: &'a super::scope::SessionScope,
-    body: &'a SendMessageRequest,
-    message: &'a str,
-    message_uuid: uuid::Uuid,
-    reply: ReplyMode,
-    started_at: std::time::Instant,
-}
-
 async fn queue_busy_message(
-    request: QueueBusyRequest<'_>,
+    request: ResolvedSendRequest<'_>,
 ) -> Result<Json<SendMessageResponse>, AppError> {
     if request.reply == ReplyMode::OnTurnEnd {
         return Err(AppError::BadRequest(
@@ -175,12 +225,12 @@ async fn queue_busy_message(
         request.message_uuid,
     )
     .await?;
-    if queued.inserted && request.body.link_to_current_session.unwrap_or(true) {
+    if queued.inserted && request.link_to_current_session {
         insert_message_link(
             request.state,
             request.source.session_id,
             request.target.session_id,
-            request.body.source_note.as_deref(),
+            request.source_note,
         )
         .await?;
     }
@@ -195,6 +245,7 @@ async fn queue_busy_message(
         request.state,
         request.source,
         request.target,
+        request.tool,
         &response,
         request.started_at,
     )
@@ -299,27 +350,4 @@ pub(super) async fn publish_generated_user_message(
     )
     .await
     .map_err(|error| AppError::Internal(error.to_string()))
-}
-
-async fn ensure_send_budget(
-    state: &AppState,
-    source: &super::scope::SessionScope,
-) -> Result<(), AppError> {
-    let recent_send_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM mcp_tool_audit_log
-         WHERE tool_name = 'project_send_session_message'
-           AND source_session_id = ?
-           AND status = 'ok'
-           AND created_at >= datetime('now', '-1 hour')",
-    )
-    .bind(source.session_id)
-    .fetch_one(&state.write_pool)
-    .await?;
-    if recent_send_count >= MAX_SEND_MESSAGES_PER_SOURCE_PER_HOUR {
-        return Err(AppError::BadRequest(format!(
-            "project_send_session_message hourly limit exceeded for source session {}",
-            source.session_id
-        )));
-    }
-    Ok(())
 }

@@ -102,23 +102,9 @@ fn tool_schema(name: &str) -> Value {
         }),
         "project_list_agent_providers" => json!({ "type": "object", "properties": {} }),
         "project_spawn_session" => spawn_session_schema(),
-        "project_send_session_message" => json!({
-            "type": "object",
-            "properties": {
-                "target_session_id": { "type": "number" },
-                "message": { "type": "string" },
-                "message_uuid": { "type": "string", "description": "Stable UUID for explicitly retrying the same logical message." },
-                "delivery": {
-                    "type": "string",
-                    "enum": ["steer_current_turn", "next_turn", "reject_if_active"],
-                    "default": "steer_current_turn"
-                },
-                "reply": { "type": "string", "enum": ["none", "on_turn_end"], "default": "none" },
-                "source_note": { "type": "string" },
-                "link_to_current_session": { "type": "boolean" }
-            },
-            "required": ["target_session_id", "message"]
-        }),
+        "project_send_session_message" => super::send_message_schema::schema(
+            "Current-project session id receiving the follow-up message.",
+        ),
         "project_list_pending_gates" | "project_respond_gate" => {
             super::project_gate_schema::schema(name)
         }
@@ -126,6 +112,7 @@ fn tool_schema(name: &str) -> Value {
     };
     document_schema(name, schema)
 }
+
 fn paginated_session_schema(include_query: bool) -> Value {
     let mut schema = json!({
         "type": "object",
