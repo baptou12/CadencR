@@ -32,6 +32,67 @@ interface ModelPickerRowProps {
 
 export { INHERIT_VALUE };
 
+interface ModelOptionsProps {
+  currentValue: string;
+  effectiveModel: string;
+  models: ModelOption[];
+  onSelect: (value: string) => void;
+  showInherit: boolean;
+}
+
+function ModelOptions({
+  currentValue,
+  effectiveModel,
+  models,
+  onSelect,
+  showInherit,
+}: ModelOptionsProps): React.ReactElement {
+  const effectiveModelLabel = models.find((model) => model.id === effectiveModel)?.label;
+  return (
+    <CommandList>
+      <CommandEmpty className="py-2 text-center text-xs">No option found.</CommandEmpty>
+      <CommandGroup>
+        {showInherit && (
+          <CommandItem
+            value={INHERIT_VALUE}
+            onSelect={() => onSelect(INHERIT_VALUE)}
+            className="text-xs"
+          >
+            <CheckIcon
+              className={cn(
+                "mr-2 size-3",
+                currentValue === INHERIT_VALUE ? "opacity-100" : "opacity-0",
+              )}
+            />
+            Inherit ({effectiveModelLabel ?? effectiveModel})
+          </CommandItem>
+        )}
+        {models.map((model) => (
+          <CommandItem
+            key={model.id}
+            value={model.id}
+            keywords={[model.label]}
+            onSelect={() => onSelect(model.id)}
+            className="text-xs"
+          >
+            <CheckIcon
+              className={cn("mr-2 size-3", currentValue === model.id ? "opacity-100" : "opacity-0")}
+            />
+            <span className="flex items-center gap-2">
+              <ProviderIcon
+                providerId={model.providerId}
+                alt={model.label}
+                className="size-3.5 rounded-sm"
+              />
+              {model.label}
+            </span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+    </CommandList>
+  );
+}
+
 export function ModelPickerRow({
   label,
   models,
@@ -88,50 +149,13 @@ export function ModelPickerRow({
         <PopoverContent className="w-64 p-0" align="start">
           <Command>
             <CommandInput placeholder="Search options..." className="h-8 text-xs" />
-            <CommandList>
-              <CommandEmpty className="py-2 text-center text-xs">No option found.</CommandEmpty>
-              <CommandGroup>
-                {showInherit && (
-                  <CommandItem
-                    value={INHERIT_VALUE}
-                    onSelect={() => handleSelect(INHERIT_VALUE)}
-                    className="text-xs"
-                  >
-                    <CheckIcon
-                      className={cn(
-                        "mr-2 size-3",
-                        currentValue === INHERIT_VALUE ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                    Inherit ({getModelLabel(effectiveModel)})
-                  </CommandItem>
-                )}
-                {models.map((model) => (
-                  <CommandItem
-                    key={model.id}
-                    value={model.id}
-                    keywords={[model.label]}
-                    onSelect={() => handleSelect(model.id)}
-                    className="text-xs"
-                  >
-                    <CheckIcon
-                      className={cn(
-                        "mr-2 size-3",
-                        currentValue === model.id ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                    <span className="flex items-center gap-2">
-                      <ProviderIcon
-                        providerId={model.providerId}
-                        alt={model.label}
-                        className="size-3.5 rounded-sm"
-                      />
-                      {model.label}
-                    </span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
+            <ModelOptions
+              currentValue={currentValue}
+              effectiveModel={effectiveModel}
+              models={models}
+              onSelect={handleSelect}
+              showInherit={showInherit}
+            />
           </Command>
         </PopoverContent>
       </Popover>

@@ -42,33 +42,54 @@ import {
  */
 const RESOLVED_MODEL_STALE_MS = 5 * 60 * 1000;
 
-export function useResolvedModel(featureId: number, projectId: number) {
-  const queryClient = useQueryClient();
-
-  // Settings inside `useResolvedModel` change rarely and the WS layer pushes
-  // updates anyway — a 5-minute staleTime collapses the dual-mount waterfall
-  // (route + WebSocketSessionFeatureBlock) without losing freshness.
+function useResolvedModelSources(featureId: number, projectId: number) {
   const agentCatalog = useAgentCatalog({ staleTime: RESOLVED_MODEL_STALE_MS });
-  const featureSettings = useGetFeatureModelSettings(featureId, {
+  const featureModels = useGetFeatureModelSettings(featureId, {
     query: { staleTime: RESOLVED_MODEL_STALE_MS },
   });
-  const projectSettings = useGetProjectModelSettings(projectId, {
+  const projectModels = useGetProjectModelSettings(projectId, {
     query: { staleTime: RESOLVED_MODEL_STALE_MS },
   });
-  const globalSettings = useGetWorkspaceModelSettings({
+  const globalModels = useGetWorkspaceModelSettings({
     query: { staleTime: RESOLVED_MODEL_STALE_MS },
   });
-  const workspaceKvSettings = useGetWorkspaceSettings();
-  const featureProviderSettings = useGetFeatureProviderSettings(featureId, {
+  const workspaceSettings = useGetWorkspaceSettings();
+  const featureProviders = useGetFeatureProviderSettings(featureId, {
     staleTime: RESOLVED_MODEL_STALE_MS,
   });
-  const projectProviderSettings = useGetProjectProviderSettings(projectId, {
+  const projectProviders = useGetProjectProviderSettings(projectId, {
     staleTime: RESOLVED_MODEL_STALE_MS,
   });
-  const globalProviderSettings = useGetWorkspaceProviderSettings({
+  const globalProviders = useGetWorkspaceProviderSettings({
     staleTime: RESOLVED_MODEL_STALE_MS,
   });
+  return useMemo(
+    () => ({
+      providers: agentCatalog.data?.providers,
+      defaultProviderId: agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER,
+      featureModels: featureModels.data,
+      projectModels: projectModels.data,
+      globalModels: globalModels.data,
+      featureProviders: featureProviders.data,
+      projectProviders: projectProviders.data,
+      globalProviders: globalProviders.data,
+      workspaceSettingMap: settingsArrayToMap(workspaceSettings.data),
+    }),
+    [
+      agentCatalog.data,
+      featureModels.data,
+      featureProviders.data,
+      globalModels.data,
+      globalProviders.data,
+      projectModels.data,
+      projectProviders.data,
+      workspaceSettings.data,
+    ],
+  );
+}
 
+function useResolvedModelMutations(featureId: number) {
+  const queryClient = useQueryClient();
   const setModelMutation = useSetFeatureModelSetting({
     mutation: {
       onSuccess: () =>
@@ -82,43 +103,6 @@ export function useResolvedModel(featureId: number, projectId: number) {
     },
   });
 
-  // Memoized so `resolveModelThinkingEffort` keeps a stable identity across
-  // renders when the underlying KV array hasn't changed.
-  const workspaceSettingMap = useMemo(
-    () => settingsArrayToMap(workspaceKvSettings.data),
-    [workspaceKvSettings.data],
-  );
-
-  const resolveSelection = useCallback(
-    (agentType: AgentType) =>
-      resolveRuntimeSelection({
-        agentType: agentType as AgentTypeSetting,
-        providers: agentCatalog.data?.providers,
-        defaultProviderId: agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER,
-        globalModels: globalSettings.data,
-        globalProviders: globalProviderSettings.data,
-        projectModels: projectSettings.data,
-        projectProviders: projectProviderSettings.data,
-        featureModels: featureSettings.data,
-        featureProviders: featureProviderSettings.data,
-      }),
-    [
-      agentCatalog.data,
-      featureProviderSettings.data,
-      featureSettings.data,
-      globalProviderSettings.data,
-      globalSettings.data,
-      projectProviderSettings.data,
-      projectSettings.data,
-    ],
-  );
-
-  /** Resolve model through the hierarchy for display */
-  const resolveModel = useCallback(
-    (agentType: AgentType): string => resolveSelection(agentType).modelId,
-    [resolveSelection],
-  );
-
   const handleModelChange = useCallback(
     (agentType: AgentType, modelId: string) => {
       setModelMutation.mutate({
@@ -129,34 +113,6 @@ export function useResolvedModel(featureId: number, projectId: number) {
     [featureId, setModelMutation],
   );
 
-  const resolveProvider = useCallback(
-    (agentType: AgentType): string => resolveSelection(agentType).providerId,
-    [resolveSelection],
-  );
-
-  /**
-   * Last-used thinking effort for the (provider, model) pair, read from the
-   * workspace EAV settings. Validated against the model's supported levels —
-   * an unsupported value returns `undefined`.
-   */
-  const resolveModelThinkingEffort = useCallback(
-    (providerId: string, modelId: string): ThinkingEffortLevel | undefined => {
-      const model = agentCatalog.data?.providers
-        .find((provider) => provider.id === providerId)
-        ?.models.find((entry) => entry.id === modelId);
-      const levels = supportedThinkingEffortLevels(model);
-      const value = workspaceSettingMap[thinkingEffortModelKey(providerId, modelId)];
-      const effort = parseThinkingEffort(value);
-      return effort && isThinkingEffortSupported(levels, effort) ? effort : undefined;
-    },
-    [agentCatalog.data?.providers, workspaceSettingMap],
-  );
-
-  /**
-   * Persist the per-model default. Used when the user adjusts effort outside
-   * a live WS session (the WS effort.set handler writes its own copy on the
-   * backend during a live session).
-   */
   const setModelThinkingEffort = useCallback(
     (providerId: string, modelId: string, effort: ThinkingEffortLevel | undefined): void => {
       setWorkspaceSettingMutation.mutate({
@@ -177,6 +133,50 @@ export function useResolvedModel(featureId: number, projectId: number) {
     },
     [featureId, setProviderMutation],
   );
+  return useMemo(
+    () => ({ handleModelChange, handleProviderChange, setModelThinkingEffort }),
+    [handleModelChange, handleProviderChange, setModelThinkingEffort],
+  );
+}
+
+export function useResolvedModel(featureId: number, projectId: number) {
+  const sources = useResolvedModelSources(featureId, projectId);
+  const mutations = useResolvedModelMutations(featureId);
+  const resolveSelection = useCallback(
+    (agentType: AgentType) =>
+      resolveRuntimeSelection({
+        agentType: agentType as AgentTypeSetting,
+        providers: sources.providers,
+        defaultProviderId: sources.defaultProviderId,
+        globalModels: sources.globalModels,
+        globalProviders: sources.globalProviders,
+        projectModels: sources.projectModels,
+        projectProviders: sources.projectProviders,
+        featureModels: sources.featureModels,
+        featureProviders: sources.featureProviders,
+      }),
+    [sources],
+  );
+  const resolveModel = useCallback(
+    (agentType: AgentType): string => resolveSelection(agentType).modelId,
+    [resolveSelection],
+  );
+  const resolveProvider = useCallback(
+    (agentType: AgentType): string => resolveSelection(agentType).providerId,
+    [resolveSelection],
+  );
+  const resolveModelThinkingEffort = useCallback(
+    (providerId: string, modelId: string): ThinkingEffortLevel | undefined => {
+      const model = sources.providers
+        ?.find((provider) => provider.id === providerId)
+        ?.models.find((entry) => entry.id === modelId);
+      const levels = supportedThinkingEffortLevels(model);
+      const value = sources.workspaceSettingMap[thinkingEffortModelKey(providerId, modelId)];
+      const effort = parseThinkingEffort(value);
+      return effort && isThinkingEffortSupported(levels, effort) ? effort : undefined;
+    },
+    [sources],
+  );
 
   // Stabilize the return value: a fresh object literal would propagate a new
   // `value` through `ResolvedModelContext` on every render of the provider,
@@ -186,19 +186,12 @@ export function useResolvedModel(featureId: number, projectId: number) {
   return useMemo(
     () => ({
       resolveModel,
-      handleModelChange,
+      handleModelChange: mutations.handleModelChange,
       resolveProvider,
-      handleProviderChange,
+      handleProviderChange: mutations.handleProviderChange,
       resolveModelThinkingEffort,
-      setModelThinkingEffort,
+      setModelThinkingEffort: mutations.setModelThinkingEffort,
     }),
-    [
-      resolveModel,
-      handleModelChange,
-      resolveProvider,
-      handleProviderChange,
-      resolveModelThinkingEffort,
-      setModelThinkingEffort,
-    ],
+    [mutations, resolveModel, resolveModelThinkingEffort, resolveProvider],
   );
 }
