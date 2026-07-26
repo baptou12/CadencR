@@ -43,7 +43,7 @@ const validSnapshot = {
 const validPrSnapshot = {
   feature_id: 7,
   fetched_at: 1_700_000_000_001,
-  auth_required: false,
+  setup_required: false,
   error: null,
   pr: {
     number: 42,

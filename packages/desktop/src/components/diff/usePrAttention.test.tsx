@@ -7,7 +7,7 @@ function snapshot(overrides: Partial<PrStatusSnapshot> = {}): PrStatusSnapshot {
   return {
     feature_id: 12,
     fetched_at: 100,
-    auth_required: false,
+    setup_required: false,
     error: null,
     pr: {
       number: 42,

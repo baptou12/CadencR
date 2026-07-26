@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { openExternalUrl } from "@/lib/open-external";
 import { isThreadAnchored, threadExternalHost, threadLocation } from "@/lib/pr-review-threads";
+import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 import { cn } from "@/lib/utils";
 
 /** One review thread in the PR timeline. */
@@ -346,7 +347,9 @@ function CommentsError({
       <Button
         variant="ghost"
         size="xs"
-        onClick={() => void navigate({ to: "/settings", search: { section: "git" } })}
+        onClick={() =>
+          void navigate({ to: "/settings", search: { section: FORGE_SETTINGS_ANCHOR } })
+        }
       >
         <Settings2Icon className="size-3" aria-hidden />
         Git settings

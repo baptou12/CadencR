@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import React from "react";
+import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 
 const mocks = vi.hoisted(() => {
   const mockGetWorkspaceSetting = vi.fn(() => ({
@@ -11,13 +12,14 @@ const mocks = vi.hoisted(() => {
     mutate: vi.fn(),
     isLoading: false,
   }));
-  return { mockGetWorkspaceSetting, mockSetWorkspaceSetting };
+  const mockUseSearch = vi.fn(() => ({}) as { section?: string });
+  return { mockGetWorkspaceSetting, mockSetWorkspaceSetting, mockUseSearch };
 });
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (_path: string) => (opts: { component: unknown }) => ({
     options: opts,
-    useSearch: vi.fn(() => ({})),
+    useSearch: mocks.mockUseSearch,
     useParams: vi.fn(() => ({})),
   }),
   useNavigate: () => vi.fn(),
@@ -59,6 +61,8 @@ describe("SettingsPage route", () => {
       data: { value: "1" },
       isSuccess: true,
     });
+    mocks.mockUseSearch.mockReturnValue({});
+    vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
   });
 
   it("renders the settings heading", () => {
@@ -100,6 +104,25 @@ describe("SettingsPage route", () => {
     expect(screen.getByRole("heading", { name: "Git" })).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: /merge strategy/i })).toBeInTheDocument();
     expect(screen.getByText("--no-ff")).toBeInTheDocument();
+  });
+
+  it("scrolls a ?section deep link to the anchor it names", () => {
+    // The forge onboarding button in the PR pane sends the user here. Both
+    // halves are silent when broken: a renamed anchor id resolves to nothing and
+    // strands the user at the top of the page with no error at all.
+    mocks.mockUseSearch.mockReturnValue({ section: FORGE_SETTINGS_ANCHOR });
+
+    const { container } = render(<SettingsPage />);
+
+    const anchor = container.querySelector(`#${FORGE_SETTINGS_ANCHOR}`);
+    expect(anchor).not.toBeNull();
+    expect(vi.mocked(HTMLElement.prototype.scrollIntoView).mock.contexts).toContain(anchor);
+  });
+
+  it("leaves the page at the top when no section is requested", () => {
+    render(<SettingsPage />);
+
+    expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 
   it("does not render the removed loader-style option", () => {

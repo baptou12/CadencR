@@ -16,6 +16,7 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { formatCombo } from "@/lib/shortcuts/format";
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import type { ReviewThreadSummary } from "@/lib/pr-review-threads";
+import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 
 export interface GitReviewStatusProps {
   isLoading: boolean;
@@ -79,7 +80,9 @@ function ReviewError({ errorMessage, isRefreshing, onRetry }: GitReviewStatusPro
       <Button
         variant="ghost"
         size="xs"
-        onClick={() => void navigate({ to: "/settings", search: { section: "git" } })}
+        onClick={() =>
+          void navigate({ to: "/settings", search: { section: FORGE_SETTINGS_ANCHOR } })
+        }
       >
         <Settings2Icon className="size-3" aria-hidden />
         Git settings

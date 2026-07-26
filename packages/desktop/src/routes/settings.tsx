@@ -148,13 +148,12 @@ function SettingsPage() {
     goBack();
   });
 
-  // Honor `?section=...` deep links — scroll once the layout has painted.
+  // Honor `?section=...` deep links. Anchors carry their own `scroll-mt-*`
+  // gutter, so the browser places them — the target can be a card nested inside
+  // a section, which an `offsetTop` measurement could not reach.
   useEffect(() => {
     if (!section) return;
-    const target = document.getElementById(section);
-    const main = mainRef.current;
-    if (!target || !main) return;
-    main.scrollTo({ top: target.offsetTop - 16 });
+    document.getElementById(section)?.scrollIntoView({ block: "start" });
   }, [section]);
 
   return (

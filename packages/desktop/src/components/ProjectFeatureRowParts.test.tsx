@@ -20,7 +20,7 @@ function feature(overrides: Partial<Feature> = {}): Feature {
 
 function snapshot(overrides: Partial<PrStatusSnapshot> = {}): PrStatusSnapshot {
   return {
-    auth_required: false,
+    setup_required: false,
     feature_id: 5,
     fetched_at: 1,
     error: null,

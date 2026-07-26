@@ -89,6 +89,11 @@ export function prStatusLabel(snapshot: PrStatusSnapshot): string {
  * The sidebar row's forge slot. Normally the proposal chip; when a host lookup
  * failed before any proposal was found there is no chip to tint, so the error
  * still surfaces as a dot rather than disappearing.
+ *
+ * A forge that was never connected is not one of those failures and gets no dot:
+ * on a fresh install every row would carry one, which is noise rather than news
+ * — the same reason the poller stays quiet about a feature with no remote. The
+ * PR pane is where that state is worth a word, and there it comes with a button.
  */
 export function FeaturePrIndicator({
   snapshot,
@@ -96,7 +101,7 @@ export function FeaturePrIndicator({
   snapshot: PrStatusSnapshot | undefined;
 }): React.JSX.Element | null {
   if (!snapshot?.pr) {
-    if (!snapshot?.error) return null;
+    if (!snapshot?.error || snapshot.setup_required) return null;
     return (
       <span
         className="size-1.5 shrink-0 rounded-full bg-[var(--acc-red)] ring-1 ring-background"

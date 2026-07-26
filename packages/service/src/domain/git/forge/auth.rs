@@ -181,14 +181,17 @@ pub fn normalize_hostname(hostname: &str) -> Result<String, ForgeError> {
     Ok(hostname)
 }
 
+/// A forge failure as an HTTP answer: 4xx when the user has to change something,
+/// 5xx when the forge or the network is having a moment.
+///
+/// That is the same question [`ForgeError::is_setup_failure`] answers for the PR
+/// pane, so it is asked once here rather than kept as a second exhaustive match
+/// that has to be remembered whenever a variant is added.
 pub fn forge_to_app_error(error: ForgeError) -> AppError {
-    match error {
-        ForgeError::Authentication(message) | ForgeError::Configuration(message) => {
-            AppError::BadRequest(message)
-        }
-        ForgeError::RateLimited(message)
-        | ForgeError::Http(message)
-        | ForgeError::Response(message) => AppError::Internal(message),
+    if error.is_setup_failure() {
+        AppError::BadRequest(error.to_string())
+    } else {
+        AppError::Internal(error.to_string())
     }
 }
 

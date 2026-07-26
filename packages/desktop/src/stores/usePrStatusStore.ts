@@ -93,11 +93,17 @@ export function selectPrStatus(
   return (state) => (featureId == null ? undefined : state.byFeature[featureId]);
 }
 
+/**
+ * Whether an incoming snapshot is worth storing. Must stay in step with the
+ * backend's `PrStatusSnapshot::semantic_eq`: anything the backend bothers to
+ * broadcast but this call treats as equal is a push the UI silently drops.
+ */
 export function prStatusSnapshotsEqual(a: PrStatusSnapshot, b: PrStatusSnapshot): boolean {
   return (
     a.feature_id === b.feature_id &&
-    a.auth_required === b.auth_required &&
+    a.setup_required === b.setup_required &&
     a.error === b.error &&
+    a.unresolved_threads === b.unresolved_threads &&
     prSummariesEqual(a.pr, b.pr) &&
     ciRollupsEqual(a.ci, b.ci)
   );

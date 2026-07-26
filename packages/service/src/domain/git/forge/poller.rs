@@ -160,25 +160,27 @@ async fn poll_interval(state: &AppState, group: &RepoGroup) -> Duration {
 }
 
 async fn refresh_group(state: &AppState, group: RepoGroup) {
+    let hostname = &group.remote.hostname;
     let Some(provider) = provider_for(group.kind) else {
         publish_group_error(
             state,
             &group,
-            "Choose a forge kind for this remote in Settings".into(),
-            false,
+            &ForgeError::Configuration(format!(
+                "Choose which provider {hostname} runs so Cadencr knows which API to call."
+            )),
         )
         .await;
         return;
     };
-    let api_base_url = match api_base_url(&group.remote.hostname, group.kind, group.config.as_ref())
-    {
+    let api_base_url = match api_base_url(hostname, group.kind, group.config.as_ref()) {
         Some(url) => url,
         None => {
             publish_group_error(
                 state,
                 &group,
-                "Configure an API base URL for this forge".into(),
-                false,
+                &ForgeError::Configuration(format!(
+                    "Set an API base URL for {hostname} before Cadencr can reach its API."
+                )),
             )
             .await;
             return;
@@ -186,7 +188,7 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
     };
     let credentials = match resolve_credentials(
         &state.forge_auth,
-        &group.remote.hostname,
+        hostname,
         group.kind,
         group.config.as_ref(),
     )
@@ -194,11 +196,18 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
     {
         Ok(Some(credentials)) => credentials,
         Ok(None) => {
-            publish_group_error(state, &group, String::new(), true).await;
+            publish_group_error(
+                state,
+                &group,
+                &ForgeError::Authentication(format!(
+                    "Add an API token for {hostname} to load pull requests, checks, and comments."
+                )),
+            )
+            .await;
             return;
         }
         Err(error) => {
-            publish_group_error(state, &group, error.to_string(), false).await;
+            publish_group_error(state, &group, &error).await;
             return;
         }
     };
@@ -211,7 +220,9 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
     let prs = match provider.list_open_prs(&context).await {
         Ok(prs) => prs,
         Err(error) => {
-            publish_group_error(state, &group, error.to_string(), false).await;
+            // The first real call is where an expired or wrongly-scoped token
+            // surfaces, so this arm carries onboarding failures too.
+            publish_group_error(state, &group, &error).await;
             return;
         }
     };
@@ -266,7 +277,7 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
                 ci,
                 fetched_at,
                 error: detail_errors.get(feature_id).cloned().or(ci_error),
-                auth_required: false,
+                setup_required: false,
                 unresolved_threads,
             },
         )
@@ -358,17 +369,18 @@ fn matched_prs(group: &RepoGroup, prs: &[PrSummary]) -> HashMap<i64, Option<PrSu
         .collect()
 }
 
-async fn publish_group_error(
-    state: &AppState,
-    group: &RepoGroup,
-    error: String,
-    auth_required: bool,
-) {
+/// Report one group-wide failure against every feature in the group.
+///
+/// Takes the `ForgeError` rather than a message plus a flag: whether the user
+/// can fix this in Settings is a property of the error, and asking it here keeps
+/// the answer from drifting between call sites.
+async fn publish_group_error(state: &AppState, group: &RepoGroup, error: &ForgeError) {
+    let setup_required = error.is_setup_failure();
+    let detail = error.to_string();
     for (feature_id, _) in &group.features {
-        let detail = (!error.is_empty()).then(|| error.clone());
         publish(
             state,
-            PrStatusSnapshot::unpolled(*feature_id, detail, auth_required),
+            PrStatusSnapshot::unpolled(*feature_id, Some(detail.clone()), setup_required),
         )
         .await;
     }

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { DEFAULT_PR_COMMENT_FILTER, type PrCommentFilter } from "@/components/PrCommentsFilter";
 import type { PrReviewThreads } from "@/hooks/usePrReviewThreads";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 import { openPullRequestExternally } from "@/lib/open-pull-request";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 import { cn } from "@/lib/utils";
@@ -83,7 +84,7 @@ export const FeaturePrView = memo(function FeaturePrView({
       />
     );
   }
-  if (status?.auth_required) return <ForgeConnectEmptyState />;
+  if (status?.setup_required) return <ForgeConnectEmptyState reason={status.error} />;
   if (status?.error && !status.pr) return <PrViewError message={status.error} />;
   if (!status?.pr) return <NoPrEmptyState />;
 
@@ -274,20 +275,34 @@ function PrHeader({ status }: { status: PrStatusSnapshot }): ReactElement {
   );
 }
 
-function ForgeConnectEmptyState(): ReactElement {
+/**
+ * The pane's onboarding state: this feature has a remote, but the forge behind
+ * it isn't usable yet. The button is the point — the fix lives in a card partway
+ * down a different route, which nobody finds from an error saying "in Settings".
+ *
+ * `reason` goes in the detail slot rather than the description because it is not
+ * always prose: a rejected call carries the forge's own body, which can be JSON.
+ */
+function ForgeConnectEmptyState({ reason }: { reason?: string | null }): ReactElement {
   const navigate = useNavigate();
   return (
     <EmptyState
       title="Connect this remote"
-      description="Add an API token before Cadencr can load pull requests, checks, and comments."
+      // Deliberately not a second "…to load pull requests, checks, and comments":
+      // the backend's reason already says that, and the two stacked read as a
+      // stutter. This line states the situation, `detail` gives the specifics.
+      description="Cadencr can't reach the forge behind this remote yet."
+      detail={reason}
       icon={<PrEmptyIcon />}
       action={
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void navigate({ to: "/settings", search: { section: "git" } })}
+          onClick={() =>
+            void navigate({ to: "/settings", search: { section: FORGE_SETTINGS_ANCHOR } })
+          }
         >
-          Open Git settings
+          Connect a provider
         </Button>
       }
     />

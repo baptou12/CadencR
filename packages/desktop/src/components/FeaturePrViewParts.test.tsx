@@ -5,7 +5,7 @@ import { ChecksPanel } from "./FeaturePrViewParts";
 
 function snapshot(): PrStatusSnapshot {
   return {
-    auth_required: false,
+    setup_required: false,
     feature_id: 3,
     fetched_at: 1,
     error: null,

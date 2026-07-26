@@ -8,7 +8,7 @@ function snapshot(
   prOverrides: Partial<NonNullable<PrStatusSnapshot["pr"]>> = {},
 ): PrStatusSnapshot {
   return {
-    auth_required: false,
+    setup_required: false,
     feature_id: 20,
     fetched_at: 1,
     error: null,
@@ -131,5 +131,21 @@ describe("FeaturePrIndicator", () => {
     render(<FeaturePrIndicator snapshot={snapshot({ pr: null, error: "Bad credentials" })} />);
 
     expect(screen.getByLabelText("Forge status error: Bad credentials")).toBeInTheDocument();
+  });
+
+  it("stays silent about a forge the user never connected", () => {
+    // The reason is written for the PR pane's onboarding prompt. Painting it as
+    // a red dot here would mark every row on a fresh install as broken.
+    const { container } = render(
+      <FeaturePrIndicator
+        snapshot={snapshot({
+          pr: null,
+          setup_required: true,
+          error: "Add an API token for github.com to load pull requests, checks, and comments.",
+        })}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
   });
 });

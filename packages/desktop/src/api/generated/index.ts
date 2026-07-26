@@ -1828,12 +1828,19 @@ treat `None` as unknown and fall back to the check-driven tone.
 export type PrStatusSnapshotUnresolvedThreads = number | null;
 
 export interface PrStatusSnapshot {
-  auth_required: boolean;
   ci?: PrStatusSnapshotCi;
   error?: PrStatusSnapshotError;
   feature_id: number;
   fetched_at: number;
   pr?: PrStatusSnapshotPr;
+  /** The forge cannot be reached until the user finishes connecting it — no
+token, no provider kind, no API base URL, or a token the forge rejected.
+
+`error` carries the specific reason. Kept separate from a transient
+failure (rate limit, network, unexpected response) because only this
+state is worth turning into an onboarding prompt: retrying will never
+clear it, and offering "connect a provider" for a 500 would be wrong. */
+  setup_required: boolean;
   /**
    * How many review threads the forge still reports as open.
 

@@ -5,6 +5,13 @@ import type { PrReviewThreads } from "@/hooks/usePrReviewThreads";
 import { usePrStatusStore } from "@/stores/usePrStatusStore";
 import { FeaturePrView, reviewStateLabel } from "./FeaturePrView";
 
+const navigateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return { ...actual, useNavigate: () => navigateMock };
+});
+
 describe("reviewStateLabel", () => {
   it("hides the provider's absence-of-review sentinel", () => {
     expect(reviewStateLabel("none")).toBeNull();
@@ -19,7 +26,7 @@ describe("reviewStateLabel", () => {
 
 function snapshot(): PrStatusSnapshot {
   return {
-    auth_required: false,
+    setup_required: false,
     feature_id: 42,
     fetched_at: 1,
     error: null,
@@ -85,6 +92,68 @@ describe("FeaturePrView pinned band", () => {
     fireEvent.wheel(band, { deltaY: 3, deltaMode: 1 });
 
     expect(scroller.scrollTop).toBe(48);
+  });
+});
+
+describe("FeaturePrView forge onboarding", () => {
+  beforeEach(() => {
+    navigateMock.mockClear();
+    usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
+  });
+
+  function renderUnconnected(error: string | null): void {
+    usePrStatusStore.getState().setStatus({
+      ...snapshot(),
+      pr: undefined,
+      ci: undefined,
+      setup_required: true,
+      error,
+    });
+    render(<FeaturePrView featureId={42} reviews={REVIEWS} />);
+  }
+
+  it("sends the user to the forge card instead of the top of Git settings", () => {
+    // The Git section opens on merge strategy, so landing there leaves the
+    // remote-connections card several scrolls below the fold.
+    renderUnconnected("Add an API token for github.com to load pull requests.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect a provider" }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/settings",
+      search: { section: "git-remotes" },
+    });
+  });
+
+  it("explains which host needs what, using the reason the backend gave", () => {
+    renderUnconnected(
+      "Choose which provider git.acme.test runs so Cadencr knows which API to call.",
+    );
+
+    expect(screen.getByText(/git\.acme\.test/)).toBeVisible();
+  });
+
+  it("still offers the button when the backend sent no reason", () => {
+    renderUnconnected(null);
+
+    expect(screen.getByRole("button", { name: "Connect a provider" })).toBeVisible();
+    expect(screen.getByText(/can't reach the forge behind this remote/)).toBeVisible();
+  });
+
+  it("leaves a transient failure as an error, with nothing to connect", () => {
+    // A rate limit is not an onboarding problem: offering "connect a provider"
+    // for an already-connected forge sends the user to fix what isn't broken.
+    usePrStatusStore.getState().setStatus({
+      ...snapshot(),
+      pr: undefined,
+      ci: undefined,
+      setup_required: false,
+      error: "API rate limit exceeded",
+    });
+    render(<FeaturePrView featureId={42} reviews={REVIEWS} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("API rate limit exceeded");
+    expect(screen.queryByRole("button", { name: "Connect a provider" })).toBeNull();
   });
 });
 
