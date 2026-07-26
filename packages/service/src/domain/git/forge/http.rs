@@ -2,11 +2,14 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::{Duration, Instant};
 
-use reqwest::header::{ETAG, IF_NONE_MATCH, RETRY_AFTER};
+use reqwest::header::{ETAG, IF_NONE_MATCH};
 use reqwest::{RequestBuilder, StatusCode};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 
+mod rate_limit;
+
+use self::rate_limit::{is_secondary_rate_limit, rate_limit_wait, DEFAULT_RATE_LIMIT_WAIT};
 use super::provider::ForgeError;
 
 #[derive(Clone)]
@@ -106,45 +109,20 @@ impl ForgeHttp {
             });
         }
         if status == StatusCode::TOO_MANY_REQUESTS {
-            let wait = retry_after(&response).unwrap_or(Duration::from_secs(60));
-            self.backoff_until
-                .lock()
-                .await
-                .insert(host, Instant::now() + wait);
-            return Err(ForgeError::RateLimited(format!(
-                "Forge rate limit reached; retrying in {}s",
-                wait.as_secs()
-            )));
+            let wait = rate_limit_wait(&response).unwrap_or(DEFAULT_RATE_LIMIT_WAIT);
+            return Err(self.arm_backoff(host, wait).await);
         }
         if status == StatusCode::UNAUTHORIZED {
             return Err(ForgeError::Authentication(
                 "Forge rejected the configured token".into(),
             ));
         }
-        if status == StatusCode::FORBIDDEN && github_rate_limit_exhausted(&response) {
-            let wait = github_reset_wait(&response).unwrap_or(Duration::from_secs(60));
-            self.backoff_until
-                .lock()
-                .await
-                .insert(host, Instant::now() + wait);
-            return Err(ForgeError::RateLimited(format!(
-                "Forge rate limit reached; retrying in {}s",
-                wait.as_secs()
-            )));
+        if status == StatusCode::FORBIDDEN {
+            return Err(self.classify_forbidden(host, response).await);
         }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            let detail = body.chars().take(500).collect::<String>();
-            let message = if detail.trim().is_empty() {
-                format!("Forge request failed with HTTP {status}")
-            } else {
-                format!("Forge request failed with HTTP {status}: {detail}")
-            };
-            return if status == StatusCode::FORBIDDEN {
-                Err(ForgeError::Authentication(message))
-            } else {
-                Err(ForgeError::Http(message))
-            };
+            return Err(ForgeError::Http(request_failure_message(status, &body)));
         }
 
         let etag = response
@@ -176,6 +154,38 @@ impl ForgeHttp {
             .map_err(|error| ForgeError::Response(format!("invalid forge response: {error}")))
     }
 
+    /// Decide what a `403` actually means. GitHub answers a throttled request
+    /// with `403` as readily as with `429`, so a forbidden response is only an
+    /// auth problem once every rate-limit signal has been ruled out — otherwise
+    /// a throttled poll sends the user off to re-authenticate a working token.
+    async fn classify_forbidden(&self, host: String, response: reqwest::Response) -> ForgeError {
+        if let Some(wait) = rate_limit_wait(&response) {
+            return self.arm_backoff(host, wait).await;
+        }
+        let status = response.status();
+        // Truncate before inspecting: a proxy or WAF can answer 403 with a page
+        // of HTML, and the two reads below would each copy the whole thing.
+        let detail = truncated_detail(&response.text().await.unwrap_or_default());
+        if is_secondary_rate_limit(&detail) {
+            // A secondary limit carries no reset header, so the body is the only
+            // signal. GitHub's guidance is to wait at least a minute — the default.
+            return self.arm_backoff(host, DEFAULT_RATE_LIMIT_WAIT).await;
+        }
+        ForgeError::Authentication(request_failure_message(status, &detail))
+    }
+
+    /// Pause every request to `host` until the forge says it will listen again.
+    async fn arm_backoff(&self, host: String, wait: Duration) -> ForgeError {
+        self.backoff_until
+            .lock()
+            .await
+            .insert(host, Instant::now() + wait);
+        ForgeError::RateLimited(format!(
+            "Forge rate limit reached; retrying in {}s",
+            wait.as_secs()
+        ))
+    }
+
     async fn check_backoff(&self, host: &str) -> Result<(), ForgeError> {
         let mut backoff = self.backoff_until.lock().await;
         let Some(until) = backoff.get(host).copied() else {
@@ -186,9 +196,17 @@ impl ForgeHttp {
             backoff.remove(host);
             return Ok(());
         }
+        // Deliberately no countdown. This string reaches the sidebar through a
+        // snapshot, and `PrStatusSnapshot::semantic_eq` compares it verbatim, so
+        // a decrementing number would make every poll look like fresh news and
+        // rebroadcast to every client for the length of the pause.
+        tracing::debug!(
+            host,
+            seconds_left = until.saturating_duration_since(now).as_secs(),
+            "forge host is paused"
+        );
         Err(ForgeError::RateLimited(format!(
-            "Forge requests for {host} are paused for {}s",
-            until.saturating_duration_since(now).as_secs()
+            "Forge requests for {host} are paused until the rate limit resets"
         )))
     }
 }
@@ -202,33 +220,114 @@ fn response_cache_key(request: &reqwest::Request) -> String {
     format!("{}#{:016x}", request.url(), hasher.finish())
 }
 
-fn retry_after(response: &reqwest::Response) -> Option<Duration> {
-    response
-        .headers()
-        .get(RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .parse::<u64>()
-        .ok()
-        .map(Duration::from_secs)
+/// As much of a response body as is worth quoting back to the user. Forges
+/// answer with anything from a one-line JSON message to a full HTML page.
+fn truncated_detail(body: &str) -> String {
+    body.chars().take(500).collect()
 }
 
-fn github_rate_limit_exhausted(response: &reqwest::Response) -> bool {
-    response
-        .headers()
-        .get("x-ratelimit-remaining")
-        .and_then(|value| value.to_str().ok())
-        == Some("0")
+fn request_failure_message(status: StatusCode, body: &str) -> String {
+    let detail = truncated_detail(body);
+    if detail.trim().is_empty() {
+        format!("Forge request failed with HTTP {status}")
+    } else {
+        format!("Forge request failed with HTTP {status}: {detail}")
+    }
 }
 
-fn github_reset_wait(response: &reqwest::Response) -> Option<Duration> {
-    let reset = response
-        .headers()
-        .get("x-ratelimit-reset")?
-        .to_str()
-        .ok()?
-        .parse::<i64>()
-        .ok()?;
-    let seconds = reset.saturating_sub(chrono::Utc::now().timestamp()).max(1);
-    Some(Duration::from_secs(seconds as u64))
+#[cfg(test)]
+mod tests {
+    use super::rate_limit::test_response;
+    use super::*;
+
+    async fn classify(headers: &[(&str, &str)], body: &str) -> ForgeError {
+        ForgeHttp::default()
+            .classify_forbidden("forge.test".into(), test_response(403, headers, body))
+            .await
+    }
+
+    #[tokio::test]
+    async fn a_throttled_403_never_asks_the_user_to_reconnect() {
+        // The bug this covers: GitHub answers a secondary rate limit with 403
+        // and a `retry-after`, but leaves the hourly quota untouched. Reading
+        // only `x-ratelimit-remaining` classified that as an auth failure —
+        // which `is_setup_failure` turns into the "Connect this remote" prompt,
+        // telling the user to re-authenticate a perfectly good token.
+        let error = classify(&[("retry-after", "30")], "secondary rate limit").await;
+
+        assert_eq!(
+            error,
+            ForgeError::RateLimited("Forge rate limit reached; retrying in 30s".into())
+        );
+        assert!(!error.is_setup_failure());
+    }
+
+    #[tokio::test]
+    async fn a_secondary_limit_with_no_headers_is_read_from_the_body() {
+        for body in [
+            "You have exceeded a secondary rate limit. Please wait a few minutes.",
+            "You have triggered an abuse detection mechanism.",
+        ] {
+            let error = classify(&[], body).await;
+            assert!(!error.is_setup_failure(), "{body}");
+            assert!(
+                matches!(&error, ForgeError::RateLimited(message) if message.contains("60s")),
+                "{body} produced {error:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_exhausted_quota_still_backs_off_until_the_reset() {
+        let reset = chrono::Utc::now().timestamp() + 120;
+        let error = classify(
+            &[
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-reset", &reset.to_string()),
+            ],
+            "API rate limit exceeded",
+        )
+        .await;
+
+        // The exact wait is asserted in `rate_limit`'s own tests, which own the
+        // clock arithmetic; pinning the number here too would just make this
+        // test fail whenever it straddles a second boundary.
+        assert!(matches!(error, ForgeError::RateLimited(_)), "{error:?}");
+        assert!(!error.is_setup_failure());
+    }
+
+    #[tokio::test]
+    async fn a_real_permission_failure_is_still_a_setup_failure() {
+        // The other half of the fix: narrowing the rate-limit test must not
+        // swallow the case the 403 branch exists for. A token missing a scope
+        // has to keep reaching the onboarding prompt.
+        let error = classify(&[], "Resource not accessible by personal access token").await;
+
+        assert!(error.is_setup_failure());
+        assert!(
+            matches!(&error, ForgeError::Authentication(message)
+                if message.contains("Resource not accessible")),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rate_limited_host_is_paused_without_another_request() {
+        let http = ForgeHttp::default();
+        let error = http
+            .classify_forbidden(
+                "paused.test".into(),
+                test_response(403, &[("retry-after", "45")], ""),
+            )
+            .await;
+
+        assert!(matches!(error, ForgeError::RateLimited(_)));
+        // The pause is the point: the next poll has to be refused locally
+        // rather than spending another request on a host that is refusing us.
+        assert!(matches!(
+            http.check_backoff("paused.test").await,
+            Err(ForgeError::RateLimited(_))
+        ));
+        assert!(http.check_backoff("other.test").await.is_ok());
+    }
 }
