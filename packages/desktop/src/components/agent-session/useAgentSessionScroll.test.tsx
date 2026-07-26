@@ -1,7 +1,11 @@
-import { render, screen, waitFor, act } from "@/test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { render, renderHook, screen, waitFor, act } from "@/test-utils";
+import type { VirtuosoHandle } from "react-virtuoso";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAgentSessionScroll } from "./useAgentSessionScroll";
 import type { AgentBlockData } from "../AgentBlock";
+
+const isIosMock = vi.fn(() => false);
+vi.mock("@/lib/is-ios", () => ({ isIos: () => isIosMock() }));
 
 function makeBlock(id: string): AgentBlockData {
   return { id, type: "text", content: `block ${id}` };
@@ -79,6 +83,10 @@ function Harness({
     </div>
   );
 }
+
+afterEach(() => {
+  isIosMock.mockReturnValue(false);
+});
 
 describe("useAgentSessionScroll history loading", () => {
   it("loads older history when an upward scrollbar/keyboard scroll lands near the top", async () => {
@@ -206,5 +214,62 @@ describe("useAgentSessionScroll history loading", () => {
     dispatchScroll(scroller, 900);
     dispatchScroll(scroller, 24);
     await waitFor(() => expect(secondLoad).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("useAgentSessionScroll bottom pinning", () => {
+  it("does not feed iOS height changes back into Virtuoso scrolling", () => {
+    isIosMock.mockReturnValue(true);
+    const { result } = renderHook(() =>
+      useAgentSessionScroll({
+        blocks: [makeBlock("1"), makeBlock("2")],
+        conversationKey: "conversation-a",
+        hasMore: false,
+      }),
+    );
+    const scrollToIndex = vi.fn();
+    result.current.virtuosoRef.current = { scrollToIndex } as unknown as VirtuosoHandle;
+
+    act(() => {
+      result.current.onTotalListHeightChanged(200);
+      result.current.onTotalListHeightChanged(300);
+    });
+
+    expect(scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("keeps explicit iOS bottom navigation without raw scrollTop pinning", async () => {
+    isIosMock.mockReturnValue(true);
+    const { result } = renderHook(() =>
+      useAgentSessionScroll({
+        blocks: [makeBlock("1"), makeBlock("2")],
+        conversationKey: "conversation-a",
+        hasMore: false,
+      }),
+    );
+    const scrollToIndex = vi.fn();
+    result.current.virtuosoRef.current = { scrollToIndex } as unknown as VirtuosoHandle;
+    const scroller = document.createElement("div");
+    stubGeometry(scroller, 2_000, 500);
+    let scrollTop = 0;
+    let scrollTopWrites = 0;
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+        scrollTopWrites += 1;
+      },
+    });
+
+    act(() => {
+      result.current.scrollContainerRef(scroller);
+      result.current.scrollToBottom();
+    });
+    await waitForAnimationFrame();
+
+    expect(scrollToIndex).toHaveBeenCalledOnce();
+    expect(scrollTopWrites).toBe(0);
+    act(() => result.current.scrollContainerRef(null));
   });
 });

@@ -109,6 +109,10 @@ export function useAgentSessionScroll({
    * one-shot align doesn't re-read.
    */
   const pinScrollerToEnd = useCallback((): void => {
+    // On iOS, Virtuoso owns bottom pinning through its deviation-aware
+    // `followOutput` path. A raw scrollTop write can fight that correction and
+    // feed a synchronous scroll/measurement loop back into React.
+    if (isIos()) return;
     const el = scrollerElRef.current;
     if (!el || !stickRef.current) return;
     pinToBottom(el);
@@ -272,7 +276,10 @@ export function useAgentSessionScroll({
       // height delta is user-driven, not new content, so re-pinning would jump
       // the clicked recap out of view.
       if (!stickRef.current || isAutoScrollPinSuppressed()) return;
-      pinToEnd();
+      // Reissuing scrollToIndex from Virtuoso's own height callback closes a
+      // feedback loop on iOS WebKit. `followOutput` already owns that platform's
+      // streaming bottom pin; viewport backfill remains independent below.
+      if (!isIos()) pinToEnd();
       maybeFillViewport();
     },
     [restoreHistoryAnchor, pinToEnd, maybeFillViewport],
