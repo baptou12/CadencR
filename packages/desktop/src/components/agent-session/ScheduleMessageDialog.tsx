@@ -28,6 +28,69 @@ export interface ScheduleMessageDialogProps {
   onDelete?: () => Promise<void>;
 }
 
+function ScheduleMessageFields({
+  isEdit,
+  text,
+  setText,
+  date,
+  setDate,
+  now,
+  isPast,
+}: {
+  isEdit: boolean;
+  text: string;
+  setText: (text: string) => void;
+  date: Date;
+  setDate: (date: Date) => void;
+  now: Date;
+  isPast: boolean;
+}): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-4">
+      {isEdit ? (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Message</label>
+          <Textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            rows={3}
+            className="max-h-40 resize-none"
+            autoFocus
+          />
+        </div>
+      ) : (
+        <div className="max-h-24 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+          {text}
+        </div>
+      )}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {SCHEDULE_PRESETS.map((preset) => (
+            <Button
+              key={preset.label}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-full px-3 text-xs"
+              onClick={() => setDate(preset.resolve(new Date()))}
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
+        <DateTimePicker value={date} onChange={setDate} min={now} invalid={isPast} />
+        <p className="text-xs text-muted-foreground">
+          {isPast ? (
+            <span className="text-destructive">Pick a time in the future.</span>
+          ) : (
+            <>Times shown in your timezone ({localTimeZone()}).</>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function ScheduleMessageDialog({
   open,
   onOpenChange,
@@ -90,49 +153,15 @@ export function ScheduleMessageDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          {isEdit ? (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Message</label>
-              <Textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                rows={3}
-                className="max-h-40 resize-none"
-                autoFocus
-              />
-            </div>
-          ) : (
-            <div className="max-h-24 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
-              {text}
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-1.5">
-              {SCHEDULE_PRESETS.map((preset) => (
-                <Button
-                  key={preset.label}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 rounded-full px-3 text-xs"
-                  onClick={() => setDate(preset.resolve(new Date()))}
-                >
-                  {preset.label}
-                </Button>
-              ))}
-            </div>
-            <DateTimePicker value={date} onChange={setDate} min={now} invalid={isPast} />
-            <p className="text-xs text-muted-foreground">
-              {isPast ? (
-                <span className="text-destructive">Pick a time in the future.</span>
-              ) : (
-                <>Times shown in your timezone ({localTimeZone()}).</>
-              )}
-            </p>
-          </div>
-        </div>
+        <ScheduleMessageFields
+          isEdit={isEdit}
+          text={text}
+          setText={setText}
+          date={date}
+          setDate={setDate}
+          now={now}
+          isPast={isPast}
+        />
 
         <DialogFooter className="gap-2 sm:justify-between">
           {isEdit && onDelete ? (

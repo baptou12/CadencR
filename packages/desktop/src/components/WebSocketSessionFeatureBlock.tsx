@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, type ReactElement } from "react";
+import { useEffect, useRef, type ReactElement, type RefObject } from "react";
 import { EditorFuzzyShortcut } from "@/components/editor/EditorFuzzyShortcut";
-import { promptDropTargetIdOf } from "@/lib/prompt-drop-target";
 import { OpenDiffInEditorProvider } from "@/components/diff/OpenDiffInEditorContext";
 import { LinkRoutingProvider } from "@/components/links/LinkRoutingProvider";
 import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchShortcut";
@@ -22,18 +21,17 @@ import {
   useWsSessionEffects,
   useWsSessionShortcuts,
 } from "@/components/WebSocketSessionFeatureBlockHooks";
-import {
-  useAgentFirstNonAgentWork,
-  useStaggeredTabReadiness,
-} from "@/components/useAgentFirstNonAgentWork";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   focusTabTrigger,
-  useAgentDropZone,
   useFeatureBlockTabs,
   useOpenDiffFileInEditor,
   useSessionFeatureActions,
 } from "./WebSocketSessionFeatureBlockLocalHooks";
+import {
+  useNonAgentTabReadiness,
+  useSessionPromptDropZone,
+} from "./WebSocketSessionFeatureBlockSetup";
 
 export interface WebSocketSessionFeatureBlockProps {
   sessionId: string;
@@ -55,112 +53,28 @@ export interface WebSocketSessionFeatureBlockProps {
   requestedFocusTab?: TabKind;
 }
 
-export function WebSocketSessionFeatureBlock(
-  props: WebSocketSessionFeatureBlockProps,
-): ReactElement {
-  const layoutFeatureId = props.layoutFeatureId ?? props.featureId;
-  return (
-    <FeatureLayoutProvider
-      featureId={layoutFeatureId}
-      hotkeysEnabled={props.hotkeysEnabled ?? true}
-    >
-      <WebSocketSessionFeatureBody {...props} layoutFeatureId={layoutFeatureId} />
-    </FeatureLayoutProvider>
-  );
-}
-
-function WebSocketSessionFeatureBody(
-  props: WebSocketSessionFeatureBlockProps & { layoutFeatureId: number },
-): ReactElement {
-  const {
-    sessionId,
-    cwd,
-    featureId,
-    projectId,
-    layoutFeatureId,
-    embedded = false,
-    hotkeysEnabled = true,
-    onActivate,
-    requestedFocusTab,
-  } = props;
-  // Phones get the embedded-style single tab strip: splits/resize make no
-  // sense at 390px, so we collapse to one pane driven by the top tabs.
-  const isMobile = useIsMobile();
-  const splitsEnabled = !embedded && !isMobile;
-  const layoutState = useFeatureLayoutStore(selectFeatureLayout(layoutFeatureId));
-  const requestedFocusPending = useRequestedFeatureFocus(layoutFeatureId, requestedFocusTab);
-  const focusedTabId = getFocusedTab(layoutState) ?? "agent";
-  // The non-agent tab the user is explicitly looking at (focused in its pane,
-  // or requested by a deep-link). It loads the instant the gate opens; the
-  // rest stagger in behind it.
-  const immediateNonAgentTab: TabKind | null =
-    focusedTabId !== "agent"
-      ? focusedTabId
-      : requestedFocusTab != null && requestedFocusTab !== "agent"
-        ? requestedFocusTab
-        : null;
-  const nonAgentTabRequested = immediateNonAgentTab != null;
-  const nonAgentWorkEnabled = useAgentFirstNonAgentWork({
-    enabled: !embedded || nonAgentTabRequested,
-    immediate: nonAgentTabRequested,
-    resetKey: sessionId,
-  });
-  // Reveal non-agent tab content in priority order (editor → git → terminal →
-  // browser) so split layouts don't hydrate every panel in the same frame as
-  // the agent stream.
-  const tabReady = useStaggeredTabReadiness({
-    enabled: nonAgentWorkEnabled,
-    immediateTab: immediateNonAgentTab,
-    resetKey: sessionId,
-  });
-
-  // `useSaveLastOpenedFeature` is mounted once at the route level; we used to
-  // also call it here, which produced a duplicate
-  // `PUT /api/workspace/settings/lastOpenedFeature` on every open.
-  const gitVisible = isTabVisible(layoutState, "git");
-  const data = useSessionFeatureData(sessionId, cwd, featureId, projectId, {
-    gitMetadataEnabled: nonAgentWorkEnabled && (!embedded || gitVisible),
-    projectLookupEnabled: nonAgentWorkEnabled,
-  });
-  const controls = useSessionControls(sessionId, featureId, projectId, data.effectiveCwd, {
-    loadPersistedState: !embedded,
-    agentCatalogEnabled: !embedded && nonAgentWorkEnabled,
-  });
-  const refs = useSessionRefs();
+function useRequestedTabFocus({
+  layoutFeatureId,
+  requestedFocusTab,
+  requestedFocusPending,
+  isMobile,
+  refs,
+  sectionRef,
+}: {
+  layoutFeatureId: number;
+  requestedFocusTab: TabKind | undefined;
+  requestedFocusPending: boolean;
+  isMobile: boolean;
+  refs: ReturnType<typeof useSessionRefs>;
+  sectionRef: RefObject<HTMLElement | null>;
+}): void {
   const requestedFocusKeyRef = useRef<string | null>(null);
-  const sectionRef = useRef<HTMLElement>(null);
-  const openDiffFileInEditor = useOpenDiffFileInEditor({
-    featureId,
-    layoutFeatureId,
-    rootPath: data.effectiveCwd || data.projectPath || cwd,
-    refs,
-  });
-
-  const { sendFromGitTab } = useSessionFeatureActions({ layoutFeatureId, controls, refs });
-
-  useWsSessionEffects({
-    sessionId,
-    cwd,
-    featureId,
-    data,
-    controls,
-    refs,
-    focusedTabId,
-    hotkeysEnabled,
-    // Phones don't get autofocus: it pops the on-screen keyboard the moment a
-    // conversation/agent tab opens, covering the transcript before it's read.
-    autoFocusPrompt: !embedded && !requestedFocusPending && !isMobile,
-    autoInitSession: !embedded,
-  });
   useEffect((): (() => void) | void => {
     if (!requestedFocusTab || requestedFocusPending) return;
-
     const key = `${layoutFeatureId}:${requestedFocusTab}`;
     if (requestedFocusKeyRef.current === key) return;
     requestedFocusKeyRef.current = key;
     const focusRequestedTarget = (): void => {
-      // Phones: never programmatically focus the prompt — it pops the on-screen
-      // keyboard over the transcript when a conversation/agent tab opens.
       if (requestedFocusTab === "agent" && !isMobile) refs.agent.current?.focusPromptBar();
       if (requestedFocusTab === "terminal") refs.terminal.current?.activate();
       if (requestedFocusTab === "editor") refs.editor.current?.focusActiveEditor();
@@ -169,43 +83,50 @@ function WebSocketSessionFeatureBody(
       }
     };
     const frame = requestAnimationFrame(focusRequestedTarget);
-    return () => {
-      cancelAnimationFrame(frame);
-    };
+    return () => cancelAnimationFrame(frame);
   }, [
+    isMobile,
     layoutFeatureId,
     refs.agent,
     refs.editor,
     refs.terminal,
-    requestedFocusTab,
     requestedFocusPending,
-    isMobile,
+    requestedFocusTab,
+    sectionRef,
   ]);
-  useWsSessionShortcuts({ controls, hotkeysEnabled });
+}
 
-  // The whole feature/card area is the drop zone — drops on history, meta
-  // bar, or any tab content route to this agent's prompt. The id must match
-  // what `AgentPromptBar` computes so `useImageAttachments` accepts the drop.
-  const promptDropTargetId = useMemo(
-    () => promptDropTargetIdOf({ wsSessionId: sessionId, featureId }),
-    [sessionId, featureId],
-  );
-  const agentDropZone = useAgentDropZone();
+interface SessionFeatureViewProps {
+  props: WebSocketSessionFeatureBlockProps & { layoutFeatureId: number };
+  data: ReturnType<typeof useSessionFeatureData>;
+  refs: ReturnType<typeof useSessionRefs>;
+  tabs: ReturnType<typeof useFeatureBlockTabs>;
+  sectionRef: RefObject<HTMLElement | null>;
+  openDiffFileInEditor: ReturnType<typeof useOpenDiffFileInEditor>;
+  promptDropTargetId: string;
+  agentDropZone: ReturnType<typeof useSessionPromptDropZone>["agentDropZone"];
+  splitsEnabled: boolean;
+}
 
-  const tabs = useFeatureBlockTabs({
-    sessionId,
+function SessionFeatureView({
+  props,
+  data,
+  refs,
+  tabs,
+  sectionRef,
+  openDiffFileInEditor,
+  promptDropTargetId,
+  agentDropZone,
+  splitsEnabled,
+}: SessionFeatureViewProps): ReactElement {
+  const {
     featureId,
-    layoutFeatureId,
     projectId,
-    data,
-    controls,
-    refs,
-    layoutState,
-    tabReady,
-    hotkeysEnabled,
-    sendFromGitTab,
-  });
-
+    layoutFeatureId,
+    embedded = false,
+    hotkeysEnabled = true,
+    onActivate,
+  } = props;
   return (
     <LinkRoutingProvider scopeId={featureId}>
       <OpenDiffInEditorProvider onOpenFileInEditor={openDiffFileInEditor}>
@@ -214,16 +135,8 @@ function WebSocketSessionFeatureBody(
           tabIndex={0}
           onFocusCapture={onActivate}
           onPointerDownCapture={onActivate}
-          // `data-agent-prompt-id` tags this whole agent area as the drop
-          // target — the Electron preload walks `closest()` to find it. The
-          // `group/agent-section` + `data-agent-dragover` pair lets the prompt
-          // bar paint its primary ring via CSS, with no React state crossing
-          // component boundaries — so in the unified grid only the card under
-          // the cursor highlights, not every mounted prompt.
           data-agent-prompt-id={promptDropTargetId}
           data-agent-dragover={agentDropZone.isDragging ? "true" : undefined}
-          // Distinguishes the full-page feature chrome from unified-grid cards
-          // so theme CSS (e.g. the CadencR chassis) can style only the former.
           data-feature-chrome={embedded ? "embedded" : "standard"}
           onDragEnter={agentDropZone.onDragEnter}
           onDragLeave={agentDropZone.onDragLeave}
@@ -273,6 +186,119 @@ function WebSocketSessionFeatureBody(
         </section>
       </OpenDiffInEditorProvider>
     </LinkRoutingProvider>
+  );
+}
+
+export function WebSocketSessionFeatureBlock(
+  props: WebSocketSessionFeatureBlockProps,
+): ReactElement {
+  const layoutFeatureId = props.layoutFeatureId ?? props.featureId;
+  return (
+    <FeatureLayoutProvider
+      featureId={layoutFeatureId}
+      hotkeysEnabled={props.hotkeysEnabled ?? true}
+    >
+      <WebSocketSessionFeatureBody {...props} layoutFeatureId={layoutFeatureId} />
+    </FeatureLayoutProvider>
+  );
+}
+
+function WebSocketSessionFeatureBody(
+  props: WebSocketSessionFeatureBlockProps & { layoutFeatureId: number },
+): ReactElement {
+  const {
+    sessionId,
+    cwd,
+    featureId,
+    projectId,
+    layoutFeatureId,
+    embedded = false,
+    hotkeysEnabled = true,
+    requestedFocusTab,
+  } = props;
+  const isMobile = useIsMobile();
+  const splitsEnabled = !embedded && !isMobile;
+  const layoutState = useFeatureLayoutStore(selectFeatureLayout(layoutFeatureId));
+  const requestedFocusPending = useRequestedFeatureFocus(layoutFeatureId, requestedFocusTab);
+  const focusedTabId = getFocusedTab(layoutState) ?? "agent";
+  const readiness = useNonAgentTabReadiness({
+    embedded,
+    focusedTabId,
+    requestedFocusTab,
+    sessionId,
+  });
+
+  const gitVisible = isTabVisible(layoutState, "git");
+  const data = useSessionFeatureData(sessionId, cwd, featureId, projectId, {
+    gitMetadataEnabled: readiness.workEnabled && (!embedded || gitVisible),
+    projectLookupEnabled: readiness.workEnabled,
+  });
+  const controls = useSessionControls(sessionId, featureId, projectId, data.effectiveCwd, {
+    loadPersistedState: !embedded,
+    agentCatalogEnabled: !embedded && readiness.workEnabled,
+  });
+  const refs = useSessionRefs();
+  const sectionRef = useRef<HTMLElement>(null);
+  const openDiffFileInEditor = useOpenDiffFileInEditor({
+    featureId,
+    layoutFeatureId,
+    rootPath: data.effectiveCwd || data.projectPath || cwd,
+    refs,
+  });
+
+  const { sendFromGitTab } = useSessionFeatureActions({ layoutFeatureId, controls, refs });
+
+  useWsSessionEffects({
+    sessionId,
+    cwd,
+    featureId,
+    data,
+    controls,
+    refs,
+    focusedTabId,
+    hotkeysEnabled,
+    // Avoid opening the on-screen keyboard before mobile users read the transcript.
+    autoFocusPrompt: !embedded && !requestedFocusPending && !isMobile,
+    autoInitSession: !embedded,
+  });
+  useRequestedTabFocus({
+    layoutFeatureId,
+    requestedFocusTab,
+    requestedFocusPending,
+    isMobile,
+    refs,
+    sectionRef,
+  });
+  useWsSessionShortcuts({ controls, hotkeysEnabled });
+
+  const { agentDropZone, promptDropTargetId } = useSessionPromptDropZone(sessionId, featureId);
+
+  const tabs = useFeatureBlockTabs({
+    sessionId,
+    featureId,
+    layoutFeatureId,
+    projectId,
+    data,
+    controls,
+    refs,
+    layoutState,
+    tabReady: readiness.tabReady,
+    hotkeysEnabled,
+    sendFromGitTab,
+  });
+
+  return (
+    <SessionFeatureView
+      props={props}
+      data={data}
+      refs={refs}
+      tabs={tabs}
+      sectionRef={sectionRef}
+      openDiffFileInEditor={openDiffFileInEditor}
+      promptDropTargetId={promptDropTargetId}
+      agentDropZone={agentDropZone}
+      splitsEnabled={splitsEnabled}
+    />
   );
 }
 

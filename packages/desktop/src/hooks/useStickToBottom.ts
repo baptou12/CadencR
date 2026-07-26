@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   canScroll,
   isVerticalScrollbarPointer,
@@ -18,6 +18,104 @@ export interface StickToBottomHandles {
   autoScroll: boolean;
   /** Toggle auto-scroll; enabling snaps back to the bottom. */
   toggle: () => void;
+}
+
+interface ScrollFollowingParams {
+  active: boolean;
+  autoScrollRef: RefObject<boolean>;
+  contentRef: RefObject<HTMLDivElement | null>;
+  disengage: () => void;
+  lastScrollTopRef: RefObject<number>;
+  pin: () => void;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  setAutoScroll: (active: boolean) => void;
+  touchStartYRef: RefObject<number>;
+  userIntentRef: RefObject<boolean>;
+}
+
+function useScrollFollowing({
+  active,
+  autoScrollRef,
+  contentRef,
+  disengage,
+  lastScrollTopRef,
+  pin,
+  scrollRef,
+  setAutoScroll,
+  touchStartYRef,
+  userIntentRef,
+}: ScrollFollowingParams): void {
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!active || !el) return;
+
+    const onWheel = (event: WheelEvent): void => {
+      if (event.deltaY < 0 && canScroll(el)) disengage();
+    };
+    const onTouchStart = (event: TouchEvent): void => {
+      touchStartYRef.current = event.touches[0]?.clientY ?? 0;
+    };
+    const onTouchMove = (event: TouchEvent): void => {
+      const y = event.touches[0]?.clientY ?? 0;
+      if (y > touchStartYRef.current + 5 && canScroll(el)) disengage();
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") disengage();
+    };
+    const onPointerDown = (event: PointerEvent): void => {
+      if (isVerticalScrollbarPointer(el, event) && canScroll(el)) userIntentRef.current = true;
+    };
+    const onScroll = (): void => {
+      const top = el.scrollTop;
+      const prev = lastScrollTopRef.current;
+      lastScrollTopRef.current = top;
+      const atBottom = el.scrollHeight - top - el.clientHeight < BOTTOM_THRESHOLD_PX;
+      if (atBottom) {
+        userIntentRef.current = false;
+        if (!autoScrollRef.current) setAutoScroll(true);
+        return;
+      }
+      if (userIntentRef.current && top < prev - 1 && autoScrollRef.current) setAutoScroll(false);
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("keydown", onKeyDown);
+    el.addEventListener("pointerdown", onPointerDown, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
+
+    const content = contentRef.current;
+    const observer =
+      content && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            if (autoScrollRef.current && !isResizing()) pin();
+          })
+        : undefined;
+    if (content) observer?.observe(content);
+    if (autoScrollRef.current) pin();
+
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("scroll", onScroll);
+      observer?.disconnect();
+    };
+  }, [
+    active,
+    autoScrollRef,
+    contentRef,
+    disengage,
+    lastScrollTopRef,
+    pin,
+    scrollRef,
+    setAutoScroll,
+    touchStartYRef,
+    userIntentRef,
+  ]);
 }
 
 /**
@@ -72,74 +170,18 @@ export function useStickToBottom(active: boolean): StickToBottomHandles {
     });
   }, [pin]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!active || !el) return;
-
-    const onWheel = (e: WheelEvent): void => {
-      if (e.deltaY < 0 && canScroll(el)) disengage();
-    };
-    const onTouchStart = (e: TouchEvent): void => {
-      touchStartYRef.current = e.touches[0]?.clientY ?? 0;
-    };
-    const onTouchMove = (e: TouchEvent): void => {
-      const y = e.touches[0]?.clientY ?? 0;
-      if (y > touchStartYRef.current + 5 && canScroll(el)) disengage();
-    };
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") disengage();
-    };
-    const onPointerDown = (e: PointerEvent): void => {
-      if (isVerticalScrollbarPointer(el, e) && canScroll(el)) userIntentRef.current = true;
-    };
-    const onScroll = (): void => {
-      const top = el.scrollTop;
-      const prev = lastScrollTopRef.current;
-      lastScrollTopRef.current = top;
-      const atBottom = el.scrollHeight - top - el.clientHeight < BOTTOM_THRESHOLD_PX;
-      if (atBottom) {
-        userIntentRef.current = false;
-        if (!autoScrollRef.current) setAutoScroll(true);
-        return;
-      }
-      // Only a user-driven upward scroll disengages; programmatic pins and
-      // browser scroll-anchoring never arm `userIntentRef`.
-      if (userIntentRef.current && top < prev - 1 && autoScrollRef.current) {
-        setAutoScroll(false);
-      }
-    };
-
-    el.addEventListener("wheel", onWheel, { passive: true });
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
-    el.addEventListener("keydown", onKeyDown);
-    el.addEventListener("pointerdown", onPointerDown, { passive: true });
-    el.addEventListener("scroll", onScroll, { passive: true });
-
-    const content = contentRef.current;
-    let ro: ResizeObserver | undefined;
-    if (content && typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => {
-        // Skip pinning mid split-pane drag: the resize-coordinator throttles
-        // per-frame observer work so drags stay smooth (same contract the main
-        // stream's scroll hook honors). Growth pins resume once the drag ends.
-        if (autoScrollRef.current && !isResizing()) pin();
-      });
-      ro.observe(content);
-    }
-    // Snap to the bottom on (re)mount / when streaming (re)starts.
-    if (autoScrollRef.current) pin();
-
-    return () => {
-      el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("keydown", onKeyDown);
-      el.removeEventListener("pointerdown", onPointerDown);
-      el.removeEventListener("scroll", onScroll);
-      ro?.disconnect();
-    };
-  }, [active, disengage, pin]);
+  useScrollFollowing({
+    active,
+    autoScrollRef,
+    contentRef,
+    disengage,
+    lastScrollTopRef,
+    pin,
+    scrollRef,
+    setAutoScroll,
+    touchStartYRef,
+    userIntentRef,
+  });
 
   return { scrollRef, contentRef, autoScroll, toggle };
 }

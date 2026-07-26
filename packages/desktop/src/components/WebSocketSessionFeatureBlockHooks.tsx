@@ -151,7 +151,7 @@ function statusFromFeatureSettings(settings: Record<string, string>): WorktreeSt
   return settings.worktree_path || settings.worktree_branch ? "ready" : "idle";
 }
 
-export function useWsSessionEffects(args: {
+interface WsSessionEffectsArgs {
   sessionId: string;
   cwd: string;
   featureId: number;
@@ -162,38 +162,23 @@ export function useWsSessionEffects(args: {
   hotkeysEnabled: boolean;
   autoFocusPrompt: boolean;
   autoInitSession: boolean;
-}): void {
-  const {
-    sessionId,
-    cwd,
-    featureId,
-    data,
-    controls,
-    refs,
-    focusedTabId,
-    hotkeysEnabled,
-    autoFocusPrompt,
-    autoInitSession,
-  } = args;
-  const { ws } = controls;
-  const { initSession, isConnected } = ws;
+}
+
+function useSessionInitialization({
+  sessionId,
+  cwd,
+  featureId,
+  data,
+  controls,
+  autoInitSession,
+}: WsSessionEffectsArgs): void {
+  const { initSession, isConnected } = controls.ws;
   const serverSessionId = data.session?.serverSessionId;
   const persistedLoaded = data.session?.persistedLoaded ?? false;
-  useAgentLetterFocus({
-    enabled: hotkeysEnabled && focusedTabId === "agent",
-    onFocus: () => refs.agent.current?.focusActiveInput(),
-  });
   useEffect(() => {
     if (!autoInitSession) return;
     if (!isConnected || controls.initializedRef.current === sessionId) return;
-    if (serverSessionId !== "") return;
-    // Wait for the persisted snapshot before initializing so the payload
-    // carries the restored permission mode. Otherwise the entry's default
-    // (`acceptEdits`) is sent and the backend's COALESCE overwrites the
-    // persisted mode — the silent revert that loses a sticky `bypassPermissions`
-    // after a reload/reconnect. `autoInitSession` and persisted loading are both
-    // gated on `!embedded`, so `persistedLoaded` always settles here.
-    if (!persistedLoaded) return;
+    if (serverSessionId !== "" || !persistedLoaded) return;
     controls.initializedRef.current = sessionId;
     initSession({
       cwd,
@@ -201,12 +186,6 @@ export function useWsSessionEffects(args: {
       provider: controls.resolvedProviderId,
       model: controls.resolvedModelId,
       thinkingEffort: controls.resolvedThinkingEffort,
-      // Pass the user's currently-selected mode so the backend can apply it
-      // via `--permission-mode` (Claude Code) / `session/set_mode` (ACP) at
-      // spawn time. Without this the backend silently falls back to its
-      // provider default in `session_init.rs`, which only matches the FE's
-      // local selection by coincidence — that's the race that made the
-      // first prompt land in the wrong mode.
       permissionMode: controls.ws.permissionMode,
     });
   }, [
@@ -224,6 +203,16 @@ export function useWsSessionEffects(args: {
     serverSessionId,
     sessionId,
   ]);
+}
+
+export function useWsSessionEffects(args: WsSessionEffectsArgs): void {
+  const { sessionId, data, controls, refs, focusedTabId, hotkeysEnabled, autoFocusPrompt } = args;
+  const serverSessionId = data.session?.serverSessionId;
+  useAgentLetterFocus({
+    enabled: hotkeysEnabled && focusedTabId === "agent",
+    onFocus: () => refs.agent.current?.focusActiveInput(),
+  });
+  useSessionInitialization(args);
   useEffect(() => {
     if (!autoFocusPrompt) return undefined;
     if (!hotkeysEnabled || focusedTabId !== "agent") return undefined;
