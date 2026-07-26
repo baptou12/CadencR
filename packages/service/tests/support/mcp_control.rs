@@ -47,6 +47,28 @@ pub async fn seed_send_target_session(pool: &sqlx::SqlitePool, status: &str) {
     seed_target_session(pool, 888, 43, status, None).await;
 }
 
+pub async fn seed_cross_project_send_target(pool: &sqlx::SqlitePool, status: &str) {
+    sqlx::query("INSERT INTO projects (id, name, path) VALUES (8, 'Other', '/tmp/other')")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO features (id, project_id, title, status, type)
+         VALUES (44, 8, 'Cross-project target', 'active', 'ws-session')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_sessions (id, feature_id, agent_type, status)
+         VALUES (999, 44, 'session', ?)",
+    )
+    .bind(status)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 pub async fn seed_target_session(
     pool: &sqlx::SqlitePool,
     session_id: i64,
@@ -119,10 +141,32 @@ pub fn send_message_request_with_link(
     delivery: &str,
     link_to_current_session: bool,
 ) -> Request<Body> {
+    send_message_request_to(
+        "/internal/mcp/project/send-message",
+        888,
+        delivery,
+        link_to_current_session,
+    )
+}
+
+pub fn project_cross_project_send_message_request(delivery: &str) -> Request<Body> {
+    send_message_request_to("/internal/mcp/project/send-message", 999, delivery, true)
+}
+
+pub fn workspace_cross_project_send_message_request(delivery: &str) -> Request<Body> {
+    send_message_request_to("/internal/mcp/workspace/send-message", 999, delivery, true)
+}
+
+fn send_message_request_to(
+    endpoint: &str,
+    target_session_id: i64,
+    delivery: &str,
+    link_to_current_session: bool,
+) -> Request<Body> {
     let body = json!({
         "source_feature_id": 42,
         "source_session_id": 777,
-        "target_session_id": 888,
+        "target_session_id": target_session_id,
         "message": "Please validate delivery.",
         "delivery": delivery,
         "source_note": "delegated by project MCP",
@@ -130,7 +174,7 @@ pub fn send_message_request_with_link(
     });
     Request::builder()
         .method("POST")
-        .uri("/internal/mcp/project/send-message")
+        .uri(endpoint)
         .header("content-type", "application/json")
         .body(Body::from(body.to_string()))
         .unwrap()

@@ -11,6 +11,7 @@ use crate::domain::mcp::tools::messages::{
     cap_message_content, fts_literal_query, messages_json, MessageRow,
     DEFAULT_MAX_RETURNED_MESSAGE_CHARS,
 };
+use crate::domain::mcp::tools::project_control;
 use crate::domain::mcp::tools::{session_graph, workspace_activity, workspace_projects};
 
 const DEFAULT_LIMIT: i64 = 25;
@@ -61,7 +62,7 @@ pub async fn run_workspace_tool(
 ) -> CallToolResult {
     if !workspace_mcp_enabled() {
         return error_result(
-            "cadencr-workspace reads are disabled; set workspace_mcp_enabled=true to allow them",
+            "cadencr-workspace tools are disabled; set workspace_mcp_enabled=true to allow them",
         );
     }
     let started_at = std::time::Instant::now();
@@ -71,15 +72,33 @@ pub async fn run_workspace_tool(
         "workspace_read_sessions" => read_sessions(&ctx, &args).await,
         "workspace_session_graph" => session_graph::session_graph(&ctx, &args).await,
         "workspace_recent_activity" => workspace_activity::recent_activity(&ctx, &args).await,
+        "workspace_send_session_message" => {
+            project_control::send_workspace_session_message(&args, &ctx).await
+        }
         _ => Err(format!("Unknown tool: {name}")),
     };
-    let audit =
-        record_read_tool_audit("cadencr-workspace", name, &args, &ctx, &result, started_at).await;
-    let result = audit.map_or_else(Err, |_| result);
+    let result = if is_workspace_read_tool(name) {
+        record_read_tool_audit("cadencr-workspace", name, &args, &ctx, &result, started_at)
+            .await
+            .map_or_else(Err, |_| result)
+    } else {
+        result
+    };
     match result {
         Ok(value) => text_result(&value.to_string()),
         Err(error) => error_result(&error),
     }
+}
+
+fn is_workspace_read_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "workspace_list_projects"
+            | "workspace_read_session"
+            | "workspace_read_sessions"
+            | "workspace_session_graph"
+            | "workspace_recent_activity"
+    )
 }
 
 fn workspace_mcp_enabled() -> bool {

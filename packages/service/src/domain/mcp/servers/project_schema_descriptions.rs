@@ -28,8 +28,6 @@ pub(super) fn property_description(tool_name: &str, property: &str) -> String {
         ("project_spawn_session", "thinking_level") => "Provider/model-specific thinking or reasoning level. Use one of the target provider/model pair's thinking_levels from project_list_agent_providers. When omitted, CadencR uses the last selection for that target provider/model, then the CLI-advertised default_thinking_level.".into(),
         ("project_spawn_session", "follow") => "Reactive parent subscription. When present, omitted gates/completion fields default to true. Gates, questions, permissions, and requested completion replies automatically steer the parent; do not poll. An intentional child stop is not a failure and leaves completion follow armed for a later resumed result. Use false fields only to opt out explicitly.".into(),
         ("project_spawn_session", "await_result") => "Legacy completion-follow flag. Prefer follow.completion. A requested <cadencr-reply> steers the parent automatically when the child turn ends.".into(),
-        ("project_send_session_message", "delivery") => "Delivery policy. steer_current_turn is the default and injects into an active turn; next_turn is the only queueing mode; reject_if_active fails when busy. Legacy aliases remain accepted but are deprecated.".into(),
-        ("project_send_session_message", "reply") => "Set on_turn_end to receive the target turn result automatically as a mid-turn <cadencr-reply>; never poll for it.".into(),
         (_, "session_id") => "Target session id in the current project.".into(),
         (_, "target_session_id") => "Current-project session id receiving the operation.".into(),
         (_, "limit") => "Maximum number of rows/messages to return; tools clamp oversized values.".into(),
@@ -52,7 +50,6 @@ pub(super) fn property_description(tool_name: &str, property: &str) -> String {
         (_, "codex_permission_mode") => "Codex access mode for codex_cli sessions: default, autoReview, or fullAccess.".into(),
         (_, "branch") => "Worktree/branch creation options for the spawned session.".into(),
         (_, "link_to_current_session") => "Legacy gate-follow flag; prefer follow.gates. Defaults to true when follow is absent.".into(),
-        (_, "message") => "User message content to send to the target session.".into(),
         _ => format!("Input parameter `{property}` for {tool_name}."),
     }
 }

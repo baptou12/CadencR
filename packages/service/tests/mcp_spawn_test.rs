@@ -393,6 +393,7 @@ async fn test_workspace_mcp_stdio_server_advertises_workspace_tools() {
             "workspace_read_sessions",
             "workspace_session_graph",
             "workspace_recent_activity",
+            "workspace_send_session_message",
         ],
     )
     .await;

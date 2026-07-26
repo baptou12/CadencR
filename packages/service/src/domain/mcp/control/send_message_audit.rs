@@ -2,20 +2,22 @@ use super::super::audit::{elapsed_ms, record_tool_audit, result_size_bytes, Tool
 use super::super::scope::SessionScope;
 use super::SendMessageResponse;
 use crate::app_state::AppState;
+use crate::domain::mcp::send_message_tool::SendMessageTool;
 use crate::error::AppError;
 
 pub(super) async fn audit_send_message(
     state: &AppState,
     source: &SessionScope,
     target: &SessionScope,
+    tool: SendMessageTool,
     response: &SendMessageResponse,
     started_at: std::time::Instant,
 ) -> Result<(), AppError> {
     record_tool_audit(
         &state.write_pool,
         ToolAudit {
-            server_name: "cadencr-project",
-            tool_name: "project_send_session_message",
+            server_name: tool.server_name(),
+            tool_name: tool.tool_name(),
             source_session_id: Some(source.session_id),
             source_feature_id: Some(source.feature_id),
             source_project_id: Some(source.project_id),
@@ -35,14 +37,15 @@ pub(super) async fn audit_send_message_error(
     state: &AppState,
     source: &SessionScope,
     target: &SessionScope,
+    tool: SendMessageTool,
     error: &str,
     started_at: std::time::Instant,
 ) -> Result<(), AppError> {
     record_tool_audit(
         &state.write_pool,
         ToolAudit {
-            server_name: "cadencr-project",
-            tool_name: "project_send_session_message",
+            server_name: tool.server_name(),
+            tool_name: tool.tool_name(),
             source_session_id: Some(source.session_id),
             source_feature_id: Some(source.feature_id),
             source_project_id: Some(source.project_id),
