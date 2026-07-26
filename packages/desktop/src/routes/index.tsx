@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactElement } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { FeatureStatus, useListProjects, useListFeatures, type Feature } from "../api/generated";
 import { readSavedFeature } from "@/lib/saved-feature";
@@ -19,6 +19,68 @@ function getQueryErrorMessage(error: unknown): string {
 
 function isRestorableFeature(feature: Feature): boolean {
   return feature.status !== FeatureStatus.archived;
+}
+
+interface HomePageStatusProps {
+  activeFeatureCount: number;
+  featuresLoaded: boolean;
+  projectsLoaded: boolean;
+  startupError: unknown;
+  targetProjectId: number | null;
+}
+
+function CenteredMessage({
+  title,
+  detail,
+  error = false,
+}: {
+  title: string;
+  detail?: string;
+  error?: boolean;
+}): ReactElement {
+  return (
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="text-center">
+        <p className={error ? "text-destructive" : "text-muted-foreground"}>{title}</p>
+        {detail ? <p className="mt-2 text-sm text-muted-foreground">{detail}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function HomePageStatus({
+  activeFeatureCount,
+  featuresLoaded,
+  projectsLoaded,
+  startupError,
+  targetProjectId,
+}: HomePageStatusProps): ReactElement {
+  if (projectsLoaded && targetProjectId != null && featuresLoaded && activeFeatureCount === 0) {
+    return (
+      <CenteredMessage
+        title="No features in this project yet"
+        detail="Use the + button in the sidebar to create a new feature"
+      />
+    );
+  }
+  if (projectsLoaded && targetProjectId == null) {
+    return (
+      <CenteredMessage
+        title="No projects yet"
+        detail="Use the + button in the sidebar to add a project"
+      />
+    );
+  }
+  if (startupError) {
+    return (
+      <CenteredMessage
+        title="Failed to load workspace"
+        detail={getQueryErrorMessage(startupError)}
+        error
+      />
+    );
+  }
+  return <CenteredMessage title="Loading..." />;
 }
 
 function HomePage() {
@@ -78,53 +140,13 @@ function HomePage() {
     }
   }, [activeFeatures, lastFeature, searchProjectId, targetProjectId, featuresQuery.data, navigate]);
 
-  // Show helpful message if project exists but has no active features.
-  if (
-    projectsQuery.isSuccess &&
-    targetProjectId != null &&
-    featuresQuery.isSuccess &&
-    activeFeatures.length === 0
-  ) {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="text-center">
-          <p className="text-muted-foreground">No features in this project yet</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Use the + button in the sidebar to create a new feature
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show message if no projects exist
-  if (projectsQuery.isSuccess && targetProjectId == null) {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="text-center">
-          <p className="text-muted-foreground">No projects yet</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Use the + button in the sidebar to add a project
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (startupError) {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="text-center">
-          <p className="text-destructive">Failed to load workspace</p>
-          <p className="mt-2 text-sm text-muted-foreground">{getQueryErrorMessage(startupError)}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-full items-center justify-center p-6">
-      <p className="text-muted-foreground">Loading...</p>
-    </div>
+    <HomePageStatus
+      activeFeatureCount={activeFeatures.length}
+      featuresLoaded={featuresQuery.isSuccess}
+      projectsLoaded={projectsQuery.isSuccess}
+      startupError={startupError}
+      targetProjectId={targetProjectId}
+    />
   );
 }

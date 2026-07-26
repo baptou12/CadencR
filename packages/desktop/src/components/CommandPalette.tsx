@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowLeftIcon } from "lucide-react";
@@ -43,316 +43,344 @@ interface CommandPaletteProps {
 
 type Mode = "commands" | "pick-project-feature" | "pick-project-session" | "pick-worktree-mode";
 
-export function CommandPalette({
-  open,
-  onOpenChange,
-  activeProjectId,
-  activeFeatureId,
-}: CommandPaletteProps) {
+function useCommandPaletteState(props: CommandPaletteProps) {
   const [mode, setMode] = useState<Mode>("commands");
   const [search, setSearch] = useState("");
   const [pendingProjectId, setPendingProjectId] = useState<number | null>(null);
   const [worktreeChoice, setWorktreeChoice] = useState<WorktreeChoiceValue>({ mode: "new" });
-  // Tracks whether the user has explicitly picked a worktree mode/branch in the
-  // current step. Guards the "apply project default" effect below from
-  // clobbering that pick when the async project-settings query settles.
   const worktreeChoiceTouchedRef = useRef(false);
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const projectsQuery = useListProjects();
   const projectSettingsQuery = useGetProjectSettings(pendingProjectId ?? 0, {
     query: { enabled: pendingProjectId != null },
   });
-  const setProjectSetting = useSetProjectSetting();
   const projectDefaultWorktreeMode = defaultWorktreeModeFromSettings(projectSettingsQuery.data);
+  useEffect(() => {
+    if (mode !== "pick-worktree-mode" || worktreeChoiceTouchedRef.current) return;
+    setWorktreeChoice(projectDefaultWorktreeMode === "skip" ? { mode: "skip" } : { mode: "new" });
+  }, [mode, projectDefaultWorktreeMode]);
+  const sortedProjects = useMemo(() => {
+    const projects = projectsQuery.data ?? [];
+    if (!props.activeProjectId) return projects;
+    return [
+      ...projects.filter((project) => project.id === props.activeProjectId),
+      ...projects.filter((project) => project.id !== props.activeProjectId),
+    ];
+  }, [projectsQuery.data, props.activeProjectId]);
+  return useMemo(
+    () => ({
+      mode,
+      pendingProjectId,
+      projectDefaultWorktreeMode,
+      search,
+      setMode,
+      setPendingProjectId,
+      setSearch,
+      setWorktreeChoice,
+      sortedProjects,
+      worktreeChoice,
+      worktreeChoiceTouchedRef,
+    }),
+    [mode, pendingProjectId, projectDefaultWorktreeMode, search, sortedProjects, worktreeChoice],
+  );
+}
 
-  const createProjectMutation = useCreateProject({
+type CommandPaletteState = ReturnType<typeof useCommandPaletteState>;
+
+function useCommandPaletteMutations(
+  props: CommandPaletteProps,
+  navigate: ReturnType<typeof useNavigate>,
+) {
+  const queryClient = useQueryClient();
+  const createProject = useCreateProject({
     mutation: {
       onSuccess: () => {
         void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
       },
     },
   });
-
-  const createFeatureMutation = useCreateFeature({
-    mutation: {
-      onSuccess: (result, variables) => {
-        void queryClient.invalidateQueries({
-          queryKey: getListFeaturesQueryKey({ project_id: variables.data.project_id }),
-        });
-        void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(variables.data.project_id),
-            featureId: String(result.id),
-          },
-        });
-      },
-    },
-  });
-
-  const createSessionMutation = useCreateFeature({
-    mutation: {
-      onSuccess: (session, variables) => {
-        void queryClient.invalidateQueries({
-          queryKey: getListFeaturesQueryKey({ project_id: variables.data.project_id }),
-        });
-        void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(variables.data.project_id),
-            featureId: String(session.id),
-          },
-        });
-      },
-    },
-  });
-
-  const close = useCallback(() => {
-    onOpenChange(false);
-  }, [onOpenChange]);
-
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) {
-        setMode("commands");
-        setSearch("");
-        setPendingProjectId(null);
-        setWorktreeChoice({ mode: "new" });
-        worktreeChoiceTouchedRef.current = false;
-      }
-      onOpenChange(open);
-    },
-    [onOpenChange],
+  const createAndNavigate = (
+    result: { id: number },
+    variables: { data: CreateFeatureRequest },
+  ): void => {
+    void queryClient.invalidateQueries({
+      queryKey: getListFeaturesQueryKey({ project_id: variables.data.project_id }),
+    });
+    void navigate({
+      to: "/projects/$projectId/features/$featureId",
+      params: { projectId: String(variables.data.project_id), featureId: String(result.id) },
+    });
+  };
+  const createFeature = useCreateFeature({ mutation: { onSuccess: createAndNavigate } });
+  const createSession = useCreateFeature({ mutation: { onSuccess: createAndNavigate } });
+  const setProjectSetting = useSetProjectSetting();
+  return useMemo(
+    () => ({ createFeature, createProject, createSession, setProjectSetting }),
+    [createFeature, createProject, createSession, setProjectSetting],
   );
-  const handleFeatureSelect = useCallback(
-    (projectId: number, featureId: number) => {
-      void navigate({
-        to: "/projects/$projectId/features/$featureId",
-        params: {
-          projectId: String(projectId),
-          featureId: String(featureId),
-        },
-      });
-      close();
+}
+
+type CommandPaletteMutations = ReturnType<typeof useCommandPaletteMutations>;
+
+function useWorktreePaletteActions(
+  state: CommandPaletteState,
+  mutations: CommandPaletteMutations,
+  close: () => void,
+) {
+  const startWorktreePick = useCallback(
+    (projectId: number) => {
+      state.setPendingProjectId(projectId);
+      state.setWorktreeChoice({ mode: "new" });
+      state.worktreeChoiceTouchedRef.current = false;
+      state.setSearch("");
+      state.setMode("pick-worktree-mode");
     },
-    [navigate, close],
+    [state],
   );
-
-  const handleNewProject = useCallback(async () => {
-    const folder = await desktopBridge.pickDirectory();
-    if (!folder) return;
-    const name = folder.split("/").pop() ?? folder;
-    createProjectMutation.mutate({ data: { name, path: folder } });
-    close();
-  }, [createProjectMutation, close]);
-  const startWorktreePick = useCallback((projectId: number) => {
-    setPendingProjectId(projectId);
-    setWorktreeChoice({ mode: "new" });
-    worktreeChoiceTouchedRef.current = false;
-    setSearch("");
-    setMode("pick-worktree-mode");
-  }, []);
-
-  const handleWorktreeChoiceChange = useCallback((value: WorktreeChoiceValue) => {
-    worktreeChoiceTouchedRef.current = true;
-    setWorktreeChoice(value);
-  }, []);
-
-  // Seed the worktree step with the project's saved default once settings load.
-  // Skipped after the user picks a mode/branch so the async settle of
-  // `projectDefaultWorktreeMode` never overwrites an explicit "reuse" choice.
-  useEffect(() => {
-    if (mode !== "pick-worktree-mode") return;
-    if (worktreeChoiceTouchedRef.current) return;
-    setWorktreeChoice(projectDefaultWorktreeMode === "skip" ? { mode: "skip" } : { mode: "new" });
-  }, [mode, projectDefaultWorktreeMode]);
-
-  const handleConfirmCreateFeature = useCallback(async () => {
-    if (pendingProjectId == null) return;
-    if (!isWorktreeChoiceValid(worktreeChoice)) return;
-    if (worktreeChoice.mode !== "reuse" && worktreeChoice.mode !== projectDefaultWorktreeMode) {
+  const handleWorktreeChoiceChange = useCallback(
+    (value: WorktreeChoiceValue) => {
+      state.worktreeChoiceTouchedRef.current = true;
+      state.setWorktreeChoice(value);
+    },
+    [state],
+  );
+  const confirmCreateFeature = useCallback(async () => {
+    if (state.pendingProjectId == null || !isWorktreeChoiceValid(state.worktreeChoice)) return;
+    const choice = state.worktreeChoice;
+    if (choice.mode !== "reuse" && choice.mode !== state.projectDefaultWorktreeMode) {
       try {
-        await setProjectSetting.mutateAsync({
-          id: pendingProjectId,
-          data: { key: DEFAULT_WORKTREE_MODE_KEY, value: worktreeChoice.mode },
+        await mutations.setProjectSetting.mutateAsync({
+          id: state.pendingProjectId,
+          data: { key: DEFAULT_WORKTREE_MODE_KEY, value: choice.mode },
         });
-      } catch (err) {
-        toast.error(apiErrorMessage(err, "Failed to save worktree preference"));
+      } catch (error) {
+        toast.error(apiErrorMessage(error, "Failed to save worktree preference"));
         return;
       }
     }
     const data: CreateFeatureRequest = {
-      project_id: pendingProjectId,
+      project_id: state.pendingProjectId,
       title: "Untitled Feature",
-      worktree_mode: worktreeChoice.mode,
+      worktree_mode: choice.mode,
     };
-    if (worktreeChoice.mode === "reuse") {
-      data.reuse_branch = worktreeChoice.branch;
-    }
-    createFeatureMutation.mutate({ data });
+    if (choice.mode === "reuse") data.reuse_branch = choice.branch;
+    mutations.createFeature.mutate({ data });
     close();
-  }, [
-    pendingProjectId,
-    worktreeChoice,
-    projectDefaultWorktreeMode,
-    setProjectSetting,
-    createFeatureMutation,
-    close,
-  ]);
+  }, [close, mutations, state]);
+  return useMemo(
+    () => ({ confirmCreateFeature, handleWorktreeChoiceChange, startWorktreePick }),
+    [confirmCreateFeature, handleWorktreeChoiceChange, startWorktreePick],
+  );
+}
+
+type WorktreePaletteActions = ReturnType<typeof useWorktreePaletteActions>;
+
+function dispatchPaletteShortcut(init: KeyboardEventInit): void {
+  window.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true }));
+}
+
+function useCommandPaletteActions(
+  props: CommandPaletteProps,
+  state: CommandPaletteState,
+  mutations: CommandPaletteMutations,
+  worktree: WorktreePaletteActions,
+  navigate: ReturnType<typeof useNavigate>,
+  close: () => void,
+) {
+  const handleFeatureSelect = useCallback(
+    (projectId: number, featureId: number) => {
+      void navigate({
+        to: "/projects/$projectId/features/$featureId",
+        params: { projectId: String(projectId), featureId: String(featureId) },
+      });
+      close();
+    },
+    [close, navigate],
+  );
+  const handleNewProject = useCallback(async () => {
+    const folder = await desktopBridge.pickDirectory();
+    if (!folder) return;
+    mutations.createProject.mutate({
+      data: { name: folder.split("/").pop() ?? folder, path: folder },
+    });
+    close();
+  }, [close, mutations.createProject]);
   const handleProjectPick = useCallback(
     (projectId: number) => {
-      if (mode === "pick-project-feature") {
-        startWorktreePick(projectId);
-      } else if (mode === "pick-project-session") {
-        createSessionMutation.mutate({ data: { project_id: projectId, type: "ws-session" } });
+      if (state.mode === "pick-project-feature") worktree.startWorktreePick(projectId);
+      else if (state.mode === "pick-project-session") {
+        mutations.createSession.mutate({ data: { project_id: projectId, type: "ws-session" } });
         close();
       }
     },
-    [mode, startWorktreePick, createSessionMutation, close],
+    [close, mutations.createSession, state.mode, worktree.startWorktreePick],
   );
-
-  const handleOpenDiff = useCallback(() => {
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "D",
-        code: "KeyD",
-        metaKey: true,
-        shiftKey: true,
-        bubbles: true,
-      }),
-    );
-    close();
-  }, [close]);
-
-  const handleOpenSettings = useCallback(() => {
-    void navigate({ to: "/settings" });
-    close();
-  }, [navigate, close]);
-
   const handleNewFeature = useCallback(() => {
-    if (activeProjectId != null) {
-      startWorktreePick(activeProjectId);
-    } else {
-      setMode("pick-project-feature");
-      setSearch("");
+    if (props.activeProjectId != null) worktree.startWorktreePick(props.activeProjectId);
+    else {
+      state.setMode("pick-project-feature");
+      state.setSearch("");
     }
-  }, [activeProjectId, startWorktreePick]);
-
+  }, [props.activeProjectId, state, worktree.startWorktreePick]);
   const handleNewSession = useCallback(() => {
-    if (activeProjectId != null) {
-      createSessionMutation.mutate({
-        data: { project_id: activeProjectId, type: "ws-session" },
+    if (props.activeProjectId != null) {
+      mutations.createSession.mutate({
+        data: { project_id: props.activeProjectId, type: "ws-session" },
       });
       close();
     } else {
-      setMode("pick-project-session");
-      setSearch("");
+      state.setMode("pick-project-session");
+      state.setSearch("");
     }
-  }, [activeProjectId, createSessionMutation, close]);
+  }, [close, mutations.createSession, props.activeProjectId, state]);
+  return useMemo(
+    () => ({
+      handleFeatureSelect,
+      handleNewFeature,
+      handleNewProject,
+      handleNewSession,
+      handleOpenDiff: () => {
+        dispatchPaletteShortcut({ key: "D", code: "KeyD", metaKey: true, shiftKey: true });
+        close();
+      },
+      handleOpenSettings: () => {
+        void navigate({ to: "/settings" });
+        close();
+      },
+      handleProjectPick,
+      handleToggleTerminal: () => {
+        dispatchPaletteShortcut({ key: "`", code: "Backquote", ctrlKey: true });
+        close();
+      },
+    }),
+    [
+      close,
+      handleFeatureSelect,
+      handleNewFeature,
+      handleNewProject,
+      handleNewSession,
+      handleProjectPick,
+      navigate,
+    ],
+  );
+}
 
-  const handleToggleTerminal = useCallback(() => {
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "`",
-        code: "Backquote",
-        ctrlKey: true,
-        bubbles: true,
-      }),
-    );
-    close();
-  }, [close]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (mode === "pick-worktree-mode") {
-        if (e.key === "Escape" || (e.key === "Backspace" && search === "")) {
-          e.preventDefault();
-          setSearch("");
-          if (activeProjectId == null) {
-            setMode("pick-project-feature");
-          } else {
-            setMode("commands");
-            setPendingProjectId(null);
-          }
-        } else if (e.key === "Enter" && isWorktreeChoiceValid(worktreeChoice)) {
-          e.preventDefault();
-          handleConfirmCreateFeature();
-        }
-        return;
+export function CommandPalette(props: CommandPaletteProps) {
+  const state = useCommandPaletteState(props);
+  const navigate = useNavigate();
+  const close = useCallback(() => props.onOpenChange(false), [props.onOpenChange]);
+  const mutations = useCommandPaletteMutations(props, navigate);
+  const worktree = useWorktreePaletteActions(state, mutations, close);
+  const actions = useCommandPaletteActions(props, state, mutations, worktree, navigate, close);
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        state.setMode("commands");
+        state.setSearch("");
+        state.setPendingProjectId(null);
+        state.setWorktreeChoice({ mode: "new" });
+        state.worktreeChoiceTouchedRef.current = false;
       }
-      if (mode !== "commands" && e.key === "Backspace" && search === "") {
-        e.preventDefault();
-        setMode("commands");
+      props.onOpenChange(open);
+    },
+    [props.onOpenChange, state],
+  );
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (state.mode === "pick-worktree-mode") {
+        if (event.key === "Escape" || (event.key === "Backspace" && state.search === "")) {
+          event.preventDefault();
+          state.setSearch("");
+          state.setMode(props.activeProjectId == null ? "pick-project-feature" : "commands");
+          if (props.activeProjectId != null) state.setPendingProjectId(null);
+        } else if (event.key === "Enter" && isWorktreeChoiceValid(state.worktreeChoice)) {
+          event.preventDefault();
+          void worktree.confirmCreateFeature();
+        }
+      } else if (state.mode !== "commands" && event.key === "Backspace" && state.search === "") {
+        event.preventDefault();
+        state.setMode("commands");
       }
     },
-    [mode, search, worktreeChoice, activeProjectId, handleConfirmCreateFeature],
+    [props.activeProjectId, state, worktree.confirmCreateFeature],
   );
-
-  const projects = projectsQuery.data ?? [];
-  const sortedProjects = activeProjectId
-    ? [
-        ...projects.filter((p: { id: number }) => p.id === activeProjectId),
-        ...projects.filter((p: { id: number }) => p.id !== activeProjectId),
-      ]
-    : projects;
-
-  if (mode === "pick-worktree-mode" && pendingProjectId != null) {
+  if (state.mode === "pick-worktree-mode" && state.pendingProjectId != null) {
     return (
       <CommandPaletteWorktreeStep
-        open={open}
+        open={props.open}
         onOpenChange={handleOpenChange}
-        projectId={pendingProjectId}
-        value={worktreeChoice}
-        onChange={handleWorktreeChoiceChange}
-        onConfirm={handleConfirmCreateFeature}
+        projectId={state.pendingProjectId}
+        value={state.worktreeChoice}
+        onChange={worktree.handleWorktreeChoiceChange}
+        onConfirm={worktree.confirmCreateFeature}
         onKeyDown={handleKeyDown}
       />
     );
   }
-
-  if (mode === "pick-project-feature" || mode === "pick-project-session") {
+  if (state.mode === "pick-project-feature" || state.mode === "pick-project-session") {
     return (
-      <CommandDialog open={open} onOpenChange={handleOpenChange}>
-        <CommandInput
-          placeholder={`Pick a project for new ${mode === "pick-project-feature" ? "feature" : "session"}...`}
-          value={search}
-          onValueChange={setSearch}
-          onKeyDown={handleKeyDown}
-        />
-        <CommandList>
-          <CommandEmpty>No projects found.</CommandEmpty>
-          <CommandGroup heading="Projects">
-            {sortedProjects.map((p: { id: number; name: string }) => (
-              <CommandItem key={p.id} onSelect={() => handleProjectPick(p.id)}>
-                <ArrowLeftIcon className="mr-2 opacity-0" />
-                {p.name}
-                {p.id === activeProjectId && (
-                  <span className="text-muted-foreground ml-2 text-xs">(current)</span>
-                )}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
+      <CommandPaletteProjectStep
+        props={props}
+        state={state}
+        actions={actions}
+        onOpenChange={handleOpenChange}
+        onKeyDown={handleKeyDown}
+      />
     );
   }
-
   return (
     <CommandPaletteCommands
-      open={open}
+      open={props.open}
       onOpenChange={handleOpenChange}
-      search={search}
-      onSearchChange={setSearch}
-      sortedProjects={sortedProjects}
-      activeFeatureId={activeFeatureId}
-      onOpenSettings={handleOpenSettings}
-      onNewProject={handleNewProject}
-      onNewFeature={handleNewFeature}
-      onNewSession={handleNewSession}
-      onOpenDiff={handleOpenDiff}
-      onToggleTerminal={handleToggleTerminal}
-      onFeatureSelect={handleFeatureSelect}
+      search={state.search}
+      onSearchChange={state.setSearch}
+      sortedProjects={state.sortedProjects}
+      activeFeatureId={props.activeFeatureId}
+      onOpenSettings={actions.handleOpenSettings}
+      onNewProject={actions.handleNewProject}
+      onNewFeature={actions.handleNewFeature}
+      onNewSession={actions.handleNewSession}
+      onOpenDiff={actions.handleOpenDiff}
+      onToggleTerminal={actions.handleToggleTerminal}
+      onFeatureSelect={actions.handleFeatureSelect}
     />
+  );
+}
+
+function CommandPaletteProjectStep({
+  props,
+  state,
+  actions,
+  onOpenChange,
+  onKeyDown,
+}: {
+  props: CommandPaletteProps;
+  state: CommandPaletteState;
+  actions: ReturnType<typeof useCommandPaletteActions>;
+  onOpenChange: (open: boolean) => void;
+  onKeyDown: (event: React.KeyboardEvent) => void;
+}) {
+  return (
+    <CommandDialog open={props.open} onOpenChange={onOpenChange}>
+      <CommandInput
+        placeholder={`Pick a project for new ${state.mode === "pick-project-feature" ? "feature" : "session"}...`}
+        value={state.search}
+        onValueChange={state.setSearch}
+        onKeyDown={onKeyDown}
+      />
+      <CommandList>
+        <CommandEmpty>No projects found.</CommandEmpty>
+        <CommandGroup heading="Projects">
+          {state.sortedProjects.map((project) => (
+            <CommandItem key={project.id} onSelect={() => actions.handleProjectPick(project.id)}>
+              <ArrowLeftIcon className="mr-2 opacity-0" />
+              {project.name}
+              {project.id === props.activeProjectId && (
+                <span className="text-muted-foreground ml-2 text-xs">(current)</span>
+              )}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      </CommandList>
+    </CommandDialog>
   );
 }

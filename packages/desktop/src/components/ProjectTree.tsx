@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronRight,
@@ -37,19 +37,16 @@ import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { ProjectBadge } from "@/components/ProjectBadge";
 import { PROJECT_COLORS } from "@/lib/project-colors";
-import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
-import { NewProjectOnboardingDialog } from "./NewProjectOnboardingDialog";
 import { useNewProjectOnboarding } from "@/lib/project-onboarding";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { toast } from "sonner";
 import { SidebarProjectsHeader } from "./SidebarProjectsHeader";
 import { ProjectFeatures } from "./ProjectFeatures";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { ImportConversationsDialog } from "./import/ImportConversationsDialog";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { ProjectRowButton } from "./ProjectRowButton";
+import { ProjectTreeDialogs } from "./ProjectTreeDialogs";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -57,19 +54,16 @@ interface ProjectTreeProps {
   onSelectFeature: (featureId: number) => void;
 }
 
-export function ProjectTree({
-  activeProjectId,
-  activeFeatureId,
-  onSelectFeature,
-}: ProjectTreeProps) {
+type ProjectSummary = ReturnType<typeof useOrderedProjects>["projects"][number];
+type ProjectDialogTarget = { id: number; name: string };
+
+function useProjectTreeMutations(
+  projects: ProjectSummary[],
+  maybeOnboard: (project: ProjectDialogTarget) => void,
+) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { projects, isRefreshing, refresh } = useOrderedProjects();
-  const { collapsed } = useSidebarCollapsed();
-
-  const [isSelectingFolder, setIsSelectingFolder] = useState(false);
-  const { onboardingProject, maybeOnboard, close: closeOnboarding } = useNewProjectOnboarding();
-
+  const pendingProjectIdRef = useRef(0);
   const setProjectSetting = useSetProjectSetting({
     mutation: {
       onSuccess: (_data, variables) => {
@@ -77,304 +71,287 @@ export function ProjectTree({
           queryKey: getGetProjectSettingsQueryKey(variables.id),
         });
       },
-      onError: (err: unknown) => {
-        toast.error(`Could not save project setting: ${apiErrorMessage(err, "Unknown error")}`);
+      onError: (error) => {
+        toast.error(`Could not save project setting: ${apiErrorMessage(error, "Unknown error")}`);
       },
     },
   });
-  const createProjectMutation = useCreateProject({
+  const createProject = useCreateProject({
     mutation: {
       onSuccess: (project) => {
         const color = PROJECT_COLORS[project.id % PROJECT_COLORS.length];
         setProjectSetting.mutate({ id: project.id, data: { key: "color", value: color } });
-        void queryClient.invalidateQueries({
-          queryKey: getListProjectsQueryKey(),
-        });
-        // Onboard the freshly-added project (color + worktree defaults) unless
-        // the user opted out.
+        void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
         maybeOnboard({ id: project.id, name: project.name });
       },
     },
   });
-  const deleteProjectMutation = useDeleteProject({
+  const deleteProject = useDeleteProject({
     mutation: {
       onSuccess: () => {
-        void queryClient.invalidateQueries({
-          queryKey: getListProjectsQueryKey(),
-        });
+        void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
       },
     },
   });
-
-  // Track which project the create mutation was triggered for
-  const pendingProjectIdRef = useRef(0);
-
-  const createWsSessionMutation = useCreateFeature({
+  const createSession = useCreateFeature({
     mutation: {
-      onSuccess: (wsSession) => {
+      onSuccess: (session) => {
         void invalidateByUrlPrefix(queryClient, "/api/features");
-        const wsSessionId = wsSessionIdFromFeature(wsSession.id);
         const projectId = pendingProjectIdRef.current;
-        const project = projects.find((p) => p.id === projectId);
+        const project = projects.find((candidate) => candidate.id === projectId);
         void navigate({
           to: "/ws-session/$sessionId",
-          params: { sessionId: wsSessionId },
-          search: {
-            cwd: project?.path ?? "",
-            featureId: wsSession.id,
-            projectId,
-          },
+          params: { sessionId: wsSessionIdFromFeature(session.id) },
+          search: { cwd: project?.path ?? "", featureId: session.id, projectId },
         });
       },
     },
   });
+  return useMemo(
+    () => ({ createProject, createSession, deleteProject, pendingProjectIdRef }),
+    [createProject, createSession, deleteProject],
+  );
+}
 
+function useProjectTreeController(props: ProjectTreeProps) {
+  const ordered = useOrderedProjects();
+  const { collapsed } = useSidebarCollapsed();
+  const [isSelectingFolder, setIsSelectingFolder] = useState(false);
+  const onboarding = useNewProjectOnboarding();
+  const mutations = useProjectTreeMutations(ordered.projects, onboarding.maybeOnboard);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
-  const [settingsProject, setSettingsProject] = useState<{
-    id: number;
-    name: string;
-  } | null>(null);
-  const [importProject, setImportProject] = useState<{
-    id: number;
-    name: string;
-  } | null>(null);
-  const [deleteProject, setDeleteProject] = useState<{
-    id: number;
-    name: string;
-  } | null>(null);
-
-  // Auto-expand the active project
+  const [settingsProject, setSettingsProject] = useState<ProjectDialogTarget | null>(null);
+  const [importProject, setImportProject] = useState<ProjectDialogTarget | null>(null);
+  const [deleteProject, setDeleteProject] = useState<ProjectDialogTarget | null>(null);
   useEffect(() => {
-    if (activeProjectId != null) {
-      setExpanded((prev) => ({ ...prev, [activeProjectId]: true }));
+    if (props.activeProjectId != null) {
+      setExpanded((previous) => ({ ...previous, [props.activeProjectId!]: true }));
     }
-  }, [activeProjectId]);
-
-  const toggleExpand = (projectId: number) => {
-    setExpanded((prev) => ({ ...prev, [projectId]: !prev[projectId] }));
-  };
-
-  const handleAddProject = async () => {
+  }, [props.activeProjectId]);
+  const startSession = useCallback(
+    (projectId: number) => {
+      setExpanded((previous) => ({ ...previous, [projectId]: true }));
+      mutations.pendingProjectIdRef.current = projectId;
+      mutations.createSession.mutate({ data: { project_id: projectId, type: "ws-session" } });
+    },
+    [mutations],
+  );
+  const addProject = useCallback(async () => {
     setIsSelectingFolder(true);
     try {
       const folder = await desktopBridge.pickDirectory();
       if (!folder) return;
-      const name = folder.split("/").pop() ?? folder;
-      createProjectMutation.mutate({ data: { name, path: folder } });
+      mutations.createProject.mutate({
+        data: { name: folder.split("/").pop() ?? folder, path: folder },
+      });
     } finally {
       setIsSelectingFolder(false);
     }
-  };
+  }, [mutations.createProject]);
+  return useMemo(
+    () => ({
+      addProject,
+      collapsed,
+      deleteProject,
+      expanded,
+      importProject,
+      isSelectingFolder,
+      mutations,
+      onboarding,
+      ordered,
+      setDeleteProject,
+      setExpanded,
+      setImportProject,
+      setSettingsProject,
+      settingsProject,
+      startSession,
+    }),
+    [
+      addProject,
+      collapsed,
+      deleteProject,
+      expanded,
+      importProject,
+      isSelectingFolder,
+      mutations,
+      onboarding,
+      ordered,
+      settingsProject,
+      startSession,
+    ],
+  );
+}
 
+export type ProjectTreeController = ReturnType<typeof useProjectTreeController>;
+
+export function ProjectTree(props: ProjectTreeProps) {
+  const controller = useProjectTreeController(props);
   return (
-    <ShortcutHintsProvider enabled={!collapsed}>
+    <ShortcutHintsProvider enabled={!controller.collapsed}>
       <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
         <SidebarProjectsHeader
-          onAddProject={handleAddProject}
-          isAddingProject={isSelectingFolder || createProjectMutation.isLoading}
+          onAddProject={controller.addProject}
+          isAddingProject={
+            controller.isSelectingFolder || controller.mutations.createProject.isLoading
+          }
           canAddProject={isDesktopShell()}
-          onRefresh={() => void refresh()}
-          isRefreshing={isRefreshing}
+          onRefresh={() => void controller.ordered.refresh()}
+          isRefreshing={controller.ordered.isRefreshing}
         />
-
         <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
           <div className="flex min-w-0 flex-col gap-0.5 px-1">
-            {projects.map((project) => {
-              const isExpanded = expanded[project.id] ?? false;
-              const isActive = activeProjectId === project.id;
-
-              return (
-                <div key={project.id}>
-                  {/* Project row */}
-                  <ContextMenu>
-                    <ContextMenuTrigger asChild>
-                      <ProjectRowButton
-                        projectId={project.id}
-                        isActive={isActive}
-                        onClick={() => toggleExpand(project.id)}
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-                        )}
-                        <ProjectBadge projectId={project.id} />
-                        <span className="min-w-0 truncate">{project.name}</span>
-
-                        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-                          {/* New session */}
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpanded((prev) => ({ ...prev, [project.id]: true }));
-                              pendingProjectIdRef.current = project.id;
-                              createWsSessionMutation.mutate({
-                                data: { project_id: project.id, type: "ws-session" },
-                              });
-                            }}
-                          >
-                            <PlusIcon className="h-3.5 w-3.5" />
-                          </span>
-
-                          {/* Project menu */}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent can-hover:opacity-0 can-hover:focus-visible:opacity-100 can-hover:group-hover/project:opacity-100"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Ellipsis className="h-3.5 w-3.5" />
-                              </span>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSettingsProject({
-                                    id: project.id,
-                                    name: project.name,
-                                  });
-                                }}
-                              >
-                                <Settings className="size-4" /> Project Settings
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setImportProject({
-                                    id: project.id,
-                                    name: project.name,
-                                  });
-                                }}
-                              >
-                                <Download className="size-4" /> Import existing sessions
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeleteProject({
-                                    id: project.id,
-                                    name: project.name,
-                                  });
-                                }}
-                              >
-                                <Trash2 className="size-4" /> Delete Project
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </ProjectRowButton>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuActionItem
-                        icon={PlusIcon}
-                        onSelect={() => {
-                          setExpanded((prev) => ({ ...prev, [project.id]: true }));
-                          pendingProjectIdRef.current = project.id;
-                          createWsSessionMutation.mutate({
-                            data: { project_id: project.id, type: "ws-session" },
-                          });
-                        }}
-                      >
-                        New Session
-                      </ContextMenuActionItem>
-                      <ContextMenuSeparator />
-                      <ContextMenuActionItem
-                        icon={Settings}
-                        onSelect={() => setSettingsProject({ id: project.id, name: project.name })}
-                      >
-                        Project Settings
-                      </ContextMenuActionItem>
-                      <ContextMenuActionItem
-                        icon={Download}
-                        onSelect={() => setImportProject({ id: project.id, name: project.name })}
-                      >
-                        Import existing sessions
-                      </ContextMenuActionItem>
-                      <ContextMenuActionItem
-                        icon={Trash2}
-                        variant="destructive"
-                        onSelect={() => setDeleteProject({ id: project.id, name: project.name })}
-                      >
-                        Delete Project
-                      </ContextMenuActionItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-
-                  {/* Features (expanded) */}
-                  {isExpanded && (
-                    <ProjectFeatures
-                      projectId={project.id}
-                      projectPath={project.path}
-                      activeFeatureId={isActive ? activeFeatureId : null}
-                      onSelectFeature={onSelectFeature}
-                    />
-                  )}
-                </div>
-              );
-            })}
-
-            {projects.length === 0 && (
+            {controller.ordered.projects.map((project) => (
+              <ProjectTreeRow
+                key={project.id}
+                project={project}
+                props={props}
+                controller={controller}
+              />
+            ))}
+            {controller.ordered.projects.length === 0 && (
               <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
             )}
           </div>
         </ScrollArea>
-
-        {settingsProject && (
-          <ProjectSettingsDialog
-            projectId={settingsProject.id}
-            projectName={settingsProject.name}
-            open={true}
-            onOpenChange={(open) => {
-              if (!open) setSettingsProject(null);
-            }}
-          />
-        )}
-
-        {onboardingProject && (
-          <NewProjectOnboardingDialog
-            projectId={onboardingProject.id}
-            projectName={onboardingProject.name}
-            open={true}
-            onOpenChange={(open) => {
-              if (!open) closeOnboarding();
-            }}
-          />
-        )}
-
-        {importProject && (
-          <ImportConversationsDialog
-            projectId={importProject.id}
-            projectName={importProject.name}
-            open={true}
-            onOpenChange={(open) => {
-              if (!open) setImportProject(null);
-            }}
-          />
-        )}
-
-        <ConfirmDialog
-          open={deleteProject !== null}
-          onOpenChange={(open) => {
-            if (!open) setDeleteProject(null);
-          }}
-          title={`Delete "${deleteProject?.name}"?`}
-          description="This will permanently delete the project and all its features, plans, sessions, and settings. This action cannot be undone."
-          confirmText="Delete"
-          variant="destructive"
-          onConfirm={() => {
-            if (deleteProject) {
-              deleteProjectMutation.mutate({ id: deleteProject.id });
-            }
-          }}
-        />
+        <ProjectTreeDialogs controller={controller} />
       </div>
     </ShortcutHintsProvider>
+  );
+}
+
+function ProjectTreeRow({
+  project,
+  props,
+  controller,
+}: {
+  project: ProjectSummary;
+  props: ProjectTreeProps;
+  controller: ProjectTreeController;
+}) {
+  const isExpanded = controller.expanded[project.id] ?? false;
+  const isActive = props.activeProjectId === project.id;
+  const toggle = (): void =>
+    controller.setExpanded((previous) => ({ ...previous, [project.id]: !previous[project.id] }));
+  return (
+    <div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <ProjectRowButton projectId={project.id} isActive={isActive} onClick={toggle}>
+            {isExpanded ? (
+              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            )}
+            <ProjectBadge projectId={project.id} />
+            <span className="min-w-0 truncate">{project.name}</span>
+            <ProjectRowActions project={project} controller={controller} />
+          </ProjectRowButton>
+        </ContextMenuTrigger>
+        <ProjectRowContextMenu project={project} controller={controller} />
+      </ContextMenu>
+      {isExpanded && (
+        <ProjectFeatures
+          projectId={project.id}
+          projectPath={project.path}
+          activeFeatureId={isActive ? props.activeFeatureId : null}
+          onSelectFeature={props.onSelectFeature}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProjectRowActions({
+  project,
+  controller,
+}: {
+  project: ProjectSummary;
+  controller: ProjectTreeController;
+}) {
+  const target = { id: project.id, name: project.name };
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-0.5">
+      <span
+        role="button"
+        tabIndex={0}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+        onClick={(event) => {
+          event.stopPropagation();
+          controller.startSession(project.id);
+        }}
+      >
+        <PlusIcon className="h-3.5 w-3.5" />
+      </span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <span
+            role="button"
+            tabIndex={0}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent can-hover:opacity-0 can-hover:focus-visible:opacity-100 can-hover:group-hover/project:opacity-100"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Ellipsis className="h-3.5 w-3.5" />
+          </span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.setSettingsProject(target);
+            }}
+          >
+            <Settings className="size-4" /> Project Settings
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.setImportProject(target);
+            }}
+          >
+            <Download className="size-4" /> Import existing sessions
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={(event) => {
+              event.stopPropagation();
+              controller.setDeleteProject(target);
+            }}
+          >
+            <Trash2 className="size-4" /> Delete Project
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function ProjectRowContextMenu({
+  project,
+  controller,
+}: {
+  project: ProjectSummary;
+  controller: ProjectTreeController;
+}) {
+  const target = { id: project.id, name: project.name };
+  return (
+    <ContextMenuContent>
+      <ContextMenuActionItem icon={PlusIcon} onSelect={() => controller.startSession(project.id)}>
+        New Session
+      </ContextMenuActionItem>
+      <ContextMenuSeparator />
+      <ContextMenuActionItem icon={Settings} onSelect={() => controller.setSettingsProject(target)}>
+        Project Settings
+      </ContextMenuActionItem>
+      <ContextMenuActionItem icon={Download} onSelect={() => controller.setImportProject(target)}>
+        Import existing sessions
+      </ContextMenuActionItem>
+      <ContextMenuActionItem
+        icon={Trash2}
+        variant="destructive"
+        onSelect={() => controller.setDeleteProject(target)}
+      >
+        Delete Project
+      </ContextMenuActionItem>
+    </ContextMenuContent>
   );
 }

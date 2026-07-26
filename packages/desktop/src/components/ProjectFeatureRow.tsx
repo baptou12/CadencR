@@ -57,52 +57,145 @@ interface ProjectFeatureRowProps {
 
 const FEATURE_NESTING_INDENT_PX = 16;
 
+type ProjectFeatureRowState = ReturnType<typeof useProjectFeatureRowState>;
+
+interface FeatureRowDetailsProps {
+  props: ProjectFeatureRowProps;
+  state: ProjectFeatureRowState;
+  onOpenConversation: () => void;
+}
+
+function FeatureRowDetails({
+  props,
+  state,
+  onOpenConversation,
+}: FeatureRowDetailsProps): ReactElement {
+  const {
+    feature,
+    liveTitle,
+    isAutoNaming,
+    hasWorktree,
+    shellCount,
+    browserCount,
+    isEditingLabel,
+    labelDraft,
+    labelSuggestions,
+    isSavingLabel,
+    onLabelDraftChange,
+    onSaveLabel,
+    onCancelLabelEdit,
+    onTogglePin,
+    onArchiveOrDelete,
+  } = props;
+  return (
+    <>
+      <FeatureRowStatusIcon
+        featureId={feature.id}
+        liveStatus={state.liveStatus}
+        isActive={state.isActive}
+        isUnread={state.isUnread}
+        onOpenConversation={onOpenConversation}
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <FeatureRowTitleLine
+          feature={feature}
+          liveTitle={liveTitle}
+          isAutoNaming={isAutoNaming}
+          isArchived={state.isArchived}
+          hasWorktree={hasWorktree}
+        />
+        <FeatureRowMetaLine
+          feature={feature}
+          prStatus={state.prStatus}
+          gitStats={state.gitStats}
+          shellCount={shellCount}
+          browserCount={browserCount}
+          isEditingLabel={isEditingLabel}
+          labelDraft={labelDraft}
+          labelSuggestions={labelSuggestions}
+          isSavingLabel={isSavingLabel}
+          onLabelDraftChange={onLabelDraftChange}
+          onSaveLabel={onSaveLabel}
+          onCancelLabelEdit={onCancelLabelEdit}
+        />
+      </div>
+      <FeatureRowActions
+        featureId={feature.id}
+        isArchived={state.isArchived}
+        isPinned={state.isPinned}
+        onTogglePin={onTogglePin}
+        onArchiveOrDelete={onArchiveOrDelete}
+      />
+    </>
+  );
+}
+
+interface FeatureRowMenuProps {
+  props: ProjectFeatureRowProps;
+  state: ProjectFeatureRowState;
+  onStartLabelEditAfterMenuClose: () => void;
+}
+
+function FeatureRowMenu({
+  props,
+  state,
+  onStartLabelEditAfterMenuClose,
+}: FeatureRowMenuProps): ReactElement {
+  const {
+    feature,
+    liveTitle,
+    worktree,
+    shellCount,
+    browserCount,
+    onNavigate,
+    onTogglePin,
+    onCloseActivity,
+    onUnarchive,
+    onArchiveOrDelete,
+  } = props;
+  return (
+    <ProjectFeatureContextMenu
+      feature={feature}
+      liveTitle={liveTitle}
+      worktree={worktree}
+      pullRequest={state.prStatus?.pr}
+      isArchived={state.isArchived}
+      isPinned={state.isPinned}
+      hasActivity={shellCount > 0 || browserCount > 0}
+      shellCount={shellCount}
+      browserCount={browserCount}
+      onNavigate={onNavigate}
+      onTogglePin={onTogglePin}
+      onStartLabelEditAfterMenuClose={onStartLabelEditAfterMenuClose}
+      onCloseActivity={onCloseActivity}
+      onUnarchive={onUnarchive}
+      onArchiveOrDelete={onArchiveOrDelete}
+    />
+  );
+}
+
 /**
  * Memoized: rendered N times per project in the sidebar. A parent update
  * (label edit, project rename) must not re-render every row. The parent
  * passes stable callback refs and a stable `labelSuggestions` reference, so
  * default shallow-prop comparison is sufficient.
  */
-export const ProjectFeatureRow = memo(function ProjectFeatureRow({
-  feature,
-  projectId,
-  activeFeatureId,
-  liveTitle,
-  isAutoNaming,
-  hasWorktree,
-  hasLiveWorktree,
-  worktree,
-  shellCount,
-  browserCount,
-  isEditingLabel,
-  labelDraft,
-  labelSuggestions,
-  isSavingLabel,
-  onNavigate,
-  onStartLabelEdit,
-  onLabelDraftChange,
-  onSaveLabel,
-  onCancelLabelEdit,
-  onArchiveOrDelete,
-  onUnarchive,
-  onTogglePin,
-  onCloseActivity,
-  hierarchyControl,
-  hierarchyDepth = 0,
-}: ProjectFeatureRowProps): ReactElement {
-  const startLabelEditOnMenuCloseRef = useRef(false);
+export const ProjectFeatureRow = memo(function ProjectFeatureRow(
+  props: ProjectFeatureRowProps,
+): ReactElement {
   const {
-    liveStatus,
-    isUnread,
-    prStatus,
-    gitStats,
-    isActive,
-    isArchived,
-    isPinned,
-    prefetchFeature,
-  } = useProjectFeatureRowState(feature, projectId, activeFeatureId, hasLiveWorktree);
+    feature,
+    projectId,
+    activeFeatureId,
+    hasLiveWorktree,
+    onNavigate,
+    onStartLabelEdit,
+    hierarchyControl,
+    hierarchyDepth = 0,
+  } = props;
+  const startLabelEditOnMenuCloseRef = useRef(false);
+  const state = useProjectFeatureRowState(feature, projectId, activeFeatureId, hasLiveWorktree);
   const { navRef, badgeRef } = useNavShortcutHint<HTMLDivElement>();
-  const hasActivity = shellCount > 0 || browserCount > 0;
   const markStartLabelEditAfterMenuClose = (): void => {
     startLabelEditOnMenuCloseRef.current = true;
   };
@@ -131,14 +224,14 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
           data-nav-project-id={String(projectId)}
           data-feature-depth={hierarchyDepth}
           className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-0.5 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none transition-colors hover:bg-sidebar-accent ${
-            isActive ? "bg-sidebar-accent" : ""
-          } ${isArchived ? "opacity-50" : ""}`}
+            state.isActive ? "bg-sidebar-accent" : ""
+          } ${state.isArchived ? "opacity-50" : ""}`}
           onClick={(e) => {
-            if (isActive || e.detail > 1) return;
+            if (state.isActive || e.detail > 1) return;
             onNavigate(feature);
           }}
-          onMouseEnter={prefetchFeature}
-          onFocus={prefetchFeature}
+          onMouseEnter={state.prefetchFeature}
+          onFocus={state.prefetchFeature}
           onKeyDown={(e) => {
             if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
             if (e.key === "Enter" || e.key === " ") {
@@ -156,47 +249,10 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
             {hierarchyControl}
           </div>
 
-          <FeatureRowStatusIcon
-            featureId={feature.id}
-            liveStatus={liveStatus}
-            isActive={isActive}
-            isUnread={isUnread}
+          <FeatureRowDetails
+            props={props}
+            state={state}
             onOpenConversation={handleOpenConversation}
-          />
-
-          {/* Name + optional metadata sub-line (stats). The check-run signal
-              rides the PR chip's glow on the second line — it used to be a dot
-              anchored here, which overlapped that chip. */}
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <FeatureRowTitleLine
-              feature={feature}
-              liveTitle={liveTitle}
-              isAutoNaming={isAutoNaming}
-              isArchived={isArchived}
-              hasWorktree={hasWorktree}
-            />
-            <FeatureRowMetaLine
-              feature={feature}
-              prStatus={prStatus}
-              gitStats={gitStats}
-              shellCount={shellCount}
-              browserCount={browserCount}
-              isEditingLabel={isEditingLabel}
-              labelDraft={labelDraft}
-              labelSuggestions={labelSuggestions}
-              isSavingLabel={isSavingLabel}
-              onLabelDraftChange={onLabelDraftChange}
-              onSaveLabel={onSaveLabel}
-              onCancelLabelEdit={onCancelLabelEdit}
-            />
-          </div>
-
-          <FeatureRowActions
-            featureId={feature.id}
-            isArchived={isArchived}
-            isPinned={isPinned}
-            onTogglePin={onTogglePin}
-            onArchiveOrDelete={onArchiveOrDelete}
           />
         </div>
       </ContextMenuTrigger>
@@ -205,22 +261,10 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
         // from onSelect races with Radix's context-menu focus/pointer teardown.
         onCloseAutoFocus={handleMenuCloseAutoFocus}
       >
-        <ProjectFeatureContextMenu
-          feature={feature}
-          liveTitle={liveTitle}
-          worktree={worktree}
-          pullRequest={prStatus?.pr}
-          isArchived={isArchived}
-          isPinned={isPinned}
-          hasActivity={hasActivity}
-          shellCount={shellCount}
-          browserCount={browserCount}
-          onNavigate={onNavigate}
-          onTogglePin={onTogglePin}
+        <FeatureRowMenu
+          props={props}
+          state={state}
           onStartLabelEditAfterMenuClose={markStartLabelEditAfterMenuClose}
-          onCloseActivity={onCloseActivity}
-          onUnarchive={onUnarchive}
-          onArchiveOrDelete={onArchiveOrDelete}
         />
       </ContextMenuContent>
     </ContextMenu>

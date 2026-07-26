@@ -125,6 +125,87 @@ interface ShortcutHintsProviderProps {
   children: ReactNode;
 }
 
+function useShortcutHintListeners({
+  enabled,
+  entriesRef,
+  hintsVisibleRef,
+  staleHideTimerRef,
+  shortcutKeysRef,
+}: {
+  enabled: boolean;
+  entriesRef: RefObject<Set<ShortcutHintRegistration>>;
+  hintsVisibleRef: RefObject<boolean>;
+  staleHideTimerRef: RefObject<number | null>;
+  shortcutKeysRef: RefObject<readonly string[]>;
+}): void {
+  useEffect(() => {
+    const clearStaleHideTimer = (): void => {
+      if (staleHideTimerRef.current == null) return;
+      window.clearTimeout(staleHideTimerRef.current);
+      staleHideTimerRef.current = null;
+    };
+    const ordered = (): ShortcutHintRegistration[] => orderedEntries(entriesRef.current);
+    const showHints = (): void => {
+      if (hintsVisibleRef.current) return;
+      paintBadges(ordered(), true, shortcutKeysRef.current);
+      hintsVisibleRef.current = true;
+    };
+    const refreshHints = (): void => {
+      if (!hintsVisibleRef.current) return;
+      paintBadges(ordered(), true, shortcutKeysRef.current);
+    };
+    const hideHints = (): void => {
+      clearStaleHideTimer();
+      if (!hintsVisibleRef.current) return;
+      paintBadges(ordered(), false, shortcutKeysRef.current);
+      hintsVisibleRef.current = false;
+    };
+    const scheduleStaleHide = (): void => {
+      clearStaleHideTimer();
+      staleHideTimerRef.current = window.setTimeout(() => {
+        staleHideTimerRef.current = null;
+        hideHints();
+      }, STALE_MODIFIER_HINT_MS);
+    };
+    if (!enabled) {
+      hideHints();
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (isAppSwitcherShortcut(event)) {
+        hideHints();
+        return;
+      }
+      if ((event.key === "Meta" || event.metaKey) && !hintsVisibleRef.current) {
+        showHints();
+        scheduleStaleHide();
+      }
+      const index = shortcutIndex(event, shortcutKeysRef.current);
+      if (index == null) return;
+      const target = ordered()[index]?.navRef.current;
+      if (!target) return;
+      event.preventDefault();
+      target.click();
+      requestAnimationFrame(refreshHints);
+    };
+    const handleKeyUp = (event: KeyboardEvent): void => {
+      if (event.key === "Meta") hideHints();
+    };
+    const handleWindowFocusChange = (): void => hideHints();
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", handleWindowFocusChange);
+    window.addEventListener("focus", handleWindowFocusChange);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", handleWindowFocusChange);
+      window.removeEventListener("focus", handleWindowFocusChange);
+      hideHints();
+    };
+  }, [enabled, entriesRef, hintsVisibleRef, shortcutKeysRef, staleHideTimerRef]);
+}
+
 /**
  * Mounts the keyboard listeners that show/hide the numeric shortcut hints
  * on every registered sidebar row. Children call `useNavShortcutHint()` to
@@ -151,87 +232,13 @@ export function ShortcutHintsProvider({
     [],
   );
 
-  useEffect(() => {
-    const clearStaleHideTimer = (): void => {
-      if (staleHideTimerRef.current == null) return;
-      window.clearTimeout(staleHideTimerRef.current);
-      staleHideTimerRef.current = null;
-    };
-
-    const ordered = (): ShortcutHintRegistration[] => orderedEntries(entriesRef.current);
-
-    const showHints = (): void => {
-      if (hintsVisibleRef.current) return;
-      paintBadges(ordered(), true, shortcutKeysRef.current);
-      hintsVisibleRef.current = true;
-    };
-
-    const refreshHints = (): void => {
-      if (!hintsVisibleRef.current) return;
-      paintBadges(ordered(), true, shortcutKeysRef.current);
-    };
-
-    const hideHints = (): void => {
-      clearStaleHideTimer();
-      if (!hintsVisibleRef.current) return;
-      paintBadges(ordered(), false, shortcutKeysRef.current);
-      hintsVisibleRef.current = false;
-    };
-
-    const scheduleStaleHide = (): void => {
-      clearStaleHideTimer();
-      staleHideTimerRef.current = window.setTimeout(() => {
-        staleHideTimerRef.current = null;
-        hideHints();
-      }, STALE_MODIFIER_HINT_MS);
-    };
-
-    if (!enabled) {
-      hideHints();
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (isAppSwitcherShortcut(event)) {
-        hideHints();
-        return;
-      }
-
-      const shouldShowHints = event.key === "Meta" || event.metaKey;
-      if (shouldShowHints && !hintsVisibleRef.current) {
-        showHints();
-        scheduleStaleHide();
-      }
-
-      const index = shortcutIndex(event, shortcutKeysRef.current);
-      if (index == null) return;
-
-      const target = ordered()[index]?.navRef.current;
-      if (!target) return;
-
-      event.preventDefault();
-      target.click();
-      requestAnimationFrame(refreshHints);
-    };
-
-    const handleKeyUp = (event: KeyboardEvent): void => {
-      if (event.key === "Meta") hideHints();
-    };
-
-    const handleWindowFocusChange = (): void => hideHints();
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("keyup", handleKeyUp, true);
-    window.addEventListener("blur", handleWindowFocusChange);
-    window.addEventListener("focus", handleWindowFocusChange);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("keyup", handleKeyUp, true);
-      window.removeEventListener("blur", handleWindowFocusChange);
-      window.removeEventListener("focus", handleWindowFocusChange);
-      hideHints();
-    };
-  }, [enabled]);
+  useShortcutHintListeners({
+    enabled,
+    entriesRef,
+    hintsVisibleRef,
+    staleHideTimerRef,
+    shortcutKeysRef,
+  });
 
   useEffect(() => {
     let cancelled = false;

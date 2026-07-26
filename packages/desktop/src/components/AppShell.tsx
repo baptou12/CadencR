@@ -28,6 +28,96 @@ interface AppShellProps {
   children: ReactNode;
 }
 
+function MobileAppShell({
+  collapsed,
+  setCollapsed,
+  onSearch,
+  children,
+}: Pick<AppShellProps, "collapsed" | "setCollapsed" | "onSearch" | "children">): ReactNode {
+  return (
+    <div className="relative flex h-[var(--app-vh)] w-full overflow-hidden">
+      <main
+        data-focus-zone="main-content"
+        className="h-full w-full min-w-0 overflow-hidden outline-none pt-[env(safe-area-inset-top)]"
+      >
+        {children}
+      </main>
+      <MobileDrawer
+        collapsed={collapsed}
+        onClose={() => setCollapsed(true)}
+        onOpen={() => setCollapsed(false)}
+        closeLabel="Close menu"
+      >
+        <Sidebar onSearch={onSearch} />
+      </MobileDrawer>
+    </div>
+  );
+}
+
+function DesktopAppShell({
+  collapsed,
+  onSearch,
+  sidebarPanelRef,
+  leftSidebarRef,
+  defaultLeftSize,
+  onLayoutChanged,
+  children,
+  isDragging,
+}: Omit<AppShellProps, "isMobile" | "setCollapsed"> & { isDragging: boolean }): ReactNode {
+  return (
+    <ResizablePanelGroup
+      data-app-shell-resize={isDragging ? undefined : "fluid"}
+      orientation="horizontal"
+      onLayoutChanged={onLayoutChanged}
+    >
+      <ResizablePanel
+        id="sidebar"
+        panelRef={sidebarPanelRef}
+        collapsible={collapsed || !isDragging}
+        collapsedSize={0}
+        defaultSize={defaultLeftSize}
+        minSize={`${SIDEBAR_MIN_WIDTH}px`}
+        maxSize={`${SIDEBAR_MAX_WIDTH}px`}
+      >
+        <div
+          ref={leftSidebarRef}
+          data-focus-zone="left-sidebar"
+          tabIndex={0}
+          className="h-full outline-none"
+          onFocus={(event) => {
+            if (event.target === event.currentTarget && !event.currentTarget.matches(":active")) {
+              event.currentTarget.querySelector<HTMLElement>("[data-nav-item]")?.focus();
+            }
+          }}
+        >
+          <Sidebar onSearch={onSearch} />
+        </div>
+      </ResizablePanel>
+      <ResizableHandle
+        data-app-shell-handle=""
+        className={cn("cursor-col-resize", collapsed && "pointer-events-none opacity-0")}
+      />
+      <ResizablePanel id="main">
+        <main
+          data-focus-zone="main-content"
+          tabIndex={0}
+          className="h-full overflow-hidden outline-none"
+          onFocus={(event) => {
+            if (event.target !== event.currentTarget || event.currentTarget.matches(":active")) {
+              return;
+            }
+            const firstItem = event.currentTarget.querySelector<HTMLElement>("[data-nav-item]");
+            const textarea = event.currentTarget.querySelector<HTMLElement>("textarea");
+            (firstItem ?? textarea)?.focus();
+          }}
+        >
+          {children}
+        </main>
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  );
+}
+
 /**
  * The sidebar + main split. Desktop renders a resizable two-panel layout;
  * mobile renders the main content full-bleed with the sidebar as an
@@ -72,100 +162,25 @@ export function AppShell({
   const isDragging = useIsResizing();
   if (isMobile) {
     return (
-      <div className="relative flex h-[var(--app-vh)] w-full overflow-hidden">
-        {/*
-         * Only the TOP safe-area inset is reserved shell-wide. Padding the bottom
-         * here left a dead background strip under the bottom-pinned prompt/context
-         * bar in standalone/fullscreen mode (where the inset is non-zero). Instead,
-         * bottom bars that hold tappable controls (the terminal key bar) own their
-         * own home-indicator clearance, so the session's bar reaches the edge.
-         */}
-        <main
-          data-focus-zone="main-content"
-          className="h-full w-full min-w-0 overflow-hidden outline-none pt-[env(safe-area-inset-top)]"
-        >
-          {children}
-        </main>
-        {/*
-         * Safe-area insets live INSIDE the sidebar (on its `<aside>`), not as
-         * padding here: padding the drawer panel would inset the sidebar's
-         * `bg-sidebar` surface from the screen edges, leaving dead gaps at the
-         * top/bottom in standalone/fullscreen mode (where the insets are
-         * non-zero). Letting the surface reach the edges and padding the content
-         * keeps the rail edge-to-edge while clearing the notch/home indicator.
-         */}
-        <MobileDrawer
-          collapsed={collapsed}
-          onClose={() => setCollapsed(true)}
-          onOpen={() => setCollapsed(false)}
-          closeLabel="Close menu"
-        >
-          <Sidebar onSearch={onSearch} />
-        </MobileDrawer>
-      </div>
+      <MobileAppShell
+        collapsed={collapsed}
+        setCollapsed={setCollapsed}
+        onSearch={onSearch}
+        children={children}
+      />
     );
   }
 
   return (
-    <ResizablePanelGroup
-      data-app-shell-resize={isDragging ? undefined : "fluid"}
-      orientation="horizontal"
+    <DesktopAppShell
+      collapsed={collapsed}
+      onSearch={onSearch}
+      sidebarPanelRef={sidebarPanelRef}
+      leftSidebarRef={leftSidebarRef}
+      defaultLeftSize={defaultLeftSize}
       onLayoutChanged={onLayoutChanged}
-    >
-      <ResizablePanel
-        id="sidebar"
-        panelRef={sidebarPanelRef}
-        collapsible={collapsed || !isDragging}
-        collapsedSize={0}
-        defaultSize={defaultLeftSize}
-        minSize={`${SIDEBAR_MIN_WIDTH}px`}
-        maxSize={`${SIDEBAR_MAX_WIDTH}px`}
-      >
-        <div
-          ref={leftSidebarRef}
-          data-focus-zone="left-sidebar"
-          tabIndex={0}
-          className="h-full outline-none"
-          onFocus={(e) => {
-            if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-              const firstItem = e.currentTarget.querySelector(
-                "[data-nav-item]",
-              ) as HTMLElement | null;
-              if (firstItem) firstItem.focus();
-            }
-          }}
-        >
-          <Sidebar onSearch={onSearch} />
-        </div>
-      </ResizablePanel>
-      <ResizableHandle
-        // CadencR themes collapse this handle to 0 width so the sidebar and
-        // feature header share one seamless chassis band (see theme-cadencr-material.css).
-        data-app-shell-handle=""
-        className={cn("cursor-col-resize", collapsed && "pointer-events-none opacity-0")}
-      />
-      <ResizablePanel id="main">
-        <main
-          data-focus-zone="main-content"
-          tabIndex={0}
-          className="h-full overflow-hidden outline-none"
-          onFocus={(e) => {
-            if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-              const firstItem = e.currentTarget.querySelector(
-                "[data-nav-item]",
-              ) as HTMLElement | null;
-              if (firstItem) {
-                firstItem.focus();
-              } else {
-                const textarea = e.currentTarget.querySelector("textarea") as HTMLElement | null;
-                if (textarea) textarea.focus();
-              }
-            }
-          }}
-        >
-          {children}
-        </main>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+      children={children}
+      isDragging={isDragging}
+    />
   );
 }
