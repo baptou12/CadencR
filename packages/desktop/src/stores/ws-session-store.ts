@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create, type StoreApi } from "zustand";
 import {
   type PromptDispatchOptions,
   type WsEnvelope,
@@ -24,7 +24,6 @@ import {
 } from "./ws-session-types";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
-import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import type { SocketHandlerDeps } from "./ws-session-socket-handler";
@@ -74,175 +73,117 @@ function rejectPendingRequests(session: SessionEntry): void {
   }
 }
 
-export const useWsSessionStore = create<WsSessionStore>((set, get) => {
-  function getSession(sessionId: string): SessionEntry {
-    return get().sessions[sessionId] ?? createSessionEntry();
-  }
+type WsStoreSet = StoreApi<WsSessionStore>["setState"];
+type WsStoreGet = StoreApi<WsSessionStore>["getState"];
 
-  function sendRaw(sessionId: string, envelope: WsEnvelope): void {
-    const session = get().sessions[sessionId];
-    if (session?.conn?.sendJson(envelope)) return;
-    // The socket is not OPEN (reconnecting, or still CONNECTING). Dropping the
-    // envelope here is silent data loss. Hold it and flush on `onOpen`, after
-    // the reconnect `session.init` replay; the canonical user-message event is
-    // created only after the backend persists the queued prompt.
-    session?.outboundQueue.push(envelope);
-  }
+function getSessionEntry(get: WsStoreGet, sessionId: string): SessionEntry {
+  return get().sessions[sessionId] ?? createSessionEntry();
+}
 
-  /** Send queued envelopes in order; stop (and keep the rest) if the socket drops again. */
-  function flushOutboundQueue(sessionId: string): void {
-    const session = get().sessions[sessionId];
-    if (!session?.conn) return;
-    const queue = session.outboundQueue;
-    // Drain by index and splice once at the end: shift() per envelope would
-    // reindex the array each time (O(n²) on a long-outage backlog).
-    let sent = 0;
-    while (sent < queue.length && session.conn.sendJson(queue[sent])) sent += 1;
-    if (sent > 0) queue.splice(0, sent);
-  }
+function sendRawEnvelope(get: WsStoreGet, sessionId: string, envelope: WsEnvelope): void {
+  const session = get().sessions[sessionId];
+  if (session?.conn?.sendJson(envelope)) return;
+  session?.outboundQueue.push(envelope);
+}
 
-  function forceReconnectSession(sessionId: string): void {
-    const session = get().sessions[sessionId];
-    if (session?.conn) {
-      rejectPendingRequests(session);
-      session.conn.close(1000, "force-reconnect");
-      set(updateSession(get(), sessionId, { conn: null, isConnected: false }));
-    }
-    get().connect(sessionId);
-  }
+function flushOutboundQueue(get: WsStoreGet, sessionId: string): void {
+  const session = get().sessions[sessionId];
+  if (!session?.conn) return;
+  const queue = session.outboundQueue;
+  let sent = 0;
+  while (sent < queue.length && session.conn.sendJson(queue[sent])) sent += 1;
+  if (sent > 0) queue.splice(0, sent);
+}
 
-  function queuePrompt(sessionId: string, text: string, options: PromptDispatchOptions = {}): void {
-    const session = getSession(sessionId);
-    set(updateSession(get(), sessionId, buildQueuedPromptPatch(session, text, options)));
+function forceReconnectSession(set: WsStoreSet, get: WsStoreGet, sessionId: string): void {
+  const session = get().sessions[sessionId];
+  if (session?.conn) {
+    rejectPendingRequests(session);
+    session.conn.close(1000, "force-reconnect");
+    set(updateSession(get(), sessionId, { conn: null, isConnected: false }));
   }
+  get().connect(sessionId);
+}
 
-  function flushQueuedInitActions(sessionId: string): void {
-    const session = get().sessions[sessionId];
-    if (!session || !session.serverSessionId) return;
-    for (const envelope of buildQueuedInitEnvelopes(session)) {
-      sendRaw(sessionId, envelope);
-    }
-    if (session.queuedPrompts.length === 0) return;
-    set(updateSession(get(), sessionId, { queuedPrompts: [] }));
+function flushQueuedInitActions(set: WsStoreSet, get: WsStoreGet, sessionId: string): void {
+  const session = get().sessions[sessionId];
+  if (!session || !session.serverSessionId) return;
+  for (const envelope of buildQueuedInitEnvelopes(session)) {
+    sendRawEnvelope(get, sessionId, envelope);
   }
+  if (session.queuedPrompts.length === 0) return;
+  set(updateSession(get(), sessionId, { queuedPrompts: [] }));
+}
 
-  /**
-   * Re-emit `session.init` after a transport reconnect so the backend's
-   * per-connection `sdk_sessions` map gets rebuilt for this session id.
-   *
-   * Only fires when:
-   *  - We already have a `featureId` (the init payload requires it).
-   *  - This is a reconnect, not the first connect — detected by the
-   *    presence of a previously-established `serverSessionId`.
-   *
-   * Provider-neutral: replays whatever provider/model/effort/mode the
-   * session was last using. The backend `session.init` handler is
-   * idempotent for an existing DB session — it re-binds the in-memory
-   * handle from the DB row rather than creating a new one.
-   */
-  function reinitOnReconnect(sessionId: string): void {
-    const session = get().sessions[sessionId];
-    if (!session) return;
-    if (!session.featureId || !session.serverSessionId || !session.cwd) return;
-    sendRaw(
-      sessionId,
-      createSessionInit({
-        cwd: session.cwd,
-        featureId: session.featureId,
-        provider: session.currentProviderId || undefined,
-        model: session.currentModelId || undefined,
-        thinkingEffort: session.currentThinkingEffort,
-        permissionMode: session.permissionMode,
+function reinitOnReconnect(get: WsStoreGet, sessionId: string): void {
+  const session = get().sessions[sessionId];
+  if (!session?.featureId || !session.serverSessionId || !session.cwd) return;
+  sendRawEnvelope(
+    get,
+    sessionId,
+    createSessionInit({
+      cwd: session.cwd,
+      featureId: session.featureId,
+      provider: session.currentProviderId || undefined,
+      model: session.currentModelId || undefined,
+      thinkingEffort: session.currentThinkingEffort,
+      permissionMode: session.permissionMode,
+    }),
+  );
+}
+
+function handlePermissionResponse(
+  set: WsStoreSet,
+  get: WsStoreGet,
+  sessionId: string,
+  currentRequestId: string,
+  payload: unknown,
+): void {
+  const session = getSessionEntry(get, sessionId);
+  const error = parseErrorPayload(payload);
+  if (error?.message || payload === null) {
+    const message = error?.message ?? "Permission response timed out.";
+    const errorBlock = makeErrorBlock(session, message, { idPrefix: "ws-permission-error" });
+    const isDeadSessionError = isGateClosingErrorCode(error?.code);
+    const responseUuids = new Map(session.permissionResponseMessageUuids);
+    if (isDeadSessionError) responseUuids.delete(currentRequestId);
+    const gatePatch: Partial<SessionEntry> = isDeadSessionError
+      ? {
+          ...buildClearedGatePatch(session),
+          lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message }),
+        }
+      : { submittingPermissionRequestId: null };
+    set(
+      updateSession(get(), sessionId, {
+        ...blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
+        ...gatePatch,
+        permissionResponseMessageUuids: responseUuids,
       }),
     );
+    return;
   }
-  const ctx: StoreAccessors = { get, set, getSession };
-
-  const branchDeps: BranchDeps = {
-    get,
-    set,
-    sendRequest: (sessionId, envelope) => get().sendRequest(sessionId, envelope),
-  };
-
-  const socketDeps: SocketHandlerDeps = { ctx, flushQueuedInitActions };
-
-  return {
-    sessions: {},
-    branchConfirm: null,
-    composerPrefill: null,
-    forkNavigation: null,
-
-    rewindToMessage(sessionId: string, messageId: number, confirmDiscard?: boolean) {
-      void branch.rewindToMessage(branchDeps, sessionId, messageId, confirmDiscard);
-    },
-    forkFromMessage(sessionId: string, messageId: number) {
-      void branch.forkFromMessage(branchDeps, sessionId, messageId);
-    },
-    resolveBranchConfirm(confirmed: boolean) {
-      branch.resolveBranchConfirm(branchDeps, confirmed);
-    },
-    consumeComposerPrefill(sessionId: string) {
-      if (get().composerPrefill?.sessionId === sessionId) set({ composerPrefill: null });
-    },
-    consumeForkNavigation(sessionId: string) {
-      if (get().forkNavigation?.sessionId === sessionId) set({ forkNavigation: null });
-    },
-
-    connect(sessionId: string) {
-      connectSession(
-        {
-          ctx,
-          socketDeps,
-          sourceKey: wsSessionSourceKey,
-          rejectPendingRequests,
-          forceReconnectSession,
-          reinitOnReconnect,
-          flushOutboundQueue,
-        },
-        sessionId,
-      );
-    },
-
-    ...createWsSessionTransportActions({
-      ctx,
-      sendRaw,
-      sourceKey: wsSessionSourceKey,
-      rejectPendingRequests,
+  const responseUuids = new Map(session.permissionResponseMessageUuids);
+  responseUuids.delete(currentRequestId);
+  const permissionPatch = advancePendingPermissionQueue(session.pendingPermissionQueue);
+  set(
+    updateSession(get(), sessionId, {
+      ...permissionPatch,
+      pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
+      submittingPermissionRequestId: null,
+      permissionResponseMessageUuids: responseUuids,
     }),
+  );
+}
 
-    sendPrompt(sessionId: string, text: string, options: PromptDispatchOptions = {}) {
-      const session = getSession(sessionId);
-      const trackProviderReceipt = shouldTrackPromptReceipt(session);
-      const messageUuid = options.messageUuid ?? crypto.randomUUID();
-      if (session.serverSessionId) {
-        sendRaw(
-          sessionId,
-          createPromptSend(session.serverSessionId, text, {
-            ...options,
-            messageUuid,
-            trackPromptReceipt: trackProviderReceipt,
-          }),
-        );
-      } else {
-        queuePrompt(sessionId, text, { ...options, messageUuid });
-      }
-    },
-
-    respondToPermission(
-      sessionId: string,
-      requestId: string,
-      decision: PermissionDecisionValue,
-      feedback?: string,
-      optionId?: string,
-    ) {
-      const session = getSession(sessionId);
+function createPermissionActions(
+  set: WsStoreSet,
+  get: WsStoreGet,
+): Pick<WsSessionStore, "respondToPermission" | "respondToQuestion"> {
+  return {
+    respondToPermission(sessionId, requestId, decision, feedback, optionId) {
+      const session = getSessionEntry(get, sessionId);
       const currentRequestId = session.pendingPermission?.requestId ?? requestId;
-      // Belt-and-braces: the UI also disables buttons while a submission is
-      // in flight, but if anything slips through (keyboard shortcut race,
-      // remount, etc.) we still want to drop the duplicate request.
-      if (session.submittingPermissionRequestId === currentRequestId) {
-        return;
-      }
+      if (session.submittingPermissionRequestId === currentRequestId) return;
       const permissionResponseMessageUuids = new Map(session.permissionResponseMessageUuids);
       const messageUuid =
         permissionResponseMessageUuids.get(currentRequestId) ?? crypto.randomUUID();
@@ -251,11 +192,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         session.serverSessionId,
         currentRequestId,
         decision,
-        {
-          feedback,
-          optionId,
-          messageUuid,
-        },
+        { feedback, optionId, messageUuid },
       );
       set(
         updateSession(get(), sessionId, {
@@ -265,66 +202,21 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       );
       void get()
         .sendRequest(sessionId, envelope)
-        .then((payload) => {
-          const error = parseErrorPayload(payload);
-          if (error?.message || payload === null) {
-            const session = getSession(sessionId);
-            const message = error?.message ?? "Permission response timed out.";
-            const errorBlock = makeErrorBlock(session, message, {
-              idPrefix: "ws-permission-error",
-            });
-            // If the backend says the session/permission is unanswerable,
-            // drop the gate so the user is not staring at buttons that
-            // will only ever bounce back the same error. Timeouts (payload
-            // === null) leave the gate in place — the WS reconnects and a
-            // retry can still land.
-            const isDeadSessionError = isGateClosingErrorCode(error?.code);
-            const responseUuids = new Map(session.permissionResponseMessageUuids);
-            if (isDeadSessionError) responseUuids.delete(currentRequestId);
-            const gatePatch: Partial<SessionEntry> = isDeadSessionError
-              ? {
-                  ...buildClearedGatePatch(session),
-                  lifecycle: transitionTurn(session.lifecycle, {
-                    type: "turn_errored",
-                    message,
-                  }),
-                }
-              : { submittingPermissionRequestId: null };
-            set(
-              updateSession(get(), sessionId, {
-                ...blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
-                ...gatePatch,
-                permissionResponseMessageUuids: responseUuids,
-              }),
-            );
-            return;
-          }
-          const session = getSession(sessionId);
-          const responseUuids = new Map(session.permissionResponseMessageUuids);
-          responseUuids.delete(currentRequestId);
-          const permissionPatch = advancePendingPermissionQueue(session.pendingPermissionQueue);
-          set(
-            updateSession(get(), sessionId, {
-              ...permissionPatch,
-              pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
-              submittingPermissionRequestId: null,
-              permissionResponseMessageUuids: responseUuids,
-            }),
-          );
-        });
+        .then((payload) =>
+          handlePermissionResponse(set, get, sessionId, currentRequestId, payload),
+        );
     },
-
-    respondToQuestion(sessionId: string, response: AgentQuestionAnswers) {
-      const session = getSession(sessionId);
-      const messageUuid = crypto.randomUUID();
-      sendRaw(
+    respondToQuestion(sessionId, response: AgentQuestionAnswers) {
+      const session = getSessionEntry(get, sessionId);
+      sendRawEnvelope(
+        get,
         sessionId,
         createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once", {
           updatedInput: buildAskUserQuestionUpdatedInput(
             session.pendingQuestionToolInput,
             response,
           ),
-          messageUuid,
+          messageUuid: crypto.randomUUID(),
         }),
       );
       set(
@@ -332,13 +224,111 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           pendingQuestions: [],
           pendingQuestionToolInput: {},
           pendingRequestId: "",
-          lifecycle: transitionTurn(session.lifecycle, {
-            type: "question_answered",
-          }),
+          lifecycle: transitionTurn(session.lifecycle, { type: "question_answered" }),
         }),
       );
     },
+  };
+}
 
+function createBranchActions(
+  set: WsStoreSet,
+  get: WsStoreGet,
+  branchDeps: BranchDeps,
+): Pick<
+  WsSessionStore,
+  | "rewindToMessage"
+  | "forkFromMessage"
+  | "resolveBranchConfirm"
+  | "consumeComposerPrefill"
+  | "consumeForkNavigation"
+> {
+  return {
+    rewindToMessage: (sessionId, messageId, confirmDiscard) => {
+      void branch.rewindToMessage(branchDeps, sessionId, messageId, confirmDiscard);
+    },
+    forkFromMessage: (sessionId, messageId) => {
+      void branch.forkFromMessage(branchDeps, sessionId, messageId);
+    },
+    resolveBranchConfirm: (confirmed) => branch.resolveBranchConfirm(branchDeps, confirmed),
+    consumeComposerPrefill: (sessionId) => {
+      if (get().composerPrefill?.sessionId === sessionId) set({ composerPrefill: null });
+    },
+    consumeForkNavigation: (sessionId) => {
+      if (get().forkNavigation?.sessionId === sessionId) set({ forkNavigation: null });
+    },
+  };
+}
+
+function createPromptActions(set: WsStoreSet, get: WsStoreGet): Pick<WsSessionStore, "sendPrompt"> {
+  return {
+    sendPrompt(sessionId, text, options: PromptDispatchOptions = {}) {
+      const session = getSessionEntry(get, sessionId);
+      const messageUuid = options.messageUuid ?? crypto.randomUUID();
+      if (session.serverSessionId) {
+        sendRawEnvelope(
+          get,
+          sessionId,
+          createPromptSend(session.serverSessionId, text, {
+            ...options,
+            messageUuid,
+            trackPromptReceipt: shouldTrackPromptReceipt(session),
+          }),
+        );
+        return;
+      }
+      set(
+        updateSession(
+          get(),
+          sessionId,
+          buildQueuedPromptPatch(session, text, { ...options, messageUuid }),
+        ),
+      );
+    },
+  };
+}
+
+function createWsSessionStore(set: WsStoreSet, get: WsStoreGet): WsSessionStore {
+  const getSession = (sessionId: string): SessionEntry => getSessionEntry(get, sessionId);
+  const sendRaw = (sessionId: string, envelope: WsEnvelope): void =>
+    sendRawEnvelope(get, sessionId, envelope);
+  const ctx: StoreAccessors = { get, set, getSession };
+  const branchDeps: BranchDeps = {
+    get,
+    set,
+    sendRequest: (sessionId, envelope) => get().sendRequest(sessionId, envelope),
+  };
+  const socketDeps: SocketHandlerDeps = {
+    ctx,
+    flushQueuedInitActions: (sessionId) => flushQueuedInitActions(set, get, sessionId),
+  };
+  return {
+    sessions: {},
+    branchConfirm: null,
+    composerPrefill: null,
+    forkNavigation: null,
+    ...createBranchActions(set, get, branchDeps),
+    connect: (sessionId) =>
+      connectSession(
+        {
+          ctx,
+          socketDeps,
+          sourceKey: wsSessionSourceKey,
+          rejectPendingRequests,
+          forceReconnectSession: (id) => forceReconnectSession(set, get, id),
+          reinitOnReconnect: (id) => reinitOnReconnect(get, id),
+          flushOutboundQueue: (id) => flushOutboundQueue(get, id),
+        },
+        sessionId,
+      ),
+    ...createWsSessionTransportActions({
+      ctx,
+      sendRaw,
+      sourceKey: wsSessionSourceKey,
+      rejectPendingRequests,
+    }),
+    ...createPromptActions(set, get),
+    ...createPermissionActions(set, get),
     ...createWsSessionSimpleActions({
       ctx,
       sendRaw,
@@ -347,4 +337,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       planRestorePrefix: PLAN_RESTORE_PREFIX,
     }),
   };
-});
+}
+
+export const useWsSessionStore = create<WsSessionStore>(createWsSessionStore);
