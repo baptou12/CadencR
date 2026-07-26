@@ -5,7 +5,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
   type PointerEvent,
+  type RefObject,
 } from "react";
 
 const MIN_SCALE = 0.25;
@@ -31,6 +33,93 @@ export interface PanZoom {
   reset: () => void;
 }
 
+interface PanHandlers {
+  isPanning: boolean;
+  onPointerDown: (event: PointerEvent) => void;
+  onPointerMove: (event: PointerEvent) => void;
+  onPointerUp: (event: PointerEvent) => void;
+}
+
+function usePanHandlers(containerRef: RefObject<HTMLDivElement | null>): PanHandlers {
+  const [isPanning, setIsPanning] = useState(false);
+  const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const onPointerDown = useCallback((event: PointerEvent) => {
+    const element = containerRef.current;
+    if (!element || (!event.metaKey && !event.ctrlKey)) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pan.current = {
+      x: event.clientX,
+      y: event.clientY,
+      left: element.scrollLeft,
+      top: element.scrollTop,
+    };
+    setIsPanning(true);
+  }, []);
+  const onPointerMove = useCallback((event: PointerEvent) => {
+    const start = pan.current;
+    const element = containerRef.current;
+    if (!start || !element) return;
+    element.scrollLeft = start.left - (event.clientX - start.x);
+    element.scrollTop = start.top - (event.clientY - start.y);
+  }, []);
+  const onPointerUp = useCallback((event: PointerEvent) => {
+    if (!pan.current) return;
+    pan.current = null;
+    setIsPanning(false);
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }, []);
+  return useMemo(
+    () => ({ isPanning, onPointerDown, onPointerMove, onPointerUp }),
+    [isPanning, onPointerDown, onPointerMove, onPointerUp],
+  );
+}
+
+function useDiagramMeasurement(
+  svg: string,
+  containerRef: RefObject<HTMLDivElement | null>,
+  contentRef: RefObject<HTMLDivElement | null>,
+  fitScaleRef: MutableRefObject<number>,
+  setScale: (scale: number) => void,
+): { w: number; h: number } | null {
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const svgElement = contentRef.current?.querySelector("svg");
+    const box = svgElement?.viewBox?.baseVal;
+    if (!box || !box.width || !box.height) {
+      setNatural(null);
+      fitScaleRef.current = 1;
+      return;
+    }
+    setNatural({ w: box.width, h: box.height });
+    const containerWidth = containerRef.current?.clientWidth ?? box.width;
+    const fit = clamp(Math.min(1, containerWidth / box.width), MIN_SCALE, MAX_SCALE);
+    fitScaleRef.current = fit;
+    setScale(fit);
+  }, [containerRef, contentRef, fitScaleRef, setScale, svg]);
+  return natural;
+}
+
+function useWheelZoom(
+  containerRef: RefObject<HTMLDivElement | null>,
+  zoomAt: (anchorX: number, anchorY: number, factor: number) => void,
+): void {
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const onWheel = (event: WheelEvent): void => {
+      // Trackpad pinch arrives as a ctrl/meta-modified wheel; plain scroll
+      // falls through to the viewport's native scrolling.
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const rect = element.getBoundingClientRect();
+      zoomAt(event.clientX - rect.left, event.clientY - rect.top, Math.exp(-event.deltaY * 0.01));
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [containerRef, zoomAt]);
+}
+
 /**
  * Zoom + pan for an injected SVG, built on native scrolling.
  *
@@ -49,31 +138,14 @@ export interface PanZoom {
 export function usePanZoom(svg: string): PanZoom {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [scale, setScale] = useState(1);
-  const [isPanning, setIsPanning] = useState(false);
   // Fit-to-width scale is derived once per diagram and only read by `reset`,
   // so it lives in a ref rather than driving renders.
   const fitScaleRef = useRef(1);
-  const pan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   // Scroll offset to apply after a zoom commits, to keep a point anchored.
   const pendingScroll = useRef<{ left: number; top: number } | null>(null);
-
-  // Read the diagram's natural size from the SVG viewBox, then fit it to width.
-  useLayoutEffect(() => {
-    const svgEl = contentRef.current?.querySelector("svg");
-    const box = svgEl?.viewBox?.baseVal;
-    if (!box || !box.width || !box.height) {
-      setNatural(null);
-      fitScaleRef.current = 1;
-      return;
-    }
-    setNatural({ w: box.width, h: box.height });
-    const containerWidth = containerRef.current?.clientWidth ?? box.width;
-    const fit = clamp(Math.min(1, containerWidth / box.width), MIN_SCALE, MAX_SCALE);
-    fitScaleRef.current = fit;
-    setScale(fit);
-  }, [svg]);
+  const natural = useDiagramMeasurement(svg, containerRef, contentRef, fitScaleRef, setScale);
+  const { isPanning, onPointerDown, onPointerMove, onPointerUp } = usePanHandlers(containerRef);
 
   // Apply the anchored scroll offset once the new scale has laid out.
   useLayoutEffect(() => {
@@ -100,44 +172,7 @@ export function usePanZoom(svg: string): PanZoom {
     });
   }, []);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent): void => {
-      // Trackpad pinch arrives as a ctrl/meta-modified wheel; plain scroll
-      // falls through to the viewport's native scrolling.
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.01));
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [zoomAt]);
-
-  const onPointerDown = useCallback((e: PointerEvent) => {
-    const el = containerRef.current;
-    if (!el || (!e.metaKey && !e.ctrlKey)) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    pan.current = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
-    setIsPanning(true);
-  }, []);
-
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    const start = pan.current;
-    const el = containerRef.current;
-    if (!start || !el) return;
-    el.scrollLeft = start.left - (e.clientX - start.x);
-    el.scrollTop = start.top - (e.clientY - start.y);
-  }, []);
-
-  const onPointerUp = useCallback((e: PointerEvent) => {
-    if (!pan.current) return;
-    pan.current = null;
-    setIsPanning(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  }, []);
+  useWheelZoom(containerRef, zoomAt);
 
   const zoomByCenter = useCallback(
     (factor: number) => {
