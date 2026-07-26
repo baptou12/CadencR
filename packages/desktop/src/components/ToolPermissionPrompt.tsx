@@ -1,4 +1,3 @@
-import { useState, useCallback, useRef, useEffect } from "react";
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { useScopedShortcut } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
@@ -8,6 +7,7 @@ import { KbdShortcut } from "@/components/KbdShortcut";
 import { SendIcon, Loader2 } from "lucide-react";
 import { getPermissionPreview } from "./permission-preview";
 import { ToolPermissionPromptHeader } from "./ToolPermissionPromptHeader";
+import { useToolPermissionActions } from "./useToolPermissionActions";
 import {
   AGENT_OPTION_CARD_BASE,
   AGENT_OPTION_CARD_RESTING,
@@ -66,6 +66,73 @@ const FALLBACK_OPTIONS: PermissionOption[] = [
     collectFeedback: true,
   },
 ];
+
+interface ToolPermissionPromptContentProps {
+  permission: PendingPermission;
+  options: PermissionOption[];
+  rawCommand: string | null;
+  highlightedIndex: number | null;
+  submittedIndex: number | null;
+  showFeedback: boolean;
+  feedback: string;
+  isSubmitting: boolean;
+  onCancel?: () => void;
+  onOption: (index: number) => void;
+  onFeedbackChange: (feedback: string) => void;
+  onDenySubmit: () => void;
+}
+
+function ToolPermissionPromptContent({
+  permission,
+  options,
+  rawCommand,
+  highlightedIndex,
+  submittedIndex,
+  showFeedback,
+  feedback,
+  isSubmitting,
+  onCancel,
+  onOption,
+  onFeedbackChange,
+  onDenySubmit,
+}: ToolPermissionPromptContentProps) {
+  return (
+    <div className="agent-prompt-gate-panel border-t border-amber-500/30 bg-card px-3 py-2">
+      <ToolPermissionPromptHeader toolName={permission.toolName} onCancel={onCancel} />
+      <p className="mb-1.5 text-sm text-foreground">{permission.description}</p>
+      {rawCommand && (
+        <pre className="mb-3 max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 text-xs text-foreground font-mono whitespace-pre-wrap break-all">
+          {rawCommand}
+        </pre>
+      )}
+      <div className="mb-2 flex flex-col gap-1.5">
+        {options.map((option, index) => (
+          <PermissionOptionButton
+            key={`${option.decision}-${option.label}`}
+            option={option}
+            index={index}
+            highlighted={highlightedIndex === index}
+            onClick={onOption}
+            options={options}
+            disabled={isSubmitting}
+            showSpinner={isSubmitting && submittedIndex === index}
+          />
+        ))}
+      </div>
+      {showFeedback && (
+        <DenyFeedbackInput
+          feedback={feedback}
+          onChange={onFeedbackChange}
+          onSubmit={onDenySubmit}
+          disabled={isSubmitting}
+          showSpinner={
+            isSubmitting && submittedIndex !== null && options[submittedIndex]?.decision === "deny"
+          }
+        />
+      )}
+    </div>
+  );
+}
 
 interface PermissionOptionButtonProps {
   option: PermissionOption;
@@ -255,84 +322,17 @@ export function ToolPermissionPrompt({
   disableShortcuts,
   isSubmitting = false,
 }: ToolPermissionPromptProps) {
-  const [feedback, setFeedback] = useState("");
-  const [showFeedback, setShowFeedback] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
-  const [submittedIndex, setSubmittedIndex] = useState<number | null>(null);
-  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const options =
     permission.options && permission.options.length > 0 ? permission.options : FALLBACK_OPTIONS;
   const rawCommand = getPermissionPreview(permission);
+  const actions = useToolPermissionActions({ isSubmitting, options, onDecision });
 
-  useEffect(() => {
-    return () => {
-      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-      if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
-    };
-  }, []);
-
-  // Clear the local "which option was clicked" tracker once the store reports
-  // the submission is no longer in flight (e.g. backend returned an error and
-  // re-enabled the buttons so the user can retry). On a new request id the
-  // parent re-keys this component, so a remount handles that case for free.
-  useEffect(() => {
-    if (!isSubmitting) setSubmittedIndex(null);
-  }, [isSubmitting]);
-
-  const flashHighlight = useCallback((index: number) => {
-    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-    setHighlightedIndex(index);
-    highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
-  }, []);
-
-  const submitOption = useCallback(
-    (option: PermissionOption, index: number) => {
-      setSubmittedIndex(index);
-      const trimmedFeedback = feedback.trim() || undefined;
-      if (option.decision === "deny") {
-        if (option.optionId) onDecision("deny", trimmedFeedback, option.optionId);
-        else onDecision("deny", trimmedFeedback);
-        return;
-      }
-      if (option.optionId) onDecision(option.decision, undefined, option.optionId);
-      else onDecision(option.decision);
-    },
-    [feedback, onDecision],
-  );
-
-  const handleOption = useCallback(
-    (index: number) => {
-      if (isSubmitting) return;
-      const option = options[index];
-      if (!option) return;
-      if (option.decision === "deny" && option.collectFeedback && !showFeedback) {
-        setShowFeedback(true);
-        return;
-      }
-      submitOption(option, index);
-    },
-    [isSubmitting, options, showFeedback, submitOption],
-  );
-
-  const handleDenyWithEnter = useCallback(() => {
-    if (isSubmitting) return;
-    const denyIndex = options.findIndex((option) => option.decision === "deny");
-    if (denyIndex < 0) return;
-    submitOption(options[denyIndex], denyIndex);
-  }, [isSubmitting, options, submitOption]);
-
-  const handleHotkey = useCallback(
-    (index: number) => {
-      if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
-      flashHighlight(index);
-      actionTimerRef.current = setTimeout(() => handleOption(index), 150);
-    },
-    [flashHighlight, handleOption],
-  );
-
-  usePermissionHotkeys({ disableShortcuts, isSubmitting, options, onTrigger: handleHotkey });
+  usePermissionHotkeys({
+    disableShortcuts,
+    isSubmitting,
+    options,
+    onTrigger: actions.handleHotkey,
+  });
   useScopedHotkeys(
     "escape",
     (event) => {
@@ -350,47 +350,19 @@ export function ToolPermissionPrompt({
   );
 
   return (
-    <div className="agent-prompt-gate-panel border-t border-amber-500/30 bg-card px-3 py-2">
-      <ToolPermissionPromptHeader toolName={permission.toolName} onCancel={onCancel} />
-
-      {/* Description */}
-      <p className="mb-1.5 text-sm text-foreground">{permission.description}</p>
-
-      {/* Raw command / path */}
-      {rawCommand && (
-        <pre className="mb-3 max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 text-xs text-foreground font-mono whitespace-pre-wrap break-all">
-          {rawCommand}
-        </pre>
-      )}
-
-      {/* Options */}
-      <div className="mb-2 flex flex-col gap-1.5">
-        {options.map((option, index) => (
-          <PermissionOptionButton
-            key={`${option.decision}-${option.label}`}
-            option={option}
-            index={index}
-            highlighted={highlightedIndex === index}
-            onClick={handleOption}
-            options={options}
-            disabled={isSubmitting}
-            showSpinner={isSubmitting && submittedIndex === index}
-          />
-        ))}
-      </div>
-
-      {/* Feedback input for deny */}
-      {showFeedback && (
-        <DenyFeedbackInput
-          feedback={feedback}
-          onChange={setFeedback}
-          onSubmit={handleDenyWithEnter}
-          disabled={isSubmitting}
-          showSpinner={
-            isSubmitting && submittedIndex !== null && options[submittedIndex]?.decision === "deny"
-          }
-        />
-      )}
-    </div>
+    <ToolPermissionPromptContent
+      permission={permission}
+      options={options}
+      rawCommand={rawCommand}
+      highlightedIndex={actions.highlightedIndex}
+      submittedIndex={actions.submittedIndex}
+      showFeedback={actions.showFeedback}
+      feedback={actions.feedback}
+      isSubmitting={isSubmitting}
+      onCancel={onCancel}
+      onOption={actions.handleOption}
+      onFeedbackChange={actions.setFeedback}
+      onDenySubmit={actions.handleDenyWithEnter}
+    />
   );
 }

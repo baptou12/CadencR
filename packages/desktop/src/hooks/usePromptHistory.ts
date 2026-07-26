@@ -11,6 +11,61 @@ interface HistoryResultPayload {
   entries: string[];
 }
 
+function useHistoryNavigation(history: string[]) {
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [tempDraft, setTempDraft] = useState("");
+  const tempDraftRef = useRef(tempDraft);
+  tempDraftRef.current = tempDraft;
+  const historyIndexRef = useRef(historyIndex);
+  historyIndexRef.current = historyIndex;
+
+  const navigateUp = useCallback((currentText: string): string | null => {
+    const entries = historyRef.current;
+    const index = historyIndexRef.current;
+    if (entries.length === 0) return null;
+    if (index === -1) {
+      setTempDraft(currentText);
+      setHistoryIndex(0);
+      return entries[0] ?? null;
+    }
+    if (index >= entries.length - 1) return null;
+    const next = index + 1;
+    setHistoryIndex(next);
+    return entries[next] ?? null;
+  }, []);
+
+  const navigateDown = useCallback((): string | null => {
+    const entries = historyRef.current;
+    const index = historyIndexRef.current;
+    if (index === -1) return null;
+    if (index > 0) {
+      const previous = index - 1;
+      setHistoryIndex(previous);
+      return entries[previous] ?? null;
+    }
+    setHistoryIndex(-1);
+    return tempDraftRef.current;
+  }, []);
+
+  const resetNavigation = useCallback(() => {
+    if (historyIndexRef.current === -1) return;
+    setHistoryIndex(-1);
+    setTempDraft("");
+  }, []);
+
+  const clearNavigation = useCallback(() => {
+    setHistoryIndex(-1);
+    setTempDraft("");
+  }, []);
+
+  return useMemo(
+    () => ({ navigateUp, navigateDown, resetNavigation, clearNavigation, historyIndex }),
+    [clearNavigation, historyIndex, navigateDown, navigateUp, resetNavigation],
+  );
+}
+
 export function usePromptHistory(projectId: number, wsSessionId?: string) {
   const sendRequest = useWsSessionStore((s) => s.sendRequest);
   const isConnected = useWsSessionStore((s) =>
@@ -18,17 +73,7 @@ export function usePromptHistory(projectId: number, wsSessionId?: string) {
   );
 
   const [history, setHistory] = useState<string[]>([]);
-  const historyRef = useRef<string[]>([]);
-  historyRef.current = history;
-
-  // -1 means "not browsing history"
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  // Saves current input text when user starts browsing
-  const [tempDraft, setTempDraft] = useState("");
-  const tempDraftRef = useRef(tempDraft);
-  tempDraftRef.current = tempDraft;
-  const historyIndexRef = useRef(historyIndex);
-  historyIndexRef.current = historyIndex;
+  const navigation = useHistoryNavigation(history);
 
   // Fetch history when WS connects
   useEffect(() => {
@@ -38,45 +83,6 @@ export function usePromptHistory(projectId: number, wsSessionId?: string) {
       setHistory(data.entries ?? []);
     });
   }, [wsSessionId, projectId, isConnected, sendRequest]);
-
-  /**
-   * Called when Up arrow pressed on first line.
-   * Returns new text to display, or null if already at oldest entry.
-   */
-  const navigateUp = useCallback((currentText: string): string | null => {
-    const h = historyRef.current;
-    const idx = historyIndexRef.current;
-    if (h.length === 0) return null;
-    if (idx === -1) {
-      setTempDraft(currentText);
-      setHistoryIndex(0);
-      return h[0] ?? null;
-    }
-    if (idx < h.length - 1) {
-      const next = idx + 1;
-      setHistoryIndex(next);
-      return h[next] ?? null;
-    }
-    return null;
-  }, []);
-
-  /**
-   * Called when Down arrow pressed while browsing.
-   * Returns new text to display, or null if not browsing.
-   */
-  const navigateDown = useCallback((): string | null => {
-    const h = historyRef.current;
-    const idx = historyIndexRef.current;
-    if (idx === -1) return null;
-    if (idx > 0) {
-      const prev = idx - 1;
-      setHistoryIndex(prev);
-      return h[prev] ?? null;
-    }
-    // Back to current draft
-    setHistoryIndex(-1);
-    return tempDraftRef.current;
-  }, []);
 
   const addEntry = useCallback(
     (content: string) => {
@@ -88,30 +94,19 @@ export function usePromptHistory(projectId: number, wsSessionId?: string) {
           setHistory((prev) => [trimmed, ...prev].slice(0, 100));
         }
       });
-      setHistoryIndex(-1);
-      setTempDraft("");
+      navigation.clearNavigation();
     },
-    [wsSessionId, projectId, sendRequest],
+    [navigation, projectId, sendRequest, wsSessionId],
   );
-
-  /**
-   * Resets navigation state when user types, breaking out of history browse.
-   */
-  const resetNavigation = useCallback(() => {
-    if (historyIndexRef.current !== -1) {
-      setHistoryIndex(-1);
-      setTempDraft("");
-    }
-  }, []);
 
   return useMemo(
     () => ({
-      navigateUp,
-      navigateDown,
+      navigateUp: navigation.navigateUp,
+      navigateDown: navigation.navigateDown,
       addEntry,
-      resetNavigation,
-      historyIndex,
+      resetNavigation: navigation.resetNavigation,
+      historyIndex: navigation.historyIndex,
     }),
-    [navigateUp, navigateDown, addEntry, resetNavigation, historyIndex],
+    [addEntry, navigation],
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { agentQuestionOptionValue, type AgentQuestion, type AgentQuestionAnswers } from "./types";
 
 interface UseAgentQuestionFormParams {
@@ -32,282 +32,251 @@ export interface AgentQuestionForm {
   selectedPreview: string | undefined;
 }
 
-/**
- * Holds all of the state and handlers for the agent question drawer:
- * option selection, "Other" free-text, per-question answer persistence,
- * and forward/back navigation across a multi-question set.
- */
-export function useAgentQuestionForm({
-  questions,
-  onSubmit,
-}: UseAgentQuestionFormParams): AgentQuestionForm {
+interface SavedAnswer {
+  text: string;
+  selectedOptions: Set<string>;
+  freeText: string;
+  showOther: boolean;
+}
+
+const EMPTY_ANSWER = (): SavedAnswer => ({
+  text: "",
+  selectedOptions: new Set<string>(),
+  freeText: "",
+  showOther: false,
+});
+
+function answerText(question: AgentQuestion | undefined, state: SavedAnswer): string {
+  if (!question?.options?.length) return state.freeText.trim();
+  const parts = Array.from(state.selectedOptions);
+  if (state.showOther && state.freeText.trim()) parts.push(state.freeText.trim());
+  return parts.join("; ");
+}
+
+function answerValues(question: AgentQuestion | undefined, state: SavedAnswer): string[] {
+  if (!question) return [];
+  if (!question.options?.length) return state.freeText.trim() ? [state.freeText.trim()] : [];
+  const values = Array.from(state.selectedOptions);
+  if (state.showOther && state.freeText.trim()) values.push(state.freeText.trim());
+  return values;
+}
+
+function useQuestionFormState() {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<
-    { text: string; selectedOptions: Set<string>; freeText: string; showOther: boolean }[]
-  >([]);
+  const [answers, setAnswers] = useState<SavedAnswer[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [showOther, setShowOther] = useState(false);
-  // Drives re-render so the digit badges dim while the free-text input is
-  // focused — mirroring that the 1-9 selectors don't fire inside inputs.
   const [freeTextFocused, setFreeTextFocused] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
-  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clean up highlight timer on unmount
-  useEffect(() => {
-    return () => {
-      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-    };
-  }, []);
-
-  const currentQuestion = questions[currentIndex];
-
   const resetState = useCallback(() => {
     setSelectedOptions(new Set());
     setFreeText("");
     setShowOther(false);
-    // Submitting via Enter (or any path that unmounts the input) never fires
-    // its onBlur, so clear the focus flag here — otherwise the 1-9 badges stay
-    // dimmed on the next question even though "Other" isn't selected.
     setFreeTextFocused(false);
   }, []);
-
-  const getCurrentAnswerText = useCallback((): string => {
-    const parts: string[] = [];
-    if (selectedOptions.size > 0) {
-      parts.push(Array.from(selectedOptions).join(", "));
-    }
-    if (showOther && freeText.trim()) {
-      parts.push(freeText.trim());
-    }
-    // If no options at all (free-text only question), use freeText directly
-    if (!currentQuestion?.options?.length && freeText.trim()) {
-      return freeText.trim();
-    }
-    return parts.join("; ");
-  }, [selectedOptions, showOther, freeText, currentQuestion]);
-
-  const getAnswerValues = useCallback(
-    (
-      question: AgentQuestion | undefined,
-      answerState: { selectedOptions: Set<string>; freeText: string; showOther: boolean },
-    ): string[] => {
-      if (!question) return [];
-      const values: string[] = [];
-      if (question.options?.length) {
-        values.push(...Array.from(answerState.selectedOptions));
-        if (answerState.showOther && answerState.freeText.trim()) {
-          values.push(answerState.freeText.trim());
-        }
-        return values;
-      }
-      if (answerState.freeText.trim()) {
-        return [answerState.freeText.trim()];
-      }
-      return values;
-    },
-    [],
+  const restoreState = useCallback((saved: SavedAnswer) => {
+    setSelectedOptions(new Set(saved.selectedOptions));
+    setFreeText(saved.freeText);
+    setShowOther(saved.showOther);
+    setFreeTextFocused(false);
+  }, []);
+  return useMemo(
+    () => ({
+      answers,
+      currentIndex,
+      freeText,
+      freeTextFocused,
+      resetState,
+      restoreState,
+      selectedOptions,
+      setAnswers,
+      setCurrentIndex,
+      setFreeText,
+      setFreeTextFocused,
+      setSelectedOptions,
+      setShowOther,
+      showOther,
+    }),
+    [
+      answers,
+      currentIndex,
+      freeText,
+      freeTextFocused,
+      resetState,
+      restoreState,
+      selectedOptions,
+      showOther,
+    ],
   );
+}
 
-  /** Save current UI state into answers array at a given index */
-  const saveCurrentState = useCallback(
-    (index: number) => {
-      const text = getCurrentAnswerText();
-      setAnswers((prev) => {
-        const next = [...prev];
-        next[index] = { text, selectedOptions: new Set(selectedOptions), freeText, showOther };
-        return next;
-      });
+type QuestionFormState = ReturnType<typeof useQuestionFormState>;
+
+function currentSavedAnswer(
+  question: AgentQuestion | undefined,
+  state: QuestionFormState,
+): SavedAnswer {
+  const snapshot = {
+    text: "",
+    selectedOptions: new Set(state.selectedOptions),
+    freeText: state.freeText,
+    showOther: state.showOther,
+  };
+  return { ...snapshot, text: answerText(question, snapshot) };
+}
+
+function useQuestionNavigation(questions: AgentQuestion[], state: QuestionFormState) {
+  const canGoBack = state.currentIndex > 0;
+  const canGoForward =
+    state.currentIndex < state.answers.length - 1 && state.answers[state.currentIndex + 1] != null;
+  const saveCurrentState = useCallback(() => {
+    const saved = currentSavedAnswer(questions[state.currentIndex], state);
+    state.setAnswers((previous) => {
+      const next = [...previous];
+      next[state.currentIndex] = saved;
+      return next;
+    });
+  }, [questions, state]);
+  const move = useCallback(
+    (nextIndex: number): void => {
+      saveCurrentState();
+      state.setCurrentIndex(nextIndex);
+      const saved = state.answers[nextIndex];
+      if (saved) state.restoreState(saved);
+      else state.resetState();
     },
-    [getCurrentAnswerText, selectedOptions, freeText, showOther],
+    [saveCurrentState, state],
   );
-
-  /** Restore UI state from a saved answer */
-  const restoreState = useCallback(
-    (saved: { selectedOptions: Set<string>; freeText: string; showOther: boolean }) => {
-      setSelectedOptions(new Set(saved.selectedOptions));
-      setFreeText(saved.freeText);
-      setShowOther(saved.showOther);
-    },
-    [],
-  );
-
-  const canGoBack = currentIndex > 0;
-  const canGoForward = currentIndex < answers.length - 1 && answers[currentIndex + 1] != null;
-
   const handleBack = useCallback(() => {
-    if (!canGoBack) return;
-    // Save current state before navigating
-    saveCurrentState(currentIndex);
-    const prevIndex = currentIndex - 1;
-    setCurrentIndex(prevIndex);
-    const saved = answers[prevIndex];
-    if (saved) {
-      restoreState(saved);
-    } else {
-      resetState();
-    }
-  }, [canGoBack, currentIndex, answers, saveCurrentState, restoreState, resetState]);
-
+    if (canGoBack) move(state.currentIndex - 1);
+  }, [canGoBack, move, state.currentIndex]);
   const handleForward = useCallback(() => {
-    if (!canGoForward) return;
-    saveCurrentState(currentIndex);
-    const nextIndex = currentIndex + 1;
-    setCurrentIndex(nextIndex);
-    const saved = answers[nextIndex];
-    if (saved) {
-      restoreState(saved);
-    } else {
-      resetState();
-    }
-  }, [canGoForward, currentIndex, answers, saveCurrentState, restoreState, resetState]);
+    if (canGoForward) move(state.currentIndex + 1);
+  }, [canGoForward, move, state.currentIndex]);
+  return useMemo(
+    () => ({ canGoBack, canGoForward, handleBack, handleForward }),
+    [canGoBack, canGoForward, handleBack, handleForward],
+  );
+}
 
+function useQuestionSubmission(
+  questions: AgentQuestion[],
+  onSubmit: (response: AgentQuestionAnswers) => void,
+  state: QuestionFormState,
+) {
+  const handleNext = useCallback(() => {
+    const current = currentSavedAnswer(questions[state.currentIndex], state);
+    if (!current.text) return;
+    const newAnswers = [...state.answers];
+    newAnswers[state.currentIndex] = current;
+    if (state.currentIndex < questions.length - 1) {
+      state.setAnswers(newAnswers);
+      state.setCurrentIndex((previous) => previous + 1);
+      const nextSaved = newAnswers[state.currentIndex + 1];
+      if (nextSaved) state.restoreState(nextSaved);
+      else state.resetState();
+      return;
+    }
+    onSubmit(
+      questions.map((question, index) =>
+        answerValues(question, newAnswers[index] ?? EMPTY_ANSWER()),
+      ),
+    );
+    state.setCurrentIndex(0);
+    state.setAnswers([]);
+    state.resetState();
+  }, [onSubmit, questions, state]);
+  const handleFreeTextSubmit = useCallback(() => {
+    if (state.freeText.trim()) handleNext();
+  }, [handleNext, state.freeText]);
+  return useMemo(() => ({ handleFreeTextSubmit, handleNext }), [handleFreeTextSubmit, handleNext]);
+}
+
+function useQuestionOptions(question: AgentQuestion | undefined, state: QuestionFormState) {
   const handleOptionToggle = useCallback(
     (option: string) => {
-      if (!currentQuestion) return;
-
-      if (currentQuestion.multiSelect) {
-        setSelectedOptions((prev) => {
-          const next = new Set(prev);
-          if (next.has(option)) {
-            next.delete(option);
-          } else {
-            next.add(option);
-          }
+      if (!question) return;
+      if (question.multiSelect) {
+        state.setSelectedOptions((previous) => {
+          const next = new Set(previous);
+          if (next.has(option)) next.delete(option);
+          else next.add(option);
           return next;
         });
       } else {
-        // Single select — set only this option
-        setSelectedOptions(new Set([option]));
-        setShowOther(false);
-        setFreeText("");
+        state.setSelectedOptions(new Set([option]));
+        state.setShowOther(false);
+        state.setFreeText("");
       }
     },
-    [currentQuestion],
+    [question, state],
   );
-
   const handleOtherToggle = useCallback(() => {
-    setShowOther((prev) => !prev);
-    if (!showOther) {
-      // If enabling "Other", deselect options in single-select mode
-      if (!currentQuestion?.multiSelect) {
-        setSelectedOptions(new Set());
-      }
-    }
-  }, [showOther, currentQuestion]);
+    state.setShowOther((previous) => !previous);
+    if (!state.showOther && !question?.multiSelect) state.setSelectedOptions(new Set());
+  }, [question?.multiSelect, state]);
+  return useMemo(
+    () => ({ handleOptionToggle, handleOtherToggle }),
+    [handleOptionToggle, handleOtherToggle],
+  );
+}
 
-  const handleNext = useCallback(() => {
-    const answer = getCurrentAnswerText();
-    if (!answer) return;
-
-    // Save structured state at current index
-    const newAnswers = [...answers];
-    newAnswers[currentIndex] = {
-      text: answer,
-      selectedOptions: new Set(selectedOptions),
-      freeText,
-      showOther,
-    };
-
-    if (currentIndex < questions.length - 1) {
-      setAnswers(newAnswers);
-      setCurrentIndex((prev) => prev + 1);
-      // Restore next answer if it exists (user went back then forward via Next)
-      const nextSaved = newAnswers[currentIndex + 1];
-      if (nextSaved) {
-        setSelectedOptions(new Set(nextSaved.selectedOptions));
-        setFreeText(nextSaved.freeText);
-        setShowOther(nextSaved.showOther);
-        // The restored input isn't focused; clear the flag so 1-9 stay active.
-        setFreeTextFocused(false);
-      } else {
-        resetState();
-      }
-    } else {
-      const response = questions.map((question, index) =>
-        getAnswerValues(
-          question,
-          newAnswers[index] ?? {
-            text: "",
-            selectedOptions: new Set<string>(),
-            freeText: "",
-            showOther: false,
-          },
-        ),
-      );
-      onSubmit(response);
-
-      // Reset everything
-      setCurrentIndex(0);
-      setAnswers([]);
-      resetState();
-    }
-  }, [
-    getCurrentAnswerText,
-    answers,
-    currentIndex,
-    questions,
-    onSubmit,
-    resetState,
-    selectedOptions,
-    freeText,
-    showOther,
-    getAnswerValues,
-  ]);
-
-  const handleFreeTextSubmit = useCallback(() => {
-    if (freeText.trim()) {
-      handleNext();
-    }
-  }, [freeText, handleNext]);
-
+function useQuestionHighlight() {
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
   const flashHighlight = useCallback((index: number) => {
-    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    if (timerRef.current) clearTimeout(timerRef.current);
     setHighlightedIndex(index);
-    highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
+    timerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
   }, []);
+  return useMemo(() => ({ flashHighlight, highlightedIndex }), [flashHighlight, highlightedIndex]);
+}
 
-  // 1 through 9 selects/toggles an option by index. Mod+O toggles "Other..."
-  const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other" highlight
-
+export function useAgentQuestionForm({
+  questions,
+  onSubmit,
+}: UseAgentQuestionFormParams): AgentQuestionForm {
+  const state = useQuestionFormState();
+  const currentQuestion = questions[state.currentIndex];
+  const navigation = useQuestionNavigation(questions, state);
+  const submission = useQuestionSubmission(questions, onSubmit, state);
+  const options = useQuestionOptions(currentQuestion, state);
+  const highlight = useQuestionHighlight();
+  const hasOptions = !!currentQuestion?.options?.length;
   const hasAnswer =
-    selectedOptions.size > 0 ||
-    (showOther && freeText.trim().length > 0) ||
-    (!currentQuestion?.options?.length && freeText.trim().length > 0);
-
-  const isLastQuestion = currentIndex >= questions.length - 1;
-  const hasOptions = !!(currentQuestion?.options && currentQuestion.options.length > 0);
+    state.selectedOptions.size > 0 ||
+    (state.showOther && state.freeText.trim().length > 0) ||
+    (!hasOptions && state.freeText.trim().length > 0);
   const selectedPreview = hasOptions
-    ? currentQuestion!
-        .options!.filter(
-          (option) => selectedOptions.has(agentQuestionOptionValue(option)) && option.preview,
+    ? currentQuestion.options
+        ?.filter(
+          (option) => state.selectedOptions.has(agentQuestionOptionValue(option)) && option.preview,
         )
         .at(-1)?.preview
     : undefined;
-
   return {
-    currentIndex,
+    currentIndex: state.currentIndex,
     currentQuestion,
-    selectedOptions,
-    freeText,
-    setFreeText,
-    showOther,
-    freeTextFocused,
-    setFreeTextFocused,
-    highlightedIndex,
-    canGoBack,
-    canGoForward,
-    otherShortcutIndex,
-    handleBack,
-    handleForward,
-    handleOptionToggle,
-    handleOtherToggle,
-    handleNext,
-    handleFreeTextSubmit,
-    flashHighlight,
+    selectedOptions: state.selectedOptions,
+    freeText: state.freeText,
+    setFreeText: state.setFreeText,
+    showOther: state.showOther,
+    freeTextFocused: state.freeTextFocused,
+    setFreeTextFocused: state.setFreeTextFocused,
+    highlightedIndex: highlight.highlightedIndex,
+    ...navigation,
+    otherShortcutIndex: currentQuestion?.options?.length ?? 0,
+    ...options,
+    ...submission,
+    flashHighlight: highlight.flashHighlight,
     hasAnswer,
-    isLastQuestion,
+    isLastQuestion: state.currentIndex >= questions.length - 1,
     hasOptions,
     selectedPreview,
   };

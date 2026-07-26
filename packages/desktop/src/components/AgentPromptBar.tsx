@@ -1,397 +1,193 @@
-import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
-import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
-import { PlanApprovalBar } from "./PlanApprovalBar";
-import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import { AgentPromptPendingIndicator } from "./AgentPromptPendingIndicator";
+import type { AgentPromptBarHandle, AgentPromptBarProps } from "./agent-prompt-bar-types";
+import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
+import { PlanApprovalBar } from "./PlanApprovalBar";
 import { PromptBarActions } from "./PromptBarActions";
-import { SplitSendActions } from "./SplitSendActions";
-import { ShellCommandModeMarker } from "./ShellCommandModeMarker";
 import { PromptEditor } from "./prompt-editor/PromptEditor";
-import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
-import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
-import { usePromptAttachments } from "@/hooks/usePromptAttachments";
-import { usePromptDraft } from "@/hooks/usePromptDraft";
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { usePromptHistory } from "@/hooks/usePromptHistory";
-import { usePromptScheduleControl } from "@/hooks/usePromptScheduleControl";
-import { useAgentPromptShortcuts } from "@/hooks/useAgentPromptShortcuts";
-import { useAgentPromptSend } from "./agent-prompt-send";
-import { useFeaturePromptDraftRestore } from "./agent-prompt-draft-restore";
-import { useDeferredAgentPrompts } from "./useDeferredAgentPrompts";
+import { ShellCommandModeMarker } from "./ShellCommandModeMarker";
+import { SplitSendActions } from "./SplitSendActions";
+import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import {
-  DEFAULT_PROMPT_COMMAND_POLICY,
-  supportsDollarSkillReferences,
-} from "@/lib/prompt-command-policy";
-import type {
-  AgentPromptBarHandle,
-  AgentPromptBarProps,
-  SplitSendAction,
-} from "./agent-prompt-bar-types";
+  useAgentPromptBarController,
+  type AgentPromptBarController,
+} from "./useAgentPromptBarController";
+
 export type { AgentPromptBarHandle, SplitSendAction } from "./agent-prompt-bar-types";
+
 export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarProps>(
-  function AgentPromptBar(
-    {
-      onSend,
-      onSchedule,
-      onStop,
-      status,
-      splitSendActions,
-      disabled,
-      pendingQuestions,
-      onQuestionResponse,
-      disableShortcuts,
-      onCollapse,
-      onPermissionModeToggle,
-      pendingPlanApproval,
-      planApproveLabel,
-      planApprovalError,
-      onPlanApprove,
-      onPlanRequestChanges,
-      onPlanReject,
-      onGateClose,
-      onOpenModelPicker,
-      agentTabActive = true,
-      featureId,
-      projectId,
-      sessionId,
-      wsSessionId,
-      providerId,
-      onToggleMaximize,
-      noTopPadding,
-      slashCommandsOverride,
-      slashCommandsLoading,
-      promptCommandPolicy = DEFAULT_PROMPT_COMMAND_POLICY,
-      pendingPermission,
-      onPermissionDecision,
-      isSubmittingPermission,
-    },
-    ref,
-  ) {
-    const editorRef = useRef<PromptEditorHandle>(null);
-    const wrapperRef = useRef<HTMLDivElement>(null);
-    const isMobile = useIsMobile();
-    const promptCommandHint = [
-      "/ commands",
-      supportsDollarSkillReferences(promptCommandPolicy) ? "$ skills" : undefined,
-      promptCommandPolicy.userShell ? "! shell" : undefined,
-    ]
-      .filter((hint): hint is string => !!hint)
-      .join(", ");
-    const [text, setText] = useState("");
-    const isShellCommandMode = promptCommandPolicy.userShell && text.startsWith("!");
-    const textRef = useRef(text);
-    textRef.current = text;
-    const navigatingHistoryRef = useRef(false);
-    const restoringDraftRef = useRef(false);
-    // Set once the user types in or sends from this feature; reset on feature
-    // switch by the draft-restore hook. Gates draft auto-restore so a late
-    // query refetch can't re-inject text the user already sent.
-    const interactedRef = useRef(false);
-    const hadSpecialStateRef = useRef(false);
-    const shouldRestoreFocusRef = useRef(false);
-    const {
-      initialDraft: restoredDraft,
-      draftFeatureId,
-      saveDraft,
-    } = usePromptDraft({
-      featureId,
-    });
-    useFeaturePromptDraftRestore({
-      featureId,
-      restoredDraft,
-      draftFeatureId,
-      textRef,
-      editorRef,
-      restoringDraftRef,
-      interactedRef,
-      setText,
-      isMobile,
-    });
-    const {
-      visiblePermission,
-      visiblePlanApproval,
-      visibleQuestions,
-      permissionDeferred,
-      planApprovalDeferred,
-      questionsDeferred,
-    } = useDeferredAgentPrompts({
-      pendingPermission,
-      pendingPlanApproval,
-      pendingQuestions,
-      promptText: text,
-    });
-    const hasSpecialState =
-      !!visiblePermission ||
-      !!visiblePlanApproval ||
-      (!!visibleQuestions && visibleQuestions.length > 0);
-    useEffect(() => {
-      if (hasSpecialState) {
-        hadSpecialStateRef.current = true;
-        shouldRestoreFocusRef.current = !!wrapperRef.current?.contains(document.activeElement);
-        return;
-      }
-      if (!hadSpecialStateRef.current) return;
-      hadSpecialStateRef.current = false;
-      if (!shouldRestoreFocusRef.current) return;
-      shouldRestoreFocusRef.current = false;
-      requestAnimationFrame(() => editorRef.current?.focus());
-    }, [hasSpecialState]);
-    const history = usePromptHistory(projectId ?? 0, wsSessionId);
-    const {
-      attachments,
-      addFiles,
-      removeAttachment,
-      clearAttachments,
-      restoreAttachments,
-      dragHandlers,
-    } = usePromptAttachments({ wsSessionId, sessionId, featureId, providerId });
-    useImperativeHandle(ref, () => ({
-      focusInput: () => editorRef.current?.focus(),
-      setDraft: (value: string) => {
-        // Mirror the draft-restore path: flag the restore so the editor's
-        // onChange doesn't treat it as a fresh user edit, populate both the
-        // editor and the text state, persist, and focus with the caret at end.
-        restoringDraftRef.current = true;
-        setText(value);
-        editorRef.current?.setText(value, true);
-        interactedRef.current = true;
-        saveDraft(value);
-        queueMicrotask(() => {
-          restoringDraftRef.current = false;
-        });
-      },
-    }));
-    const isRunning = status === "agent";
-    const getAttachments = useCallback(() => attachments, [attachments]);
-    const addHistoryEntry = useCallback(
-      (entry: string) => {
-        if (projectId) history.addEntry(entry);
-      },
-      [projectId, history],
-    );
-    const { sending, runSend } = useAgentPromptSend({
-      editorRef,
-      setText,
-      clearAttachments,
-      restoreAttachments,
-      saveDraft,
-      addHistoryEntry,
-      getAttachments,
-      interactedRef,
-    });
-    const hasSendableContent = isShellCommandMode
-      ? text.slice(1).trim().length > 0 && attachments.length === 0
-      : text.trim().length > 0 || attachments.length > 0;
-    const canSend = hasSendableContent && !disabled && !sending && !permissionDeferred;
-    const handleSend = useCallback(() => {
-      if (!canSend) return;
-      const trimmed = textRef.current.trim();
-      void runSend(onSend, trimmed);
-    }, [canSend, onSend, runSend]);
-    const handleSplitAction = useCallback(
-      (action: SplitSendAction) => {
-        if (!canSend) return;
-        const trimmed = textRef.current.trim();
-        void runSend(action.onClick, trimmed);
-      },
-      [canSend, runSend],
-    );
-    const scheduleControl = usePromptScheduleControl({
-      onSchedule,
-      featureId,
-      enabled: canSend && text.trim().length > 0,
-      textRef,
-      editorRef,
-      setText,
-      saveDraft,
-      addHistoryEntry,
-      interactedRef,
-    });
-    const handleEnterSend = useCallback(() => {
-      if (!canSend) return true;
-      if (!isShellCommandMode && splitSendActions && splitSendActions.length > 0) {
-        handleSplitAction(splitSendActions[0]);
-      } else {
-        handleSend();
-      }
-      return true;
-    }, [canSend, isShellCommandMode, splitSendActions, handleSplitAction, handleSend]);
-    const clearShellCommandMode = useCallback(() => {
-      editorRef.current?.clearShellCommandMode();
-    }, []);
-    const handleEditorChange = useCallback(
-      (newText: string) => {
-        setText(newText);
-        if (restoringDraftRef.current) return;
-        // A real user edit (typing or history navigation) hands the input to
-        // the user, suppressing later draft auto-restore for this feature.
-        interactedRef.current = true;
-        if (navigatingHistoryRef.current) {
-          navigatingHistoryRef.current = false;
-          return;
-        }
-        saveDraft(newText);
-        history.resetNavigation();
-      },
-      [saveDraft, history],
-    );
-    const handleArrowUp = useCallback(() => {
-      if (!projectId || !wsSessionId) return null;
-      const result = history.navigateUp(textRef.current);
-      if (result !== null) navigatingHistoryRef.current = true;
-      return result;
-    }, [projectId, wsSessionId, history]);
-    const handleArrowDown = useCallback(() => {
-      if (!projectId || !wsSessionId || history.historyIndex < 0) return null;
-      const result = history.navigateDown();
-      if (result !== null) navigatingHistoryRef.current = true;
-      return result;
-    }, [projectId, wsSessionId, history]);
-    const handlePromptSurfaceClick = useCallback(
-      (event: React.MouseEvent<HTMLDivElement>): void => {
-        if (!shouldFocusPromptFromSurfaceClick(event.target)) return;
-        editorRef.current?.focus();
-      },
-      [],
-    );
-    useAgentPromptShortcuts({
-      agentTabActive,
-      isRunning,
-      wrapperRef,
-      onOpenModelPicker,
-      onToggleMaximize,
-      onPermissionModeToggle,
-      onCollapse,
-      onStop,
-    });
-    const specialPrompt =
-      visiblePermission && onPermissionDecision ? (
-        <ToolPermissionPrompt
-          key={
-            visiblePermission.requestId ??
-            `${visiblePermission.toolName}:${visiblePermission.pattern}`
-          }
-          permission={visiblePermission}
-          onDecision={onPermissionDecision}
-          onCancel={onGateClose}
-          disableShortcuts={disableShortcuts}
-          isSubmitting={!!isSubmittingPermission}
-        />
-      ) : visiblePlanApproval && onPlanApprove && onPlanRequestChanges ? (
-        <PlanApprovalBar
-          allowedPrompts={visiblePlanApproval.allowedPrompts}
-          initialFeedback={text}
-          approveLabel={planApproveLabel}
-          onApprove={onPlanApprove}
-          onRequestChanges={onPlanRequestChanges}
-          onReject={onGateClose ?? onPlanReject}
-          error={planApprovalError}
-        />
-      ) : !!visibleQuestions && visibleQuestions.length > 0 && onQuestionResponse ? (
-        <AgentQuestionDrawer
-          questions={visibleQuestions}
-          open={true}
-          onSubmit={onQuestionResponse}
-          onCancel={onGateClose}
-          inline
-          disableShortcuts={disableShortcuts}
-        />
-      ) : null;
+  function AgentPromptBar(props, ref) {
+    const controller = useAgentPromptBarController(props, ref);
     return (
       <>
-        {permissionDeferred && pendingPermission && (
-          <AgentPromptPendingIndicator kind="permission" detail={pendingPermission.toolName} />
-        )}
-        {planApprovalDeferred && <AgentPromptPendingIndicator kind="plan" />}
-        {questionsDeferred && <AgentPromptPendingIndicator kind="question" />}
-        {specialPrompt && (
-          <div data-permission-area={!!visiblePermission} data-question-area>
-            {specialPrompt}
-          </div>
-        )}
-        <div
-          ref={wrapperRef}
-          data-agent-prompt-bar="true"
-          hidden={hasSpecialState}
-          aria-hidden={hasSpecialState}
-          className={cn(
-            // `min-h-0`: the one composer row allowed to shrink. Its siblings
-            // (chips, context bar) keep `min-height: auto` and hold their
-            // content size, so a tall draft's whole deficit lands here.
-            "flex min-h-0 flex-col px-3 pb-4",
-            noTopPadding ? "pt-0" : "pt-3",
-            "group-data-[agent-dragover]/agent-section:ring-2 group-data-[agent-dragover]/agent-section:ring-inset group-data-[agent-dragover]/agent-section:ring-primary/50",
-          )}
-          {...dragHandlers}
-        >
-          {attachments.length > 0 && (
-            <ImageAttachmentPreview
-              attachments={attachments}
-              onRemove={removeAttachment}
-              className="mb-2"
-            />
-          )}
-          <div
-            data-shell-command-mode={isShellCommandMode || undefined}
-            // The draft's height budget: never more than 40% of `--app-vh`
-            // (`vh` would be wrong — it tracks the URL bar but never the
-            // on-screen keyboard; `useVisualViewportHeight` pins `--app-vh`
-            // while the keyboard is open), and `min-h-0` lets it give up even
-            // that when the composer as a whole runs short. A plain length, so
-            // it resolves identically in every engine.
-            className="glass-surface flex max-h-[calc(var(--app-vh,100dvh)*0.4)] min-h-0 items-center gap-1.5 rounded-lg border border-transparent bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
-            onClick={handlePromptSurfaceClick}
-          >
-            {isShellCommandMode && <ShellCommandModeMarker onClear={clearShellCommandMode} />}
-            <PromptEditor
-              ref={editorRef}
-              onChange={handleEditorChange}
-              onEnterSend={handleEnterSend}
-              onArrowUp={handleArrowUp}
-              onArrowDown={handleArrowDown}
-              disabled={disabled || sending}
-              placeholder={
-                status === "question"
-                  ? "Send a message to resume…"
-                  : `Send a message… (@ files, @@ conversations, ${promptCommandHint})`
-              }
-              // No cap here — the height budget is set on the prompt surface
-              // and handed down through the wrapper. `flex-1 min-h-0` takes
-              // whatever that leaves and `overflow-y-auto` scrolls the rest, so
-              // a long draft stops growing instead of shoving the send button
-              // off the bottom of the screen.
-              className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
-              mentionProjectId={projectId}
-              mentionFeatureId={featureId}
-              slashCommands={slashCommandsOverride}
-              slashCommandsLoading={slashCommandsLoading}
-              promptCommandPolicy={promptCommandPolicy}
-              onPasteImages={addFiles}
-            />
-            <PromptBarActions
-              onAddFiles={addFiles}
-              providerId={providerId}
-              inputsDisabled={!!disabled || sending || isShellCommandMode}
-              isRunning={isRunning}
-              onStop={onStop}
-              onSend={handleSend}
-              canSend={canSend}
-              sending={sending}
-              showSendButton={(isShellCommandMode || !splitSendActions) && (!isRunning || isMobile)}
-              schedule={isShellCommandMode ? undefined : scheduleControl}
-            />
-          </div>
-          {splitSendActions && !isRunning && !isShellCommandMode && (
-            <SplitSendActions
-              actions={splitSendActions}
-              disabled={!canSend}
-              onAction={handleSplitAction}
-            />
-          )}
-        </div>
+        <DeferredPromptIndicators props={props} controller={controller} />
+        <SpecialPrompt props={props} controller={controller} />
+        <PromptComposer props={props} controller={controller} />
       </>
     );
   },
 );
+
+function DeferredPromptIndicators({
+  props,
+  controller,
+}: {
+  props: AgentPromptBarProps;
+  controller: AgentPromptBarController;
+}) {
+  return (
+    <>
+      {controller.special.permissionDeferred && props.pendingPermission && (
+        <AgentPromptPendingIndicator kind="permission" detail={props.pendingPermission.toolName} />
+      )}
+      {controller.special.planApprovalDeferred && <AgentPromptPendingIndicator kind="plan" />}
+      {controller.special.questionsDeferred && <AgentPromptPendingIndicator kind="question" />}
+    </>
+  );
+}
+
+function SpecialPrompt({
+  props,
+  controller,
+}: {
+  props: AgentPromptBarProps;
+  controller: AgentPromptBarController;
+}) {
+  const special = controller.special;
+  const content =
+    special.visiblePermission && props.onPermissionDecision ? (
+      <ToolPermissionPrompt
+        key={
+          special.visiblePermission.requestId ??
+          `${special.visiblePermission.toolName}:${special.visiblePermission.pattern}`
+        }
+        permission={special.visiblePermission}
+        onDecision={props.onPermissionDecision}
+        onCancel={props.onGateClose}
+        disableShortcuts={props.disableShortcuts}
+        isSubmitting={!!props.isSubmittingPermission}
+      />
+    ) : special.visiblePlanApproval && props.onPlanApprove && props.onPlanRequestChanges ? (
+      <PlanApprovalBar
+        allowedPrompts={special.visiblePlanApproval.allowedPrompts}
+        initialFeedback={controller.state.text}
+        approveLabel={props.planApproveLabel}
+        onApprove={props.onPlanApprove}
+        onRequestChanges={props.onPlanRequestChanges}
+        onReject={props.onGateClose ?? props.onPlanReject}
+        error={props.planApprovalError}
+      />
+    ) : special.visibleQuestions?.length && props.onQuestionResponse ? (
+      <AgentQuestionDrawer
+        questions={special.visibleQuestions}
+        open
+        onSubmit={props.onQuestionResponse}
+        onCancel={props.onGateClose}
+        inline
+        disableShortcuts={props.disableShortcuts}
+      />
+    ) : null;
+  return content ? (
+    <div data-permission-area={!!special.visiblePermission} data-question-area>
+      {content}
+    </div>
+  ) : null;
+}
+
+function PromptComposer({
+  props,
+  controller,
+}: {
+  props: AgentPromptBarProps;
+  controller: AgentPromptBarController;
+}) {
+  const { state } = controller;
+  return (
+    <div
+      ref={state.wrapperRef}
+      data-agent-prompt-bar="true"
+      hidden={controller.special.hasSpecialState}
+      aria-hidden={controller.special.hasSpecialState}
+      className={cn(
+        "flex min-h-0 flex-col px-3 pb-4",
+        props.noTopPadding ? "pt-0" : "pt-3",
+        "group-data-[agent-dragover]/agent-section:ring-2 group-data-[agent-dragover]/agent-section:ring-inset group-data-[agent-dragover]/agent-section:ring-primary/50",
+      )}
+      {...state.attachments.dragHandlers}
+    >
+      {state.attachments.attachments.length > 0 && (
+        <ImageAttachmentPreview
+          attachments={state.attachments.attachments}
+          onRemove={state.attachments.removeAttachment}
+          className="mb-2"
+        />
+      )}
+      <PromptSurface props={props} controller={controller} />
+      {props.splitSendActions && !controller.isRunning && !controller.isShellCommandMode && (
+        <SplitSendActions
+          actions={props.splitSendActions}
+          disabled={!controller.sending.canSend}
+          onAction={controller.sending.handleSplitAction}
+        />
+      )}
+    </div>
+  );
+}
+
+function PromptSurface({
+  props,
+  controller,
+}: {
+  props: AgentPromptBarProps;
+  controller: AgentPromptBarController;
+}) {
+  const { editorActions, sending, state } = controller;
+  return (
+    <div
+      data-shell-command-mode={controller.isShellCommandMode || undefined}
+      className="glass-surface flex max-h-[calc(var(--app-vh,100dvh)*0.4)] min-h-0 items-center gap-1.5 rounded-lg border border-transparent bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
+      onClick={editorActions.handleSurfaceClick}
+    >
+      {controller.isShellCommandMode && (
+        <ShellCommandModeMarker onClear={editorActions.clearShellCommandMode} />
+      )}
+      <PromptEditor
+        ref={state.editorRef}
+        onChange={editorActions.handleEditorChange}
+        onEnterSend={sending.handleEnterSend}
+        onArrowUp={editorActions.handleArrowUp}
+        onArrowDown={editorActions.handleArrowDown}
+        disabled={props.disabled || sending.sending}
+        placeholder={
+          props.status === "question"
+            ? "Send a message to resume…"
+            : `Send a message… (@ files, @@ conversations, ${controller.promptCommandHint})`
+        }
+        className="min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
+        mentionProjectId={props.projectId}
+        mentionFeatureId={props.featureId}
+        slashCommands={props.slashCommandsOverride}
+        slashCommandsLoading={props.slashCommandsLoading}
+        promptCommandPolicy={controller.promptCommandPolicy}
+        onPasteImages={state.attachments.addFiles}
+      />
+      <PromptBarActions
+        onAddFiles={state.attachments.addFiles}
+        providerId={props.providerId}
+        inputsDisabled={!!props.disabled || sending.sending || controller.isShellCommandMode}
+        isRunning={controller.isRunning}
+        onStop={props.onStop}
+        onSend={sending.handleSend}
+        canSend={sending.canSend}
+        sending={sending.sending}
+        showSendButton={
+          (controller.isShellCommandMode || !props.splitSendActions) &&
+          (!controller.isRunning || state.isMobile)
+        }
+        schedule={controller.isShellCommandMode ? undefined : sending.scheduleControl}
+      />
+    </div>
+  );
+}

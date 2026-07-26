@@ -1,4 +1,11 @@
-import { useState, useMemo, useCallback } from "react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  type Dispatch,
+  type KeyboardEvent,
+  type SetStateAction,
+} from "react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useFileSearch } from "@/api/generated";
 
@@ -23,6 +30,74 @@ interface UseFileMentionParams {
   featureId: number | undefined;
 }
 
+interface MentionItem {
+  path: string;
+  isDir: boolean;
+}
+
+function useMentionChangeHandler(
+  isOpen: boolean,
+  close: () => void,
+  setState: Dispatch<SetStateAction<FileMentionState>>,
+): (newText: string, selectionStart: number) => void {
+  return useCallback(
+    (newText: string, selectionStart: number) => {
+      const textBeforeCursor = newText.slice(0, selectionStart);
+      const atIndex = textBeforeCursor.lastIndexOf("@");
+      if (atIndex === -1 || (atIndex > 0 && !/\s/.test(newText[atIndex - 1]))) {
+        if (isOpen) close();
+        return;
+      }
+
+      const query = textBeforeCursor.slice(atIndex + 1);
+      if (query.includes(" ")) {
+        if (isOpen) close();
+        return;
+      }
+
+      setState({ isOpen: true, query, selectedIndex: 0, triggerIndex: atIndex });
+    },
+    [close, isOpen, setState],
+  );
+}
+
+type MentionKeyResult = { newText: string; newCursorPos: number } | true | false;
+
+function useMentionKeyboard(
+  isOpen: boolean,
+  filteredItems: MentionItem[],
+  confirm: (text: string) => Exclude<MentionKeyResult, boolean> | null,
+  close: () => void,
+  setState: Dispatch<SetStateAction<FileMentionState>>,
+): (event: KeyboardEvent<HTMLTextAreaElement>, text: string) => MentionKeyResult {
+  return useCallback(
+    (event, text) => {
+      if (!isOpen || filteredItems.length === 0) return false;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        setState((current) => ({
+          ...current,
+          selectedIndex:
+            (current.selectedIndex + delta + filteredItems.length) % filteredItems.length,
+        }));
+        return true;
+      }
+      if (event.key === "Tab" || event.key === "Enter") {
+        event.preventDefault();
+        return confirm(text) ?? true;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return true;
+      }
+      return false;
+    },
+    [close, confirm, filteredItems, isOpen, setState],
+  );
+}
+
 export function useFileMention({ projectId, featureId }: UseFileMentionParams) {
   const [state, setState] = useState<FileMentionState>(INITIAL_STATE);
 
@@ -40,7 +115,7 @@ export function useFileMention({ projectId, featureId }: UseFileMentionParams) {
     { query: { enabled: state.isOpen && projectId != null, keepPreviousData: true } },
   );
 
-  const filteredItems = useMemo(() => {
+  const filteredItems = useMemo<MentionItem[]>(() => {
     if (!state.isOpen) return [];
     // Directories carry a trailing slash so the inserted mention reads as a
     // folder (e.g. `@src/components/`).
@@ -54,40 +129,7 @@ export function useFileMention({ projectId, featureId }: UseFileMentionParams) {
     setState(INITIAL_STATE);
   }, []);
 
-  const handleChange = useCallback(
-    (newText: string, selectionStart: number) => {
-      // Find the last unescaped @ before the cursor
-      const textBeforeCursor = newText.slice(0, selectionStart);
-      const atIndex = textBeforeCursor.lastIndexOf("@");
-
-      if (atIndex === -1) {
-        if (state.isOpen) close();
-        return;
-      }
-
-      // @ must be at start or preceded by whitespace
-      if (atIndex > 0 && !/\s/.test(newText[atIndex - 1])) {
-        if (state.isOpen) close();
-        return;
-      }
-
-      const query = textBeforeCursor.slice(atIndex + 1);
-
-      // Close if there's a space in the query (user moved past the mention)
-      if (query.includes(" ")) {
-        if (state.isOpen) close();
-        return;
-      }
-
-      setState({
-        isOpen: true,
-        query,
-        selectedIndex: 0,
-        triggerIndex: atIndex,
-      });
-    },
-    [state.isOpen, close],
-  );
+  const handleChange = useMentionChangeHandler(state.isOpen, close, setState);
 
   const confirm = useCallback(
     (text: string, selectedPath?: string): { newText: string; newCursorPos: number } | null => {
@@ -109,57 +151,19 @@ export function useFileMention({ projectId, featureId }: UseFileMentionParams) {
     [state, filteredItems, close],
   );
 
-  const handleKeyDown = useCallback(
-    (
-      e: React.KeyboardEvent<HTMLTextAreaElement>,
-      text: string,
-    ): { newText: string; newCursorPos: number } | true | false => {
-      if (!state.isOpen || filteredItems.length === 0) return false;
+  const handleKeyDown = useMentionKeyboard(state.isOpen, filteredItems, confirm, close, setState);
 
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setState((s) => ({
-          ...s,
-          selectedIndex: (s.selectedIndex + 1) % filteredItems.length,
-        }));
-        return true;
-      }
-
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setState((s) => ({
-          ...s,
-          selectedIndex: (s.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
-        }));
-        return true;
-      }
-
-      if (e.key === "Tab" || e.key === "Enter") {
-        e.preventDefault();
-        const result = confirm(text);
-        if (result) return result;
-        return true;
-      }
-
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-        return true;
-      }
-
-      return false;
-    },
-    [state.isOpen, filteredItems, confirm, close],
+  return useMemo(
+    () => ({
+      isOpen: state.isOpen,
+      query: state.query,
+      selectedIndex: state.selectedIndex,
+      filteredItems,
+      handleChange,
+      handleKeyDown,
+      confirm,
+      close,
+    }),
+    [close, confirm, filteredItems, handleChange, handleKeyDown, state],
   );
-
-  return {
-    isOpen: state.isOpen,
-    query: state.query,
-    selectedIndex: state.selectedIndex,
-    filteredItems,
-    handleChange,
-    handleKeyDown,
-    confirm,
-    close,
-  };
 }

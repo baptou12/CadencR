@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type MutableRefObject } from "react";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { desktopBridge, type FileDropItem } from "@/lib/desktop-bridge";
@@ -56,6 +56,108 @@ function droppedFilePreviewUrl(
   return kind === "image" ? `data:${mimeType};base64,${base64}` : "";
 }
 
+function useAttachmentAdders(
+  providerId: string | undefined,
+  attachmentsRef: MutableRefObject<ImageAttachment[]>,
+  addAttachment: (attachment: ImageAttachment) => void,
+) {
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      const remaining = MAX_FILES - attachmentsRef.current.length;
+      if (remaining <= 0) return;
+      Array.from(files)
+        .slice(0, remaining)
+        .forEach((file) => {
+          const mimeType = normalizeAttachmentMime(file.name, file.type);
+          const kind = getAttachmentKindForProvider(providerId, file.name, mimeType);
+          if (!kind) {
+            toast.error(`Unsupported file: ${file.name}`, {
+              description: unsupportedAttachmentDescription(providerId),
+            });
+            return;
+          }
+          if (file.size > MAX_SIZE_BYTES) return;
+          const reader = new FileReader();
+          reader.addEventListener("load", (event) => {
+            const dataUrl = event.target?.result as string;
+            addAttachment({
+              id: crypto.randomUUID(),
+              fileName: file.name,
+              base64: dataUrl.split(",")[1],
+              mimeType,
+              kind,
+              previewUrl: filePreviewUrl(file, kind),
+            });
+          });
+          reader.readAsDataURL(file);
+        });
+    },
+    [addAttachment, attachmentsRef, providerId],
+  );
+  const addDroppedFiles = useCallback(
+    async (files: FileDropItem[]) => {
+      const remaining = MAX_FILES - attachmentsRef.current.length;
+      if (remaining <= 0) return;
+      for (const file of files.slice(0, remaining)) {
+        const mimeType = normalizeAttachmentMime(file.name, "");
+        const kind = getAttachmentKindForProvider(providerId, file.name, mimeType);
+        if (!kind) {
+          toast.error(`Unsupported file: ${file.name}`, {
+            description: unsupportedAttachmentDescription(providerId),
+          });
+          continue;
+        }
+        try {
+          const base64 = await desktopBridge.readFileBase64(file.handle);
+          addAttachment({
+            id: crypto.randomUUID(),
+            fileName: file.name,
+            base64,
+            mimeType,
+            kind,
+            previewUrl: droppedFilePreviewUrl(base64, mimeType, kind),
+          });
+        } catch (error) {
+          const message = apiErrorMessage(error, String(error));
+          toast.error(`Couldn't attach ${file.name}`, { description: message });
+        }
+      }
+    },
+    [addAttachment, attachmentsRef, providerId],
+  );
+  return useMemo(() => ({ addFiles, addDroppedFiles }), [addDroppedFiles, addFiles]);
+}
+
+function useFileDropSubscription(
+  promptId: string | undefined,
+  addDroppedFiles: (files: FileDropItem[]) => Promise<void>,
+): void {
+  const addDroppedFilesRef = useRef(addDroppedFiles);
+  addDroppedFilesRef.current = addDroppedFiles;
+  useEffect(
+    () =>
+      desktopBridge.onFileDrop((event) => {
+        if (event.type === "drop") {
+          if (event.files.length === 0) return;
+          if (!event.targetPromptId) {
+            toast.error("Drop the image on an agent to attach it.", {
+              id: "image-drop-missing-target",
+            });
+            return;
+          }
+          if (promptId && event.targetPromptId !== promptId) return;
+          void addDroppedFilesRef.current(event.files);
+        } else if (event.type === "error") {
+          toast.error("Couldn't read dropped files.", {
+            id: "image-drop-read-error",
+            description: event.message ?? "The desktop shell rejected the dropped file paths.",
+          });
+        }
+      }),
+    [promptId],
+  );
+}
+
 export function useImageAttachments(
   promptId?: string,
   providerId?: string,
@@ -79,114 +181,12 @@ export function useImageAttachments(
     });
   }, []);
 
-  const addFiles = useCallback(
-    (files: FileList | File[]) => {
-      const fileArray = Array.from(files);
-      const remaining = MAX_FILES - attachmentsRef.current.length;
-      if (remaining <= 0) return;
-
-      fileArray.slice(0, remaining).forEach((file) => {
-        const mimeType = normalizeAttachmentMime(file.name, file.type);
-        const kind = getAttachmentKindForProvider(providerId, file.name, mimeType);
-        if (!kind) {
-          toast.error(`Unsupported file: ${file.name}`, {
-            description: unsupportedAttachmentDescription(providerId),
-          });
-          return;
-        }
-        if (file.size > MAX_SIZE_BYTES) return;
-
-        const reader = new FileReader();
-        reader.addEventListener("load", (e) => {
-          const dataUrl = e.target?.result as string;
-          const base64 = dataUrl.split(",")[1];
-          const previewUrl = filePreviewUrl(file, kind);
-          addAttachment({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            base64,
-            mimeType,
-            kind,
-            previewUrl,
-          });
-        });
-        reader.readAsDataURL(file);
-      });
-    },
-    [addAttachment, providerId],
+  const { addFiles, addDroppedFiles } = useAttachmentAdders(
+    providerId,
+    attachmentsRef,
+    addAttachment,
   );
-
-  const addDroppedFiles = useCallback(
-    async (files: FileDropItem[]) => {
-      const remaining = MAX_FILES - attachmentsRef.current.length;
-      if (remaining <= 0) return;
-
-      for (const file of files.slice(0, remaining)) {
-        const mimeType = normalizeAttachmentMime(file.name, "");
-        const kind = getAttachmentKindForProvider(providerId, file.name, mimeType);
-        if (!kind) {
-          toast.error(`Unsupported file: ${file.name}`, {
-            description: unsupportedAttachmentDescription(providerId),
-          });
-          continue;
-        }
-
-        try {
-          const base64 = await desktopBridge.readFileBase64(file.handle);
-          const previewUrl = droppedFilePreviewUrl(base64, mimeType, kind);
-          addAttachment({
-            id: crypto.randomUUID(),
-            fileName: file.name,
-            base64,
-            mimeType,
-            kind,
-            previewUrl,
-          });
-        } catch (e) {
-          const message = apiErrorMessage(e, String(e));
-          toast.error(`Couldn't attach ${file.name}`, { description: message });
-        }
-      }
-    },
-    [addAttachment, providerId],
-  );
-
-  // Stable ref so the effect doesn't re-register on every render
-  const addDroppedFilesRef = useRef(addDroppedFiles);
-  addDroppedFilesRef.current = addDroppedFiles;
-
-  // Listen for OS-level file drops (e.g. from Finder). The agent `<section>`
-  // owns the visual drop-zone state; this effect only routes the file payload
-  // to the prompt under the cursor.
-  useEffect(() => {
-    return desktopBridge.onFileDrop((event) => {
-      if (event.type === "drop") {
-        // Non-file drags (text, links) still produce a drop event with no
-        // files — bail so we don't surface any user-facing noise for inert
-        // drops.
-        if (event.files.length === 0) return;
-        // No matching prompt under the cursor (e.g. the drop landed on the
-        // sidebar or empty grid space). Surface one toast — sonner's `id`
-        // collapses concurrent calls from every mounted subscriber into a
-        // single visible toast.
-        if (!event.targetPromptId) {
-          toast.error("Drop the image on an agent to attach it.", {
-            id: "image-drop-missing-target",
-          });
-          return;
-        }
-        if (promptId && event.targetPromptId !== promptId) return;
-        void addDroppedFilesRef.current(event.files);
-      } else if (event.type === "error") {
-        toast.error("Couldn't read dropped files.", {
-          id: "image-drop-read-error",
-          description: event.message ?? "The desktop shell rejected the dropped file paths.",
-        });
-      }
-      // `enter` / `leave` are intentionally ignored — the per-section React
-      // drag handlers in `WebSocketSessionFeatureBlock` own the highlight.
-    });
-  }, [promptId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useFileDropSubscription(promptId, addDroppedFiles);
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
