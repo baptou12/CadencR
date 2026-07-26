@@ -9,7 +9,7 @@
  *
  * Roots are resolved per-id because each server roots at its own markers.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { LSPClient } from "@codemirror/lsp-client";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -54,6 +54,62 @@ interface Acquired {
   root: string;
 }
 
+function useAcquireLspClients({
+  workspaceRoot,
+  absPath,
+  languageId,
+  lspIds,
+  idsKey,
+  setReady,
+  setErrorMessage,
+}: UseLspClientsArgs & {
+  idsKey: string;
+  setReady: Dispatch<SetStateAction<ReadyLspClient[]>>;
+  setErrorMessage: Dispatch<SetStateAction<string | null>>;
+}): void {
+  useEffect(() => {
+    setErrorMessage(null);
+    if (!workspaceRoot || !absPath || !languageId || lspIds.length === 0) {
+      setReady([]);
+      return;
+    }
+    let cancelled = false;
+    const acquired: Acquired[] = [];
+    const acquireOne = async (lspId: string): Promise<ReadyLspClient | null> => {
+      const root = await resolveLspRoot(workspaceRoot, languageId, absPath, lspId);
+      const entry = await acquireLspClient(root, lspId, languageId);
+      if (cancelled) {
+        releaseLspClient(root, lspId);
+        return null;
+      }
+      acquired.push({ lspId, root });
+      return { lspId, root, client: entry.client, workspace: entry.workspace };
+    };
+    const typeCheckerId = lspIds[0];
+    void Promise.all(
+      lspIds.map((id) => acquireOne(id).catch((error: unknown) => ({ id, error }))),
+    ).then((results) => {
+      if (cancelled) return;
+      const live: ReadyLspClient[] = [];
+      for (const result of results) {
+        if (result && "client" in result) {
+          live.push(result);
+        } else if (result && "error" in result) {
+          const message = apiErrorMessage(result.error, "Failed to start language server");
+          toast.error(message);
+          if (result.id === typeCheckerId) setErrorMessage(message);
+        }
+      }
+      setReady(live);
+    });
+    return () => {
+      cancelled = true;
+      for (const client of acquired) releaseLspClient(client.root, client.lspId);
+      setReady([]);
+    };
+  }, [absPath, idsKey, languageId, lspIds, setErrorMessage, setReady, workspaceRoot]);
+}
+
 /**
  * Resolve each id's root, acquire a client per id, and keep the set in sync
  * with `lspIds`. Returns the ready clients plus an aggregate status (error if
@@ -75,55 +131,15 @@ export function useLspClients({
   // Stable join key so the acquire effect only re-runs when the id set changes.
   const idsKey = lspIds.join(",");
 
-  useEffect(() => {
-    setErrorMessage(null);
-    if (!workspaceRoot || !absPath || !languageId || lspIds.length === 0) {
-      setReady([]);
-      return;
-    }
-    let cancelled = false;
-    const acquired: Acquired[] = [];
-
-    const acquireOne = async (lspId: string): Promise<ReadyLspClient | null> => {
-      // Each server roots at its own markers; ask the backend with its id.
-      const root = await resolveLspRoot(workspaceRoot, languageId, absPath, lspId);
-      const entry = await acquireLspClient(root, lspId, languageId);
-      if (cancelled) {
-        releaseLspClient(root, lspId);
-        return null;
-      }
-      acquired.push({ lspId, root });
-      return { lspId, root, client: entry.client, workspace: entry.workspace };
-    };
-
-    // The type checker is the first id; its failure is the only one that makes
-    // the whole editor's LSP "error". A linter (any trailing id) that won't
-    // start — e.g. enabled in settings but not installed — must NOT mask a
-    // working type checker: it gets a one-shot toast, but go-to-def / hover /
-    // diagnostics from the type checker stay live.
-    const typeCheckerId = lspIds[0];
-    void Promise.all(
-      lspIds.map((id) => acquireOne(id).catch((err: unknown) => ({ id, err }))),
-    ).then((results) => {
-      if (cancelled) return;
-      const live: ReadyLspClient[] = [];
-      for (const r of results) {
-        if (r && "client" in r) live.push(r);
-        else if (r && "err" in r) {
-          const msg = apiErrorMessage(r.err, "Failed to start language server");
-          toast.error(msg);
-          if (r.id === typeCheckerId) setErrorMessage(msg);
-        }
-      }
-      setReady(live);
-    });
-
-    return () => {
-      cancelled = true;
-      for (const a of acquired) releaseLspClient(a.root, a.lspId);
-      setReady([]);
-    };
-  }, [workspaceRoot, absPath, languageId, idsKey, lspIds]);
+  useAcquireLspClients({
+    workspaceRoot,
+    absPath,
+    languageId,
+    lspIds,
+    idsKey,
+    setReady,
+    setErrorMessage,
+  });
 
   // Subscribe to each acquired client's status so reconnects re-bind it and
   // surface reconnecting/error in the status bar.

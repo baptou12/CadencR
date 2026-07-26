@@ -14,7 +14,18 @@
  * (recomputed on resize).
  */
 import { useQuery } from "@tanstack/react-query";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type RefObject,
+  type SetStateAction,
+  type SyntheticEvent,
+} from "react";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -75,6 +86,147 @@ function clampView(view: View, image: ImageDimensions, container: DOMRect): View
   return { scale: view.scale, tx, ty };
 }
 
+function useImageFitView(
+  containerRef: RefObject<HTMLDivElement | null>,
+  rectRef: MutableRefObject<DOMRect | null>,
+  dimensions: ImageDimensions | null,
+  setFitView: Dispatch<SetStateAction<View | null>>,
+): void {
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || !dimensions) return;
+    const refresh = (): void => {
+      const rect = node.getBoundingClientRect();
+      rectRef.current = rect;
+      setFitView(computeFitView(dimensions, rect));
+    };
+    refresh();
+    const observer = new ResizeObserver(refresh);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [containerRef, dimensions, rectRef, setFitView]);
+}
+
+function useImageWheelNavigation(
+  containerRef: RefObject<HTMLDivElement | null>,
+  rectRef: MutableRefObject<DOMRect | null>,
+  dimensions: ImageDimensions | null,
+  fitView: View | null,
+  setUserView: Dispatch<SetStateAction<View | null>>,
+): void {
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent): void => {
+      const rect = rectRef.current;
+      if (!dimensions || !rect) return;
+      const isPinch = event.ctrlKey || event.metaKey;
+      if (!isPinch && event.deltaX === 0 && event.deltaY === 0) return;
+      event.preventDefault();
+      setUserView((previous) => {
+        const base = previous ?? fitView ?? computeFitView(dimensions, rect);
+        if (!isPinch) {
+          return clampView(
+            {
+              scale: base.scale,
+              tx: base.tx - event.deltaX,
+              ty: base.ty - event.deltaY,
+            },
+            dimensions,
+            rect,
+          );
+        }
+        const cx = event.clientX - rect.left;
+        const cy = event.clientY - rect.top;
+        const scale = Math.min(
+          MAX_SCALE,
+          Math.max(MIN_SCALE, base.scale * Math.exp(-event.deltaY * PINCH_SENSITIVITY)),
+        );
+        const ratio = scale / base.scale;
+        return clampView(
+          { scale, tx: cx - (cx - base.tx) * ratio, ty: cy - (cy - base.ty) * ratio },
+          dimensions,
+          rect,
+        );
+      });
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, [containerRef, dimensions, fitView, rectRef, setUserView]);
+}
+
+interface ImageViewerContentProps {
+  containerRef: RefObject<HTMLDivElement | null>;
+  error: string | null;
+  objectUrl: string | null;
+  fileName: string;
+  view: View | null;
+  status: string;
+  zoomLabel: string;
+  onDoubleClick: () => void;
+  onLoad: (event: SyntheticEvent<HTMLImageElement>) => void;
+  onError: () => void;
+}
+
+function ImageViewerContent({
+  containerRef,
+  error,
+  objectUrl,
+  fileName,
+  view,
+  status,
+  zoomLabel,
+  onDoubleClick,
+  onLoad,
+  onError,
+}: ImageViewerContentProps) {
+  return (
+    <div className="h-full flex flex-col">
+      <div
+        ref={containerRef}
+        onDoubleClick={onDoubleClick}
+        className="flex-1 relative overflow-hidden"
+      >
+        {error ? (
+          <div className="h-full flex items-center justify-center text-destructive text-sm px-6 text-center">
+            {error}
+          </div>
+        ) : objectUrl === null ? (
+          <div className="h-full flex items-center justify-center bg-background">
+            <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <CheckerboardBackdrop className="!overflow-hidden">
+            <img
+              src={objectUrl}
+              alt={fileName}
+              onLoad={onLoad}
+              onError={onError}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                transformOrigin: "0 0",
+                transform: view
+                  ? `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`
+                  : "scale(0)",
+                imageRendering: view && view.scale > 2 ? "pixelated" : "auto",
+                visibility: view ? "visible" : "hidden",
+              }}
+              className="select-none max-w-none max-h-none"
+              draggable={false}
+            />
+          </CheckerboardBackdrop>
+        )}
+      </div>
+      <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
+        <span className="truncate">{status}</span>
+        <span>{zoomLabel}</span>
+      </div>
+    </div>
+  );
+}
+
 function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewerProps) {
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
@@ -125,68 +277,8 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
     toast.error(message, { id: `image-viewer:${filePath}` });
   }, [filePath]);
 
-  // Track the container rect (drives both the cached `rectRef` for the
-  // wheel hot path and the auto-fit view that mirrors pane resizes).
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node || !dimensions) return;
-
-    function refresh(): void {
-      if (!node || !dimensions) return;
-      const rect = node.getBoundingClientRect();
-      rectRef.current = rect;
-      setFitView(computeFitView(dimensions, rect));
-    }
-    refresh();
-
-    const observer = new ResizeObserver(refresh);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [dimensions]);
-
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node) return;
-
-    function onWheel(event: WheelEvent): void {
-      const dims = dimensions;
-      const rect = rectRef.current;
-      if (!dims || !rect) return;
-      const isPinch = event.ctrlKey || event.metaKey;
-      if (!isPinch && event.deltaX === 0 && event.deltaY === 0) return;
-      // Always claim the gesture so it doesn't bubble to outer scroll
-      // containers (and Chromium's page-zoom doesn't fire on pinch).
-      event.preventDefault();
-
-      setUserView((prev) => {
-        const base = prev ?? fitView ?? computeFitView(dims, rect);
-        let next: View;
-        if (isPinch) {
-          const cx = event.clientX - rect.left;
-          const cy = event.clientY - rect.top;
-          const newScale = Math.min(
-            MAX_SCALE,
-            Math.max(MIN_SCALE, base.scale * Math.exp(-event.deltaY * PINCH_SENSITIVITY)),
-          );
-          // Anchor at the cursor: keep the image-local pixel under the
-          // cursor in the same screen position after the scale change.
-          const ratio = newScale / base.scale;
-          next = {
-            scale: newScale,
-            tx: cx - (cx - base.tx) * ratio,
-            ty: cy - (cy - base.ty) * ratio,
-          };
-        } else {
-          // Pixel-level trackpad scroll → 1:1 pan.
-          next = { scale: base.scale, tx: base.tx - event.deltaX, ty: base.ty - event.deltaY };
-        }
-        return clampView(next, dims, rect);
-      });
-    }
-
-    node.addEventListener("wheel", onWheel, { passive: false });
-    return () => node.removeEventListener("wheel", onWheel);
-  }, [dimensions, fitView]);
+  useImageFitView(containerRef, rectRef, dimensions, setFitView);
+  useImageWheelNavigation(containerRef, rectRef, dimensions, fitView, setUserView);
 
   // Double-click resets — macOS Preview / Quick Look convention.
   const handleDoubleClick = useCallback(() => setUserView(null), []);
@@ -202,51 +294,18 @@ function ImageFileViewerImpl({ filePath, projectId, featureId }: ImageFileViewer
     (imageQuery.error ? apiErrorMessage(imageQuery.error, "Failed to load image") : null);
 
   return (
-    <div className="h-full flex flex-col">
-      <div
-        ref={containerRef}
-        onDoubleClick={handleDoubleClick}
-        className="flex-1 relative overflow-hidden"
-      >
-        {error ? (
-          <div className="h-full flex items-center justify-center text-destructive text-sm px-6 text-center">
-            {error}
-          </div>
-        ) : objectUrl === null ? (
-          <div className="h-full flex items-center justify-center bg-background">
-            <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <CheckerboardBackdrop className="!overflow-hidden">
-            <img
-              src={objectUrl}
-              alt={fileNameLabel}
-              onLoad={handleImgLoad}
-              onError={handleImgError}
-              style={{
-                position: "absolute",
-                left: 0,
-                top: 0,
-                transformOrigin: "0 0",
-                transform: view
-                  ? `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`
-                  : "scale(0)",
-                // `pixelated` keeps sprites/icons crisp past 2×; below
-                // that the GPU's bilinear filter is what you want.
-                imageRendering: view && view.scale > 2 ? "pixelated" : "auto",
-                visibility: view ? "visible" : "hidden",
-              }}
-              className="select-none max-w-none max-h-none"
-              draggable={false}
-            />
-          </CheckerboardBackdrop>
-        )}
-      </div>
-      <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
-        <span className="truncate">{statusParts.join("  ·  ")}</span>
-        <span>{zoomLabel}</span>
-      </div>
-    </div>
+    <ImageViewerContent
+      containerRef={containerRef}
+      error={error}
+      objectUrl={objectUrl}
+      fileName={fileNameLabel}
+      view={view}
+      status={statusParts.join("  ·  ")}
+      zoomLabel={zoomLabel}
+      onDoubleClick={handleDoubleClick}
+      onLoad={handleImgLoad}
+      onError={handleImgError}
+    />
   );
 }
 

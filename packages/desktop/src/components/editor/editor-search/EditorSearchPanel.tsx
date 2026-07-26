@@ -44,6 +44,139 @@ interface MatchInfo {
   error: string | null;
 }
 
+function usePersistedSearchState(featureId: number, paneId: string) {
+  const cached = (): ReturnType<typeof getPaneSearch> => getPaneSearch(featureId, paneId);
+  const [query, setQueryState] = useState<string>(() => cached().query);
+  const [caseSensitive, setCaseSensitiveState] = useState<boolean>(() => cached().caseSensitive);
+  const [regex, setRegexState] = useState<boolean>(() => cached().regex);
+  const [replacement, setReplacementState] = useState<string>(() => cached().replacement ?? "");
+  const stateRef = useRef({ query, caseSensitive, regex, replacement });
+  stateRef.current = { query, caseSensitive, regex, replacement };
+  const persist = useCallback(
+    (patch: Partial<typeof stateRef.current>): void => {
+      setPaneSearch(featureId, paneId, { ...stateRef.current, ...patch });
+    },
+    [featureId, paneId],
+  );
+  const setQuery = useCallback(
+    (next: string): void => {
+      setQueryState(next);
+      persist({ query: next });
+    },
+    [persist],
+  );
+  const setCaseSensitive = useCallback(
+    (next: boolean): void => {
+      setCaseSensitiveState(next);
+      persist({ caseSensitive: next });
+    },
+    [persist],
+  );
+  const setRegex = useCallback(
+    (next: boolean): void => {
+      setRegexState(next);
+      persist({ regex: next });
+    },
+    [persist],
+  );
+  const setReplacement = useCallback(
+    (next: string): void => {
+      setReplacementState(next);
+      persist({ replacement: next });
+    },
+    [persist],
+  );
+  return useMemo(
+    () => ({
+      query,
+      caseSensitive,
+      regex,
+      replacement,
+      setQuery,
+      setCaseSensitive,
+      setRegex,
+      setReplacement,
+    }),
+    [
+      caseSensitive,
+      query,
+      regex,
+      replacement,
+      setCaseSensitive,
+      setQuery,
+      setRegex,
+      setReplacement,
+    ],
+  );
+}
+
+function useEditorSearchActions(view: EditorView, onClose: () => void, replacement: string) {
+  const handleNext = useCallback((): void => findNextMatch(view), [view]);
+  const handlePrev = useCallback((): void => findPrevMatch(view), [view]);
+  const handleClose = useCallback((): void => {
+    closeBufferSearch(view);
+    onClose();
+    view.focus();
+  }, [onClose, view]);
+  const handleReplaceOne = useCallback((): void => {
+    replaceActiveMatch(view, replacement);
+  }, [replacement, view]);
+  const handleReplaceAll = useCallback((): void => {
+    replaceAllMatches(view, replacement);
+  }, [replacement, view]);
+  const handleReplaceKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleClose();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        if (event.metaKey || event.ctrlKey) handleReplaceAll();
+        else handleReplaceOne();
+      }
+    },
+    [handleClose, handleReplaceAll, handleReplaceOne],
+  );
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleClose();
+        return;
+      }
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        selectActiveMatch(view);
+        event.currentTarget.blur();
+        view.focus();
+      } else if (event.shiftKey) handlePrev();
+      else handleNext();
+    },
+    [handleClose, handleNext, handlePrev, view],
+  );
+  return useMemo(
+    () => ({
+      handleNext,
+      handlePrev,
+      handleClose,
+      handleReplaceOne,
+      handleReplaceAll,
+      handleReplaceKeyDown,
+      handleKeyDown,
+    }),
+    [
+      handleClose,
+      handleKeyDown,
+      handleNext,
+      handlePrev,
+      handleReplaceAll,
+      handleReplaceKeyDown,
+      handleReplaceOne,
+    ],
+  );
+}
+
 function EditorSearchPanel({
   view,
   featureId,
@@ -53,62 +186,19 @@ function EditorSearchPanel({
   replaceFocusSignal = 0,
   onClose,
 }: EditorSearchPanelProps) {
-  // Lazy initializers re-read the cache on every mount, so closing and
-  // reopening Cmd+F within the same pane restores the previous query.
-  const [query, setQueryState] = useState<string>(() => getPaneSearch(featureId, paneId).query);
-  const [caseSensitive, setCaseSensitiveState] = useState<boolean>(
-    () => getPaneSearch(featureId, paneId).caseSensitive,
-  );
-  const [regex, setRegexState] = useState<boolean>(() => getPaneSearch(featureId, paneId).regex);
-  const [replacement, setReplacementState] = useState<string>(
-    () => getPaneSearch(featureId, paneId).replacement ?? "",
-  );
+  const state = usePersistedSearchState(featureId, paneId);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
 
-  const debouncedQuery = useDebouncedValue(query, QUERY_DEBOUNCE_MS);
+  const debouncedQuery = useDebouncedValue(state.query, QUERY_DEBOUNCE_MS);
 
   useEffect(() => {
-    setBufferSearchQuery(view, { query: debouncedQuery, caseSensitive, regex });
-  }, [view, debouncedQuery, caseSensitive, regex]);
-
-  // Mirror the four state fields in a ref so the setters can read the latest
-  // values without listing them as `useCallback` deps. Without this, each
-  // keystroke (which updates `query` or `replacement`) regenerated every
-  // setter, defeating downstream memoization.
-  const stateRef = useRef({ query, caseSensitive, regex, replacement });
-  stateRef.current = { query, caseSensitive, regex, replacement };
-
-  // Persist directly from the setters rather than from a mount-time effect, so
-  // we never clobber the cache with the panel's initial values on remount.
-  const setQuery = useCallback(
-    (next: string): void => {
-      setQueryState(next);
-      setPaneSearch(featureId, paneId, { ...stateRef.current, query: next });
-    },
-    [featureId, paneId],
-  );
-  const setCaseSensitive = useCallback(
-    (next: boolean): void => {
-      setCaseSensitiveState(next);
-      setPaneSearch(featureId, paneId, { ...stateRef.current, caseSensitive: next });
-    },
-    [featureId, paneId],
-  );
-  const setRegex = useCallback(
-    (next: boolean): void => {
-      setRegexState(next);
-      setPaneSearch(featureId, paneId, { ...stateRef.current, regex: next });
-    },
-    [featureId, paneId],
-  );
-  const setReplacement = useCallback(
-    (next: string): void => {
-      setReplacementState(next);
-      setPaneSearch(featureId, paneId, { ...stateRef.current, replacement: next });
-    },
-    [featureId, paneId],
-  );
+    setBufferSearchQuery(view, {
+      query: debouncedQuery,
+      caseSensitive: state.caseSensitive,
+      regex: state.regex,
+    });
+  }, [debouncedQuery, state.caseSensitive, state.regex, view]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -128,59 +218,13 @@ function EditorSearchPanel({
   }, [replaceFocusSignal, replaceMode]);
 
   const matchInfo = useLiveMatchInfo(view);
-
-  const handleNext = useCallback((): void => findNextMatch(view), [view]);
-  const handlePrev = useCallback((): void => findPrevMatch(view), [view]);
-  const handleClose = useCallback((): void => {
-    closeBufferSearch(view);
-    onClose();
-    view.focus();
-  }, [view, onClose]);
-  const handleReplaceOne = useCallback((): void => {
-    replaceActiveMatch(view, replacement);
-  }, [view, replacement]);
-  const handleReplaceAll = useCallback((): void => {
-    replaceAllMatches(view, replacement);
-  }, [view, replacement]);
-  const handleReplaceKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>): void => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        handleClose();
-        return;
-      }
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      if (event.metaKey || event.ctrlKey) handleReplaceAll();
-      else handleReplaceOne();
-    },
-    [handleClose, handleReplaceAll, handleReplaceOne],
+  const actions = useEditorSearchActions(view, onClose, state.replacement);
+  const counterLabel = useMemo(
+    () => buildCounterLabel(state.query, matchInfo),
+    [matchInfo, state.query],
   );
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>): void => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        handleClose();
-        return;
-      }
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
-        selectActiveMatch(view);
-        event.currentTarget.blur();
-        view.focus();
-        return;
-      }
-      if (event.shiftKey) handlePrev();
-      else handleNext();
-    },
-    [handleClose, handleNext, handlePrev, view],
-  );
-
-  const counterLabel = useMemo(() => buildCounterLabel(query, matchInfo), [query, matchInfo]);
   const hasError = matchInfo.error !== null;
-  const showNoMatches = query.length > 0 && matchInfo.total === 0 && !hasError;
+  const showNoMatches = state.query.length > 0 && matchInfo.total === 0 && !hasError;
 
   return (
     <div
@@ -197,9 +241,9 @@ function EditorSearchPanel({
       <div className="flex items-center gap-1">
         <SearchInputRow
           inputRef={inputRef}
-          query={query}
-          onQueryChange={setQuery}
-          onKeyDown={handleKeyDown}
+          query={state.query}
+          onQueryChange={state.setQuery}
+          onKeyDown={actions.handleKeyDown}
           counterLabel={counterLabel}
           hasError={hasError}
           errorTitle={matchInfo.error}
@@ -207,23 +251,23 @@ function EditorSearchPanel({
         />
         <SearchPanelControls
           disabled={matchInfo.total === 0}
-          caseSensitive={caseSensitive}
-          regex={regex}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          onToggleCase={setCaseSensitive}
-          onToggleRegex={setRegex}
-          onClose={handleClose}
+          caseSensitive={state.caseSensitive}
+          regex={state.regex}
+          onPrev={actions.handlePrev}
+          onNext={actions.handleNext}
+          onToggleCase={state.setCaseSensitive}
+          onToggleRegex={state.setRegex}
+          onClose={actions.handleClose}
         />
       </div>
       {replaceMode && (
         <EditorReplaceRow
           inputRef={replaceInputRef}
-          replacement={replacement}
-          onReplacementChange={setReplacement}
-          onReplaceOne={handleReplaceOne}
-          onReplaceAll={handleReplaceAll}
-          onKeyDown={handleReplaceKeyDown}
+          replacement={state.replacement}
+          onReplacementChange={state.setReplacement}
+          onReplaceOne={actions.handleReplaceOne}
+          onReplaceAll={actions.handleReplaceAll}
+          onKeyDown={actions.handleReplaceKeyDown}
           disabled={matchInfo.total === 0}
         />
       )}

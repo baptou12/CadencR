@@ -28,21 +28,15 @@ export interface FileTreeEntryActions {
   trashPath: (pierrePath: string) => void;
 }
 
-/**
- * Rename / move / trash handlers for the editor file tree. Each issues its
- * mutation and keeps pierre's optimistic local model in sync (reversing it on
- * error). Extracted from `FileTree.tsx` to keep that component under the
- * file-size limit.
- */
-export function useFileTreeEntryActions({
+function useRenameHandler({
   model,
   projectId,
   featureId,
   mutations,
   renameFilePath,
   tryHandleAsCreate,
-}: UseFileTreeEntryActionsOptions): FileTreeEntryActions {
-  const handleRename = useCallback(
+}: UseFileTreeEntryActionsOptions): FileTreeEntryActions["handleRename"] {
+  return useCallback(
     (event: FileTreeRenameEvent) => {
       if (tryHandleAsCreate(event)) return;
 
@@ -69,16 +63,37 @@ export function useFileTreeEntryActions({
           },
         },
         {
-          // Keep any open tab for the renamed path (and tabs under a renamed
-          // folder) pointing at the new filesystem path.
           onSuccess: () => renameFilePath(fsSource, fsDest),
-          // Pierre already mutated its local model. Reverse it.
           onError: () => model.move(pierreDest, pierreSource),
         },
       );
     },
     [featureId, model, mutations.rename, projectId, renameFilePath, tryHandleAsCreate],
   );
+}
+
+/**
+ * Rename / move / trash handlers for the editor file tree. Each issues its
+ * mutation and keeps pierre's optimistic local model in sync (reversing it on
+ * error). Extracted from `FileTree.tsx` to keep that component under the
+ * file-size limit.
+ */
+export function useFileTreeEntryActions({
+  model,
+  projectId,
+  featureId,
+  mutations,
+  renameFilePath,
+  tryHandleAsCreate,
+}: UseFileTreeEntryActionsOptions): FileTreeEntryActions {
+  const handleRename = useRenameHandler({
+    model,
+    projectId,
+    featureId,
+    mutations,
+    renameFilePath,
+    tryHandleAsCreate,
+  });
 
   const handleDropComplete = useCallback(
     (draggedPaths: readonly string[], pierreTargetDir: string | null) => {

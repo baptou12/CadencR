@@ -19,28 +19,9 @@ import {
 } from "@/stores/feature-layout-schema";
 import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
-/**
- * UX wrapper around the `feature_layouts` CRUD endpoints. Owns:
- *   - List of saved layouts + the current default.
- *   - Save current as new / update existing / select / set default / delete.
- *   - Applying a layout: hydrates the current per-feature layout state.
- *     Current layout state is persisted separately in `feature_settings`;
- *     explicit saves (Save as new / Update X) only manage named templates.
- */
-export function useSavedLayouts(featureId: number) {
-  const layoutsQuery = useListLayouts();
-  const createMutation = useCreateLayout();
-  const updateMutation = useUpdateLayout();
-  const deleteMutation = useDeleteLayout();
-  const setDefaultMutation = useSetDefaultLayout();
+function useLayoutMutationRunner() {
   const queryClient = useQueryClient();
-
-  const setStoreState = useFeatureLayoutStore((s) => s.setState);
-  const setAppliedLayoutId = useFeatureLayoutStore((s) => s.setAppliedLayoutId);
-  const layouts = useMemo(() => layoutsQuery.data ?? [], [layoutsQuery.data]);
-  const defaultLayout = useMemo(() => layouts.find((l) => l.is_default) ?? null, [layouts]);
-
-  const runMutation = useCallback(
+  return useCallback(
     async <T>(
       action: () => Promise<T>,
       errorPrefix: string,
@@ -51,15 +32,25 @@ export function useSavedLayouts(featureId: number) {
         void queryClient.invalidateQueries({ queryKey: getListLayoutsQueryKey() });
         if (success) toast.success(success(result));
         return result;
-      } catch (err) {
-        const msg = apiErrorMessage(err, "Unknown error");
-        toast.error(`${errorPrefix}: ${msg}`);
+      } catch (error) {
+        const message = apiErrorMessage(error, "Unknown error");
+        toast.error(`${errorPrefix}: ${message}`);
         return null;
       }
     },
     [queryClient],
   );
+}
 
+function useNamedLayoutMutations(
+  featureId: number,
+  setAppliedLayoutId: (featureId: number, layoutId: number | null) => void,
+) {
+  const createMutation = useCreateLayout();
+  const updateMutation = useUpdateLayout();
+  const deleteMutation = useDeleteLayout();
+  const setDefaultMutation = useSetDefaultLayout();
+  const runMutation = useLayoutMutationRunner();
   const saveAsNew = useCallback(
     async (name: string): Promise<FeatureLayout | null> => {
       const current = selectFeatureLayout(featureId)(useFeatureLayoutStore.getState());
@@ -67,38 +58,38 @@ export function useSavedLayouts(featureId: number) {
       const created = await runMutation(
         () => createMutation.mutateAsync({ data: { name, config } }),
         "Could not save layout",
-        (l) => `Layout "${l.name}" saved`,
+        (layout) => `Layout "${layout.name}" saved`,
       );
       if (created) setAppliedLayoutId(featureId, created.id);
       return created;
     },
     [createMutation, featureId, runMutation, setAppliedLayoutId],
   );
-
   const updateExisting = useCallback(
     (id: number): Promise<FeatureLayout | null> => {
       const current = selectFeatureLayout(featureId)(useFeatureLayoutStore.getState());
-      const config = serializeLayoutForSave(current);
       return runMutation(
-        () => updateMutation.mutateAsync({ id, data: { config } }),
+        () =>
+          updateMutation.mutateAsync({
+            id,
+            data: { config: serializeLayoutForSave(current) },
+          }),
         "Could not update layout",
-        (l) => `Layout "${l.name}" updated`,
+        (layout) => `Layout "${layout.name}" updated`,
       );
     },
-    [updateMutation, featureId, runMutation],
+    [featureId, runMutation, updateMutation],
   );
-
   const setDefault = useCallback(
     async (id: number): Promise<void> => {
       await runMutation(
         () => setDefaultMutation.mutateAsync({ id }),
         "Could not set default",
-        (l) => `"${l.name}" is now the default layout`,
+        (layout) => `"${layout.name}" is now the default layout`,
       );
     },
-    [setDefaultMutation, runMutation],
+    [runMutation, setDefaultMutation],
   );
-
   const deleteLayout = useCallback(
     async (id: number): Promise<void> => {
       const result = await runMutation(
@@ -107,13 +98,36 @@ export function useSavedLayouts(featureId: number) {
         () => "Layout deleted",
       );
       if (result === null) return;
-      // If we were applying that layout, clear the applied marker.
       const applied = selectFeatureLayout(featureId)(
         useFeatureLayoutStore.getState(),
       ).appliedLayoutId;
       if (applied === id) setAppliedLayoutId(featureId, null);
     },
     [deleteMutation, featureId, runMutation, setAppliedLayoutId],
+  );
+  return useMemo(
+    () => ({ saveAsNew, updateExisting, setDefault, deleteLayout }),
+    [deleteLayout, saveAsNew, setDefault, updateExisting],
+  );
+}
+
+/**
+ * UX wrapper around the `feature_layouts` CRUD endpoints. Owns:
+ *   - List of saved layouts + the current default.
+ *   - Save current as new / update existing / select / set default / delete.
+ *   - Applying a layout: hydrates the current per-feature layout state.
+ *     Current layout state is persisted separately in `feature_settings`;
+ *     explicit saves (Save as new / Update X) only manage named templates.
+ */
+export function useSavedLayouts(featureId: number) {
+  const layoutsQuery = useListLayouts();
+  const setStoreState = useFeatureLayoutStore((s) => s.setState);
+  const setAppliedLayoutId = useFeatureLayoutStore((s) => s.setAppliedLayoutId);
+  const layouts = useMemo(() => layoutsQuery.data ?? [], [layoutsQuery.data]);
+  const defaultLayout = useMemo(() => layouts.find((l) => l.is_default) ?? null, [layouts]);
+  const { saveAsNew, updateExisting, setDefault, deleteLayout } = useNamedLayoutMutations(
+    featureId,
+    setAppliedLayoutId,
   );
 
   /**

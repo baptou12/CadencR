@@ -34,7 +34,10 @@ type EditorTabActions = Pick<
   | "clearPendingGoToLine"
 >;
 
-export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTabActions {
+function createBasicTabActions(
+  set: EditorSet,
+  get: EditorGet,
+): Pick<EditorTabActions, "initFeature" | "openFile" | "closeTab"> {
   return {
     initFeature: (featureId) => {
       if (get().features[featureId]) return;
@@ -101,7 +104,13 @@ export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTa
         });
         return updateFeature(state, featureId, next);
       }),
+  };
+}
 
+function createUntitledTabActions(
+  set: EditorSet,
+): Pick<EditorTabActions, "openUntitledBuffer" | "convertUntitledToFile"> {
+  return {
     openUntitledBuffer: (featureId, paneId, maxTabs = DEFAULT_MAX_TABS) => {
       const newPath = `${UNTITLED_PATH_PREFIX}${crypto.randomUUID()}`;
       set((state) => {
@@ -181,7 +190,13 @@ export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTa
         });
         return updateFeature(state, featureId, next);
       }),
+  };
+}
 
+function createPathTabActions(
+  set: EditorSet,
+): Pick<EditorTabActions, "setActiveFile" | "renameFilePath"> {
+  return {
     setActiveFile: (featureId, paneId, filePath) =>
       set((state) => {
         const feature = state.features[featureId];
@@ -254,7 +269,13 @@ export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTa
         if (!anyChanged) return state;
         return updateFeature(state, featureId, { ...feature, panes: nextPanes });
       }),
+  };
+}
 
+function createTabMetadataActions(
+  set: EditorSet,
+): Pick<EditorTabActions, "setDirty" | "setCursorPosition" | "clearPendingGoToLine"> {
+  return {
     setDirty: (featureId, paneId, filePath, isDirty) =>
       set((state) => {
         const feature = state.features[featureId];
@@ -278,7 +299,25 @@ export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTa
         }));
         return updateFeature(state, featureId, next);
       }),
+    clearPendingGoToLine: (featureId, paneId, filePath) =>
+      set((state) => {
+        const feature = state.features[featureId] ?? { ...defaultFeatureState };
+        const next = updatePane(feature, paneId, (pane) => ({
+          ...pane,
+          tabs: pane.tabs.map((tab) =>
+            tab.filePath === filePath ? { ...tab, pendingGoToLine: undefined } : tab,
+          ),
+        }));
+        return updateFeature(state, featureId, next);
+      }),
+  };
+}
 
+function createArtifactTabActions(
+  set: EditorSet,
+  get: EditorGet,
+): Pick<EditorTabActions, "openArtifact" | "openPhaseArtifacts"> {
+  return {
     openArtifact: (featureId, paneId, phaseSlug, maxTabs = DEFAULT_MAX_TABS, artifactType) =>
       set((state) => {
         const typeSuffix =
@@ -332,17 +371,15 @@ export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTa
         openArtifact(featureId, paneId, phaseSlug, maxTabs, artifactTypes[0]);
       }
     },
+  };
+}
 
-    clearPendingGoToLine: (featureId, paneId, filePath) =>
-      set((state) => {
-        const feature = state.features[featureId] ?? { ...defaultFeatureState };
-        const next = updatePane(feature, paneId, (pane) => ({
-          ...pane,
-          tabs: pane.tabs.map((t) =>
-            t.filePath === filePath ? { ...t, pendingGoToLine: undefined } : t,
-          ),
-        }));
-        return updateFeature(state, featureId, next);
-      }),
+export function createEditorTabActions(set: EditorSet, get: EditorGet): EditorTabActions {
+  return {
+    ...createBasicTabActions(set, get),
+    ...createUntitledTabActions(set),
+    ...createPathTabActions(set),
+    ...createTabMetadataActions(set),
+    ...createArtifactTabActions(set, get),
   };
 }

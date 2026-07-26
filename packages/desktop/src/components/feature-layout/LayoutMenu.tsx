@@ -29,6 +29,62 @@ interface LayoutMenuProps {
   featureId: number;
 }
 
+function SavedLayoutItems({
+  layouts,
+  appliedLayoutId,
+  onApply,
+}: {
+  layouts: FeatureLayout[];
+  appliedLayoutId: number | null;
+  onApply: (layout: FeatureLayout) => void;
+}): ReactNode {
+  if (layouts.length === 0) {
+    return (
+      <DropdownMenuItem disabled className="text-xs italic">
+        No saved layouts yet
+      </DropdownMenuItem>
+    );
+  }
+  return layouts.map((layout) => (
+    <DropdownMenuItem key={layout.id} onSelect={() => onApply(layout)}>
+      {layout.id === appliedLayoutId ? (
+        <CheckIcon className="size-4" />
+      ) : (
+        <span className="size-4" />
+      )}
+      <span className="flex-1 truncate">{layout.name}</span>
+      {layout.is_default && <StarIcon className="size-3.5 text-yellow-500" />}
+    </DropdownMenuItem>
+  ));
+}
+
+function DefaultLayoutSubmenu({
+  layouts,
+  onSetDefault,
+}: {
+  layouts: FeatureLayout[];
+  onSetDefault: (layoutId: number) => void;
+}): ReactNode {
+  if (layouts.length === 0) return null;
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>Set default</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        {layouts.map((layout) => (
+          <DropdownMenuItem key={layout.id} onSelect={() => onSetDefault(layout.id)}>
+            {layout.is_default ? (
+              <StarIcon className="size-3.5 text-yellow-500" />
+            ) : (
+              <span className="size-3.5" />
+            )}
+            <span className="ml-1 flex-1 truncate">{layout.name}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
 /**
  * End-of-strip menu for managing saved layouts. Lives at the right edge of
  * the root pane's tab strip.
@@ -77,22 +133,7 @@ export function LayoutMenu({ featureId }: LayoutMenuProps): ReactNode {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel>Layouts</DropdownMenuLabel>
-          {layouts.length === 0 && (
-            <DropdownMenuItem disabled className="text-xs italic">
-              No saved layouts yet
-            </DropdownMenuItem>
-          )}
-          {layouts.map((l) => (
-            <DropdownMenuItem key={l.id} onSelect={() => apply(l)}>
-              {l.id === appliedLayoutId ? (
-                <CheckIcon className="size-4" />
-              ) : (
-                <span className="size-4" />
-              )}
-              <span className="flex-1 truncate">{l.name}</span>
-              {l.is_default && <StarIcon className="size-3.5 text-yellow-500" />}
-            </DropdownMenuItem>
-          ))}
+          <SavedLayoutItems layouts={layouts} appliedLayoutId={appliedLayoutId} onApply={apply} />
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => {
@@ -107,23 +148,10 @@ export function LayoutMenu({ featureId }: LayoutMenuProps): ReactNode {
               Update &ldquo;{appliedLayout.name}&rdquo;
             </DropdownMenuItem>
           )}
-          {layouts.length > 0 && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Set default</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                {layouts.map((l) => (
-                  <DropdownMenuItem key={l.id} onSelect={() => void setDefault(l.id)}>
-                    {l.is_default ? (
-                      <StarIcon className="size-3.5 text-yellow-500" />
-                    ) : (
-                      <span className="size-3.5" />
-                    )}
-                    <span className="ml-1 flex-1 truncate">{l.name}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}
+          <DefaultLayoutSubmenu
+            layouts={layouts}
+            onSetDefault={(layoutId) => void setDefault(layoutId)}
+          />
           {appliedLayout && (
             <DropdownMenuItem
               variant="destructive"

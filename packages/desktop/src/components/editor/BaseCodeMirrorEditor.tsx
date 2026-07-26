@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import {
   EditorView,
   lineNumbers,
@@ -42,6 +42,103 @@ interface BaseCodeMirrorEditorProps {
   onEditorViewChange?: (view: EditorView | null) => void;
 }
 
+function useCodeMirrorReconfiguration({
+  viewRef,
+  editorViewRef,
+  vimCompartment,
+  readOnlyCompartment,
+  languageCompartment,
+  vimMode,
+  readOnly,
+  language,
+}: {
+  viewRef: RefObject<EditorView | null>;
+  editorViewRef?: React.MutableRefObject<EditorView | null>;
+  vimCompartment: RefObject<Compartment>;
+  readOnlyCompartment: RefObject<Compartment>;
+  languageCompartment: RefObject<Compartment>;
+  vimMode: boolean;
+  readOnly: boolean;
+  language?: Extension | null;
+}): void {
+  useEffect(() => {
+    if (editorViewRef) editorViewRef.current = viewRef.current;
+  });
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: vimCompartment.current.reconfigure(vimMode ? vim() : []) });
+  }, [viewRef, vimCompartment, vimMode]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: readOnlyCompartment.current.reconfigure(EditorState.readOnly.of(readOnly)),
+    });
+  }, [readOnly, readOnlyCompartment, viewRef]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: languageCompartment.current.reconfigure(language ?? []) });
+  }, [language, languageCompartment, viewRef]);
+}
+
+function buildEditorExtensions({
+  ergonomics,
+  vimMode,
+  readOnly,
+  language,
+  extraExtensions,
+  onChangeRef,
+  onSaveRef,
+  vimCompartment,
+  readOnlyCompartment,
+  languageCompartment,
+}: {
+  ergonomics: boolean;
+  vimMode: boolean;
+  readOnly: boolean;
+  language?: Extension | null;
+  extraExtensions?: Extension[];
+  onChangeRef: RefObject<((value: string) => void) | undefined>;
+  onSaveRef: RefObject<(() => void) | undefined>;
+  vimCompartment: RefObject<Compartment>;
+  readOnlyCompartment: RefObject<Compartment>;
+  languageCompartment: RefObject<Compartment>;
+}): Extension[] {
+  const updateListener = EditorView.updateListener.of((update) => {
+    if (update.docChanged) onChangeRef.current?.(update.state.doc.toString());
+  });
+  const saveKeymap = keymap.of([
+    {
+      key: "Mod-s",
+      run: () => {
+        onSaveRef.current?.();
+        return true;
+      },
+    },
+  ]);
+  return [
+    history(),
+    EditorState.allowMultipleSelections.of(true),
+    tooltips({ parent: document.body }),
+    drawSelection(),
+    lineNumbers(),
+    highlightActiveLine(),
+    bracketMatching(),
+    indentOnInput(),
+    ergonomics ? ergonomicsExtensions : [],
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    saveKeymap,
+    updateListener,
+    vimCompartment.current.of(vimMode ? vim() : []),
+    readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
+    languageCompartment.current.of(language ?? []),
+    ...cadencrEditorTheme,
+    ...(extraExtensions ?? []),
+  ];
+}
+
 export default function BaseCodeMirrorEditor({
   initialContent = "",
   language,
@@ -67,94 +164,32 @@ export default function BaseCodeMirrorEditor({
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
 
-  // Sync EditorView to caller's ref
-  useEffect(() => {
-    if (editorViewRef) editorViewRef.current = viewRef.current;
+  useCodeMirrorReconfiguration({
+    viewRef,
+    editorViewRef,
+    vimCompartment,
+    readOnlyCompartment,
+    languageCompartment,
+    vimMode,
+    readOnly,
+    language,
   });
-
-  // Hot-swap vim mode
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({ effects: vimCompartment.current.reconfigure(vimMode ? vim() : []) });
-  }, [vimMode]);
-
-  // Hot-swap readOnly
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({
-      effects: readOnlyCompartment.current.reconfigure(EditorState.readOnly.of(readOnly)),
-    });
-  }, [readOnly]);
-
-  // Hot-swap language
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    view.dispatch({ effects: languageCompartment.current.reconfigure(language ?? []) });
-  }, [language]);
 
   // Create editor once on mount
   useEffect(() => {
     if (!containerRef.current) return;
-
-    const updateListener = EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        onChangeRef.current?.(update.state.doc.toString());
-      }
+    const extensions = buildEditorExtensions({
+      ergonomics,
+      vimMode,
+      readOnly,
+      language,
+      extraExtensions,
+      onChangeRef,
+      onSaveRef,
+      vimCompartment,
+      readOnlyCompartment,
+      languageCompartment,
     });
-
-    const saveKeymap = keymap.of([
-      {
-        key: "Mod-s",
-        run: () => {
-          onSaveRef.current?.();
-          return true;
-        },
-      },
-    ]);
-
-    const extensions: Extension[] = [
-      history(),
-      // `allowMultipleSelections` is the state-level switch for multi-cursor.
-      // Without it, every transaction that tries to install multiple ranges
-      // (e.g. `selectNextOccurrence`, `selectSelectionMatches`,
-      // `addCursorAbove`, `addCursorBelow`) gets silently filtered down to a
-      // single range — the visual extension alone (`drawSelection`) is not
-      // sufficient, the facet has to be flipped to `true`.
-      //   https://codemirror.net/docs/ref/#state.EditorState^allowMultipleSelections
-      EditorState.allowMultipleSelections.of(true),
-      // Render all floating tooltips (LSP hover/signature popovers,
-      // autocomplete, lint diagnostics) under `document.body` instead of nested
-      // inside `.cm-editor`. In the Frost themes the editor split pane carries
-      // its own `backdrop-filter` (theme-frost.css) and so becomes a backdrop
-      // root — a nested tooltip's own `backdrop-filter` then paints nothing in
-      // Chromium, leaving the glass unblurred. Portaling the tooltips out of the
-      // pane lets them frost the app behind them like every other overlay; CM
-      // copies the editor's theme classes onto the portaled container, so their
-      // background/border styling is preserved.
-      tooltips({ parent: document.body }),
-      drawSelection(),
-      lineNumbers(),
-      highlightActiveLine(),
-      bracketMatching(),
-      indentOnInput(),
-      // Editing-ergonomics layer (folding, auto-close brackets, rectangular
-      // selection, selection-match + fold/active-line gutters). Mounted once at
-      // create-time; large-file mode passes `ergonomics={false}` to keep heavy
-      // read-only buffers lightweight. Reading the prop here (not via a ref) is
-      // safe because this create effect runs a single time per mount.
-      ergonomics ? ergonomicsExtensions : [],
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      saveKeymap,
-      updateListener,
-      vimCompartment.current.of(vimMode ? vim() : []),
-      readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
-      languageCompartment.current.of(language ?? []),
-      ...cadencrEditorTheme,
-      ...(extraExtensions ?? []),
-    ];
 
     const state = EditorState.create({ doc: initialContent, extensions });
     const view = new EditorView({ state, parent: containerRef.current });

@@ -16,7 +16,15 @@ import "./excalidraw-asset-path";
 import { Excalidraw, getSceneVersion, serializeAsJSON } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
-import { memo, useCallback, useEffect, useRef } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type MutableRefObject,
+  type RefObject,
+} from "react";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { useReadFile } from "@/api/generated";
@@ -37,6 +45,172 @@ interface ExcalidrawEditorProps {
 
 const AUTO_SAVE_DELAY_MS = 1500;
 
+type SetEditorDirty = ReturnType<typeof useEditorStore.getState>["setDirty"];
+
+function useSceneSerializer(
+  apiRef: RefObject<ExcalidrawImperativeAPI | null>,
+  lastSerializedVersionRef: MutableRefObject<number | null>,
+): () => string | null {
+  return useCallback((): string | null => {
+    const api = apiRef.current;
+    if (!api) return null;
+    const elements = api.getSceneElements();
+    lastSerializedVersionRef.current = getSceneVersion(elements);
+    return serializeAsJSON(elements, api.getAppState(), api.getFiles(), "local");
+  }, [apiRef, lastSerializedVersionRef]);
+}
+
+function useSceneSavedHandler(
+  apiRef: RefObject<ExcalidrawImperativeAPI | null>,
+  lastSerializedVersionRef: MutableRefObject<number | null>,
+  baselineVersionRef: MutableRefObject<number | null>,
+  isDirtyRef: MutableRefObject<boolean>,
+  setDirty: SetEditorDirty,
+  featureId: number,
+  paneId: string,
+  filePath: string,
+): () => void {
+  return useCallback(() => {
+    const savedVersion = lastSerializedVersionRef.current;
+    baselineVersionRef.current = savedVersion;
+    const api = apiRef.current;
+    const liveVersion = api ? getSceneVersion(api.getSceneElements()) : savedVersion;
+    if (savedVersion !== null && liveVersion !== savedVersion) {
+      isDirtyRef.current = true;
+      setDirty(featureId, paneId, filePath, true);
+    } else {
+      isDirtyRef.current = false;
+    }
+  }, [
+    apiRef,
+    baselineVersionRef,
+    featureId,
+    filePath,
+    isDirtyRef,
+    lastSerializedVersionRef,
+    paneId,
+    setDirty,
+  ]);
+}
+
+function useSceneChangeHandler(
+  baselineVersionRef: MutableRefObject<number | null>,
+  isDirtyRef: MutableRefObject<boolean>,
+  autoSaveTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>,
+  isAutoSaveEnabledRef: MutableRefObject<boolean>,
+  saveQuiet: () => Promise<void>,
+  setDirty: SetEditorDirty,
+  featureId: number,
+  paneId: string,
+  filePath: string,
+): (elements: Parameters<typeof getSceneVersion>[0]) => void {
+  const markClean = useCallback(() => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (!isDirtyRef.current) return;
+    isDirtyRef.current = false;
+    setDirty(featureId, paneId, filePath, false);
+  }, [autoSaveTimerRef, featureId, filePath, isDirtyRef, paneId, setDirty]);
+  return useCallback(
+    (elements) => {
+      const version = getSceneVersion(elements);
+      if (baselineVersionRef.current === null) {
+        baselineVersionRef.current = version;
+        return;
+      }
+      if (version === baselineVersionRef.current) {
+        markClean();
+        return;
+      }
+      if (!isDirtyRef.current) {
+        isDirtyRef.current = true;
+        setDirty(featureId, paneId, filePath, true);
+      }
+      if (isAutoSaveEnabledRef.current) {
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = setTimeout(() => void saveQuiet(), AUTO_SAVE_DELAY_MS);
+      }
+    },
+    [
+      autoSaveTimerRef,
+      baselineVersionRef,
+      featureId,
+      filePath,
+      isAutoSaveEnabledRef,
+      isDirtyRef,
+      markClean,
+      paneId,
+      saveQuiet,
+      setDirty,
+    ],
+  );
+}
+
+function useParsedExcalidrawScene(filePath: string, projectId: number, featureId: number) {
+  const { data, error: readError } = useReadFile(
+    { project_id: projectId, feature_id: featureId, file_path: filePath },
+    {
+      query: {
+        enabled: Boolean(filePath && projectId),
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+      },
+    },
+  );
+  const parsedRef = useRef<ParsedScene | null>(null);
+  if (parsedRef.current === null && data !== undefined) {
+    parsedRef.current = parseScene(data.content);
+  }
+  const { initialData, error: parseError } = parsedRef.current ?? {
+    initialData: null,
+    error: null,
+  };
+  useEffect(() => {
+    if (parseError) toast.error(parseError, { id: `excalidraw:${filePath}` });
+  }, [filePath, parseError]);
+  const errorMessage = parseError ?? (readError instanceof Error ? readError.message : null);
+  return useMemo(() => ({ initialData, errorMessage }), [errorMessage, initialData]);
+}
+
+interface ExcalidrawEditorViewProps {
+  fileName: string;
+  errorMessage: string | null;
+  initialData: ParsedScene["initialData"];
+  autoSavedVisible: boolean;
+  onApi: (api: ExcalidrawImperativeAPI) => void;
+  onChange: (elements: Parameters<typeof getSceneVersion>[0]) => void;
+}
+
+function ExcalidrawEditorView({
+  fileName,
+  errorMessage,
+  initialData,
+  autoSavedVisible,
+  onApi,
+  onChange,
+}: ExcalidrawEditorViewProps) {
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex-1 min-h-0 relative">
+        {errorMessage ? (
+          <div className="h-full flex items-center justify-center text-destructive text-sm px-6 text-center">
+            {errorMessage}
+          </div>
+        ) : initialData === null ? (
+          <div className="h-full flex items-center justify-center bg-background">
+            <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <Excalidraw excalidrawAPI={onApi} initialData={initialData} onChange={onChange} />
+        )}
+      </div>
+      <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
+        <span className="truncate">{fileName}</span>
+        {autoSavedVisible ? <span>Auto-saved</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function ExcalidrawEditorImpl({ filePath, projectId, featureId, paneId }: ExcalidrawEditorProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,57 +228,19 @@ function ExcalidrawEditorImpl({ filePath, projectId, featureId, paneId }: Excali
   const isAutoSaveEnabledRef = useRef(false);
   isAutoSaveEnabledRef.current = (autoSaveSetting ?? "false") === "true";
 
-  const { data, error: readError } = useReadFile(
-    { project_id: projectId, feature_id: featureId, file_path: filePath },
-    {
-      query: {
-        enabled: Boolean(filePath && projectId),
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-      },
-    },
+  const { initialData, errorMessage } = useParsedExcalidrawScene(filePath, projectId, featureId);
+
+  const serialize = useSceneSerializer(apiRef, lastSerializedVersionRef);
+  const handleSaved = useSceneSavedHandler(
+    apiRef,
+    lastSerializedVersionRef,
+    baselineVersionRef,
+    isDirtyRef,
+    setDirty,
+    featureId,
+    paneId,
+    filePath,
   );
-
-  // Parse the scene exactly once, when content first loads. Excalidraw only
-  // reads `initialData` at mount, and the tab remounts per file (`key` in
-  // `EditorPane`), so re-parsing on every save (each save swaps the read-file
-  // cache entry via `setQueryData`) would be wasted work on a large JSON scene.
-  const parsedRef = useRef<ParsedScene | null>(null);
-  if (parsedRef.current === null && data !== undefined) {
-    parsedRef.current = parseScene(data.content);
-  }
-  const { initialData, error: parseError } = parsedRef.current ?? {
-    initialData: null,
-    error: null,
-  };
-
-  useEffect(() => {
-    if (parseError) toast.error(parseError, { id: `excalidraw:${filePath}` });
-  }, [parseError, filePath]);
-
-  const serialize = useCallback((): string | null => {
-    const api = apiRef.current;
-    if (!api) return null;
-    const elements = api.getSceneElements();
-    lastSerializedVersionRef.current = getSceneVersion(elements);
-    return serializeAsJSON(elements, api.getAppState(), api.getFiles(), "local");
-  }, []);
-
-  const handleSaved = useCallback(() => {
-    const savedVersion = lastSerializedVersionRef.current;
-    baselineVersionRef.current = savedVersion;
-    // The write is async: if the user kept drawing while it was in flight, the
-    // live scene is newer than what we persisted. Re-assert dirty so those
-    // edits aren't silently marked saved (the hook already cleared the flag).
-    const api = apiRef.current;
-    const liveVersion = api ? getSceneVersion(api.getSceneElements()) : savedVersion;
-    if (savedVersion !== null && liveVersion !== savedVersion) {
-      isDirtyRef.current = true;
-      setDirty(featureId, paneId, filePath, true);
-    } else {
-      isDirtyRef.current = false;
-    }
-  }, [featureId, paneId, filePath, setDirty]);
 
   const { save, saveQuiet, autoSavedVisible } = useExcalidrawSave({
     projectId,
@@ -115,36 +251,16 @@ function ExcalidrawEditorImpl({ filePath, projectId, featureId, paneId }: Excali
     onSaved: handleSaved,
   });
 
-  const markClean = useCallback(() => {
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    if (!isDirtyRef.current) return;
-    isDirtyRef.current = false;
-    setDirty(featureId, paneId, filePath, false);
-  }, [featureId, paneId, filePath, setDirty]);
-
-  const handleChange = useCallback(
-    (elements: Parameters<typeof getSceneVersion>[0]): void => {
-      const version = getSceneVersion(elements);
-      // First callback establishes the loaded baseline without flagging dirty.
-      if (baselineVersionRef.current === null) {
-        baselineVersionRef.current = version;
-        return;
-      }
-      // Undo back to a saved state (or a no-op change) clears the dirty flag.
-      if (version === baselineVersionRef.current) {
-        markClean();
-        return;
-      }
-      if (!isDirtyRef.current) {
-        isDirtyRef.current = true;
-        setDirty(featureId, paneId, filePath, true);
-      }
-      if (isAutoSaveEnabledRef.current) {
-        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = setTimeout(() => void saveQuiet(), AUTO_SAVE_DELAY_MS);
-      }
-    },
-    [featureId, paneId, filePath, setDirty, saveQuiet, markClean],
+  const handleChange = useSceneChangeHandler(
+    baselineVersionRef,
+    isDirtyRef,
+    autoSaveTimerRef,
+    isAutoSaveEnabledRef,
+    saveQuiet,
+    setDirty,
+    featureId,
+    paneId,
+    filePath,
   );
 
   // ⌘S. CodeMirror binds save inside its own keymap; the canvas has none, so
@@ -178,29 +294,15 @@ function ExcalidrawEditorImpl({ filePath, projectId, featureId, paneId }: Excali
     apiRef.current = api;
   }, []);
 
-  const fileNameLabel = getFileName(filePath);
-  const errorMessage = parseError ?? (readError instanceof Error ? readError.message : null);
-
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 min-h-0 relative">
-        {errorMessage ? (
-          <div className="h-full flex items-center justify-center text-destructive text-sm px-6 text-center">
-            {errorMessage}
-          </div>
-        ) : initialData === null ? (
-          <div className="h-full flex items-center justify-center bg-background">
-            <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <Excalidraw excalidrawAPI={handleApi} initialData={initialData} onChange={handleChange} />
-        )}
-      </div>
-      <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
-        <span className="truncate">{fileNameLabel}</span>
-        {autoSavedVisible ? <span>Auto-saved</span> : null}
-      </div>
-    </div>
+    <ExcalidrawEditorView
+      fileName={getFileName(filePath)}
+      errorMessage={errorMessage}
+      initialData={initialData}
+      autoSavedVisible={autoSavedVisible}
+      onApi={handleApi}
+      onChange={handleChange}
+    />
   );
 }
 

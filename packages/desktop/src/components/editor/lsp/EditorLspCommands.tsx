@@ -32,6 +32,61 @@ interface EditorLspCommandsProps {
   enabled: boolean;
 }
 
+function useEditorLspShortcuts({
+  enabled,
+  openRename,
+  runFindReferences,
+  openSymbolPicker,
+  openWorkspacePicker,
+}: {
+  enabled: boolean;
+  openRename: () => void;
+  runFindReferences: () => void;
+  openSymbolPicker: () => void;
+  openWorkspacePicker: () => void;
+}): void {
+  useScopedGlobalShortcutById(
+    "editor-rename-symbol",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openRename();
+    },
+    "editor",
+    { enabled },
+  );
+  useScopedGlobalShortcutById(
+    "editor-find-references",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      runFindReferences();
+    },
+    "editor",
+    { enabled },
+  );
+  useScopedGlobalShortcutById(
+    "editor-symbol-outline",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openSymbolPicker();
+    },
+    "editor",
+    { enabled },
+  );
+  useScopedGlobalShortcutById(
+    "editor-workspace-symbols",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openWorkspacePicker();
+    },
+    "editor",
+    { enabled },
+  );
+}
+
 export function EditorLspCommands({
   view,
   projectId,
@@ -74,49 +129,13 @@ export function EditorLspCommands({
       });
   }, [view]);
 
-  useScopedGlobalShortcutById(
-    "editor-rename-symbol",
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      openRename();
-    },
-    "editor",
-    { enabled },
-  );
-
-  useScopedGlobalShortcutById(
-    "editor-find-references",
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      runFindReferences();
-    },
-    "editor",
-    { enabled },
-  );
-
-  useScopedGlobalShortcutById(
-    "editor-symbol-outline",
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setSymbolPickerOpen(true);
-    },
-    "editor",
-    { enabled },
-  );
-
-  useScopedGlobalShortcutById(
-    "editor-workspace-symbols",
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setWorkspacePickerOpen(true);
-    },
-    "editor",
-    { enabled },
-  );
+  useEditorLspShortcuts({
+    enabled,
+    openRename,
+    runFindReferences,
+    openSymbolPicker: () => setSymbolPickerOpen(true),
+    openWorkspacePicker: () => setWorkspacePickerOpen(true),
+  });
 
   return (
     <>
