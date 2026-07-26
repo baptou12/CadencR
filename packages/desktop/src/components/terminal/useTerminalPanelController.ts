@@ -18,6 +18,7 @@ import {
   type TerminalPanelState,
 } from "@/hooks/useTerminalState";
 import { useTheme } from "@/hooks/useTheme";
+import { useMonoFont } from "@/lib/fonts/mono-font-setting";
 import { useWorktreeTerminalAutoSwitch } from "@/hooks/useWorktreeTerminalAutoSwitch";
 import type { XTermInstanceHandle } from "./XTermInstance";
 import { useTerminalPaneShortcuts } from "./useTerminalPaneShortcuts";
@@ -309,6 +310,7 @@ export function useTerminalPanelController(
   const layout = useTerminalLayoutActions(props, leaves, focus);
   const runtime = useTerminalRuntimeActions(props, leaves, focus, layout);
   const { theme } = useTheme();
+  const { resolved: monoFontFamily } = useMonoFont();
   const setPtyId = useTerminalStore((state) => state.setPtyId);
   const setPaneCwd = useTerminalStore((state) => state.setPaneCwd);
   const clearInitialCommand = useTerminalStore((state) => state.clearInitialCommand);
@@ -330,6 +332,7 @@ export function useTerminalPanelController(
       isMobile,
       layout,
       leaves,
+      monoFontFamily,
       runtime,
       setPaneCwd,
       setPtyId,
@@ -343,6 +346,7 @@ export function useTerminalPanelController(
       isMobile,
       layout,
       leaves,
+      monoFontFamily,
       runtime,
       setPaneCwd,
       setPtyId,

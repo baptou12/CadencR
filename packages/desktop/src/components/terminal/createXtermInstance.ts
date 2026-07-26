@@ -1,15 +1,18 @@
 import { Terminal } from "@xterm/xterm";
 import type { XTermPalette } from "@/lib/themes";
+import { DEFAULT_MONO_STACK } from "@/lib/fonts/constants";
 
-export function createXtermInstance(theme: XTermPalette): Terminal {
+export function createXtermInstance(
+  theme: XTermPalette,
+  fontFamily: string = DEFAULT_MONO_STACK,
+): Terminal {
   return new Terminal({
     cursorBlink: true,
     cursorStyle: "block",
     cursorWidth: 2,
     fontSize: 13,
     lineHeight: 1.2,
-    fontFamily:
-      "'FiraCode Nerd Font', 'Fira Code', 'CaskaydiaCove Nerd Font', 'Cascadia Code', 'SF Mono', Menlo, Monaco, 'Courier New', monospace",
+    fontFamily,
     fontWeight: "400",
     fontWeightBold: "600",
     letterSpacing: 0,

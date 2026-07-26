@@ -4,10 +4,10 @@ import type { XTermInstanceHandle, XTermInstanceProps } from "./XTermInstance.ty
 import { useXTermInstanceController } from "./useXTermInstanceController";
 
 export type { XTermInstanceHandle } from "./XTermInstance.types";
-
 export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>(
   function XTermInstance(props, ref) {
     const controller = useXTermInstanceController(props, ref);
+
     return (
       <div
         ref={controller.containerRef}
