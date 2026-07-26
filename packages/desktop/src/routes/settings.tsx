@@ -16,6 +16,7 @@ import { StatsSection } from "@/components/settings/StatsSection";
 import { AgentVerbositySettings } from "@/components/settings/AgentVerbositySettings";
 import { AgentSummaryModeToggle } from "@/components/settings/AgentSummaryModeToggle";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
+import { FontSelector } from "@/components/settings/FontSelector";
 import { FileTreeIconSetSelector } from "@/components/settings/FileTreeIconSetSelector";
 import { LspServerList } from "@/components/settings/LspServerList";
 import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
@@ -169,6 +170,7 @@ function AppearanceSection(): React.JSX.Element {
           <ThemeSelector />
           <AnimationsToggle divided />
         </SettingsSubsection>
+        <FontSelector />
         <SettingsSubsection
           title="Agent output verbosity"
           description="Control how much of each agent turn stays expanded in the stream. Switching modes does not affect what the agent does — only how its output is rendered."
