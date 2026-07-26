@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,31 @@ interface ThemePickerProps {
   autoFocus?: boolean;
 }
 
+function useSelectedThemeFocus(
+  scrollerRef: RefObject<HTMLDivElement | null>,
+  selectedIndex: number,
+  autoFocus: boolean,
+): void {
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const target = scroller.querySelector<HTMLElement>(
+      `[data-theme-card="${THEME_LIST[selectedIndex]?.id}"]`,
+    );
+    target?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [scrollerRef, selectedIndex]);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const target = scrollerRef.current?.querySelector<HTMLElement>(
+      `[data-theme-card="${THEME_LIST[selectedIndex]?.id}"]`,
+    );
+    target?.focus({ preventScroll: true });
+    // The selected card should only autofocus when the picker mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 export function ThemePicker({
   title,
   selectedThemeId,
@@ -36,29 +61,7 @@ export function ThemePicker({
     [selectedThemeId],
   );
 
-  // Keep the selected card in view as the user navigates.
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const target = scroller.querySelector<HTMLElement>(
-      `[data-theme-card="${THEME_LIST[selectedIndex]?.id}"]`,
-    );
-    target?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  }, [selectedIndex]);
-
-  // Autofocus the selected card so arrow keys work immediately when the
-  // drawer opens — the first picker passes `autoFocus`.
-  useEffect(() => {
-    if (!autoFocus) return;
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const target = scroller.querySelector<HTMLElement>(
-      `[data-theme-card="${THEME_LIST[selectedIndex]?.id}"]`,
-    );
-    target?.focus({ preventScroll: true });
-    // We only want to run once on mount, not every time selection changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useSelectedThemeFocus(scrollerRef, selectedIndex, autoFocus);
 
   const step = useCallback(
     (direction: 1 | -1): void => {

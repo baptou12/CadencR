@@ -132,6 +132,20 @@ const NAV_GROUPS: SettingsNavGroup[] = [
   },
 ];
 
+function SettingsSidebarHeader(): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="grid size-7 place-items-center rounded-md bg-primary text-[var(--primary-foreground)]">
+        <Settings2 className="size-4" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold">Settings</div>
+        <div className="truncate text-[11px] text-muted-foreground">Cadencr v{APP_VERSION}</div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage() {
   const { section } = Route.useSearch();
   const navigate = useNavigate();
@@ -162,19 +176,7 @@ function SettingsPage() {
       <SettingsNavSidebar
         groups={NAV_GROUPS}
         scrollRef={mainRef}
-        header={
-          <div className="flex items-center gap-2">
-            <div className="grid size-7 place-items-center rounded-md bg-primary text-[var(--primary-foreground)]">
-              <Settings2 className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold">Settings</div>
-              <div className="truncate text-[11px] text-muted-foreground">
-                Cadencr v{APP_VERSION}
-              </div>
-            </div>
-          </div>
-        }
+        header={<SettingsSidebarHeader />}
         footer={
           <div className="flex items-center justify-between gap-2">
             <span>Changes save automatically.</span>
@@ -269,23 +271,68 @@ function AppearanceSection(): React.JSX.Element {
 
 /* ─── Editor ─────────────────────────────────────────────────────────── */
 
+function MaxOpenTabsControl(): React.JSX.Element {
+  const maxTabs = useDebouncedSetting("editor_max_tabs");
+  const maxTabsValue = maxTabs.value ?? "10";
+  const isLimited = maxTabsValue !== "0";
+  const maxTabsNum = isLimited ? parseInt(maxTabsValue, 10) || 10 : 10;
+  const setMaxTabsNum = (value: number): void => {
+    const clamped = Math.max(1, Math.min(50, value));
+    maxTabs.setValue(String(clamped));
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setMaxTabsNum(maxTabsNum - 1)}
+        disabled={!isLimited}
+        className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
+        aria-label="Decrease max tabs"
+      >
+        −
+      </button>
+      <Input
+        type="number"
+        min={1}
+        max={50}
+        disabled={!isLimited}
+        value={maxTabsNum}
+        onChange={(event) => setMaxTabsNum(parseInt(event.target.value, 10) || 1)}
+        className="h-7 w-14 text-center disabled:opacity-50"
+      />
+      <button
+        type="button"
+        onClick={() => setMaxTabsNum(maxTabsNum + 1)}
+        disabled={!isLimited}
+        className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
+        aria-label="Increase max tabs"
+      >
+        +
+      </button>
+      <label
+        htmlFor="max-tabs-unlimited"
+        className="ml-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+      >
+        Unlimited
+        <Switch
+          id="max-tabs-unlimited"
+          size="sm"
+          checked={!isLimited}
+          onCheckedChange={(checked) => maxTabs.setValue(checked ? "0" : "10")}
+        />
+      </label>
+    </div>
+  );
+}
+
 function EditorSection(): React.JSX.Element {
   const vimMode = useDebouncedSetting("editor_vim_mode");
   const autoSave = useDebouncedSetting("editor_auto_save");
   const gitBlame = useDebouncedSetting("editor_git_blame");
-  const maxTabs = useDebouncedSetting("editor_max_tabs");
 
   const isVimEnabled = (vimMode.value ?? "false") === "true";
   const isAutoSaveEnabled = (autoSave.value ?? "false") === "true";
   const isGitBlameEnabled = (gitBlame.value ?? "false") === "true";
-  const maxTabsValue = maxTabs.value ?? "10";
-  const isLimited = maxTabsValue !== "0";
-  const maxTabsNum = isLimited ? parseInt(maxTabsValue, 10) || 10 : 10;
-
-  const setMaxTabsNum = (n: number) => {
-    const clamped = Math.max(1, Math.min(50, n));
-    maxTabs.setValue(String(clamped));
-  };
 
   return (
     <SettingsSection id="editor" title="Editor" subtitle="CodeMirror · File tree">
@@ -339,49 +386,7 @@ function EditorSection(): React.JSX.Element {
             }
             label="Max open tabs"
             description="Older tabs are closed once you exceed the cap. Disable to keep them all."
-            control={
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMaxTabsNum(maxTabsNum - 1)}
-                  disabled={!isLimited}
-                  className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
-                  aria-label="Decrease max tabs"
-                >
-                  −
-                </button>
-                <Input
-                  type="number"
-                  min={1}
-                  max={50}
-                  disabled={!isLimited}
-                  value={maxTabsNum}
-                  onChange={(e) => setMaxTabsNum(parseInt(e.target.value, 10) || 1)}
-                  className="h-7 w-14 text-center disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => setMaxTabsNum(maxTabsNum + 1)}
-                  disabled={!isLimited}
-                  className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
-                  aria-label="Increase max tabs"
-                >
-                  +
-                </button>
-                <label
-                  htmlFor="max-tabs-unlimited"
-                  className="ml-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Unlimited
-                  <Switch
-                    id="max-tabs-unlimited"
-                    size="sm"
-                    checked={!isLimited}
-                    onCheckedChange={(checked) => maxTabs.setValue(checked ? "0" : "10")}
-                  />
-                </label>
-              </div>
-            }
+            control={<MaxOpenTabsControl />}
           />
         </SettingsSubsection>
       </SettingsCard>
