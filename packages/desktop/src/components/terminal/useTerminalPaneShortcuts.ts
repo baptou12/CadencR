@@ -12,6 +12,110 @@ interface UseTerminalPaneShortcutsParams {
   onClose: (paneId: string) => void;
 }
 
+interface ShortcutOptions {
+  enabled: boolean;
+}
+
+function useTerminalSplitShortcuts(
+  onSplit: (orientation: SplitOrientation) => void,
+  options: ShortcutOptions,
+): void {
+  useScopedGlobalShortcutById(
+    "terminal-split-h",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onSplit("horizontal");
+    },
+    "terminal",
+    options,
+  );
+  useScopedGlobalShortcutById(
+    "terminal-split-v",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onSplit("vertical");
+    },
+    "terminal",
+    options,
+  );
+}
+
+function useTerminalNavigationShortcuts(
+  onNavigate: (direction: "left" | "right" | "up" | "down") => void,
+  options: ShortcutOptions,
+): void {
+  useTerminalNavigationShortcut("terminal-nav-pane-left", "left", onNavigate, options);
+  useTerminalNavigationShortcut("terminal-nav-pane-right", "right", onNavigate, options);
+  useTerminalNavigationShortcut("terminal-nav-pane-up", "up", onNavigate, options);
+  useTerminalNavigationShortcut("terminal-nav-pane-down", "down", onNavigate, options);
+}
+
+function useTerminalNavigationShortcut(
+  shortcutId:
+    | "terminal-nav-pane-left"
+    | "terminal-nav-pane-right"
+    | "terminal-nav-pane-up"
+    | "terminal-nav-pane-down",
+  direction: "left" | "right" | "up" | "down",
+  onNavigate: (direction: "left" | "right" | "up" | "down") => void,
+  options: ShortcutOptions,
+): void {
+  useScopedGlobalShortcutById(
+    shortcutId,
+    (event) => {
+      event.preventDefault();
+      onNavigate(direction);
+    },
+    "terminal",
+    options,
+  );
+}
+
+function useTerminalActionShortcuts({
+  resolvedActivePaneId,
+  paneRefs,
+  onClose,
+  options,
+}: Pick<UseTerminalPaneShortcutsParams, "resolvedActivePaneId" | "paneRefs" | "onClose"> & {
+  options: ShortcutOptions;
+}): void {
+  useScopedGlobalShortcutById(
+    "terminal-clear",
+    (event) => {
+      if (!resolvedActivePaneId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      paneRefs.current.get(resolvedActivePaneId)?.clearScreen();
+    },
+    "terminal",
+    options,
+  );
+  useScopedGlobalShortcutById(
+    "terminal-delete-line",
+    (event) => {
+      if (!resolvedActivePaneId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      paneRefs.current.get(resolvedActivePaneId)?.clearInput();
+    },
+    "terminal",
+    options,
+  );
+  useScopedGlobalShortcutById(
+    "terminal-close",
+    (event) => {
+      if (!resolvedActivePaneId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose(resolvedActivePaneId);
+    },
+    "terminal",
+    options,
+  );
+}
+
 /**
  * Registers all terminal-pane keyboard shortcuts (split, navigate, clear,
  * delete-line, close), scoped to the terminal tab so they don't fire from
@@ -29,110 +133,8 @@ export function useTerminalPaneShortcuts({
   onNavigate,
   onClose,
 }: UseTerminalPaneShortcutsParams): void {
-  const opts = { enabled: hotkeysEnabled };
-
-  useScopedGlobalShortcutById(
-    "terminal-split-h",
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onSplit("horizontal");
-    },
-    "terminal",
-    opts,
-  );
-
-  useScopedGlobalShortcutById(
-    "terminal-split-v",
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onSplit("vertical");
-    },
-    "terminal",
-    opts,
-  );
-
-  // One capture-phase listener per arrow direction so xterm doesn't swallow the
-  // keys while its textarea is focused.
-  useScopedGlobalShortcutById(
-    "terminal-nav-pane-left",
-    (e) => {
-      e.preventDefault();
-      onNavigate("left");
-    },
-    "terminal",
-    opts,
-  );
-  useScopedGlobalShortcutById(
-    "terminal-nav-pane-right",
-    (e) => {
-      e.preventDefault();
-      onNavigate("right");
-    },
-    "terminal",
-    opts,
-  );
-  useScopedGlobalShortcutById(
-    "terminal-nav-pane-up",
-    (e) => {
-      e.preventDefault();
-      onNavigate("up");
-    },
-    "terminal",
-    opts,
-  );
-  useScopedGlobalShortcutById(
-    "terminal-nav-pane-down",
-    (e) => {
-      e.preventDefault();
-      onNavigate("down");
-    },
-    "terminal",
-    opts,
-  );
-
-  useScopedGlobalShortcutById(
-    "terminal-clear",
-    (e) => {
-      if (!resolvedActivePaneId) return;
-      e.preventDefault();
-      e.stopPropagation();
-      paneRefs.current.get(resolvedActivePaneId)?.clearScreen();
-    },
-    "terminal",
-    opts,
-  );
-
-  useScopedGlobalShortcutById(
-    "terminal-delete-line",
-    (e) => {
-      if (!resolvedActivePaneId) return;
-      e.preventDefault();
-      e.stopPropagation();
-      paneRefs.current.get(resolvedActivePaneId)?.clearInput();
-    },
-    "terminal",
-    opts,
-  );
-
-  // CMD+W: kill the active split's PTY. Scoped to the terminal tab.
-  //
-  // We only `preventDefault` + `stopPropagation` when there *is* a pane to
-  // close — otherwise we let the event fall through to `useAppClose`'s global
-  // meta+w (hooks/useAppClose.ts), which is the user-visible "no terminals
-  // left, close the app" behaviour. Stopping propagation matters: without it,
-  // `useAppClose` would *also* run and request a window close while the user
-  // only intended to kill one split.
-  useScopedGlobalShortcutById(
-    "terminal-close",
-    (e) => {
-      if (!resolvedActivePaneId) return;
-      e.preventDefault();
-      e.stopPropagation();
-      onClose(resolvedActivePaneId);
-    },
-    "terminal",
-    opts,
-  );
+  const options = { enabled: hotkeysEnabled };
+  useTerminalSplitShortcuts(onSplit, options);
+  useTerminalNavigationShortcuts(onNavigate, options);
+  useTerminalActionShortcuts({ resolvedActivePaneId, paneRefs, onClose, options });
 }

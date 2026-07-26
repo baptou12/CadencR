@@ -112,74 +112,13 @@ export interface MetaBarHandle {
   openModelPicker: () => void;
 }
 
-export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
-  {
-    showAutoScrollChip,
-    autoScrollEnabled,
-    onToggleAutoScroll,
-    permissionMode,
-    onPermissionModeToggle,
-    enabledOptInModes,
-    providerModes = [],
-    accessMode,
-    providerAccessModes = [],
-    accessModeDefault,
-    isAccessModePending = false,
-    onAccessModeChange,
-    showWorktreeChip,
-    worktreeMode,
-    onWorktreeModeChange,
-    worktreeProjectId,
-    worktreeDefaultBranch,
-    worktreeProjectPath,
-    worktreeSelectedBranch,
-    onWorktreeBranchChange,
-    onProviderChange,
-    currentProviderId,
-    onModelChange,
-    currentThinkingEffort,
-    supportedThinkingEfforts = [],
-    onThinkingEffortChange,
-    showClaudeProfileSelector = false,
-    claudeProfile,
-    claudeProfiles = [],
-    claudeProfilesLoading = false,
-    claudeProfilesError = false,
-    onClaudeProfileChange,
-    showReadOnlyModel = false,
-    currentModelId,
-    currentModelLabel,
-    isModelCatalogLoading = false,
-    models,
-    providers = [],
-    canChangeProvider = false,
-    todos,
-    runtimeProvider,
-    runtimeSessionId,
-    featureId,
-    wsSessionId,
-    projectPath,
-    isRunning = false,
-    onPause,
-    onModelSelected,
-    variant = "session",
-    secondaryBelow = false,
-  },
-  ref,
-) {
-  const [internalModelPickerOpen, setInternalModelPickerOpen] = useState(false);
-  const displayProviderId = currentProviderId ?? runtimeProvider;
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      openModelPicker: () => setInternalModelPickerOpen(true),
-    }),
-    [],
-  );
+function useMetaBarState(props: MetaBarProps, ref: React.ForwardedRef<MetaBarHandle>) {
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const displayProviderId = props.currentProviderId ?? props.runtimeProvider;
+  useImperativeHandle(ref, () => ({ openModelPicker: () => setModelPickerOpen(true) }), []);
   const pickerProviders = useMemo(() => {
-    if (providers.length > 0) {
-      return providers.map((provider) => ({
+    if (props.providers && props.providers.length > 0) {
+      return props.providers.map((provider) => ({
         id: provider.id,
         label: provider.label,
         disabled: !!provider.disabled,
@@ -192,148 +131,172 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         id: displayProviderId,
         label: displayProviderId,
         disabled: false,
-        models,
+        models: props.models,
       },
     ];
-  }, [displayProviderId, models, providers]);
-
-  // Hide the chip when the provider can't cycle (< 2 visible modes).
+  }, [displayProviderId, props.models, props.providers]);
   const activeMode = useMemo(() => {
-    if (!onPermissionModeToggle || !permissionMode) return null;
-    const visibleModes = getVisibleModes(displayProviderId, enabledOptInModes ?? [], providerModes);
+    if (!props.onPermissionModeToggle || !props.permissionMode) return null;
+    const visibleModes = getVisibleModes(
+      displayProviderId,
+      props.enabledOptInModes ?? [],
+      props.providerModes ?? [],
+    );
     if (visibleModes.length < 2) return null;
-    return findProviderMode(displayProviderId, permissionMode, providerModes) ?? visibleModes[0];
-  }, [displayProviderId, enabledOptInModes, onPermissionModeToggle, permissionMode, providerModes]);
+    return (
+      findProviderMode(displayProviderId, props.permissionMode, props.providerModes ?? []) ??
+      visibleModes[0]
+    );
+  }, [
+    displayProviderId,
+    props.enabledOptInModes,
+    props.onPermissionModeToggle,
+    props.permissionMode,
+    props.providerModes,
+  ]);
+  const displayMode = getDisplayMode(activeMode, displayProviderId, props.permissionMode);
+  return useMemo(
+    () => ({
+      displayMode,
+      displayProviderId,
+      modelPickerOpen,
+      pickerProviders,
+      setModelPickerOpen,
+    }),
+    [displayMode, displayProviderId, modelPickerOpen, pickerProviders],
+  );
+}
 
-  const displayMode = getDisplayMode(activeMode, displayProviderId, permissionMode);
-  const isStandalone = variant === "standalone";
-  const shouldShowModel = !!onModelChange || showReadOnlyModel;
-  const hasAccessMode = !!accessMode && !!onAccessModeChange && providerAccessModes.length > 0;
-  const hasProfileSelector =
-    showClaudeProfileSelector && !!claudeProfile && !!onClaudeProfileChange;
-  const hasTrailingGroup =
-    hasProfileSelector || hasAccessMode || (!secondaryBelow && runtimeSessionId && onPause);
+type MetaBarState = ReturnType<typeof useMetaBarState>;
 
+export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(props, ref) {
+  const state = useMetaBarState(props, ref);
+  const isStandalone = props.variant === "standalone";
   return (
     <div
       className={cn(
         "flex items-center gap-1.5",
         isStandalone ? "px-3 py-2" : "relative -mt-6 px-3 py-3 backdrop-blur-sm",
       )}
-      style={
-        isStandalone
-          ? undefined
-          : {
-              background:
-                "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.05) 10%, hsl(var(--background) / 0.12) 20%, hsl(var(--background) / 0.25) 35%, hsl(var(--background) / 0.45) 50%, hsl(var(--background) / 0.65) 65%, hsl(var(--background) / 0.82) 80%, hsl(var(--background) / 0.93) 90%, hsl(var(--background)) 100%)",
-            }
-      }
+      style={isStandalone ? undefined : { background: META_BAR_GRADIENT }}
     >
-      {showAutoScrollChip && !secondaryBelow && (
-        <AutoScrollChip enabled={autoScrollEnabled} onToggle={onToggleAutoScroll} />
-      )}
-
-      {/* Mode chip — labels/colors driven by the per-provider catalog. */}
-      {displayMode && (
-        <ShortcutTooltip label={`${displayMode.label} mode`} keys={["shift", "Tab"]}>
-          <button
-            type="button"
-            onClick={onPermissionModeToggle}
-            title={`${displayMode.description} (Shift+Tab to cycle)`}
-            aria-label={displayMode.ariaLabel}
-            className={cn(META_BAR_CHIP, displayMode.chipClass, "min-w-0")}
-          >
-            <displayMode.icon className="size-3 shrink-0" />
-            <SlidingText text={displayMode.label} className="max-w-[160px]" />
-          </button>
-        </ShortcutTooltip>
-      )}
-
-      {/* Worktree chip — inline when wide; on narrow widths it drops to the
-          `MetaBarSecondary` strip below the prompt (`secondaryBelow`). */}
-      {showWorktreeChip && !secondaryBelow && (
-        <WorktreeChip
-          worktreeProjectId={worktreeProjectId}
-          worktreeDefaultBranch={worktreeDefaultBranch}
-          worktreeProjectPath={worktreeProjectPath}
-          worktreeMode={worktreeMode}
-          onWorktreeModeChange={onWorktreeModeChange}
-          worktreeSelectedBranch={worktreeSelectedBranch}
-          onWorktreeBranchChange={onWorktreeBranchChange}
-        />
-      )}
-
-      {/* Model chip */}
-      {shouldShowModel && (
-        <ModelMetaChip
-          open={internalModelPickerOpen}
-          onOpenChange={setInternalModelPickerOpen}
-          currentProviderId={displayProviderId}
-          currentModelId={currentModelId}
-          currentModelLabel={currentModelLabel}
-          isModelCatalogLoading={isModelCatalogLoading}
-          pickerProviders={pickerProviders}
-          canChangeProvider={canChangeProvider}
-          onProviderChange={onProviderChange}
-          onModelChange={onModelChange}
-          currentThinkingEffort={currentThinkingEffort}
-          supportedThinkingEfforts={supportedThinkingEfforts}
-          onThinkingEffortChange={onThinkingEffortChange}
-          onModelSelected={onModelSelected}
-        />
-      )}
-
-      {/* Tasks chip */}
-      {!secondaryBelow && todos && todos.length > 0 && (
-        <AgentTodoList todos={todos} chipClass={META_BAR_CHIP} />
-      )}
-
-      {hasTrailingGroup && (
-        <div className="ml-auto flex items-center gap-1.5">
-          {hasProfileSelector && (
-            <ClaudeProfileCombobox
-              value={claudeProfile}
-              profiles={claudeProfiles}
-              isLoading={claudeProfilesLoading}
-              isError={claudeProfilesError}
-              onChange={onClaudeProfileChange}
-              variant="compact"
-              label="Profile"
-            />
-          )}
-
-          {/* Provider access chip — separate from collaboration mode; no keyboard shortcut. */}
-          {accessMode && onAccessModeChange && providerAccessModes.length > 0 && (
-            <AccessModePopover
-              mode={accessMode}
-              selectedMode={accessModeDefault}
-              isPending={isAccessModePending}
-              onChange={onAccessModeChange}
-              providerId={displayProviderId}
-              options={providerAccessModes}
-            />
-          )}
-
-          {/* Session info */}
-          {!secondaryBelow && runtimeSessionId && onPause && (
-            <SessionInfoChip
-              runtimeProvider={runtimeProvider}
-              runtimeSessionId={runtimeSessionId}
-              featureId={featureId}
-              wsSessionId={wsSessionId}
-              projectPath={projectPath}
-              isRunning={isRunning}
-              onPause={onPause}
-              chipClass={META_BAR_CHIP}
-              claudeProfile={claudeProfile}
-              claudeProfiles={claudeProfiles}
-              claudeProfilesLoading={claudeProfilesLoading}
-              claudeProfilesError={claudeProfilesError}
-              onClaudeProfileChange={onClaudeProfileChange}
-            />
-          )}
-        </div>
-      )}
+      <MetaBarPrimary props={props} state={state} />
+      <MetaBarTrailing props={props} state={state} />
     </div>
   );
 });
+
+const META_BAR_GRADIENT =
+  "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.05) 10%, hsl(var(--background) / 0.12) 20%, hsl(var(--background) / 0.25) 35%, hsl(var(--background) / 0.45) 50%, hsl(var(--background) / 0.65) 65%, hsl(var(--background) / 0.82) 80%, hsl(var(--background) / 0.93) 90%, hsl(var(--background)) 100%)";
+
+function MetaBarPrimary({ props, state }: { props: MetaBarProps; state: MetaBarState }) {
+  const showModel = !!props.onModelChange || props.showReadOnlyModel;
+  return (
+    <>
+      {props.showAutoScrollChip && !props.secondaryBelow && (
+        <AutoScrollChip enabled={props.autoScrollEnabled} onToggle={props.onToggleAutoScroll} />
+      )}
+      {state.displayMode && (
+        <ShortcutTooltip label={`${state.displayMode.label} mode`} keys={["shift", "Tab"]}>
+          <button
+            type="button"
+            onClick={props.onPermissionModeToggle}
+            title={`${state.displayMode.description} (Shift+Tab to cycle)`}
+            aria-label={state.displayMode.ariaLabel}
+            className={cn(META_BAR_CHIP, state.displayMode.chipClass, "min-w-0")}
+          >
+            <state.displayMode.icon className="size-3 shrink-0" />
+            <SlidingText text={state.displayMode.label} className="max-w-[160px]" />
+          </button>
+        </ShortcutTooltip>
+      )}
+      {props.showWorktreeChip && !props.secondaryBelow && (
+        <WorktreeChip
+          worktreeProjectId={props.worktreeProjectId}
+          worktreeDefaultBranch={props.worktreeDefaultBranch}
+          worktreeProjectPath={props.worktreeProjectPath}
+          worktreeMode={props.worktreeMode}
+          onWorktreeModeChange={props.onWorktreeModeChange}
+          worktreeSelectedBranch={props.worktreeSelectedBranch}
+          onWorktreeBranchChange={props.onWorktreeBranchChange}
+        />
+      )}
+      {showModel && (
+        <ModelMetaChip
+          open={state.modelPickerOpen}
+          onOpenChange={state.setModelPickerOpen}
+          currentProviderId={state.displayProviderId}
+          currentModelId={props.currentModelId}
+          currentModelLabel={props.currentModelLabel}
+          isModelCatalogLoading={props.isModelCatalogLoading ?? false}
+          pickerProviders={state.pickerProviders}
+          canChangeProvider={props.canChangeProvider ?? false}
+          onProviderChange={props.onProviderChange}
+          onModelChange={props.onModelChange}
+          currentThinkingEffort={props.currentThinkingEffort}
+          supportedThinkingEfforts={props.supportedThinkingEfforts ?? []}
+          onThinkingEffortChange={props.onThinkingEffortChange}
+          onModelSelected={props.onModelSelected}
+        />
+      )}
+      {!props.secondaryBelow && props.todos && props.todos.length > 0 && (
+        <AgentTodoList todos={props.todos} chipClass={META_BAR_CHIP} />
+      )}
+    </>
+  );
+}
+
+function MetaBarTrailing({ props, state }: { props: MetaBarProps; state: MetaBarState }) {
+  const hasProfile =
+    props.showClaudeProfileSelector && !!props.claudeProfile && !!props.onClaudeProfileChange;
+  const hasAccess =
+    !!props.accessMode &&
+    !!props.onAccessModeChange &&
+    (props.providerAccessModes?.length ?? 0) > 0;
+  const hasSession = !props.secondaryBelow && !!props.runtimeSessionId && !!props.onPause;
+  if (!hasProfile && !hasAccess && !hasSession) return null;
+  return (
+    <div className="ml-auto flex items-center gap-1.5">
+      {hasProfile && props.claudeProfile && props.onClaudeProfileChange && (
+        <ClaudeProfileCombobox
+          value={props.claudeProfile}
+          profiles={props.claudeProfiles ?? []}
+          isLoading={props.claudeProfilesLoading ?? false}
+          isError={props.claudeProfilesError ?? false}
+          onChange={props.onClaudeProfileChange}
+          variant="compact"
+          label="Profile"
+        />
+      )}
+      {props.accessMode &&
+        props.onAccessModeChange &&
+        (props.providerAccessModes?.length ?? 0) > 0 && (
+          <AccessModePopover
+            mode={props.accessMode}
+            selectedMode={props.accessModeDefault}
+            isPending={props.isAccessModePending ?? false}
+            onChange={props.onAccessModeChange}
+            providerId={state.displayProviderId}
+            options={props.providerAccessModes ?? []}
+          />
+        )}
+      {hasSession && props.runtimeSessionId && props.onPause && (
+        <SessionInfoChip
+          runtimeProvider={props.runtimeProvider}
+          runtimeSessionId={props.runtimeSessionId}
+          featureId={props.featureId}
+          wsSessionId={props.wsSessionId}
+          projectPath={props.projectPath}
+          isRunning={props.isRunning ?? false}
+          onPause={props.onPause}
+          chipClass={META_BAR_CHIP}
+          claudeProfile={props.claudeProfile}
+          claudeProfiles={props.claudeProfiles ?? []}
+          claudeProfilesLoading={props.claudeProfilesLoading ?? false}
+          claudeProfilesError={props.claudeProfilesError ?? false}
+          onClaudeProfileChange={props.onClaudeProfileChange}
+        />
+      )}
+    </div>
+  );
+}

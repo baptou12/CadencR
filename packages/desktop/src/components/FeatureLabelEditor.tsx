@@ -1,4 +1,10 @@
-import { useRef, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
+import {
+  useRef,
+  type KeyboardEvent,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +30,74 @@ interface FeatureLabelEditorProps {
    */
   onSave: (override?: string) => void;
   onCancel: () => void;
+}
+
+interface FeatureLabelCommandProps {
+  inputRef: RefObject<HTMLInputElement | null>;
+  value: string;
+  suggestions: readonly string[];
+  isSaving: boolean;
+  onChange: (value: string) => void;
+  onSave: (override?: string) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  onSuggestionSelect: (label: string) => void;
+}
+
+function FeatureLabelCommand({
+  inputRef,
+  value,
+  suggestions,
+  isSaving,
+  onChange,
+  onSave,
+  onKeyDown,
+  onSuggestionSelect,
+}: FeatureLabelCommandProps): ReactElement {
+  return (
+    <Command shouldFilter>
+      <div className="border-b px-3 py-2 text-xs font-medium text-foreground">
+        Set feature label
+      </div>
+      <CommandInput
+        ref={inputRef}
+        value={value}
+        disabled={isSaving}
+        aria-label="Feature label"
+        autoFocus
+        data-ignore-feature-row-keydown
+        placeholder={isSaving ? "Saving label…" : "Set label"}
+        className="h-9 text-xs"
+        onValueChange={onChange}
+        onKeyDown={onKeyDown}
+      />
+      {suggestions.length > 0 && (
+        <CommandList className="max-h-36">
+          <CommandEmpty className="py-3 text-center text-xs">No matching labels.</CommandEmpty>
+          <CommandGroup heading="Existing labels">
+            {suggestions.map((label) => (
+              <CommandItem
+                key={label}
+                value={label}
+                className="text-xs"
+                onSelect={() => onSuggestionSelect(label)}
+              >
+                {label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      )}
+      <div className="flex items-center justify-between gap-2 border-t p-2">
+        <span className="text-[10.5px] text-muted-foreground">
+          Tab autocompletes · Enter saves · Esc cancels
+        </span>
+        <Button type="button" size="xs" disabled={isSaving} onClick={() => onSave()}>
+          {isSaving && <Loader2Icon aria-label="Saving label" className="size-3 animate-spin" />}
+          Save
+        </Button>
+      </div>
+    </Command>
+  );
 }
 
 export function FeatureLabelEditor({
@@ -111,51 +185,16 @@ export function FeatureLabelEditor({
         onInteractOutside={onCancel}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <Command shouldFilter>
-          <div className="border-b px-3 py-2 text-xs font-medium text-foreground">
-            Set feature label
-          </div>
-          <CommandInput
-            ref={inputRef}
-            value={value}
-            disabled={isSaving}
-            aria-label="Feature label"
-            autoFocus
-            data-ignore-feature-row-keydown
-            placeholder={isSaving ? "Saving label…" : "Set label"}
-            className="h-9 text-xs"
-            onValueChange={onChange}
-            onKeyDown={handleKeyDown}
-          />
-          {suggestions.length > 0 && (
-            <CommandList className="max-h-36">
-              <CommandEmpty className="py-3 text-center text-xs">No matching labels.</CommandEmpty>
-              <CommandGroup heading="Existing labels">
-                {suggestions.map((label) => (
-                  <CommandItem
-                    key={label}
-                    value={label}
-                    className="text-xs"
-                    onSelect={() => handleSuggestionSelect(label)}
-                  >
-                    {label}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          )}
-          <div className="flex items-center justify-between gap-2 border-t p-2">
-            <span className="text-[10.5px] text-muted-foreground">
-              Tab autocompletes · Enter saves · Esc cancels
-            </span>
-            <Button type="button" size="xs" disabled={isSaving} onClick={() => onSave()}>
-              {isSaving && (
-                <Loader2Icon aria-label="Saving label" className="size-3 animate-spin" />
-              )}
-              Save
-            </Button>
-          </div>
-        </Command>
+        <FeatureLabelCommand
+          inputRef={inputRef}
+          value={value}
+          suggestions={suggestions}
+          isSaving={isSaving}
+          onChange={onChange}
+          onSave={onSave}
+          onKeyDown={handleKeyDown}
+          onSuggestionSelect={handleSuggestionSelect}
+        />
       </PopoverContent>
     </Popover>
   );

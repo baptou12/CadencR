@@ -35,6 +35,88 @@ export interface CollapsibleHeaderProps {
   onToggleMaximize?: () => void;
 }
 
+function HeaderActions({
+  isOpen,
+  onMarkDone,
+  resumable,
+  onResume,
+  canDelete,
+  onDelete,
+  maximized,
+  onToggleMaximize,
+}: Pick<
+  CollapsibleHeaderProps,
+  | "isOpen"
+  | "onMarkDone"
+  | "resumable"
+  | "onResume"
+  | "canDelete"
+  | "onDelete"
+  | "maximized"
+  | "onToggleMaximize"
+>): React.ReactNode {
+  return (
+    <div className="ml-auto flex items-center gap-1">
+      {onMarkDone && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-green-400"
+          onClick={(event) => {
+            event.stopPropagation();
+            onMarkDone();
+          }}
+        >
+          <CheckCircleIcon className="size-3" />
+          Mark Done
+        </Button>
+      )}
+      {resumable && onResume && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-xs"
+          onClick={(event) => {
+            event.stopPropagation();
+            onResume();
+          }}
+        >
+          <RotateCcwIcon className="size-3" />
+          Resume
+        </Button>
+      )}
+      {canDelete && onDelete && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-red-400"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+        >
+          <Trash2Icon className="size-3" />
+          Remove
+        </Button>
+      )}
+      {isOpen && onToggleMaximize && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleMaximize();
+          }}
+          title={maximized ? "Minimize" : "Maximize"}
+        >
+          {maximized ? <Minimize2Icon className="size-3" /> : <Maximize2Icon className="size-3" />}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function CollapsibleHeader({
   headerRef,
   onToggle,
@@ -74,68 +156,16 @@ export function CollapsibleHeader({
         {badge.label}
       </Badge>
       <SlidingText className="text-sm font-medium" text={displayLabel} />
-      <div className="ml-auto flex items-center gap-1">
-        {onMarkDone && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-green-400"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMarkDone();
-            }}
-          >
-            <CheckCircleIcon className="size-3" />
-            Mark Done
-          </Button>
-        )}
-        {resumable && onResume && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 px-2 text-xs"
-            onClick={(e) => {
-              e.stopPropagation();
-              onResume();
-            }}
-          >
-            <RotateCcwIcon className="size-3" />
-            Resume
-          </Button>
-        )}
-        {canDelete && onDelete && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-red-400"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            <Trash2Icon className="size-3" />
-            Remove
-          </Button>
-        )}
-        {isOpen && onToggleMaximize && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleMaximize();
-            }}
-            title={maximized ? "Minimize" : "Maximize"}
-          >
-            {maximized ? (
-              <Minimize2Icon className="size-3" />
-            ) : (
-              <Maximize2Icon className="size-3" />
-            )}
-          </Button>
-        )}
-      </div>
+      <HeaderActions
+        isOpen={isOpen}
+        onMarkDone={onMarkDone}
+        resumable={resumable}
+        onResume={onResume}
+        canDelete={canDelete}
+        onDelete={onDelete}
+        maximized={maximized}
+        onToggleMaximize={onToggleMaximize}
+      />
     </div>
   );
 }

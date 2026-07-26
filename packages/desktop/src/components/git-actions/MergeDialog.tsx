@@ -47,6 +47,98 @@ interface MergeDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+interface MergeDialogBodyProps {
+  currentBranch: string;
+  targetBranch: string;
+  effectiveMode: GitMergeMode;
+  saveAsDefault: boolean;
+  submitting: boolean;
+  error: string | null;
+  conflictFiles: string[] | null;
+  onModeChange: (mode: GitMergeMode) => void;
+  onSaveAsDefaultChange: (checked: boolean) => void;
+  onCancel: () => void;
+  onMerge: () => void;
+}
+
+function MergeDialogBody({
+  currentBranch,
+  targetBranch,
+  effectiveMode,
+  saveAsDefault,
+  submitting,
+  error,
+  conflictFiles,
+  onModeChange,
+  onSaveAsDefaultChange,
+  onCancel,
+  onMerge,
+}: MergeDialogBodyProps): ReactElement {
+  return (
+    <>
+      <div className="space-y-4">
+        <div className="rounded-md border p-3 text-sm">
+          <div className="font-mono">
+            {currentBranch} → {targetBranch}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Remote targets such as origin/main are merged into their local branch, e.g. main.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm font-medium">Merge option</div>
+          <RadioCardGroup<GitMergeMode>
+            ariaLabel="Merge option"
+            value={effectiveMode}
+            onChange={onModeChange}
+            options={GIT_MERGE_RADIO_OPTIONS}
+            layout="grid"
+            disabled={submitting}
+          />
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={saveAsDefault}
+            onCheckedChange={(checked) => onSaveAsDefaultChange(checked === true)}
+          />
+          Save as default
+        </label>
+
+        {error && (
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <div className="space-y-2">
+                <p className="font-medium">{error}</p>
+                {conflictFiles && conflictFiles.length > 0 && (
+                  <ConflictFileList files={conflictFiles} />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel} disabled={submitting}>
+          Cancel
+          <KbdShortcut keys={ESC_KEYS} variant="hint" />
+        </Button>
+        <Button onClick={onMerge} disabled={submitting}>
+          {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+          Merge
+          <KbdShortcut keys={SUBMIT_KEYS} variant="hint" />
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
 export default function MergeDialog({
   featureId,
   open,
@@ -121,65 +213,19 @@ export default function MergeDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="rounded-md border p-3 text-sm">
-            <div className="font-mono">
-              {snapshot?.current_branch ?? "current"} → {snapshot?.target_branch ?? "target"}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Remote targets such as origin/main are merged into their local branch, e.g. main.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Merge option</div>
-            <RadioCardGroup<GitMergeMode>
-              ariaLabel="Merge option"
-              value={effectiveMode}
-              onChange={(next) => setMode(next)}
-              options={GIT_MERGE_RADIO_OPTIONS}
-              layout="grid"
-              disabled={submitting}
-            />
-          </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={saveAsDefault}
-              onCheckedChange={(checked) => setSaveAsDefault(checked === true)}
-            />
-            Save as default
-          </label>
-
-          {error && (
-            <div
-              role="alert"
-              className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                <div className="space-y-2">
-                  <p className="font-medium">{error}</p>
-                  {conflictFiles && conflictFiles.length > 0 && (
-                    <ConflictFileList files={conflictFiles} />
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Cancel
-            <KbdShortcut keys={ESC_KEYS} variant="hint" />
-          </Button>
-          <Button onClick={handleMerge} disabled={submitting}>
-            {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
-            Merge
-            <KbdShortcut keys={SUBMIT_KEYS} variant="hint" />
-          </Button>
-        </DialogFooter>
+        <MergeDialogBody
+          currentBranch={snapshot?.current_branch ?? "current"}
+          targetBranch={snapshot?.target_branch ?? "target"}
+          effectiveMode={effectiveMode}
+          saveAsDefault={saveAsDefault}
+          submitting={submitting}
+          error={error}
+          conflictFiles={conflictFiles}
+          onModeChange={setMode}
+          onSaveAsDefaultChange={setSaveAsDefault}
+          onCancel={() => onOpenChange(false)}
+          onMerge={() => void handleMerge()}
+        />
       </DialogContent>
     </Dialog>
   );

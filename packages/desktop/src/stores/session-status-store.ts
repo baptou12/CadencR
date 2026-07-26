@@ -28,21 +28,8 @@
  *
  * Every consumer reads via a narrow selector.
  */
-import { create } from "zustand";
+import { create, type StoreApi } from "zustand";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
-import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
-import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
-import {
-  reportManualReconnectRequired,
-  useConnectionStatusStore,
-} from "@/stores/connection-status-store";
-import {
-  registerReconnector,
-  resetReconnectState,
-  scheduleReconnect,
-  unregisterReconnector,
-} from "@/lib/ws-reconnect";
-import { isBrowserRemote } from "@/lib/remote/device-token";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { updateSession, type SessionEntry, type WsSessionStore } from "@/stores/ws-session-types";
 import { transitionTurn, type TurnLifecycle } from "@/stores/ws-turn-lifecycle";
@@ -54,10 +41,7 @@ import {
   handleAppEnvelope,
   notifyTransition,
 } from "@/stores/session-status-handlers";
-import { hydratePrStatuses } from "@/stores/pr-status-hydration";
-import { subscribeForgeStatus } from "@/stores/forge-visibility";
-
-const APP_WS_SOURCE = "app-ws";
+import { createAppWsConnect, createAppWsDisconnect } from "@/stores/session-status-connection";
 
 export type { LiveAgentStatus, PendingKind };
 
@@ -77,7 +61,7 @@ export interface SessionStatusEntry {
    */
   turnStartedAtMs?: number | null;
 }
-interface SessionStatusState {
+export interface SessionStatusState {
   ws: WebSocket | null;
   isConnected: boolean;
   hasSnapshot: boolean;
@@ -87,16 +71,19 @@ interface SessionStatusState {
   disconnect: () => void;
 }
 
-type IntentionalCloseWebSocket = WebSocket & {
-  __intentionalClose?: () => void;
-};
+type SessionStatusSet = StoreApi<SessionStatusState>["setState"];
+type SessionStatusGet = StoreApi<SessionStatusState>["getState"];
+export type EnvelopeDispatcher = (
+  domain: string,
+  action: string,
+  payload: Record<string, unknown>,
+) => void;
 
-export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
-  function dispatchEnvelope(
-    domain: string,
-    action: string,
-    payload: Record<string, unknown>,
-  ): void {
+function createEnvelopeDispatcher(
+  set: SessionStatusSet,
+  get: SessionStatusGet,
+): EnvelopeDispatcher {
+  return (domain, action, payload): void => {
     if (handleAppEnvelope(domain, action, payload)) return;
     if (domain !== "app") return;
     if (action === "session_status.snapshot") {
@@ -120,144 +107,18 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         notifyTransition(result.featureId, result.prevStatus, result.nextStatus);
       }
     }
-  }
+  };
+}
 
+export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
+  const dispatchEnvelope = createEnvelopeDispatcher(set, get);
   return {
     ws: null,
     isConnected: false,
     hasSnapshot: false,
     bySession: {},
-
-    connect() {
-      // Register so the connection watchdog can force-reconnect us on
-      // wake/online without us having to wait for a TCP-level close.
-      registerReconnector(
-        APP_WS_SOURCE,
-        () => {
-          const live = get().ws;
-          if (live && live.readyState !== WebSocket.CLOSED) {
-            (live as IntentionalCloseWebSocket).__intentionalClose?.();
-            live.close();
-          }
-          set({ ws: null, isConnected: false });
-          get().connect();
-        },
-        { onManualRequired: reportManualReconnectRequired },
-      );
-
-      const existing = get().ws;
-      if (
-        existing &&
-        (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)
-      ) {
-        return;
-      }
-
-      const protocols = getWsProtocols();
-      const ws = new WebSocket(getWsUrl(), protocols.length ? protocols : undefined);
-      // `intentionalClose` flips to true in `disconnect()` *before* we call
-      // `ws.close()`. The close handler then knows not to schedule a
-      // reconnect and not to scribble on the current `store.ws` (which may
-      // already be a freshly-created replacement — see Strict Mode race).
-      let intentionalClose = false;
-      let unsubscribeForgeVisibility = (): void => {};
-
-      ws.addEventListener("open", () => {
-        resetReconnectState(APP_WS_SOURCE);
-        // Preserve `bySession` so sidebar icons don't blink during the
-        // 100–300 ms window before the snapshot arrives. `applySnapshot`
-        // reconciles per-session via the seq, so any stale entries
-        // self-correct (older entries get overwritten; newer ones survive).
-        set({ isConnected: true });
-        useConnectionStatusStore.getState().reportSource(APP_WS_SOURCE, "connected");
-        // The watchdog already calls `probeHealth()` from `forceReconnectAll`
-        // on wake, and the periodic 15 s poll covers the standalone case.
-        // Reporting `connected` here is sufficient to clear the indicator.
-        ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));
-        // Also subscribe to global feature-lifecycle events so a conversation
-        // created/deleted/archived on another device updates this sidebar
-        // without a manual refresh.
-        ws.send(JSON.stringify(createEnvelope("app", "subscribe.feature_events", {})));
-        // Subscribe to settings-file change events so external edits to the
-        // JSON settings files (or changes made on another device) refresh this
-        // client's settings without a manual reload.
-        ws.send(JSON.stringify(createEnvelope("app", "subscribe.settings_events", {})));
-        // PR/MR status is global rather than tied to an opened Git pane: every
-        // sidebar row needs updates. The subscription also sends an immediate
-        // cache snapshot; HTTP hydration covers cold-start and reconnect races.
-        unsubscribeForgeVisibility = subscribeForgeStatus(ws);
-        void hydratePrStatuses();
-        // Host-only: subscribe to remote device-connection events so a phone
-        // pairing/connecting shows a "Device connected" toast. Remote browsers
-        // skip this so a device never toasts for its own connection.
-        if (!isBrowserRemote()) {
-          ws.send(JSON.stringify(createEnvelope("app", "subscribe.remote_events", {})));
-        }
-      });
-
-      // Guard against React Strict Mode double-mount races: a closing
-      // socket may fire `close` after `connect()` has already replaced
-      // `store.ws` with a new instance. Both store mutations are gated
-      // by an instance check (`get().ws === ws`).
-      ws.addEventListener("close", () => {
-        unsubscribeForgeVisibility();
-        if (get().ws === ws) {
-          set({ isConnected: false, ws: null });
-        }
-        if (!intentionalClose) {
-          useConnectionStatusStore
-            .getState()
-            .reportSource(APP_WS_SOURCE, "reconnecting", "App WebSocket dropped");
-          scheduleReconnect(APP_WS_SOURCE, () => get().connect());
-        } else {
-          useConnectionStatusStore.getState().clearSource(APP_WS_SOURCE);
-        }
-      });
-
-      ws.addEventListener("error", () => {
-        if (get().ws === ws) set({ isConnected: false });
-        if (!intentionalClose) {
-          useConnectionStatusStore
-            .getState()
-            .reportSource(APP_WS_SOURCE, "reconnecting", "App WebSocket error");
-        }
-      });
-
-      ws.addEventListener("message", (event) => {
-        let envelope: ReturnType<typeof parseEnvelope>;
-        try {
-          envelope = parseEnvelope(event.data as string);
-        } catch {
-          return; // unparseable — skip
-        }
-        try {
-          dispatchEnvelope(
-            envelope.domain,
-            envelope.action,
-            envelope.payload as Record<string, unknown>,
-          );
-        } catch (err) {
-          console.error("[session-status] dispatchEnvelope error:", err);
-        }
-      });
-
-      (ws as IntentionalCloseWebSocket).__intentionalClose = () => {
-        intentionalClose = true;
-      };
-
-      set({ ws });
-    },
-
-    disconnect() {
-      unregisterReconnector(APP_WS_SOURCE);
-      useConnectionStatusStore.getState().clearSource(APP_WS_SOURCE);
-      const ws = get().ws;
-      if (ws) {
-        (ws as IntentionalCloseWebSocket).__intentionalClose?.();
-        ws.close();
-      }
-      set({ ws: null, isConnected: false });
-    },
+    connect: createAppWsConnect(set, get, dispatchEnvelope),
+    disconnect: createAppWsDisconnect(set, get),
   };
 });
 

@@ -21,42 +21,23 @@ interface UseAgentQuestionShortcutsParams {
   onCancel?: () => void;
 }
 
-/**
- * Registers the keyboard shortcuts for the agent question drawer:
- * 1-9 to select an option, Mod+O to toggle "Other", Enter to submit,
- * Left/Right to navigate between questions, and Escape to cancel.
- */
-export function useAgentQuestionShortcuts({
+function useQuestionChoiceShortcuts({
   open,
   disableShortcuts,
   currentQuestion,
-  showOther,
-  freeTextFocused,
-  canGoBack,
-  canGoForward,
   otherShortcutIndex,
   handleOptionToggle,
   handleOtherToggle,
-  handleNext,
-  handleBack,
-  handleForward,
   flashHighlight,
-  onCancel,
 }: UseAgentQuestionShortcutsParams): void {
-  // `useScopedShortcut` enables form tags by default, so pressing "1" while
-  // typing in the "Other" free-text input would otherwise select an option
-  // instead of inserting the digit. Opt out explicitly so numbers are typed
-  // into the input — same as q-submit/q-prev/q-next below.
   useScopedShortcut(
     "q-select-1-9",
-    (e) => {
-      if (!open || !currentQuestion?.options) return;
-      if (!/^[1-9]$/.test(e.key)) return;
-      const digit = Number(e.key);
+    (event) => {
+      if (!open || !currentQuestion?.options || !/^[1-9]$/.test(event.key)) return;
+      const digit = Number(event.key);
       if (digit > currentQuestion.options.length) return;
-      e.preventDefault();
-      const option = currentQuestion.options[digit - 1];
-      handleOptionToggle(agentQuestionOptionValue(option));
+      event.preventDefault();
+      handleOptionToggle(agentQuestionOptionValue(currentQuestion.options[digit - 1]));
       flashHighlight(digit - 1);
     },
     "agent",
@@ -67,12 +48,11 @@ export function useAgentQuestionShortcuts({
     },
     [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
   );
-
   useScopedShortcut(
     "q-other",
-    (e) => {
+    (event) => {
       if (!open || !currentQuestion?.options) return;
-      e.preventDefault();
+      event.preventDefault();
       handleOtherToggle();
       flashHighlight(otherShortcutIndex);
     },
@@ -87,15 +67,25 @@ export function useAgentQuestionShortcuts({
       otherShortcutIndex,
     ],
   );
+}
 
-  // Enter to validate/submit current question. Default enableOnFormTags=true
-  // would steal Enter inside the free-text input; opt out explicitly.
+function useQuestionNavigationShortcuts({
+  open,
+  disableShortcuts,
+  currentQuestion,
+  showOther,
+  freeTextFocused,
+  canGoBack,
+  canGoForward,
+  handleNext,
+  handleBack,
+  handleForward,
+}: UseAgentQuestionShortcutsParams): void {
   useScopedShortcut(
     "q-submit",
-    (e) => {
-      if (!open || !currentQuestion) return;
-      if (showOther || !currentQuestion.options?.length) return;
-      e.preventDefault();
+    (event) => {
+      if (!open || !currentQuestion || showOther || !currentQuestion.options?.length) return;
+      event.preventDefault();
       handleNext();
     },
     "agent",
@@ -106,13 +96,11 @@ export function useAgentQuestionShortcuts({
     },
     [open, disableShortcuts, currentQuestion, showOther, handleNext],
   );
-
-  // Left/Right arrow keys to navigate between questions
   useScopedShortcut(
     "q-prev",
-    (e) => {
+    (event) => {
       if (!open || freeTextFocused) return;
-      e.preventDefault();
+      event.preventDefault();
       handleBack();
     },
     "agent",
@@ -123,12 +111,11 @@ export function useAgentQuestionShortcuts({
     },
     [open, disableShortcuts, canGoBack, handleBack, freeTextFocused],
   );
-
   useScopedShortcut(
     "q-next",
-    (e) => {
+    (event) => {
       if (!open || freeTextFocused) return;
-      e.preventDefault();
+      event.preventDefault();
       handleForward();
     },
     "agent",
@@ -139,7 +126,17 @@ export function useAgentQuestionShortcuts({
     },
     [open, disableShortcuts, canGoForward, handleForward, freeTextFocused],
   );
+}
 
+/**
+ * Registers the keyboard shortcuts for the agent question drawer:
+ * 1-9 to select an option, Mod+O to toggle "Other", Enter to submit,
+ * Left/Right to navigate between questions, and Escape to cancel.
+ */
+export function useAgentQuestionShortcuts(params: UseAgentQuestionShortcutsParams): void {
+  useQuestionChoiceShortcuts(params);
+  useQuestionNavigationShortcuts(params);
+  const { open, onCancel, disableShortcuts } = params;
   useScopedHotkeys(
     "escape",
     (event) => {

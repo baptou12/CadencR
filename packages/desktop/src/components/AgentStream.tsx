@@ -1,4 +1,12 @@
-import { memo, useCallback, useMemo, useRef, type MutableRefObject, type Ref } from "react";
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  type MutableRefObject,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Loader2Icon } from "lucide-react";
 import {
   Virtuoso,
@@ -7,12 +15,12 @@ import {
   type ListRange,
   type VirtuosoHandle,
 } from "react-virtuoso";
-import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
+import type { AgentBlockData } from "./AgentBlock";
 import { AgentStreamItem } from "./agent-session/AgentStreamItem";
 import { CompactFlowRow } from "./agent-session/CompactFlowRow";
 import { ConversationSearch } from "./agent-session/ConversationSearch";
-import { buildDisplayItems, filterRenderableBlocks, type DisplayItem } from "./agentStreamDisplay";
-import { collapseTurnsToSummary } from "./agentStreamSummary";
+import type { DisplayItem } from "./agentStreamDisplay";
+import { useAgentDisplayItems, useRootBlocks, useToolResultMap } from "./useAgentStreamData";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import { isTurnInProgress } from "@/components/TurnWorkingLabel";
 import type { AgentVerbosityMode } from "@/lib/agent-verbosity";
@@ -124,33 +132,6 @@ const VIRTUOSO_COMPONENTS = {
   Footer: StreamFooter,
 } satisfies Components<DisplayItem, AgentStreamVirtuosoContext>;
 
-function useRootBlocks(
-  blocks: AgentBlockData[],
-  rootBlocksProp: AgentBlockData[] | undefined,
-): AgentBlockData[] {
-  return useMemo(
-    () => rootBlocksProp ?? blocks.filter((block) => !block.parentToolUseId),
-    [rootBlocksProp, blocks],
-  );
-}
-
-function useToolResultMap(
-  blocks: AgentBlockData[],
-  toolResultMapProp: Map<string, AgentBlockData> | undefined,
-): Map<string, AgentBlockData> {
-  const fallbackToolResultCount = useMemo(
-    () =>
-      toolResultMapProp ? 0 : blocks.reduce((n, b) => n + (b.type === "tool_result" ? 1 : 0), 0),
-    [blocks, toolResultMapProp],
-  );
-  const fallbackToolResultMap = useMemo(
-    () => (toolResultMapProp ? new Map<string, AgentBlockData>() : buildToolResultMap(blocks)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: rebuild only on tool_result count change for the fallback path
-    [fallbackToolResultCount, toolResultMapProp],
-  );
-  return toolResultMapProp ?? fallbackToolResultMap;
-}
-
 const LoadingOlderOverlay = memo(function LoadingOlderOverlay() {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
@@ -160,6 +141,116 @@ const LoadingOlderOverlay = memo(function LoadingOlderOverlay() {
     </div>
   );
 });
+
+function useAgentStreamRefs(
+  virtuosoRef: Ref<VirtuosoHandle> | undefined,
+  scrollContainerRef: ScrollRef | undefined,
+) {
+  const localVirtuosoRef = useRef<VirtuosoHandle | null>(null);
+  const scrollerElRef = useRef<HTMLElement | null>(null);
+  const setVirtuoso = useCallback(
+    (handle: VirtuosoHandle | null): void => {
+      localVirtuosoRef.current = handle;
+      if (typeof virtuosoRef === "function") virtuosoRef(handle);
+      else if (virtuosoRef)
+        (virtuosoRef as MutableRefObject<VirtuosoHandle | null>).current = handle;
+    },
+    [virtuosoRef],
+  );
+  const onScroller = useCallback(
+    (element: HTMLElement | Window | null): void => {
+      const scroller = element instanceof HTMLElement ? element : null;
+      scrollerElRef.current = scroller;
+      scrollContainerRef?.(scroller);
+    },
+    [scrollContainerRef],
+  );
+  return useMemo(
+    () => ({ localVirtuosoRef, scrollerElRef, setVirtuoso, onScroller }),
+    [onScroller, setVirtuoso],
+  );
+}
+
+function useAgentStreamItemRenderer(
+  basePath: string | undefined,
+  toolResultMap: Map<string, AgentBlockData>,
+  verbosityMode: AgentVerbosityMode,
+) {
+  return useCallback(
+    (_index: number, item: DisplayItem, context: AgentStreamVirtuosoContext) => {
+      if (item.kind === "flow") {
+        return <CompactFlowRow blocks={item.blocks} basePath={basePath} />;
+      }
+      return (
+        <AgentStreamItem
+          block={item.block}
+          isStreaming={context.streamingBlockId === item.block.id}
+          basePath={basePath}
+          toolResultMap={toolResultMap}
+          verbosityMode={verbosityMode}
+        />
+      );
+    },
+    [basePath, toolResultMap, verbosityMode],
+  );
+}
+
+interface AgentVirtuosoProps {
+  items: DisplayItem[];
+  firstItemIndex: number;
+  context: AgentStreamVirtuosoContext;
+  followOutput?: FollowOutput;
+  onAtBottomStateChange?: AgentStreamProps["onAtBottomStateChange"];
+  onTotalListHeightChanged?: AgentStreamProps["onTotalListHeightChanged"];
+  onStartReached?: AgentStreamProps["onStartReached"];
+  setVirtuoso: (handle: VirtuosoHandle | null) => void;
+  onScroller: (element: HTMLElement | Window | null) => void;
+  computeItemKey: (index: number) => string;
+  onRangeChanged: (range: ListRange) => void;
+  renderItem: (index: number, item: DisplayItem, context: AgentStreamVirtuosoContext) => ReactNode;
+}
+
+function AgentVirtuoso({
+  items,
+  firstItemIndex,
+  context,
+  followOutput,
+  onAtBottomStateChange,
+  onTotalListHeightChanged,
+  onStartReached,
+  setVirtuoso,
+  onScroller,
+  computeItemKey,
+  onRangeChanged,
+  renderItem,
+}: AgentVirtuosoProps) {
+  return (
+    <Virtuoso
+      data-testid="agent-stream-scroller"
+      className="h-full overflow-x-hidden"
+      style={{ height: "100%" }}
+      ref={setVirtuoso}
+      scrollerRef={onScroller}
+      data={items}
+      firstItemIndex={firstItemIndex}
+      computeItemKey={computeItemKey}
+      initialTopMostItemIndex={{ index: "LAST", align: "end" }}
+      defaultItemHeight={40}
+      increaseViewportBy={{ top: 1600, bottom: 800 }}
+      minOverscanItemCount={{ top: 12, bottom: 8 }}
+      overscan={{ main: 800, reverse: 800 }}
+      components={VIRTUOSO_COMPONENTS}
+      context={context}
+      followOutput={followOutput}
+      atBottomStateChange={onAtBottomStateChange}
+      atBottomThreshold={16}
+      totalListHeightChanged={onTotalListHeightChanged}
+      startReached={onStartReached}
+      rangeChanged={onRangeChanged}
+      itemContent={renderItem}
+    />
+  );
+}
 
 export const AgentStream = memo(function AgentStream({
   blocks,
@@ -184,29 +275,18 @@ export const AgentStream = memo(function AgentStream({
   searchEnabled = false,
 }: AgentStreamProps) {
   const rootBlocks = useRootBlocks(blocks, rootBlocksProp);
-  const displayBlocks = useMemo(() => {
-    const filtered = filterRenderableBlocks(rootBlocks);
-    if (!summaryMode) return filtered;
-    // The in-flight turn streams live and folds to a recap only once it ends —
-    // keyed on `turnActive` so a question/permission pause doesn't collapse it
-    // (see `isSegmentBoundary`). Each recap reveals its detail inline, so no
-    // expand state is threaded here.
-    const activeStreaming = turnActive ?? !!isStreaming;
-    return collapseTurnsToSummary(filtered, { activeStreaming });
-  }, [rootBlocks, summaryMode, isStreaming, turnActive]);
   const toolResultMap = useToolResultMap(blocks, toolResultMapProp);
-  const isCompact = verbosityMode === "compact";
-  const displayItems = useMemo(
-    () => buildDisplayItems(displayBlocks, { compact: isCompact }),
-    [displayBlocks, isCompact],
+  const { displayBlocks, displayItems } = useAgentDisplayItems(
+    rootBlocks,
+    summaryMode,
+    turnActive,
+    isStreaming,
+    verbosityMode,
   );
   const firstItemIndex = FIRST_ITEM_INDEX_BASE - historyPrependDisplayOffset;
 
-  // The streaming cursor is, by construction, the last displayed block —
-  // there is no separate "active block" pointer in the store. Threading just
-  // its id (not the whole `isStreaming` boolean) keeps the per-item
-  // `isStreaming={ctx.streamingBlockId === block.id}` check from flipping for
-  // any block other than the one actually receiving chunks.
+  // Only the last displayed block can receive stream chunks; pass its id
+  // through Virtuoso context so older memoized rows remain stable.
   const lastBlockId = displayBlocks.at(-1)?.id;
   const virtuosoContext = useMemo(
     (): AgentStreamVirtuosoContext => ({
@@ -217,27 +297,7 @@ export const AgentStream = memo(function AgentStream({
     }),
     [isStreaming, lastBlockId, lifecycle, showStreamingIndicator, workingLabel],
   );
-  // Local handles so the search overlay can drive scroll-to-match and walk the
-  // scroller for highlighting, while still forwarding both refs to the owner.
-  const localVirtuosoRef = useRef<VirtuosoHandle | null>(null);
-  const scrollerElRef = useRef<HTMLElement | null>(null);
-  const setVirtuoso = useCallback(
-    (handle: VirtuosoHandle | null): void => {
-      localVirtuosoRef.current = handle;
-      if (typeof virtuosoRef === "function") virtuosoRef(handle);
-      else if (virtuosoRef)
-        (virtuosoRef as MutableRefObject<VirtuosoHandle | null>).current = handle;
-    },
-    [virtuosoRef],
-  );
-  const onScroller = useCallback(
-    (el: HTMLElement | Window | null): void => {
-      const element = el instanceof HTMLElement ? el : null;
-      scrollerElRef.current = element;
-      scrollContainerRef?.(element);
-    },
-    [scrollContainerRef],
-  );
+  const streamRefs = useAgentStreamRefs(virtuosoRef, scrollContainerRef);
   const onRangeChanged = useCallback(
     (range: ListRange): void => {
       if (range.startIndex <= firstItemIndex + HISTORY_PREFETCH_ROWS) onStartReached?.();
@@ -251,27 +311,7 @@ export const AgentStream = memo(function AgentStream({
     },
     [displayItems, firstItemIndex],
   );
-  // `renderItem` deliberately does NOT depend on `isStreaming` /
-  // `streamingBlockId`. Those reach the item via Virtuoso `context` so
-  // advancing the streaming cursor only re-renders the (up to) two blocks
-  // whose per-block `isStreaming` flag actually flipped, not the entire list.
-  const renderItem = useCallback(
-    (_i: number, item: DisplayItem, ctx: AgentStreamVirtuosoContext) => {
-      if (item.kind === "flow") {
-        return <CompactFlowRow blocks={item.blocks} basePath={basePath} />;
-      }
-      return (
-        <AgentStreamItem
-          block={item.block}
-          isStreaming={ctx.streamingBlockId === item.block.id}
-          basePath={basePath}
-          toolResultMap={toolResultMap}
-          verbosityMode={verbosityMode}
-        />
-      );
-    },
-    [basePath, toolResultMap, verbosityMode],
-  );
+  const renderItem = useAgentStreamItemRenderer(basePath, toolResultMap, verbosityMode);
 
   if (displayItems.length === 0) {
     return (
@@ -290,33 +330,23 @@ export const AgentStream = memo(function AgentStream({
         <ConversationSearch
           enabled={searchEnabled}
           items={displayItems}
-          virtuosoRef={localVirtuosoRef}
-          scrollerRef={scrollerElRef}
+          virtuosoRef={streamRefs.localVirtuosoRef}
+          scrollerRef={streamRefs.scrollerElRef}
         />
       )}
-      <Virtuoso
-        data-testid="agent-stream-scroller"
-        className="h-full overflow-x-hidden"
-        style={{ height: "100%" }}
-        ref={setVirtuoso}
-        scrollerRef={onScroller}
-        data={displayItems}
+      <AgentVirtuoso
+        items={displayItems}
         firstItemIndex={firstItemIndex}
-        computeItemKey={computeItemKey}
-        initialTopMostItemIndex={{ index: "LAST", align: "end" }}
-        defaultItemHeight={40}
-        increaseViewportBy={{ top: 1600, bottom: 800 }}
-        minOverscanItemCount={{ top: 12, bottom: 8 }}
-        overscan={{ main: 800, reverse: 800 }}
-        components={VIRTUOSO_COMPONENTS}
         context={virtuosoContext}
         followOutput={followOutput}
-        atBottomStateChange={onAtBottomStateChange}
-        atBottomThreshold={16}
-        totalListHeightChanged={onTotalListHeightChanged}
-        startReached={onStartReached}
-        rangeChanged={onRangeChanged}
-        itemContent={renderItem}
+        onAtBottomStateChange={onAtBottomStateChange}
+        onTotalListHeightChanged={onTotalListHeightChanged}
+        onStartReached={onStartReached}
+        setVirtuoso={streamRefs.setVirtuoso}
+        onScroller={streamRefs.onScroller}
+        computeItemKey={computeItemKey}
+        onRangeChanged={onRangeChanged}
+        renderItem={renderItem}
       />
     </div>
   );

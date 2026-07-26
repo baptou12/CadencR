@@ -28,13 +28,11 @@ export interface QrPairingScannerProps {
   onCancel: () => void;
 }
 
-export function QrPairingScanner({ onDetect, onCancel }: QrPairingScannerProps): ReactElement {
-  const videoRef = useRef<HTMLVideoElement>(null);
+function useQrCamera(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  onDetect: (text: string) => void,
+): string | null {
   const [error, setError] = useState<string | null>(null);
-
-  // The camera effect runs exactly once (deps `[]`); reading the latest
-  // `onDetect` through a ref keeps a fresh callback from tearing down and
-  // re-acquiring the camera stream on every parent render.
   const onDetectRef = useRef(onDetect);
   useEffect(() => {
     onDetectRef.current = onDetect;
@@ -108,9 +106,15 @@ export function QrPairingScanner({ onDetect, onCancel }: QrPairingScannerProps):
       clearInterval(timer);
       stream?.getTracks().forEach((track) => track.stop());
     };
-    // Acquire the camera once; `onDetect` is read through a ref (see above).
+    // Acquire once; `onDetect` is read through a ref to avoid camera restarts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  return error;
+}
+
+export function QrPairingScanner({ onDetect, onCancel }: QrPairingScannerProps): ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const error = useQrCamera(videoRef, onDetect);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-white">

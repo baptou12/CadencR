@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { create } from "zustand";
+import { create, type StateCreator } from "zustand";
 import {
   getLeaves,
   removeLeaf,
@@ -113,187 +113,200 @@ function updateFeature(
   return { features: { ...state.features, [featureId]: next } };
 }
 
+type TerminalStoreSet = Parameters<StateCreator<TerminalStore>>[0];
+type TerminalStoreGet = Parameters<StateCreator<TerminalStore>>[1];
+
+function createPanelActions(
+  set: TerminalStoreSet,
+  get: TerminalStoreGet,
+): Pick<TerminalStore, "getFeature" | "togglePanel" | "minimize" | "closePanel"> {
+  return {
+    getFeature: (featureId) => get().features[featureId] ?? defaultState,
+    togglePanel: (featureId) =>
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        if (!previous.root) {
+          return updateFeature(state, featureId, {
+            isOpen: true,
+            isMinimized: false,
+            root: makeLeaf(),
+          });
+        }
+        return updateFeature(state, featureId, {
+          ...previous,
+          isOpen: !previous.isOpen,
+          isMinimized: false,
+        });
+      }),
+    minimize: (featureId) =>
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        return updateFeature(state, featureId, { ...previous, isMinimized: true });
+      }),
+    closePanel: (featureId) => set((state) => updateFeature(state, featureId, { ...defaultState })),
+  };
+}
+
+function createLayoutActions(
+  set: TerminalStoreSet,
+): Pick<
+  TerminalStore,
+  "splitPane" | "addPane" | "adoptPtys" | "removePane" | "replaceLeafWithFresh"
+> {
+  return {
+    splitPane: (featureId, leafId, orientation) => {
+      let createdId: string | null = null;
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        if (!previous.root) {
+          const newLeaf = makeLeaf();
+          createdId = newLeaf.id;
+          return updateFeature(state, featureId, {
+            isOpen: true,
+            isMinimized: false,
+            root: newLeaf,
+          });
+        }
+        const targetId = leafId ?? getLeaves(previous.root).at(-1)?.id;
+        if (!targetId) return state;
+        const newLeaf = makeLeaf();
+        createdId = newLeaf.id;
+        return updateFeature(state, featureId, {
+          ...previous,
+          root: splitLeaf(previous.root, targetId, orientation, newLeaf),
+        });
+      });
+      return createdId;
+    },
+    addPane: (featureId) => {
+      let createdId: string | null = null;
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        if (!previous.root) {
+          const newLeaf = makeLeaf();
+          createdId = newLeaf.id;
+          return updateFeature(state, featureId, { ...previous, root: newLeaf });
+        }
+        const lastLeaf = getLeaves(previous.root).at(-1);
+        if (!lastLeaf) return state;
+        const newLeaf = makeLeaf();
+        createdId = newLeaf.id;
+        return updateFeature(state, featureId, {
+          ...previous,
+          root: splitLeaf(previous.root, lastLeaf.id, "horizontal", newLeaf),
+        });
+      });
+      return createdId;
+    },
+    adoptPtys: (featureId, ptys) =>
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        if (previous.root || ptys.length === 0) return state;
+        let root: SplitNode = makeLeaf({ ptyId: ptys[0].ptyId, cwd: ptys[0].cwd });
+        for (let index = 1; index < ptys.length; index += 1) {
+          const target = getLeaves(root).at(-1);
+          if (!target) break;
+          root = splitLeaf(root, target.id, "horizontal", makeLeaf(ptys[index]));
+        }
+        return updateFeature(state, featureId, { isOpen: true, isMinimized: false, root });
+      }),
+    removePane: (featureId, paneId) =>
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        if (!previous.root) return state;
+        const root = removeLeaf(previous.root, paneId);
+        return updateFeature(
+          state,
+          featureId,
+          root ? { ...previous, root } : { isOpen: false, isMinimized: false, root: null },
+        );
+      }),
+    replaceLeafWithFresh: (featureId, paneId, notice) =>
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        if (!previous.root) return state;
+        const root = replaceLeaf(previous.root, paneId, makeLeaf({ initialNotice: notice }));
+        return root === previous.root
+          ? state
+          : updateFeature(state, featureId, { ...previous, root });
+      }),
+  };
+}
+
+function createPaneMetadataActions(
+  set: TerminalStoreSet,
+): Pick<
+  TerminalStore,
+  "setPtyId" | "setPaneCwd" | "dismissCwdWarning" | "clearInitialCommand" | "clearInitialNotice"
+> {
+  const updatePane = (
+    featureId: number,
+    paneId: string,
+    update: (leaf: TerminalLeaf) => TerminalLeaf,
+    skipIfUnchanged = true,
+  ): void =>
+    set((state) => {
+      const previous = state.features[featureId] ?? defaultState;
+      if (!previous.root) return state;
+      const root = updateLeaf(previous.root, paneId, update);
+      return skipIfUnchanged && root === previous.root
+        ? state
+        : updateFeature(state, featureId, { ...previous, root });
+    });
+  return {
+    setPtyId: (featureId, paneId, ptyId) =>
+      updatePane(featureId, paneId, (leaf) => (leaf.ptyId === ptyId ? leaf : { ...leaf, ptyId })),
+    setPaneCwd: (featureId, paneId, cwd) =>
+      updatePane(featureId, paneId, (leaf) => (leaf.cwd === cwd ? leaf : { ...leaf, cwd })),
+    dismissCwdWarning: (featureId, paneId) =>
+      updatePane(
+        featureId,
+        paneId,
+        (leaf) => (leaf.cwdWarningDismissed ? leaf : { ...leaf, cwdWarningDismissed: true }),
+        false,
+      ),
+    clearInitialCommand: (featureId, paneId) =>
+      updatePane(featureId, paneId, (leaf) => ({ ...leaf, initialCommand: undefined }), false),
+    clearInitialNotice: (featureId, paneId) =>
+      updatePane(featureId, paneId, (leaf) =>
+        leaf.initialNotice === undefined ? leaf : { ...leaf, initialNotice: undefined },
+      ),
+  };
+}
+
+function createTerminalCommandActions(
+  set: TerminalStoreSet,
+): Pick<TerminalStore, "sendToTerminal"> {
+  return {
+    sendToTerminal: (featureId, command) =>
+      set((state) => {
+        const previous = state.features[featureId] ?? defaultState;
+        const newLeaf = makeLeaf({ initialCommand: command });
+        if (!previous.root) {
+          return updateFeature(state, featureId, {
+            isOpen: true,
+            isMinimized: false,
+            root: newLeaf,
+          });
+        }
+        const lastLeaf = getLeaves(previous.root).at(-1);
+        if (!lastLeaf) return state;
+        return updateFeature(state, featureId, {
+          ...previous,
+          isOpen: true,
+          isMinimized: false,
+          root: splitLeaf(previous.root, lastLeaf.id, "horizontal", newLeaf),
+        });
+      }),
+  };
+}
+
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   features: {},
-
-  getFeature: (featureId) => get().features[featureId] ?? defaultState,
-
-  togglePanel: (featureId) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) {
-        return updateFeature(state, featureId, {
-          isOpen: true,
-          isMinimized: false,
-          root: makeLeaf(),
-        });
-      }
-      if (prev.isOpen) {
-        return updateFeature(state, featureId, { ...prev, isOpen: false, isMinimized: false });
-      }
-      return updateFeature(state, featureId, { ...prev, isOpen: true, isMinimized: false });
-    }),
-
-  splitPane: (featureId, leafId, orientation) => {
-    // Build the new leaf outside the set() so we can return its id to the
-    // caller. The store still owns id generation via `makeLeaf` so behaviour
-    // is unchanged — we just expose what we created.
-    let createdId: string | null = null;
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) {
-        const newLeaf = makeLeaf();
-        createdId = newLeaf.id;
-        return updateFeature(state, featureId, {
-          isOpen: true,
-          isMinimized: false,
-          root: newLeaf,
-        });
-      }
-      const targetId = leafId ?? getLeaves(prev.root).at(-1)?.id;
-      if (!targetId) return state;
-      const newLeaf = makeLeaf();
-      const newRoot = splitLeaf(prev.root, targetId, orientation, newLeaf);
-      createdId = newLeaf.id;
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    });
-    return createdId;
-  },
-
-  addPane: (featureId) => {
-    let createdId: string | null = null;
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) {
-        const newLeaf = makeLeaf();
-        createdId = newLeaf.id;
-        return updateFeature(state, featureId, { ...prev, root: newLeaf });
-      }
-      // Default: horizontal split on the last leaf
-      const lastLeaf = getLeaves(prev.root).at(-1);
-      if (!lastLeaf) return state;
-      const newLeaf = makeLeaf();
-      const newRoot = splitLeaf(prev.root, lastLeaf.id, "horizontal", newLeaf);
-      createdId = newLeaf.id;
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    });
-    return createdId;
-  },
-
-  adoptPtys: (featureId, ptys) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      // Only adopt into an empty feature; never clobber an existing layout.
-      if (prev.root || ptys.length === 0) return state;
-      let root: SplitNode = makeLeaf({ ptyId: ptys[0].ptyId, cwd: ptys[0].cwd });
-      for (let i = 1; i < ptys.length; i += 1) {
-        const target = getLeaves(root).at(-1);
-        if (!target) break;
-        root = splitLeaf(root, target.id, "horizontal", makeLeaf(ptys[i]));
-      }
-      return updateFeature(state, featureId, { isOpen: true, isMinimized: false, root });
-    }),
-
-  removePane: (featureId, paneId) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) return state;
-      const newRoot = removeLeaf(prev.root, paneId);
-      if (!newRoot) {
-        return updateFeature(state, featureId, { isOpen: false, isMinimized: false, root: null });
-      }
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
-
-  replaceLeafWithFresh: (featureId, paneId, notice) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) return state;
-      const newRoot = replaceLeaf(prev.root, paneId, makeLeaf({ initialNotice: notice }));
-      if (newRoot === prev.root) return state;
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
-
-  minimize: (featureId) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      return updateFeature(state, featureId, { ...prev, isMinimized: true });
-    }),
-
-  closePanel: (featureId) => set((state) => updateFeature(state, featureId, { ...defaultState })),
-
-  setPtyId: (featureId, paneId, ptyId) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) return state;
-      const newRoot = updateLeaf(prev.root, paneId, (leaf) =>
-        leaf.ptyId === ptyId ? leaf : { ...leaf, ptyId },
-      );
-      if (newRoot === prev.root) return state;
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
-
-  setPaneCwd: (featureId, paneId, cwd) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) return state;
-      const newRoot = updateLeaf(prev.root, paneId, (leaf) =>
-        leaf.cwd === cwd ? leaf : { ...leaf, cwd },
-      );
-      if (newRoot === prev.root) return state;
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
-
-  dismissCwdWarning: (featureId, paneId) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) return state;
-      const newRoot = updateLeaf(prev.root, paneId, (leaf) =>
-        leaf.cwdWarningDismissed ? leaf : { ...leaf, cwdWarningDismissed: true },
-      );
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
-
-  sendToTerminal: (featureId, command) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      const newLeaf = makeLeaf({ initialCommand: command });
-
-      if (!prev.root) {
-        return updateFeature(state, featureId, { isOpen: true, isMinimized: false, root: newLeaf });
-      }
-      const lastLeaf = getLeaves(prev.root).at(-1);
-      if (!lastLeaf) return state;
-      const newRoot = splitLeaf(prev.root, lastLeaf.id, "horizontal", newLeaf);
-      return updateFeature(state, featureId, {
-        ...prev,
-        isOpen: true,
-        isMinimized: false,
-        root: newRoot,
-      });
-    }),
-
-  clearInitialCommand: (featureId, paneId) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) return state;
-      const newRoot = updateLeaf(prev.root, paneId, (leaf) => ({
-        ...leaf,
-        initialCommand: undefined,
-      }));
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
-
-  clearInitialNotice: (featureId, paneId) =>
-    set((state) => {
-      const prev = state.features[featureId] ?? defaultState;
-      if (!prev.root) return state;
-      const newRoot = updateLeaf(prev.root, paneId, (leaf) =>
-        leaf.initialNotice === undefined ? leaf : { ...leaf, initialNotice: undefined },
-      );
-      if (newRoot === prev.root) return state;
-      return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
+  ...createPanelActions(set, get),
+  ...createLayoutActions(set),
+  ...createPaneMetadataActions(set),
+  ...createTerminalCommandActions(set),
 }));
 
 // ---------------------------------------------------------------------------

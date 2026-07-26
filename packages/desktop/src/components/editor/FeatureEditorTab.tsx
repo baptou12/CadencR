@@ -22,15 +22,6 @@ import {
 import { GitBranch, PanelLeft, Search } from "lucide-react";
 import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { EditorSidebarLayout } from "./EditorSidebarLayout";
@@ -45,6 +36,7 @@ import {
   ConfirmedConflictPathsProvider,
   useConfirmedConflictPaths,
 } from "./useAutoConflictResolution";
+import { EditorLeaveDialog } from "./EditorLeaveDialog";
 
 interface FeatureEditorTabProps {
   featureId: number;
@@ -61,287 +53,303 @@ export interface FeatureEditorTabHandle {
 
 const EDITOR_SIDEBAR_COLLAPSED_SETTING = "editor_sidebar_collapsed";
 
-const FeatureEditorTab = memo(
-  forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(function FeatureEditorTab(
-    { featureId, projectId, projectPath, focusedOverride },
-    ref,
-  ) {
-    // In embedded/unified mode the layout store is keyed by a per-card id
-    // (`-sessionDbId`), not the real feature id. The `FeatureLayoutProvider`
-    // wrapping this tab seeds the correct key; fall back to `featureId` for
-    // tests / hosts that don't wrap us in a provider.
-    const layoutFeatureId = useFeatureLayoutContext()?.featureId ?? featureId;
-    const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } =
-      useEditorState(featureId);
-    const navigatePane = useEditorStore((s) => s.navigatePane);
-    // Gate the pane-nav shortcuts on this layout having editor as the
-    // focused tab. With split panes the editor can be visible next to the
-    // agent without owning keyboard focus, so visibility isn't enough.
-    // CMD+P lives in `EditorFuzzyShortcut` at the WS-block level so its
-    // listener is registered before this tab's lazy chunk loads.
-    const layoutEditorFocused = useFeatureLayoutStore(
-      (s) => getFocusedTab(selectFeatureLayout(layoutFeatureId)(s)) === "editor",
-    );
-    const isEditorFocused = focusedOverride ?? layoutEditorFocused;
-    const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
-    const [pendingProceed, setPendingProceed] = useState<(() => void) | null>(null);
-    const [isSavingAll, setIsSavingAll] = useState(false);
-    const [fileSearchOpen, setFileSearchOpen] = useState(false);
-    const openFileSearch = useCallback(() => setFileSearchOpen(true), []);
+function useEditorFocusState(activePaneId: string, isEditorFocused: boolean) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const editorViewsRef = useRef<Map<string, EditorView>>(new Map());
+  const focusActiveEditor = useCallback((): void => {
+    editorViewsRef.current.get(activePaneId)?.focus();
+  }, [activePaneId]);
+  const shouldRestoreEditorFocus = useCallback((): boolean => {
+    const active = document.activeElement;
+    return !(active instanceof HTMLElement && rootRef.current?.contains(active));
+  }, []);
+  const handleEditorViewChange = useCallback(
+    (paneId: string, view: EditorView | null): void => {
+      if (!view) {
+        editorViewsRef.current.delete(paneId);
+        return;
+      }
+      editorViewsRef.current.set(paneId, view);
+      if (isEditorFocused && paneId === activePaneId && shouldRestoreEditorFocus()) {
+        requestAnimationFrame(() => view.focus());
+      }
+    },
+    [activePaneId, isEditorFocused, shouldRestoreEditorFocus],
+  );
+  return useMemo(
+    () => ({ focusActiveEditor, handleEditorViewChange, rootRef, shouldRestoreEditorFocus }),
+    [focusActiveEditor, handleEditorViewChange, shouldRestoreEditorFocus],
+  );
+}
 
+type EditorFocusState = ReturnType<typeof useEditorFocusState>;
+
+function useEditorLeaveGuard(
+  ref: React.ForwardedRef<FeatureEditorTabHandle>,
+  panes: ReturnType<typeof useEditorState>["panes"],
+  focus: EditorFocusState,
+) {
+  const [open, setOpen] = useState(false);
+  const [pendingProceed, setPendingProceed] = useState<(() => void) | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const getDirtyTabs = useCallback(
+    () =>
+      Object.entries(panes).flatMap(([paneId, pane]) =>
+        pane.tabs.filter((tab) => tab.isDirty).map((tab) => ({ paneId, filePath: tab.filePath })),
+      ),
+    [panes],
+  );
+  useImperativeHandle(
+    ref,
+    () => ({
+      requestLeave(proceed) {
+        if (getDirtyTabs().length === 0) proceed();
+        else {
+          setPendingProceed(() => proceed);
+          setOpen(true);
+        }
+      },
+      focusActiveEditor: focus.focusActiveEditor,
+    }),
+    [focus.focusActiveEditor, getDirtyTabs],
+  );
+  const cancel = useCallback(() => {
+    setOpen(false);
+    setPendingProceed(null);
+  }, []);
+  const switchWithoutSaving = useCallback(() => {
+    setOpen(false);
+    pendingProceed?.();
+    setPendingProceed(null);
+  }, [pendingProceed]);
+  const saveAndSwitch = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      await saveAll(getDirtyTabs());
+      setOpen(false);
+      pendingProceed?.();
+      setPendingProceed(null);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "Failed to save files"));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [getDirtyTabs, pendingProceed]);
+  return useMemo(
+    () => ({
+      cancel,
+      dirtyCount: getDirtyTabs().length,
+      isSaving,
+      open,
+      saveAndSwitch,
+      switchWithoutSaving,
+    }),
+    [cancel, getDirtyTabs, isSaving, open, saveAndSwitch, switchWithoutSaving],
+  );
+}
+
+type EditorLeaveGuard = ReturnType<typeof useEditorLeaveGuard>;
+
+function useEditorNavigationShortcuts({
+  featureId,
+  handleToggleSidebar,
+  isEditorFocused,
+  navigatePane,
+}: {
+  featureId: number;
+  handleToggleSidebar: () => void;
+  isEditorFocused: boolean;
+  navigatePane: ReturnType<typeof useEditorStore.getState>["navigatePane"];
+}): void {
+  useScopedGlobalShortcutById(
+    "editor-toggle-sidebar",
+    (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!event.repeat) handleToggleSidebar();
+    },
+    "editor",
+    { enabled: isEditorFocused },
+  );
+  const usePaneShortcut = (
+    id:
+      | "editor-nav-pane-left"
+      | "editor-nav-pane-right"
+      | "editor-nav-pane-up"
+      | "editor-nav-pane-down",
+    direction: "left" | "right" | "up" | "down",
+  ): void => {
+    useScopedShortcut(
+      id,
+      (event) => {
+        if ((direction === "up" || direction === "down") && isInCodeMirrorEditor(event.target))
+          return;
+        event.preventDefault();
+        navigatePane(featureId, direction);
+      },
+      "editor",
+      { enabled: isEditorFocused },
+    );
+  };
+  usePaneShortcut("editor-nav-pane-left", "left");
+  usePaneShortcut("editor-nav-pane-right", "right");
+  usePaneShortcut("editor-nav-pane-up", "up");
+  usePaneShortcut("editor-nav-pane-down", "down");
+}
+
+function useFeatureEditorEffects({
+  focus,
+  initFeature,
+  isEditorFocused,
+  persistedCollapsed,
+  sidebarVisible,
+  toggleSidebar,
+}: {
+  focus: EditorFocusState;
+  initFeature: () => void;
+  isEditorFocused: boolean;
+  persistedCollapsed: string | null;
+  sidebarVisible: boolean;
+  toggleSidebar: () => void;
+}): void {
+  const initializedRef = useRef(false);
+  useEffect(() => initFeature(), [initFeature]);
+  useEffect(() => {
+    if (!isEditorFocused || !focus.shouldRestoreEditorFocus()) return undefined;
+    const frame = requestAnimationFrame(focus.focusActiveEditor);
+    return () => cancelAnimationFrame(frame);
+  }, [focus, isEditorFocused]);
+  useEffect(() => {
+    if (initializedRef.current || persistedCollapsed === null) return;
+    initializedRef.current = true;
+    if ((persistedCollapsed !== "true") !== sidebarVisible) toggleSidebar();
+  }, [persistedCollapsed, sidebarVisible, toggleSidebar]);
+}
+
+const FeatureEditorTab = memo(
+  forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(function FeatureEditorTab(props, ref) {
+    const layoutFeatureId = useFeatureLayoutContext()?.featureId ?? props.featureId;
+    const editor = useEditorState(props.featureId);
+    const navigatePane = useEditorStore((state) => state.navigatePane);
+    const layoutEditorFocused = useFeatureLayoutStore(
+      (state) => getFocusedTab(selectFeatureLayout(layoutFeatureId)(state)) === "editor",
+    );
+    const isEditorFocused = props.focusedOverride ?? layoutEditorFocused;
+    const [fileSearchOpen, setFileSearchOpen] = useState(false);
     const { value: persistedCollapsed, setValue: persistCollapsed } = useDebouncedSetting(
       EDITOR_SIDEBAR_COLLAPSED_SETTING,
       0,
     );
-    const hasInitializedRef = useRef(false);
-    const rootRef = useRef<HTMLDivElement>(null);
-    const editorViewsRef = useRef<Map<string, EditorView>>(new Map());
-
-    useFileWatcher(projectPath);
-    const confirmedConflicts = useConfirmedConflictPaths(featureId);
-
-    const focusActiveEditor = useCallback((): void => {
-      editorViewsRef.current.get(activePaneId)?.focus();
-    }, [activePaneId]);
-
-    const shouldRestoreEditorFocus = useCallback((): boolean => {
-      const active = document.activeElement;
-      return !(active instanceof HTMLElement && rootRef.current?.contains(active));
-    }, []);
-
-    const handleEditorViewChange = useCallback(
-      (paneId: string, view: EditorView | null): void => {
-        if (view) {
-          editorViewsRef.current.set(paneId, view);
-          if (isEditorFocused && paneId === activePaneId && shouldRestoreEditorFocus()) {
-            requestAnimationFrame(() => view.focus());
-          }
-        } else {
-          editorViewsRef.current.delete(paneId);
-        }
-      },
-      [activePaneId, isEditorFocused, shouldRestoreEditorFocus],
-    );
-
-    /** Collect all dirty tabs across all panes */
-    const getDirtyTabs = useCallback(() => {
-      return Object.entries(panes).flatMap(([paneId, pane]) =>
-        pane.tabs.filter((t) => t.isDirty).map((t) => ({ paneId, filePath: t.filePath })),
-      );
-    }, [panes]);
-
-    useImperativeHandle(
-      ref,
-      () => ({
-        requestLeave(proceed: () => void) {
-          const dirty = getDirtyTabs();
-          if (dirty.length === 0) {
-            proceed();
-          } else {
-            // Store proceed as a function in a wrapper to avoid React treating it as a state updater
-            setPendingProceed(() => proceed);
-            setLeaveDialogOpen(true);
-          }
-        },
-        focusActiveEditor,
-      }),
-      [focusActiveEditor, getDirtyTabs],
-    );
-
-    async function handleSaveAllAndSwitch() {
-      const dirty = getDirtyTabs();
-      setIsSavingAll(true);
-      try {
-        await saveAll(dirty);
-        setLeaveDialogOpen(false);
-        pendingProceed?.();
-        setPendingProceed(null);
-      } catch (err) {
-        const msg = apiErrorMessage(err, "Failed to save files");
-        toast.error(msg);
-      } finally {
-        setIsSavingAll(false);
-      }
-    }
-
-    function handleSwitchWithoutSaving() {
-      setLeaveDialogOpen(false);
-      pendingProceed?.();
-      setPendingProceed(null);
-    }
-
-    function handleCancelLeave() {
-      setLeaveDialogOpen(false);
-      setPendingProceed(null);
-    }
-
-    const handleToggleSidebar = useCallback((): void => {
-      toggleSidebar();
-      persistCollapsed(String(sidebarVisible));
-    }, [persistCollapsed, sidebarVisible, toggleSidebar]);
-
-    // Pane nav shortcuts. Tab-scoped via the wrapper hook.
-    useScopedGlobalShortcutById(
-      "editor-toggle-sidebar",
-      (e) => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (e.repeat) return;
-        handleToggleSidebar();
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-    useScopedShortcut(
-      "editor-nav-pane-left",
-      (e) => {
-        e.preventDefault();
-        navigatePane(featureId, "left");
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-    useScopedShortcut(
-      "editor-nav-pane-right",
-      (e) => {
-        e.preventDefault();
-        navigatePane(featureId, "right");
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-    useScopedShortcut(
-      "editor-nav-pane-up",
-      (e) => {
-        // Mod+Alt+ArrowUp is also "Add cursor above" inside the editor
-        // buffer. Let the buffer keymap own the chord when CodeMirror has
-        // focus; pane nav still works from the file tree, search results,
-        // or any non-editor child of the editor tab.
-        if (isInCodeMirrorEditor(e.target)) return;
-        e.preventDefault();
-        navigatePane(featureId, "up");
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-    useScopedShortcut(
-      "editor-nav-pane-down",
-      (e) => {
-        if (isInCodeMirrorEditor(e.target)) return;
-        e.preventDefault();
-        navigatePane(featureId, "down");
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-
-    useEffect(() => {
-      initFeature();
-    }, [initFeature]);
-
-    useEffect(() => {
-      if (!isEditorFocused || !shouldRestoreEditorFocus()) return undefined;
-      const frame = requestAnimationFrame(focusActiveEditor);
-      return () => cancelAnimationFrame(frame);
-    }, [focusActiveEditor, isEditorFocused, shouldRestoreEditorFocus]);
-
-    // Sync persisted workspace-level sidebar collapse state on first load only.
-    useEffect(() => {
-      if (hasInitializedRef.current || persistedCollapsed === null) return;
-      hasInitializedRef.current = true;
-      const shouldBeVisible = persistedCollapsed !== "true";
-      if (shouldBeVisible !== sidebarVisible) {
-        toggleSidebar();
-      }
-    }, [persistedCollapsed, sidebarVisible, toggleSidebar]);
-
-    const dirtyCount = getDirtyTabs().length;
-    // Active file in the focused pane — lets the mobile editor drawer close
-    // itself once a file is opened from the tree.
-    const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
-
-    const isWorktree = Boolean(useFeatureWorktreePath(featureId, projectId));
-
-    const sidebar = useMemo(
-      () => (
-        <div className="glass-surface flex h-full flex-col border-r border-border/60 bg-sidebar">
-          <SidebarHeader
-            isWorktree={isWorktree}
-            onToggle={handleToggleSidebar}
-            onOpenFileSearch={openFileSearch}
-          />
-          <div className="flex-1 overflow-hidden">
-            <FileTree projectId={projectId} featureId={featureId} />
-          </div>
-        </div>
-      ),
-      [featureId, handleToggleSidebar, isWorktree, openFileSearch, projectId],
-    );
-
-    const editorPane = useMemo(
-      () => (
-        <EditorSplitTree
-          node={splitTree}
-          featureId={featureId}
-          projectId={projectId}
-          onEditorViewChange={handleEditorViewChange}
-        />
-      ),
-      [featureId, handleEditorViewChange, projectId, splitTree],
-    );
-
+    useFileWatcher(props.projectPath);
+    const confirmedConflicts = useConfirmedConflictPaths(props.featureId);
+    const focus = useEditorFocusState(editor.activePaneId, isEditorFocused);
+    const leave = useEditorLeaveGuard(ref, editor.panes, focus);
+    const handleToggleSidebar = useCallback(() => {
+      editor.toggleSidebar();
+      persistCollapsed(String(editor.sidebarVisible));
+    }, [editor.sidebarVisible, editor.toggleSidebar, persistCollapsed]);
+    useEditorNavigationShortcuts({
+      featureId: props.featureId,
+      handleToggleSidebar,
+      isEditorFocused,
+      navigatePane,
+    });
+    useFeatureEditorEffects({
+      focus,
+      initFeature: editor.initFeature,
+      isEditorFocused,
+      persistedCollapsed,
+      sidebarVisible: editor.sidebarVisible,
+      toggleSidebar: editor.toggleSidebar,
+    });
+    const isWorktree = Boolean(useFeatureWorktreePath(props.featureId, props.projectId));
     return (
-      <ConfirmedConflictPathsProvider conflicts={confirmedConflicts}>
-        <div ref={rootRef} className="flex h-full">
-          <Dialog
-            open={leaveDialogOpen}
-            onOpenChange={(open) => {
-              if (!open) handleCancelLeave();
-            }}
-          >
-            <DialogContent showCloseButton={false}>
-              <DialogHeader>
-                <DialogTitle>Unsaved Changes</DialogTitle>
-                <DialogDescription>
-                  You have unsaved changes in {dirtyCount} file{dirtyCount !== 1 ? "s" : ""}. Switch
-                  tab anyway?
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={handleCancelLeave}>
-                  Cancel
-                </Button>
-                <Button variant="outline" onClick={handleSwitchWithoutSaving}>
-                  Switch Without Saving
-                </Button>
-                <Button onClick={() => void handleSaveAllAndSwitch()} disabled={isSavingAll}>
-                  {isSavingAll ? "Saving…" : "Save All & Switch"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {fileSearchOpen && (
-            <FileSearchDialog
-              projectId={projectId}
-              featureId={featureId}
-              open={fileSearchOpen}
-              onOpenChange={setFileSearchOpen}
-            />
-          )}
-
-          <EditorSidebarLayout
-            sidebarVisible={sidebarVisible}
-            sidebar={sidebar}
-            editor={editorPane}
-            onToggleSidebar={handleToggleSidebar}
-            activeFilePath={activeFilePath}
-          />
-        </div>
-      </ConfirmedConflictPathsProvider>
+      <FeatureEditorView
+        props={props}
+        editor={editor}
+        focus={focus}
+        leave={leave}
+        confirmedConflicts={confirmedConflicts}
+        fileSearchOpen={fileSearchOpen}
+        setFileSearchOpen={setFileSearchOpen}
+        isWorktree={isWorktree}
+        handleToggleSidebar={handleToggleSidebar}
+      />
     );
   }),
 );
+
+function FeatureEditorView({
+  props,
+  editor,
+  focus,
+  leave,
+  confirmedConflicts,
+  fileSearchOpen,
+  setFileSearchOpen,
+  isWorktree,
+  handleToggleSidebar,
+}: {
+  props: FeatureEditorTabProps;
+  editor: ReturnType<typeof useEditorState>;
+  focus: EditorFocusState;
+  leave: EditorLeaveGuard;
+  confirmedConflicts: ReturnType<typeof useConfirmedConflictPaths>;
+  fileSearchOpen: boolean;
+  setFileSearchOpen: (open: boolean) => void;
+  isWorktree: boolean;
+  handleToggleSidebar: () => void;
+}) {
+  const openFileSearch = useCallback(() => setFileSearchOpen(true), [setFileSearchOpen]);
+  const sidebar = useMemo(
+    () => (
+      <div className="glass-surface flex h-full flex-col border-r border-border/60 bg-sidebar">
+        <SidebarHeader
+          isWorktree={isWorktree}
+          onToggle={handleToggleSidebar}
+          onOpenFileSearch={openFileSearch}
+        />
+        <div className="flex-1 overflow-hidden">
+          <FileTree projectId={props.projectId} featureId={props.featureId} />
+        </div>
+      </div>
+    ),
+    [handleToggleSidebar, isWorktree, openFileSearch, props.featureId, props.projectId],
+  );
+  const editorPane = useMemo(
+    () => (
+      <EditorSplitTree
+        node={editor.splitTree}
+        featureId={props.featureId}
+        projectId={props.projectId}
+        onEditorViewChange={focus.handleEditorViewChange}
+      />
+    ),
+    [editor.splitTree, focus.handleEditorViewChange, props.featureId, props.projectId],
+  );
+  return (
+    <ConfirmedConflictPathsProvider conflicts={confirmedConflicts}>
+      <div ref={focus.rootRef} className="flex h-full">
+        <EditorLeaveDialog leave={leave} />
+        {fileSearchOpen && (
+          <FileSearchDialog
+            projectId={props.projectId}
+            featureId={props.featureId}
+            open
+            onOpenChange={setFileSearchOpen}
+          />
+        )}
+        <EditorSidebarLayout
+          sidebarVisible={editor.sidebarVisible}
+          sidebar={sidebar}
+          editor={editorPane}
+          onToggleSidebar={handleToggleSidebar}
+          activeFilePath={editor.panes[editor.activePaneId]?.activeFilePath ?? null}
+        />
+      </div>
+    </ConfirmedConflictPathsProvider>
+  );
+}
 
 export default FeatureEditorTab;
 

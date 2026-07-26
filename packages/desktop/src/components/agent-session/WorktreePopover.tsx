@@ -56,6 +56,91 @@ interface WorktreeButtonGroupProps {
   onSelectedBranchChange: (next: string | null) => void;
 }
 
+interface BranchPickerProps {
+  open: boolean;
+  query: string;
+  branchLabel: string;
+  effectHint: string | null;
+  defaultBranch: string | undefined;
+  selectedBranch: string | null;
+  branchesQuery: ReturnType<typeof useListBranches>;
+  branchList: ReturnType<typeof useBranchList>;
+  onOpenChange: (open: boolean) => void;
+  onQueryChange: (query: string) => void;
+  onSelectDefault: () => void;
+}
+
+function BranchPicker({
+  open,
+  query,
+  branchLabel,
+  effectHint,
+  defaultBranch,
+  selectedBranch,
+  branchesQuery,
+  branchList,
+  onOpenChange,
+  onQueryChange,
+  onSelectDefault,
+}: BranchPickerProps): ReactElement {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(WORKTREE_SEGMENT_ACTIVE, "rounded-l-md")}
+          title={effectHint ?? undefined}
+        >
+          <GitBranchIcon className="size-3 shrink-0" />
+          <SlidingText text={branchLabel} className="max-w-[160px]" />
+          <ChevronDownIcon className="size-3 shrink-0 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-0" align="start">
+        <div className="flex flex-col">
+          <div className="px-2 pt-2 pb-1.5 border-b">
+            <Input
+              variant="ghost"
+              autoFocus
+              placeholder="Search branches…"
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              onKeyDown={branchList.onKeyDown}
+              className="h-7"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onSelectDefault}
+            className={cn(
+              "w-full flex items-center gap-2 px-3 py-2 text-left text-sm border-b hover:bg-accent",
+              selectedBranch == null && "bg-accent/50",
+            )}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium leading-tight">
+                Project default{defaultBranch ? ` (${defaultBranch})` : ""}
+              </div>
+              <div className="text-xs text-muted-foreground leading-tight">
+                Use the branch the project is currently on.
+              </div>
+            </div>
+            {selectedBranch == null && (
+              <CheckIcon className="size-3.5 shrink-0 text-[var(--chip-worktree-fg)]" />
+            )}
+          </button>
+          <BranchList
+            isLoading={branchesQuery.isLoading}
+            isError={branchesQuery.isError}
+            error={branchesQuery.error}
+            list={branchList.list}
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
   projectId,
   defaultBranch,
@@ -67,20 +152,13 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
 }: WorktreeButtonGroupProps): ReactElement {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const branchesQuery = useListBranches(
-    { project_id: projectId },
-    // Repos can have hundreds of branches — only fetch when the picker opens.
-    { query: { enabled: open } },
-  );
+  const branchesQuery = useListBranches({ project_id: projectId }, { query: { enabled: open } });
   const branches = branchesQuery.data ?? EMPTY_BRANCHES;
   const state = branchWorktreeState({ selectedBranch, defaultBranch, branches, projectPath });
 
   const selectBranch = useCallback(
     (next: string | null) => {
       onSelectedBranchChange(next);
-      // Steer the mode so it stays valid for the new branch: an attached
-      // branch defaults to reuse; an invalid pick (e.g. switching to the
-      // default branch while in `branch_worktree`) falls back to "On branch".
       const nextState = branchWorktreeState({
         selectedBranch: next,
         defaultBranch,
@@ -99,7 +177,6 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
 
   const handlePick = useCallback(
     (branch: BranchInfo) => {
-      // Picking the project's current branch is the same as "Project default".
       selectBranch(branch.name === defaultBranch ? null : branch.name);
     },
     [defaultBranch, selectBranch],
@@ -129,75 +206,26 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
   });
 
   const branchLabel = state.effectiveBranch ?? "branch";
-  // What the *first prompt* will actually do — the checkout/provisioning is
-  // deferred until send, so surface that here rather than letting the chip
-  // imply the branch already switched.
   const effectHint = firstPromptBranchEffect({ mode, selectedBranch, defaultBranch });
 
   return (
     <div className={WORKTREE_GROUP}>
-      {/* Branch segment — always rendered active: a branch is always selected
-          (project default when nothing is picked). */}
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className={cn(WORKTREE_SEGMENT_ACTIVE, "rounded-l-md")}
-            title={effectHint ?? undefined}
-          >
-            <GitBranchIcon className="size-3 shrink-0" />
-            <SlidingText text={branchLabel} className="max-w-[160px]" />
-            <ChevronDownIcon className="size-3 shrink-0 opacity-70" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-0" align="start">
-          <div className="flex flex-col">
-            <div className="px-2 pt-2 pb-1.5 border-b">
-              <Input
-                variant="ghost"
-                autoFocus
-                placeholder="Search branches…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={branchList.onKeyDown}
-                className="h-7"
-              />
-            </div>
-            {/* "Use project default" row — clears the explicit pick. */}
-            <button
-              type="button"
-              onClick={() => selectBranch(null)}
-              className={cn(
-                "w-full flex items-center gap-2 px-3 py-2 text-left text-sm border-b hover:bg-accent",
-                selectedBranch == null && "bg-accent/50",
-              )}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium leading-tight">
-                  Project default{defaultBranch ? ` (${defaultBranch})` : ""}
-                </div>
-                <div className="text-xs text-muted-foreground leading-tight">
-                  Use the branch the project is currently on.
-                </div>
-              </div>
-              {selectedBranch == null && (
-                <CheckIcon className="size-3.5 shrink-0 text-[var(--chip-worktree-fg)]" />
-              )}
-            </button>
-            <BranchList
-              isLoading={branchesQuery.isLoading}
-              isError={branchesQuery.isError}
-              error={branchesQuery.error}
-              list={branchList.list}
-            />
-          </div>
-        </PopoverContent>
-      </Popover>
+      <BranchPicker
+        open={open}
+        query={query}
+        branchLabel={branchLabel}
+        effectHint={effectHint}
+        defaultBranch={defaultBranch}
+        selectedBranch={selectedBranch}
+        branchesQuery={branchesQuery}
+        branchList={branchList}
+        onOpenChange={setOpen}
+        onQueryChange={setQuery}
+        onSelectDefault={() => selectBranch(null)}
+      />
 
-      {/* Hairline divider — matches the model-picker group style. */}
       <div className="w-px bg-border" aria-hidden="true" />
 
-      {/* Mode segment. */}
       <WorktreeModePicker
         mode={mode}
         onModeChange={onModeChange}

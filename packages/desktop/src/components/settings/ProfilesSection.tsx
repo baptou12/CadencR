@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type ReactElement, type SetStateAction } from "react";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,65 @@ import { ErrorRow, LoadingRow, toastCallbacks } from "./SettingsStateRows";
 interface EnvRow {
   key: string;
   value: string;
+}
+
+interface EnvRowsEditorProps {
+  rows: EnvRow[];
+  duplicateKey: string | undefined;
+  setRows: Dispatch<SetStateAction<EnvRow[]>>;
+}
+
+function EnvRowsEditor({ rows, duplicateKey, setRows }: EnvRowsEditorProps): ReactElement {
+  const updateRow = (index: number, patch: Partial<EnvRow>): void => {
+    setRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)),
+    );
+  };
+  const removeRow = (index: number): void => {
+    setRows((current) => {
+      const next = current.filter((_, rowIndex) => rowIndex !== index);
+      return next.length > 0 ? next : [{ key: "", value: "" }];
+    });
+  };
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-medium">Environment variables</label>
+      <div className="space-y-1.5">
+        {rows.map((row, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <Input
+              className="flex-1 font-mono text-xs"
+              placeholder="ANTHROPIC_BASE_URL"
+              value={row.key}
+              onChange={(event) => updateRow(index, { key: event.target.value })}
+            />
+            <Input
+              className="flex-1 font-mono text-xs"
+              placeholder="value"
+              value={row.value}
+              onChange={(event) => updateRow(index, { value: event.target.value })}
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Remove row"
+              onClick={() => removeRow(index)}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        ))}
+      </div>
+      {duplicateKey && <p className="text-xs text-destructive">Duplicate key: {duplicateKey}</p>}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setRows((current) => [...current, { key: "", value: "" }])}
+      >
+        <Plus className="size-3.5" /> Add row
+      </Button>
+    </div>
+  );
 }
 
 export function ProfilesSection() {
@@ -278,56 +337,7 @@ function ProfileEditor({
             />
             {nameError && <p className="text-xs text-destructive">{nameError}</p>}
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Environment variables</label>
-            <div className="space-y-1.5">
-              {rows.map((row, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <Input
-                    className="flex-1 font-mono text-xs"
-                    placeholder="ANTHROPIC_BASE_URL"
-                    value={row.key}
-                    onChange={(e) => {
-                      const next = [...rows];
-                      next[i] = { ...row, key: e.target.value };
-                      setRows(next);
-                    }}
-                  />
-                  <Input
-                    className="flex-1 font-mono text-xs"
-                    placeholder="value"
-                    value={row.value}
-                    onChange={(e) => {
-                      const next = [...rows];
-                      next[i] = { ...row, value: e.target.value };
-                      setRows(next);
-                    }}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Remove row"
-                    onClick={() => {
-                      const next = rows.filter((_, idx) => idx !== i);
-                      setRows(next.length > 0 ? next : [{ key: "", value: "" }]);
-                    }}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            {duplicateKey && (
-              <p className="text-xs text-destructive">Duplicate key: {duplicateKey}</p>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRows([...rows, { key: "", value: "" }])}
-            >
-              <Plus className="size-3.5" /> Add row
-            </Button>
-          </div>
+          <EnvRowsEditor rows={rows} duplicateKey={duplicateKey} setRows={setRows} />
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>

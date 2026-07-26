@@ -143,101 +143,81 @@ function buildWsUrl(options: BuildOptions, cols?: number, rows?: number): string
   return `${getTerminalWsUrl()}?${params.toString()}`;
 }
 
-export function useTerminalWebSocket(
+interface TerminalConnectionRefs {
+  connRef: { current: WsConnection | null };
+  dimsRef: { current: { cols: number; rows: number } | null };
+  lastForcedAtRef: { current: number };
+  latestPtyIdRef: { current: string | undefined };
+  optionsRef: { current: UseTerminalWebSocketOptions };
+}
+
+function handleTerminalMessage(data: string, refs: TerminalConnectionRefs): void {
+  try {
+    const message = JSON.parse(data) as TerminalMessage;
+    const callbacks = refs.optionsRef.current;
+    switch (message.type) {
+      case "data":
+        callbacks.onData(message.data);
+        break;
+      case "ready":
+        refs.latestPtyIdRef.current = message.pty_id;
+        callbacks.onReady(message.pty_id, message.cwd);
+        break;
+      case "exit":
+        callbacks.onExit(message.code);
+        break;
+      case "reconnected":
+        callbacks.onReconnected(message.scrollback, message.alive, message.cwd);
+        if (!message.alive) refs.latestPtyIdRef.current = undefined;
+        break;
+      case "error":
+        callbacks.onError(message.message);
+        break;
+    }
+  } catch {
+    refs.optionsRef.current.onError("Failed to parse terminal message");
+  }
+}
+
+function useTerminalConnector(
   options: UseTerminalWebSocketOptions,
-): UseTerminalWebSocketReturn {
-  const [isConnected, setIsConnected] = useState(false);
-  const connRef = useRef<WsConnection | null>(null);
-  const optionsRef = useRef(options);
-  optionsRef.current = options;
-
-  // Latest known PTY id. Seeded from `options.ptyId` (when reconnecting to
-  // a known PTY) and overwritten when the backend sends `ready` /
-  // `reconnected`. The reconnector reads this so it always reattaches
-  // to the live PTY rather than spawning a fresh shell on every blip.
-  const latestPtyIdRef = useRef<string | undefined>(options.ptyId);
-  // Last fitted dimensions — needed when reconnecting without a known
-  // PTY (fresh fallback, e.g. after a >300s grace expiry the backend
-  // may still need cols/rows to spawn a new shell).
-  const dimsRef = useRef<{ cols: number; rows: number } | null>(null);
-
-  // Stable per-instance key for the ws-reconnect registry. Random suffix
-  // because the same featureId could host multiple terminal panes.
+  setIsConnected: (connected: boolean) => void,
+) {
+  const refs: TerminalConnectionRefs = {
+    connRef: useRef<WsConnection | null>(null),
+    dimsRef: useRef<{ cols: number; rows: number } | null>(null),
+    lastForcedAtRef: useRef(0),
+    latestPtyIdRef: useRef<string | undefined>(options.ptyId),
+    optionsRef: useRef(options),
+  };
+  refs.optionsRef.current = options;
   const reconnectKey = useRef(`terminal:${crypto.randomUUID()}`).current;
-
-  // Last wall-clock time we kicked off a force-reconnect from `write()`.
-  // Used to debounce the recovery loop: a stuck WS drops every keystroke,
-  // we only want one reconnection attempt per `FORCE_RECONNECT_COOLDOWN_MS`.
-  const lastForcedAtRef = useRef(0);
-
   const doConnect = useCallback(
     (cols: number, rows: number) => {
-      dimsRef.current = { cols, rows };
-
-      // Tear down previous connection if any.
-      connRef.current?.close(1000, "reconnect");
-
-      // Always prefer the latest known PTY id over the prop — `optionsRef`
-      // may still be holding the original `existingPtyId`, but a freshly-
-      // spawned PTY's id lives only in `latestPtyIdRef`.
-      const buildOpts: BuildOptions = {
-        featureId: optionsRef.current.featureId,
-        projectId: optionsRef.current.projectId,
-        requestedCwd: optionsRef.current.requestedCwd,
-        ptyId: latestPtyIdRef.current,
+      refs.dimsRef.current = { cols, rows };
+      refs.connRef.current?.close(1000, "reconnect");
+      const buildOptions: BuildOptions = {
+        featureId: refs.optionsRef.current.featureId,
+        projectId: refs.optionsRef.current.projectId,
+        requestedCwd: refs.optionsRef.current.requestedCwd,
+        ptyId: refs.latestPtyIdRef.current,
       };
-
-      const conn = createWsConnection({
-        url: buildWsUrl(buildOpts, cols, rows),
+      const reconnect = (): void => {
+        const dimensions = refs.dimsRef.current;
+        if (dimensions) doConnect(dimensions.cols, dimensions.rows);
+      };
+      refs.connRef.current = createWsConnection({
+        url: buildWsUrl(buildOptions, cols, rows),
         protocols: getWsProtocols(),
         onOpen: () => {
           setIsConnected(true);
           resetReconnectState(reconnectKey);
-          // Clear the force-reconnect debounce so a *later* stall triggers
-          // immediate recovery rather than waiting out the cooldown window
-          // we started during the prior failure.
-          lastForcedAtRef.current = 0;
-          // Dismiss the drop toast (if any) so the user sees the recovery
-          // succeed rather than being left staring at "Reconnecting…".
+          refs.lastForcedAtRef.current = 0;
           toast.dismiss(TERMINAL_DROPPED_TOAST_ID);
           useConnectionStatusStore.getState().reportSource(reconnectKey, "connected");
         },
-        onMessage: (data) => {
-          try {
-            const msg = JSON.parse(data) as TerminalMessage;
-            const cb = optionsRef.current;
-            switch (msg.type) {
-              case "data":
-                cb.onData(msg.data);
-                break;
-              case "ready":
-                latestPtyIdRef.current = msg.pty_id;
-                cb.onReady(msg.pty_id, msg.cwd);
-                break;
-              case "exit":
-                cb.onExit(msg.code);
-                break;
-              case "reconnected":
-                cb.onReconnected(msg.scrollback, msg.alive, msg.cwd);
-                if (!msg.alive) {
-                  // PTY is gone (>300s grace). Drop the stored id so any
-                  // future reconnect would spawn fresh rather than
-                  // hammering an empty handle.
-                  latestPtyIdRef.current = undefined;
-                }
-                break;
-              case "error":
-                cb.onError(msg.message);
-                break;
-            }
-          } catch {
-            optionsRef.current.onError("Failed to parse terminal message");
-          }
-        },
+        onMessage: (data) => handleTerminalMessage(data, refs),
         onError: (intentional) => {
-          // `intentional` is true when our own `close()` flipped the flag —
-          // covers both explicit reconnect and unmount cleanup, so no
-          // separate "unmounted" guard is needed here.
           if (intentional) return;
           useConnectionStatusStore
             .getState()
@@ -246,110 +226,103 @@ export function useTerminalWebSocket(
         onClose: (intentional) => {
           setIsConnected(false);
           if (intentional) return;
-          // Surface to the user inside the xterm buffer + global indicator,
-          // then schedule a backoff reconnect. The backend keeps PTYs
-          // alive for 300s so most reconnects within that window will
-          // resume cleanly via the `?pty_id=` path.
-          optionsRef.current.onError("Connection lost. Reconnecting…");
+          refs.optionsRef.current.onError("Connection lost. Reconnecting…");
           useConnectionStatusStore
             .getState()
             .reportSource(reconnectKey, "reconnecting", "Terminal WebSocket dropped");
-          scheduleReconnect(reconnectKey, () => {
-            const dims = dimsRef.current;
-            if (dims) doConnect(dims.cols, dims.rows);
-          });
+          scheduleReconnect(reconnectKey, reconnect);
         },
       });
-
-      connRef.current = conn;
     },
-    [reconnectKey],
+    [reconnectKey, setIsConnected],
   );
+  return useMemo(() => ({ doConnect, reconnectKey, refs }), [doConnect, reconnectKey]);
+}
 
+type TerminalConnector = ReturnType<typeof useTerminalConnector>;
+
+function reportDroppedWrite(data: string, connector: TerminalConnector): void {
+  const { connRef, lastForcedAtRef } = connector.refs;
+  const connection = connRef.current;
+  console.warn("[terminal] dropped write", {
+    bytes: data.length,
+    isOpen: connection?.isOpen() ?? false,
+    isConnecting: connection?.isConnecting() ?? false,
+    devFrozen: devFrozen.current,
+  });
+  toast.error("Terminal disconnected — your input was dropped. Reconnecting…", {
+    id: TERMINAL_DROPPED_TOAST_ID,
+  });
+  const now = Date.now();
+  if (now - lastForcedAtRef.current < FORCE_RECONNECT_COOLDOWN_MS) return;
+  lastForcedAtRef.current = now;
+  useConnectionStatusStore
+    .getState()
+    .reportSource(connector.reconnectKey, "reconnecting", "Terminal write stalled");
+  forceReconnect(connector.reconnectKey);
+}
+
+function useTerminalSocketActions(connector: TerminalConnector) {
+  const { doConnect, reconnectKey, refs } = connector;
   const connect = useCallback(
     (cols: number, rows: number) => {
       doConnect(cols, rows);
-      // Register so the watchdog can force this terminal to reconnect on
-      // wake/online without waiting for TCP-level close detection.
       registerReconnector(
         reconnectKey,
         () => {
-          const dims = dimsRef.current;
-          if (dims) doConnect(dims.cols, dims.rows);
+          const dimensions = refs.dimsRef.current;
+          if (dimensions) doConnect(dimensions.cols, dimensions.rows);
         },
         { onManualRequired: reportManualReconnectRequired },
       );
     },
-    [doConnect, reconnectKey],
+    [doConnect, reconnectKey, refs.dimsRef],
   );
-
-  // Clean up WebSocket + reconnect registry on unmount. The WS connection
-  // itself flips `intentional=true` inside `close()`, which gates the
-  // close/error callbacks from running stale React state — so no
-  // separate "is the hook still mounted" guard is needed.
-  useEffect(() => {
-    return () => {
-      connRef.current?.close(1000, "unmount");
+  useEffect(
+    () => () => {
+      refs.connRef.current?.close(1000, "unmount");
       unregisterReconnector(reconnectKey);
       useConnectionStatusStore.getState().clearSource(reconnectKey);
-    };
-  }, [reconnectKey]);
-
+    },
+    [reconnectKey, refs.connRef],
+  );
   const write = useCallback(
     (data: string) => {
-      const conn = connRef.current;
-      if (devFrozen.current || !conn || !conn.sendJson({ type: "write", data })) {
-        // Silent drop — surface to the user (deduped by toast id) and log
-        // with the connection state for diagnostics. Without this, the terminal
-        // looks frozen for no visible reason.
-        console.warn("[terminal] dropped write", {
-          bytes: data.length,
-          isOpen: conn?.isOpen() ?? false,
-          isConnecting: conn?.isConnecting() ?? false,
-          devFrozen: devFrozen.current,
-        });
-        toast.error("Terminal disconnected — your input was dropped. Reconnecting…", {
-          id: TERMINAL_DROPPED_TOAST_ID,
-        });
-        // Self-heal: force the reconnector to run *now* instead of waiting
-        // for `onClose` to fire (which can take forever when the socket is
-        // wedged in `CLOSING` or `OPEN` over dead TCP — exactly the bug the
-        // user hit, and exactly what `window.__cadencrTerminal.freeze()`
-        // reproduces). The reconnect re-uses the latest known `pty_id` so
-        // the user reattaches to their live shell rather than spawning a
-        // fresh one (the backend keeps PTYs for 300 s after disconnect).
-        // Debounced so a flurry of keystrokes triggers one reconnect, not
-        // a parade.
-        const now = Date.now();
-        if (now - lastForcedAtRef.current >= FORCE_RECONNECT_COOLDOWN_MS) {
-          lastForcedAtRef.current = now;
-          useConnectionStatusStore
-            .getState()
-            .reportSource(reconnectKey, "reconnecting", "Terminal write stalled");
-          forceReconnect(reconnectKey);
-        }
+      const connection = refs.connRef.current;
+      if (devFrozen.current || !connection || !connection.sendJson({ type: "write", data })) {
+        reportDroppedWrite(data, connector);
       }
     },
-    [reconnectKey],
+    [connector, refs.connRef],
   );
-
-  const resize = useCallback((cols: number, rows: number) => {
-    dimsRef.current = { cols, rows };
-    const conn = connRef.current;
-    if (devFrozen.current || !conn || !conn.sendJson({ type: "resize", cols, rows })) {
-      console.warn("[terminal] dropped resize", { cols, rows });
-    }
-  }, []);
-
+  const resize = useCallback(
+    (cols: number, rows: number) => {
+      refs.dimsRef.current = { cols, rows };
+      const connection = refs.connRef.current;
+      if (
+        devFrozen.current ||
+        !connection ||
+        !connection.sendJson({ type: "resize", cols, rows })
+      ) {
+        console.warn("[terminal] dropped resize", { cols, rows });
+      }
+    },
+    [refs.connRef, refs.dimsRef],
+  );
   const kill = useCallback(() => {
-    const conn = connRef.current;
-    if (devFrozen.current || !conn || !conn.sendJson({ type: "kill" })) {
+    const connection = refs.connRef.current;
+    if (devFrozen.current || !connection || !connection.sendJson({ type: "kill" })) {
       console.warn("[terminal] dropped kill");
     }
-  }, []);
+  }, [refs.connRef]);
+  return useMemo(() => ({ connect, kill, resize, write }), [connect, kill, resize, write]);
+}
 
-  return useMemo(
-    () => ({ connect, write, resize, kill, isConnected }),
-    [connect, write, resize, kill, isConnected],
-  );
+export function useTerminalWebSocket(
+  options: UseTerminalWebSocketOptions,
+): UseTerminalWebSocketReturn {
+  const [isConnected, setIsConnected] = useState(false);
+  const connector = useTerminalConnector(options, setIsConnected);
+  const actions = useTerminalSocketActions(connector);
+  return useMemo(() => ({ ...actions, isConnected }), [actions, isConnected]);
 }

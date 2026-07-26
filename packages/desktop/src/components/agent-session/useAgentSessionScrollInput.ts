@@ -23,6 +23,72 @@ interface ScrollInputParams {
   requestOlderHistory: () => void;
 }
 
+interface ScrollContainerRefParams {
+  scrollerElRef: ScrollInputParams["scrollerElRef"];
+  stickRef: ScrollInputParams["stickRef"];
+  lastScrollTopRef: ScrollInputParams["lastScrollTopRef"];
+  growthObserverRef: React.MutableRefObject<MutationObserver | null>;
+  onKeyDown: (event: KeyboardEvent) => void;
+  onPointerDown: (event: PointerEvent) => void;
+  onWheel: (event: WheelEvent) => void;
+  onScroll: () => void;
+  onTouchStart: (event: TouchEvent) => void;
+  onTouchMove: (event: TouchEvent) => void;
+}
+
+function useScrollContainerRef({
+  scrollerElRef,
+  stickRef,
+  lastScrollTopRef,
+  growthObserverRef,
+  onKeyDown,
+  onPointerDown,
+  onWheel,
+  onScroll,
+  onTouchStart,
+  onTouchMove,
+}: ScrollContainerRefParams): ScrollRef {
+  return useCallback<ScrollRef>(
+    (element) => {
+      const previous = scrollerElRef.current;
+      if (previous === element) return;
+      if (previous) {
+        previous.removeEventListener("keydown", onKeyDown);
+        previous.removeEventListener("pointerdown", onPointerDown);
+        previous.removeEventListener("wheel", onWheel);
+        previous.removeEventListener("scroll", onScroll);
+        previous.removeEventListener("touchstart", onTouchStart);
+        previous.removeEventListener("touchmove", onTouchMove);
+      }
+      growthObserverRef.current?.disconnect();
+      growthObserverRef.current = null;
+      scrollerElRef.current = element;
+      if (element) {
+        lastScrollTopRef.current = element.scrollTop;
+        element.addEventListener("keydown", onKeyDown);
+        element.addEventListener("pointerdown", onPointerDown, { passive: true });
+        element.addEventListener("wheel", onWheel, { passive: true });
+        element.addEventListener("scroll", onScroll, { passive: true });
+        element.addEventListener("touchstart", onTouchStart, { passive: true });
+        element.addEventListener("touchmove", onTouchMove, { passive: true });
+        observeListGrowth(element, stickRef, growthObserverRef);
+      }
+    },
+    [
+      growthObserverRef,
+      lastScrollTopRef,
+      onKeyDown,
+      onPointerDown,
+      onScroll,
+      onTouchMove,
+      onTouchStart,
+      onWheel,
+      scrollerElRef,
+      stickRef,
+    ],
+  );
+}
+
 /**
  * Owns the raw DOM input listeners that disengage bottom-stick and arm
  * history loading. Split out of `useAgentSessionScroll` to keep that file
@@ -114,44 +180,18 @@ export function useAgentSessionScrollInput({
     setAutoScrollEnabled,
   ]);
 
-  return useCallback<ScrollRef>(
-    (el) => {
-      const prev = scrollerElRef.current;
-      if (prev === el) return;
-      if (prev) {
-        prev.removeEventListener("keydown", onKeyDown);
-        prev.removeEventListener("pointerdown", onPointerDown);
-        prev.removeEventListener("wheel", onWheel);
-        prev.removeEventListener("scroll", onScroll);
-        prev.removeEventListener("touchstart", onTouchStart);
-        prev.removeEventListener("touchmove", onTouchMove);
-      }
-      growthObserverRef.current?.disconnect();
-      growthObserverRef.current = null;
-      scrollerElRef.current = el;
-      if (el) {
-        lastScrollTopRef.current = el.scrollTop;
-        el.addEventListener("keydown", onKeyDown);
-        el.addEventListener("pointerdown", onPointerDown, { passive: true });
-        el.addEventListener("wheel", onWheel, { passive: true });
-        el.addEventListener("scroll", onScroll, { passive: true });
-        el.addEventListener("touchstart", onTouchStart, { passive: true });
-        el.addEventListener("touchmove", onTouchMove, { passive: true });
-        observeListGrowth(el, stickRef, growthObserverRef);
-      }
-    },
-    [
-      scrollerElRef,
-      stickRef,
-      lastScrollTopRef,
-      onKeyDown,
-      onPointerDown,
-      onWheel,
-      onScroll,
-      onTouchStart,
-      onTouchMove,
-    ],
-  );
+  return useScrollContainerRef({
+    scrollerElRef,
+    stickRef,
+    lastScrollTopRef,
+    growthObserverRef,
+    onKeyDown,
+    onPointerDown,
+    onWheel,
+    onScroll,
+    onTouchStart,
+    onTouchMove,
+  });
 }
 
 /**

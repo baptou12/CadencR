@@ -8,7 +8,16 @@
  * submit it performs the rename and applies the `WorkspaceEdit` across every
  * affected file, showing a "Renamed in N files" summary toast.
  */
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type KeyboardEvent,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 import type { EditorView } from "@codemirror/view";
 import { Pencil, X } from "lucide-react";
 import { toast } from "sonner";
@@ -26,17 +35,19 @@ interface EditorRenamePanelProps {
   onClose: () => void;
 }
 
-export function EditorRenamePanel({ view, reopenSignal, host, onClose }: EditorRenamePanelProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const handleClose = useCallback((): void => {
-    onClose();
-    view.focus();
-  }, [onClose, view]);
-
-  // Probe prepareRename on (re)open; seed the input or bail with a toast.
+function usePrepareRename({
+  view,
+  reopenSignal,
+  handleClose,
+  inputRef,
+  setValue,
+}: {
+  view: EditorView;
+  reopenSignal: number;
+  handleClose: () => void;
+  inputRef: RefObject<HTMLInputElement | null>;
+  setValue: Dispatch<SetStateAction<string>>;
+}): void {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -49,21 +60,31 @@ export function EditorRenamePanel({ view, reopenSignal, host, onClose }: EditorR
           return;
         }
         setValue(prep.placeholder);
-        const el = inputRef.current;
-        if (el) {
-          el.focus();
-          el.select();
-        }
-      } catch (err) {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      } catch (error) {
         if (cancelled) return;
-        toast.error(`Rename unavailable: ${apiErrorMessage(err, String(err))}`);
+        toast.error(`Rename unavailable: ${apiErrorMessage(error, String(error))}`);
         handleClose();
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [view, reopenSignal, handleClose]);
+  }, [handleClose, inputRef, reopenSignal, setValue, view]);
+}
+
+export function EditorRenamePanel({ view, reopenSignal, host, onClose }: EditorRenamePanelProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const handleClose = useCallback((): void => {
+    onClose();
+    view.focus();
+  }, [onClose, view]);
+
+  usePrepareRename({ view, reopenSignal, handleClose, inputRef, setValue });
 
   const handleSubmit = useCallback(async (): Promise<void> => {
     const next = value.trim();

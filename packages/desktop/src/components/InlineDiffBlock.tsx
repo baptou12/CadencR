@@ -29,6 +29,79 @@ interface InlineDiffBlockProps {
   onExpandedChange?: (next: boolean) => void;
 }
 
+interface InlineDiffHeaderProps {
+  additions: number;
+  deletions: number;
+  displayPath: string;
+  filePath: string;
+  isExpanded: boolean;
+  onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  patch: string;
+  toggleExpanded: () => void;
+  toolName?: string;
+}
+
+function InlineDiffHeader({
+  additions,
+  deletions,
+  displayPath,
+  filePath,
+  isExpanded,
+  onOpenFileInEditor,
+  patch,
+  toggleExpanded,
+  toolName,
+}: InlineDiffHeaderProps): React.ReactElement {
+  const ToolIcon = toolName === "Write" ? FilePlusIcon : PencilIcon;
+  return (
+    <div
+      data-testid="inline-diff-header"
+      onClick={toggleExpanded}
+      className="flex cursor-pointer items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--block-edit-accent,var(--numstat-add-fg))_15%,var(--editor-bg))] px-3 py-1.5 text-xs"
+    >
+      {toolName && (
+        <>
+          <ToolIcon className="size-3 shrink-0 text-[var(--block-edit-accent,var(--numstat-add-fg))]" />
+          <span className="font-medium text-[var(--block-edit-accent,var(--numstat-add-fg))]">
+            {toolName}
+          </span>
+        </>
+      )}
+      <span className="flex-1 truncate font-mono text-[var(--editor-fg)]">{displayPath}</span>
+      <NumStat additions={additions} deletions={deletions} hideZero={false} />
+      {onOpenFileInEditor && (
+        <button
+          data-inline-diff-edit-action
+          type="button"
+          aria-label={`Edit ${displayPath} in editor`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenFileInEditor(filePath, firstChangedNewLine(patch));
+          }}
+          className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 leading-4 text-primary transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+        >
+          <PencilIcon className="size-3" />
+          <span className="text-[11px] font-medium">Edit</span>
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleExpanded();
+        }}
+        className="shrink-0 text-primary/70 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+        aria-expanded={isExpanded}
+        aria-label={isExpanded ? "Collapse diff" : "Expand diff"}
+      >
+        <ChevronRightIcon
+          className={cn("size-3 transition-transform", isExpanded && "rotate-90")}
+        />
+      </button>
+    </div>
+  );
+}
+
 /**
  * Compact inline diff block for displaying file changes during agent execution.
  * Uses the shared patch diff renderer with a synthesized unified patch.
@@ -43,7 +116,6 @@ export function InlineDiffBlock({
   expanded,
   onExpandedChange,
 }: InlineDiffBlockProps) {
-  const ToolIcon = toolName === "Write" ? FilePlusIcon : PencilIcon;
   const { theme } = useTheme();
   const contextOpenFileInEditor = useOpenDiffInEditor();
   const openFileInEditor = onOpenFileInEditor ?? contextOpenFileInEditor;
@@ -75,55 +147,18 @@ export function InlineDiffBlock({
 
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--editor-border)] bg-[var(--editor-bg)]">
-      {/* Compact file header — clicking anywhere on the row toggles expand;
-          nested buttons (Edit, chevron) stop propagation. */}
-      <div
-        data-testid="inline-diff-header"
-        onClick={toggleExpanded}
-        className="flex cursor-pointer items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--block-edit-accent,var(--numstat-add-fg))_15%,var(--editor-bg))] px-3 py-1.5 text-xs"
-      >
-        {toolName && (
-          <>
-            <ToolIcon className="size-3 shrink-0 text-[var(--block-edit-accent,var(--numstat-add-fg))]" />
-            <span className="font-medium text-[var(--block-edit-accent,var(--numstat-add-fg))]">
-              {toolName}
-            </span>
-          </>
-        )}
-        <span className="flex-1 truncate font-mono text-[var(--editor-fg)]">{displayPath}</span>
-        <NumStat additions={additions} deletions={deletions} hideZero={false} />
-        {openFileInEditor && (
-          <button
-            data-inline-diff-edit-action
-            type="button"
-            aria-label={`Edit ${displayPath} in editor`}
-            onClick={(e) => {
-              e.stopPropagation();
-              openFileInEditor(filePath, firstChangedNewLine(patch));
-            }}
-            className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 leading-4 text-primary transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-          >
-            <PencilIcon className="size-3" />
-            <span className="text-[11px] font-medium">Edit</span>
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleExpanded();
-          }}
-          className="shrink-0 text-primary/70 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-          aria-expanded={isExpanded}
-          aria-label={isExpanded ? "Collapse diff" : "Expand diff"}
-        >
-          <ChevronRightIcon
-            className={cn("size-3 transition-transform", isExpanded && "rotate-90")}
-          />
-        </button>
-      </div>
+      <InlineDiffHeader
+        additions={additions}
+        deletions={deletions}
+        displayPath={displayPath}
+        filePath={filePath}
+        isExpanded={isExpanded}
+        onOpenFileInEditor={openFileInEditor}
+        patch={patch}
+        toggleExpanded={toggleExpanded}
+        toolName={toolName}
+      />
 
-      {/* Diff content */}
       <CollapsibleSection open={isExpanded}>
         <PatchDiffView
           patch={patch}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import type { AgentCatalog } from "@/api/agentRuntime";
 import { availableCatalogProviders, DEFAULT_PROVIDER } from "@/shared/models";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
@@ -12,6 +12,55 @@ interface UseAgentSessionModelStateParams {
   runtimeProvider?: string;
   onProviderChange?: (providerId: string) => void;
   hasConversation: boolean;
+}
+
+interface ActiveProviderParams {
+  providerOptions: { id: string; models: { id: string }[] }[];
+  currentProviderId?: string;
+  currentModelId?: string;
+  runtimeProvider?: string;
+  modelProviderId?: string;
+  defaultProviderId?: string;
+}
+
+function resolveActiveProviderId({
+  providerOptions,
+  currentProviderId,
+  currentModelId,
+  runtimeProvider,
+  modelProviderId,
+  defaultProviderId,
+}: ActiveProviderParams): string {
+  const isSelectable = (providerId?: string): boolean =>
+    providerOptions.some((provider) => provider.id === providerId);
+  const supportsModel = (providerId?: string): boolean => {
+    if (!providerId || !currentModelId) return false;
+    return (
+      providerOptions
+        .find((provider) => provider.id === providerId)
+        ?.models.some((model) => model.id === currentModelId) ?? false
+    );
+  };
+  if (
+    currentProviderId &&
+    isSelectable(currentProviderId) &&
+    (!currentModelId || supportsModel(currentProviderId))
+  ) {
+    return currentProviderId;
+  }
+  if (
+    runtimeProvider &&
+    isSelectable(runtimeProvider) &&
+    (!currentModelId || supportsModel(runtimeProvider))
+  ) {
+    return runtimeProvider;
+  }
+  return (
+    modelProviderId ??
+    (isSelectable(defaultProviderId) ? defaultProviderId : undefined) ??
+    providerOptions[0]?.id ??
+    DEFAULT_PROVIDER
+  );
 }
 
 export function useAgentSessionModelState(params: UseAgentSessionModelStateParams) {
@@ -49,51 +98,25 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
     [allModels, currentModelId],
   );
 
-  const providerSupportsModel = useCallback(
-    (providerId?: string) => {
-      if (!providerId || !currentModelId) return false;
-      const provider = providerOptions.find((entry) => entry.id === providerId);
-      if (!provider) return false;
-      return provider.models.some((model) => model.id === currentModelId);
-    },
-    [currentModelId, providerOptions],
+  const activeProviderId = useMemo(
+    () =>
+      resolveActiveProviderId({
+        providerOptions,
+        currentProviderId,
+        currentModelId,
+        runtimeProvider,
+        modelProviderId,
+        defaultProviderId: agentCatalog?.default_provider,
+      }),
+    [
+      agentCatalog?.default_provider,
+      currentModelId,
+      currentProviderId,
+      modelProviderId,
+      providerOptions,
+      runtimeProvider,
+    ],
   );
-
-  const activeProviderId = useMemo(() => {
-    const isSelectableProvider = (providerId?: string): boolean =>
-      providerOptions.some((provider) => provider.id === providerId);
-
-    const preferredCurrentProvider =
-      isSelectableProvider(currentProviderId) &&
-      (!currentModelId || providerSupportsModel(currentProviderId))
-        ? currentProviderId
-        : undefined;
-    if (preferredCurrentProvider) return preferredCurrentProvider;
-
-    const preferredRuntimeProvider =
-      isSelectableProvider(runtimeProvider) &&
-      (!currentModelId || providerSupportsModel(runtimeProvider))
-        ? runtimeProvider
-        : undefined;
-    if (preferredRuntimeProvider) return preferredRuntimeProvider;
-
-    return (
-      modelProviderId ??
-      (isSelectableProvider(agentCatalog?.default_provider)
-        ? agentCatalog?.default_provider
-        : undefined) ??
-      providerOptions[0]?.id ??
-      DEFAULT_PROVIDER
-    );
-  }, [
-    agentCatalog?.default_provider,
-    currentProviderId,
-    currentModelId,
-    modelProviderId,
-    providerOptions,
-    providerSupportsModel,
-    runtimeProvider,
-  ]);
 
   const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
   const visibleModels = activeProvider?.models ?? [];

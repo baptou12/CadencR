@@ -41,6 +41,100 @@ export interface BashBlockProps {
   onExpandedChange?: (next: boolean) => void;
 }
 
+interface BashHeaderProps {
+  command?: string;
+  formattedCommand?: string;
+  isError?: boolean;
+  isBodyOpen: boolean;
+}
+
+function BashHeader({
+  command,
+  formattedCommand,
+  isError,
+  isBodyOpen,
+}: BashHeaderProps): ReactElement {
+  return (
+    <>
+      <TerminalIcon className="size-3 shrink-0" />
+      <span
+        className={cn("font-medium", isError ? "text-destructive" : "text-[var(--block-bash-fg)]")}
+      >
+        Bash
+      </span>
+      <pre
+        className={cn(
+          "min-w-0 flex-1 font-mono",
+          isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
+          isBodyOpen ? "whitespace-pre-wrap break-all" : "truncate",
+        )}
+      >
+        {(isBodyOpen ? formattedCommand : command) ?? "Running command…"}
+      </pre>
+    </>
+  );
+}
+
+function BashHeaderToggle({
+  isBodyOpen,
+  onToggle,
+}: {
+  isBodyOpen: boolean;
+  onToggle: () => void;
+}): ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
+      aria-expanded={isBodyOpen}
+      aria-label={isBodyOpen ? "Collapse output" : "Expand output"}
+    >
+      <ChevronRightIcon className={cn("size-3 transition-transform", isBodyOpen && "rotate-90")} />
+    </button>
+  );
+}
+
+function BashContextMenuItems({
+  command,
+  content,
+  hasOutput,
+}: Pick<BashBlockProps, "command" | "content"> & { hasOutput: boolean }): ReactElement {
+  return (
+    <>
+      <ContextMenuActionItem
+        icon={ClipboardCopyIcon}
+        disabled={!hasOutput}
+        onSelect={() => void copyToClipboard(content ?? "", "Output copied")}
+      >
+        Copy Output
+      </ContextMenuActionItem>
+      <ContextMenuActionItem
+        icon={TerminalIcon}
+        disabled={!command}
+        onSelect={() => void copyToClipboard(command ?? "", "Command copied")}
+      >
+        Copy Command
+      </ContextMenuActionItem>
+      <ContextMenuActionItem
+        icon={Code2Icon}
+        disabled={!hasOutput}
+        onSelect={() =>
+          void copyToClipboard(
+            "```bash\n" + (content ?? "") + "\n```",
+            "Copied as Markdown code block",
+          )
+        }
+      >
+        Copy as Markdown Code Block
+      </ContextMenuActionItem>
+    </>
+  );
+}
+
 export const BashBlock = memo(function BashBlock({
   command,
   content,
@@ -97,52 +191,14 @@ export const BashBlock = memo(function BashBlock({
             truncationClassName="text-[var(--block-bash-muted-fg)]/70"
             bodyHidden={!isBodyOpen}
             header={
-              <>
-                <TerminalIcon className="size-3 shrink-0" />
-                <span
-                  className={cn(
-                    "font-medium",
-                    isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
-                  )}
-                >
-                  Bash
-                </span>
-                <pre
-                  className={cn(
-                    // Pin the command (and Bash label above) to the
-                    // high-contrast fg so it stays readable on every theme,
-                    // but stay in `text-destructive` on error so the whole
-                    // header reads as one red row.
-                    "min-w-0 flex-1 font-mono",
-                    isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
-                    // Collapsed: single-line ellipsis. Expanded: wrap with line
-                    // breaks before shell operators (inserted by
-                    // `formatShellCommand`).
-                    isBodyOpen ? "whitespace-pre-wrap break-all" : "truncate",
-                  )}
-                >
-                  {(isBodyOpen ? formattedCommand : command) ?? "Running command…"}
-                </pre>
-              </>
+              <BashHeader
+                command={command}
+                formattedCommand={formattedCommand}
+                isError={isError}
+                isBodyOpen={isBodyOpen}
+              />
             }
-            // Rendered after the "Show all N / Show last N" toggle so the
-            // fold chevron stays pinned to the very end of the header bar.
-            headerTrailing={
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleBodyOpen();
-                }}
-                className="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
-                aria-expanded={isBodyOpen}
-                aria-label={isBodyOpen ? "Collapse output" : "Expand output"}
-              >
-                <ChevronRightIcon
-                  className={cn("size-3 transition-transform", isBodyOpen && "rotate-90")}
-                />
-              </button>
-            }
+            headerTrailing={<BashHeaderToggle isBodyOpen={isBodyOpen} onToggle={toggleBodyOpen} />}
           >
             {({ showAll }) =>
               hasOutput ? (
@@ -168,32 +224,7 @@ export const BashBlock = memo(function BashBlock({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuActionItem
-          icon={ClipboardCopyIcon}
-          disabled={!hasOutput}
-          onSelect={() => void copyToClipboard(content ?? "", "Output copied")}
-        >
-          Copy Output
-        </ContextMenuActionItem>
-        <ContextMenuActionItem
-          icon={TerminalIcon}
-          disabled={!command}
-          onSelect={() => void copyToClipboard(command ?? "", "Command copied")}
-        >
-          Copy Command
-        </ContextMenuActionItem>
-        <ContextMenuActionItem
-          icon={Code2Icon}
-          disabled={!hasOutput}
-          onSelect={() =>
-            void copyToClipboard(
-              "```bash\n" + (content ?? "") + "\n```",
-              "Copied as Markdown code block",
-            )
-          }
-        >
-          Copy as Markdown Code Block
-        </ContextMenuActionItem>
+        <BashContextMenuItems command={command} content={content} hasOutput={hasOutput} />
       </ContextMenuContent>
     </ContextMenu>
   );

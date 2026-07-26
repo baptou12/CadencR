@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { toast } from "sonner";
 import type { FileTree as FileTreeModel, FileTreeRenameEvent } from "@pierre/trees";
 import type { FileTreeMutations } from "@/hooks/useFileTreeMutations";
@@ -75,33 +75,11 @@ interface UseFileTreeDraftResult {
   tryHandleAsCreate: (event: FileTreeRenameEvent) => boolean;
 }
 
-/**
- * Owns the "draft" state for inline file/folder creation. Pierre doesn't
- * have a first-class "draft" API — the official pattern is
- * `model.add(placeholder) + model.startRenaming(placeholder, {removeIfCanceled: true})`.
- * This hook wraps that pattern so the main `FileTree` doesn't have to
- * juggle the ref + onMutation cleanup + create-vs-rename branching.
- *
- * Pierre lifecycle (handled here):
- *  - Escape / blur-with-empty-input → controller removes the placeholder
- *  - Enter with empty/whitespace → controller removes the placeholder
- *  - Enter with text → controller calls `onRename`; `tryHandleAsCreate`
- *    detects the draft path and routes to `createFile`/`createFolder`.
- */
-export function useFileTreeDraft({
-  model,
-  projectId,
-  featureId,
-  mutations,
-  onFileCreated,
-  featureKey,
-}: UseFileTreeDraftOptions): UseFileTreeDraftResult {
-  const draftRef = useRef<DraftState | null>(null);
-
-  // Clear `draftRef` whenever pierre removes the placeholder we added.
-  // Pierre auto-removes drafts on Escape or empty-Enter — without this
-  // listener, `draftRef` would keep pointing at a path that no longer
-  // exists, and the next `startCreate` would try to remove it and throw.
+function useDraftLifecycle(
+  model: FileTreeModel,
+  featureKey: number,
+  draftRef: RefObject<DraftState | null>,
+): void {
   useEffect(() => {
     const unsubscribe = model.onMutation("remove", (event) => {
       if (draftRef.current && event.path === draftRef.current.pierrePath) {
@@ -109,19 +87,18 @@ export function useFileTreeDraft({
       }
     });
     return unsubscribe;
-  }, [model]);
-
-  // Drop any in-flight draft when the feature changes.
+  }, [draftRef, model]);
   useEffect(() => {
     draftRef.current = null;
-  }, [featureKey]);
+  }, [draftRef, featureKey]);
+}
 
-  const startCreate = useCallback(
+function useStartCreate(
+  model: FileTreeModel,
+  draftRef: RefObject<DraftState | null>,
+): UseFileTreeDraftResult["startCreate"] {
+  return useCallback(
     (kind: DraftKind, parentDir: string) => {
-      // Cancel any prior draft so we never accumulate orphan
-      // placeholders. Guard with `getItem` because pierre may have
-      // already removed the draft itself (e.g. the user pressed
-      // Escape) — calling `model.remove` on a missing path throws.
       const previous = draftRef.current;
       if (previous) {
         draftRef.current = null;
@@ -144,8 +121,34 @@ export function useFileTreeDraft({
         toast.error("Could not start inline create");
       }
     },
-    [model],
+    [draftRef, model],
   );
+}
+
+/**
+ * Owns the "draft" state for inline file/folder creation. Pierre doesn't
+ * have a first-class "draft" API — the official pattern is
+ * `model.add(placeholder) + model.startRenaming(placeholder, {removeIfCanceled: true})`.
+ * This hook wraps that pattern so the main `FileTree` doesn't have to
+ * juggle the ref + onMutation cleanup + create-vs-rename branching.
+ *
+ * Pierre lifecycle (handled here):
+ *  - Escape / blur-with-empty-input → controller removes the placeholder
+ *  - Enter with empty/whitespace → controller removes the placeholder
+ *  - Enter with text → controller calls `onRename`; `tryHandleAsCreate`
+ *    detects the draft path and routes to `createFile`/`createFolder`.
+ */
+export function useFileTreeDraft({
+  model,
+  projectId,
+  featureId,
+  mutations,
+  onFileCreated,
+  featureKey,
+}: UseFileTreeDraftOptions): UseFileTreeDraftResult {
+  const draftRef = useRef<DraftState | null>(null);
+  useDraftLifecycle(model, featureKey, draftRef);
+  const startCreate = useStartCreate(model, draftRef);
 
   const isDraftPath = useCallback(
     (pierrePath: string | null) =>

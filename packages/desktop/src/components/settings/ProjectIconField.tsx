@@ -1,13 +1,64 @@
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { FolderOpen, Loader2, RefreshCw, X } from "lucide-react";
-import { useScanProjectIcons } from "@/api/generated";
+import { useScanProjectIcons, type ProjectIconCandidate } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import { ProjectBadge } from "@/components/ProjectBadge";
 import { ProjectIconCandidateGrid } from "@/components/settings/ProjectIconCandidateGrid";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { PROJECT_ICON_SETTING_KEY } from "@/lib/project-icon";
+
+function ProjectIconScanResult({
+  candidates,
+  error,
+  isFetching,
+  projectId,
+  selectedPath,
+  onSelect,
+}: {
+  candidates: ProjectIconCandidate[] | undefined;
+  error: unknown;
+  isFetching: boolean;
+  projectId: number;
+  selectedPath: string;
+  onSelect: (path: string) => void;
+}): React.JSX.Element {
+  if (isFetching) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        Scanning repository for logos…
+      </div>
+    );
+  }
+  if (candidates && candidates.length > 0) {
+    return (
+      <ProjectIconCandidateGrid
+        projectId={projectId}
+        candidates={candidates}
+        selectedPath={selectedPath}
+        onSelect={onSelect}
+      />
+    );
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      {error
+        ? "The scan failed — check that this project is a git repository."
+        : "No logo files found in this repository. Pick one manually instead."}
+    </p>
+  );
+}
+
+function useProjectIconScanError(error: unknown, projectId: number): void {
+  useEffect(() => {
+    if (!error) return;
+    toast.error(apiErrorMessage(error, "Could not scan this project for logos"), {
+      id: `project-icon-scan:${projectId}`,
+    });
+  }, [error, projectId]);
+}
 
 /**
  * Lets a project show its own logo instead of the accent dot.
@@ -38,15 +89,7 @@ export function ProjectIconField({
     query: { staleTime: Infinity, refetchOnWindowFocus: false, retry: false },
   });
 
-  // The scan shells out to git, which fails on a project that isn't a repo (or
-  // whose directory has moved). Surface it rather than showing an empty grid
-  // that looks like "no logos here".
-  useEffect(() => {
-    if (!error) return;
-    toast.error(apiErrorMessage(error, "Could not scan this project for logos"), {
-      id: `project-icon-scan:${projectId}`,
-    });
-  }, [error, projectId]);
+  useProjectIconScanError(error, projectId);
 
   const handlePickFile = useCallback(async (): Promise<void> => {
     try {
@@ -96,25 +139,14 @@ export function ProjectIconField({
         </p>
       ) : null}
 
-      {isFetching ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" aria-hidden />
-          Scanning repository for logos…
-        </div>
-      ) : candidates && candidates.length > 0 ? (
-        <ProjectIconCandidateGrid
-          projectId={projectId}
-          candidates={candidates}
-          selectedPath={selectedPath}
-          onSelect={handleSelect}
-        />
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {error
-            ? "The scan failed — check that this project is a git repository."
-            : "No logo files found in this repository. Pick one manually instead."}
-        </p>
-      )}
+      <ProjectIconScanResult
+        candidates={candidates}
+        error={error}
+        isFetching={isFetching}
+        projectId={projectId}
+        selectedPath={selectedPath}
+        onSelect={handleSelect}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>

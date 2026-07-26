@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useEditorStore, isUntitledPath } from "@/stores/editor-store";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { isExcalidrawFile, isImageFile } from "@/lib/file-language";
@@ -22,6 +22,163 @@ interface EditorPaneProps {
   onEditorViewChange?: (paneId: string, view: EditorView | null) => void;
 }
 
+function useEditorFileShortcut({
+  action,
+  activeFilePath,
+  id,
+  isFocusedPane,
+}: {
+  action: () => void;
+  activeFilePath: string | null;
+  id: "editor-buffer-search" | "editor-replace" | "editor-go-to-line";
+  isFocusedPane: boolean;
+}): void {
+  useScopedGlobalShortcutById(
+    id,
+    (event) => {
+      if (!isFocusedPane || !activeFilePath) return;
+      event.preventDefault();
+      event.stopPropagation();
+      action();
+    },
+    "editor",
+    { enabled: isFocusedPane && Boolean(activeFilePath) },
+  );
+}
+
+function useEditorPaneShortcuts({
+  activeFilePath,
+  featureId,
+  isFocusedPane,
+  openGoToLine,
+  openSearch,
+  openUntitledBuffer,
+  paneId,
+}: {
+  activeFilePath: string | null;
+  featureId: number;
+  isFocusedPane: boolean;
+  openGoToLine: () => void;
+  openSearch: (withReplace: boolean) => void;
+  openUntitledBuffer: ReturnType<typeof useEditorStore.getState>["openUntitledBuffer"];
+  paneId: string;
+}): void {
+  useEditorFileShortcut({
+    action: () => openSearch(false),
+    activeFilePath,
+    id: "editor-buffer-search",
+    isFocusedPane,
+  });
+  useEditorFileShortcut({
+    action: () => openSearch(true),
+    activeFilePath,
+    id: "editor-replace",
+    isFocusedPane,
+  });
+  useEditorFileShortcut({
+    action: openGoToLine,
+    activeFilePath,
+    id: "editor-go-to-line",
+    isFocusedPane,
+  });
+  useScopedGlobalShortcutById(
+    "editor-new",
+    (event) => {
+      if (!isFocusedPane) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openUntitledBuffer(featureId, paneId);
+    },
+    "editor",
+    { enabled: isFocusedPane },
+  );
+  useScopedGlobalShortcutById(
+    "editor-copy-path",
+    (event) => {
+      if (!isFocusedPane) return;
+      event.preventDefault();
+      event.stopPropagation();
+      copyFilePath(activeFilePath);
+    },
+    "editor",
+    { enabled: isFocusedPane },
+  );
+}
+
+function useEditorPaneControls({
+  activeFilePath,
+  featureId,
+  isFocusedPane,
+  openUntitledBuffer,
+  paneId,
+}: {
+  activeFilePath: string | null;
+  featureId: number;
+  isFocusedPane: boolean;
+  openUntitledBuffer: ReturnType<typeof useEditorStore.getState>["openUntitledBuffer"];
+  paneId: string;
+}) {
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchReopenSignal, setSearchReopenSignal] = useState(0);
+  const [replaceMode, setReplaceMode] = useState(false);
+  const [replaceFocusSignal, setReplaceFocusSignal] = useState(0);
+  const [goToLineOpen, setGoToLineOpen] = useState(false);
+  const [goToLineReopenSignal, setGoToLineReopenSignal] = useState(0);
+  const openSearch = useCallback((withReplace: boolean): void => {
+    setSearchOpen((wasOpen) => {
+      if (wasOpen) setSearchReopenSignal((value) => value + 1);
+      return true;
+    });
+    if (withReplace) {
+      setReplaceMode(true);
+      setReplaceFocusSignal((value) => value + 1);
+    }
+  }, []);
+  const closeSearch = useCallback((): void => {
+    setSearchOpen(false);
+    setReplaceMode(false);
+  }, []);
+  const openGoToLine = useCallback((): void => {
+    setGoToLineOpen((wasOpen) => {
+      if (wasOpen) setGoToLineReopenSignal((value) => value + 1);
+      return true;
+    });
+  }, []);
+  const closeGoToLine = useCallback((): void => setGoToLineOpen(false), []);
+  useEditorPaneShortcuts({
+    activeFilePath,
+    featureId,
+    isFocusedPane,
+    openGoToLine,
+    openSearch,
+    openUntitledBuffer,
+    paneId,
+  });
+  useEffect(() => () => clearPaneSearch(featureId, paneId), [featureId, paneId]);
+  return useMemo(
+    () => ({
+      closeGoToLine,
+      closeSearch,
+      goToLineOpen,
+      goToLineReopenSignal,
+      replaceFocusSignal,
+      replaceMode,
+      searchOpen,
+      searchReopenSignal,
+    }),
+    [
+      closeGoToLine,
+      closeSearch,
+      goToLineOpen,
+      goToLineReopenSignal,
+      replaceFocusSignal,
+      replaceMode,
+      searchOpen,
+      searchReopenSignal,
+    ],
+  );
+}
+
 export default function EditorPane({
   featureId,
   paneId,
@@ -41,188 +198,33 @@ export default function EditorPane({
   const activeConflict = useActiveConflict(activeFilePath, activeFileIsDirty);
   const setActivePane = useEditorStore((s) => s.setActivePane);
   const openUntitledBuffer = useEditorStore((s) => s.openUntitledBuffer);
-
   const isFocusedPane = activePaneId === paneId;
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchReopenSignal, setSearchReopenSignal] = useState(0);
-  // Replace mode is sticky: once the user opens the replace row, repeated ⌘F
-  // calls keep it visible until the panel is closed. ⌘⌥F always re-opens
-  // into replace mode and bumps `replaceFocusSignal` so the replace input
-  // grabs focus even if the panel is already open in find-only mode.
-  const [replaceMode, setReplaceMode] = useState(false);
-  const [replaceFocusSignal, setReplaceFocusSignal] = useState(0);
-  const [goToLineOpen, setGoToLineOpen] = useState(false);
-  const [goToLineReopenSignal, setGoToLineReopenSignal] = useState(0);
-
-  const openSearch = useCallback((withReplace: boolean): void => {
-    setSearchOpen((wasOpen) => {
-      if (wasOpen) setSearchReopenSignal((n) => n + 1);
-      return true;
-    });
-    if (withReplace) {
-      setReplaceMode(true);
-      setReplaceFocusSignal((n) => n + 1);
-    }
-  }, []);
-  const closeSearch = useCallback((): void => {
-    setSearchOpen(false);
-    // Reset replace visibility so the next ⌘F lands in find-only mode.
-    setReplaceMode(false);
-  }, []);
-
-  useScopedGlobalShortcutById(
-    "editor-buffer-search",
-    (event) => {
-      if (!isFocusedPane || !activeFilePath) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openSearch(false);
-    },
-    "editor",
-    { enabled: isFocusedPane && Boolean(activeFilePath) },
-  );
-
-  useScopedGlobalShortcutById(
-    "editor-replace",
-    (event) => {
-      if (!isFocusedPane || !activeFilePath) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openSearch(true);
-    },
-    "editor",
-    { enabled: isFocusedPane && Boolean(activeFilePath) },
-  );
-
-  const openGoToLine = useCallback((): void => {
-    setGoToLineOpen((wasOpen) => {
-      if (wasOpen) setGoToLineReopenSignal((n) => n + 1);
-      return true;
-    });
-  }, []);
-  const closeGoToLine = useCallback((): void => setGoToLineOpen(false), []);
-
-  useScopedGlobalShortcutById(
-    "editor-go-to-line",
-    (event) => {
-      if (!isFocusedPane || !activeFilePath) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openGoToLine();
-    },
-    "editor",
-    { enabled: isFocusedPane && Boolean(activeFilePath) },
-  );
-
-  // CMD+N: spawn a fresh untitled buffer in the currently focused pane.
-  // Scoped to the editor tab so it doesn't fire while the agent/terminal
-  // is in front. We only handle this on the focused pane — every pane
-  // mounts this hook, but only one of them owns the chord at a time.
-  useScopedGlobalShortcutById(
-    "editor-new",
-    (event) => {
-      if (!isFocusedPane) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openUntitledBuffer(featureId, paneId);
-    },
-    "editor",
-    { enabled: isFocusedPane },
-  );
-
-  // CMD+SHIFT+C: copy the active file's project-relative path. Capture-phase
-  // + editor-scoped so it works with CodeMirror focused; gated on the focused
-  // pane so a split layout copies the file the user is actually looking at.
-  useScopedGlobalShortcutById(
-    "editor-copy-path",
-    (event) => {
-      if (!isFocusedPane) return;
-      event.preventDefault();
-      event.stopPropagation();
-      copyFilePath(activeFilePath);
-    },
-    "editor",
-    { enabled: isFocusedPane },
-  );
-
-  useEffect(() => {
-    return () => clearPaneSearch(featureId, paneId);
-  }, [featureId, paneId]);
-
-  function handleFocus() {
-    if (!isActive) {
-      setActivePane(featureId, paneId);
-    }
-  }
-
-  const suspenseFallback = (
-    <div className="flex flex-col gap-2 p-4 animate-pulse">
-      <div className="h-4 w-3/4 rounded bg-muted" />
-      <div className="h-4 w-1/2 rounded bg-muted" />
-      <div className="h-4 w-5/6 rounded bg-muted" />
-    </div>
-  );
-
+  const controls = useEditorPaneControls({
+    activeFilePath,
+    featureId,
+    isFocusedPane,
+    openUntitledBuffer,
+    paneId,
+  });
   return (
-    <div className="flex flex-col h-full" onFocus={handleFocus}>
+    <div
+      className="flex flex-col h-full"
+      onFocus={() => {
+        if (!isActive) setActivePane(featureId, paneId);
+      }}
+    >
       <EditorSubTabs featureId={featureId} paneId={paneId} projectId={projectId} />
-
       <div className="flex-1 overflow-hidden">
         {activeFilePath ? (
-          <Suspense fallback={suspenseFallback}>
-            {activeConflict ? (
-              <ConflictResolverEditor
-                key={`conflict:${activeFilePath}`}
-                filePath={activeFilePath}
-                conflictKind={activeConflict.kind}
-                projectId={projectId}
-                paneId={paneId}
-                featureId={featureId}
-                onEditorViewChange={onEditorViewChange}
-              />
-            ) : isExcalidrawFile(activeFilePath) ? (
-              <ExcalidrawEditor
-                key={activeFilePath}
-                filePath={activeFilePath}
-                projectId={projectId}
-                featureId={featureId}
-                paneId={paneId}
-              />
-            ) : isImageFile(activeFilePath) ? (
-              <ImageFileViewer
-                key={activeFilePath}
-                filePath={activeFilePath}
-                projectId={projectId}
-                featureId={featureId}
-              />
-            ) : isUntitledPath(activeFilePath) ? (
-              <UntitledCodeMirrorEditor
-                key={activeFilePath}
-                filePath={activeFilePath}
-                projectId={projectId}
-                paneId={paneId}
-                featureId={featureId}
-                onEditorViewChange={onEditorViewChange}
-              />
-            ) : (
-              <CodeMirrorEditor
-                key={activeFilePath}
-                filePath={activeFilePath}
-                projectId={projectId}
-                paneId={paneId}
-                featureId={featureId}
-                searchOpen={searchOpen}
-                searchReopenSignal={searchReopenSignal}
-                searchReplaceMode={replaceMode}
-                searchReplaceFocusSignal={replaceFocusSignal}
-                goToLineOpen={goToLineOpen}
-                goToLineReopenSignal={goToLineReopenSignal}
-                onCloseSearch={closeSearch}
-                onCloseGoToLine={closeGoToLine}
-                onEditorViewChange={onEditorViewChange}
-              />
-            )}
-          </Suspense>
+          <EditorPaneContent
+            activeConflict={activeConflict}
+            activeFilePath={activeFilePath}
+            controls={controls}
+            featureId={featureId}
+            onEditorViewChange={onEditorViewChange}
+            paneId={paneId}
+            projectId={projectId}
+          />
         ) : (
           <div className="flex items-center justify-center h-full px-4 text-muted-foreground text-sm text-center text-balance">
             Open a file from the sidebar, press CMD+N for a new buffer, or use CMD+P
@@ -230,5 +232,88 @@ export default function EditorPane({
         )}
       </div>
     </div>
+  );
+}
+
+const suspenseFallback = (
+  <div className="flex flex-col gap-2 p-4 animate-pulse">
+    <div className="h-4 w-3/4 rounded bg-muted" />
+    <div className="h-4 w-1/2 rounded bg-muted" />
+    <div className="h-4 w-5/6 rounded bg-muted" />
+  </div>
+);
+
+function EditorPaneContent({
+  activeConflict,
+  activeFilePath,
+  controls,
+  featureId,
+  onEditorViewChange,
+  paneId,
+  projectId,
+}: {
+  activeConflict: ReturnType<typeof useActiveConflict>;
+  activeFilePath: string;
+  controls: ReturnType<typeof useEditorPaneControls>;
+  featureId: number;
+  onEditorViewChange: EditorPaneProps["onEditorViewChange"];
+  paneId: string;
+  projectId: number;
+}) {
+  return (
+    <Suspense fallback={suspenseFallback}>
+      {activeConflict ? (
+        <ConflictResolverEditor
+          key={`conflict:${activeFilePath}`}
+          filePath={activeFilePath}
+          conflictKind={activeConflict.kind}
+          projectId={projectId}
+          paneId={paneId}
+          featureId={featureId}
+          onEditorViewChange={onEditorViewChange}
+        />
+      ) : isExcalidrawFile(activeFilePath) ? (
+        <ExcalidrawEditor
+          key={activeFilePath}
+          filePath={activeFilePath}
+          projectId={projectId}
+          featureId={featureId}
+          paneId={paneId}
+        />
+      ) : isImageFile(activeFilePath) ? (
+        <ImageFileViewer
+          key={activeFilePath}
+          filePath={activeFilePath}
+          projectId={projectId}
+          featureId={featureId}
+        />
+      ) : isUntitledPath(activeFilePath) ? (
+        <UntitledCodeMirrorEditor
+          key={activeFilePath}
+          filePath={activeFilePath}
+          projectId={projectId}
+          paneId={paneId}
+          featureId={featureId}
+          onEditorViewChange={onEditorViewChange}
+        />
+      ) : (
+        <CodeMirrorEditor
+          key={activeFilePath}
+          filePath={activeFilePath}
+          projectId={projectId}
+          paneId={paneId}
+          featureId={featureId}
+          searchOpen={controls.searchOpen}
+          searchReopenSignal={controls.searchReopenSignal}
+          searchReplaceMode={controls.replaceMode}
+          searchReplaceFocusSignal={controls.replaceFocusSignal}
+          goToLineOpen={controls.goToLineOpen}
+          goToLineReopenSignal={controls.goToLineReopenSignal}
+          onCloseSearch={controls.closeSearch}
+          onCloseGoToLine={controls.closeGoToLine}
+          onEditorViewChange={onEditorViewChange}
+        />
+      )}
+    </Suspense>
   );
 }

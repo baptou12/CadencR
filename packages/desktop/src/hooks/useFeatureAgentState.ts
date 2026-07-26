@@ -10,8 +10,21 @@
  * partial blocks that are merged into the accumulated state on the client.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useGetFeatureAgentState, getFeatureAgentState } from "../api/generated";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from "react";
+import {
+  useGetFeatureAgentState,
+  getFeatureAgentState,
+  type FeatureAgentStateResponse,
+} from "../api/generated";
 import { useAgentStateIdbCache } from "./useAgentStateIdbCache";
 import {
   applyToolCallUpdates,
@@ -82,6 +95,145 @@ function getOptionalSessionString(
   return typeof value === "string" ? value : null;
 }
 
+type ServerSession = FeatureAgentStateResponse["sessions"][number];
+
+function parseQuestions(raw: unknown): AgentQuestion[] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const result = parseAskUserQuestions(raw as Record<string, unknown>);
+  return result.length > 0 ? result : null;
+}
+
+function mergeServerSession(
+  accumulated: Map<number, AccumulatedSession>,
+  session: ServerSession,
+): void {
+  const newBlocks = serverBlocksToAgentBlocks(session.blocks);
+  let current = accumulated.get(session.sessionDbId);
+  if (!session.isIncremental || !current) {
+    current = {
+      blocks: newBlocks,
+      maxMessageId: session.maxMessageId,
+      toolUseIdMap: buildToolUseIdMap(newBlocks),
+      todos: (session.todos as TodoItem[] | null) ?? null,
+      hasMore: session.hasMore ?? false,
+      oldestMessageId: session.oldestMessageId ?? null,
+    };
+    accumulated.set(session.sessionDbId, current);
+    return;
+  }
+  if (newBlocks.length > 0) {
+    mergeIncrementalBlocks(current, newBlocks);
+    current.blocks = [...current.blocks];
+  }
+  if (session.maxMessageId > current.maxMessageId) current.maxMessageId = session.maxMessageId;
+  const updates = (session as unknown as { toolCallUpdates?: Record<string, string> | null })
+    .toolCallUpdates;
+  if (updates && Object.keys(updates).length > 0 && applyToolCallUpdates(current.blocks, updates)) {
+    current.blocks = [...current.blocks];
+  }
+  if (session.todos != null) current.todos = session.todos as TodoItem[];
+}
+
+function reconcileAccumulatedSessions(
+  accumulated: Map<number, AccumulatedSession>,
+  serverSessions: ServerSession[],
+): void {
+  const currentSessionIds = new Set(serverSessions.map((session) => session.sessionDbId));
+  for (const sessionId of accumulated.keys()) {
+    if (!currentSessionIds.has(sessionId)) accumulated.delete(sessionId);
+  }
+  for (const session of serverSessions) mergeServerSession(accumulated, session);
+}
+
+function toFeatureSession(
+  session: ServerSession,
+  accumulated: AccumulatedSession | undefined,
+): FeatureSession {
+  const status: AgentStatus =
+    session.status === "running" ||
+    session.status === "paused" ||
+    session.status === "completed" ||
+    session.status === "error"
+      ? session.status
+      : session.status === "waiting"
+        ? "paused"
+        : "idle";
+  return {
+    sessionDbId: session.sessionDbId,
+    agentType: session.agentType as AgentType,
+    status,
+    subprocessId: session.subprocessId ?? null,
+    model: session.model ?? null,
+    profile: getOptionalSessionString(session, "profile"),
+    blocks: accumulated?.blocks ?? serverBlocksToAgentBlocks(session.blocks),
+    pendingQuestions: parseQuestions(session.pendingQuestions),
+    hasFileChanges: session.hasFileChanges,
+    resumable: session.resumable,
+    runtimeProvider: getOptionalSessionString(session, "runtimeProvider"),
+    runtimeSessionId: session.runtimeSessionId ?? null,
+    todos: (session.todos as TodoItem[] | null) ?? accumulated?.todos ?? null,
+    permissionMode: parsePermissionMode(session.permissionMode) ?? "acceptEdits",
+    accessMode: parseAccessMode(session.accessMode),
+    pendingPermission: (session.pendingPermission as PendingPermission | null) ?? null,
+    inputTokens: session.inputTokens ?? 0,
+    outputTokens: session.outputTokens ?? 0,
+    contextWindow: normalizeContextWindow(session.contextWindow),
+    wasCompacted: session.wasCompacted ?? false,
+    draftPrompt: getOptionalSessionString(session, "draftPrompt"),
+    hasMore: accumulated?.hasMore ?? session.hasMore ?? false,
+    oldestMessageId: accumulated?.oldestMessageId ?? session.oldestMessageId ?? null,
+  };
+}
+
+function registerOlderToolCalls(accumulated: AccumulatedSession, blocks: AgentBlockData[]): void {
+  for (const block of blocks) {
+    if (block.type === "tool_call" && block.toolUseId) {
+      accumulated.toolUseIdMap.set(block.toolUseId, {
+        toolName: block.toolName ?? "tool",
+        block,
+      });
+    }
+    for (const child of block.childBlocks ?? []) {
+      if (child.type === "tool_call" && child.toolUseId) {
+        accumulated.toolUseIdMap.set(child.toolUseId, {
+          toolName: child.toolName ?? "tool",
+          block: child,
+        });
+      }
+    }
+  }
+}
+
+function useLoadOlderMessages(
+  featureId: number,
+  accumulatedRef: RefObject<Map<number, AccumulatedSession>>,
+  setOlderHistoryVersion: Dispatch<SetStateAction<number>>,
+): (sessionDbId: number) => Promise<void> {
+  return useCallback(
+    async (sessionDbId: number) => {
+      const accumulated = accumulatedRef.current.get(sessionDbId);
+      if (!accumulated?.hasMore || accumulated.oldestMessageId == null) return;
+      const data = await getFeatureAgentState(featureId, {
+        before: JSON.stringify({ [sessionDbId]: accumulated.oldestMessageId }),
+        limit: AGENT_STATE_OLDER_MESSAGE_LIMIT,
+      });
+      const serverSession = data.sessions.find((session) => session.sessionDbId === sessionDbId);
+      if (!serverSession) return;
+      const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks);
+      if (olderBlocks.length === 0) {
+        accumulated.hasMore = false;
+        return;
+      }
+      registerOlderToolCalls(accumulated, olderBlocks);
+      accumulated.blocks = [...olderBlocks, ...accumulated.blocks];
+      accumulated.hasMore = serverSession.hasMore ?? false;
+      accumulated.oldestMessageId = serverSession.oldestMessageId ?? null;
+      setOlderHistoryVersion((version) => version + 1);
+    },
+    [accumulatedRef, featureId, setOlderHistoryVersion],
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The hook
 // ---------------------------------------------------------------------------
@@ -123,12 +275,6 @@ export function useFeatureAgentState(featureId: number) {
     { query: { keepPreviousData: true } },
   );
 
-  const parseQuestions = useCallback((raw: unknown): AgentQuestion[] | null => {
-    if (!raw || typeof raw !== "object") return null;
-    const result = parseAskUserQuestions(raw as Record<string, unknown>);
-    return result.length > 0 ? result : null;
-  }, []);
-
   // Track which query.data we last processed to guard against React strict mode
   // calling useMemo twice with the same input (which would double-append blocks).
   const lastProcessedDataRef = useRef<unknown>(null);
@@ -137,107 +283,14 @@ export function useFeatureAgentState(featureId: number) {
   const sessions: FeatureSession[] = useMemo(() => {
     const serverSessions = query.data?.sessions ?? [];
     if (serverSessions.length === 0 && accumulatedRef.current.size === 0) return [];
-
-    const accMap = accumulatedRef.current;
-
-    // Only mutate the accumulated ref if this is genuinely new data.
-    // React strict mode may call useMemo twice with the same input;
-    // without this guard incremental blocks would be appended twice.
-    const isNewData = query.data !== lastProcessedDataRef.current;
-    if (isNewData) {
+    if (query.data !== lastProcessedDataRef.current) {
       lastProcessedDataRef.current = query.data;
-
-      // Track which sessions are still present from the server
-      const currentSessionIds = new Set(serverSessions.map((s) => s.sessionDbId));
-
-      // Remove sessions that disappeared from the server response
-      for (const sid of accMap.keys()) {
-        if (!currentSessionIds.has(sid)) accMap.delete(sid);
-      }
-
-      for (const s of serverSessions) {
-        const newBlocks = serverBlocksToAgentBlocks(s.blocks);
-        let acc = accMap.get(s.sessionDbId);
-
-        if (!s.isIncremental || !acc) {
-          // Full replacement: rebuild accumulated state from scratch
-          acc = {
-            blocks: newBlocks,
-            maxMessageId: s.maxMessageId,
-            toolUseIdMap: buildToolUseIdMap(newBlocks),
-            todos: (s.todos as TodoItem[] | null) ?? null,
-            hasMore: s.hasMore ?? false,
-            oldestMessageId: s.oldestMessageId ?? null,
-          };
-          accMap.set(s.sessionDbId, acc);
-        } else {
-          // Incremental: merge new blocks into accumulated state.
-          // Create a new array reference so React detects the change
-          // (mergeIncrementalBlocks mutates in place for efficiency,
-          // but useLayoutEffect in AgentSession depends on [blocks] identity).
-          if (newBlocks.length > 0) {
-            mergeIncrementalBlocks(acc, newBlocks);
-            acc.blocks = [...acc.blocks];
-          }
-          if (s.maxMessageId > acc.maxMessageId) {
-            acc.maxMessageId = s.maxMessageId;
-          }
-          // Apply in-flight tool_call content updates (input_json_delta)
-          const updates = (s as unknown as { toolCallUpdates?: Record<string, string> | null })
-            .toolCallUpdates;
-          if (updates && Object.keys(updates).length > 0) {
-            if (applyToolCallUpdates(acc.blocks, updates)) {
-              acc.blocks = [...acc.blocks];
-            }
-          }
-          // Update cached todos if server provided new ones
-          if (s.todos != null) {
-            acc.todos = s.todos as TodoItem[];
-          }
-        }
-      }
+      reconcileAccumulatedSessions(accumulatedRef.current, serverSessions);
     }
-
-    return serverSessions.map((s) => {
-      const acc = accMap.get(s.sessionDbId);
-
-      const status: AgentStatus =
-        s.status === "running" ||
-        s.status === "paused" ||
-        s.status === "completed" ||
-        s.status === "error"
-          ? s.status
-          : s.status === "waiting"
-            ? "paused"
-            : "idle";
-
-      return {
-        sessionDbId: s.sessionDbId,
-        agentType: s.agentType as AgentType,
-        status,
-        subprocessId: s.subprocessId ?? null,
-        model: s.model ?? null,
-        profile: getOptionalSessionString(s, "profile"),
-        blocks: acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks),
-        pendingQuestions: parseQuestions(s.pendingQuestions),
-        hasFileChanges: s.hasFileChanges,
-        resumable: s.resumable,
-        runtimeProvider: getOptionalSessionString(s, "runtimeProvider"),
-        runtimeSessionId: s.runtimeSessionId ?? null,
-        todos: (s.todos as TodoItem[] | null) ?? acc?.todos ?? null,
-        permissionMode: parsePermissionMode(s.permissionMode) ?? "acceptEdits",
-        accessMode: parseAccessMode(s.accessMode),
-        pendingPermission: (s.pendingPermission as PendingPermission | null) ?? null,
-        inputTokens: s.inputTokens ?? 0,
-        outputTokens: s.outputTokens ?? 0,
-        contextWindow: normalizeContextWindow(s.contextWindow),
-        wasCompacted: s.wasCompacted ?? false,
-        draftPrompt: getOptionalSessionString(s, "draftPrompt"),
-        hasMore: acc?.hasMore ?? s.hasMore ?? false,
-        oldestMessageId: acc?.oldestMessageId ?? s.oldestMessageId ?? null,
-      };
-    });
-  }, [olderHistoryVersion, query.data, parseQuestions]);
+    return serverSessions.map((session) =>
+      toFeatureSession(session, accumulatedRef.current.get(session.sessionDbId)),
+    );
+  }, [olderHistoryVersion, query.data]);
 
   // After processing new data, bump dataVersion so afterMessageIds recomputes
   // on the next render and subsequent fetches use incremental cursors.
@@ -253,53 +306,7 @@ export function useFeatureAgentState(featureId: number) {
   // features never paints the previous feature's cached blocks.
   useAgentStateIdbCache(featureId, query.data, prevFeatureIdRef, AGENT_STATE_INITIAL_MESSAGE_LIMIT);
 
-  const loadOlderMessages = useCallback(
-    async (sessionDbId: number) => {
-      const acc = accumulatedRef.current.get(sessionDbId);
-      if (!acc || !acc.hasMore || acc.oldestMessageId == null) return;
-
-      const beforeParam = JSON.stringify({ [sessionDbId]: acc.oldestMessageId });
-      const data = await getFeatureAgentState(featureId, {
-        before: beforeParam,
-        limit: AGENT_STATE_OLDER_MESSAGE_LIMIT,
-      });
-
-      const serverSession = data.sessions.find((s) => s.sessionDbId === sessionDbId);
-      if (!serverSession) return;
-
-      const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks);
-      if (olderBlocks.length === 0) {
-        acc.hasMore = false;
-        return;
-      }
-
-      // Register tool_call blocks from older messages so future merges work
-      for (const block of olderBlocks) {
-        if (block.type === "tool_call" && block.toolUseId) {
-          acc.toolUseIdMap.set(block.toolUseId, { toolName: block.toolName ?? "tool", block });
-        }
-        if (block.childBlocks) {
-          for (const child of block.childBlocks) {
-            if (child.type === "tool_call" && child.toolUseId) {
-              acc.toolUseIdMap.set(child.toolUseId, {
-                toolName: child.toolName ?? "tool",
-                block: child,
-              });
-            }
-          }
-        }
-      }
-
-      // Prepend older blocks
-      acc.blocks = [...olderBlocks, ...acc.blocks];
-      acc.hasMore = serverSession.hasMore ?? false;
-      acc.oldestMessageId = serverSession.oldestMessageId ?? null;
-
-      // Force re-render
-      setOlderHistoryVersion((v) => v + 1);
-    },
-    [featureId],
-  );
+  const loadOlderMessages = useLoadOlderMessages(featureId, accumulatedRef, setOlderHistoryVersion);
 
   return {
     sessions,

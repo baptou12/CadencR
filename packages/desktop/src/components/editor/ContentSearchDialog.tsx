@@ -56,17 +56,7 @@ const defaultFilters: SearchFilters = {
 /** Persists filter state per feature across dialog open/close cycles. */
 const filterCache = new Map<number, SearchFilters>();
 
-export default function ContentSearchDialog({
-  projectId,
-  featureId,
-  open,
-  onOpenChange,
-  onResultOpen,
-}: ContentSearchDialogProps) {
-  const { activePaneId, openFile } = useEditorState(featureId);
-  const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
-  const maxTabs = parseInt(maxTabsSetting ?? "10", 10);
-
+function useContentSearchFilters(featureId: number, open: boolean) {
   const cached = filterCache.get(featureId) ?? defaultFilters;
   const [query, setQuery] = useState(cached.query);
   const [caseSensitive, setCaseSensitive] = useState(cached.caseSensitive);
@@ -75,8 +65,6 @@ export default function ContentSearchDialog({
   const [respectGitignore, setRespectGitignore] = useState(cached.respectGitignore);
   const [includePattern, setIncludePattern] = useState(cached.includePattern);
   const [excludePattern, setExcludePattern] = useState(cached.excludePattern);
-
-  // Persist filters to cache whenever they change
   useEffect(() => {
     filterCache.set(featureId, {
       query,
@@ -97,50 +85,9 @@ export default function ContentSearchDialog({
     includePattern,
     excludePattern,
   ]);
-
   const debouncedQuery = useDebouncedValue(query, DEBOUNCE_MS);
-
-  const searchParams: ContentSearchParams = useMemo(
-    () => ({
-      project_id: projectId,
-      feature_id: featureId,
-      query: debouncedQuery,
-      case_sensitive: caseSensitive,
-      whole_word: wholeWord,
-      is_regex: isRegex,
-      respect_gitignore: respectGitignore,
-      include_pattern: includePattern || undefined,
-      exclude_pattern: excludePattern || undefined,
-    }),
-    [
-      projectId,
-      featureId,
-      debouncedQuery,
-      caseSensitive,
-      wholeWord,
-      isRegex,
-      respectGitignore,
-      includePattern,
-      excludePattern,
-    ],
-  );
-
-  const { data, isLoading, isFetching } = useContentSearch(searchParams, {
-    query: {
-      enabled: open && debouncedQuery.length > 0,
-      keepPreviousData: true,
-    },
-  });
-
-  const hasQuery = debouncedQuery.length > 0;
-  // `isFetching` stays true across debounced refetches even when previous
-  // results are shown (keepPreviousData), so the header loader keeps the UI
-  // from looking frozen while a large search is in flight.
-  const searching = isFetching && hasQuery;
-
   useEffect(() => {
     if (!open) return;
-    // Restore persisted state when dialog re-opens
     const restored = filterCache.get(featureId) ?? defaultFilters;
     setQuery(restored.query);
     setCaseSensitive(restored.caseSensitive);
@@ -150,9 +97,67 @@ export default function ContentSearchDialog({
     setIncludePattern(restored.includePattern);
     setExcludePattern(restored.excludePattern);
   }, [open, featureId]);
+  return useMemo(
+    () => ({
+      caseSensitive,
+      debouncedQuery,
+      excludePattern,
+      includePattern,
+      isRegex,
+      query,
+      respectGitignore,
+      setCaseSensitive,
+      setExcludePattern,
+      setIncludePattern,
+      setIsRegex,
+      setQuery,
+      setRespectGitignore,
+      setWholeWord,
+      wholeWord,
+    }),
+    [
+      caseSensitive,
+      debouncedQuery,
+      excludePattern,
+      includePattern,
+      isRegex,
+      query,
+      respectGitignore,
+      wholeWord,
+    ],
+  );
+}
 
-  // Stable identity keeps Virtuoso from re-rendering every visible row (each of
-  // which mounts a CodeMirror view) on every keystroke.
+function useContentSearchResults({
+  featureId,
+  filters,
+  onOpenChange,
+  onResultOpen,
+  open,
+  projectId,
+}: ContentSearchDialogProps & { filters: ReturnType<typeof useContentSearchFilters> }) {
+  const { activePaneId, openFile } = useEditorState(featureId);
+  const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
+  const maxTabs = parseInt(maxTabsSetting ?? "10", 10);
+  const searchParams: ContentSearchParams = useMemo(
+    () => ({
+      project_id: projectId,
+      feature_id: featureId,
+      query: filters.debouncedQuery,
+      case_sensitive: filters.caseSensitive,
+      whole_word: filters.wholeWord,
+      is_regex: filters.isRegex,
+      respect_gitignore: filters.respectGitignore,
+      include_pattern: filters.includePattern || undefined,
+      exclude_pattern: filters.excludePattern || undefined,
+    }),
+    [featureId, filters, projectId],
+  );
+  const { data, isLoading, isFetching } = useContentSearch(searchParams, {
+    query: { enabled: open && filters.debouncedQuery.length > 0, keepPreviousData: true },
+  });
+  const hasQuery = filters.debouncedQuery.length > 0;
+  const searching = isFetching && hasQuery;
   const handleSelect = useCallback(
     (filePath: string, lineNumber?: number): void => {
       openFile(activePaneId ?? "main", filePath, maxTabs, lineNumber);
@@ -161,111 +166,144 @@ export default function ContentSearchDialog({
     },
     [openFile, activePaneId, maxTabs, onResultOpen, onOpenChange],
   );
-
   const grouped = useMemo(() => groupByFile(data?.matches ?? []), [data?.matches]);
-
   const computeItemKey = useCallback((_: number, group: FileGroupData) => group.path, []);
   const itemContent = useCallback(
     (_: number, group: FileGroupData) => <FileGroup group={group} onSelect={handleSelect} />,
     [handleSelect],
   );
-  // Always hand Virtuoso a components object — passing `undefined` overwrites
-  // its internal default (`{}`) and crashes on `components.EmptyPlaceholder`.
   const components = useMemo(
     () => (data?.truncated ? { Footer: TruncatedFooter } : {}),
     [data?.truncated],
   );
+  return useMemo(
+    () => ({ components, computeItemKey, grouped, hasQuery, isLoading, itemContent, searching }),
+    [components, computeItemKey, grouped, hasQuery, isLoading, itemContent, searching],
+  );
+}
 
+export default function ContentSearchDialog(props: ContentSearchDialogProps) {
+  const filters = useContentSearchFilters(props.featureId, props.open);
+  const results = useContentSearchResults({ ...props, filters });
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
         showCloseButton={false}
         className="sm:max-w-[900px] h-[80vh] !flex !flex-col gap-2 p-0 pt-3 overflow-hidden"
       >
-        <div className="flex items-center border-b border-border px-3 pb-2 gap-2">
-          {searching ? (
-            <Loader2 className="size-4 shrink-0 opacity-50 animate-spin" />
-          ) : (
-            <SearchIcon className="size-4 shrink-0 opacity-50" />
-          )}
-          <Input
-            autoFocus
-            variant="ghost"
-            placeholder="Search in files..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="flex-1"
-          />
-          <div className="flex items-center gap-1 shrink-0">
-            <SearchToggleButton
-              active={caseSensitive}
-              onToggle={setCaseSensitive}
-              title="Case Sensitive"
-              icon={<CaseSensitive className="w-4 h-4" />}
-            />
-            <SearchToggleButton
-              active={wholeWord}
-              onToggle={setWholeWord}
-              title="Whole Word"
-              icon={<WholeWord className="w-4 h-4" />}
-            />
-            <SearchToggleButton
-              active={isRegex}
-              onToggle={setIsRegex}
-              title="Regex"
-              icon={<Regex className="w-4 h-4" />}
-            />
-            <SearchToggleButton
-              active={respectGitignore}
-              onToggle={setRespectGitignore}
-              title="Only search git-tracked files"
-              label="Git only"
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-2 px-3 border-b border-border pb-2">
-          <Input
-            variant="ghost"
-            placeholder="Include (e.g. *.ts, src/**)"
-            value={includePattern}
-            onChange={(e) => setIncludePattern(e.target.value)}
-            className="flex-1 text-xs"
-          />
-          <div className="w-px h-5 bg-border shrink-0" />
-          <Input
-            variant="ghost"
-            placeholder="Exclude (e.g. *.test.ts, dist/**)"
-            value={excludePattern}
-            onChange={(e) => setExcludePattern(e.target.value)}
-            className="flex-1 text-xs"
-          />
-        </div>
-
-        <div className="flex-1 min-h-0">
-          {isLoading && hasQuery && grouped.length === 0 && (
-            <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Searching...
-            </div>
-          )}
-          {!searching && hasQuery && grouped.length === 0 && (
-            <div className="py-8 text-center text-sm text-muted-foreground">No results found.</div>
-          )}
-          {grouped.length > 0 && (
-            // Windowed so only visible file groups mount a CodeMirror view.
-            // Rendering every group at once mounts one editor per file, which
-            // freezes the main thread on large-codebase searches.
-            <Virtuoso
-              data={grouped}
-              className="h-full"
-              computeItemKey={computeItemKey}
-              itemContent={itemContent}
-              components={components}
-            />
-          )}
-        </div>
+        <ContentSearchHeader filters={filters} searching={results.searching} />
+        <ContentSearchPatterns filters={filters} />
+        <ContentSearchResults results={results} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ContentSearchHeader({
+  filters,
+  searching,
+}: {
+  filters: ReturnType<typeof useContentSearchFilters>;
+  searching: boolean;
+}) {
+  return (
+    <div className="flex items-center border-b border-border px-3 pb-2 gap-2">
+      {searching ? (
+        <Loader2 className="size-4 shrink-0 opacity-50 animate-spin" />
+      ) : (
+        <SearchIcon className="size-4 shrink-0 opacity-50" />
+      )}
+      <Input
+        autoFocus
+        variant="ghost"
+        placeholder="Search in files..."
+        value={filters.query}
+        onChange={(event) => filters.setQuery(event.target.value)}
+        className="flex-1"
+      />
+      <div className="flex items-center gap-1 shrink-0">
+        <SearchToggleButton
+          active={filters.caseSensitive}
+          onToggle={filters.setCaseSensitive}
+          title="Case Sensitive"
+          icon={<CaseSensitive className="w-4 h-4" />}
+        />
+        <SearchToggleButton
+          active={filters.wholeWord}
+          onToggle={filters.setWholeWord}
+          title="Whole Word"
+          icon={<WholeWord className="w-4 h-4" />}
+        />
+        <SearchToggleButton
+          active={filters.isRegex}
+          onToggle={filters.setIsRegex}
+          title="Regex"
+          icon={<Regex className="w-4 h-4" />}
+        />
+        <SearchToggleButton
+          active={filters.respectGitignore}
+          onToggle={filters.setRespectGitignore}
+          title="Only search git-tracked files"
+          label="Git only"
+        />
+      </div>
+    </div>
+  );
+}
+
+function ContentSearchPatterns({
+  filters,
+}: {
+  filters: ReturnType<typeof useContentSearchFilters>;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-3 border-b border-border pb-2">
+      <Input
+        variant="ghost"
+        placeholder="Include (e.g. *.ts, src/**)"
+        value={filters.includePattern}
+        onChange={(event) => filters.setIncludePattern(event.target.value)}
+        className="flex-1 text-xs"
+      />
+      <div className="w-px h-5 bg-border shrink-0" />
+      <Input
+        variant="ghost"
+        placeholder="Exclude (e.g. *.test.ts, dist/**)"
+        value={filters.excludePattern}
+        onChange={(event) => filters.setExcludePattern(event.target.value)}
+        className="flex-1 text-xs"
+      />
+    </div>
+  );
+}
+
+function ContentSearchResults({
+  results,
+}: {
+  results: ReturnType<typeof useContentSearchResults>;
+}) {
+  const empty = results.grouped.length === 0;
+  return (
+    <div className="flex-1 min-h-0">
+      {results.isLoading && results.hasQuery && empty && (
+        <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          Searching...
+        </div>
+      )}
+      {!results.searching && results.hasQuery && empty && (
+        <div className="py-8 text-center text-sm text-muted-foreground">No results found.</div>
+      )}
+      {!empty && (
+        <Virtuoso
+          data={results.grouped}
+          className="h-full"
+          computeItemKey={results.computeItemKey}
+          itemContent={results.itemContent}
+          components={results.components}
+        />
+      )}
+    </div>
   );
 }
 

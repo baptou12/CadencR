@@ -7,22 +7,13 @@ import {
   useRef,
   useState,
   type MutableRefObject,
+  type MouseEventHandler,
   type ReactElement,
   type Ref,
 } from "react";
-import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
-import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
-import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
-import {
-  $getRoot,
-  COMMAND_PRIORITY_HIGH,
-  KEY_ENTER_COMMAND,
-  type EditorState,
-  type LexicalEditor,
-} from "lexical";
+import { $getRoot, COMMAND_PRIORITY_HIGH, KEY_ENTER_COMMAND, type LexicalEditor } from "lexical";
 import { HelpCircleIcon, SearchIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { Project } from "@/api/generated";
@@ -32,17 +23,13 @@ import {
 } from "@/components/UnifiedAgentsFilterLanguage";
 import { UnifiedAgentsFilterHelpDialog } from "@/components/UnifiedAgentsFilterHelpDialog";
 import {
-  FilterTextNodeNormalizationPlugin,
-  PlainSpaceAfterFilterTokenPlugin,
-  SlashFilterCursorPlugin,
-} from "@/components/UnifiedAgentsFilterPlugins";
-import {
   getUnifiedAgentsFilterEditorText,
   initializeUnifiedAgentsFilterEditorText,
   replaceUnifiedAgentsFilterActiveToken,
   setUnifiedAgentsFilterEditorText,
 } from "@/components/UnifiedAgentsFilterEditorText";
 import { useUnifiedAgentsFilterShellFocus } from "@/components/UnifiedAgentsFilterFocus";
+import { FilterEditorShell } from "@/components/UnifiedAgentsFilterEditorShell";
 import { Button } from "@/components/ui/button";
 import {
   UnifiedAgentsFilterSuggestionsMenu,
@@ -67,6 +54,91 @@ interface UnifiedAgentsDynamicFilterProps {
   inputRef?: Ref<UnifiedAgentsFilterInputHandle>;
   onValueChange: (value: string) => void;
   onEnter?: () => void;
+}
+
+interface UnifiedAgentsFilterControlProps {
+  editor: LexicalEditor;
+  projects: Project[];
+  draft: string;
+  focused: boolean;
+  suggestions: UnifiedAgentsFilterSuggestion[];
+  selectedSuggestionIndex: number;
+  onDraftChange: (value: string) => void;
+  onFocusedChange: (focused: boolean) => void;
+  onActiveTokenChange: (token: string | null) => void;
+  onDirty: () => void;
+  onClear: () => void;
+  onApplySuggestion: (suggestion: UnifiedAgentsFilterSuggestion) => void;
+  onShellMouseDown: MouseEventHandler<HTMLDivElement>;
+}
+
+function UnifiedAgentsFilterControl({
+  editor,
+  projects,
+  draft,
+  focused,
+  suggestions,
+  selectedSuggestionIndex,
+  onDraftChange,
+  onFocusedChange,
+  onActiveTokenChange,
+  onDirty,
+  onClear,
+  onApplySuggestion,
+  onShellMouseDown,
+}: UnifiedAgentsFilterControlProps): ReactElement {
+  return (
+    <div className="relative min-w-0 flex-1">
+      <div
+        className={cn(
+          "titlebar-no-drag flex min-h-9 min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5",
+          "shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04)] transition-[border-color,background-color,box-shadow]",
+          "focus-within:border-primary/70 focus-within:bg-muted/55 focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16),inset_0_1px_0_hsl(var(--foreground)/0.05)]",
+        )}
+        onMouseDown={onShellMouseDown}
+      >
+        <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <FilterEditorShell
+          editor={editor}
+          collapsed={!focused}
+          onDraftChange={onDraftChange}
+          onDirty={onDirty}
+          onFocusChange={onFocusedChange}
+          onActiveSlashFilterTokenChange={onActiveTokenChange}
+        />
+        <UnifiedAgentsFilterHelpDialog projects={projects}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-5 shrink-0 rounded text-muted-foreground hover:text-foreground"
+            aria-label="Explain agent filter language"
+          >
+            <HelpCircleIcon className="size-3" />
+          </Button>
+        </UnifiedAgentsFilterHelpDialog>
+        {draft.length > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-5 shrink-0 rounded text-muted-foreground hover:text-foreground"
+            onClick={onClear}
+            aria-label="Clear agent filter"
+          >
+            <XIcon className="size-3" />
+          </Button>
+        )}
+      </div>
+      {suggestions.length > 0 ? (
+        <UnifiedAgentsFilterSuggestionsMenu
+          suggestions={suggestions}
+          selectedIndex={selectedSuggestionIndex}
+          onApply={onApplySuggestion}
+        />
+      ) : null}
+    </div>
+  );
 }
 
 export const UnifiedAgentsDynamicFilter = memo(function UnifiedAgentsDynamicFilter({
@@ -157,20 +229,7 @@ function UnifiedAgentsDynamicFilterInner({
 
   const visibleSuggestions =
     focused && activeSlashFilterToken !== null && dismissedDraft !== draft ? suggestions : [];
-  const handleEnter = useCallback(
-    (nextDraft: string): void => {
-      const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLElement) activeElement.blur();
-      editor.blur();
-      editor.getRootElement()?.blur();
-      dirtyRef.current = false;
-      setDraft(nextDraft);
-      onValueChange(nextDraft);
-      onEnter?.();
-    },
-    [editor, onEnter, onValueChange],
-  );
-  useFilterEnterCommand(editor, handleEnter);
+  useFilterSubmission(editor, onValueChange, onEnter, dirtyRef, setDraft);
   useUnifiedAgentsFilterSuggestionKeyboard({
     editor,
     enabled: focused,
@@ -191,124 +250,27 @@ function UnifiedAgentsDynamicFilterInner({
   }, [editor, onValueChange]);
 
   return (
-    <div className="relative min-w-0 flex-1">
-      <div
-        className={cn(
-          "titlebar-no-drag flex min-h-9 min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5",
-          "shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04)] transition-[border-color,background-color,box-shadow]",
-          "focus-within:border-primary/70 focus-within:bg-muted/55 focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16),inset_0_1px_0_hsl(var(--foreground)/0.05)]",
-        )}
-        onMouseDown={handleShellMouseDown}
-      >
-        <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-        <FilterEditorShell
-          editor={editor}
-          collapsed={!focused}
-          onDraftChange={setDraft}
-          onDirty={() => {
-            if (skipNextDirtyRef.current) {
-              skipNextDirtyRef.current = false;
-              return;
-            }
-            dirtyRef.current = true;
-          }}
-          onFocusChange={setFocused}
-          onActiveSlashFilterTokenChange={setActiveSlashFilterToken}
-        />
-        <UnifiedAgentsFilterHelpDialog projects={projects}>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-5 shrink-0 rounded text-muted-foreground hover:text-foreground"
-            aria-label="Explain agent filter language"
-          >
-            <HelpCircleIcon className="size-3" />
-          </Button>
-        </UnifiedAgentsFilterHelpDialog>
-        {draft.length > 0 && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-5 shrink-0 rounded text-muted-foreground hover:text-foreground"
-            onClick={clearFilter}
-            aria-label="Clear agent filter"
-          >
-            <XIcon className="size-3" />
-          </Button>
-        )}
-      </div>
-      {visibleSuggestions.length > 0 ? (
-        <UnifiedAgentsFilterSuggestionsMenu
-          suggestions={visibleSuggestions}
-          selectedIndex={selectedSuggestionIndex}
-          onApply={applySuggestion}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function FilterEditorShell({
-  editor,
-  collapsed,
-  onDraftChange,
-  onDirty,
-  onFocusChange,
-  onActiveSlashFilterTokenChange,
-}: {
-  editor: LexicalEditor;
-  collapsed: boolean;
-  onDraftChange: (value: string) => void;
-  onDirty: () => void;
-  onFocusChange: (focused: boolean) => void;
-  onActiveSlashFilterTokenChange: (token: string | null) => void;
-}): ReactElement {
-  const handleChange = useCallback(
-    (_editorState: EditorState): void => {
-      editor.getEditorState().read(() => {
-        onDirty();
-        onDraftChange(getUnifiedAgentsFilterEditorText());
-      });
-    },
-    [editor, onDirty, onDraftChange],
-  );
-
-  return (
-    <>
-      <PlainTextPlugin
-        contentEditable={
-          <ContentEditable
-            className={cn(
-              "min-h-8 min-w-0 flex-1 py-1.5 font-mono text-[12.5px] leading-5 text-foreground outline-none",
-              // Unfocused: keep the box a single line, ellipsizing a long filter
-              // (the `[&>p]` target hits the Lexical paragraph that holds the
-              // tokens). Focused: let it wrap so the whole filter stays editable.
-              collapsed
-                ? "overflow-hidden whitespace-nowrap [&>p]:overflow-hidden [&>p]:text-ellipsis [&>p]:whitespace-nowrap"
-                : "whitespace-pre-wrap break-words",
-            )}
-            aria-label="Filter agents"
-            spellCheck={false}
-            autoCorrect="off"
-            autoCapitalize="off"
-            onFocus={() => onFocusChange(true)}
-            onBlur={() => onFocusChange(false)}
-          />
+    <UnifiedAgentsFilterControl
+      editor={editor}
+      projects={projects}
+      draft={draft}
+      focused={focused}
+      suggestions={visibleSuggestions}
+      selectedSuggestionIndex={selectedSuggestionIndex}
+      onDraftChange={setDraft}
+      onFocusedChange={setFocused}
+      onActiveTokenChange={setActiveSlashFilterToken}
+      onDirty={() => {
+        if (skipNextDirtyRef.current) {
+          skipNextDirtyRef.current = false;
+          return;
         }
-        placeholder={
-          <div className="pointer-events-none absolute top-1/2 left-7 -translate-y-1/2 select-none font-mono text-[12.5px] leading-5 text-muted-foreground">
-            Filter by agent name… type / for last, project, sort, exclude, pin
-          </div>
-        }
-        ErrorBoundary={LexicalErrorBoundary}
-      />
-      <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
-      <SlashFilterCursorPlugin onTokenChange={onActiveSlashFilterTokenChange} />
-      <FilterTextNodeNormalizationPlugin />
-      <PlainSpaceAfterFilterTokenPlugin />
-    </>
+        dirtyRef.current = true;
+      }}
+      onClear={clearFilter}
+      onApplySuggestion={applySuggestion}
+      onShellMouseDown={handleShellMouseDown}
+    />
   );
 }
 
@@ -362,6 +324,29 @@ function useFilterEnterCommand(editor: LexicalEditor, onEnter: (value: string) =
       ),
     [editor, onEnter],
   );
+}
+
+function useFilterSubmission(
+  editor: LexicalEditor,
+  onValueChange: (value: string) => void,
+  onEnter: (() => void) | undefined,
+  dirtyRef: MutableRefObject<boolean>,
+  setDraft: (value: string) => void,
+): void {
+  const handleEnter = useCallback(
+    (nextDraft: string): void => {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement) activeElement.blur();
+      editor.blur();
+      editor.getRootElement()?.blur();
+      dirtyRef.current = false;
+      setDraft(nextDraft);
+      onValueChange(nextDraft);
+      onEnter?.();
+    },
+    [dirtyRef, editor, onEnter, onValueChange, setDraft],
+  );
+  useFilterEnterCommand(editor, handleEnter);
 }
 
 function useDebouncedFilterCommit(

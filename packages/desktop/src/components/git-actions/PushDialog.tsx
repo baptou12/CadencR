@@ -16,7 +16,18 @@
  * pre-invalidate after success — the WS `git.status` envelope drives
  * everything downstream.
  */
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
+import {
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type ReactElement,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -50,6 +61,175 @@ interface PushDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+interface PushLifecycleArgs {
+  featureId: number;
+  open: boolean;
+  runPush: () => Promise<void>;
+  setFailed: Dispatch<SetStateAction<boolean>>;
+  setAnsweredOffset: Dispatch<SetStateAction<number>>;
+  setInputValue: Dispatch<SetStateAction<string>>;
+}
+
+function usePushDialogLifecycle({
+  featureId,
+  open,
+  runPush,
+  setFailed,
+  setAnsweredOffset,
+  setInputValue,
+}: PushLifecycleArgs): void {
+  const pushStartedRef = useRef(false);
+  useEffect(() => {
+    if (!open || pushStartedRef.current) return;
+    pushStartedRef.current = true;
+    setFailed(false);
+    setAnsweredOffset(-1);
+    const store = usePushOutputStore.getState();
+    store.reset(featureId);
+    store.start(featureId);
+    void runPush();
+    // The dialog is keyed by feature; only opening it should start a push.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    if (open) return;
+    pushStartedRef.current = false;
+    setFailed(false);
+    setAnsweredOffset(-1);
+    setInputValue("");
+    usePushOutputStore.getState().reset(featureId);
+  }, [featureId, open, setAnsweredOffset, setFailed, setInputValue]);
+}
+
+function useActivePushPrompt(
+  buffer: string,
+  answeredOffset: number,
+  inputRef: RefObject<HTMLInputElement | null>,
+) {
+  const activePrompt = useMemo(() => {
+    const detected = detectSshPrompt(buffer);
+    return detected && detected.offset > answeredOffset ? detected : null;
+  }, [answeredOffset, buffer]);
+  useEffect(() => {
+    if (activePrompt) inputRef.current?.focus();
+  }, [activePrompt, inputRef]);
+  return activePrompt;
+}
+
+function usePushRunner(
+  featureId: number,
+  onOpenChange: (open: boolean) => void,
+  setFailed: Dispatch<SetStateAction<boolean>>,
+) {
+  const push = usePush();
+  const showError = useCallback(
+    (detail: string): void => {
+      usePushOutputStore.getState().fail(featureId, detail);
+      setFailed(true);
+    },
+    [featureId, setFailed],
+  );
+  const runPush = useCallback(async (): Promise<void> => {
+    try {
+      const result = await push.mutateAsync({ data: { feature_id: featureId } });
+      if (!result.success) {
+        showError(result.error ?? "Push failed.");
+        return;
+      }
+      toast.success("Pushed");
+      onOpenChange(false);
+    } catch (error) {
+      showError(apiErrorMessage(error, "Push failed."));
+    }
+  }, [featureId, onOpenChange, push, showError]);
+  return useMemo(() => ({ push, runPush }), [push, runPush]);
+}
+
+interface PushDialogViewProps {
+  featureId: number;
+  open: boolean;
+  failed: boolean;
+  submitting: boolean;
+  pushPending: boolean;
+  inputPending: boolean;
+  inputValue: string;
+  activePrompt: ReturnType<typeof detectSshPrompt>;
+  inputRef: RefObject<HTMLInputElement | null>;
+  onOpenChange: (open: boolean) => void;
+  onInputChange: (value: string) => void;
+  onPromptSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}
+
+function PushDialogView({
+  featureId,
+  open,
+  failed,
+  submitting,
+  pushPending,
+  inputPending,
+  inputValue,
+  activePrompt,
+  inputRef,
+  onOpenChange,
+  onInputChange,
+  onPromptSubmit,
+}: PushDialogViewProps): ReactElement {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="!w-[min(90vw,48rem)] !max-w-[min(90vw,48rem)] sm:!max-w-[min(90vw,48rem)]">
+        <DialogHeader>
+          <DialogTitle>Push to remote</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 min-w-0">
+          <PushOutputPane
+            featureId={featureId}
+            isMutationPending={pushPending}
+            hasFailed={failed}
+          />
+          {activePrompt && (
+            <form onSubmit={onPromptSubmit} className="space-y-1.5">
+              <label
+                htmlFor="push-prompt-input"
+                className="block text-xs font-mono text-muted-foreground"
+              >
+                {activePrompt.text}
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="push-prompt-input"
+                  ref={inputRef}
+                  type={activePrompt.kind === "password" ? "password" : "text"}
+                  value={inputValue}
+                  onChange={(event) => onInputChange(event.target.value)}
+                  autoComplete="off"
+                  data-1p-ignore
+                  spellCheck={false}
+                  disabled={inputPending}
+                />
+                <Button type="submit" disabled={inputPending}>
+                  {inputPending && <Loader2 className="size-3.5 animate-spin mr-2" />}
+                  Send
+                </Button>
+              </div>
+            </form>
+          )}
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+            title={submitting ? "Push is running — wait for it to finish." : "Close this dialog"}
+          >
+            {submitting ? "Running…" : "Close"}
+            <KbdShortcut keys={ESC_KEYS} variant="hint" />
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function PushDialog({
   featureId,
   open,
@@ -70,86 +250,19 @@ export default function PushDialog({
   const buffer = usePushOutputStore(selectPushOutput(featureId));
   const wsRunning = usePushOutputStore(selectPushRunning(featureId));
 
-  const push = usePush();
+  const runner = usePushRunner(featureId, onOpenChange, setFailed);
   const sendInput = usePushInput();
-  const submitting = push.isPending || wsRunning;
+  const submitting = runner.push.isPending || wsRunning;
 
-  // Auto-start on open: we already required one click to get here from
-  // GitActionButton, so a second confirm in the dialog would be friction
-  // for zero benefit. The "running" state takes over the footer button.
-  // `pushStartedRef` makes this single-fire across StrictMode double-mount.
-  const pushStartedRef = useRef(false);
-  useEffect(() => {
-    if (!open) return;
-    if (pushStartedRef.current) return;
-    pushStartedRef.current = true;
-    setFailed(false);
-    setAnsweredOffset(-1);
-    const store = usePushOutputStore.getState();
-    store.reset(featureId);
-    store.start(featureId);
-    void runPush();
-    // We deliberately depend only on `open`. Re-running on featureId
-    // change isn't a real case (dialog is keyed on featureId from the
-    // parent) and would re-trigger the push on prop changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  // Wipe state when the dialog closes so reopening doesn't show the
-  // previous run's terminal. Same pattern as CommitDialog.
-  useEffect(() => {
-    if (open) return;
-    pushStartedRef.current = false;
-    setFailed(false);
-    setAnsweredOffset(-1);
-    setInputValue("");
-    usePushOutputStore.getState().reset(featureId);
-  }, [open, featureId]);
-
-  // Decide whether to show the prompt input. A prompt is "active" when
-  // the buffer's tail matches a known prompt regex AND its offset is
-  // strictly past anything we've already answered.
-  const activePrompt = useMemo(() => {
-    const detected = detectSshPrompt(buffer);
-    if (!detected) return null;
-    if (detected.offset <= answeredOffset) return null;
-    return detected;
-  }, [buffer, answeredOffset]);
-
-  // Focus the input the moment a prompt appears — the user shouldn't
-  // have to click into the textbox to start typing their passphrase.
-  useEffect(() => {
-    if (activePrompt) inputRef.current?.focus();
-  }, [activePrompt]);
-
-  async function runPush(): Promise<void> {
-    try {
-      const result = await push.mutateAsync({
-        data: { feature_id: featureId },
-      });
-      if (!result.success) {
-        showError(result.error ?? "Push failed.");
-        return;
-      }
-      toast.success("Pushed");
-      onOpenChange(false);
-    } catch (err) {
-      showError(apiErrorMessage(err, "Push failed."));
-    }
-  }
-
-  /**
-   * Surface an error inside the terminal frame. If the WS pipeline
-   * already streamed lines (the typical case — ssh stderr, git error),
-   * we just append the final summary so the user sees both the live log
-   * *and* a clear failure footer. If nothing streamed (sync HTTP error,
-   * network drop), we synthesize a minimal "session" so the frame still
-   * has something to show.
-   */
-  function showError(detail: string): void {
-    usePushOutputStore.getState().fail(featureId, detail);
-    setFailed(true);
-  }
+  const activePrompt = useActivePushPrompt(buffer, answeredOffset, inputRef);
+  usePushDialogLifecycle({
+    featureId,
+    open,
+    runPush: runner.runPush,
+    setFailed,
+    setAnsweredOffset,
+    setInputValue,
+  });
 
   async function handlePromptSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
@@ -189,72 +302,19 @@ export default function PushDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!w-[min(90vw,48rem)] !max-w-[min(90vw,48rem)] sm:!max-w-[min(90vw,48rem)]">
-        <DialogHeader>
-          <DialogTitle>Push to remote</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-3 min-w-0">
-          <PushOutputPane
-            featureId={featureId}
-            isMutationPending={push.isPending}
-            hasFailed={failed}
-          />
-
-          {activePrompt && (
-            <form onSubmit={handlePromptSubmit} className="space-y-1.5">
-              <label
-                htmlFor="push-prompt-input"
-                className="block text-xs font-mono text-muted-foreground"
-              >
-                {activePrompt.text}
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  id="push-prompt-input"
-                  ref={inputRef}
-                  type={activePrompt.kind === "password" ? "password" : "text"}
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  // `autoComplete="off"` and `data-1p-ignore` ask password
-                  // managers (1Password, Bitwarden, browser built-ins) NOT
-                  // to capture this — the user is typing an SSH key
-                  // passphrase, not a website credential, and a save-prompt
-                  // here would be both annoying and wrong.
-                  autoComplete="off"
-                  data-1p-ignore
-                  spellCheck={false}
-                  disabled={sendInput.isPending}
-                />
-                <Button type="submit" disabled={sendInput.isPending}>
-                  {sendInput.isPending && <Loader2 className="size-3.5 animate-spin mr-2" />}
-                  Send
-                </Button>
-              </div>
-            </form>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-            // Spell out *why* Cancel is disabled while running: closing the
-            // dialog mid-push wouldn't actually cancel the backend work,
-            // and pretending it did would be the kind of UX lie we keep
-            // off-limits.
-            title={submitting ? "Push is running — wait for it to finish." : "Close this dialog"}
-          >
-            {submitting ? "Running…" : "Close"}
-            {/* Render unconditionally: even while submitting and the button is
-                disabled, Radix Dialog's Escape handler still closes the dialog,
-                so the hint stays accurate. */}
-            <KbdShortcut keys={ESC_KEYS} variant="hint" />
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <PushDialogView
+      featureId={featureId}
+      open={open}
+      failed={failed}
+      submitting={submitting}
+      pushPending={runner.push.isPending}
+      inputPending={sendInput.isPending}
+      inputValue={inputValue}
+      activePrompt={activePrompt}
+      inputRef={inputRef}
+      onOpenChange={onOpenChange}
+      onInputChange={setInputValue}
+      onPromptSubmit={handlePromptSubmit}
+    />
   );
 }

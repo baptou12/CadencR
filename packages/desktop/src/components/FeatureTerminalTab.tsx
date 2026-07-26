@@ -34,6 +34,46 @@ export interface FeatureTerminalTabHandle {
   activate: () => void;
 }
 
+function useEnsureTerminalOpen(featureId: number): () => Promise<void> {
+  // Guards the one-shot async hydration so StrictMode's double-invoke
+  // (and overlapping visibility/focus effects) can't fire two backend
+  // lookups — and thus two pane trees — for the same empty feature.
+  const hydratingRef = useRef(false);
+
+  return useCallback(async (): Promise<void> => {
+    const store = useTerminalStore.getState();
+    if (!store.getFeature(featureId).root) {
+      // A hydration is already resolving the tree; it will also open the
+      // panel, so bail rather than racing it with a fresh `togglePanel`.
+      if (hydratingRef.current) return;
+      hydratingRef.current = true;
+      try {
+        const sessions = await fetchTerminalSessions(featureId).catch((err: unknown) => {
+          // Degrade to a fresh shell — the terminal still opens, we just
+          // don't auto-attach this time. (Not a user-facing failure.)
+          console.warn("[terminal] could not list existing sessions; spawning fresh", err);
+          return [];
+        });
+        if (!store.getFeature(featureId).root) {
+          if (sessions.length > 0) {
+            store.adoptPtys(
+              featureId,
+              sessions.map((session) => ({ ptyId: session.pty_id, cwd: session.cwd })),
+            );
+          } else {
+            store.addPane(featureId);
+          }
+        }
+      } finally {
+        hydratingRef.current = false;
+      }
+    }
+    if (!store.getFeature(featureId).isOpen) {
+      store.togglePanel(featureId);
+    }
+  }, [featureId]);
+}
+
 export const FeatureTerminalTab = memo(
   forwardRef<FeatureTerminalTabHandle, FeatureTerminalTabProps>(function FeatureTerminalTab(
     { featureId, projectId, hidden, activeOverride, focusedOverride, hotkeysEnabled = true },
@@ -61,49 +101,13 @@ export const FeatureTerminalTab = memo(
     );
     const expectedCwd = worktreePath === undefined ? null : (worktreePath ?? projectPath);
 
-    // Guards the one-shot async hydration below so StrictMode's double-invoke
-    // (and overlapping visibility/focus effects) can't fire two backend
-    // lookups — and thus two pane trees — for the same empty feature.
-    const hydratingRef = useRef(false);
-
     // Open the terminal, attaching to the feature's already-running shells when
     // any exist so a second device (e.g. a remote browser) mirrors and can type
     // into the same session instead of spawning a fresh one. Reads fresh store
     // state throughout (never a captured closure) so it stays idempotent under
     // StrictMode: a stale `panes.length === 0` would otherwise `addPane()` twice
     // and split into a phantom 2-pane terminal.
-    const ensureTerminalOpen = useCallback(async (): Promise<void> => {
-      const store = useTerminalStore.getState();
-      if (!store.getFeature(featureId).root) {
-        // A hydration is already resolving the tree; it will also open the
-        // panel, so bail rather than racing it with a fresh `togglePanel`.
-        if (hydratingRef.current) return;
-        hydratingRef.current = true;
-        try {
-          const sessions = await fetchTerminalSessions(featureId).catch((err: unknown) => {
-            // Degrade to a fresh shell — the terminal still opens, we just
-            // don't auto-attach this time. (Not a user-facing failure.)
-            console.warn("[terminal] could not list existing sessions; spawning fresh", err);
-            return [];
-          });
-          if (!store.getFeature(featureId).root) {
-            if (sessions.length > 0) {
-              store.adoptPtys(
-                featureId,
-                sessions.map((s) => ({ ptyId: s.pty_id, cwd: s.cwd })),
-              );
-            } else {
-              store.addPane(featureId);
-            }
-          }
-        } finally {
-          hydratingRef.current = false;
-        }
-      }
-      if (!store.getFeature(featureId).isOpen) {
-        store.togglePanel(featureId);
-      }
-    }, [featureId]);
+    const ensureTerminalOpen = useEnsureTerminalOpen(featureId);
 
     const activate = useCallback(async (): Promise<void> => {
       await ensureTerminalOpen();

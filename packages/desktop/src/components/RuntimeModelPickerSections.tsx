@@ -4,7 +4,7 @@ import { CommandGroup, CommandItem } from "@/components/ui/command";
 import { favoriteModelKey } from "@/lib/favorite-models";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { cn } from "@/lib/utils";
-import type { RuntimeModelPickerProvider } from "./RuntimeModelPicker";
+import type { RuntimeModelPickerProvider } from "./RuntimeModelPicker.types";
 
 export interface RuntimeModelPickerAction {
   id: string;
