@@ -12,6 +12,10 @@ import {
   resolveRendererCspDevelopment,
   type RendererCspDevelopmentEndpoints,
 } from "./electron/main/csp";
+import {
+  electronBundleContractPlugin,
+  type ElectronBundleContract,
+} from "./electron/bundle-contract";
 import pkg from "./package.json" with { type: "json" };
 
 const excalidrawFontsDir = path.join(
@@ -77,12 +81,28 @@ function cspMetaPlugin(
   };
 }
 
+const electronBundleContracts = {
+  main: {
+    processName: "main",
+    entryFileName: path.basename(pkg.main),
+    externalizationSentinels: ["electron", "electron-updater", "dotenv"],
+  },
+  preload: {
+    processName: "preload",
+    entryFileName: "index.js",
+    externalizationSentinels: ["electron"],
+  },
+} as const satisfies Record<"main" | "preload", ElectronBundleContract>;
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "VITE_");
   const development = resolveRendererCspDevelopment(env);
   return {
     main: {
-      plugins: [externalizeDepsPlugin()],
+      plugins: [
+        externalizeDepsPlugin(),
+        electronBundleContractPlugin(electronBundleContracts.main),
+      ],
       build: {
         rollupOptions: {
           input: path.resolve(__dirname, "electron/main/index.ts"),
@@ -90,7 +110,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     preload: {
-      plugins: [externalizeDepsPlugin()],
+      plugins: [
+        externalizeDepsPlugin(),
+        electronBundleContractPlugin(electronBundleContracts.preload),
+      ],
       build: {
         rollupOptions: {
           input: path.resolve(__dirname, "electron/preload/index.ts"),
