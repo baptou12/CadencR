@@ -131,8 +131,7 @@ function useAgentSessionMeta(props: AgentSessionProps, base: AgentSessionBase) {
     hasConversation: props.blocks.length > 0,
   });
   const isClaudeProvider =
-    model.activeProviderId === PROVIDER_IDS.CLAUDE_CODE ||
-    props.runtimeProvider === PROVIDER_IDS.CLAUDE_CODE;
+    model.modelSelectionStatus === "ready" && model.activeProviderId === PROVIDER_IDS.CLAUDE_CODE;
   const localProfile = useClaudeProfileSelection({
     isClaudeProvider: isClaudeProvider && props.claudeProfileSelection == null,
     wsSessionId: props.wsSessionId,

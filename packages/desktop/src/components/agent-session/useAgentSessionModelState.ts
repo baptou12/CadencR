@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import type { AgentCatalog } from "@/api/agentRuntime";
+import { resolveProviderModelAlias } from "@/lib/provider-model-aliases";
 import { availableCatalogProviders, DEFAULT_PROVIDER } from "@/shared/models";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 
 export const MODEL_CATALOG_LOADING_LABEL = "Loading model…";
+export type ModelSelectionStatus = "catalog-loading" | "selection-pending" | "ready";
 
 interface UseAgentSessionModelStateParams {
   agentCatalog: AgentCatalog | undefined;
@@ -12,55 +14,6 @@ interface UseAgentSessionModelStateParams {
   runtimeProvider?: string;
   onProviderChange?: (providerId: string) => void;
   hasConversation: boolean;
-}
-
-interface ActiveProviderParams {
-  providerOptions: { id: string; models: { id: string }[] }[];
-  currentProviderId?: string;
-  currentModelId?: string;
-  runtimeProvider?: string;
-  modelProviderId?: string;
-  defaultProviderId?: string;
-}
-
-function resolveActiveProviderId({
-  providerOptions,
-  currentProviderId,
-  currentModelId,
-  runtimeProvider,
-  modelProviderId,
-  defaultProviderId,
-}: ActiveProviderParams): string {
-  const isSelectable = (providerId?: string): boolean =>
-    providerOptions.some((provider) => provider.id === providerId);
-  const supportsModel = (providerId?: string): boolean => {
-    if (!providerId || !currentModelId) return false;
-    return (
-      providerOptions
-        .find((provider) => provider.id === providerId)
-        ?.models.some((model) => model.id === currentModelId) ?? false
-    );
-  };
-  if (
-    currentProviderId &&
-    isSelectable(currentProviderId) &&
-    (!currentModelId || supportsModel(currentProviderId))
-  ) {
-    return currentProviderId;
-  }
-  if (
-    runtimeProvider &&
-    isSelectable(runtimeProvider) &&
-    (!currentModelId || supportsModel(runtimeProvider))
-  ) {
-    return runtimeProvider;
-  }
-  return (
-    modelProviderId ??
-    (isSelectable(defaultProviderId) ? defaultProviderId : undefined) ??
-    providerOptions[0]?.id ??
-    DEFAULT_PROVIDER
-  );
 }
 
 export function useAgentSessionModelState(params: UseAgentSessionModelStateParams) {
@@ -85,49 +38,53 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
   );
   const isCatalogLoading = agentCatalog === undefined;
 
-  const allModels = useMemo(
-    () =>
-      providerOptions.flatMap((provider) =>
-        provider.models.map((model) => ({ ...model, providerId: provider.id })),
-      ),
-    [providerOptions],
-  );
+  const activeProviderId = useMemo(() => {
+    const currentProvider = providerOptions.find((provider) => provider.id === currentProviderId);
+    if (currentProvider) return currentProvider.id;
+    const activeRuntimeProvider = providerOptions.find(
+      (provider) => provider.id === runtimeProvider,
+    );
+    if (activeRuntimeProvider) return activeRuntimeProvider.id;
+    const catalogDefault = providerOptions.find(
+      (provider) => provider.id === agentCatalog?.default_provider,
+    );
 
-  const modelProviderId = useMemo(
-    () => allModels.find((model) => model.id === currentModelId)?.providerId,
-    [allModels, currentModelId],
-  );
+    return catalogDefault?.id ?? providerOptions[0]?.id ?? DEFAULT_PROVIDER;
+  }, [agentCatalog?.default_provider, currentProviderId, providerOptions, runtimeProvider]);
 
-  const activeProviderId = useMemo(
-    () =>
-      resolveActiveProviderId({
-        providerOptions,
-        currentProviderId,
-        currentModelId,
-        runtimeProvider,
-        modelProviderId,
-        defaultProviderId: agentCatalog?.default_provider,
-      }),
-    [
-      agentCatalog?.default_provider,
-      currentModelId,
-      currentProviderId,
-      modelProviderId,
-      providerOptions,
-      runtimeProvider,
-    ],
-  );
-
-  const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
-  const visibleModels = activeProvider?.models ?? [];
+  const hasCompleteSelection = Boolean(currentProviderId && currentModelId);
+  const { visibleModels, selectedModel, hasSelectionMismatch } = useMemo(() => {
+    const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
+    const models = activeProvider?.models ?? [];
+    const resolvedModelId =
+      currentModelId && activeProvider
+        ? resolveProviderModelAlias(activeProvider.id, currentModelId, activeProvider.models)
+        : currentModelId;
+    const model = models.find((candidate) => candidate.id === resolvedModelId);
+    const hasProviderMismatch = hasCompleteSelection && activeProviderId !== currentProviderId;
+    let hasCatalogMismatch = false;
+    if (hasCompleteSelection && activeProvider && currentModelId && !model) {
+      hasCatalogMismatch = providerOptions.some((provider) => {
+        if (provider.id === activeProviderId) return false;
+        const candidateId = resolveProviderModelAlias(provider.id, currentModelId, provider.models);
+        return provider.models.some((candidate) => candidate.id === candidateId);
+      });
+    }
+    return {
+      visibleModels: models,
+      selectedModel: model,
+      hasSelectionMismatch: hasProviderMismatch || hasCatalogMismatch,
+    };
+  }, [activeProviderId, currentModelId, currentProviderId, hasCompleteSelection, providerOptions]);
+  const modelSelectionStatus: ModelSelectionStatus = isCatalogLoading
+    ? "catalog-loading"
+    : !hasCompleteSelection || hasSelectionMismatch
+      ? "selection-pending"
+      : "ready";
   const currentModelLabel =
-    (isCatalogLoading
+    modelSelectionStatus !== "ready"
       ? MODEL_CATALOG_LOADING_LABEL
-      : allModels.find((m) => m.id === currentModelId && m.providerId === activeProviderId)
-          ?.label) ??
-    visibleModels.find((m) => m.id === currentModelId)?.label ??
-    currentModelId ??
-    "Model";
+      : (selectedModel?.label ?? currentModelId ?? "Model");
 
   // Gate on conversation activity only. Backend-reported `status` races
   // with REST hydration: a freshly-created agent_sessions row is inserted
@@ -135,11 +92,11 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
   // status === "idle" here would lock the picker on ~20-25% of new sessions.
   const canChangeProvider = !!onProviderChange && !hasConversation;
   const supportedThinkingEfforts = supportedThinkingEffortLevels(
-    visibleModels.find((model) => model.id === currentModelId),
+    modelSelectionStatus === "ready" ? selectedModel : undefined,
   );
 
   return {
-    isCatalogLoading,
+    modelSelectionStatus,
     providerOptions,
     activeProviderId,
     visibleModels,

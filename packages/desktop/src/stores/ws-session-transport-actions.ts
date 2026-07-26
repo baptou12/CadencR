@@ -91,12 +91,6 @@ export function createWsSessionTransportActions(deps: TransportActionDeps): Tran
       if (config.featureId) {
         sessionPatch.featureId = config.featureId;
       }
-      if (config.provider) {
-        sessionPatch.currentProviderId = config.provider;
-      }
-      if (config.model) {
-        sessionPatch.currentModelId = config.model;
-      }
       if (config.thinkingEffort) {
         sessionPatch.currentThinkingEffort = config.thinkingEffort;
       }

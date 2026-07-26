@@ -143,4 +143,52 @@ describe("ws session history pagination", () => {
 
     expect(ctx.get().sessions.s1.historyPrependDisplayOffset).toBe(0);
   });
+
+  it("hydrates a persisted provider and model as one ready selection", () => {
+    const ctx = createCtx(createSessionEntry());
+
+    applyPersistedState(
+      ctx,
+      "s1",
+      {
+        blocks: [],
+        lifecycle: { phase: "idle" },
+        currentProviderId: "opencode",
+        runtimeProvider: "opencode",
+        currentModelId: "lmstudio/qwen-3.6:35b-a3b",
+      },
+      "plan-restore:",
+    );
+
+    const session = ctx.get().sessions.s1;
+    expect(session.currentProviderId).toBe("opencode");
+    expect(session.currentModelId).toBe("lmstudio/qwen-3.6:35b-a3b");
+  });
+
+  it("keeps an initialized live selection when a stale snapshot arrives later", () => {
+    const session = createSessionEntry();
+    session.serverSessionId = "42";
+    session.currentProviderId = "claude_code";
+    session.currentModelId = "opus";
+    session.runtimeProvider = "claude_code";
+    const ctx = createCtx(session);
+
+    applyPersistedState(
+      ctx,
+      "s1",
+      {
+        blocks: [],
+        lifecycle: { phase: "idle" },
+        currentProviderId: "opencode",
+        runtimeProvider: "opencode",
+        currentModelId: "lmstudio/qwen-3.6:35b-a3b",
+      },
+      "plan-restore:",
+    );
+
+    const updated = ctx.get().sessions.s1;
+    expect(updated.currentProviderId).toBe("claude_code");
+    expect(updated.currentModelId).toBe("opus");
+    expect(updated.runtimeProvider).toBe("claude_code");
+  });
 });

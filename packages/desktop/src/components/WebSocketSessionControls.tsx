@@ -121,7 +121,7 @@ function useWorktreePreference(projectId: number): WorktreePreferenceControls {
 // before the catalog loads, so callers can resolve it up front to drive Claude
 // profile selection and then feed the chosen profile back into the catalog.
 function activeProviderIdOf(ws: WsSession, resolvedProviderId: string): string {
-  return ws.runtimeProvider || ws.currentProviderId || resolvedProviderId;
+  return ws.currentProviderId || ws.runtimeProvider || resolvedProviderId;
 }
 
 function useRuntimeSelection(

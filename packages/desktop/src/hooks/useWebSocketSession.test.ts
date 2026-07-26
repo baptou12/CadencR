@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { FALLBACK_MODEL_ID } from "../shared/models";
 
 vi.mock("@/api/generated", () => ({
   useGetFeatureAgentState: vi.fn(() => ({ data: undefined, isLoading: false })),
@@ -103,13 +102,13 @@ describe("useWebSocketSession", () => {
     expect(result.current.isConnected).toBe(true);
   });
 
-  it("currentModelId defaults to FALLBACK_MODEL_ID before catalog loads", async () => {
+  it("keeps currentModelId empty before the backend initializes the session", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(result.current.currentModelId).toBe(FALLBACK_MODEL_ID);
+    expect(result.current.currentModelId).toBe("");
   });
 
   it("restarts stale local timing when backend live status first reports agent", async () => {
@@ -1043,7 +1042,7 @@ describe("useWebSocketSession", () => {
       ws.simulateMessage({
         domain: "session",
         action: "initialized",
-        payload: { session_id: "srv-1" },
+        payload: { session_id: "srv-1", provider: "claude_code", model: "opus" },
       });
     });
 
@@ -1114,7 +1113,7 @@ describe("useWebSocketSession", () => {
       ws.simulateMessage({
         domain: "session",
         action: "initialized",
-        payload: { session_id: "srv-1" },
+        payload: { session_id: "srv-1", provider: "claude_code", model: "opus" },
       });
     });
 
@@ -1179,7 +1178,7 @@ describe("useWebSocketSession", () => {
       ws.simulateMessage({
         domain: "session",
         action: "initialized",
-        payload: { session_id: "srv-1" },
+        payload: { session_id: "srv-1", provider: "claude_code", model: "opus" },
       });
     });
 
@@ -1219,6 +1218,11 @@ describe("useWebSocketSession", () => {
     });
 
     act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1", provider: "claude_code", model: "opus" },
+      });
       getWs().simulateMessage({
         domain: "session",
         action: "mode.changed",

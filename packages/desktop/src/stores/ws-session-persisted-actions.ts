@@ -69,6 +69,18 @@ function buildSessionMetaPatch(options: SessionMetaPatchOptions): Partial<Sessio
   } = options;
   const resolvedProviderId = payload.currentProviderId ?? payload.runtimeProvider ?? undefined;
   const resolvedRuntimeProvider = payload.runtimeProvider ?? payload.currentProviderId ?? undefined;
+  const canHydrateSelection = !existing?.serverSessionId;
+  const hasSelectionSnapshot =
+    payload.currentProviderId !== undefined ||
+    payload.runtimeProvider !== undefined ||
+    payload.currentModelId !== undefined;
+  const selectionPatch: Partial<SessionEntry> =
+    canHydrateSelection && hasSelectionSnapshot
+      ? {
+          currentProviderId: resolvedProviderId ?? "",
+          currentModelId: payload.currentModelId ?? "",
+        }
+      : {};
   return {
     persistedLoaded: true,
     historyPrependDisplayOffset: 0,
@@ -79,12 +91,13 @@ function buildSessionMetaPatch(options: SessionMetaPatchOptions): Partial<Sessio
     sessionDbId: payload.sessionDbId ?? null,
     lifecycle:
       shouldPreservePromptLifecycle && existing ? existing.lifecycle : lifecycleWithPendingGate,
-    ...(resolvedProviderId ? { currentProviderId: resolvedProviderId } : {}),
-    ...(payload.currentModelId ? { currentModelId: payload.currentModelId } : {}),
+    ...selectionPatch,
     ...(payload.currentProfile ? { currentProfile: payload.currentProfile } : {}),
     ...(payload.permissionMode ? { permissionMode: payload.permissionMode } : {}),
     ...(payload.accessMode ? { accessMode: parseAccessMode(payload.accessMode) } : {}),
-    ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
+    ...(canHydrateSelection && resolvedRuntimeProvider
+      ? { runtimeProvider: resolvedRuntimeProvider }
+      : {}),
     ...(payload.runtimeSessionId ? { runtimeSessionId: payload.runtimeSessionId } : {}),
     ...(payload.contextUsage !== undefined ? { contextUsage: payload.contextUsage } : {}),
     ...(payload.hasFileChanges !== undefined ? { hasFileChanges: payload.hasFileChanges } : {}),

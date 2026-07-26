@@ -16,6 +16,7 @@ import {
   type ThinkingEffortLevel,
 } from "@/shared/thinking-effort";
 import { ShortcutTooltip } from "../ShortcutTooltip";
+import type { ModelSelectionStatus } from "./useAgentSessionModelState";
 
 export type Model = RuntimeModelPickerModel;
 export type Provider = RuntimeModelPickerProvider;
@@ -30,7 +31,7 @@ interface ModelMetaChipProps {
   currentProviderId?: string;
   currentModelId?: string;
   currentModelLabel: string;
-  isModelCatalogLoading?: boolean;
+  modelSelectionStatus?: ModelSelectionStatus;
   pickerProviders: RuntimeModelPickerProvider[];
   canChangeProvider: boolean;
   onProviderChange?: (providerId: string) => void;
@@ -47,7 +48,7 @@ export function ModelMetaChip({
   currentProviderId,
   currentModelId,
   currentModelLabel,
-  isModelCatalogLoading = false,
+  modelSelectionStatus = "ready",
   pickerProviders,
   canChangeProvider,
   onProviderChange,
@@ -57,6 +58,8 @@ export function ModelMetaChip({
   onThinkingEffortChange,
   onModelSelected,
 }: ModelMetaChipProps): ReactNode {
+  const isModelLoading = modelSelectionStatus !== "ready";
+  const isPickerDisabled = modelSelectionStatus === "catalog-loading";
   const selectedThinkingEffort =
     currentThinkingEffort && supportedThinkingEfforts.includes(currentThinkingEffort)
       ? currentThinkingEffort
@@ -90,21 +93,19 @@ export function ModelMetaChip({
               <ModelButton
                 currentProviderId={currentProviderId}
                 currentModelLabel={currentModelLabel}
-                isModelCatalogLoading={isModelCatalogLoading}
+                isModelLoading={isModelLoading}
+                disabled={isPickerDisabled}
               />
             }
           />
         </ShortcutTooltip>
       ) : (
         <ShortcutTooltip label={`Model: ${currentModelLabel}`}>
-          <div
-            className={cn(MODEL_SEGMENT, "min-w-0 rounded-md")}
-            aria-busy={isModelCatalogLoading}
-          >
+          <div className={cn(MODEL_SEGMENT, "min-w-0 rounded-md")} aria-busy={isModelLoading}>
             <ModelIcon
               providerId={currentProviderId}
               label={currentModelLabel}
-              loading={isModelCatalogLoading}
+              loading={isModelLoading}
             />
             <SlidingText text={currentModelLabel} className="max-w-[160px]" />
           </div>
@@ -126,11 +127,11 @@ export function ModelMetaChip({
 interface ModelButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   currentProviderId?: string;
   currentModelLabel: string;
-  isModelCatalogLoading?: boolean;
+  isModelLoading?: boolean;
 }
 
 const ModelButton = forwardRef<HTMLButtonElement, ModelButtonProps>(function ModelButton(
-  { currentProviderId, currentModelLabel, isModelCatalogLoading, className, ...buttonProps },
+  { currentProviderId, currentModelLabel, isModelLoading, className, ...buttonProps },
   ref,
 ): ReactNode {
   return (
@@ -138,8 +139,8 @@ const ModelButton = forwardRef<HTMLButtonElement, ModelButtonProps>(function Mod
       {...buttonProps}
       ref={ref}
       type="button"
-      aria-label={isModelCatalogLoading ? "Loading model catalog" : undefined}
-      disabled={isModelCatalogLoading}
+      aria-label={isModelLoading ? "Loading model" : undefined}
+      aria-busy={isModelLoading}
       className={cn(
         MODEL_SEGMENT,
         "min-w-0 rounded-l-md hover:bg-[var(--chip-violet-bg)]/16 disabled:cursor-wait disabled:opacity-80",
@@ -149,10 +150,10 @@ const ModelButton = forwardRef<HTMLButtonElement, ModelButtonProps>(function Mod
       <ModelIcon
         providerId={currentProviderId}
         label={currentModelLabel}
-        loading={isModelCatalogLoading}
+        loading={isModelLoading}
       />
       <SlidingText text={currentModelLabel} className="max-w-[160px]" />
-      {!isModelCatalogLoading && <ChevronDownIcon className="size-3 shrink-0" />}
+      {!isModelLoading && <ChevronDownIcon className="size-3 shrink-0" />}
     </button>
   );
 });

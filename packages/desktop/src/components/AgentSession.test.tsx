@@ -547,7 +547,7 @@ describe("AgentSession", () => {
     expect(screen.getByText("No models available")).toBeInTheDocument();
   });
 
-  it("uses model provider icon when persisted provider is stale after restart", async () => {
+  it("shows loading instead of combining a stale provider with another provider's model", async () => {
     const runtimeApi = await import("../api/agentRuntime");
     vi.mocked(runtimeApi.useAgentCatalog).mockReturnValueOnce({
       data: {
@@ -587,8 +587,9 @@ describe("AgentSession", () => {
       />,
     );
 
-    const modelIcon = screen.getByAltText("GPT-5.3 Codex");
-    expect(modelIcon).toHaveAttribute("src", expect.stringContaining("opencode"));
+    expect(screen.getByRole("button", { name: "Loading model" })).toBeEnabled();
+    expect(screen.queryByAltText("GPT-5.3 Codex")).toBeNull();
+    expect(screen.queryByAltText("Opus")).toBeNull();
   });
 
   it("shows prompt bar for completed session agent when pendingPlanApproval is set", () => {

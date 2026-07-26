@@ -151,6 +151,7 @@ async fn model_set_preserves_explicit_cursor_provider() {
     };
     let env: WsEnvelope = serde_json::from_str(&text).unwrap();
     assert_eq!(env.action, "model.set.ok");
+    assert_eq!(env.payload["provider"], "cursor");
 
     let persisted: Option<String> =
         sqlx::query_scalar("SELECT runtime_provider FROM agent_sessions WHERE id = ?")
@@ -244,6 +245,7 @@ async fn test_opencode_model_set_clears_effort_when_new_model_does_not_support_i
     if let Message::Text(text) = msg {
         let env: WsEnvelope = serde_json::from_str(&text).unwrap();
         assert_eq!(env.action, "model.set.ok");
+        assert_eq!(env.payload["provider"], "opencode");
     } else {
         panic!("expected text message");
     }
