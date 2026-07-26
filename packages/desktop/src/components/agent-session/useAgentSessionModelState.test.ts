@@ -16,6 +16,13 @@ const catalog: AgentCatalog = {
       default_model: "opus",
       models: [{ id: "opus", label: "Opus" }],
     },
+    {
+      id: "opencode",
+      label: "OpenCode",
+      status: "available",
+      default_model: "lmstudio/qwen-3.6:35b-a3b",
+      models: [{ id: "lmstudio/qwen-3.6:35b-a3b", label: "Qwen 3.6" }],
+    },
   ],
 };
 
@@ -31,8 +38,52 @@ describe("useAgentSessionModelState.canChangeProvider", () => {
       }),
     );
     expect(result.current.currentModelLabel).toBe(MODEL_CATALOG_LOADING_LABEL);
-    expect(result.current.isCatalogLoading).toBe(true);
+    expect(result.current.modelSelectionStatus).toBe("catalog-loading");
     expect(result.current.visibleModels).toEqual([]);
+  });
+
+  it("shows loading until the backend confirms a provider and model pair", () => {
+    const { result } = renderHook(() =>
+      useAgentSessionModelState({
+        agentCatalog: catalog,
+        currentProviderId: "",
+        currentModelId: "",
+        hasConversation: false,
+      }),
+    );
+    expect(result.current.currentModelLabel).toBe(MODEL_CATALOG_LOADING_LABEL);
+    expect(result.current.modelSelectionStatus).toBe("selection-pending");
+    expect(result.current.supportedThinkingEfforts).toEqual([]);
+  });
+
+  it("does not infer a provider when the confirmed fields disagree", () => {
+    const { result } = renderHook(() =>
+      useAgentSessionModelState({
+        agentCatalog: catalog,
+        currentProviderId: "claude_code",
+        currentModelId: "lmstudio/qwen-3.6:35b-a3b",
+        runtimeProvider: "opencode",
+        hasConversation: false,
+      }),
+    );
+    expect(result.current.activeProviderId).toBe("claude_code");
+    expect(result.current.currentModelLabel).toBe(MODEL_CATALOG_LOADING_LABEL);
+    expect(result.current.modelSelectionStatus).toBe("selection-pending");
+  });
+
+  it("does not show a Claude alias under OpenCode", () => {
+    const { result } = renderHook(() =>
+      useAgentSessionModelState({
+        agentCatalog: catalog,
+        currentProviderId: "opencode",
+        currentModelId: "opus",
+        runtimeProvider: "opencode",
+        hasConversation: false,
+      }),
+    );
+    expect(result.current.activeProviderId).toBe("opencode");
+    expect(result.current.currentModelLabel).toBe(MODEL_CATALOG_LOADING_LABEL);
+    expect(result.current.modelSelectionStatus).toBe("selection-pending");
   });
 
   it("allows provider change on a fresh conversation", () => {
@@ -46,6 +97,7 @@ describe("useAgentSessionModelState.canChangeProvider", () => {
       }),
     );
     expect(result.current.canChangeProvider).toBe(true);
+    expect(result.current.modelSelectionStatus).toBe("ready");
   });
 
   it("locks the provider once the conversation has any block", () => {
@@ -77,7 +129,7 @@ describe("useAgentSessionModelState.canChangeProvider", () => {
     const { result } = renderHook(() =>
       useAgentSessionModelState({
         agentCatalog: catalog,
-        currentProviderId: "opencode",
+        currentProviderId: "cursor",
         runtimeProvider: "claude_code",
         hasConversation: false,
       }),
@@ -90,7 +142,7 @@ describe("useAgentSessionModelState.canChangeProvider", () => {
     const { result } = renderHook(() =>
       useAgentSessionModelState({
         agentCatalog: catalog,
-        runtimeProvider: "opencode",
+        runtimeProvider: "cursor",
         hasConversation: false,
       }),
     );

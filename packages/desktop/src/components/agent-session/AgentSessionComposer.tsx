@@ -25,7 +25,7 @@ export interface AgentSessionComposerProps {
   showWorktreeChip: boolean;
   activeProviderId: string;
   currentModelLabel: string;
-  isModelCatalogLoading: boolean;
+  modelSelectionStatus: AgentSessionMetaProps["modelSelectionStatus"];
   models: AgentSessionMetaProps["models"];
   providers: AgentSessionMetaProps["providers"];
   canChangeProvider: boolean;
@@ -167,7 +167,7 @@ function AgentSessionMeta(
       showReadOnlyModel={session.showReadOnlyModel}
       currentModelId={session.currentModelId}
       currentModelLabel={props.currentModelLabel}
-      isModelCatalogLoading={props.isModelCatalogLoading}
+      modelSelectionStatus={props.modelSelectionStatus}
       models={props.models}
       providers={props.providers}
       canChangeProvider={props.canChangeProvider}

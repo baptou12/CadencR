@@ -263,23 +263,44 @@ describe("MetaBar mode chip", () => {
     expect(screen.queryByRole("button", { name: /Permission mode/i })).toBeNull();
   });
 
-  it("renders a disabled loader in the model chip while the catalog loads", () => {
+  it("renders a disabled loader and hides provider-specific controls while the catalog loads", () => {
     renderChip({
       onModelChange: vi.fn(),
       currentProviderId: PROVIDER_IDS.OPENCODE,
       currentModelId: "default/default",
       currentModelLabel: MODEL_CATALOG_LOADING_LABEL,
-      isModelCatalogLoading: true,
+      modelSelectionStatus: "catalog-loading",
       models: [],
       providers: [],
+      accessMode: "default",
+      onAccessModeChange: vi.fn(),
     });
 
     const loader = screen.getByRole("button", {
-      name: "Loading model catalog",
+      name: "Loading model",
     });
     expect(loader).toBeDisabled();
     expect(screen.getByText(MODEL_CATALOG_LOADING_LABEL)).toBeInTheDocument();
     expect(screen.queryByText("default/default")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Permission mode/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /access mode/i })).toBeNull();
+  });
+
+  it("keeps the picker enabled while a provider switch is awaiting its model", () => {
+    renderChip({
+      onModelChange: vi.fn(),
+      currentProviderId: PROVIDER_IDS.OPENCODE,
+      currentModelId: "",
+      currentModelLabel: MODEL_CATALOG_LOADING_LABEL,
+      modelSelectionStatus: "selection-pending",
+      models: [{ id: "default/default", label: "Default" }],
+      accessMode: "default",
+      onAccessModeChange: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: "Loading model" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /Permission mode/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /access mode/i })).toBeNull();
   });
 
   it("places the pre-first-prompt Claude profile selector at the end of the top line", () => {

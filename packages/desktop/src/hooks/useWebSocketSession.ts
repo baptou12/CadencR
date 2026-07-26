@@ -6,7 +6,6 @@
  */
 
 import { useEffect, useMemo } from "react";
-import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { useGetFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
@@ -317,11 +316,11 @@ function useSessionSnapshot(
       accessMode: session?.accessMode ?? "default",
       pendingPlanApproval: session?.pendingPlanApproval ?? null,
       contextUsage: session?.contextUsage ?? null,
-      currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,
-      currentModelId: session?.currentModelId ?? FALLBACK_MODEL_ID,
+      currentProviderId: session?.currentProviderId ?? "",
+      currentModelId: session?.currentModelId ?? "",
       currentThinkingEffort: session?.currentThinkingEffort,
       currentProfile: session?.currentProfile,
-      runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
+      runtimeProvider: session?.runtimeProvider ?? "",
       runtimeSessionId: session?.runtimeSessionId ?? "",
       mcpServers: session?.mcpServers ?? null,
       hasFileChanges: session?.hasFileChanges ?? false,

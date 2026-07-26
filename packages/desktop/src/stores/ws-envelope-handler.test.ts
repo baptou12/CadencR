@@ -267,6 +267,7 @@ describe("handleEnvelope provider.set.ok", () => {
   it("updates provider state but does NOT touch permissionMode (mode.changed follows)", () => {
     const session = createSessionEntry();
     session.currentProviderId = "claude_code";
+    session.currentModelId = "opus";
     session.permissionMode = "plan";
     const ctx = createTestContext(session);
 
@@ -279,6 +280,7 @@ describe("handleEnvelope provider.set.ok", () => {
     const updated = ctx.getSession("s1");
     expect(updated.currentProviderId).toBe("codex_cli");
     expect(updated.runtimeProvider).toBe("codex_cli");
+    expect(updated.currentModelId).toBe("");
     expect(updated.supportsPromptReceipts).toBe(false);
     // No optimistic update — the chip stays on the old mode until the backend
     // emits a `mode.changed` envelope as the second half of the provider switch.
@@ -316,6 +318,50 @@ describe("handleEnvelope provider.set.ok", () => {
     });
 
     expect(ctx.getSession("s1").permissionMode).toBe("default");
+  });
+
+  it("keeps the atomic model pair when model.set.ok arrives before provider.set.ok", () => {
+    const session = createSessionEntry();
+    session.currentProviderId = "claude_code";
+    session.currentModelId = "opus";
+    session.runtimeProvider = "claude_code";
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "model.set.ok",
+      payload: {
+        provider: "opencode",
+        model: "lmstudio/qwen-3.6:35b-a3b",
+      },
+    });
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "provider.set.ok",
+      payload: { provider: "opencode" },
+    });
+
+    const updated = ctx.getSession("s1");
+    expect(updated.currentProviderId).toBe("opencode");
+    expect(updated.currentModelId).toBe("lmstudio/qwen-3.6:35b-a3b");
+  });
+
+  it("rejects model.set.ok when the authoritative provider is missing", () => {
+    const session = createSessionEntry();
+    session.currentProviderId = "claude_code";
+    session.currentModelId = "opus";
+    session.runtimeProvider = "claude_code";
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "model.set.ok",
+      payload: { model: "lmstudio/qwen-3.6:35b-a3b" },
+    });
+
+    const updated = ctx.getSession("s1");
+    expect(updated.currentProviderId).toBe("claude_code");
+    expect(updated.currentModelId).toBe("opus");
   });
 });
 

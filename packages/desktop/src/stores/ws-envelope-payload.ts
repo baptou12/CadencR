@@ -153,14 +153,19 @@ function sessionDbIdFromSessionId(value: string | undefined): number | undefined
 }
 
 export function parseModelPayload(payload: unknown): {
-  model?: string;
+  provider: string;
+  model: string;
   context_window?: number;
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
+  const provider = optionalString(record, "provider");
+  const model = optionalString(record, "model");
+  if (!provider || !model) return null;
   const contextWindow = optionalNumber(record, "context_window");
   return {
-    model: optionalString(record, "model"),
+    provider,
+    model,
     context_window: contextWindow && contextWindow > 0 ? contextWindow : undefined,
   };
 }

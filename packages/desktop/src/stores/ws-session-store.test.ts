@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { FALLBACK_MODEL_ID } from "../shared/models";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
 import { updateSession } from "./ws-session-types";
 import { invalidateWorktreeQueries } from "@/lib/worktreeQueries";
@@ -141,7 +140,7 @@ async function connectInitializedSession(sessionId = "s1"): Promise<{
   ws.simulateMessage({
     domain: "session",
     action: "initialized",
-    payload: { session_id: "srv-1" },
+    payload: { session_id: "srv-1", provider: "claude_code", model: "opus" },
   });
   return { store, ws };
 }
@@ -1132,56 +1131,69 @@ describe("ws-session-store", () => {
     expect(after.submittingPermissionRequestId).toBeNull();
   });
 
-  it("new session defaults currentModelId to FALLBACK_MODEL_ID", async () => {
+  it("new session keeps provider and model empty until initialization", async () => {
     useWsSessionStore.getState().connect("s1");
     await tick();
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.currentModelId).toBe(FALLBACK_MODEL_ID);
+    expect(session.currentProviderId).toBe("");
+    expect(session.currentModelId).toBe("");
   });
 
-  it("initSession with model updates currentModelId in store", async () => {
+  it("initSession waits for initialized before applying provider and model", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
-    store.initSession("s1", { model: "claude-haiku-4-5-20251001" });
+    store.initSession("s1", {
+      provider: "opencode",
+      model: "lmstudio/qwen-3.6:35b-a3b",
+    });
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.currentModelId).toBe("claude-haiku-4-5-20251001");
+    expect(session.currentProviderId).toBe("");
+    expect(session.currentModelId).toBe("");
   });
 
-  it("initSession without model keeps FALLBACK_MODEL_ID", async () => {
+  it("initSession without model keeps the pending selection empty", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
     store.initSession("s1", { cwd: "/tmp" });
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.currentModelId).toBe(FALLBACK_MODEL_ID);
+    expect(session.currentModelId).toBe("");
   });
 
   it("session.initialized with model updates currentModelId from server", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
-    // Frontend sends settings model on init
-    store.initSession("s1", { model: "opus[1m]" });
-    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+    store.initSession("s1", { provider: "claude_code", model: "opus[1m]" });
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("");
 
     // Server responds with the stored model from the DB (last used)
     const ws = MockWebSocket.instances[0];
     ws.simulateMessage({
       domain: "session",
       action: "initialized",
-      payload: { session_id: "42", model: "claude-haiku-4-5-20251001" },
+      payload: {
+        session_id: "42",
+        provider: "claude_code",
+        model: "claude-haiku-4-5-20251001",
+      },
     });
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe(
       "claude-haiku-4-5-20251001",
     );
   });
 
-  it("session.initialized without model keeps frontend model", async () => {
+  it("session.initialized without selection fields preserves a hydrated selection", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
-    store.initSession("s1", { model: "opus[1m]" });
+    useWsSessionStore.setState((state) =>
+      updateSession(state, "s1", {
+        currentProviderId: "claude_code",
+        currentModelId: "opus[1m]",
+      }),
+    );
 
     const ws = MockWebSocket.instances[0];
     ws.simulateMessage({
@@ -1355,7 +1367,10 @@ describe("ws-session-store", () => {
     });
 
     useWsSessionStore.setState((state) =>
-      updateSession(state, "s1", { currentProviderId: "stale-provider" }),
+      updateSession(state, "s1", {
+        currentProviderId: "stale-provider",
+        currentModelId: "stale-model",
+      }),
     );
     store.setProvider("s1", "claude_code");
     expect(useWsSessionStore.getState().sessions["s1"].currentProviderId).toBe("stale-provider");
@@ -1365,7 +1380,9 @@ describe("ws-session-store", () => {
       action: "provider.set.ok",
       payload: { provider: "claude_code" },
     });
-    expect(useWsSessionStore.getState().sessions["s1"].currentProviderId).toBe("claude_code");
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentProviderId).toBe("claude_code");
+    expect(session.currentModelId).toBe("");
   });
 
   it("setModel sends catalog ownership and waits for model.set.ok", async () => {
@@ -1394,9 +1411,11 @@ describe("ws-session-store", () => {
     ws.simulateMessage({
       domain: "session",
       action: "model.set.ok",
-      payload: { model: "haiku" },
+      payload: { provider: "claude_code", model: "haiku" },
     });
-    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("haiku");
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.currentProviderId).toBe("claude_code");
+    expect(session.currentModelId).toBe("haiku");
   });
 
   it("model.set.ok preserves tokens and keeps existing context window when backend omits it", async () => {
@@ -1424,7 +1443,7 @@ describe("ws-session-store", () => {
     ws.simulateMessage({
       domain: "session",
       action: "model.set.ok",
-      payload: { model: "sonnet" },
+      payload: { provider: "claude_code", model: "sonnet" },
     });
 
     const usage = useWsSessionStore.getState().sessions["s1"].contextUsage;
@@ -1461,7 +1480,11 @@ describe("ws-session-store", () => {
     ws.simulateMessage({
       domain: "session",
       action: "model.set.ok",
-      payload: { model: "claude-opus-4-7[1m]", context_window: 1_000_000 },
+      payload: {
+        provider: "claude_code",
+        model: "claude-opus-4-7[1m]",
+        context_window: 1_000_000,
+      },
     });
 
     const usage = useWsSessionStore.getState().sessions["s1"].contextUsage;

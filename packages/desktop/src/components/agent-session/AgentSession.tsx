@@ -106,7 +106,7 @@ function SessionComposer({
       showWorktreeChip={meta.showWorktreeChip}
       activeProviderId={meta.model.activeProviderId}
       currentModelLabel={meta.model.currentModelLabel ?? ""}
-      isModelCatalogLoading={meta.model.isCatalogLoading}
+      modelSelectionStatus={meta.model.modelSelectionStatus}
       models={meta.model.visibleModels}
       providers={meta.visibleProviders}
       canChangeProvider={meta.model.canChangeProvider}

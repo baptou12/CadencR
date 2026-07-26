@@ -113,6 +113,7 @@ pub(crate) async fn handle_model_set(
         sender,
         &envelope.id,
         feature_id,
+        runtime_provider,
         model,
         seeded_window,
     )
@@ -324,6 +325,7 @@ async fn send_model_set_ok(
     sender: &WsSender,
     envelope_id: &str,
     feature_id: i64,
+    provider: String,
     model: String,
     seeded_window: Option<u64>,
 ) {
@@ -335,6 +337,7 @@ async fn send_model_set_ok(
         feature_id,
         WsSessionAction::ModelSetOk,
         ModelSetOkPayload {
+            provider,
             model,
             context_window: seeded_window,
         },

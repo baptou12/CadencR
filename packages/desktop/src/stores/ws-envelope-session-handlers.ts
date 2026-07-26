@@ -64,13 +64,13 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
     supportsPromptReceipts: p.supports_prompt_receipts ?? false,
   };
   if (p.sessionDbId != null) updates.sessionDbId = p.sessionDbId;
-  if (p.provider) {
-    updates.currentProviderId = p.provider;
-    updates.runtimeProvider = p.provider;
+  if (p.provider || p.model) {
+    updates.currentProviderId = p.provider ?? "";
+    updates.currentModelId = p.model ?? "";
+    updates.runtimeProvider = p.provider ?? "";
   } else {
-    updates.runtimeProvider = ctx.getSession(sessionId).currentProviderId;
+    updates.runtimeProvider = session.currentProviderId;
   }
-  if (p.model) updates.currentModelId = p.model;
   if (p.profile) updates.currentProfile = p.profile;
   const accessMode = p.access_mode ?? p.codex_permission_mode;
   if (accessMode) {

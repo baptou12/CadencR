@@ -22,6 +22,7 @@ import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 import { AccessModePopover } from "./AccessModePopover";
 import { getDisplayMode } from "./meta-bar-codex-modes";
 import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
+import type { ModelSelectionStatus } from "./useAgentSessionModelState";
 
 export interface MetaBarProps {
   showAutoScrollChip: boolean;
@@ -78,7 +79,7 @@ export interface MetaBarProps {
   showReadOnlyModel?: boolean;
   currentModelId?: string;
   currentModelLabel: string;
-  isModelCatalogLoading?: boolean;
+  modelSelectionStatus?: ModelSelectionStatus;
   models: Model[];
   providers?: Provider[];
   canChangeProvider?: boolean;
@@ -114,7 +115,8 @@ export interface MetaBarHandle {
 
 function useMetaBarState(props: MetaBarProps, ref: React.ForwardedRef<MetaBarHandle>) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const displayProviderId = props.currentProviderId ?? props.runtimeProvider;
+  const displayProviderId = props.currentProviderId || props.runtimeProvider;
+  const isSelectionPending = (props.modelSelectionStatus ?? "ready") !== "ready";
   useImperativeHandle(ref, () => ({ openModelPicker: () => setModelPickerOpen(true) }), []);
   const pickerProviders = useMemo(() => {
     if (props.providers && props.providers.length > 0) {
@@ -136,7 +138,7 @@ function useMetaBarState(props: MetaBarProps, ref: React.ForwardedRef<MetaBarHan
     ];
   }, [displayProviderId, props.models, props.providers]);
   const activeMode = useMemo(() => {
-    if (!props.onPermissionModeToggle || !props.permissionMode) return null;
+    if (isSelectionPending || !props.onPermissionModeToggle || !props.permissionMode) return null;
     const visibleModes = getVisibleModes(
       displayProviderId,
       props.enabledOptInModes ?? [],
@@ -149,6 +151,7 @@ function useMetaBarState(props: MetaBarProps, ref: React.ForwardedRef<MetaBarHan
     );
   }, [
     displayProviderId,
+    isSelectionPending,
     props.enabledOptInModes,
     props.onPermissionModeToggle,
     props.permissionMode,
@@ -159,11 +162,12 @@ function useMetaBarState(props: MetaBarProps, ref: React.ForwardedRef<MetaBarHan
     () => ({
       displayMode,
       displayProviderId,
+      isSelectionPending,
       modelPickerOpen,
       pickerProviders,
       setModelPickerOpen,
     }),
-    [displayMode, displayProviderId, modelPickerOpen, pickerProviders],
+    [displayMode, displayProviderId, isSelectionPending, modelPickerOpen, pickerProviders],
   );
 }
 
@@ -228,7 +232,7 @@ function MetaBarPrimary({ props, state }: { props: MetaBarProps; state: MetaBarS
           currentProviderId={state.displayProviderId}
           currentModelId={props.currentModelId}
           currentModelLabel={props.currentModelLabel}
-          isModelCatalogLoading={props.isModelCatalogLoading ?? false}
+          modelSelectionStatus={props.modelSelectionStatus}
           pickerProviders={state.pickerProviders}
           canChangeProvider={props.canChangeProvider ?? false}
           onProviderChange={props.onProviderChange}
@@ -248,8 +252,12 @@ function MetaBarPrimary({ props, state }: { props: MetaBarProps; state: MetaBarS
 
 function MetaBarTrailing({ props, state }: { props: MetaBarProps; state: MetaBarState }) {
   const hasProfile =
-    props.showClaudeProfileSelector && !!props.claudeProfile && !!props.onClaudeProfileChange;
+    !state.isSelectionPending &&
+    props.showClaudeProfileSelector &&
+    !!props.claudeProfile &&
+    !!props.onClaudeProfileChange;
   const hasAccess =
+    !state.isSelectionPending &&
     !!props.accessMode &&
     !!props.onAccessModeChange &&
     (props.providerAccessModes?.length ?? 0) > 0;
@@ -268,7 +276,8 @@ function MetaBarTrailing({ props, state }: { props: MetaBarProps; state: MetaBar
           label="Profile"
         />
       )}
-      {props.accessMode &&
+      {hasAccess &&
+        props.accessMode &&
         props.onAccessModeChange &&
         (props.providerAccessModes?.length ?? 0) > 0 && (
           <AccessModePopover

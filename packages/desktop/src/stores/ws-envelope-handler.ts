@@ -244,11 +244,14 @@ function handleModeChanged(ctx: StoreAccessors, sessionId: string, payload: unkn
 function handleProviderSetOk(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseProviderPayload(payload);
   if (!p?.provider) return;
+  const session = ctx.getSession(sessionId);
+  const providerChanged = p.provider !== session.currentProviderId;
   const accessMode = p.access_mode ?? p.codex_permission_mode;
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       currentProviderId: p.provider,
       runtimeProvider: p.provider,
+      ...(providerChanged ? { currentModelId: "" } : {}),
       mcpServers: null,
       supportsPromptReceipts: p.supports_prompt_receipts ?? false,
       ...(accessMode
@@ -262,14 +265,19 @@ function handleProviderSetOk(ctx: StoreAccessors, sessionId: string, payload: un
 
 function handleModelSetOk(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseModelPayload(payload);
-  if (!p?.model) return;
-  const existing = ctx.getSession(sessionId).contextUsage;
-  const nextContextWindow = p.context_window ?? existing?.contextWindow ?? null;
-  const nextUsage = existing
-    ? { ...existing, contextWindow: nextContextWindow }
+  if (!p) return;
+  const session = ctx.getSession(sessionId);
+  const nextContextWindow = p.context_window ?? session.contextUsage?.contextWindow ?? null;
+  const nextUsage = session.contextUsage
+    ? { ...session.contextUsage, contextWindow: nextContextWindow }
     : { inputTokens: 0, outputTokens: 0, contextWindow: nextContextWindow, wasCompacted: false };
   ctx.set(
-    updateSession(ctx.get(), sessionId, { currentModelId: p.model, contextUsage: nextUsage }),
+    updateSession(ctx.get(), sessionId, {
+      currentProviderId: p.provider,
+      currentModelId: p.model,
+      runtimeProvider: p.provider,
+      contextUsage: nextUsage,
+    }),
   );
 }
 

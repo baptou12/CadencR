@@ -276,6 +276,7 @@ pub struct ModeChangedPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ModelSetOkPayload {
+    pub provider: String,
     pub model: String,
     pub context_window: Option<u64>,
 }
@@ -347,11 +348,13 @@ mod tests {
     #[test]
     fn model_set_ok_keeps_null_context_window_for_existing_clients() {
         let payload = ModelSetOkPayload {
+            provider: "codex".to_string(),
             model: "gpt-5".to_string(),
             context_window: None,
         };
 
         let value = serde_json::to_value(&payload).unwrap();
+        assert_eq!(value["provider"], "codex");
         assert_eq!(value["context_window"], serde_json::Value::Null);
     }
 

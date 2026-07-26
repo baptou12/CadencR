@@ -1602,6 +1602,7 @@ export interface ModelSetOkPayload {
   /** @minimum 0 */
   context_window?: ModelSetOkPayloadContextWindow;
   model: string;
+  provider: string;
 }
 
 /**

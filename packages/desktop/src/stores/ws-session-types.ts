@@ -27,7 +27,7 @@ import {
   type TurnTimingState,
 } from "./ws-turn-timing";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
-import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
+import { DEFAULT_PROVIDER } from "../shared/models";
 import { defaultEditModeFor } from "../lib/provider-modes";
 import type { PermissionMode } from "../types/permission-mode";
 import type { AccessMode } from "@/types/access-mode";
@@ -231,9 +231,9 @@ export function createSessionEntry(): SessionEntry {
     compactRequestPending: false,
     pendingManualCompact: false,
     runtimeCompacting: false,
-    currentProviderId: DEFAULT_PROVIDER,
-    currentModelId: FALLBACK_MODEL_ID,
-    runtimeProvider: DEFAULT_PROVIDER,
+    currentProviderId: "",
+    currentModelId: "",
+    runtimeProvider: "",
     runtimeSessionId: "",
     currentProfile: undefined,
     mcpServers: null,
