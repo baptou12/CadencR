@@ -44,8 +44,23 @@ export function secureWebContents(webContents: WebContents): void {
     void openApprovedExternalUrl(url);
   });
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === "clipboard-sanitized-write");
+    callback(isAllowedPermission(permission));
   });
+  // queryLocalFonts() triggers a synchronous permission *check* (not a request)
+  // in Chromium, so both handlers must allow `local-fonts`. Trusted local app.
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) =>
+    isAllowedPermission(permission),
+  );
+}
+
+/**
+ * `local-fonts` is a real Chromium permission (backs the Local Font Access
+ * API, `window.queryLocalFonts()`) but Electron's bundled type defs don't
+ * list it yet, hence the widen-then-compare instead of a direct literal
+ * match against `Electron.Permission`.
+ */
+function isAllowedPermission(permission: string): boolean {
+  return permission === "clipboard-sanitized-write" || permission === "local-fonts";
 }
 
 async function openApprovedExternalUrl(rawUrl: string): Promise<void> {
