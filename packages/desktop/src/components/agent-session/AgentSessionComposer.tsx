@@ -39,6 +39,7 @@ export interface AgentSessionComposerProps {
   claudeProfiles: AgentSessionMetaProps["claudeProfiles"];
   claudeProfilesLoading: boolean;
   claudeProfilesError: boolean;
+  activeClaudeProfile: string;
   onClaudeProfileChange: (profile: string) => void;
 }
 
@@ -163,6 +164,7 @@ function AgentSessionMeta(
       claudeProfiles={props.claudeProfiles}
       claudeProfilesLoading={props.claudeProfilesLoading}
       claudeProfilesError={props.claudeProfilesError}
+      activeClaudeProfile={props.activeClaudeProfile}
       onClaudeProfileChange={props.onClaudeProfileChange}
       showReadOnlyModel={session.showReadOnlyModel}
       currentModelId={session.currentModelId}
@@ -259,6 +261,7 @@ function AgentSessionSecondary(props: AgentSessionComposerProps): ReactElement {
       claudeProfiles={props.claudeProfiles}
       claudeProfilesLoading={props.claudeProfilesLoading}
       claudeProfilesError={props.claudeProfilesError}
+      activeClaudeProfile={props.activeClaudeProfile}
       onClaudeProfileChange={props.onClaudeProfileChange}
     />
   );

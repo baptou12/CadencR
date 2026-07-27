@@ -38,6 +38,7 @@ export interface MetaBarSecondaryProps extends WorktreeChipProps {
   claudeProfiles?: ClaudeCodeProfile[];
   claudeProfilesLoading?: boolean;
   claudeProfilesError?: boolean;
+  activeClaudeProfile?: string;
   onClaudeProfileChange?: (profile: string) => void;
 }
 
@@ -58,6 +59,7 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
   claudeProfiles = [],
   claudeProfilesLoading = false,
   claudeProfilesError = false,
+  activeClaudeProfile,
   onClaudeProfileChange,
   worktreeMode,
   onWorktreeModeChange,
@@ -106,6 +108,7 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
             claudeProfiles={claudeProfiles}
             claudeProfilesLoading={claudeProfilesLoading}
             claudeProfilesError={claudeProfilesError}
+            activeClaudeProfile={activeClaudeProfile}
             onClaudeProfileChange={onClaudeProfileChange}
           />
         </div>

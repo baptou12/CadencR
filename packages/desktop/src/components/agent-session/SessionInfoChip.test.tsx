@@ -1,17 +1,14 @@
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { PROVIDER_IDS } from "@/lib/providers";
 import { SessionInfoChip, SessionInfoMcpServersProvider } from "./SessionInfoChip";
 
-vi.mock("@/api/agentRuntime", () => ({
-  useClaudeCodeProfiles: vi.fn(() => ({
-    data: { active: "default", profiles: [{ name: "bedrock", env: {} }] },
-    isLoading: false,
-    isError: false,
-  })),
-  DEFAULT_CLAUDE_PROFILE_NAME: "default",
-}));
+beforeAll(() => {
+  Element.prototype.hasPointerCapture = vi.fn(() => false);
+  Element.prototype.setPointerCapture = vi.fn();
+  Element.prototype.releasePointerCapture = vi.fn();
+});
 
 describe("SessionInfoChip", () => {
   it("renders MCP servers above the Claude profile row", async () => {
@@ -39,7 +36,7 @@ describe("SessionInfoChip", () => {
     await user.click(screen.getByRole("button", { name: /session info/i }));
 
     const mcpHeading = screen.getByText("MCP servers");
-    const profileHeading = screen.getByText("Active profile");
+    const profileHeading = screen.getByText("Claude profile");
     expect(mcpHeading.compareDocumentPosition(profileHeading)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
@@ -133,9 +130,6 @@ describe("SessionInfoChip", () => {
   });
 
   it("renders an editable Claude profile combobox in the info popover", async () => {
-    Element.prototype.hasPointerCapture = vi.fn(() => false);
-    Element.prototype.setPointerCapture = vi.fn();
-    Element.prototype.releasePointerCapture = vi.fn();
     const user = userEvent.setup();
     const onProfileChange = vi.fn();
 
@@ -158,5 +152,52 @@ describe("SessionInfoChip", () => {
     await user.click(await screen.findByRole("option", { name: "bedrock" }));
 
     expect(onProfileChange).toHaveBeenCalledWith("bedrock");
+  });
+
+  it("says which profile stays active when the session overrides it", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SessionInfoChip
+        runtimeProvider={PROVIDER_IDS.CLAUDE_CODE}
+        runtimeSessionId="sess-123"
+        projectPath="/tmp/project"
+        isRunning={false}
+        onPause={vi.fn()}
+        chipClass="chip"
+        claudeProfile="bedrock"
+        claudeProfiles={[{ name: "bedrock", env: {} }]}
+        activeClaudeProfile="default"
+        onClaudeProfileChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /session info/i }));
+
+    expect(screen.getByText(/“Default” stays the active profile/)).toBeInTheDocument();
+  });
+
+  it("omits the override sentence when the session runs the active profile", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SessionInfoChip
+        runtimeProvider={PROVIDER_IDS.CLAUDE_CODE}
+        runtimeSessionId="sess-123"
+        projectPath="/tmp/project"
+        isRunning={false}
+        onPause={vi.fn()}
+        chipClass="chip"
+        claudeProfile="default"
+        claudeProfiles={[{ name: "bedrock", env: {} }]}
+        // Spelled differently on purpose: the alias must not read as an override.
+        activeClaudeProfile="default (recommended)"
+        onClaudeProfileChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /session info/i }));
+
+    expect(screen.queryByText(/stays the active profile/)).not.toBeInTheDocument();
   });
 });

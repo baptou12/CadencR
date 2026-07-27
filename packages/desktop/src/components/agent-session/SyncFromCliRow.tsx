@@ -56,7 +56,7 @@ export function SyncFromCliRow({
     <div className="space-y-1">
       <Button
         type="button"
-        variant="outline"
+        variant="raised"
         size="sm"
         className="w-full"
         onClick={() => refresh.mutate({ featureId })}

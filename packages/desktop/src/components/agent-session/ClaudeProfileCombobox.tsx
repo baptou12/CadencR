@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useState, type ReactElement } from "react";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { DEFAULT_CLAUDE_PROFILE_NAME, type ClaudeCodeProfile } from "@/api/agentRuntime";
+import type { ClaudeCodeProfile } from "@/api/agentRuntime";
+import { DEFAULT_CLAUDE_PROFILE_NAME, formatClaudeProfileLabel } from "@/lib/claude-profiles";
 import {
   Command,
   CommandEmpty,
@@ -9,6 +10,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +23,13 @@ export interface ClaudeProfileComboboxProps {
   triggerClassName?: string;
   variant?: "default" | "compact";
   label?: string;
+  /**
+   * The globally configured active profile (Settings → Agents), which is a
+   * different thing from `value`: picking here only scopes the next prompt and
+   * never mutates the active profile. Passing it badges that row so "active"
+   * and "selected for this session" stop looking like the same state.
+   */
+  activeProfile?: string;
 }
 
 export const ClaudeProfileCombobox = memo(function ClaudeProfileCombobox({
@@ -32,6 +41,7 @@ export const ClaudeProfileCombobox = memo(function ClaudeProfileCombobox({
   triggerClassName,
   variant = "default",
   label,
+  activeProfile,
 }: ClaudeProfileComboboxProps): ReactElement {
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -57,12 +67,12 @@ export const ClaudeProfileCombobox = memo(function ClaudeProfileCombobox({
           role="combobox"
           aria-label="Claude profile"
           aria-expanded={open}
-          title={`Claude profile: ${formatProfileLabel(value)}`}
+          title={`Claude profile: ${formatClaudeProfileLabel(value)}`}
           className={cn(triggerBaseClassName(variant), triggerClassName)}
         >
           <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
             {label && <span className="text-muted-foreground/80">{label}</span>}
-            <span className="truncate">{formatProfileLabel(value)}</span>
+            <span className="truncate">{formatClaudeProfileLabel(value)}</span>
           </span>
           <ChevronDownIcon className="size-3 opacity-70" />
         </button>
@@ -86,20 +96,28 @@ export const ClaudeProfileCombobox = memo(function ClaudeProfileCombobox({
           <CommandList className="max-h-48">
             <CommandEmpty className="py-3 text-center text-xs">No matching profiles.</CommandEmpty>
             <CommandGroup heading="Claude profiles">
-              {options.map((profile) => (
-                <CommandItem
-                  key={profile.value}
-                  value={profile.value}
-                  className="text-xs"
-                  onSelect={() => {
-                    onChange(profile.value);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="flex-1 truncate">{profile.label}</span>
-                  {profile.value === value && <CheckIcon className="size-3" />}
-                </CommandItem>
-              ))}
+              {options.map((profile) => {
+                const selected = profile.value === value;
+                return (
+                  <CommandItem
+                    key={profile.value}
+                    value={profile.value}
+                    className={cn("text-xs", selected && "font-medium text-foreground")}
+                    onSelect={() => {
+                      onChange(profile.value);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="flex-1 truncate">{profile.label}</span>
+                    {profile.value === activeProfile && (
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                        Active
+                      </Badge>
+                    )}
+                    {selected && <CheckIcon className="size-3.5 shrink-0 text-primary" />}
+                  </CommandItem>
+                );
+              })}
             </CommandGroup>
           </CommandList>
         </Command>
@@ -112,7 +130,10 @@ function triggerBaseClassName(variant: "default" | "compact"): string {
   if (variant === "compact") {
     return "inline-flex h-8 min-w-0 max-w-[180px] items-center justify-between gap-1.5 overflow-hidden whitespace-nowrap rounded-md border border-border bg-muted/40 px-2.5 text-[11px] font-medium text-foreground shadow-sm hover:bg-accent [&_svg]:size-3 [&_svg]:shrink-0 [&_svg]:opacity-70";
   }
-  return "inline-flex h-8 min-w-32 items-center justify-between gap-2 whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-xs transition-[color,box-shadow] outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  // Filled, not `bg-transparent`: this variant renders on the session-info
+  // popover, where a transparent trigger reads as text rather than a control.
+  // Same `bg-muted/40` as the compact variant so the two never drift apart.
+  return "inline-flex h-8 min-w-32 items-center justify-between gap-2 whitespace-nowrap rounded-md border border-border bg-muted/40 px-3 py-2 text-xs shadow-xs transition-[color,box-shadow] outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 }
 
 function loadingClassName(variant: "default" | "compact"): string {
@@ -120,14 +141,6 @@ function loadingClassName(variant: "default" | "compact"): string {
     return "inline-flex h-8 items-center rounded-md border border-border/50 bg-muted/30 px-2.5 text-[11px] text-muted-foreground";
   }
   return "text-[11px] text-muted-foreground";
-}
-
-function formatProfileLabel(profile: string): string {
-  const normalized = profile.trim().toLowerCase();
-  if (normalized === DEFAULT_CLAUDE_PROFILE_NAME || normalized === "default (recommended)") {
-    return "Default";
-  }
-  return profile;
 }
 
 interface ProfileOption {
@@ -141,13 +154,13 @@ function useProfileOptions(profiles: ClaudeCodeProfile[]): ProfileOption[] {
     const options: ProfileOption[] = [
       {
         value: DEFAULT_CLAUDE_PROFILE_NAME,
-        label: formatProfileLabel(DEFAULT_CLAUDE_PROFILE_NAME),
+        label: formatClaudeProfileLabel(DEFAULT_CLAUDE_PROFILE_NAME),
       },
     ];
     profiles.forEach((profile) => {
       if (seen.has(profile.name)) return;
       seen.add(profile.name);
-      options.push({ value: profile.name, label: formatProfileLabel(profile.name) });
+      options.push({ value: profile.name, label: formatClaudeProfileLabel(profile.name) });
     });
     return options;
   }, [profiles]);

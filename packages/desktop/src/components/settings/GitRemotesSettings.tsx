@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LabeledControl } from "@/components/settings/LabeledControl";
 import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsHeading } from "@/components/settings/SettingsHeading";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -354,23 +355,5 @@ function ForgeHostActions({
         Test connection
       </Button>
     </div>
-  );
-}
-
-function LabeledControl({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactElement;
-}): ReactElement {
-  return (
-    <label className="space-y-1.5">
-      <span className="block text-xs font-medium">{label}</span>
-      {children}
-      {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
-    </label>
   );
 }

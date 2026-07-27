@@ -5,6 +5,7 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import type { PrIndicatorTone } from "@/components/PrStatusIndicators";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { formatCombo } from "@/lib/shortcuts/format";
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { GitTabToggle, type GitViewMode } from "./GitTabToggle";
@@ -29,12 +30,13 @@ export interface GitTabToolbarProps {
   stats: { isLoading: boolean; isError: boolean; additions?: number; deletions?: number };
 }
 
+/** Width of the file-list toggle, reserved as an empty slot in list views so
+ *  the tab strip doesn't shift sideways when you switch view. */
+const TOGGLE_SLOT = "size-7 shrink-0";
+
 /**
- * Navigation on the left, view controls on the right.
- *
- * The file-list toggle moved to the right edge in that split: it changes how
- * the pane below is drawn rather than what it shows, and sitting ahead of the
- * tabs it read as the first item of the navigation.
+ * File-list toggle first, navigation next, diff size last — the toggle leads
+ * because it sits directly above the sidebar it collapses.
  */
 export function GitTabToolbar({
   viewMode,
@@ -58,6 +60,15 @@ export function GitTabToolbar({
   // beside the agent stream, and the two have nothing to do with each other.
   return (
     <div className="@container flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+      {isListView ? (
+        <div className={TOGGLE_SLOT} aria-hidden data-slot="file-list-toggle-placeholder" />
+      ) : (
+        <FileListToggle
+          collapsed={fileListCollapsed}
+          loading={isFileListCollapseLoading}
+          onToggle={onToggleFileList}
+        />
+      )}
       <GitTabToggle
         value={viewMode}
         onChange={onViewModeChange}
@@ -71,16 +82,8 @@ export function GitTabToolbar({
         pendingValue={pendingViewMode}
       />
       {!isListView && (
-        // One `ml-auto`, on the group. Two `margin-left:auto` siblings split the
-        // free space between them, which parked the stats halfway across the bar
-        // instead of beside the control they belong to.
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto">
           <GitToolbarNumStat {...stats} />
-          <FileListToggle
-            collapsed={fileListCollapsed}
-            loading={isFileListCollapseLoading}
-            onToggle={onToggleFileList}
-          />
         </div>
       )}
     </div>
@@ -99,7 +102,7 @@ function FileListToggle({
   const { keys } = useResolvedShortcut("diff-toggle-sidebar");
   const label = collapsed ? "Show file list" : "Hide file list";
   return (
-    <ShortcutTooltip label={label} keys={formatCombo(keys)} alignRight className="shrink-0">
+    <ShortcutTooltip label={label} keys={formatCombo(keys)} alignLeft className="shrink-0">
       <Button
         variant="ghost"
         size="icon-sm"
@@ -107,7 +110,7 @@ function FileListToggle({
         disabled={loading}
         aria-pressed={!collapsed}
         aria-label={label}
-        className="size-7 text-muted-foreground"
+        className={cn(TOGGLE_SLOT, "text-muted-foreground")}
       >
         {collapsed ? <PanelLeft className="size-4" /> : <PanelLeftClose className="size-4" />}
       </Button>

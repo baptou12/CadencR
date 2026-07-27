@@ -54,6 +54,25 @@ describe("ClaudeProfileCombobox", () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("bedrock"));
   });
 
+  it("badges the configured active profile, which need not be the selected one", async () => {
+    const user = userEvent.setup();
+    render(
+      <ClaudeProfileCombobox
+        value="bedrock"
+        profiles={[{ name: "bedrock", env: {} }]}
+        isLoading={false}
+        isError={false}
+        onChange={vi.fn()}
+        activeProfile="default"
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: /Claude profile/i }));
+
+    expect(await screen.findByRole("option", { name: /Default/ })).toHaveTextContent("Active");
+    expect(screen.getByRole("option", { name: "bedrock" })).not.toHaveTextContent("Active");
+  });
+
   it("shows a visible loading state", () => {
     render(
       <ClaudeProfileCombobox

@@ -75,6 +75,7 @@ export interface MetaBarProps {
   claudeProfiles?: ClaudeCodeProfile[];
   claudeProfilesLoading?: boolean;
   claudeProfilesError?: boolean;
+  activeClaudeProfile?: string;
   onClaudeProfileChange?: (profile: string) => void;
   showReadOnlyModel?: boolean;
   currentModelId?: string;
@@ -271,6 +272,7 @@ function MetaBarTrailing({ props, state }: { props: MetaBarProps; state: MetaBar
           profiles={props.claudeProfiles ?? []}
           isLoading={props.claudeProfilesLoading ?? false}
           isError={props.claudeProfilesError ?? false}
+          activeProfile={props.activeClaudeProfile}
           onChange={props.onClaudeProfileChange}
           variant="compact"
           label="Profile"
@@ -303,6 +305,7 @@ function MetaBarTrailing({ props, state }: { props: MetaBarProps; state: MetaBar
           claudeProfiles={props.claudeProfiles ?? []}
           claudeProfilesLoading={props.claudeProfilesLoading ?? false}
           claudeProfilesError={props.claudeProfilesError ?? false}
+          activeClaudeProfile={props.activeClaudeProfile}
           onClaudeProfileChange={props.onClaudeProfileChange}
         />
       )}

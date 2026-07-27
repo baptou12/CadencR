@@ -1,7 +1,13 @@
 /**
  * Per-project editor tooling pickers (Phase 4): TypeScript server, linter,
  * formatter, and format-on-save. Each falls back to the workspace-scoped global
- * default when unset on the project; the radio shows the effective value.
+ * default when unset on the project; the control shows the effective value.
+ *
+ * Three dropdowns on one row rather than three stacked card grids: eleven
+ * option cards spent most of the Project settings dialog on choices that are
+ * set once and never revisited. The hint under each control keeps describing
+ * the *selected* option, so compacting the picker doesn't cost the explanation
+ * of what is currently running.
  *
  * Writes go to `PUT /api/projects/{id}/settings` (project scope). The global
  * defaults live on the Settings → Editor page (workspace scope).
@@ -11,10 +17,23 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetProjectSettingsQueryKey, useSetProjectSetting } from "@/api/generated";
 import { useProjectEditorTooling } from "@/lib/lsp/useProjectEditorTooling";
-import { RadioCardGroup, type RadioCardOption } from "./RadioCardGroup";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { LabeledControl } from "./LabeledControl";
 import { SettingsSwitchRow } from "./SettingsSwitchRow";
 
-const TS_SERVER_OPTIONS: ReadonlyArray<RadioCardOption<string>> = [
+interface ToolingOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+const TS_SERVER_OPTIONS: readonly ToolingOption[] = [
   {
     value: "typescript-language-server",
     label: "typescript-language-server",
@@ -23,18 +42,26 @@ const TS_SERVER_OPTIONS: ReadonlyArray<RadioCardOption<string>> = [
   { value: "tsgo", label: "tsgo", description: "Go-native TypeScript preview server." },
 ];
 
-const LINTER_OPTIONS: ReadonlyArray<RadioCardOption<string>> = [
+const LINTER_OPTIONS: readonly ToolingOption[] = [
   { value: "off", label: "Off", description: "No linter." },
   { value: "eslint", label: "ESLint", description: "vscode-eslint-language-server." },
   { value: "biome", label: "Biome", description: "Biome lint diagnostics." },
   { value: "oxlint", label: "oxlint", description: "Fast Rust-based linter." },
 ];
 
-const FORMATTER_OPTIONS: ReadonlyArray<RadioCardOption<string>> = [
-  { value: "off", label: "Off", description: "No formatter." },
-  { value: "biome", label: "Biome", description: "biome format." },
-  { value: "oxfmt", label: "oxfmt", description: "oxc formatter." },
-  { value: "prettier", label: "Prettier", description: "prettier --stdin-filepath." },
+const FORMATTER_OPTIONS: readonly ToolingOption[] = [
+  {
+    value: "off",
+    label: "Off",
+    description: "No formatter — “Format document” (⌘⇧I) does nothing.",
+  },
+  { value: "biome", label: "Biome", description: "biome format, via “Format document” (⌘⇧I)." },
+  { value: "oxfmt", label: "oxfmt", description: "oxc formatter, via “Format document” (⌘⇧I)." },
+  {
+    value: "prettier",
+    label: "Prettier",
+    description: "prettier --stdin-filepath, via “Format document” (⌘⇧I).",
+  },
 ];
 
 export function ProjectEditorToolingSettings({
@@ -65,53 +92,28 @@ export function ProjectEditorToolingSettings({
   };
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <div className="text-sm font-medium">TypeScript server</div>
-        <p className="text-xs text-muted-foreground">
-          Language server for TypeScript / JavaScript files.
-        </p>
-        <RadioCardGroup<string>
-          ariaLabel="TypeScript server"
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <ToolingSelect
+          label="TypeScript server"
           value={tooling.typescriptServer}
-          onChange={(next) => update("editor_typescript_server", next)}
           options={TS_SERVER_OPTIONS}
-          layout="grid"
           disabled={setSetting.isPending}
+          onChange={(next) => update("editor_typescript_server", next)}
         />
-      </div>
-
-      <div className="border-t border-border" />
-
-      <div className="space-y-2">
-        <div className="text-sm font-medium">Linter</div>
-        <p className="text-xs text-muted-foreground">
-          Runs alongside the type checker; its diagnostics are merged in.
-        </p>
-        <RadioCardGroup<string>
-          ariaLabel="Linter"
+        <ToolingSelect
+          label="Linter"
           value={tooling.linter}
-          onChange={(next) => update("editor_linter", next)}
           options={LINTER_OPTIONS}
-          layout="grid"
           disabled={setSetting.isPending}
+          onChange={(next) => update("editor_linter", next)}
         />
-      </div>
-
-      <div className="border-t border-border" />
-
-      <div className="space-y-2">
-        <div className="text-sm font-medium">Formatter</div>
-        <p className="text-xs text-muted-foreground">
-          Used by “Format document” (⌘⇧I) and format-on-save.
-        </p>
-        <RadioCardGroup<string>
-          ariaLabel="Formatter"
+        <ToolingSelect
+          label="Formatter"
           value={tooling.formatter}
-          onChange={(next) => update("editor_formatter", next)}
           options={FORMATTER_OPTIONS}
-          layout="grid"
           disabled={setSetting.isPending}
+          onChange={(next) => update("editor_formatter", next)}
         />
       </div>
 
@@ -124,5 +126,43 @@ export function ProjectEditorToolingSettings({
         divided
       />
     </div>
+  );
+}
+
+function ToolingSelect({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly ToolingOption[];
+  disabled: boolean;
+  onChange: (next: string) => void;
+}): ReactElement {
+  const selected = options.find((option) => option.value === value);
+  // Settings are hand-editable JSON, so the persisted value can be something we
+  // don't ship an option for. Surface it as its own entry instead of rendering
+  // an empty trigger the user can only fix by overwriting it blind.
+  const items = selected
+    ? options
+    : [...options, { value, label: value, description: "Not a value Cadencr recognizes." }];
+  return (
+    <LabeledControl label={label} hint={selected?.description ?? items.at(-1)?.description}>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger size="sm" className="w-full" aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </LabeledControl>
   );
 }
