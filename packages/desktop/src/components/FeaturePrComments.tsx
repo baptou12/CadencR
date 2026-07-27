@@ -2,8 +2,8 @@ import {
   ExternalLinkIcon,
   GitCompareArrowsIcon,
   Loader2Icon,
-  MessageSquareIcon,
   RefreshCwIcon,
+  SendIcon,
   Settings2Icon,
 } from "lucide-react";
 import { memo, useCallback, useId, useState, type ReactElement } from "react";
@@ -12,7 +12,6 @@ import type { CommentThread } from "@/api/generated";
 import { AuthorInitials, PrViewError, relativeTime } from "@/components/FeaturePrViewParts";
 import { Markdown } from "@/components/Markdown";
 import { PrCommentsFilterToggle, type PrCommentFilter } from "@/components/PrCommentsFilter";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { openExternalUrl } from "@/lib/open-external";
@@ -20,42 +19,83 @@ import { isThreadAnchored, threadExternalHost, threadLocation } from "@/lib/pr-r
 import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 import { cn } from "@/lib/utils";
 
-/** One review thread in the PR timeline. */
+export interface PrCommentThreadProps {
+  thread: CommentThread;
+  selected?: boolean;
+  /** Keyboard focus, which is not selection — j/k move it, `x` picks. */
+  focused?: boolean;
+  /**
+   * Takes the thread id rather than closing over it, so the list can hand every
+   * card one shared callback. Binding per card upstream produced a fresh arrow
+   * for every row on every keystroke, which defeated this component's `memo`
+   * exactly when `j`/`k` made it matter.
+   */
+  onSelectedChange?: (threadId: string, selected: boolean) => void;
+  onViewThread?: (thread: CommentThread) => void;
+  onSendThread?: (thread: CommentThread) => void;
+}
+
+/**
+ * One review thread.
+ *
+ * Deliberately one surface rather than the header-band / body / footer-band
+ * stack it replaced: three tinted strips inside a card inside a scroller read as
+ * chrome, and the thread is the content. What is left is a location line, the
+ * conversation, and the three things you can do about it.
+ */
 export const PrCommentThread = memo(function PrCommentThread({
   thread,
   selected = false,
+  focused = false,
   onSelectedChange,
   onViewThread,
-}: {
-  thread: CommentThread;
-  selected?: boolean;
-  onSelectedChange?: (selected: boolean) => void;
-  onViewThread?: (thread: CommentThread) => void;
-}): ReactElement {
+  onSendThread,
+}: PrCommentThreadProps): ReactElement {
   const selectable = thread.resolved !== true && onSelectedChange != null;
+  const threadId = thread.id;
+  const handleSelectedChange = useCallback(
+    (next: boolean): void => onSelectedChange?.(threadId, next),
+    [onSelectedChange, threadId],
+  );
+  // No scroll-into-view here: the list owns revealing the focused row, and a
+  // card that nudged itself as well raced it — the list would place a row the
+  // virtualizer had just mounted, then the card would move it again.
   return (
     <article
+      data-thread-id={thread.id}
       data-selected={selected || undefined}
+      data-focused={focused || undefined}
       className={cn(
         // Gap below each card is the row wrapper's padding, not a margin here:
         // Virtuoso measures item wrappers with `getBoundingClientRect`, which
         // excludes margins, so a margin would leave the list short by one gap
         // per card — and the last card flush against the bottom edge.
-        "mx-4 overflow-hidden rounded-md border bg-card transition-[border-color,box-shadow]",
-        selected ? "border-primary/60 ring-1 ring-primary/20" : "border-border",
-        thread.resolved && "opacity-70",
+        "mx-4 rounded-lg border bg-card px-3 py-2.5",
+        "transition-[border-color,box-shadow,background-color] duration-150",
+        selected ? "border-primary/60 bg-primary/[0.04]" : "border-border",
+        focused && "ring-2 ring-ring/70",
+        // A card the keyboard can land on needs a stable scroll anchor; a
+        // thread taller than the viewport otherwise parks with its top clipped.
+        "scroll-mt-2",
       )}
     >
-      {(thread.file || thread.resolved != null || selectable) && (
-        <ThreadHeader
-          thread={thread}
-          selected={selected}
-          onSelectedChange={selectable ? onSelectedChange : undefined}
-        />
-      )}
-      <div className="divide-y divide-border">
+      <ThreadLocationRow
+        thread={thread}
+        selected={selected}
+        onSelectedChange={selectable ? handleSelectedChange : undefined}
+      />
+      {/*
+        The fade for a settled thread sits on the conversation, not the card.
+        On the card it also dimmed the status pill that says *why* the thread is
+        settled — which took the "resolved" marker down to 2.5:1, i.e. the one
+        word carrying the state became the hardest thing on it to read.
+      */}
+      <div className={cn("mt-1.5 space-y-2.5", thread.resolved && "opacity-70")}>
         {thread.comments.map((comment, index) => (
-          <div key={`${comment.created_at}:${index}`} className="space-y-2 px-3 py-2.5">
+          <div
+            key={`${comment.created_at}:${index}`}
+            className={cn(index > 0 && "border-t border-border/60 pt-2.5")}
+          >
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
               <AuthorInitials name={comment.author.display_name ?? comment.author.username} />
               <span className="truncate font-medium text-foreground">
@@ -66,22 +106,22 @@ export const PrCommentThread = memo(function PrCommentThread({
             <Markdown
               content={comment.body_markdown}
               cacheKey={`${thread.id}:${comment.created_at}:${index}`}
-              className="max-w-prose text-[13px] leading-relaxed"
+              className="mt-1 max-w-prose text-[13px] leading-relaxed"
             />
           </div>
         ))}
       </div>
-      <ThreadActions thread={thread} onViewThread={onViewThread} />
+      <ThreadActions thread={thread} onViewThread={onViewThread} onSendThread={onSendThread} />
     </article>
   );
 });
 
 /**
- * The line that decides whether a thread still needs work: where it points,
- * whether the diff has moved out from under it, whether the forge considers it
- * settled — and, when it is still open, the box that hands it to the agent.
+ * Where the thread points, whether it still counts, and the box that picks it.
+ * The checkbox leads the row because picking is the action this pane exists
+ * for — the location reads as its label.
  */
-function ThreadHeader({
+function ThreadLocationRow({
   thread,
   selected,
   onSelectedChange,
@@ -93,56 +133,62 @@ function ThreadHeader({
   const selectionId = useId();
   const location = threadLocation(thread);
   const context = location && thread.side === "old" ? `${location} (removed side)` : location;
-  const contextLabel = (
-    <span className="min-w-0 truncate font-mono text-muted-foreground" title={context ?? undefined}>
+  const label = (
+    <span
+      className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
+      title={context ?? undefined}
+    >
       {context ?? "General comment"}
     </span>
   );
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-[11px]">
+    <div className="flex items-center justify-between gap-2">
       {onSelectedChange ? (
         <label
           htmlFor={selectionId}
-          className="-my-1.5 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5"
-          title="Send this thread to the agent"
+          className="-my-1 flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1"
+          title="Pick this thread for the agent"
         >
           <Checkbox
             id={selectionId}
             checked={selected}
             onCheckedChange={(checked) => onSelectedChange(checked === true)}
-            aria-label={`Send ${context ?? "this general comment"} to the agent`}
-            className="mr-0.5"
+            aria-label={`Pick ${context ?? "this general comment"} for the agent`}
           />
-          {contextLabel}
+          {label}
         </label>
       ) : (
-        contextLabel
+        label
       )}
-      <span className="flex shrink-0 items-center gap-1">
+      {/*
+        Neutral pill, coloured dot — not coloured text on a tinted pill.
+        A tint at these opacities pulls the surface *toward* the text's own hue,
+        so it costs contrast rather than buying it: `--acc-orange` measures 4.45
+        as a bare word on the light card and only 3.66 once tinted behind. The
+        word rides `--muted`, where it clears 5:1 in every theme, and the dot
+        carries the meaning — which is what the design system says colour is for
+        anyway, and a dot is non-text, so 3:1 is the bar it has to clear.
+      */}
+      <span className="flex shrink-0 items-center gap-1 text-[10.5px] font-medium">
         {thread.outdated && (
-          <Badge
-            variant="outline"
-            className="rounded-md px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
+          <span
+            className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground"
             title="The diff moved since this comment was written, so its line no longer points at the current code"
           >
             outdated
-          </Badge>
+          </span>
         )}
         {thread.resolved != null && (
-          <Badge
-            variant="outline"
-            className={cn(
-              "rounded-md px-1.5 py-0 text-[10px] font-medium capitalize",
-              // Not PR_TONE_BADGE: that map is keyed by *proposal* state, and a
-              // resolved thread borrowing the "merged" key would tie two
-              // unrelated meanings to one token. Same colours, different idea.
-              thread.resolved
-                ? "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10 text-[var(--acc-green)]"
-                : "border-[var(--acc-orange)]/40 bg-[var(--acc-orange)]/10 text-[var(--acc-orange)]",
-            )}
-          >
+          <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                thread.resolved ? "bg-[var(--acc-green)]" : "bg-[var(--acc-orange)]",
+              )}
+              aria-hidden
+            />
             {thread.resolved ? "resolved" : "open"}
-          </Badge>
+          </span>
         )}
       </span>
     </div>
@@ -152,9 +198,11 @@ function ThreadHeader({
 function ThreadActions({
   thread,
   onViewThread,
+  onSendThread,
 }: {
   thread: CommentThread;
   onViewThread?: (thread: CommentThread) => void;
+  onSendThread?: (thread: CommentThread) => void;
 }): ReactElement | null {
   const url = thread.comments.find((comment) => comment.url)?.url ?? null;
   const host = threadExternalHost(thread);
@@ -166,17 +214,40 @@ function ThreadActions({
     setOpening(false);
   }, [url]);
   const canView = !!onViewThread && isThreadAnchored(thread) && thread.resolved !== true;
-  if (!url && !canView) return null;
+  const canSend = !!onSendThread && thread.resolved !== true;
+  if (!url && !canView && !canSend) return null;
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border bg-card/40 px-2 py-1.5">
+    <div className="-mb-1 mt-1.5 flex flex-wrap items-center gap-0.5">
+      {canSend && (
+        <Button
+          variant="ghost"
+          size="xs"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => onSendThread(thread)}
+        >
+          <SendIcon className="size-3" aria-hidden />
+          Send to agent
+        </Button>
+      )}
       {canView && (
-        <Button variant="ghost" size="xs" onClick={() => onViewThread(thread)}>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => onViewThread(thread)}
+        >
           <GitCompareArrowsIcon className="size-3" aria-hidden />
           View in diff
         </Button>
       )}
       {url && (
-        <Button variant="ghost" size="xs" disabled={opening} onClick={() => void open()}>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="ml-auto text-muted-foreground hover:text-foreground"
+          disabled={opening}
+          onClick={() => void open()}
+        >
           {opening ? (
             <Loader2Icon className="size-3 animate-spin" aria-hidden />
           ) : (
@@ -205,6 +276,12 @@ export interface CommentsHeaderProps {
   onAllSelectedChange?: (selected: boolean) => void;
 }
 
+/**
+ * The threads section's one header row: what you are looking at, and the single
+ * control that takes all of it. Everything the old version explained in prose —
+ * what the checkbox column is for, where the send button lives, how many are
+ * picked — is now said once, by the action bar that actually does it.
+ */
 export function CommentsHeader({
   commentsLoading,
   commentsRefreshing,
@@ -221,9 +298,8 @@ export function CommentsHeader({
 }: CommentsHeaderProps): ReactElement {
   const showFilter = !commentsLoading && !commentsError && totalCount > 0;
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2">
-        <MessageSquareIcon className="size-3.5 text-muted-foreground" aria-hidden />
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <h3 className="text-[12.5px] font-semibold tracking-tight">Review threads</h3>
         {commentsLoading && (
           <span
@@ -233,22 +309,29 @@ export function CommentsHeader({
             <Loader2Icon className="size-3 animate-spin" aria-hidden /> Loading…
           </span>
         )}
-        {showFilter && (
-          <PrCommentsFilterToggle
-            value={filter}
-            unresolvedCount={unresolvedCount}
-            totalCount={totalCount}
-            onChange={onFilterChange}
-          />
-        )}
+        {/*
+          One `ml-auto`, on the group: two of them as siblings share the free
+          space between themselves, which left the filter stranded mid-row
+          instead of grouped with the control it belongs beside.
+        */}
+        <div className="ml-auto flex items-center gap-2">
+          {showFilter && (
+            <PrCommentsFilterToggle
+              value={filter}
+              unresolvedCount={unresolvedCount}
+              totalCount={totalCount}
+              onChange={onFilterChange}
+            />
+          )}
+          {selectionEnabled && onAllSelectedChange && (
+            <SelectAllThreads
+              unresolvedCount={unresolvedCount}
+              selectedCount={selectedCount}
+              onAllSelectedChange={onAllSelectedChange}
+            />
+          )}
+        </div>
       </div>
-      {selectionEnabled && onAllSelectedChange && (
-        <SelectAllThreads
-          unresolvedCount={unresolvedCount}
-          selectedCount={selectedCount}
-          onAllSelectedChange={onAllSelectedChange}
-        />
-      )}
       {commentsError && (
         <CommentsError
           message={commentsError}
@@ -257,25 +340,19 @@ export function CommentsHeader({
         />
       )}
       {!commentsLoading && !commentsError && commentCount === 0 && (
-        <p className="pb-2 text-[12.5px] text-muted-foreground">
+        <p className="text-[12.5px] text-muted-foreground">
           {totalCount === 0
             ? "No review threads yet."
             : "Nothing unresolved — every review thread on this proposal is resolved."}
         </p>
       )}
-    </div>
+    </section>
   );
 }
 
 /**
- * The head of the checkable list: one control that takes every unresolved
- * thread at once, and the running count so the developer can see what the send
- * button is about to carry without scrolling back down to it.
- *
- * The label names the effect, not the object — the checkbox column exists only
- * to build the agent's payload, so the header says so and every row below
- * inherits the meaning. Tri-state on purpose: after ticking a few threads by
- * hand, a plain unchecked box would read as "nothing selected".
+ * Tri-state on purpose: after ticking a few threads by hand, a plain unchecked
+ * box would read as "nothing picked".
  */
 function SelectAllThreads({
   unresolvedCount,
@@ -294,30 +371,21 @@ function SelectAllThreads({
       ? "indeterminate"
       : false;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <label
-        htmlFor={selectAllId}
-        className="-my-1 flex cursor-pointer items-center gap-2 py-1 text-[11.5px] font-medium text-foreground"
-        title={
-          allSelected
-            ? "Clear every thread"
-            : `Send all ${unresolvedCount} unresolved threads to the agent`
-        }
-      >
-        <Checkbox
-          id={selectAllId}
-          checked={checked}
-          onCheckedChange={() => onAllSelectedChange(!allSelected)}
-          aria-label={`Send all ${unresolvedCount} unresolved threads to the agent`}
-        />
-        Send all to agent
-      </label>
-      <span className="text-[11.5px] leading-relaxed text-muted-foreground" aria-live="polite">
-        {selectedCount > 0
-          ? `${selectedCount} of ${unresolvedCount} picked — send from the bar below.`
-          : "Or tick individual threads to choose what the agent works on."}
-      </span>
-    </div>
+    <label
+      htmlFor={selectAllId}
+      /* Foreground, not muted: this is a control's label, and `muted` on the
+         dark card measures ~2.9:1 at this size. */
+      className="-my-1 flex cursor-pointer items-center gap-2 py-1 text-[11.5px] text-foreground"
+      title={allSelected ? "Clear every thread" : `Pick all ${unresolvedCount} unresolved threads`}
+    >
+      <Checkbox
+        id={selectAllId}
+        checked={checked}
+        onCheckedChange={() => onAllSelectedChange(!allSelected)}
+        aria-label={`Pick all ${unresolvedCount} unresolved threads for the agent`}
+      />
+      Pick all
+    </label>
   );
 }
 

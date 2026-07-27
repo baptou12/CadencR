@@ -30,6 +30,8 @@ export interface GitTabBodyProps {
   onReviewThreadSelectedChange?: (threadId: string, selected: boolean) => void;
   onAllReviewThreadsSelectedChange?: (selected: boolean) => void;
   onViewReviewThread: (thread: CommentThread) => void;
+  /** Hands one thread straight to the agent, skipping the pick-then-send pair. */
+  onSendReviewThread?: (thread: CommentThread) => void;
 }
 
 /** Picks the pane for the active Git sub-view. */
@@ -52,6 +54,7 @@ export const GitTabBody = memo(function GitTabBody({
   onReviewThreadSelectedChange,
   onAllReviewThreadsSelectedChange,
   onViewReviewThread,
+  onSendReviewThread,
 }: GitTabBodyProps): ReactElement {
   if (viewMode === "pr") {
     return (
@@ -62,6 +65,8 @@ export const GitTabBody = memo(function GitTabBody({
         onThreadSelectedChange={onReviewThreadSelectedChange}
         onAllThreadsSelectedChange={onAllReviewThreadsSelectedChange}
         onViewThread={onViewReviewThread}
+        onSendThread={onSendReviewThread}
+        registerNavigationAdapter={registerNavigationAdapter}
       />
     );
   }

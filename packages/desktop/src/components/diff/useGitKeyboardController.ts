@@ -15,6 +15,7 @@ function useGitCommand(
     | "git-open-item"
     | "git-back"
     | "git-toggle-viewed"
+    | "git-toggle-thread-picked"
     | "git-stage-file"
     | "git-reset-file"
     | "git-scroll-down"
@@ -59,6 +60,7 @@ export function useGitKeyboardController(enabled: boolean): GitNavigationAdapter
   useGitCommand("git-open-item", "open", adapterRef, enabled, false);
   useGitCommand("git-back", "back", adapterRef, enabled, false);
   useGitCommand("git-toggle-viewed", "toggleViewed", adapterRef, enabled, false);
+  useGitCommand("git-toggle-thread-picked", "togglePicked", adapterRef, enabled, false);
   useGitCommand("git-stage-file", "stage", adapterRef, enabled, false);
   useGitCommand("git-reset-file", "reset", adapterRef, enabled, false);
   useGitCommand("git-scroll-down", "scrollHalfPage", adapterRef, enabled, true, 1);

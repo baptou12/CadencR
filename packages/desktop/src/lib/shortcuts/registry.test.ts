@@ -20,6 +20,7 @@ describe("shortcut registry", () => {
       open: shortcutKeys("git-open-item"),
       back: shortcutKeys("git-back"),
       viewed: shortcutKeys("git-toggle-viewed"),
+      picked: shortcutKeys("git-toggle-thread-picked"),
       stage: shortcutKeys("git-stage-file"),
       reset: shortcutKeys("git-reset-file"),
       down: shortcutKeys("git-scroll-down"),
@@ -30,6 +31,9 @@ describe("shortcut registry", () => {
       open: ["l"],
       back: ["h"],
       viewed: ["v"],
+      // `x` is the select-a-row key every forge inbox uses, and the one bare
+      // letter this map had left.
+      picked: ["x"],
       stage: ["s"],
       reset: ["r"],
       down: ["d"],

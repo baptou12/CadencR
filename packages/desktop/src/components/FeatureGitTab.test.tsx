@@ -123,10 +123,7 @@ describe("FeatureGitTab stash conflicts", () => {
 
     await user.click(screen.getByRole("button", { name: "Report stash conflict" }));
 
-    expect(screen.getByRole("tab", { name: "Uncommitted" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
     expect(mocks.setFeatureSetting).toHaveBeenCalledWith({
       id: 9,
       data: { key: "git_view_mode", value: "uncommitted" },
@@ -143,10 +140,7 @@ describe("FeatureGitTab stash conflicts", () => {
       id: 9,
       data: { key: "git_view_mode", value: "uncommitted" },
     });
-    expect(screen.getByRole("tab", { name: "Uncommitted" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("persists the PR view through the same confirmed shortcut transition", () => {
@@ -167,11 +161,14 @@ describe("FeatureGitTab stash conflicts", () => {
     expect(screen.getByText("Pull request view")).toBeInTheDocument();
   });
 
-  it("shows a visible pending state while a Git view transition is being saved", () => {
+  it("marks the pending tab without freezing the rest of the strip", () => {
     mocks.settingPending = true;
     render(<FeatureGitTab featureId={9} projectId={3} />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Saving view…");
-    expect(screen.getByRole("tab", { name: "Stashes" })).toBeDisabled();
+    // A persisted view preference is not a reason for navigation to stop
+    // responding: the save shows on the tab that is waiting, and every other
+    // tab stays clickable.
+    expect(screen.getByRole("tab", { name: "Changes" })).toBeEnabled();
+    expect(screen.getByRole("tab", { name: "Stashes" })).toBeEnabled();
   });
 });

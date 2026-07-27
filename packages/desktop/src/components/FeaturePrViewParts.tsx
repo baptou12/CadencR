@@ -1,35 +1,17 @@
 import {
   AlertCircleIcon,
-  CheckCircle2Icon,
-  ChevronDownIcon,
+  ChevronRightIcon,
   CircleDashedIcon,
-  ExternalLinkIcon,
   GitPullRequestIcon,
   Loader2Icon,
-  XCircleIcon,
 } from "lucide-react";
-import { useCallback, useState, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import { formatDistanceToNowStrict } from "date-fns";
-import { type CiCheck, type CiState, type PrStatusSnapshot } from "@/api/generated";
+import { type PrStatusSnapshot } from "@/api/generated";
 import { Markdown } from "@/components/Markdown";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { Skeleton } from "@/components/ui/skeleton";
-import { openExternalUrl } from "@/lib/open-external";
 import { cn } from "@/lib/utils";
-
-const CI_STATE_LABEL: Record<CiState, string> = {
-  none: "none",
-  running: "running",
-  passing: "passing",
-  failing: "failing",
-};
-
-const CI_STATE_TEXT: Record<CiState, string> = {
-  none: "text-muted-foreground",
-  running: "text-[var(--acc-orange)]",
-  passing: "text-[var(--acc-green)]",
-  failing: "text-[var(--acc-red)]",
-};
 
 export function AuthorInitials({ name }: { name: string }): ReactElement {
   const initials =
@@ -57,19 +39,18 @@ export function PrViewLoading(): ReactElement {
     <div className="space-y-4 p-4" role="status" aria-label="Loading pull request">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-2.5">
-          <div className="flex items-center gap-1.5">
-            <Skeleton className="h-5 w-14 rounded-md" />
-            <Skeleton className="h-4 w-12" />
-          </div>
           <Skeleton className="h-5 w-64 max-w-full" />
           <Skeleton className="h-3.5 w-48 max-w-full" />
         </div>
-        <Skeleton className="h-8 w-16 shrink-0 rounded-md" />
+        <Skeleton className="h-8 w-20 shrink-0 rounded-md" />
       </div>
-      <Skeleton className="h-10 w-full rounded-md" />
+      <div className="flex gap-1.5">
+        <Skeleton className="h-6 w-28 rounded-md" />
+        <Skeleton className="h-6 w-24 rounded-md" />
+      </div>
       <div className="space-y-2">
         <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-28 w-full rounded-md" />
+        <Skeleton className="h-20 w-full rounded-lg" />
       </div>
       <span className="sr-only">
         <Loader2Icon className="inline size-3 animate-spin" aria-hidden /> Loading pull request…
@@ -145,143 +126,70 @@ export function PrEmptyIcon(): ReactElement {
 }
 
 /**
- * `collapsedByScroll` folds the list while the pane is scrolled away from the
- * top, so the pinned header band stays compact. A manual toggle overrides that
- * for the current scroll state only — scrolling back to the top (or away again)
- * hands control back to the automatic behavior, which is what makes the
- * fold/unfold feel like part of the scroll rather than a setting you fought.
+ * The proposal's own text, folded away.
+ *
+ * You wrote this, or you read it once — either way it is the least urgent thing
+ * on the pane, and full-height it pushed the first review thread below the fold
+ * on every single visit. Folded, its first line still carries enough to
+ * recognise, and one click gets the rest.
  */
-export function ChecksPanel({
-  status,
-  collapsedByScroll = false,
-}: {
-  status: PrStatusSnapshot;
-  collapsedByScroll?: boolean;
-}): ReactElement {
-  // Adjusting state during render is React's documented way to reset state when
-  // a prop changes: every scroll-state flip drops the manual override, so the
-  // automatic fold/unfold resumes instead of replaying an old click forever.
-  const [lastScrollState, setLastScrollState] = useState(collapsedByScroll);
-  const [override, setOverride] = useState<boolean | null>(null);
-  if (lastScrollState !== collapsedByScroll) {
-    setLastScrollState(collapsedByScroll);
-    setOverride(null);
+export function PrDescription({ status }: { status: PrStatusSnapshot }): ReactElement {
+  const pr = status.pr!;
+  const [open, setOpen] = useState(false);
+  // The header re-renders on every pick and every keystroke; splitting a body
+  // that can run to tens of kilobytes for a one-line preview does not need to
+  // happen again each time.
+  const preview = useMemo(() => descriptionPreview(pr.body_markdown), [pr.body_markdown]);
+  if (!pr.body_markdown.trim()) {
+    return <p className="text-[12px] text-muted-foreground">No description provided.</p>;
   }
-  const checksOpen = override ?? !collapsedByScroll;
-  const ciState = status.ci?.state ?? "none";
-  const checkCount = status.ci?.checks.length ?? 0;
-  const summary =
-    ciState === "none"
-      ? checkCount === 0
-        ? "none reported"
-        : `${checkCount}`
-      : `${checkCount} ${CI_STATE_LABEL[ciState]}`;
-
   return (
-    <section className="overflow-hidden rounded-md border border-border bg-card">
+    <section>
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-accent/40"
-        aria-expanded={checksOpen}
-        onClick={() => setOverride(!checksOpen)}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-1 text-left",
+          "transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        )}
       >
-        <span className="inline-flex min-w-0 items-center gap-2">
-          <CiStateIcon state={ciState} />
-          <span>Checks</span>
-          <span className={cn("truncate text-xs font-normal", CI_STATE_TEXT[ciState])}>
-            {summary}
-          </span>
-        </span>
-        <ChevronDownIcon
+        <ChevronRightIcon
           className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
-            checksOpen && "rotate-180",
+            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
+            open && "rotate-90",
           )}
           aria-hidden
         />
+        <span className="shrink-0 text-[12.5px] font-semibold tracking-tight">Description</span>
+        {!open && (
+          <span className="min-w-0 truncate text-[12px] text-muted-foreground">{preview}</span>
+        )}
       </button>
-      <CollapsibleSection open={checksOpen}>
-        <div className="space-y-0.5 border-t border-border p-1.5">
-          {checkCount > 0 ? (
-            status.ci!.checks.map((check) => <CiCheckRow key={check.name} check={check} />)
-          ) : (
-            <p className="px-2 py-2.5 text-[12px] text-muted-foreground">No checks reported.</p>
-          )}
-        </div>
+      <CollapsibleSection open={open}>
+        <Markdown
+          content={pr.body_markdown}
+          cacheKey={`${pr.url}:description`}
+          className="mt-1.5 max-w-none overflow-x-auto rounded-lg border border-border bg-card p-3 text-[13px] leading-relaxed"
+        />
       </CollapsibleSection>
     </section>
   );
 }
 
-export function PrDescription({ status }: { status: PrStatusSnapshot }): ReactElement {
-  const pr = status.pr!;
-  return (
-    <section className="space-y-2">
-      <h3 className="text-[12.5px] font-semibold tracking-tight text-foreground">Description</h3>
-      {pr.body_markdown ? (
-        <Markdown
-          content={pr.body_markdown}
-          cacheKey={`${pr.url}:description`}
-          className="max-w-none overflow-x-auto rounded-md border border-border bg-card p-3 text-[13px] leading-relaxed"
-        />
-      ) : (
-        <p className="rounded-md border border-dashed border-border px-3 py-3 text-[12.5px] text-muted-foreground">
-          No description provided.
-        </p>
-      )}
-    </section>
-  );
-}
-
-function CiCheckRow({ check }: { check: CiCheck }): ReactElement {
-  const [opening, setOpening] = useState(false);
-  const handleOpen = useCallback(async (): Promise<void> => {
-    if (!check.url) return;
-    setOpening(true);
-    await openExternalUrl(check.url, "Could not open check.");
-    setOpening(false);
-  }, [check.url]);
-  const rowClass = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px]";
-  const content = (
-    <>
-      <CiStateIcon state={check.state} />
-      <span className="min-w-0 flex-1 truncate" title={check.name}>
-        {check.name}
-      </span>
-      <span className={cn("shrink-0 text-[11px] capitalize", CI_STATE_TEXT[check.state])}>
-        {CI_STATE_LABEL[check.state]}
-      </span>
-    </>
-  );
-  if (!check.url) return <div className={rowClass}>{content}</div>;
-  return (
-    <button
-      type="button"
-      className={cn(rowClass, "transition-colors hover:bg-accent/60 disabled:opacity-60")}
-      disabled={opening}
-      onClick={() => void handleOpen()}
-    >
-      {content}
-      {opening ? (
-        <Loader2Icon className="size-3 shrink-0 animate-spin text-muted-foreground" aria-hidden />
-      ) : (
-        <ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      )}
-    </button>
-  );
-}
-
-function CiStateIcon({ state }: { state: CiState }): ReactElement {
-  if (state === "passing")
-    return <CheckCircle2Icon className="size-3.5 shrink-0 text-[var(--acc-green)]" aria-hidden />;
-  if (state === "failing")
-    return <XCircleIcon className="size-3.5 shrink-0 text-[var(--acc-red)]" aria-hidden />;
-  if (state === "running")
-    return (
-      <Loader2Icon
-        className="size-3.5 shrink-0 animate-spin text-[var(--acc-orange)]"
-        aria-hidden
-      />
-    );
-  return <CircleDashedIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />;
+/**
+ * First line of actual prose. Headings are skipped rather than unwrapped: a
+ * preview reading "Summary" tells you nothing you did not already know, and
+ * almost every template starts with one.
+ */
+function descriptionPreview(markdown: string): string {
+  for (const rawLine of markdown.split("\n")) {
+    if (/^\s*#{1,6}\s/.test(rawLine)) continue;
+    const line = rawLine
+      .replace(/^\s*[>*-]+\s*/, "")
+      .replace(/[*_`]/g, "")
+      .trim();
+    if (line) return line;
+  }
+  return "";
 }

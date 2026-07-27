@@ -5,6 +5,8 @@ export interface GitNavigationAdapter {
   open: () => boolean;
   back: () => boolean;
   toggleViewed?: () => boolean;
+  /** Picks/unpicks the focused item for the agent — the PR view's thread list. */
+  togglePicked?: () => boolean;
   stage?: () => boolean;
   reset?: () => boolean;
   scrollHalfPage?: (direction: -1 | 1) => boolean;
@@ -37,6 +39,8 @@ export function delegateGitNavigation(
       return adapter.back();
     case "toggleViewed":
       return adapter.toggleViewed?.() ?? false;
+    case "togglePicked":
+      return adapter.togglePicked?.() ?? false;
     case "stage":
       return adapter.stage?.() ?? false;
     case "reset":

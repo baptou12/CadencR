@@ -27,7 +27,13 @@ export function isGitViewMode(value: string | undefined): value is GitViewMode {
 export interface GitTabViewState {
   viewMode: GitViewMode;
   setViewMode: (next: GitViewMode) => void;
-  isSavingViewMode: boolean;
+  /**
+   * The view whose save is still in flight, or `null`. Named rather than a bare
+   * boolean so the strip can mark the one tab that is waiting instead of
+   * disabling all six — a persisted preference must not make navigation feel
+   * like it stopped responding.
+   */
+  pendingViewMode: GitViewMode | null;
   fileListCollapsed: boolean;
   setFileListCollapsed: (collapsed: boolean) => void;
   toggleFileList: () => void;
@@ -82,6 +88,11 @@ export function useGitTabViewState(
     },
     [featureId, setFeatureSetting, viewMode],
   );
+  // The mutation already holds the in-flight payload, so mirroring it in local
+  // state only bought a second render per click.
+  const requestedViewMode = setFeatureSetting.variables?.data.value;
+  const pendingViewMode =
+    setFeatureSetting.isPending && isGitViewMode(requestedViewMode) ? requestedViewMode : null;
 
   const {
     value: persistedFileListCollapsed,
@@ -103,7 +114,7 @@ export function useGitTabViewState(
     () => ({
       viewMode,
       setViewMode,
-      isSavingViewMode: setFeatureSetting.isPending,
+      pendingViewMode,
       fileListCollapsed,
       setFileListCollapsed,
       toggleFileList,
@@ -112,7 +123,7 @@ export function useGitTabViewState(
     [
       fileListCollapsed,
       isFileListCollapseLoading,
-      setFeatureSetting.isPending,
+      pendingViewMode,
       setFileListCollapsed,
       setViewMode,
       toggleFileList,

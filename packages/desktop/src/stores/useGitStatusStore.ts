@@ -156,6 +156,23 @@ export function selectGitTargetBranch(
   return (state) => (featureId == null ? undefined : state.byFeature[featureId]?.target_branch);
 }
 
+/**
+ * Narrow selectors for the two counts the Git sub-tab strip badges. Both return
+ * a number, so a watcher snapshot that only moved `computed_at` re-renders
+ * nothing — which is the whole reason these exist rather than `selectGitStatus`.
+ */
+export function selectGitUncommittedCount(
+  featureId: number | null | undefined,
+): (state: GitStatusState) => number | undefined {
+  return (state) => (featureId == null ? undefined : state.byFeature[featureId]?.uncommitted_count);
+}
+
+export function selectGitConflictCount(
+  featureId: number | null | undefined,
+): (state: GitStatusState) => number {
+  return (state) => (featureId == null ? 0 : (state.byFeature[featureId]?.conflict_count ?? 0));
+}
+
 /** Narrow selector for the checked-out branch shown in branch-aware Git views. */
 export function selectGitCurrentBranch(
   featureId: number | null | undefined,
