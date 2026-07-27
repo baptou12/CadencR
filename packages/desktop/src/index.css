@@ -29,12 +29,6 @@
   /* Brand wordmark face (the "CADENCR" logotype). See DESIGN.md › Typography ›
    * families.brand. Used at weight 800. */
   --font-brand: "Figtree Variable", var(--font-sans);
-  /* Single source of truth for the code/monospace font. Both the CodeMirror
-   * editor and the Pierre git-diff reference this so they render the exact same
-   * face — previously each declared its own (subtly divergent) stack. */
-  --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -73,6 +67,20 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+}
+
+/*
+ * Single source of truth for the code/monospace font. Deliberately NOT in the
+ * `@theme inline` block above: `inline` bakes each utility's literal value at
+ * build time, so `.font-mono` would never see MonoFontProvider's runtime
+ * `--font-mono` override. A plain `@theme` block keeps `.font-mono` (and the
+ * CodeMirror editor / Pierre git-diff, which read `var(--font-mono)` directly)
+ * wired to the live CSS variable.
+ */
+@theme {
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
 }
 
 :root {
