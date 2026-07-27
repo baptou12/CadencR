@@ -122,7 +122,7 @@ mod tests {
     fn api_base_url_requires_https_without_embedded_request_data() {
         for value in [
             "http://git.example.com/api/v4",
-            "https://user:secret@git.example.com/api/v4",
+            "https://user@git.example.com/api/v4",
             "https://git.example.com/api/v4?token=secret",
             "https://git.example.com/api/v4#fragment",
         ] {

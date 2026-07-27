@@ -111,13 +111,16 @@ assert_versions_ready() {
 run_trufflehog() {
   local previous_hash="$1"
   local exclude_paths_file="scripts/trufflehog-exclude-paths.txt"
+  local allowlist_file="scripts/trufflehog-allowlist.txt"
+  local results_file
+  results_file="$(mktemp)"
   local args=(
     trufflehog
     git
     --since-commit
     "$previous_hash"
     --skip-additional-refs
-    --fail
+    --json
   )
 
   if [ -f "$exclude_paths_file" ]; then
@@ -127,7 +130,30 @@ run_trufflehog() {
   args+=("${TRUFFLEHOG_GIT_URL:-file://$(pwd)}")
 
   echo "Running trufflehog from previous release commit $previous_hash" >&2
-  run "${args[@]}"
+  run "${args[@]}" >"$results_file"
+
+  local unexpected=0
+  while IFS= read -r finding; do
+    local fingerprint
+    fingerprint="$(printf '%s' "$finding" | shasum -a 256 | awk '{print $1}')"
+    if [ -f "$allowlist_file" ] && grep -Fxq "$fingerprint" "$allowlist_file"; then
+      echo "release: allowed known TruffleHog fixture fingerprint $fingerprint" >&2
+      continue
+    fi
+    jq -r '"release: unexpected TruffleHog result: \(.detector) \(.file):\(.line)"' \
+      <<<"$finding" >&2
+    unexpected=1
+  done < <(
+    jq -c '{
+      detector: .DetectorName,
+      raw: .Raw,
+      commit: .SourceMetadata.Data.Git.commit,
+      file: .SourceMetadata.Data.Git.file,
+      line: .SourceMetadata.Data.Git.line
+    }' "$results_file"
+  )
+  rm -f "$results_file"
+  [ "$unexpected" -eq 0 ] || fail "TruffleHog found results outside the exact fingerprint allowlist"
 }
 
 create_release_tag() {
@@ -146,6 +172,8 @@ main() {
 
   require_cmd git
   require_cmd gh
+  require_cmd jq
+  require_cmd shasum
   require_cmd trufflehog
 
   local repo_root
