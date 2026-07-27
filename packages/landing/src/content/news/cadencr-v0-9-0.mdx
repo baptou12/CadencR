@@ -1,0 +1,57 @@
+---
+title: "CadencR v0.9.0 brings GitHub and GitLab into the workspace"
+date: 2026-07-28
+summary: "CadencR v0.9.0 connects the Git workspace to GitHub and GitLab, bringing pull requests, merge requests, checks, pipelines, and review comments into the same place where agents work."
+author: "Raphaël - RLE - Le Minor"
+tags: ["release", "git", "github", "gitlab"]
+---
+
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
+import descriptionAndActionsScreenshot from "@/assets/news/v0.9.0/description-and-actions.png";
+import steerWithCommentsScreenshot from "@/assets/news/v0.9.0/steer-with-comments.png";
+
+CadencR is built around a simple idea: **stop switching between tools while you work with coding agents**.
+
+Version 0.8.0 brought everyday Git work into the workspace, from reviewing and staging changes to updating branches and resolving conflicts. **CadencR v0.9.0 connects that workflow to the Git cloud providers around it.**
+
+## From local changes to the complete review
+
+Connect GitHub or GitLab from CadencR and open the pull request or merge request attached to your conversation. The Git tab now brings together:
+
+- check and pipeline status;
+- unresolved review comments;
+- inline code locations and changed files;
+- review-thread selection and keyboard navigation;
+- direct handoff of selected feedback to the agent.
+
+<DocScreenshot
+  src={descriptionAndActionsScreenshot}
+  alt="CadencR pull request view showing passing checks, unresolved comments, the proposal description, and selected feedback ready to send to an agent"
+  caption="Checks, unresolved feedback, proposal context, and agent actions stay together in the Git workspace."
+  bordered={false}
+  rounded
+  elevated
+/>
+
+The sidebar also surfaces proposal health and unresolved feedback, so you can see what needs attention before opening another browser tab.
+
+This is not a separate cloud dashboard. It is the missing continuation of the workflow already inside CadencR:
+
+**change → review → checks → comments → agent follow-up**
+
+## Less context switching, faster review loops
+
+Agent work does not end when the code is written. Checks fail, reviewers leave comments, and the next useful prompt often starts with information living on GitHub or GitLab.
+
+CadencR v0.9.0 keeps that context beside the code and the conversation. Select the relevant feedback, send it to the agent, inspect the resulting changes, and return to the review without rebuilding the context by hand.
+
+<DocScreenshot
+  src={steerWithCommentsScreenshot}
+  alt="CadencR pull request review thread showing an inline code comment, its discussion, and selected comments ready to send to an agent"
+  caption="Turn selected review comments into the agent's next task without copying context between tools."
+  bordered={false}
+  rounded
+  elevated
+/>
+
+**CadencR v0.9.0 is available now.** [Download the release or read the complete changelog](https://github.com/merkr-software/CadencR/releases/tag/v0.9.0).

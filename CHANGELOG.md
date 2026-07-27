@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.9.0 - 2026-07-28
+
+Previous release: v0.8.1 - 2026-07-24
+
+### ✨ Added
+
+- [**Desktop**] Added a provider-neutral pull-request and merge-request workflow for GitHub and GitLab: connect remotes from Git settings, see proposal and check health from the sidebar and rebuilt Git tab, inspect unresolved review threads and inline annotations, navigate them by file or keyboard, select individual or all comments, and send the resulting review context directly to an agent. The shipped workflow also handles missing forge setup, GitHub throttling, custom GitLab CLI authentication, unresolved-thread counts, branch-backed conversations whose worktree has been removed, host-bound HTTPS credential transport, and complete revocation of stored or CLI-derived access.
+- [**Backend**] Added cross-project worker follow-ups so an orchestrator can send additional instructions to an existing spawned session instead of replacing it with a new worker, while preserving reactive gates and replies.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed Cursor access-mode changes appearing in the UI without changing the running session; Default and Auto Review now take effect on the next permission request, while transitions that alter sandbox launch flags restart safely.
+- [**Backend**] Fixed spawned sessions losing their requested thinking effort during initialization, and kept followed child-completion output owned by the child so parent conversations ask how to proceed instead of rewriting the result.
+- [**Desktop**] Fixed model pickers showing a provider, model, and agent-mode combination that did not match the backend-confirmed session selection.
+- [**provider:claude**] Fixed Claude context usage being scaled against a stale or incorrect window, especially for native one-million-token models such as Fable; the running model's reported window is now learned and applied earlier, and unknown windows hide the meter instead of displaying a misleading percentage.
+- [**Desktop**] Fixed running conversations on iOS entering a scroll feedback loop or repeatedly re-pinning the bottom; remote sessions also have more request headroom, and unrelated fetch counters no longer re-render the entire app.
+- [**Desktop**] Fixed Git history, graphs, and diffs falling back to `HEAD` after a feature branch had already been resolved, including conversations whose worktree was removed but whose branch remains available.
+- [**Desktop**] Fixed newly created directories appearing as single untracked folder entries in Changes instead of expanding to the files users can inspect, stage, and review.
+- [**Desktop**] Fixed grouped sidebar conversations blending into light and dark themes, unchecked controls losing their visible edge in dark themes, and restored pane focus opening tooltips without user intent.
+- [**Desktop**] Fixed cramped Git connection settings, oversized project-tooling controls, shifting Git toolbar actions, low-contrast Session Info buttons, and Claude profile labels that could confuse the session override with the globally active profile.
+
+### 🔒 Security
+
+- [**Backend**] Hardened local and remote service boundaries by removing the service authentication token from spawned shells and Git processes, blocking final-component symlink and race-prone file mutations, enforcing project and feature ownership for editor, terminal, and file-watcher access, bounding and rate-limiting WebSocket transport, using constant-time token checks, restricting secret storage permissions, and preventing internal errors or migration paths from exposing sensitive details.
+- [**dependencies**] Updated Rust networking, TLS, async-runtime and file-walking libraries plus GitHub Actions and frontend build tooling, with compatibility guards for the supported Electron Vite bundle.
+
 ## v0.8.1 - 2026-07-24
 
 Previous release: v0.8.0 - 2026-07-23
