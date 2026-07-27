@@ -1,12 +1,12 @@
+use super::response::{misdirected, unauthorized};
+use crate::app_state::AppState;
+use crate::shared::security::constant_time_str_eq;
 use axum::{
     extract::{Request, State},
     http::header,
     middleware::Next,
     response::Response,
 };
-
-use super::response::{misdirected, unauthorized};
-use crate::app_state::AppState;
 
 /// Non-CORS-safelisted header name, so any cross-origin `fetch` must trigger
 /// a preflight — which our CORS layer denies.
@@ -33,7 +33,7 @@ pub async fn auth_middleware(
             .headers()
             .get(MCP_CONTROL_HEADER)
             .and_then(|v| v.to_str().ok());
-        if presented != Some(state.mcp_control_token.as_str()) {
+        if !presented.is_some_and(|value| constant_time_str_eq(value, &state.mcp_control_token)) {
             return unauthorized();
         }
         return next.run(request).await;
@@ -44,7 +44,7 @@ pub async fn auth_middleware(
         .get(AUTH_HEADER)
         .and_then(|v| v.to_str().ok());
 
-    if presented != Some(state.auth_token.as_str()) {
+    if !presented.is_some_and(|value| constant_time_str_eq(value, &state.auth_token)) {
         return unauthorized();
     }
 

@@ -58,7 +58,7 @@ pub async fn run_terminal_shell_script_cancellable(
         .map_err(|error| format!("Failed to open terminal: {error}"))?;
 
     let mut command = CommandBuilder::new(&shell.program);
-    inherit_env(&mut command);
+    crate::shared::security::inherit_sanitized_pty_env(&mut command);
     command.cwd(cwd);
     command.env("TERM", "xterm-256color");
     command.env("FORCE_COLOR", "1");
@@ -145,12 +145,6 @@ fn shell_invocation() -> ShellInvocation {
             program: "/bin/sh".to_string(),
             args: vec!["-i", "-c"],
         },
-    }
-}
-
-fn inherit_env(command: &mut CommandBuilder) {
-    for (key, value) in std::env::vars_os() {
-        command.env(key, value);
     }
 }
 

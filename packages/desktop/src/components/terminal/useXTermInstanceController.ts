@@ -157,7 +157,9 @@ function useXTermConnection(props: XTermInstanceProps, refs: XTermRefs) {
     [refs.mountedRef, refs.terminalRef],
   );
   const connection = useTerminalWebSocket({
-    featureId: props.existingPtyId ? undefined : props.featureId,
+    // Reconnects must carry the owning feature so the service can reject
+    // cross-feature attachment by guessed or leaked PTY id.
+    featureId: props.featureId,
     projectId: props.existingPtyId ? undefined : props.projectId,
     ptyId: props.existingPtyId,
     requestedCwd: props.requestedCwd,

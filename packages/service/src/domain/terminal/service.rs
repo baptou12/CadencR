@@ -70,6 +70,13 @@ pub struct PtySession {
     pub foreground_active: bool,
 }
 
+pub(super) struct PtyReconnect {
+    pub handle: Arc<PtyHandle>,
+    pub alive: bool,
+    pub scrollback: String,
+    pub cwd: String,
+}
+
 /// Manages all PTY sessions. Stored in AppState.
 #[derive(Clone)]
 pub struct PtyManager {
@@ -101,6 +108,7 @@ impl PtyManager {
 
         let mut cmd = CommandBuilder::new_default_prog();
         cmd.cwd(cwd);
+        cmd.env_remove(crate::shared::security::SERVICE_AUTH_TOKEN_ENV);
         // Ensure the shell knows it's running inside an xterm-compatible terminal.
         // Without this, programs (e.g. zsh-autosuggestions) emit wrong escape
         // sequences, causing duplicate/garbled output.  node-pty set this
@@ -276,6 +284,7 @@ impl PtyManager {
         }
     }
 
+    #[cfg(test)]
     pub fn get_scrollback(&self, pty_id: &str) -> Option<(bool, String)> {
         let handle = self.terminals.get(pty_id)?;
         let alive = handle.alive.borrow().is_none();
@@ -287,6 +296,33 @@ impl PtyManager {
         Some((alive, scrollback))
     }
 
+    /// Snapshot a PTY only when it belongs to the requested feature. Treat a
+    /// feature mismatch exactly like an unknown ID so callers cannot probe
+    /// shells from another workspace.
+    pub(super) fn reconnect_for_feature(
+        &self,
+        pty_id: &str,
+        feature_id: i64,
+    ) -> Option<PtyReconnect> {
+        let handle = self.terminals.get(pty_id)?;
+        if handle.feature_id != feature_id {
+            return None;
+        }
+        let alive = handle.alive.borrow().is_none();
+        let scrollback = handle
+            .scrollback
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .contents();
+        Some(PtyReconnect {
+            handle: Arc::clone(handle.value()),
+            alive,
+            scrollback,
+            cwd: handle.cwd.clone(),
+        })
+    }
+
+    #[cfg(test)]
     /// Returns the working directory the PTY was spawned in, or None if the
     /// handle no longer exists.
     pub fn get_cwd(&self, pty_id: &str) -> Option<String> {
@@ -341,6 +377,21 @@ mod tests {
     async fn get_cwd_returns_none_for_unknown_pty() {
         let manager = PtyManager::new();
         assert_eq!(manager.get_cwd("does-not-exist"), None);
+    }
+
+    #[tokio::test]
+    async fn reconnect_for_feature_rejects_cross_feature_pty_access() {
+        let manager = PtyManager::new();
+        let cwd = temp_existing_dir();
+        let (pty_id, _) = manager
+            .create_pty(7, &cwd, 80, 24)
+            .expect("PTY should spawn");
+
+        assert!(manager.reconnect_for_feature(&pty_id, 7).is_some());
+        assert!(manager.reconnect_for_feature(&pty_id, 99).is_none());
+        assert!(manager.reconnect_for_feature("does-not-exist", 7).is_none());
+
+        manager.kill_all();
     }
 
     #[tokio::test]
@@ -401,6 +452,8 @@ mod tests {
         let _shell = crate::shared::test_env::EnvVarGuard::set("SHELL", "/bin/sh");
         let _marker =
             crate::shared::test_env::EnvVarGuard::set("CADENCR_TEST_PTY_ENV", "visible-to-pty");
+        let _auth =
+            crate::shared::test_env::EnvVarGuard::set("CADENCR_AUTH_TOKEN", "service-secret");
 
         let manager = PtyManager::new();
         let cwd = temp_existing_dir();
@@ -410,15 +463,20 @@ mod tests {
         manager
             .write_pty(
                 &pty_id,
-                b"printf 'CADENCR_TEST_PTY_ENV=%s\\n' \"$CADENCR_TEST_PTY_ENV\"\nexit\n",
+                b"printf 'CADENCR_TEST_PTY_ENV=%s AUTH=%s\\n' \"$CADENCR_TEST_PTY_ENV\" \"${CADENCR_AUTH_TOKEN-unset}\"\nexit\n",
             )
             .expect("write command to PTY");
 
         let saw_expected =
             wait_for_scrollback(&manager, &pty_id, "CADENCR_TEST_PTY_ENV=visible-to-pty").await;
+        let auth_was_scrubbed = wait_for_scrollback(&manager, &pty_id, "AUTH=unset").await;
         let _ = manager.kill_pty(&pty_id);
 
         assert!(saw_expected, "PTY shell should inherit process environment");
+        assert!(
+            auth_was_scrubbed,
+            "PTY shell must not inherit the service launch token"
+        );
     }
 
     #[tokio::test]

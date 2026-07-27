@@ -21,10 +21,12 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, Mutex};
 
+pub use crate::domain::git::commands::SensitiveInput;
+
 /// One active push session: just the input-half of the PTY stdin channel.
 /// The output-half (broadcast of `push.output` envelopes) lives in the
 /// caller's WS sender snapshot — same pattern as the commit dialog.
-type StdinTx = mpsc::UnboundedSender<String>;
+type StdinTx = mpsc::UnboundedSender<SensitiveInput>;
 
 #[derive(Default)]
 pub struct PushSessionRegistry {
@@ -49,15 +51,13 @@ impl PushSessionRegistry {
     }
 
     /// Forward user-typed input (passphrase, `yes`, etc.) to the session's
-    /// PTY stdin. Returns `true` if there's an active session for this
+    /// PTY stdin, adding the line terminator prompts expect. Returns `true` if
+    /// there's an active session for this
     /// feature *and* the channel is still open. The frontend uses the
     /// boolean to decide whether to surface "no active push" to the user.
     pub async fn send_input(&self, feature_id: i64, text: String) -> bool {
-        let inner = self.inner.lock().await;
-        match inner.get(&feature_id) {
-            Some(tx) => tx.send(text).is_ok(),
-            None => false,
-        }
+        let tx = self.inner.lock().await.get(&feature_id).cloned();
+        tx.is_some_and(|tx| tx.send(SensitiveInput::line(text)).is_ok())
     }
 
     /// Drop the session token. Idempotent.
@@ -76,14 +76,17 @@ mod tests {
     #[tokio::test]
     async fn register_send_unregister_roundtrip() {
         let reg = PushSessionRegistry::new();
-        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SensitiveInput>();
 
         assert!(reg.register(7, tx).await);
         assert!(
             reg.send_input(7, "hunter2\n".into()).await,
             "send to active session must succeed"
         );
-        assert_eq!(rx.recv().await.as_deref(), Some("hunter2\n"));
+        assert_eq!(
+            rx.recv().await.as_ref().map(SensitiveInput::as_str),
+            Some("hunter2\n")
+        );
 
         reg.unregister(7).await;
         assert!(
@@ -95,8 +98,8 @@ mod tests {
     #[tokio::test]
     async fn register_refuses_duplicate_feature_id() {
         let reg = PushSessionRegistry::new();
-        let (tx1, _rx1) = mpsc::unbounded_channel::<String>();
-        let (tx2, _rx2) = mpsc::unbounded_channel::<String>();
+        let (tx1, _rx1) = mpsc::unbounded_channel::<SensitiveInput>();
+        let (tx2, _rx2) = mpsc::unbounded_channel::<SensitiveInput>();
 
         assert!(reg.register(7, tx1).await);
         assert!(

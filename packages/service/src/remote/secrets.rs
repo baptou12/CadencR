@@ -25,7 +25,7 @@ pub fn load_or_generate_pepper(dir: &Path) -> Result<Vec<u8>> {
         tracing::warn!("remote pepper had unexpected length; regenerating");
     }
 
-    std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    secure_fs::create_dir_owner_only(dir)?;
     let mut bytes = vec![0u8; PEPPER_LEN];
     rand::rngs::SysRng
         .try_fill_bytes(&mut bytes)

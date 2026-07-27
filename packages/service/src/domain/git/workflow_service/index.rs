@@ -6,11 +6,10 @@ use std::path::PathBuf;
 use crate::app_state::AppState;
 use crate::domain::git::commands;
 use crate::domain::git::models::{FileMutationBody, SuccessResponse};
-use crate::domain::git::mutation_guard::GitMutationGuardError;
 use crate::domain::git::service::resolve_feature_git_path;
 use crate::error::AppError;
 
-use super::{broadcast_after_write_at, validate_file_mutation_path};
+use super::{broadcast_after_write_at, mutation_guard_error, validate_file_mutation_path};
 
 #[derive(Clone, Copy)]
 enum IndexMutation {
@@ -61,15 +60,6 @@ async fn mutate_file(
         error: None,
         blocked_reason: None,
     })
-}
-
-fn mutation_guard_error(error: GitMutationGuardError) -> AppError {
-    let message = error.to_string();
-    match error {
-        GitMutationGuardError::Busy { .. } => AppError::Conflict(message),
-        GitMutationGuardError::InvalidWorktree { .. } => AppError::BadRequest(message),
-        GitMutationGuardError::RegistryUnavailable => AppError::Internal(message),
-    }
 }
 
 #[cfg(test)]

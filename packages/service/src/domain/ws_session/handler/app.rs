@@ -309,21 +309,45 @@ async fn handle_subscribe_remote_events(sender: &WsSender, app_state: &AppState)
     });
 }
 
-/// Subscribe the client to file-system change events for a project directory.
-/// Starts the watcher if not already watching the same path.
+/// Subscribe the client to file-system change events for an editor root.
+/// The client supplies database ids, never a filesystem path; the backend
+/// resolves and validates the authoritative project/worktree root.
 async fn handle_subscribe_file_watcher(
     envelope: WsEnvelope,
     sender: &WsSender,
     app_state: &AppState,
 ) {
-    let project_path = match envelope
+    let project_id = match envelope
         .payload
-        .get("project_path")
-        .and_then(|v| v.as_str())
+        .get("project_id")
+        .and_then(|value| value.as_i64())
     {
-        Some(p) => p.to_string(),
+        Some(id) => id,
         None => {
-            super::send_error(sender, &envelope.id, "BAD_REQUEST", "missing project_path");
+            super::send_error(sender, &envelope.id, "BAD_REQUEST", "missing project_id");
+            return;
+        }
+    };
+    let feature_id = envelope
+        .payload
+        .get("feature_id")
+        .and_then(|value| value.as_i64());
+    let project_path = match crate::domain::projects::service::resolve_feature_editor_root(
+        &app_state.read_pool,
+        project_id,
+        feature_id,
+    )
+    .await
+    {
+        Ok(path) => path.to_string_lossy().into_owned(),
+        Err(error) => {
+            warn!(project_id, feature_id, error = %error, "invalid file watcher root");
+            super::send_error(
+                sender,
+                &envelope.id,
+                "BAD_REQUEST",
+                "invalid project or feature",
+            );
             return;
         }
     };

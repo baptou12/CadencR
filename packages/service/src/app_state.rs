@@ -224,6 +224,7 @@ impl AppState {
         frontend_port: u16,
         port: u16,
         remote: Arc<RemoteController>,
+        remote_data_dir: &std::path::Path,
     ) -> Self {
         let (session_status_tx, _) = broadcast::channel(64);
         let (feature_events_tx, _) = broadcast::channel(64);
@@ -235,11 +236,10 @@ impl AppState {
         // non-fatal — fall back to an ephemeral key so the loopback server still
         // boots; push just won't survive a restart until the file is writable.
         let push = Arc::new(
-            PushNotifier::load_or_generate(&crate::remote::paths::remote_data_dir())
-                .unwrap_or_else(|err| {
-                    tracing::warn!(%err, "VAPID key load/generate failed; using ephemeral key");
-                    PushNotifier::ephemeral()
-                }),
+            PushNotifier::load_or_generate(remote_data_dir).unwrap_or_else(|err| {
+                tracing::warn!(%err, "VAPID key load/generate failed; using ephemeral key");
+                PushNotifier::ephemeral()
+            }),
         );
         Self {
             read_pool,

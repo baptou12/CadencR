@@ -95,14 +95,47 @@ pub(super) async fn backup_database(
         std::fs::remove_file(&staging)?;
     }
 
-    // SQLite requires a string literal for VACUUM INTO; the path components
-    // are under our control and contain no quotes, so concatenation is safe.
     let staging_str = staging
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("backup path is not valid UTF-8: {}", staging.display()))?;
-    sqlx::query(AssertSqlSafe(format!("VACUUM INTO '{staging_str}'")))
+    sqlx::query("VACUUM INTO ?")
+        .bind(staging_str)
         .execute(pool)
         .await?;
     std::fs::rename(&staging, &backup)?;
     Ok(Some(backup))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn backup_path_is_bound_even_when_version_contains_a_quote() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("source.db");
+        let database_url = format!("sqlite://{}?mode=rwc", db_path.display());
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&database_url)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE sample (value TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO sample (value) VALUES ('preserved')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let backup = backup_database(&pool, &db_path, Some("v'quoted"))
+            .await
+            .expect("bound VACUUM path should succeed")
+            .expect("file database should be backed up");
+
+        assert!(backup.is_file());
+        assert!(backup.file_name().unwrap().to_string_lossy().contains('\''));
+    }
 }

@@ -12,17 +12,18 @@
 //! can `POST /api/git/push-input` to forward the user's typed line back
 //! into the PTY in real time.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use tokio::sync::mpsc;
 
 use crate::app_state::AppState;
 use crate::domain::git::commands;
+use crate::domain::git::commands::SensitiveInput;
 use crate::domain::git::models::{PushBody, PushInputBody, SuccessResponse};
 use crate::error::AppError;
 
-use super::broadcast_after_write;
 use super::streaming::{broadcast_complete, stream_git_operation, GitStreamOp};
+use super::{broadcast_after_write, mutation_guard_error};
 use crate::domain::git::service::resolve_feature_git_path;
 
 pub async fn push(state: &AppState, body: PushBody) -> Result<SuccessResponse, AppError> {
@@ -30,13 +31,17 @@ pub async fn push(state: &AppState, body: PushBody) -> Result<SuccessResponse, A
     let git_path = resolve_feature_git_path(state, feature_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("feature {feature_id} has no git path")))?;
-    let repo = Path::new(&git_path);
+    let repo = PathBuf::from(git_path);
+    let permit = state
+        .git_mutations
+        .try_acquire(&repo)
+        .map_err(mutation_guard_error)?;
 
     // ssh's prompts (`Enter passphrase…`, `(yes/no)?`) arrive on stdout
     // exactly like any other line, so the dialog can detect them and
     // surface a password input — answers come back via
     // `POST /api/git/push-input`, routed through `state.push_sessions`.
-    let (stdin_tx, stdin_rx) = mpsc::unbounded_channel::<String>();
+    let (stdin_tx, stdin_rx) = mpsc::unbounded_channel::<SensitiveInput>();
     if !state.push_sessions.register(feature_id, stdin_tx).await {
         // Concurrent push for the same feature — the dialog is supposed to
         // be single-instance per feature, so this is either a bug or a stale
@@ -58,11 +63,12 @@ pub async fn push(state: &AppState, body: PushBody) -> Result<SuccessResponse, A
         "$ git push -u origin HEAD\n".to_string(),
         |output_tx| async move {
             let stdin_rx = stdin_rx_slot.take().expect("run closure invoked once");
-            commands::push_streaming(repo, output_tx, stdin_rx).await
+            commands::push_streaming(&repo, output_tx, stdin_rx).await
         },
     )
     .await;
     state.push_sessions.unregister(feature_id).await;
+    drop(permit);
 
     let final_error = match outcome.error {
         Some(e) => Some(decorate_with_ssh_diagnostic(e).await),
@@ -94,11 +100,10 @@ pub async fn push_input(
     state: &AppState,
     body: PushInputBody,
 ) -> Result<SuccessResponse, AppError> {
-    let mut text = body.text;
-    if !text.ends_with('\n') {
-        text.push('\n');
-    }
-    let delivered = state.push_sessions.send_input(body.feature_id, text).await;
+    let delivered = state
+        .push_sessions
+        .send_input(body.feature_id, body.text)
+        .await;
     if !delivered {
         return Ok(SuccessResponse {
             success: false,
@@ -149,6 +154,7 @@ async fn ssh_auth_diagnostic() -> String {
 
     let listing = match tokio::process::Command::new("ssh-add")
         .arg("-l")
+        .env_remove(crate::shared::security::SERVICE_AUTH_TOKEN_ENV)
         .output()
         .await
     {

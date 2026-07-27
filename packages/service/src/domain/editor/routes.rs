@@ -176,12 +176,19 @@ pub async fn write_file_handler(
     let content = body.content;
 
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        std::fs::write(&path, &content).map_err(|e| match e.kind() {
-            std::io::ErrorKind::PermissionDenied => {
-                AppError::BadRequest(format!("Permission denied: {}", path.display()))
-            }
-            _ => AppError::Internal(e.to_string()),
-        })
+        service::write_file_no_follow(&path, content.as_bytes(), service::FileWriteMode::Replace)
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::PermissionDenied => {
+                    AppError::BadRequest(format!("Permission denied: {}", path.display()))
+                }
+                std::io::ErrorKind::AlreadyExists => {
+                    AppError::BadRequest("Refusing to write through a symbolic link".into())
+                }
+                _ if e.raw_os_error() == Some(libc::ELOOP) => {
+                    AppError::BadRequest("Refusing to write through a symbolic link".into())
+                }
+                _ => AppError::Internal(e.to_string()),
+            })
     })
     .await
     .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;

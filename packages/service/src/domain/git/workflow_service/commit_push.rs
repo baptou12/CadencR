@@ -3,7 +3,7 @@
 //! WS broadcast to the watcher. Push lives in its sibling [`super::push`]
 //! module — extracted to keep both files under the 400-line cap.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::app_state::AppState;
 use crate::domain::git::commands;
@@ -13,7 +13,7 @@ use crate::domain::git::service::resolve_feature_git_path;
 use crate::error::AppError;
 
 use super::streaming::{broadcast_complete, stream_git_operation, GitStreamOp};
-use super::{broadcast_after_write, validate_file_mutation_path};
+use super::{broadcast_after_write, mutation_guard_error, validate_file_mutation_path};
 
 // ---------------------------------------------------------------------------
 // POST /api/git/commit
@@ -42,7 +42,11 @@ pub async fn commit(state: &AppState, body: CommitBody) -> Result<SuccessRespons
     let git_path = resolve_feature_git_path(state, feature_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("feature {feature_id} has no git path")))?;
-    let repo = Path::new(&git_path);
+    let repo = PathBuf::from(git_path);
+    let permit = state
+        .git_mutations
+        .try_acquire(&repo)
+        .map_err(mutation_guard_error)?;
 
     // Streaming setup is shared with `push` — see [`super::streaming`].
     // The synthetic `$ git add …` header gives the dialog a first line to
@@ -57,10 +61,11 @@ pub async fn commit(state: &AppState, body: CommitBody) -> Result<SuccessRespons
         GitStreamOp::Commit,
         header,
         |output_tx| async move {
-            commands::commit_streaming(repo, message_trim, &file_paths, output_tx).await
+            commands::commit_streaming(&repo, message_trim, &file_paths, output_tx).await
         },
     )
     .await;
+    drop(permit);
 
     if outcome.success {
         broadcast_after_write(state, feature_id).await;

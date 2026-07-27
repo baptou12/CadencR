@@ -730,6 +730,7 @@ dependencies = [
  "utoipa-axum",
  "uuid",
  "web-push",
+ "zeroize",
 ]
 
 [[package]]

@@ -21,7 +21,7 @@ async fn send_now_surfaces_runtime_dispatch_failure_and_keeps_retryable_identity
     assert_response_status(
         response,
         StatusCode::INTERNAL_SERVER_ERROR,
-        "runtime adapter unavailable",
+        "Internal server error",
     )
     .await;
     let generated_count: i64 = sqlx::query_scalar(
@@ -98,7 +98,7 @@ async fn send_now_broadcasts_canonical_user_message_before_dispatch_failure() {
     assert_response_status(
         response,
         StatusCode::INTERNAL_SERVER_ERROR,
-        "runtime adapter unavailable",
+        "Internal server error",
     )
     .await;
     let payload = recv_user_message_payload(&mut rx).await;

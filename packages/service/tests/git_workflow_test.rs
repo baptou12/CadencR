@@ -320,13 +320,13 @@ async fn push_input_with_active_session_delivers_to_pty() {
     // AppState that shares the test pool but has a registry we control, and
     // call `push_input` directly.
     use cadencr_service::app_state::AppState;
-    use cadencr_service::domain::git::push_sessions::PushSessionRegistry;
+    use cadencr_service::domain::git::push_sessions::{PushSessionRegistry, SensitiveInput};
     use cadencr_service::domain::git::workflow_service;
     use std::sync::Arc;
     use tokio::sync::mpsc;
 
     let registry = Arc::new(PushSessionRegistry::new());
-    let (stdin_tx, mut stdin_rx) = mpsc::unbounded_channel::<String>();
+    let (stdin_tx, mut stdin_rx) = mpsc::unbounded_channel::<SensitiveInput>();
     assert!(
         registry.register(1, stdin_tx).await,
         "registry must accept the first registration"
@@ -349,7 +349,8 @@ async fn push_input_with_active_session_delivers_to_pty() {
 
     let delivered = stdin_rx.try_recv().expect("input must be delivered");
     assert_eq!(
-        delivered, "secret\n",
+        delivered.as_ref(),
+        b"secret\n",
         "push_input must append the trailing \\n"
     );
     registry.unregister(1).await;

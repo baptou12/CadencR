@@ -45,9 +45,20 @@ pub use update_branch::{
 use std::path::{Component, Path};
 
 use crate::app_state::AppState;
+use crate::domain::git::mutation_guard::GitMutationGuardError;
+use crate::error::AppError;
 use crate::shared::git_cli::run_git_safe_refs;
 
 const SETTING_TARGET_BRANCH: &str = "target_branch";
+
+pub(crate) fn mutation_guard_error(error: GitMutationGuardError) -> AppError {
+    let message = error.to_string();
+    match error {
+        GitMutationGuardError::Busy { .. } => AppError::Conflict(message),
+        GitMutationGuardError::InvalidWorktree { .. } => AppError::BadRequest(message),
+        GitMutationGuardError::RegistryUnavailable => AppError::Internal(message),
+    }
+}
 
 pub(crate) fn validate_file_mutation_path(file_path: &str) -> Result<(), crate::error::AppError> {
     if file_path.is_empty() {

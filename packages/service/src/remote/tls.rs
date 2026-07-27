@@ -33,7 +33,7 @@ pub struct RemoteTls {
 /// always recomputed from the cert so it stays a single source of truth.
 pub async fn load_or_generate(dir: &Path, sans: Vec<String>) -> Result<RemoteTls> {
     ensure_crypto_provider();
-    std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    super::secure_fs::create_dir_owner_only(dir)?;
     let cert_path = dir.join("cert.pem");
     let key_path = dir.join("key.pem");
 
@@ -165,5 +165,7 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+        let dir_mode = std::fs::metadata(dir.path()).unwrap().permissions().mode();
+        assert_eq!(dir_mode & 0o777, 0o700);
     }
 }

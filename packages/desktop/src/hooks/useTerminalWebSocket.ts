@@ -129,11 +129,11 @@ interface BuildOptions {
 
 function buildWsUrl(options: BuildOptions, cols?: number, rows?: number): string {
   const params = new URLSearchParams();
+  if (options.featureId != null) params.set("feature_id", String(options.featureId));
 
   if (options.ptyId) {
     params.set("pty_id", options.ptyId);
   } else {
-    if (options.featureId != null) params.set("feature_id", String(options.featureId));
     if (options.projectId != null) params.set("project_id", String(options.projectId));
     if (cols != null) params.set("cols", String(cols));
     if (rows != null) params.set("rows", String(rows));

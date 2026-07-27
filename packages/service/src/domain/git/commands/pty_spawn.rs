@@ -6,17 +6,7 @@ use std::path::Path;
 
 use crate::error::AppError;
 
-/// Copy every variable from the current process environment onto the
-/// `CommandBuilder`. `portable_pty::CommandBuilder` does **not** inherit
-/// the parent env on its own (unlike `std::process::Command`), so without
-/// this helper the spawned git would not see `HOME`, `PATH`,
-/// `SSH_AUTH_SOCK`, `GNUPGHOME`, `LANG`, … — i.e. anything that makes
-/// signing or auth work in the user's actual shell setup.
-fn inherit_env(cmd: &mut portable_pty::CommandBuilder) {
-    for (key, value) in std::env::vars_os() {
-        cmd.env(key, value);
-    }
-}
+use super::SensitiveInput;
 
 /// Spawn `git <args>` attached to a freshly-allocated PTY and stream the
 /// merged stdout/stderr chunks to `tx` as they arrive. PTYs merge stdout
@@ -25,7 +15,7 @@ fn inherit_env(cmd: &mut portable_pty::CommandBuilder) {
 /// preserves the original ordering.
 ///
 /// `stdin_rx` is optional: when `Some`, a writer task pumps every received
-/// `String` into the PTY master, which feeds the child's stdin. Use it for
+/// sensitive input into the PTY master, which feeds the child's stdin. Use it for
 /// commands that may prompt — `git push` over ssh asks for a passphrase,
 /// `git pull` may ask `(yes/no)?` for unknown hosts. When `None`, no writer
 /// task is spawned and the child's stdin is the PTY slave's empty default
@@ -34,7 +24,7 @@ pub(super) async fn spawn_pty_git(
     args: &[&str],
     cwd: &Path,
     tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
-    stdin_rx: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    stdin_rx: Option<tokio::sync::mpsc::UnboundedReceiver<SensitiveInput>>,
 ) -> Result<(), AppError> {
     use std::io::Read;
     use std::sync::{Arc, Mutex};
@@ -76,7 +66,7 @@ pub(super) async fn spawn_pty_git(
     // streaming-friendly overrides on top. This mirrors what `tokio::
     // process::Command` does by default and matches what the user gets
     // running `git` from a normal shell.
-    inherit_env(&mut cmd);
+    crate::shared::security::inherit_sanitized_pty_env(&mut cmd);
     cmd.env("TERM", "xterm-256color");
     cmd.env("FORCE_COLOR", "1");
     cmd.env("PYTHONUNBUFFERED", "1");
@@ -121,7 +111,7 @@ pub(super) async fn spawn_pty_git(
             // immediately rather than buffered until enough accumulate.
             while let Some(text) = rx.blocking_recv() {
                 use std::io::Write;
-                if writer.write_all(text.as_bytes()).is_err() {
+                if writer.write_all(text.as_ref()).is_err() {
                     break;
                 }
                 if writer.flush().is_err() {

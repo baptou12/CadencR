@@ -31,7 +31,8 @@ vi.mock("@/hooks/useShortcut", () => ({
 }));
 
 vi.mock("@/hooks/useFileWatcher", () => ({
-  useFileWatcher: (projectPath: string) => mockUseFileWatcher(projectPath),
+  useFileWatcher: (projectId: number, featureId?: number) =>
+    mockUseFileWatcher(projectId, featureId),
 }));
 
 vi.mock("@/hooks/useFeatureWorktreePath", () => ({
@@ -152,7 +153,7 @@ describe("FeatureEditorTab", () => {
   it("subscribes to file changes even when the file tree sidebar is hidden", () => {
     render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
 
-    expect(mockUseFileWatcher).toHaveBeenCalledWith("/project");
+    expect(mockUseFileWatcher).toHaveBeenCalledWith(1, 1);
     // The file tree stays mounted (so the pierre model survives a
     // collapse / expand cycle) but is hidden via CSS when the sidebar
     // is collapsed. `ResizableSidebarLayout` wraps the sidebar slot in
