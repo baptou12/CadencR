@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -81,6 +82,26 @@ function cspMetaPlugin(
   };
 }
 
+/**
+ * Git branch this bundle is built from, consumed by the sidebar environment
+ * badge (see `src/lib/app-environment.ts`): `next` shows NEXT, anything else
+ * shows BETA. Packaged release builds check out a tag, so HEAD is detached and
+ * they land on BETA like any other non-`next` build.
+ */
+function resolveBuildBranch(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: __dirname,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch (error) {
+    // Not fatal: building outside a git checkout just means no branch badge.
+    console.warn(`[cadencr] could not resolve the build branch: ${String(error)}`);
+    return "";
+  }
+}
+
 const electronBundleContracts = {
   main: {
     processName: "main",
@@ -131,6 +152,7 @@ export default defineConfig(({ mode }) => {
       },
       define: {
         __APP_VERSION__: JSON.stringify(pkg.version),
+        __APP_BUILD_BRANCH__: JSON.stringify(resolveBuildBranch()),
       },
       resolve: {
         alias: {
