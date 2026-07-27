@@ -34,13 +34,14 @@ pub struct ForgeHttp {
 impl Default for ForgeHttp {
     fn default() -> Self {
         let client = reqwest::Client::builder()
+            // Provider credentials use both standard and custom headers. Never
+            // let reqwest forward them to a redirect target; forge endpoints
+            // must remain on the HTTPS, host-bound API URL we validated.
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("Cadencr/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(20))
             .build()
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "failed to build forge HTTP client; using defaults");
-                reqwest::Client::new()
-            });
+            .expect("static forge HTTP client configuration should be valid");
         Self {
             client,
             cache: Mutex::new(HashMap::new()),

@@ -90,7 +90,10 @@ async fn refresh(
         let branch = target.branch.expect("target checked above");
         let config = configs.get(&remote.hostname).cloned();
         let kind = effective_kind(remote.host, config.as_ref());
-        let api = api_base_url(&remote.hostname, kind, config.as_ref()).unwrap_or_default();
+        let api = api_base_url(&remote.hostname, kind, config.as_ref())
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         let key = RepoKey {
             hostname: remote.hostname.clone(),
             api_base_url: api,
@@ -173,8 +176,8 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
         return;
     };
     let api_base_url = match api_base_url(hostname, group.kind, group.config.as_ref()) {
-        Some(url) => url,
-        None => {
+        Ok(Some(url)) => url,
+        Ok(None) => {
             publish_group_error(
                 state,
                 &group,
@@ -183,6 +186,10 @@ async fn refresh_group(state: &AppState, group: RepoGroup) {
                 )),
             )
             .await;
+            return;
+        }
+        Err(error) => {
+            publish_group_error(state, &group, &error).await;
             return;
         }
     };

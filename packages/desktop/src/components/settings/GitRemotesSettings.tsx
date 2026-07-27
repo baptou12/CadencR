@@ -27,6 +27,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { queryClient } from "@/lib/queryClient";
 import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
 import { refreshPrStatusesAfterAuth } from "@/stores/pr-status-hydration";
+import { forgeKindCapabilities } from "./forge-kind-capabilities";
 
 /**
  * Remote-host connections inside the Git settings section. Connecting a host
@@ -73,7 +74,7 @@ export function GitRemotesSettings(): ReactElement {
       { params: { hostname } },
       {
         onSuccess: () => {
-          toast.success(`Removed stored token for ${hostname}`);
+          toast.success(`Disconnected ${hostname}`);
           refreshForgeAuthStatus();
         },
         onError: (error) => {
@@ -167,14 +168,21 @@ function ForgeHostCard({
   }, [status]);
 
   const handleSave = (): void => {
+    const cliAuthAvailable = forgeKindCapabilities(kind).cliAuthAvailable;
     onSave({
       hostname: status.hostname,
       kind,
       api_base_url: apiBaseUrl.trim() || undefined,
       username: username.trim() || undefined,
       token: token.trim() || undefined,
-      use_cli_auth: useCliAuth,
+      use_cli_auth: cliAuthAvailable && useCliAuth,
     });
+  };
+  const handleKindChange = (value: GitHost): void => {
+    setKind(value);
+    if (!forgeKindCapabilities(value).cliAuthAvailable) {
+      setUseCliAuth(false);
+    }
   };
 
   return (
@@ -208,7 +216,7 @@ function ForgeHostCard({
           username={username}
           token={token}
           useCliAuth={useCliAuth}
-          onKindChange={setKind}
+          onKindChange={handleKindChange}
           onApiBaseUrlChange={setApiBaseUrl}
           onUsernameChange={setUsername}
           onTokenChange={setToken}
@@ -255,6 +263,7 @@ function ForgeHostControls({
   onTokenChange,
   onUseCliAuthChange,
 }: ForgeHostControlsProps): ReactElement {
+  const capabilities = forgeKindCapabilities(kind);
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -285,7 +294,7 @@ function ForgeHostControls({
           />
         </LabeledControl>
       </div>
-      {status.username_required && (
+      {capabilities.usernameRequired && (
         <LabeledControl label="Atlassian account email">
           <Input
             value={username}
@@ -308,7 +317,7 @@ function ForgeHostControls({
           disabled={disabled || useCliAuth}
         />
       </LabeledControl>
-      {status.cli_auth_available && (
+      {capabilities.cliAuthAvailable && (
         <label className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2">
           <span>
             <span className="block text-sm font-medium">
@@ -340,14 +349,14 @@ function ForgeHostActions({
 }): ReactElement {
   return (
     <div className="flex items-center justify-end gap-2">
-      {status.token_present && (
+      {(status.token_present || status.use_cli_auth) && (
         <Button
           variant="ghost"
           size="sm"
           disabled={disabled}
           onClick={() => onDisconnect(status.hostname)}
         >
-          <Trash2Icon className="mr-1.5 size-3.5" aria-hidden /> Remove token
+          <Trash2Icon className="mr-1.5 size-3.5" aria-hidden /> Disconnect
         </Button>
       )}
       <Button size="sm" disabled={disabled} onClick={onSave}>
