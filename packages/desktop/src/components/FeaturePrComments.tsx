@@ -135,7 +135,9 @@ function ThreadLocationRow({
   const context = location && thread.side === "old" ? `${location} (removed side)` : location;
   const label = (
     <span
-      className="min-w-0 truncate font-mono text-[11px] text-muted-foreground"
+      // Mono is for what it describes — a path and a line number. The fallback
+      // is a plain English label, and mono made it read as another identifier.
+      className={cn("min-w-0 truncate text-[11px] text-muted-foreground", context && "font-mono")}
       title={context ?? undefined}
     >
       {context ?? "General comment"}
