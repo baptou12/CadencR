@@ -15,6 +15,12 @@ pub struct SessionUsageUpdatePayload {
     pub output_tokens: u64,
     /// Authoritative context window for the active model. `None` means
     /// "unknown until the provider reports one" — distinct from 0.
+    ///
+    /// Each update carries the sender's *complete* usage snapshot, so an absent
+    /// window means the window is currently unknown — not "unchanged". Clients
+    /// must not fall back to one they saw earlier: that is how a retracted
+    /// window (a mid-session model switch) would keep scaling the bar by a
+    /// model that is no longer running.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
 }

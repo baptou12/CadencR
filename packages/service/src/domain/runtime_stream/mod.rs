@@ -4,7 +4,7 @@ use crate::domain::ws_session::protocol::PermissionRequestPayload;
 mod subagent_window;
 mod usage_state;
 
-pub(crate) use usage_state::RuntimeUsageState;
+pub(crate) use usage_state::{RuntimeUsageSnapshot, RuntimeUsageState};
 
 pub(crate) fn permission_request_payload(
     request: RuntimePermissionRequest,

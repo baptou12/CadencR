@@ -14,6 +14,7 @@ import {
 } from "./ws-pending-prompts";
 import { repairPersistedBlocksAfterTurn } from "./ws-session-resync";
 import type { StoreAccessors } from "./ws-envelope-types";
+import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
 import { toast } from "sonner";
 
 /**
@@ -50,17 +51,28 @@ export function handleUsageUpdate(ctx: StoreAccessors, sessionId: string, payloa
   const u = parseUsagePayload(payload);
   if (!u) return;
   const session = ctx.getSession(sessionId);
-  const contextWindow = u.context_window ?? session.contextUsage?.contextWindow ?? null;
-  ctx.set(
-    updateSession(ctx.get(), sessionId, {
-      contextUsage: {
-        inputTokens: u.input_tokens,
-        outputTokens: u.output_tokens,
-        contextWindow,
-        wasCompacted: session.contextUsage?.wasCompacted ?? false,
-      },
-    }),
-  );
+  const previous = session.contextUsage;
+  // The payload is a complete snapshot, so a missing window means "unknown",
+  // not "unchanged" — see SessionUsageUpdatePayload. Reusing the stored one
+  // would keep scaling by a model that is no longer running.
+  const next: ContextUsageState = {
+    inputTokens: u.input_tokens,
+    outputTokens: u.output_tokens,
+    contextWindow: normalizeContextWindow(u.context_window),
+    wasCompacted: previous?.wasCompacted ?? false,
+  };
+  // Roughly two updates per agent step land here; without this the whole
+  // session entry is replaced each time and every subscriber re-renders.
+  if (
+    previous &&
+    previous.inputTokens === next.inputTokens &&
+    previous.outputTokens === next.outputTokens &&
+    previous.contextWindow === next.contextWindow &&
+    previous.wasCompacted === next.wasCompacted
+  ) {
+    return;
+  }
+  ctx.set(updateSession(ctx.get(), sessionId, { contextUsage: next }));
 }
 
 export function handleTurnComplete(ctx: StoreAccessors, sessionId: string, payload: unknown): void {

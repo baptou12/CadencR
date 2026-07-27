@@ -16,6 +16,7 @@ import {
   parseProviderPayload,
   parseProfilePayload,
 } from "./ws-envelope-payload";
+import { normalizeContextWindow } from "@/types/agent";
 import { truncateBlocksAtMessage } from "./ws-session-branch";
 import { handleWorktreeEvent } from "./ws-worktree-handler";
 import { useGitStatusStore } from "./useGitStatusStore";
@@ -267,7 +268,11 @@ function handleModelSetOk(ctx: StoreAccessors, sessionId: string, payload: unkno
   const p = parseModelPayload(payload);
   if (!p) return;
   const session = ctx.getSession(sessionId);
-  const nextContextWindow = p.context_window ?? session.contextUsage?.contextWindow ?? null;
+  // The window belongs to the model, so the outgoing one is never carried over.
+  // The backend seeds the incoming model's window when its adapter can answer;
+  // otherwise the bar hides until the next `result`, which beats scaling by the
+  // old model's window (1M → 200k reads 5x low, 200k → 1M reads 5x high).
+  const nextContextWindow = normalizeContextWindow(p.context_window);
   const nextUsage = session.contextUsage
     ? { ...session.contextUsage, contextWindow: nextContextWindow }
     : { inputTokens: 0, outputTokens: 0, contextWindow: nextContextWindow, wasCompacted: false };

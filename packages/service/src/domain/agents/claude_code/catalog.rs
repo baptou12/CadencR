@@ -206,14 +206,7 @@ mod tests {
         ClaudeCodeAdapter, ProbeState,
     };
 
-    fn new_test_adapter() -> ClaudeCodeAdapter {
-        ClaudeCodeAdapter {
-            cached_models: std::sync::OnceLock::new(),
-            probe_state: tokio::sync::Mutex::new(ProbeState::default()),
-            cached_slash_commands: std::sync::OnceLock::new(),
-            slash_commands_probe_state: tokio::sync::Mutex::new(ProbeState::default()),
-        }
-    }
+    use super::super::test_support::new_test_adapter;
 
     /// Regression for the catalog-cache thrash: the env-aware default-model
     /// resolution must read the catalog cached under the *same* profile env

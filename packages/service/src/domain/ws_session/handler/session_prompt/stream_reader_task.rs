@@ -9,7 +9,7 @@ use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeMessageRx, RuntimeSessionWeakHandle,
 };
 use crate::domain::agents::{runtime_adapter, runtime_session_finished};
-use crate::domain::runtime_stream::RuntimeUsageState;
+use crate::domain::runtime_stream::{RuntimeUsageSnapshot, RuntimeUsageState};
 use crate::domain::session_status::{AgentStatus, SessionStatusBroadcaster};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{SessionEndedPayload, WsEnvelope};
@@ -90,10 +90,10 @@ enum ReaderAction {
 }
 
 impl StreamReaderState {
-    fn new(initial_context_window: Option<u64>) -> Self {
+    fn new(initial_usage: RuntimeUsageSnapshot) -> Self {
         Self {
             runtime_session_id: None,
-            usage_state: RuntimeUsageState::new(initial_context_window),
+            usage_state: RuntimeUsageState::new(initial_usage),
             last_runtime_activity: Instant::now(),
             last_provider_reconcile: Instant::now(),
             turn_state: StreamTurnState::new(),
@@ -137,14 +137,14 @@ impl StreamReaderTask {
 
     pub async fn run(mut self) {
         info!(self.db_session_id, "stream reader started");
-        let initial_context_window = self.initial_context_window().await;
+        let initial_usage = self.initial_usage_snapshot().await;
         let runtime_adapter = runtime_adapter(&self.runtime_provider);
         let mut persistence = WsSessionPersistence::with_session_id(
             self.write_pool.clone(),
             self.feature_id,
             Some(self.db_session_id),
         );
-        let mut state = StreamReaderState::new(initial_context_window);
+        let mut state = StreamReaderState::new(initial_usage);
 
         loop {
             match self.next_action(&mut state).await {
@@ -182,14 +182,27 @@ impl StreamReaderTask {
         .await;
     }
 
-    async fn initial_context_window(&self) -> Option<u64> {
-        match self.provider_context_window {
+    /// Seed the usage state from what the session already shows: the persisted
+    /// token totals plus the best known window. Carrying the totals (rather
+    /// than starting at zero) is what lets a window-only update be emitted
+    /// mid-flight without blanking the bar.
+    async fn initial_usage_snapshot(&self) -> RuntimeUsageSnapshot {
+        let row = WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id).await;
+        let persisted = |value: Option<i64>| value.and_then(|v| u64::try_from(v).ok()).unwrap_or(0);
+
+        let context_window = match self.provider_context_window {
             Some(cw) if cw > 0 => Some(cw),
-            _ => WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
-                .await
+            _ => row
+                .as_ref()
                 .and_then(|row| row.context_window)
                 .and_then(|cw| u64::try_from(cw).ok())
                 .filter(|cw| *cw > 0),
+        };
+
+        RuntimeUsageSnapshot {
+            input_tokens: persisted(row.as_ref().and_then(|row| row.input_tokens)),
+            output_tokens: persisted(row.as_ref().and_then(|row| row.output_tokens)),
+            context_window,
         }
     }
 

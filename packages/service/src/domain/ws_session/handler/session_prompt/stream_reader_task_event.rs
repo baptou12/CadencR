@@ -290,9 +290,12 @@ impl StreamReaderTask {
         if !usage_update.is_subagent {
             let _ = persist_usage(runtime_event, self.db_session_id, &self.write_pool).await;
         }
-        if usage_update.changed
-            && (usage_update.snapshot.input_tokens > 0 || usage_update.snapshot.output_tokens > 0)
-        {
+        // Any change is worth pushing, including a window that resolved on the
+        // `init` event before this turn spent a token — without that the UI
+        // keeps scaling by whatever window it last had (a different model's)
+        // for the whole turn. The snapshot carries the persisted token totals,
+        // so a window-only update restates them rather than blanking the bar.
+        if usage_update.changed {
             self.send_usage_update(
                 usage_update.snapshot.input_tokens,
                 usage_update.snapshot.output_tokens,

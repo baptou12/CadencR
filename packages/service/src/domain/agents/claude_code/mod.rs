@@ -2,6 +2,7 @@ mod adapter_impl;
 mod background_agents;
 mod branching;
 mod catalog;
+mod context_windows;
 pub mod custom_models;
 mod events;
 mod jsonl_surgery;
@@ -47,6 +48,12 @@ pub struct ClaudeCodeAdapter {
     /// Same process-lifetime semantics as `cached_models` / `probe_state`.
     cached_slash_commands: std::sync::OnceLock<std::sync::RwLock<Vec<RuntimeSlashCommand>>>,
     slash_commands_probe_state: tokio::sync::Mutex<ProbeState>,
+    /// Context windows learned from `result.modelUsage`, keyed by the CLI's
+    /// model id. The CLI advertises no window in its catalog or `init`, so
+    /// this is the only way a model's window is known before its first
+    /// `result`. Same process-lifetime semantics as `cached_models`.
+    cached_context_windows:
+        std::sync::OnceLock<std::sync::RwLock<std::collections::HashMap<String, u64>>>,
 }
 
 #[derive(Default)]
@@ -75,6 +82,7 @@ pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
         failed_at: None,
         failure_message: None,
     }),
+    cached_context_windows: std::sync::OnceLock::new(),
 };
 
 /// Seed the static `CLAUDE_CODE_ADAPTER`'s model catalog from a test.
@@ -103,6 +111,7 @@ mod test_support {
             probe_state: tokio::sync::Mutex::new(ProbeState::default()),
             cached_slash_commands: std::sync::OnceLock::new(),
             slash_commands_probe_state: tokio::sync::Mutex::new(ProbeState::default()),
+            cached_context_windows: std::sync::OnceLock::new(),
         }
     }
 

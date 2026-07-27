@@ -66,7 +66,7 @@ afterEach(() => {
 });
 
 describe("ws-session usage updates", () => {
-  it("preserves the previous context window when usage_update omits it", async () => {
+  it("clears the context window when usage_update reports none", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -87,10 +87,14 @@ describe("ws-session usage updates", () => {
       payload: { input_tokens: 150, output_tokens: 50 },
     });
 
+    // Every update carries the backend's complete snapshot, so an absent
+    // window means "no longer known" (a model switch retracted it), not "no
+    // news". Keeping the old one would scale the bar by a window that no
+    // longer describes the active model.
     expect(useWsSessionStore.getState().sessions.s1.contextUsage).toEqual({
       inputTokens: 150,
       outputTokens: 50,
-      contextWindow: 200_000,
+      contextWindow: null,
       wasCompacted: false,
     });
   });
@@ -122,5 +126,24 @@ describe("ws-session usage updates", () => {
       contextWindow: 1_000_000,
       wasCompacted: false,
     });
+  });
+
+  it("does not touch the store when a usage_update repeats the current totals", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const usage = {
+      input_tokens: 150,
+      output_tokens: 50,
+      context_window: 1_000_000,
+    };
+    latestWs().simulateMessage({ domain: "session", action: "usage_update", payload: usage });
+
+    // Two updates per agent step reach this handler; a repeat that replaced the
+    // session entry would re-render every subscriber for nothing.
+    const before = useWsSessionStore.getState().sessions.s1;
+    latestWs().simulateMessage({ domain: "session", action: "usage_update", payload: usage });
+
+    expect(useWsSessionStore.getState().sessions.s1).toBe(before);
   });
 });

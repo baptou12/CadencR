@@ -78,12 +78,14 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
   }
   updates.currentThinkingEffort = p.thinking_effort;
   if (p.input_tokens != null || p.output_tokens != null) {
-    const contextWindow =
-      normalizeContextWindow(p.context_window) ?? session.contextUsage?.contextWindow ?? null;
+    // Same rule as `session.usage_update`: this payload is a complete snapshot
+    // read from the session row, so an absent window means unknown. Falling
+    // back to the in-memory one would let a reconnect resurrect a window a
+    // model switch had already retracted.
     updates.contextUsage = {
       inputTokens: p.input_tokens ?? 0,
       outputTokens: p.output_tokens ?? 0,
-      contextWindow,
+      contextWindow: normalizeContextWindow(p.context_window),
       wasCompacted: false,
     };
   }

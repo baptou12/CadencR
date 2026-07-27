@@ -5,7 +5,9 @@ use serde_json::Value;
 
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeEventMetadata, RuntimeUsage};
 use classification::classify_message;
-pub(super) use mapping::context_window_for_model_from_raw;
+pub(super) use mapping::{
+    context_window_for_model_from_raw, init_model_context_window, model_usage_windows,
+};
 
 pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEvent {
     let background_agent = super::background_agents::background_agent_signal(&msg);
@@ -210,6 +212,21 @@ mod tests {
         // so the `[1m]` marker is not at the end. The 1M beta is still 1M
         // tokens on every backend, so the hint must fire regardless of affix.
         let event = normalize_event(init_message("us.anthropic.claude-sonnet-4-5[1m]"));
+        assert_eq!(
+            event.init().expect("init kind").context_window,
+            Some(1_000_000)
+        );
+    }
+
+    #[test]
+    fn normalize_event_resolves_1m_window_for_natively_1m_model_without_marker() {
+        // The CLI reports `claude-fable-5` on init even when Cadencr passes
+        // `claude-fable-5[1m]`, because 1M is Fable's default and there is no
+        // beta to mark. Keying only off `[1m]` left every Fable turn with no
+        // window at all, so the bar divided by whatever the session last
+        // persisted (200k in the common case) and read ~5x too high until the
+        // turn's Result landed.
+        let event = normalize_event(init_message("claude-fable-5"));
         assert_eq!(
             event.init().expect("init kind").context_window,
             Some(1_000_000)
