@@ -113,7 +113,10 @@ pub(crate) async fn get_uncommitted_entries(
     worktree_path: &Path,
 ) -> Result<Vec<PorcelainFileEntry>, AppError> {
     let (porcelain, staged_num, unstaged_num) = tokio::try_join!(
-        run_git_background(&["status", "--porcelain=v2", "-z"], worktree_path),
+        run_git_background(
+            &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+            worktree_path
+        ),
         run_git_background(&["diff", "--cached", "--numstat", "-z"], worktree_path),
         run_git_background(&["diff", "--numstat", "-z"], worktree_path),
     )?;
@@ -342,6 +345,27 @@ mod tests {
         let renamed = find(&files, "new");
         assert_eq!(renamed.old_file.as_deref(), Some("old"));
         assert!(renamed.status.starts_with('R'));
+    }
+
+    #[tokio::test]
+    async fn untracked_directories_expand_to_file_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path();
+        init(repo);
+        std::fs::create_dir_all(repo.join(".impeccable/rules")).unwrap();
+        std::fs::write(repo.join(".impeccable/config.json"), b"{}\n").unwrap();
+        std::fs::write(repo.join(".impeccable/rules/default.md"), b"# Rule\n").unwrap();
+
+        let files = get_uncommitted_changed_files(repo).await.unwrap();
+        let paths: Vec<_> = files.iter().map(|file| file.file.as_str()).collect();
+
+        assert_eq!(
+            paths,
+            [".impeccable/config.json", ".impeccable/rules/default.md"]
+        );
+        assert!(files
+            .iter()
+            .all(|file| file.stage_state == FileStageState::Untracked));
     }
 
     #[tokio::test]
