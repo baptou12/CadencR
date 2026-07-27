@@ -136,14 +136,21 @@ pub async fn resolve_credentials(
         return Ok(None);
     }
     let token = match kind {
-        GitHost::GitHub => cli_token("gh", &["auth", "token", "--hostname", hostname]).await?,
+        GitHost::GitHub => {
+            let output = cli_output("gh", &["auth", "token", "--hostname", hostname]).await?;
+            stdout_token("gh", &output)?
+        }
         GitHost::GitLab => {
-            let output = cli_token(
+            let output = cli_output(
                 "glab",
                 &["auth", "status", "--hostname", hostname, "--show-token"],
             )
             .await?;
-            parse_glab_token(&output).unwrap_or(output)
+            parse_glab_token_output(&output).ok_or_else(|| {
+                ForgeError::Authentication(
+                    "glab authenticated successfully but did not expose a token".into(),
+                )
+            })?
         }
         GitHost::Bitbucket => {
             return Err(ForgeError::Configuration(
@@ -195,7 +202,10 @@ pub fn forge_to_app_error(error: ForgeError) -> AppError {
     }
 }
 
-async fn cli_token(binary: &'static str, args: &[&str]) -> Result<String, ForgeError> {
+async fn cli_output(
+    binary: &'static str,
+    args: &[&str],
+) -> Result<std::process::Output, ForgeError> {
     let path = discover_forge_cli(binary).await?;
     let output = tokio::process::Command::new(&path)
         .args(args)
@@ -214,7 +224,11 @@ async fn cli_token(binary: &'static str, args: &[&str]) -> Result<String, ForgeE
             stderr.trim()
         )));
     }
-    String::from_utf8(output.stdout)
+    Ok(output)
+}
+
+fn stdout_token(binary: &str, output: &std::process::Output) -> Result<String, ForgeError> {
+    std::str::from_utf8(&output.stdout)
         .map(|value| value.trim().to_string())
         .map_err(|_| ForgeError::Authentication(format!("{binary} returned a non-UTF-8 token")))
 }
@@ -256,12 +270,29 @@ async fn discover_forge_cli(binary: &'static str) -> Result<PathBuf, ForgeError>
 fn parse_glab_token(output: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let line = line.trim();
-        let (_, value) = line
-            .split_once("Token:")
-            .or_else(|| line.split_once("token:"))?;
+        let lowercase = line.to_ascii_lowercase();
+        let marker = ["token found:", "token:"]
+            .into_iter()
+            .find(|marker| lowercase.contains(marker))?;
+        let marker_start = lowercase.find(marker)?;
+        let value = &line[marker_start + marker.len()..];
         let token = value.trim().trim_matches('\'').trim_matches('"');
         (!token.is_empty()).then(|| token.to_string())
     })
+}
+
+fn parse_glab_token_output(output: &std::process::Output) -> Option<String> {
+    parse_glab_token_streams(&output.stdout, &output.stderr)
+}
+
+// `glab auth status` renders its successful human-readable report to stderr,
+// while older releases used stdout and labeled the value `Token:` rather than
+// `Token found:`. Accept both streams so CLI reuse survives that format change.
+fn parse_glab_token_streams(stdout: &[u8], stderr: &[u8]) -> Option<String> {
+    [stdout, stderr]
+        .into_iter()
+        .filter_map(|stream| std::str::from_utf8(stream).ok())
+        .find_map(parse_glab_token)
 }
 
 fn read_document(path: &Path) -> Result<TokenDocument, ForgeError> {
@@ -357,6 +388,18 @@ mod tests {
         assert_eq!(
             parse_glab_token("✓ Logged in\n  Token: glpat-example\n").as_deref(),
             Some("glpat-example")
+        );
+    }
+
+    #[test]
+    fn parses_current_glab_status_token_from_stderr() {
+        assert_eq!(
+            parse_glab_token_streams(
+                b"",
+                b"gitlab.example.com\n  \xe2\x9c\x93 Token found: glpat-current\n"
+            )
+            .as_deref(),
+            Some("glpat-current")
         );
     }
 }
