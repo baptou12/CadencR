@@ -67,6 +67,18 @@ describe("scrollbar CSS", () => {
     expect(groupRule).not.toMatch(/var\(--(muted|sidebar|sidebar-accent|accent|card)\)/);
   });
 
+  it("derives the control border from the muted foreground in both color schemes", () => {
+    // `--input` is a field *fill*, not an edge: in CadencR Dark it sits at
+    // 1.07:1 against the card, which left every unchecked checkbox and switch
+    // track with no visible outline. Both arms must stay on the audited muted
+    // foreground, which is the only palette entry with a contrast floor.
+    const token = themeCss.match(/--control-border:\s*light-dark\([^;]*\);/)?.[0] ?? "";
+    const mixes = token.match(/color-mix\(in oklab, var\(--muted-foreground\) \d+%/g) ?? [];
+
+    expect(mixes).toHaveLength(2);
+    expect(token).not.toMatch(/var\(--input\)/);
+  });
+
   it("keeps Dracula hover and active accents subdued", () => {
     expect(themeCss).toMatch(
       /:root\[data-theme="dracula"\]\s*{[^}]*--accent:\s*oklch\(0\.34 0\.032 277\.821\);/s,

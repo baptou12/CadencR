@@ -24,11 +24,16 @@
   --radius: 0.625rem;
   --border-width: 1px;
   /* Interactive control outlines need more contrast than structural
-   * hairlines. Light themes derive a >= 3:1 edge from their already-audited
-   * muted foreground; dark themes keep their existing input treatment. */
+   * hairlines, so both arms derive the edge from the theme's already-audited
+   * muted foreground. The dark arm used to be `var(--input)`, which is a field
+   * *fill*, not an edge — in CadencR Dark that put an unchecked checkbox at
+   * 1.07:1 against its card, i.e. no visible box at all. Each arm carries the
+   * lightest mix that clears 3:1 on its weakest palette (Latte for light,
+   * Monokai for dark); going higher on dark reads as shouty, because this
+   * token also fills the whole unchecked switch track. */
   --control-border: light-dark(
     color-mix(in oklab, var(--muted-foreground) 82%, var(--background)),
-    var(--input)
+    color-mix(in oklab, var(--muted-foreground) 70%, var(--background))
   );
   /* Light themes use the solid primary for a clear keyboard-focus halo. Dark
    * themes retain the existing softer ring treatment. */
