@@ -6,42 +6,72 @@ use crate::domain::agents::adapter::{
     RuntimeUserMessage,
 };
 
+/// Every `(model id, context window)` the CLI reported on a `result` payload.
+/// Empty for any other event — only `result` carries `modelUsage`.
+pub(in crate::domain::agents::claude_code) fn model_usage_windows(
+    raw: &Value,
+) -> impl Iterator<Item = (&str, u64)> {
+    raw.get("modelUsage")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(model, entry)| {
+            let window = entry.get("contextWindow").and_then(Value::as_u64)?;
+            (window > 0).then_some((model.as_str(), window))
+        })
+}
+
 pub(in crate::domain::agents::claude_code) fn context_window_for_model_from_raw(
     raw: &Value,
     model: &str,
 ) -> Option<u64> {
-    let model_usage = raw.get("modelUsage")?.as_object()?;
-    if let Some(context_window) = model_usage
-        .get(model)
-        .and_then(|entry| entry.get("contextWindow"))
-        .and_then(Value::as_u64)
-    {
-        return Some(context_window);
+    let mut windows = model_usage_windows(raw).peekable();
+    windows.peek()?;
+
+    let mut only: Option<u64> = None;
+    let mut single = true;
+    for (entry_model, window) in windows {
+        if entry_model == model {
+            return Some(window);
+        }
+        single &= only.is_none();
+        only = Some(window);
     }
 
-    if model_usage.len() == 1 {
-        return model_usage
-            .values()
-            .next()
-            .and_then(|entry| entry.get("contextWindow"))
-            .and_then(Value::as_u64);
-    }
-
-    None
+    // No exact hit: a lone entry is unambiguous (the turn ran one model, and
+    // the caller's id is an alias for it). Two or more and we cannot tell.
+    single.then_some(only).flatten()
 }
+
+/// Model families whose context window is 1,000,000 tokens *natively* — the
+/// maximum is also the default, so there is no 1M beta to opt into and the CLI
+/// never affixes the `[1m]` marker. Verified against the CLI: passing
+/// `--model claude-fable-5[1m]` makes it report `claude-fable-5` back on init,
+/// and its `result.modelUsage` entry reads `"contextWindow": 1000000`.
+const NATIVE_1M_MODEL_FAMILIES: &[&str] = &["claude-fable-5"];
 
 /// Early context-window hint from the init message's *resolved* model id, used
 /// to scale the live usage bar before the turn's authoritative
 /// `Result.modelUsage.contextWindow` arrives (init carries no window field).
 ///
-/// Recognizes only the `[1m]` marker (the 1M-context beta), which is 1,000,000
-/// tokens on every backend — Anthropic, Bedrock, Vertex alike. Any other id
-/// returns `None` and defers to the CLI's authoritative `Result`; we never
-/// guess a size that could override a real value or be wrong for a
-/// custom/proxy/Bedrock-pinned model. `contains` (not `ends_with`) because
-/// Bedrock/Vertex ids affix region/routing (`us.anthropic.…-sonnet-4-5[1m]`).
-pub(super) fn init_model_context_window(model: &str) -> Option<u64> {
-    model.contains("[1m]").then_some(1_000_000)
+/// Recognizes the `[1m]` marker (the 1M-context beta) and the families in
+/// [`NATIVE_1M_MODEL_FAMILIES`], both 1,000,000 tokens on every backend.
+/// Anything else returns `None` and defers to the CLI: we never guess a size
+/// that could be wrong for a custom/proxy/Bedrock-pinned model.
+///
+/// `contains` for the marker because Bedrock/Vertex ids affix region/routing
+/// (`us.anthropic.…-sonnet-4-5[1m]`). Family matching strips those same affixes
+/// but then demands a whole-id match, so a hypothetical `claude-fable-5-mini`
+/// is not silently claimed to be 1M.
+pub(in crate::domain::agents::claude_code) fn init_model_context_window(
+    model: &str,
+) -> Option<u64> {
+    let bare = model.rsplit(['/', ':']).next().unwrap_or(model);
+    let bare = bare.strip_suffix("[1m]").unwrap_or(bare);
+    let native_1m = NATIVE_1M_MODEL_FAMILIES
+        .iter()
+        .any(|family| bare == *family || bare.ends_with(&format!(".{family}")));
+    (model.contains("[1m]") || native_1m).then_some(1_000_000)
 }
 
 /// Human-readable text for an API-error assistant message: the joined text
@@ -220,7 +250,47 @@ pub(super) fn map_user_message(message: &Value) -> RuntimeUserMessage {
 mod tests {
     use serde_json::json;
 
-    use super::context_window_for_model_from_raw;
+    use super::{context_window_for_model_from_raw, init_model_context_window};
+
+    #[test]
+    fn init_model_context_window_resolves_1m_beta_marker() {
+        assert_eq!(
+            init_model_context_window("claude-opus-5[1m]"),
+            Some(1_000_000)
+        );
+        assert_eq!(
+            init_model_context_window("us.anthropic.claude-sonnet-5[1m]"),
+            Some(1_000_000)
+        );
+    }
+
+    #[test]
+    fn init_model_context_window_resolves_natively_1m_families_without_marker() {
+        // The CLI strips `[1m]` for Fable because 1M is its default, so the
+        // marker check alone left the whole turn without a window.
+        assert_eq!(init_model_context_window("claude-fable-5"), Some(1_000_000));
+        assert_eq!(
+            init_model_context_window("us.anthropic.claude-fable-5"),
+            Some(1_000_000)
+        );
+    }
+
+    #[test]
+    fn init_model_context_window_defers_for_unmarked_models() {
+        assert_eq!(init_model_context_window("claude-opus-5"), None);
+        assert_eq!(init_model_context_window("claude-haiku-4-5"), None);
+        assert_eq!(init_model_context_window("my-proxy/custom-model"), None);
+    }
+
+    #[test]
+    fn init_model_context_window_does_not_claim_1m_for_family_lookalikes() {
+        // A narrower sibling or a proxy's own variant is not the family.
+        assert_eq!(init_model_context_window("claude-fable-5-mini"), None);
+        assert_eq!(
+            init_model_context_window("myproxy/claude-fable-5-cheap"),
+            None
+        );
+    }
 
     #[test]
     pub(in crate::domain::agents::claude_code) fn context_window_for_model_from_raw_uses_single_entry_for_default_alias(

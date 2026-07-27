@@ -1418,7 +1418,7 @@ describe("ws-session-store", () => {
     expect(session.currentModelId).toBe("haiku");
   });
 
-  it("model.set.ok preserves tokens and keeps existing context window when backend omits it", async () => {
+  it("model.set.ok preserves tokens and drops the outgoing model's context window", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -1450,9 +1450,10 @@ describe("ws-session-store", () => {
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("sonnet");
     expect(usage?.inputTokens).toBe(12345);
     expect(usage?.outputTokens).toBe(6789);
-    // Backend did not seed a new window — keep the previous model's window
-    // so the bar stays visible until the next authoritative event.
-    expect(usage?.contextWindow).toBe(200000);
+    // The backend could not seed a window for the incoming model, and the
+    // outgoing model's does not describe it — 200k against a 1M model reads 5x
+    // too high. Hide the bar until the next authoritative event instead.
+    expect(usage?.contextWindow).toBeNull();
   });
 
   it("model.set.ok applies a seeded context window without resetting tokens", async () => {

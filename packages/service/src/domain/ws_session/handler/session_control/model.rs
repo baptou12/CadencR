@@ -308,9 +308,10 @@ async fn persist_model_selection(
 
 async fn seed_context_window(model: &str, runtime_provider: &str) -> Option<u64> {
     // Seed the new model's context window ONLY when the target adapter can
-    // answer authoritatively right now (e.g. opencode knows its catalog
-    // windows). Never fall back to history — for Claude Code, the CLI is the
-    // source of truth and the window arrives on the first `result` event.
+    // answer authoritatively right now — opencode from its catalog, Claude
+    // Code from what a previous turn's `result` reported for that exact model
+    // id. `None` clears the stored window rather than leaving the outgoing
+    // model's, which would misscale the bar until the next `result`.
     // Token counts are NOT reset: the conversation history has not changed,
     // only the model has. The first `result` from the new model will stamp
     // fresh token totals.

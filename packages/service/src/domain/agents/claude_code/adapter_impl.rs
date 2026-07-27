@@ -223,22 +223,44 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         }
     }
 
+    /// Context window the CLI knows for `model_id`, without spawning anything.
+    /// Used by the model-switch path to reseed the session window instead of
+    /// leaving the previous model's in place.
+    async fn context_window_for_model(&self, model_id: &str) -> Option<u64> {
+        self.context_window_for_model_id(model_id)
+    }
+
     fn context_window_for_event(
         &self,
         runtime_event: &RuntimeEvent,
         active_model: Option<&str>,
     ) -> Option<u64> {
-        if let Some(model) = active_model {
-            if let Some(context_window) =
-                context_window_for_model_from_raw(runtime_event.raw_json(), model)
-            {
-                return Some(context_window);
+        if runtime_event.is_result() {
+            // The only authoritative source the CLI offers. Bank every window
+            // it reports so the next turn on any of these models starts out
+            // scaled correctly rather than borrowing another model's.
+            self.record_context_windows(runtime_event.raw_json());
+
+            if let Some(model) = active_model {
+                if let Some(context_window) =
+                    context_window_for_model_from_raw(runtime_event.raw_json(), model)
+                {
+                    return Some(context_window);
+                }
             }
         }
 
-        runtime_event
-            .context_window()
-            .or_else(|| runtime_event.init().and_then(|init| init.context_window))
+        runtime_event.context_window().or_else(|| {
+            // The init model id is fully qualified (it keeps the `[1m]` marker,
+            // unlike `message_start`), so it can be resolved exactly. This is
+            // what makes the *first* turn correct for a model whose id
+            // advertises nothing: without it the window stays unknown until the
+            // turn's `result` lands.
+            runtime_event
+                .init()
+                .and_then(|init| init.model.as_deref())
+                .and_then(|model| self.context_window_for_model_id(model))
+        })
     }
 
     async fn spawn(
@@ -335,11 +357,137 @@ fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
+    use super::super::events::normalize_event;
     use super::super::test_support::new_test_adapter;
     use crate::domain::agents::adapter::{
         AgentRuntimeAdapter, RuntimePromptCommandPlacement, RuntimeSkillReferenceTrigger,
         RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeUserShellStrategy,
     };
+
+    fn init_event(model: &str) -> crate::domain::agents::adapter::RuntimeEvent {
+        normalize_event(
+            serde_json::from_value(json!({
+                "type": "system",
+                "subtype": "init",
+                "uuid": "u-init",
+                "session_id": "s-init",
+                "claude_code_version": "2.0.75",
+                "cwd": "/tmp",
+                "tools": [],
+                "mcp_servers": [],
+                "model": model,
+                "permissionMode": "default",
+                "slash_commands": [],
+                "output_style": "default"
+            }))
+            .expect("valid init message"),
+        )
+    }
+
+    fn result_event(
+        model: &str,
+        context_window: u64,
+    ) -> crate::domain::agents::adapter::RuntimeEvent {
+        normalize_event(
+            serde_json::from_value(json!({
+                "type": "result",
+                "subtype": "success",
+                "uuid": "u-result",
+                "session_id": "s-init",
+                "duration_ms": 1,
+                "duration_api_ms": 1,
+                "is_error": false,
+                "num_turns": 1,
+                "result": "ok",
+                "errors": null,
+                "stop_reason": "end_turn",
+                "total_cost_usd": 0.0,
+                "usage": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0
+                },
+                // The CLI bills a background Haiku call on essentially every
+                // turn, so a real `modelUsage` is never a single entry.
+                "modelUsage": {
+                    "claude-haiku-4-5-20251001": { "contextWindow": 200_000 },
+                    model: { "contextWindow": context_window }
+                },
+                "permission_denials": [],
+                "structured_output": null
+            }))
+            .expect("valid result message"),
+        )
+    }
+
+    #[test]
+    fn resolves_1m_window_at_init_for_a_natively_1m_model() {
+        // The bug: the CLI reports `claude-fable-5` (no `[1m]` — 1M is its
+        // default), so the whole turn ran with no window and the bar divided
+        // by the session's stale one until the turn's result landed.
+        let adapter = new_test_adapter();
+        assert_eq!(
+            adapter.context_window_for_event(&init_event("claude-fable-5"), None),
+            Some(1_000_000)
+        );
+    }
+
+    #[test]
+    fn prefers_the_active_models_own_entry_over_a_background_models() {
+        let adapter = new_test_adapter();
+        let event = result_event("active[1m]", 1_000_000);
+
+        assert_eq!(
+            adapter.context_window_for_event(&event, Some("active[1m]")),
+            Some(1_000_000)
+        );
+    }
+
+    #[test]
+    fn learns_a_window_from_a_result_and_reuses_it_at_the_next_init() {
+        let adapter = new_test_adapter();
+        // A model whose id advertises nothing: unknown on the first turn...
+        assert_eq!(
+            adapter.context_window_for_event(&init_event("unmarked"), None),
+            None
+        );
+
+        // ...but the turn's result is authoritative, so every later session on
+        // that model is scaled correctly from its very first event.
+        adapter.context_window_for_event(&result_event("unmarked", 400_000), None);
+        assert_eq!(
+            adapter.context_window_for_event(&init_event("unmarked"), None),
+            Some(400_000)
+        );
+    }
+
+    #[test]
+    fn non_result_events_never_touch_the_learned_windows() {
+        // `context_window_for_event` runs on every streaming delta, so the
+        // learning write must be gated on the one event that can carry it.
+        let adapter = new_test_adapter();
+        adapter.context_window_for_event(&init_event("unlearned"), Some("unlearned"));
+        assert_eq!(adapter.learned_context_window("unlearned"), None);
+    }
+
+    #[tokio::test]
+    async fn answers_context_window_for_model_from_marker_and_learned_history() {
+        let adapter = new_test_adapter();
+        assert_eq!(
+            adapter.context_window_for_model("claude-fable-5[1m]").await,
+            Some(1_000_000)
+        );
+        assert_eq!(adapter.context_window_for_model("seed-unknown").await, None);
+
+        adapter.context_window_for_event(&result_event("seed-unknown", 300_000), None);
+        assert_eq!(
+            adapter.context_window_for_model("seed-unknown").await,
+            Some(300_000)
+        );
+    }
 
     #[test]
     fn adapter_advertises_prompt_receipts() {
