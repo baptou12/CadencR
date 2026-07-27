@@ -13,7 +13,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ProviderIcon } from "@/lib/provider-icons";
 import { getProviderMetadata, PROVIDER_IDS } from "@/lib/providers";
 import { buildResumeCommand } from "@/lib/provider-resume-command";
-import { DEFAULT_CLAUDE_PROFILE_NAME, type ClaudeCodeProfile } from "@/api/agentRuntime";
+import type { ClaudeCodeProfile } from "@/api/agentRuntime";
+import { DEFAULT_CLAUDE_PROFILE_NAME, formatClaudeProfileLabel } from "@/lib/claude-profiles";
 import { cn } from "@/lib/utils";
 import type { McpServerStatus } from "@/stores/ws-session-types";
 import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
@@ -35,6 +36,7 @@ interface SessionInfoChipProps {
   claudeProfiles?: ClaudeCodeProfile[];
   claudeProfilesLoading?: boolean;
   claudeProfilesError?: boolean;
+  activeClaudeProfile?: string;
   onClaudeProfileChange?: (profile: string) => void;
 }
 
@@ -64,6 +66,7 @@ export function SessionInfoChip({
   claudeProfiles = [],
   claudeProfilesLoading = false,
   claudeProfilesError = false,
+  activeClaudeProfile,
   onClaudeProfileChange,
 }: SessionInfoChipProps): ReactElement {
   const [copiedField, setCopiedField] = useState<"id" | "command" | null>(null);
@@ -132,6 +135,7 @@ export function SessionInfoChip({
           claudeProfiles={claudeProfiles}
           claudeProfilesLoading={claudeProfilesLoading}
           claudeProfilesError={claudeProfilesError}
+          activeClaudeProfile={activeClaudeProfile}
           onClaudeProfileChange={onClaudeProfileChange}
         />
       </PopoverContent>
@@ -154,6 +158,7 @@ interface SessionInfoContentProps {
   claudeProfiles: ClaudeCodeProfile[];
   claudeProfilesLoading: boolean;
   claudeProfilesError: boolean;
+  activeClaudeProfile?: string;
   onClaudeProfileChange?: (profile: string) => void;
 }
 
@@ -172,6 +177,7 @@ function SessionInfoContent({
   claudeProfiles,
   claudeProfilesLoading,
   claudeProfilesError,
+  activeClaudeProfile,
   onClaudeProfileChange,
 }: SessionInfoContentProps): ReactElement {
   const providerMeta = getProviderMetadata(runtimeProvider);
@@ -186,6 +192,7 @@ function SessionInfoContent({
             profiles={claudeProfiles}
             isLoading={claudeProfilesLoading}
             isError={claudeProfilesError}
+            activeProfile={activeClaudeProfile}
             onProfileChange={onClaudeProfileChange}
           />
         )}
@@ -226,7 +233,7 @@ function SessionIdRow({
         </code>
         <Button
           type="button"
-          variant="ghost"
+          variant="raised"
           size="icon-xs"
           onClick={onCopy}
           title="Copy session ID"
@@ -254,7 +261,7 @@ function LaunchCommandRow({
     <div className="space-y-1">
       <Button
         type="button"
-        variant="outline"
+        variant="raised"
         size="sm"
         className="w-full"
         onClick={onCopy}
@@ -297,30 +304,41 @@ function ProfileRow({
   profiles,
   isLoading,
   isError,
+  activeProfile,
   onProfileChange,
 }: {
   profile?: string;
   profiles: ClaudeCodeProfile[];
   isLoading: boolean;
   isError: boolean;
+  activeProfile?: string;
   onProfileChange?: (profile: string) => void;
 }): ReactElement {
   const selectedProfile = profile ?? DEFAULT_CLAUDE_PROFILE_NAME;
+  // Compare labels, not raw names: the backend spells the default profile
+  // several ways ("default", "default (recommended)"), and a raw comparison
+  // would claim the active profile differs from a selection that *is* it.
+  const overridesActive =
+    !!activeProfile &&
+    formatClaudeProfileLabel(activeProfile) !== formatClaudeProfileLabel(selectedProfile);
 
   if (onProfileChange) {
     return (
       <div className="space-y-1.5">
-        <div className="text-[11px] font-medium text-muted-foreground">Active profile</div>
+        <div className="text-[11px] font-medium text-muted-foreground">Claude profile</div>
         <ClaudeProfileCombobox
           value={selectedProfile}
           profiles={profiles}
           isLoading={isLoading}
           isError={isError}
           onChange={onProfileChange}
+          activeProfile={activeProfile}
           triggerClassName="w-full justify-between"
         />
         <p className="text-[11px] text-muted-foreground">
           Applies to the next prompt. Current running turn is not restarted.
+          {overridesActive &&
+            ` “${formatClaudeProfileLabel(activeProfile)}” stays the active profile.`}
         </p>
       </div>
     );
@@ -328,10 +346,14 @@ function ProfileRow({
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[11px] font-medium text-muted-foreground">Active profile</span>
+      <span className="text-[11px] font-medium text-muted-foreground">Claude profile</span>
       {isLoading && <span className="h-3 w-16 animate-pulse rounded bg-muted/60" />}
       {isError && <span className="text-[11px] text-destructive">Failed to load</span>}
-      {!isLoading && !isError && <span className="font-mono text-[11px]">{selectedProfile}</span>}
+      {!isLoading && !isError && (
+        <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+          {formatClaudeProfileLabel(selectedProfile)}
+        </span>
+      )}
     </div>
   );
 }

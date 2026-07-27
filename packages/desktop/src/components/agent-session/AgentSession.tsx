@@ -120,6 +120,7 @@ function SessionComposer({
       claudeProfiles={meta.profile.claudeProfiles}
       claudeProfilesLoading={meta.profile.claudeProfilesLoading}
       claudeProfilesError={meta.profile.claudeProfilesError}
+      activeClaudeProfile={meta.profile.activeClaudeProfile}
       onClaudeProfileChange={meta.profile.handleClaudeProfileChange}
     />
   );

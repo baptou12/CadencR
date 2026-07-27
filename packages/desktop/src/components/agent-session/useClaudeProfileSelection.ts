@@ -10,6 +10,12 @@ const EMPTY_CLAUDE_PROFILES: ClaudeCodeProfile[] = [];
 export interface ClaudeProfileSelection {
   selectedClaudeProfile: string;
   /**
+   * The globally configured active profile. Distinct from
+   * `selectedClaudeProfile`, which only scopes the next prompt — surfacing both
+   * is what lets the pickers say which one is merely selected here.
+   */
+  activeClaudeProfile: string;
+  /**
    * Profile to scope the agent-catalog model probe to, or `undefined` to let
    * the backend use the active profile. Only set when the user has picked a
    * profile that differs from the active one — so the default/initial state
@@ -84,6 +90,7 @@ export function useClaudeProfileSelection({
   return useMemo(
     () => ({
       selectedClaudeProfile,
+      activeClaudeProfile,
       catalogProfile,
       claudeProfiles: profiles,
       claudeProfilesLoading: isClaudeProvider && profilesQuery.isLoading,
@@ -91,6 +98,7 @@ export function useClaudeProfileSelection({
       handleClaudeProfileChange,
     }),
     [
+      activeClaudeProfile,
       catalogProfile,
       handleClaudeProfileChange,
       isClaudeProvider,
