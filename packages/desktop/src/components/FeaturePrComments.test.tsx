@@ -33,7 +33,9 @@ describe("PrCommentThread actions", () => {
 
     fireEvent.click(screen.getByText("src/app.ts:12"));
 
-    expect(onSelectedChange).toHaveBeenCalledWith(true);
+    // The card reports its own id, so the list can pass one shared callback to
+    // every row instead of binding a fresh arrow per row on every render.
+    expect(onSelectedChange).toHaveBeenCalledWith(value.id, true);
     rerender(<PrCommentThread thread={value} selected onSelectedChange={onSelectedChange} />);
     expect(container.querySelector("article")).toHaveAttribute("data-selected", "true");
   });
@@ -62,7 +64,7 @@ describe("PrCommentThread actions", () => {
 });
 
 describe("CommentsHeader", () => {
-  it("explains the select-then-send flow when review selection is available", () => {
+  it("offers one control that takes every unresolved thread", () => {
     render(
       <CommentsHeader
         commentsLoading={false}
@@ -79,10 +81,12 @@ describe("CommentsHeader", () => {
       />,
     );
 
+    // One control, no prose: what the checkbox column is for is said by the
+    // action bar that acts on it, not by a paragraph above every review.
     expect(
-      screen.getByRole("checkbox", { name: /send all 2 unresolved threads to the agent/i }),
+      screen.getByRole("checkbox", { name: /pick all 2 unresolved threads for the agent/i }),
     ).toBeVisible();
-    expect(screen.getByText(/Or tick individual threads/)).toBeVisible();
+    expect(screen.getByText("Pick all")).toBeVisible();
   });
 
   it("leaves the select-all control out when the caller cannot act on it", () => {

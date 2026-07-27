@@ -3,26 +3,17 @@ import { fireEvent, render, screen } from "@/test-utils";
 import type { CommentThread, PrStatusSnapshot } from "@/api/generated";
 import type { PrReviewThreads } from "@/hooks/usePrReviewThreads";
 import { usePrStatusStore } from "@/stores/usePrStatusStore";
-import { FeaturePrView, reviewStateLabel } from "./FeaturePrView";
+import { FeaturePrView } from "./FeaturePrView";
 
 const navigateMock = vi.hoisted(() => vi.fn());
+const hydrateMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
   return { ...actual, useNavigate: () => navigateMock };
 });
 
-describe("reviewStateLabel", () => {
-  it("hides the provider's absence-of-review sentinel", () => {
-    expect(reviewStateLabel("none")).toBeNull();
-  });
-
-  it("uses user-facing labels for actionable review states", () => {
-    expect(reviewStateLabel("approved")).toBe("approved");
-    expect(reviewStateLabel("changes_requested")).toBe("changes requested");
-    expect(reviewStateLabel("pending")).toBe("review pending");
-  });
-});
+vi.mock("@/stores/pr-status-hydration", () => ({ hydratePrStatuses: hydrateMock }));
 
 function snapshot(): PrStatusSnapshot {
   return {
@@ -92,6 +83,50 @@ describe("FeaturePrView pinned band", () => {
     fireEvent.wheel(band, { deltaY: 3, deltaMode: 1 });
 
     expect(scroller.scrollTop).toBe(48);
+  });
+});
+
+describe("FeaturePrView unresolved chip", () => {
+  beforeEach(() => {
+    usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
+    usePrStatusStore.getState().setStatus(snapshot());
+  });
+
+  it("toggles the filter off again, rather than pressing itself and sticking", () => {
+    // "unresolved" is the default filter, so a one-way chip rendered pressed on
+    // the first frame and its click was a no-op — a toggle that cannot be
+    // un-pressed is a control that lies about being one.
+    render(<FeaturePrView featureId={42} reviews={{ ...REVIEWS, unresolvedCount: 3 }} />);
+    const chip = screen.getByRole("button", { name: /3 unresolved/ });
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(chip);
+
+    expect(screen.getByRole("button", { name: /3 unresolved/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+});
+
+describe("FeaturePrView refresh", () => {
+  beforeEach(() => {
+    hydrateMock.mockClear();
+    usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
+    usePrStatusStore.getState().setStatus(snapshot());
+  });
+
+  it("refreshes the status the band actually shows, not just the threads", () => {
+    // The band displays checks, state, verdict and "updated N ago" — all from
+    // the status store. Refetching only the comments left every one of them
+    // stale, so the button did nothing a user could see.
+    const retry = vi.fn();
+    render(<FeaturePrView featureId={42} reviews={{ ...REVIEWS, retry }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh from the forge" }));
+
+    expect(retry).toHaveBeenCalledOnce();
+    expect(hydrateMock).toHaveBeenCalledOnce();
   });
 });
 
@@ -204,7 +239,7 @@ describe("FeaturePrView select-all", () => {
         onAllThreadsSelectedChange={onAll}
       />,
     );
-    return screen.getByRole("checkbox", { name: /send all 2 unresolved threads to the agent/i });
+    return screen.getByRole("checkbox", { name: /pick all 2 unresolved threads for the agent/i });
   }
 
   it("takes every unresolved thread from an empty selection", () => {
@@ -214,8 +249,9 @@ describe("FeaturePrView select-all", () => {
   });
 
   it("reads as partial while some threads are checked", () => {
+    // Tri-state: after ticking a few by hand, a plain unchecked box would read
+    // as "nothing picked". The running count lives in the send bar.
     expect(renderWith(["one"])).toHaveAttribute("data-state", "indeterminate");
-    expect(screen.getByText("1 of 2 picked — send from the bar below.")).toBeVisible();
   });
 
   it("clears the selection when every thread is already checked", () => {
@@ -246,7 +282,7 @@ describe("FeaturePrView select-all", () => {
     // fresh function identity is a new component type to React, so the whole
     // header subtree remounted and the checkbox lost focus on every tick —
     // ticking two boxes in a row from the keyboard was impossible.
-    const name = /send all 2 unresolved threads to the agent/i;
+    const name = /pick all 2 unresolved threads for the agent/i;
     const { rerender } = render(
       <FeaturePrView
         featureId={42}

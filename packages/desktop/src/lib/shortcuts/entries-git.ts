@@ -58,6 +58,17 @@ export const GIT_SHORTCUTS = [
     aliases: ["git", "add"],
   },
   {
+    // `x` is the select-a-row key every forge's own inbox uses, and it is the
+    // one bare letter the Git navigation map had left. It picks the *focused*
+    // thread, so it composes with j/k into a keyboard-only path from "read the
+    // review" to "hand it to the agent" without touching a checkbox.
+    id: "git-toggle-thread-picked",
+    keys: ["x"],
+    description: "Pick or unpick the focused review thread",
+    scope: "diff-viewer",
+    aliases: ["git", "review", "select", "pull request", "merge request"],
+  },
+  {
     id: "git-reset-file",
     keys: ["r"],
     description: "Unstage selected Git file (preserve worktree)",

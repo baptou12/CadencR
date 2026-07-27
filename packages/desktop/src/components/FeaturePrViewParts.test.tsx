@@ -1,21 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
 import type { PrStatusSnapshot } from "@/api/generated";
-import { ChecksPanel } from "./FeaturePrViewParts";
+import { PrDescription } from "./FeaturePrViewParts";
 
-function snapshot(): PrStatusSnapshot {
+function snapshot(bodyMarkdown: string): PrStatusSnapshot {
   return {
     setup_required: false,
     feature_id: 3,
     fetched_at: 1,
     error: null,
-    ci: {
-      state: "passing",
-      checks: [{ name: "build", state: "passing", url: null }],
-    },
+    ci: { state: "passing", checks: [{ name: "build", state: "passing", url: null }] },
     pr: {
       author: { username: "reviewer" },
-      body_markdown: "",
+      body_markdown: bodyMarkdown,
       head_sha: "abc",
       number: 7,
       pr_label: "Pull request",
@@ -30,52 +27,35 @@ function snapshot(): PrStatusSnapshot {
   };
 }
 
-function checksToggle(): HTMLElement {
-  return screen.getByRole("button", { name: /Checks/ });
+function disclosure(): HTMLElement {
+  return screen.getByRole("button", { name: /Description/ });
 }
 
-describe("ChecksPanel", () => {
-  it("stays expanded while the pane sits at the top", () => {
-    render(<ChecksPanel status={snapshot()} collapsedByScroll={false} />);
+describe("PrDescription", () => {
+  it("starts folded so the first review thread is above the fold", () => {
+    render(<PrDescription status={snapshot("Rewrites the poller.")} />);
 
-    expect(checksToggle()).toHaveAttribute("aria-expanded", "true");
+    expect(disclosure()).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("folds itself away once the pane is scrolled off the top", () => {
-    const { rerender } = render(<ChecksPanel status={snapshot()} collapsedByScroll={false} />);
+  it("previews the first line of prose, skipping heading markup", () => {
+    render(<PrDescription status={snapshot("## Summary\n\nRewrites the **poller**.")} />);
 
-    rerender(<ChecksPanel status={snapshot()} collapsedByScroll />);
-
-    expect(checksToggle()).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Rewrites the poller.")).toBeVisible();
   });
 
-  it("unfolds again when the pane returns to the top", () => {
-    const { rerender } = render(<ChecksPanel status={snapshot()} collapsedByScroll />);
+  it("opens on click", () => {
+    render(<PrDescription status={snapshot("Rewrites the poller.")} />);
 
-    rerender(<ChecksPanel status={snapshot()} collapsedByScroll={false} />);
+    fireEvent.click(disclosure());
 
-    expect(checksToggle()).toHaveAttribute("aria-expanded", "true");
+    expect(disclosure()).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("lets a manual expand win while scrolled away, then yields on the next scroll", () => {
-    const { rerender } = render(<ChecksPanel status={snapshot()} collapsedByScroll />);
+  it("says so plainly rather than offering an empty disclosure", () => {
+    render(<PrDescription status={snapshot("   ")} />);
 
-    fireEvent.click(checksToggle());
-    expect(checksToggle()).toHaveAttribute("aria-expanded", "true");
-
-    // Back to the top, then away again: the automatic behavior takes over
-    // rather than replaying the override forever.
-    rerender(<ChecksPanel status={snapshot()} collapsedByScroll={false} />);
-    rerender(<ChecksPanel status={snapshot()} collapsedByScroll />);
-
-    expect(checksToggle()).toHaveAttribute("aria-expanded", "false");
-  });
-
-  it("honors a manual collapse at the top", () => {
-    render(<ChecksPanel status={snapshot()} collapsedByScroll={false} />);
-
-    fireEvent.click(checksToggle());
-
-    expect(checksToggle()).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("No description provided.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Description/ })).not.toBeInTheDocument();
   });
 });

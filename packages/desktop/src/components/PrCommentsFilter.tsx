@@ -26,7 +26,7 @@ export function PrCommentsFilterToggle({
     <div
       role="group"
       aria-label="Filter review threads"
-      className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5"
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5"
     >
       <FilterButton
         active={value === "unresolved"}

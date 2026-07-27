@@ -5,32 +5,54 @@ import { cn } from "@/lib/utils";
 
 export type PrIndicatorTone = "blocked" | "danger" | "merged" | "neutral" | "ready" | "unresolved";
 
+/**
+ * Every tone resolves through a theme token. `ready` used to be a raw Tailwind
+ * `blue-400`, which is the one hue in these maps that no theme gets to tune —
+ * on the light grounds it lands around 2.3:1, well under the 4.5:1 these
+ * 10.5px chips need. `--acc-cyan` is the same idea in a colour each theme
+ * already picked for its own background (`#52bfd0` dark, `#007f9b` light).
+ */
+
 const PR_ICON_STYLE: Record<PrIndicatorTone, string> = {
   blocked: "text-[var(--acc-orange)]",
   danger: "text-[var(--acc-red)]",
   merged: "text-[var(--acc-green)]",
   neutral: "text-muted-foreground",
-  ready: "text-blue-400",
+  ready: "text-[var(--acc-cyan)]",
   unresolved: "text-[var(--acc-yellow)]",
 };
 
+/**
+ * Tone lives in the border and the glyph; the surface stays neutral.
+ *
+ * These used to carry a 10% wash of their own hue, which reads as a nice tint
+ * and quietly costs the thing it sits behind: a wash pulls the background
+ * *toward* the text colour, so the 10.5px number on it lost roughly a point of
+ * contrast in every tone — `ready` measured 3.62 against a 4.5 bar on the light
+ * grounds. `bg-background/50` is what `neutral` already used; the other five
+ * now agree with it, and the coloured border still names the state.
+ */
 const PR_CHIP_SURFACE: Record<PrIndicatorTone, string> = {
-  blocked: "border-[var(--acc-orange)]/40 bg-[var(--acc-orange)]/10",
-  danger: "border-[var(--acc-red)]/40 bg-[var(--acc-red)]/10",
-  merged: "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10",
+  blocked: "border-[var(--acc-orange)]/40 bg-background/50",
+  danger: "border-[var(--acc-red)]/40 bg-background/50",
+  merged: "border-[var(--acc-green)]/40 bg-background/50",
   neutral: "border-border/70 bg-background/50",
-  ready: "border-blue-400/40 bg-blue-400/10",
-  unresolved: "border-[var(--acc-yellow)]/40 bg-[var(--acc-yellow)]/10",
+  ready: "border-[var(--acc-cyan)]/40 bg-background/50",
+  unresolved: "border-[var(--acc-yellow)]/40 bg-background/50",
 };
 
-/** Semantic surface classes for PR state / review chips in the PR pane. */
-export const PR_TONE_BADGE: Record<PrIndicatorTone, string> = {
-  blocked: "border-[var(--acc-orange)]/40 bg-[var(--acc-orange)]/10 text-[var(--acc-orange)]",
-  danger: "border-[var(--acc-red)]/40 bg-[var(--acc-red)]/10 text-[var(--acc-red)]",
-  merged: "border-[var(--acc-green)]/40 bg-[var(--acc-green)]/10 text-[var(--acc-green)]",
-  neutral: "border-border bg-muted/40 text-muted-foreground",
-  ready: "border-blue-400/40 bg-blue-400/10 text-blue-400",
-  unresolved: "border-[var(--acc-yellow)]/40 bg-[var(--acc-yellow)]/10 text-[var(--acc-yellow)]",
+/**
+ * Fill classes for the solid dot that carries proposal health where there is no
+ * room for words — the Git sub-tab strip. Same tones as the chip, as a fill
+ * rather than a tint, because a 6px dot at 10% opacity reads as nothing.
+ */
+export const PR_TONE_DOT: Record<PrIndicatorTone, string> = {
+  blocked: "bg-[var(--acc-orange)]",
+  danger: "bg-[var(--acc-red)]",
+  merged: "bg-[var(--acc-green)]",
+  neutral: "bg-muted-foreground",
+  ready: "bg-[var(--acc-cyan)]",
+  unresolved: "bg-[var(--acc-yellow)]",
 };
 
 export function prIndicatorTone(snapshot: PrStatusSnapshot | undefined): PrIndicatorTone {

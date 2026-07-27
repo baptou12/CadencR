@@ -75,7 +75,7 @@ function TimelineHeader({ context }: { context?: TimelineContext }): ReactElemen
   if (!context) return null;
   const { status, ...header } = context;
   return (
-    <div className="space-y-4 px-4 pb-4 pt-3">
+    <div className="space-y-3 px-4 pb-3 pt-3">
       <PrDescription status={status} />
       <CommentsHeader {...header} />
     </div>

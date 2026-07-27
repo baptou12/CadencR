@@ -12,7 +12,13 @@ import { useGitTabPanes } from "./diff/useGitTabPanes";
 import { useGitTabReviews, type GitTabReviews } from "./diff/useGitTabReviews";
 import { useGitTabShortcuts } from "./diff/useGitTabShortcuts";
 import { useGitTabViewState } from "./diff/useGitTabViewState";
-import { selectGitTargetBranch, useGitStatusStore } from "@/stores/useGitStatusStore";
+import {
+  selectGitConflictCount,
+  selectGitTargetBranch,
+  selectGitUncommittedCount,
+  useGitStatusStore,
+} from "@/stores/useGitStatusStore";
+import { prIndicatorTone } from "@/components/PrStatusIndicators";
 import { GitUpdateRecoveryRegion } from "./git-actions/GitUpdateRecoveryBanner";
 import { useGitKeyboardController } from "./diff/useGitKeyboardController";
 import { useGitViewShortcuts } from "./diff/useGitViewShortcuts";
@@ -50,6 +56,7 @@ function useSendBarProps(
             totalCount: reviews.unresolved.length,
             disabled: reviews.sendDisabled,
             onSend: reviews.sendSelected,
+            onClear: () => reviews.setAllThreadsSelected(false),
           }
         : undefined,
     }),
@@ -109,6 +116,7 @@ function reviewBodyProps(
     onReviewThreadSelectedChange: reviews.canSend ? reviews.setThreadSelected : undefined,
     onAllReviewThreadsSelectedChange: reviews.canSend ? reviews.setAllThreadsSelected : undefined,
     onViewReviewThread,
+    onSendReviewThread: reviews.sendThread,
   };
 }
 
@@ -138,13 +146,19 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     ),
     [featureId, handleRequestUncommitted],
   );
-  useGitViewShortcuts(view.setViewMode, hotkeysEnabled && !view.isSavingViewMode);
+  // Not gated on a save being in flight. The strip deliberately keeps every tab
+  // clickable while one lands, and freezing the keyboard for the same window
+  // would make the faster way in the only one that stops responding.
+  // `setViewMode` already ignores a repeat of the current view.
+  useGitViewShortcuts(view.setViewMode, hotkeysEnabled);
 
   // Only the target branch affects this component's query parameters. Selecting
   // the full live snapshot would re-render the entire Git tab whenever the
   // watcher advances `computed_at` for an agent file write; changed-files and
   // per-file diff queries already subscribe to their own cache updates.
   const targetBranch = useGitStatusStore(selectGitTargetBranch(featureId));
+  const uncommittedCount = useGitStatusStore(selectGitUncommittedCount(featureId));
+  const conflictCount = useGitStatusStore(selectGitConflictCount(featureId));
   const prStatus = usePrStatusStore(selectPrStatus(featureId));
   const panes = useGitTabPanes(featureId, view.viewMode, targetBranch);
   const prAttention = usePrAttention(prStatus, panes.isPr);
@@ -180,8 +194,12 @@ export const FeatureGitTab = memo(function FeatureGitTab({
         onViewModeChange: view.setViewMode,
         targetBranch,
         prLabel: prStatus?.pr?.pr_label,
+        prNumber: prStatus?.pr?.number,
+        prTone: prIndicatorTone(prStatus),
         prAttention,
-        isSavingView: view.isSavingViewMode,
+        uncommittedCount,
+        conflictCount,
+        pendingViewMode: view.pendingViewMode,
         isListView: panes.isListView,
         fileListCollapsed: view.fileListCollapsed,
         isFileListCollapseLoading: view.isFileListCollapseLoading,

@@ -1,42 +1,37 @@
-import { ExternalLinkIcon, Loader2Icon } from "lucide-react";
-import { memo, useCallback, useRef, useState, type ReactElement, type WheelEvent } from "react";
-import { Virtuoso } from "react-virtuoso";
-import { useNavigate } from "@tanstack/react-router";
 import {
-  useGetPr,
-  type CommentThread,
-  type PrStatusSnapshot,
-  type ReviewState,
-} from "@/api/generated";
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type WheelEvent,
+} from "react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { useNavigate } from "@tanstack/react-router";
+import { useGetPr, type CommentThread } from "@/api/generated";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { DEFAULT_PR_COMMENT_FILTER, type PrCommentFilter } from "@/components/PrCommentsFilter";
 import type { PrReviewThreads } from "@/hooks/usePrReviewThreads";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { FORGE_SETTINGS_ANCHOR } from "@/lib/settings-anchors";
-import { openPullRequestExternally } from "@/lib/open-pull-request";
+import { hydratePrStatuses } from "@/stores/pr-status-hydration";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
-import { cn } from "@/lib/utils";
 import { PrCommentThread } from "@/components/FeaturePrComments";
 import {
-  AuthorInitials,
-  ChecksPanel,
   EmptyState,
   PrEmptyIcon,
   PrViewError,
   PrViewLoading,
-  relativeTime,
 } from "@/components/FeaturePrViewParts";
+import { PrStatusBand } from "@/components/PrStatusBand";
 import {
   TIMELINE_COMPONENTS,
   useTimelineContext,
   type TimelineHeaderSource,
 } from "@/components/PrTimelineSlots";
-import {
-  PR_TONE_BADGE,
-  prIndicatorTone,
-  type PrIndicatorTone,
-} from "@/components/PrStatusIndicators";
+import type { GitNavigationAdapterRegistrar } from "@/components/diff/gitNavigation";
+import { usePrThreadKeyboard } from "@/components/diff/usePrThreadKeyboard";
 
 interface FeaturePrViewProps {
   featureId: number;
@@ -45,19 +40,8 @@ interface FeaturePrViewProps {
   onThreadSelectedChange?: (threadId: string, selected: boolean) => void;
   onAllThreadsSelectedChange?: (selected: boolean) => void;
   onViewThread?: (thread: CommentThread) => void;
-}
-
-export function reviewStateLabel(reviewState: ReviewState): string | null {
-  if (reviewState === "none") return null;
-  if (reviewState === "changes_requested") return "changes requested";
-  if (reviewState === "pending") return "review pending";
-  return "approved";
-}
-
-function reviewTone(reviewState: ReviewState): PrIndicatorTone {
-  if (reviewState === "changes_requested" || reviewState === "pending") return "blocked";
-  if (reviewState === "approved") return "ready";
-  return "neutral";
+  onSendThread?: (thread: CommentThread) => void;
+  registerNavigationAdapter?: GitNavigationAdapterRegistrar;
 }
 
 export const FeaturePrView = memo(function FeaturePrView({
@@ -67,6 +51,8 @@ export const FeaturePrView = memo(function FeaturePrView({
   onThreadSelectedChange,
   onAllThreadsSelectedChange,
   onViewThread,
+  onSendThread,
+  registerNavigationAdapter,
 }: FeaturePrViewProps): ReactElement {
   const cached = usePrStatusStore(selectPrStatus(featureId));
   const summaryQuery = useGetPr(
@@ -104,9 +90,112 @@ export const FeaturePrView = memo(function FeaturePrView({
       onThreadSelectedChange={onThreadSelectedChange}
       onAllThreadsSelectedChange={onAllThreadsSelectedChange}
       onViewThread={onViewThread}
+      onSendThread={onSendThread}
+      registerNavigationAdapter={registerNavigationAdapter}
     />
   );
 });
+
+interface PrTimelineProps extends TimelineHeaderSource {
+  onViewThread?: (thread: CommentThread) => void;
+  onSendThread?: (thread: CommentThread) => void;
+  registerNavigationAdapter?: GitNavigationAdapterRegistrar;
+}
+
+/**
+ * Identity and verdict stay pinned above the scroller — reading the fortieth
+ * thread should never cost you the answer to "which proposal is this, and is it
+ * green?". Only the description and the threads scroll.
+ */
+function PrTimeline(props: PrTimelineProps): ReactElement {
+  const band = usePinnedBandScroll();
+  const {
+    selectedThreadIds,
+    onThreadSelectedChange,
+    onViewThread,
+    onSendThread,
+    status,
+    threads,
+    onFilterChange,
+  } = props;
+  const listContext = useTimelineContext(props);
+  const { focusedThreadId } = usePrThreadKeyboard({
+    threads,
+    register: props.registerNavigationAdapter,
+    onViewThread,
+    onSelectedChange: onThreadSelectedChange,
+    selectedThreadIds,
+    scrollHalfPage: band.scrollHalfPage,
+    revealThread: band.revealThread,
+  });
+
+  const itemContent = useCallback(
+    (_index: number, thread: CommentThread) => (
+      <div className="pb-2.5">
+        <PrCommentThread
+          thread={thread}
+          selected={selectedThreadIds?.has(thread.id) ?? false}
+          focused={focusedThreadId === thread.id}
+          onSelectedChange={onThreadSelectedChange}
+          onViewThread={onViewThread}
+          onSendThread={onSendThread}
+        />
+      </div>
+    ),
+    [focusedThreadId, onSendThread, onThreadSelectedChange, onViewThread, selectedThreadIds],
+  );
+
+  // "Refresh from the forge" used to refetch only the review threads, while the
+  // band around the button shows checks, state, verdict and "updated N ago" —
+  // all of which come from the status store. Clicking it because the checks
+  // looked stale changed nothing visible. `hydratePrStatuses` reports its own
+  // failures, so an unreachable forge still surfaces.
+  const onCommentsRetry = props.onCommentsRetry;
+  const [statusRefreshing, setStatusRefreshing] = useState(false);
+  const refresh = useCallback((): void => {
+    onCommentsRetry();
+    setStatusRefreshing(true);
+    void hydratePrStatuses().finally(() => setStatusRefreshing(false));
+  }, [onCommentsRetry]);
+
+  // A real toggle, because "unresolved" is the default filter: as a one-way
+  // action the chip rendered pressed from the first frame and its click did
+  // nothing, which is a control that lies about being one.
+  const filter = props.filter;
+  const toggleUnresolved = useCallback((): void => {
+    onFilterChange(filter === "unresolved" ? "all" : "unresolved");
+    band.scrollToTop();
+  }, [band, filter, onFilterChange]);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {status.error && (
+        <div className="shrink-0 px-4 pt-3">
+          <PrViewError message={status.error} compact />
+        </div>
+      )}
+      <PrStatusBand
+        status={status}
+        unresolvedCount={props.unresolvedCount}
+        unresolvedFiltered={filter === "unresolved"}
+        onToggleUnresolved={toggleUnresolved}
+        onRefresh={refresh}
+        isRefreshing={props.commentsRefreshing || statusRefreshing}
+        onWheel={band.onWheel}
+      />
+      <Virtuoso
+        ref={band.listRef}
+        className="min-h-0 flex-1"
+        data={threads}
+        context={listContext}
+        components={TIMELINE_COMPONENTS}
+        itemContent={itemContent}
+        increaseViewportBy={400}
+        scrollerRef={band.scrollerRef}
+      />
+    </div>
+  );
+}
 
 /**
  * A wheel delta in the scroller's own units. Browsers report lines (Firefox) or
@@ -119,75 +208,22 @@ function wheelPixels(deltaY: number, deltaMode: number, viewportHeight: number):
   return deltaY;
 }
 
-interface PrTimelineProps extends TimelineHeaderSource {
-  onViewThread?: (thread: CommentThread) => void;
-}
-
-/**
- * Identity (title, state, author, branches) and the check rollup stay pinned
- * above the scroller — reading the 40th comment thread shouldn't cost you the
- * answer to "which PR is this, and is it green?". Only the description and the
- * threads scroll. The checks list folds itself away as soon as you leave the
- * top so the pinned band stays a band, and unfolds when you come back.
- */
-function PrTimeline(props: PrTimelineProps): ReactElement {
-  const [scrolledPastTop, setScrolledPastTop] = useState(false);
-  const band = usePinnedBandWheel();
-  const { selectedThreadIds, onThreadSelectedChange, onViewThread, status, threads } = props;
-  const listContext = useTimelineContext(props);
-  const itemContent = useCallback(
-    (_index: number, thread: CommentThread) => (
-      <div className="pb-3">
-        <PrCommentThread
-          thread={thread}
-          selected={selectedThreadIds?.has(thread.id) ?? false}
-          onSelectedChange={
-            onThreadSelectedChange
-              ? (selected) => onThreadSelectedChange(thread.id, selected)
-              : undefined
-          }
-          onViewThread={onViewThread}
-        />
-      </div>
-    ),
-    [onThreadSelectedChange, onViewThread, selectedThreadIds],
-  );
-  const handleAtTopStateChange = useCallback((atTop: boolean) => setScrolledPastTop(!atTop), []);
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div
-        className="shrink-0 space-y-3 border-b border-border bg-card/40 px-4 py-3"
-        onWheel={band.onWheel}
-      >
-        {status.error && <PrViewError message={status.error} compact />}
-        <PrHeader status={status} />
-        <ChecksPanel status={status} collapsedByScroll={scrolledPastTop} />
-      </div>
-      <Virtuoso
-        className="min-h-0 flex-1"
-        data={threads}
-        context={listContext}
-        components={TIMELINE_COMPONENTS}
-        itemContent={itemContent}
-        increaseViewportBy={400}
-        atTopThreshold={8}
-        atTopStateChange={handleAtTopStateChange}
-        scrollerRef={band.scrollerRef}
-      />
-    </div>
-  );
-}
-
 /**
  * The pinned band is not scrollable, so a wheel gesture over it would land
  * nowhere and read as a frozen pane. Forwarding it to the list's scroller keeps
- * the whole pane feeling like one surface.
+ * the whole pane feeling like one surface — and gives the keyboard commands
+ * and the "show unresolved" chip the same handle to drive.
  */
-function usePinnedBandWheel(): {
+function usePinnedBandScroll(): {
+  listRef: React.RefObject<VirtuosoHandle | null>;
   scrollerRef: (element: HTMLElement | Window | null) => void;
   onWheel: (event: WheelEvent<HTMLDivElement>) => void;
+  scrollHalfPage: (direction: -1 | 1) => boolean;
+  scrollToTop: () => void;
+  revealThread: (index: number) => void;
 } {
   const scroller = useRef<HTMLElement | null>(null);
+  const listRef = useRef<VirtuosoHandle | null>(null);
   const scrollerRef = useCallback((element: HTMLElement | Window | null) => {
     scroller.current = element instanceof HTMLElement ? element : null;
   }, []);
@@ -196,82 +232,28 @@ function usePinnedBandWheel(): {
     if (!element || event.deltaY === 0) return;
     element.scrollTop += wheelPixels(event.deltaY, event.deltaMode, element.clientHeight);
   }, []);
-  return { scrollerRef, onWheel };
-}
-
-function PrHeader({ status }: { status: PrStatusSnapshot }): ReactElement {
-  const pr = status.pr!;
-  const reviewLabel = reviewStateLabel(pr.review_state);
-  const stateTone = prIndicatorTone(status);
-  const [opening, setOpening] = useState(false);
-  const handleOpen = useCallback(async (): Promise<void> => {
-    setOpening(true);
-    await openPullRequestExternally(pr);
-    setOpening(false);
-  }, [pr]);
-  const branchTitle = `${pr.source_branch} → ${pr.target_branch}`;
-
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 flex-1 space-y-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className={cn("rounded-md", PR_TONE_BADGE[stateTone])}>
-            {pr.state}
-          </Badge>
-          {reviewLabel && (
-            <Badge
-              variant="outline"
-              className={cn("rounded-md", PR_TONE_BADGE[reviewTone(pr.review_state)])}
-            >
-              {reviewLabel}
-            </Badge>
-          )}
-          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-            {pr.pr_label} #{pr.number}
-          </span>
-          <span aria-hidden className="text-[11px] text-border">
-            ·
-          </span>
-          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-            updated {relativeTime(pr.updated_at)}
-          </span>
-        </div>
-        <h2 className="text-base font-semibold leading-snug text-balance text-foreground">
-          {pr.title}
-        </h2>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-          <AuthorInitials name={pr.author.display_name ?? pr.author.username} />
-          <span className="truncate">{pr.author.display_name ?? pr.author.username}</span>
-          <span aria-hidden className="text-border">
-            ·
-          </span>
-          <span
-            className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono"
-            title={branchTitle}
-          >
-            <span className="truncate">{pr.source_branch}</span>
-            <span aria-hidden className="shrink-0">
-              →
-            </span>
-            <span className="shrink-0 truncate">{pr.target_branch}</span>
-          </span>
-        </div>
-      </div>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-8 shrink-0 gap-1.5"
-        disabled={opening}
-        onClick={() => void handleOpen()}
-      >
-        {opening ? (
-          <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
-        ) : (
-          <ExternalLinkIcon className="size-3.5" aria-hidden />
-        )}
-        Open
-      </Button>
-    </div>
+  const scrollHalfPage = useCallback((direction: -1 | 1): boolean => {
+    const element = scroller.current;
+    if (!element) return false;
+    element.scrollBy({ top: (element.clientHeight / 2) * direction, behavior: "auto" });
+    return true;
+  }, []);
+  const scrollToTop = useCallback((): void => {
+    // The scroller, not `scrollToIndex(0)`: the first item is not the top of the
+    // pane — the description and the threads header ride in Virtuoso's header,
+    // and aligning item 0 to the start scrolls both of them out of sight.
+    const element = scroller.current;
+    if (element) element.scrollTop = 0;
+  }, []);
+  // `scrollIntoView`, not `scrollToIndex`: it handles a row the virtualizer has
+  // not rendered *and* leaves an already-visible row where it is, so keyboard
+  // focus stops re-centring cards you can already see.
+  const revealThread = useCallback((index: number): void => {
+    listRef.current?.scrollIntoView({ index });
+  }, []);
+  return useMemo(
+    () => ({ listRef, scrollerRef, onWheel, scrollHalfPage, scrollToTop, revealThread }),
+    [onWheel, revealThread, scrollHalfPage, scrollToTop, scrollerRef],
   );
 }
 

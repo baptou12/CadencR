@@ -1,5 +1,6 @@
 import { Loader2Icon, SendIcon } from "lucide-react";
 import { useMemo, type ReactElement } from "react";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Button } from "@/components/ui/button";
 import { formatCombo } from "@/lib/shortcuts/format";
@@ -14,6 +15,7 @@ export interface GitSendCommentsBarProps {
     totalCount: number;
     disabled: boolean;
     onSend: () => void;
+    onClear: () => void;
   };
 }
 
@@ -22,29 +24,54 @@ export interface GitSendCommentsBarProps {
  * forge's unresolved review threads stay separate buttons on purpose: they are
  * different bodies of feedback with different provenance, and a developer
  * usually wants to send exactly one of them.
+ *
+ * With nothing picked the bar teaches the two ways to pick rather than
+ * reporting "0 of 8" — a count of zero is not news, and the keys are the part
+ * nobody finds on their own.
  */
 export function GitSendCommentsBar({
   drafts,
   reviews,
 }: GitSendCommentsBarProps): ReactElement | null {
   const reviewShortcut = useResolvedShortcut("diff-send-review-comments");
+  const pickShortcut = useResolvedShortcut("git-toggle-thread-picked");
   const draftShortcut = useResolvedShortcut("diff-send-comments");
   const reviewKeys = useMemo(() => formatCombo(reviewShortcut.keys), [reviewShortcut.keys]);
+  const pickKeys = useMemo(() => formatCombo(pickShortcut.keys), [pickShortcut.keys]);
   const draftKeys = useMemo(() => formatCombo(draftShortcut.keys), [draftShortcut.keys]);
   if (!drafts && !reviews) return null;
   return (
-    <div className="flex min-h-14 items-center justify-end gap-2 border-t bg-card/30 px-4 py-3">
+    <div className="flex min-h-13 items-center justify-end gap-2 border-t border-border bg-card/30 px-4 py-2.5">
       {reviews && (
         <>
-          <span className="mr-auto text-xs tabular-nums text-muted-foreground" aria-live="polite">
-            {reviews.selectedCount} of {reviews.totalCount}{" "}
-            {reviews.totalCount === 1 ? "thread" : "threads"} picked for the agent
+          <span
+            className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-foreground"
+            aria-live="polite"
+          >
+            {reviews.selectedCount > 0 ? (
+              <span className="tabular-nums">
+                <span className="font-medium text-foreground">{reviews.selectedCount}</span> of{" "}
+                {reviews.totalCount} picked
+              </span>
+            ) : (
+              <>
+                <span className="truncate">Pick threads to send</span>
+                <KbdShortcut keys={pickKeys} size="sm" />
+              </>
+            )}
           </span>
+          {reviews.selectedCount > 0 && (
+            <Button variant="ghost" size="sm" onClick={reviews.onClear}>
+              Clear
+            </Button>
+          )}
           <ShortcutTooltip label="Send picked threads to the agent" keys={reviewKeys} above>
             <span className="inline-flex">
               <Button size="sm" disabled={reviews.disabled} onClick={reviews.onSend}>
-                <SendIcon className="mr-2 size-4" aria-hidden />
-                Send {reviews.selectedCount} {reviews.selectedCount === 1 ? "thread" : "threads"}
+                <SendIcon className="size-3.5" aria-hidden />
+                {reviews.selectedCount > 0
+                  ? `Send ${reviews.selectedCount} to agent`
+                  : "Send to agent"}
               </Button>
             </span>
           </ShortcutTooltip>
@@ -54,9 +81,9 @@ export function GitSendCommentsBar({
         <ShortcutTooltip label={drafts.label} keys={draftKeys} above>
           <Button variant="outline" size="sm" disabled={drafts.disabled} onClick={drafts.onSend}>
             {drafts.sending ? (
-              <Loader2Icon className="mr-2 size-4 animate-spin" aria-hidden />
+              <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
             ) : (
-              <SendIcon className="mr-2 size-4" aria-hidden />
+              <SendIcon className="size-3.5" aria-hidden />
             )}
             {drafts.label}
           </Button>

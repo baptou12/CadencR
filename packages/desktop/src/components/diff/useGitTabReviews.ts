@@ -33,6 +33,9 @@ export interface GitTabReviews {
   setThreadSelected: (threadId: string, selected: boolean) => void;
   setAllThreadsSelected: (selected: boolean) => void;
   sendSelected: () => void;
+  /** Sends one thread on its own — the common case, without a round trip
+   *  through the checkbox column. `undefined` when the forge isn't sendable. */
+  sendThread: ((thread: CommentThread) => void) | undefined;
   sendDisabled: boolean;
   canSend: boolean;
 }
@@ -150,6 +153,19 @@ export function useGitTabReviews(
     sendReviewThreads(selection.selectedThreads);
     selection.clearSelection();
   }, [selection, sendDisabled, sendReviewThreads]);
+  const sendOne = useCallback(
+    (thread: CommentThread): void => {
+      sendReviewThreads([thread]);
+      // Drops this thread's own pick, since it has now been sent — but leaves
+      // the rest of the batch standing. Clearing the whole selection here would
+      // throw away picking work the developer cannot see from this button.
+      selection.setThreadSelected(thread.id, false);
+    },
+    // `selection` as a whole changes identity on every pick; `setThreadSelected`
+    // does not. Depending on the bag would hand every review card a new
+    // `onSendThread` each time a checkbox moved, undoing the card's `memo`.
+    [selection.setThreadSelected, sendReviewThreads],
+  );
 
   return useMemo(
     () => ({
@@ -176,11 +192,13 @@ export function useGitTabReviews(
       setThreadSelected: selection.setThreadSelected,
       setAllThreadsSelected: selection.setAllSelected,
       sendSelected,
+      sendThread: canSend ? sendOne : undefined,
       sendDisabled,
       canSend,
     }),
     [
       canSend,
+      sendOne,
       navigation.activeIndex,
       navigation.activeTarget,
       navigation.focusThread,
