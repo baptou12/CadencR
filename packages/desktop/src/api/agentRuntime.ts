@@ -180,7 +180,7 @@ export function useSetProjectProviderSetting(
 // Claude Code profiles & custom models
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_CLAUDE_PROFILE_NAME = "default";
+export { DEFAULT_CLAUDE_PROFILE_NAME } from "@/lib/claude-profiles";
 
 export interface ClaudeCodeProfile {
   name: string;

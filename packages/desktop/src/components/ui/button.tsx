@@ -14,6 +14,16 @@ const buttonVariants = cva(
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20",
         outline: "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        /**
+         * Actionable control sitting *on* a popover or card rather than on the
+         * page. `outline` is the wrong tool there: its `bg-background` equals
+         * `--popover` in several themes, so the button reads as flat text in a
+         * box. `--secondary` lifts off the popover everywhere it differs from
+         * it, and where a theme collides the two (CadencR brand) the hairline
+         * still carries the affordance — never worse than `outline`.
+         */
+        raised:
+          "bg-secondary text-secondary-foreground border border-border shadow-xs hover:bg-accent hover:text-accent-foreground",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
