@@ -145,6 +145,7 @@ mod tests {
             vec!["init", "-q", "-b", "main"],
             vec!["config", "user.email", "t@example.com"],
             vec!["config", "user.name", "T"],
+            vec!["config", "commit.gpgsign", "false"],
             vec!["commit", "--allow-empty", "-q", "-m", "init"],
         ] {
             run_git(dir, &args).await;
