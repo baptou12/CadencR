@@ -22,6 +22,7 @@ import { InternetStatusIndicator } from "@/components/InternetStatusIndicator";
 import { SidebarUpdateButton } from "@/components/SidebarUpdateButton";
 import { SidebarPushButton } from "@/components/SidebarPushButton";
 import { RemoteAccessButton } from "@/components/remote/RemoteAccessButton";
+import { APP_ENVIRONMENT_KIND } from "@/lib/app-environment";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
 import { SIDEBAR_FOOTER_PILL_CLASS } from "@/lib/changelog";
@@ -253,10 +254,7 @@ function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement
         <span className="font-brand text-xl font-extrabold uppercase tracking-widest leading-none">
           Cadencr
         </span>
-        <AppEnvironmentBadge
-          className="ml-2 -translate-y-2"
-          kind={import.meta.env.DEV ? "dev" : "beta"}
-        />
+        <AppEnvironmentBadge className="ml-2 -translate-y-2" kind={APP_ENVIRONMENT_KIND} />
         <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
             variant="ghost"

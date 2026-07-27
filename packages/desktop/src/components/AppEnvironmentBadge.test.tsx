@@ -15,4 +15,13 @@ describe("AppEnvironmentBadge", () => {
 
     expect(screen.getByText("dev")).toHaveClass("bg-orange-500/20", "text-orange-400");
   });
+
+  it("renders the next badge with the theme-owned purple accent", () => {
+    render(<AppEnvironmentBadge kind="next" />);
+
+    expect(screen.getByText("next")).toHaveClass(
+      "bg-[color-mix(in_oklab,var(--acc-purple)_15%,transparent)]",
+      "text-[var(--acc-purple)]",
+    );
+  });
 });
