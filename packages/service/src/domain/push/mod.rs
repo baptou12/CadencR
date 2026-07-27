@@ -75,7 +75,7 @@ impl PushNotifier {
             }
             Err(_) => {
                 let encoded = generate_private_key_b64();
-                std::fs::create_dir_all(dir)?;
+                crate::remote::secure_fs::create_dir_owner_only(dir)?;
                 let body = serde_json::to_vec(&VapidFile {
                     private_key: encoded.clone(),
                 })?;

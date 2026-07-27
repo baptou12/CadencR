@@ -27,14 +27,18 @@ pub async fn resolve_project_root(pool: &SqlitePool, project_id: i64) -> Result<
 /// Resolve the on-disk root a feature's editor should operate against. If the
 /// feature has a live worktree (its `worktree_path` setting points to an
 /// existing directory) we return the canonical worktree path; otherwise we
-/// fall back to the project's root. `project_id` must match the feature's
-/// owning project — we don't cross-check here because both come from the
-/// authenticated request.
+/// fall back to the project's root. A supplied feature must belong to the
+/// supplied project; request authentication does not make cross-object ids
+/// trustworthy.
 pub async fn resolve_feature_editor_root(
     pool: &SqlitePool,
     project_id: i64,
     feature_id: Option<i64>,
 ) -> Result<PathBuf, AppError> {
+    if let Some(fid) = feature_id {
+        crate::domain::features::service::ensure_belongs_to_project(pool, fid, project_id).await?;
+    }
+
     let project_root = resolve_project_root(pool, project_id).await?;
     if let Some(fid) = feature_id {
         let project_path = project_root.to_string_lossy();
@@ -218,5 +222,51 @@ mod tests {
         assert!(!canonical.is_empty());
         let canonical_tmp = std::fs::canonicalize(&dir).unwrap();
         assert_eq!(canonical, canonical_tmp.to_string_lossy().into_owned());
+    }
+
+    #[tokio::test]
+    async fn editor_root_rejects_cross_project_feature_ids() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, path TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE feature_settings (
+                feature_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                PRIMARY KEY (feature_id, key)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        sqlx::query("INSERT INTO projects (id, path) VALUES (1, ?), (2, ?)")
+            .bind(first.path().to_string_lossy().as_ref())
+            .bind(second.path().to_string_lossy().as_ref())
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id) VALUES (7, 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(resolve_feature_editor_root(&pool, 1, Some(7)).await.is_ok());
+        assert!(matches!(
+            resolve_feature_editor_root(&pool, 2, Some(7)).await,
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            resolve_feature_editor_root(&pool, 1, Some(99)).await,
+            Err(AppError::NotFound(_))
+        ));
     }
 }

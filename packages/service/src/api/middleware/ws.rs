@@ -6,6 +6,7 @@ use axum::{
 use super::response::{forbidden, unauthorized};
 use crate::app_state::AppState;
 use crate::remote::RemoteContext;
+use crate::shared::security::constant_time_str_eq;
 
 const WS_TOKEN_PREFIX: &str = "cadencr-token.";
 
@@ -89,7 +90,7 @@ pub fn validate_ws_token<'a>(
         };
         for token in raw.split(',').map(str::trim) {
             if let Some(rest) = token.strip_prefix(WS_TOKEN_PREFIX) {
-                if rest == expected_token {
+                if constant_time_str_eq(rest, expected_token) {
                     return Ok(token);
                 }
             }

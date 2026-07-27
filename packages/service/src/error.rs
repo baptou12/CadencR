@@ -58,8 +58,13 @@ impl IntoResponse for AppError {
             tracing::error!(code = code, error = %self, "request failed");
         }
 
+        let public_error = if status == StatusCode::INTERNAL_SERVER_ERROR {
+            "Internal server error".to_string()
+        } else {
+            self.to_string()
+        };
         let body = ErrorResponse {
-            error: self.to_string(),
+            error: public_error,
             code: code.to_string(),
         };
 
@@ -76,6 +81,7 @@ impl From<sqlx::Error> for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
     use axum::response::IntoResponse;
 
     #[test]
@@ -97,5 +103,20 @@ mod tests {
         let err = AppError::Internal("boom".into());
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn internal_error_body_does_not_expose_details() {
+        let response =
+            AppError::DatabaseError("SELECT secret FROM private_table".into()).into_response();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response body");
+        let body: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("decode error response");
+
+        assert_eq!(body["error"], "Internal server error");
+        assert_eq!(body["code"], "DATABASE_ERROR");
+        assert!(!body["error"].as_str().unwrap().contains("SELECT"));
     }
 }

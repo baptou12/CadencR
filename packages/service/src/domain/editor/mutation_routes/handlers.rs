@@ -1,6 +1,6 @@
 use axum::extract::{Json, Query, State};
 
-use super::helpers::validate_simple_name;
+use super::helpers::{rename_no_replace, validate_simple_name};
 use super::types::{
     CreateFileRequest, CreateFileResponse, CreateFolderRequest, CreateFolderResponse,
     EditorRootParams, EditorRootResponse, MovePathRequest, MovePathResponse, RenamePathRequest,
@@ -29,19 +29,21 @@ pub async fn create_editor_file_handler(
 
     let path_for_blocking = path.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        if path_for_blocking.exists() {
-            return Err(AppError::BadRequest(format!(
-                "File already exists: {}",
-                path_for_blocking.display()
-            )));
-        }
-        std::fs::write(&path_for_blocking, "").map_err(|e| match e.kind() {
-            std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!(
-                "Permission denied: {}",
-                path_for_blocking.display()
-            )),
-            _ => AppError::Internal(e.to_string()),
-        })
+        service::write_file_no_follow(&path_for_blocking, b"", service::FileWriteMode::CreateNew)
+            .map_err(|e| match e.kind() {
+                std::io::ErrorKind::AlreadyExists => AppError::BadRequest(format!(
+                    "File already exists: {}",
+                    path_for_blocking.display()
+                )),
+                _ if e.raw_os_error() == Some(libc::ELOOP) => {
+                    AppError::BadRequest("Refusing to create through a symbolic link".into())
+                }
+                std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!(
+                    "Permission denied: {}",
+                    path_for_blocking.display()
+                )),
+                _ => AppError::Internal(e.to_string()),
+            })
     })
     .await
     .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
@@ -68,13 +70,11 @@ pub async fn create_editor_folder_handler(
 
     let path_for_blocking = path.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        if path_for_blocking.exists() {
-            return Err(AppError::BadRequest(format!(
+        std::fs::create_dir(&path_for_blocking).map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => AppError::BadRequest(format!(
                 "Path already exists: {}",
                 path_for_blocking.display()
-            )));
-        }
-        std::fs::create_dir(&path_for_blocking).map_err(|e| match e.kind() {
+            )),
             std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!(
                 "Permission denied: {}",
                 path_for_blocking.display()
@@ -120,13 +120,11 @@ pub async fn rename_editor_path_handler(
     let project_root_for_response = project_root.clone();
     let new_abs_for_blocking = new_abs.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        if new_abs_for_blocking.exists() {
-            return Err(AppError::BadRequest(format!(
+        rename_no_replace(&old_abs, &new_abs_for_blocking).map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => AppError::BadRequest(format!(
                 "Destination already exists: {}",
                 new_abs_for_blocking.display()
-            )));
-        }
-        std::fs::rename(&old_abs, &new_abs_for_blocking).map_err(|e| match e.kind() {
+            )),
             std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!(
                 "Permission denied: {}",
                 new_abs_for_blocking.display()
@@ -203,13 +201,11 @@ pub async fn move_editor_path_handler(
     let project_root_for_response = project_root.clone();
     let new_abs_for_blocking = new_abs.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        if new_abs_for_blocking.exists() {
-            return Err(AppError::BadRequest(format!(
+        rename_no_replace(&old_abs, &new_abs_for_blocking).map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => AppError::BadRequest(format!(
                 "Destination already exists: {}",
                 new_abs_for_blocking.display()
-            )));
-        }
-        std::fs::rename(&old_abs, &new_abs_for_blocking).map_err(|e| match e.kind() {
+            )),
             std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!(
                 "Permission denied: {}",
                 new_abs_for_blocking.display()

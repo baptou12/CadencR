@@ -16,6 +16,7 @@ use std::path::Path;
 pub fn command(command: &str, cwd: &Path) -> tokio::process::Command {
     let mut cmd = cli_discovery::login_shell_command(command);
     cmd.current_dir(cwd);
+    cmd.env_remove(crate::shared::security::SERVICE_AUTH_TOKEN_ENV);
     cmd
 }
 
@@ -28,6 +29,7 @@ mod tests {
     fn command_uses_login_shell_without_interactive_flag() {
         let _guard = env_lock().lock().expect("env lock");
         let _shell = EnvVarGuard::set("SHELL", "/bin/zsh");
+        let _auth = EnvVarGuard::set("CADENCR_AUTH_TOKEN", "service-secret");
         let cmd = command("echo ok", Path::new("/tmp"));
         let args = cmd
             .as_std()
@@ -37,5 +39,9 @@ mod tests {
 
         assert_eq!(args, vec!["-l", "-c", "echo ok"]);
         assert!(!args.iter().any(|arg| arg == "-i"));
+        assert!(cmd
+            .as_std()
+            .get_envs()
+            .any(|(key, value)| key == "CADENCR_AUTH_TOKEN" && value.is_none()));
     }
 }

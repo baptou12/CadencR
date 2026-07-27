@@ -10,9 +10,10 @@ use base64::Engine;
 use rand::TryRng;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 use tracing::warn;
 use utoipa::ToSchema;
+
+use crate::shared::security::constant_time_str_eq;
 
 const CODE_TTL: Duration = Duration::from_secs(120);
 const CODE_BYTES: usize = 24;
@@ -100,7 +101,7 @@ impl PairingCodes {
         let Some(stored) = entry.hash.as_ref() else {
             return false;
         };
-        if !bool::from(stored.as_bytes().ct_eq(presented.as_bytes())) {
+        if !constant_time_str_eq(stored, &presented) {
             return false;
         }
         entry.hash = None;

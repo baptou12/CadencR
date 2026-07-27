@@ -25,6 +25,27 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, Ap
     repository::get_by_id(pool, id).await
 }
 
+pub async fn ensure_belongs_to_project(
+    pool: &SqlitePool,
+    feature_id: i64,
+    project_id: i64,
+) -> Result<(), AppError> {
+    let actual_project_id: Option<i64> =
+        sqlx::query_scalar("SELECT project_id FROM features WHERE id = ?")
+            .bind(feature_id)
+            .fetch_optional(pool)
+            .await?;
+    match actual_project_id {
+        Some(actual) if actual == project_id => Ok(()),
+        Some(_) => Err(AppError::BadRequest(format!(
+            "Feature {feature_id} does not belong to project {project_id}"
+        ))),
+        None => Err(AppError::NotFound(format!(
+            "Feature not found: {feature_id}"
+        ))),
+    }
+}
+
 pub async fn list_activity(
     pool: &SqlitePool,
     project_id: i64,

@@ -60,7 +60,58 @@ pub fn validate_path_for_write(
         .file_name()
         .ok_or_else(|| AppError::BadRequest("Invalid file name".to_string()))?;
 
-    Ok(canonical_parent.join(file_name))
+    let candidate = canonical_parent.join(file_name);
+    #[cfg(unix)]
+    {
+        Ok(candidate)
+    }
+    #[cfg(not(unix))]
+    {
+        match std::fs::symlink_metadata(&candidate) {
+            Ok(metadata) if metadata.file_type().is_symlink() => Err(AppError::BadRequest(
+                "Refusing to write through a symbolic link".to_string(),
+            )),
+            Ok(_) => Ok(candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(candidate),
+            Err(error) => Err(AppError::BadRequest(format!(
+                "Cannot inspect write target: {error}"
+            ))),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum FileWriteMode {
+    CreateNew,
+    Replace,
+}
+
+/// Open and write a file without ever following a final-component symlink.
+/// `CreateNew` makes create-file's non-existence check atomic.
+pub fn write_file_no_follow(
+    path: &Path,
+    contents: &[u8],
+    mode: FileWriteMode,
+) -> Result<(), std::io::Error> {
+    use std::io::Write;
+
+    let mut options = std::fs::OpenOptions::new();
+    let create_new = matches!(mode, FileWriteMode::CreateNew);
+    options
+        .write(true)
+        .truncate(!create_new)
+        .create(!create_new);
+    if create_new {
+        options.create_new(true);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(contents)?;
+    file.flush()
 }
 
 /// Check if a file appears to be binary by looking for null bytes in the first 8KB.

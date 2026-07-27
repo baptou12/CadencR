@@ -14,6 +14,7 @@ use crate::error::AppError;
 use crate::shared::git_cli::run_git_capture;
 
 use super::pty_spawn::spawn_pty_git;
+use super::SensitiveInput;
 
 /// Pipes each output chunk of the underlying `git commit` process to `tx`
 /// as (`stream_kind`, chunk) pairs while the command is still running. The
@@ -66,7 +67,7 @@ pub async fn commit_streaming(
 pub async fn push_streaming(
     repo: &Path,
     tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
-    stdin_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+    stdin_rx: tokio::sync::mpsc::UnboundedReceiver<SensitiveInput>,
 ) -> Result<(), AppError> {
     spawn_pty_git(&["push", "-u", "origin", "HEAD"], repo, tx, Some(stdin_rx)).await
 }

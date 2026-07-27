@@ -8,16 +8,17 @@ import { useSessionStatusStore } from "@/stores/session-status-store";
  * connection that the session-status store maintains, so we don't open
  * a second socket per app.
  */
-export function useFileWatcher(projectPath: string): void {
+export function useFileWatcher(projectId: number, featureId?: number): void {
   const ws = useSessionStatusStore((s) => s.ws);
   const isConnected = useSessionStatusStore((s) => s.isConnected);
 
   useEffect(() => {
-    if (!ws || !isConnected || ws.readyState !== WebSocket.OPEN || !projectPath) return;
+    if (!ws || !isConnected || ws.readyState !== WebSocket.OPEN) return;
 
     const envelope = createEnvelope("app", "subscribe.file_watcher", {
-      project_path: projectPath,
+      project_id: projectId,
+      feature_id: featureId,
     });
     ws.send(JSON.stringify(envelope));
-  }, [ws, isConnected, projectPath]);
+  }, [ws, isConnected, projectId, featureId]);
 }

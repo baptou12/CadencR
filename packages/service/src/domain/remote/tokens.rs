@@ -5,13 +5,12 @@
 //! no usable token. High-entropy randoms don't need a slow KDF — a keyed hash
 //! is sufficient.
 
+use super::repo;
+use crate::shared::security::constant_time_str_eq;
 use base64::Engine;
 use rand::TryRng;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
-use subtle::ConstantTimeEq;
-
-use super::repo;
 
 /// Mint a fresh 256-bit device token (URL-safe base64, no padding — safe in a
 /// `Sec-WebSocket-Protocol` token and a URL).
@@ -35,16 +34,12 @@ pub fn hash_token(pepper: &[u8], raw: &str) -> String {
         .collect()
 }
 
-fn hashes_equal(a: &str, b: &str) -> bool {
-    bool::from(a.as_bytes().ct_eq(b.as_bytes()))
-}
-
 /// Resolve a presented raw token to an active device id, or `None`. The lookup
 /// is by indexed hash; the constant-time re-compare is defense-in-depth.
 pub async fn verify_device_token(pool: &SqlitePool, pepper: &[u8], presented: &str) -> Option<i64> {
     let hash = hash_token(pepper, presented);
     match repo::find_active_device_hash(pool, &hash).await {
-        Ok(Some((id, stored))) if hashes_equal(&stored, &hash) => Some(id),
+        Ok(Some((id, stored))) if constant_time_str_eq(&stored, &hash) => Some(id),
         _ => None,
     }
 }
@@ -52,6 +47,7 @@ pub async fn verify_device_token(pool: &SqlitePool, pepper: &[u8], presented: &s
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
 
     #[test]
     fn hash_is_deterministic_and_pepper_sensitive() {
@@ -67,5 +63,45 @@ mod tests {
         assert_ne!(a, b);
         // 32 bytes base64url-no-pad => 43 chars.
         assert_eq!(a.len(), 43);
+    }
+
+    #[tokio::test]
+    async fn device_tokens_remain_valid_until_revoked() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("in-memory database");
+        sqlx::query(
+            "CREATE TABLE remote_devices (
+                id INTEGER PRIMARY KEY,
+                token_hash TEXT NOT NULL UNIQUE,
+                label TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_seen_at TEXT,
+                revoked_at TEXT
+            )",
+        )
+        .execute(&pool)
+        .await
+        .expect("create remote device table");
+
+        let pepper = b"pepper";
+        let token = "long-lived-token";
+        sqlx::query(
+            "INSERT INTO remote_devices (token_hash, label, created_at) \
+             VALUES (?, 'long-lived', datetime('now', '-365 days'))",
+        )
+        .bind(hash_token(pepper, token))
+        .execute(&pool)
+        .await
+        .expect("insert old device token");
+
+        assert!(verify_device_token(&pool, pepper, token).await.is_some());
+        let listed = repo::list_active_devices(&pool)
+            .await
+            .expect("list active devices");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].label.as_deref(), Some("long-lived"));
     }
 }

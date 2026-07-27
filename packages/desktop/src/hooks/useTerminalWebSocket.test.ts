@@ -138,9 +138,9 @@ describe("useTerminalWebSocket", () => {
   });
 
   it("builds WS URL with ptyId for reconnection (no cols/rows)", () => {
-    renderAndConnect({ ptyId: "abc-123", featureId: undefined, projectId: undefined });
+    renderAndConnect({ ptyId: "abc-123", featureId: 1, projectId: undefined });
     expect(lastWs().url).toContain("pty_id=abc-123");
-    expect(lastWs().url).not.toContain("feature_id");
+    expect(lastWs().url).toContain("feature_id=1");
     expect(lastWs().url).not.toContain("cols=");
   });
 

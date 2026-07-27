@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::app_state::AppState;
+use crate::domain::features::service::ensure_belongs_to_project as ensure_feature_belongs_to_project;
 use crate::domain::git::worktree_context::WorktreeContext;
 use crate::domain::git::{commands, repository};
 use crate::error::AppError;
@@ -65,22 +66,6 @@ pub(super) fn normalize_git_path(path: &str) -> String {
         .to_string_lossy()
         .trim_end_matches(std::path::MAIN_SEPARATOR)
         .to_string()
-}
-
-pub(super) async fn ensure_feature_belongs_to_project(
-    pool: &sqlx::SqlitePool,
-    feature_id: i64,
-    project_id: i64,
-) -> Result<(), AppError> {
-    match repository::get_feature_type_and_project(pool, feature_id).await? {
-        Some((actual_project_id, _)) if actual_project_id == project_id => Ok(()),
-        Some(_) => Err(AppError::BadRequest(format!(
-            "Feature {feature_id} does not belong to project {project_id}"
-        ))),
-        None => Err(AppError::NotFound(format!(
-            "Feature not found: {feature_id}"
-        ))),
-    }
 }
 
 pub(super) fn dirty_worktree_response() -> crate::domain::git::models::SuccessResponse {

@@ -161,8 +161,10 @@ async fn handle_remote_terminal_ws(
 async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: AppState) {
     let pty_manager = &state.pty_manager;
 
-    if let Some(pty_id) = params.pty_id {
-        handle_reconnect(socket, &pty_id, pty_manager).await;
+    if let (Some(pty_id), Some(feature_id)) = (params.pty_id.as_deref(), params.feature_id) {
+        handle_reconnect(socket, pty_id, feature_id, pty_manager).await;
+    } else if params.pty_id.is_some() {
+        send_error(socket, "Missing required feature_id for PTY reconnection").await;
     } else if let (Some(feature_id), Some(project_id)) = (params.feature_id, params.project_id) {
         let cols = params.cols.unwrap_or(80);
         let rows = params.rows.unwrap_or(24);
@@ -188,37 +190,35 @@ async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: 
 async fn handle_reconnect(
     socket: WebSocket,
     pty_id: &str,
+    feature_id: i64,
     pty_manager: &super::service::PtyManager,
 ) {
-    match pty_manager.get_scrollback(pty_id) {
-        Some((alive, scrollback)) => {
+    match pty_manager.reconnect_for_feature(pty_id, feature_id) {
+        Some(reconnect) => {
             let (mut ws_sink, ws_stream) = socket.split();
-            let cwd = pty_manager.get_cwd(pty_id);
             let msg = ServerMessage::Reconnected {
-                scrollback,
-                alive,
-                cwd,
+                scrollback: reconnect.scrollback,
+                alive: reconnect.alive,
+                cwd: Some(reconnect.cwd),
             };
             if send_msg(&mut ws_sink, &msg).await.is_err() {
                 return;
             }
 
-            if alive {
-                if let Some(handle) = pty_manager.terminals.get(pty_id) {
-                    run_pty_ws_loop(
-                        ws_sink,
-                        ws_stream,
-                        pty_id.to_string(),
-                        Arc::clone(handle.value()),
-                        pty_manager.clone(),
-                    )
-                    .await;
-                }
+            if reconnect.alive {
+                run_pty_ws_loop(
+                    ws_sink,
+                    ws_stream,
+                    pty_id.to_string(),
+                    reconnect.handle,
+                    pty_manager.clone(),
+                )
+                .await;
             }
             // If not alive, WS stays open briefly for client to read scrollback, then closes
         }
         None => {
-            send_error(socket, &format!("PTY not found: {pty_id}")).await;
+            send_error(socket, "PTY not found for feature").await;
         }
     }
 }

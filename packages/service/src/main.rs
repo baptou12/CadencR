@@ -151,12 +151,18 @@ async fn main() -> anyhow::Result<()> {
                      as a CLI flag."
                 )
             })?;
+            // The launch token belongs to the service process only. Keep the
+            // owned copy in AppState, but remove the ambient environment copy
+            // before any user-controlled terminal/action/git child can inherit
+            // it. Individual spawn choke points also scrub it defensively.
+            std::env::remove_var(shared::security::SERVICE_AUTH_TOKEN_ENV);
 
+            let remote_data_dir = remote::paths::remote_data_dir()?;
             let remote_controller =
                 std::sync::Arc::new(remote::RemoteController::new(remote::RemoteConfig {
                     renderer_dir: config.renderer_dir.clone().map(PathBuf::from),
                     remote_port: config.remote_port,
-                    data_dir: remote::paths::remote_data_dir(),
+                    data_dir: remote_data_dir.clone(),
                 }));
 
             let state = AppState::for_server(
@@ -167,6 +173,7 @@ async fn main() -> anyhow::Result<()> {
                 config.frontend_port,
                 config.port,
                 remote_controller,
+                &remote_data_dir,
             );
 
             // Watch the settings dir so external edits to the JSON files push a

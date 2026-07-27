@@ -240,7 +240,7 @@ const FeatureEditorTab = memo(
       EDITOR_SIDEBAR_COLLAPSED_SETTING,
       0,
     );
-    useFileWatcher(props.projectPath);
+    useFileWatcher(props.projectId, props.featureId);
     const confirmedConflicts = useConfirmedConflictPaths(props.featureId);
     const focus = useEditorFocusState(editor.activePaneId, isEditorFocused);
     const leave = useEditorLeaveGuard(ref, editor.panes, focus);

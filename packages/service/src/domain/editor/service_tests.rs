@@ -204,4 +204,37 @@ mod tests {
             "empty query should match nothing"
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn no_follow_write_rejects_existing_symlink_target() {
+        use std::os::unix::fs::symlink;
+
+        let (dir, root) = create_test_project();
+        let outside = TempDir::new().unwrap();
+        let victim = outside.path().join("victim");
+        fs::write(&victim, "outside").unwrap();
+        symlink(&victim, dir.path().join("linked.txt")).unwrap();
+
+        let target = service::validate_path_for_write(&root, "linked.txt").unwrap();
+        service::write_file_no_follow(&target, b"replacement", service::FileWriteMode::Replace)
+            .unwrap_err();
+        assert_eq!(fs::read_to_string(victim).unwrap(), "outside");
+    }
+
+    #[test]
+    fn create_new_write_is_atomic_and_preserves_existing_content() {
+        let (dir, _root) = create_test_project();
+        let target = dir.path().join("existing.txt");
+        fs::write(&target, "original").unwrap();
+
+        let error = service::write_file_no_follow(
+            &target,
+            b"replacement",
+            service::FileWriteMode::CreateNew,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read_to_string(target).unwrap(), "original");
+    }
 }
