@@ -59,6 +59,21 @@ impl ForgeHttp {
         self.client.post(url)
     }
 
+    /// Executes a request and hands back the raw response.
+    ///
+    /// The JSON path owns ETag caching and rate-limit backoff because every
+    /// call on it spends the account's API quota. This one exists for the pull
+    /// request image proxy, which fetches asset hosts that share neither, and
+    /// which needs the status, `content-type` and body stream rather than a
+    /// decoded value. Redirects stay unfollowed — the client-wide policy — so
+    /// the caller decides whether the next hop may still see the credentials.
+    pub async fn send(&self, builder: RequestBuilder) -> Result<reqwest::Response, ForgeError> {
+        builder
+            .send()
+            .await
+            .map_err(|error| ForgeError::Http(format!("forge request failed: {error}")))
+    }
+
     /// Executes a forge request and decodes its JSON response. The request
     /// builder owns the HTTP method, so REST GETs and GraphQL POSTs share the
     /// same rate-limit, error, and conditional-response policy.
