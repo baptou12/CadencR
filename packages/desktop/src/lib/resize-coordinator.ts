@@ -126,8 +126,8 @@ function isPointerNearHandle(e: PointerEvent, handle: HTMLElement): boolean {
   return (
     e.clientY >= r.top - HIT_TOLERANCE_PX &&
     e.clientY <= r.bottom + HIT_TOLERANCE_PX &&
-    e.clientX >= r.left &&
-    e.clientX <= r.right
+    e.clientX >= r.left - HIT_TOLERANCE_PX &&
+    e.clientX <= r.right + HIT_TOLERANCE_PX
   );
 }
 
