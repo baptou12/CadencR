@@ -63,7 +63,12 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         command: &str,
     ) -> Result<(), RuntimeError> {
         self.http
-            .shell_command(session_id, agent, command, Some(&self.cwd))
+            .shell_command()
+            .session_id(session_id)
+            .agent(agent)
+            .command(command)
+            .directory(&self.cwd)
+            .call()
             .await
             .map(|_| ())
             .map_err(|error| RuntimeError::new(format!("OpenCode shell command failed: {error}")))
