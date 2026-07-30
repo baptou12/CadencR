@@ -16,12 +16,13 @@ import { customInstance } from "@/api/client";
 export function forgeImageBlob(
   featureId: number,
   src: string,
+  kind: ForgeImageKind,
   signal?: AbortSignal,
 ): Promise<Blob> {
   return customInstance<Blob>({
     url: "/api/git/forge/image",
     method: "GET",
-    params: { feature_id: featureId, url: src },
+    params: { feature_id: featureId, url: src, kind },
     responseType: "blob",
     signal,
   });
@@ -31,6 +32,12 @@ export function forgeImageBlob(
  * React Query key for a forge image, so the same avatar recurring on forty
  * comments is fetched once.
  */
-export function forgeImageBlobQueryKey(featureId: number, src: string): readonly unknown[] {
-  return ["/api/git/forge/image", { feature_id: featureId, url: src }];
+export function forgeImageBlobQueryKey(
+  featureId: number,
+  src: string,
+  kind: ForgeImageKind,
+): readonly unknown[] {
+  return ["/api/git/forge/image", { feature_id: featureId, url: src, kind }];
 }
+
+export type ForgeImageKind = "avatar" | "content";

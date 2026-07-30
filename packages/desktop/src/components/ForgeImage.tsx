@@ -12,9 +12,17 @@
  * Scope this with {@link ForgeImageScope}; without it every image falls back to
  * the plain `<img>` it would have been.
  */
-import { createContext, useContext, type ReactElement, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ImageOffIcon, Loader2Icon } from "lucide-react";
+import { ImageIcon, ImageOffIcon, Loader2Icon } from "lucide-react";
 import type { ForgeUser } from "@/api/generated";
 import {
   MarkdownImageProvider,
@@ -22,12 +30,26 @@ import {
   type MarkdownImageProps,
 } from "@/components/markdown-image";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useInViewport } from "@/hooks/useInViewport";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { forgeImageBlob, forgeImageBlobQueryKey } from "@/lib/forge-image-blob";
+import {
+  forgeImageBlob,
+  forgeImageBlobQueryKey,
+  type ForgeImageKind,
+} from "@/lib/forge-image-blob";
 import { cn } from "@/lib/utils";
 
+const MAX_AUTOMATIC_CONTENT_IMAGES = 4;
+const MAX_AUTOMATIC_AVATARS = 24;
+
 /** Which feature's forge (and therefore whose credentials) serves these images. */
-const ForgeImageFeature = createContext<number | null>(null);
+interface ForgeImageScopeState {
+  automaticAvatars: Set<string>;
+  automaticContent: Set<string>;
+  featureId: number;
+}
+
+const ForgeImageFeature = createContext<ForgeImageScopeState | null>(null);
 
 /**
  * Marks a subtree as belonging to one pull request, so everything inside it —
@@ -40,8 +62,16 @@ export function ForgeImageScope({
   featureId: number;
   children: ReactNode;
 }): ReactElement {
+  const scope = useMemo<ForgeImageScopeState>(
+    () => ({
+      automaticAvatars: new Set(),
+      automaticContent: new Set(),
+      featureId,
+    }),
+    [featureId],
+  );
   return (
-    <ForgeImageFeature.Provider value={featureId}>
+    <ForgeImageFeature.Provider value={scope}>
       <MarkdownImageProvider value={ForgeMarkdownImage}>{children}</MarkdownImageProvider>
     </ForgeImageFeature.Provider>
   );
@@ -61,21 +91,23 @@ function isDirectSource(src: string): boolean {
   return src.startsWith("data:") || src.startsWith("blob:");
 }
 
-function useForgeImage(src: string | undefined): ForgeImageState {
-  const featureId = useContext(ForgeImageFeature);
+function useForgeImage(
+  src: string | undefined,
+  kind: ForgeImageKind,
+  enabled: boolean,
+): ForgeImageState {
+  const scope = useContext(ForgeImageFeature);
   const direct = !src || isDirectSource(src);
-  const scoped = featureId !== null;
+  const scoped = scope !== null;
   const query = useQuery({
-    queryKey: forgeImageBlobQueryKey(featureId ?? 0, src ?? ""),
-    queryFn: ({ signal }) => forgeImageBlob(featureId ?? 0, src ?? "", signal),
-    enabled: scoped && !direct,
-    // A forge asset does not change under a fixed URL, and one avatar recurs on
-    // every comment in a thread. Without a stale window, scrolling a review
-    // would re-fetch the same face on each remount.
+    queryKey: forgeImageBlobQueryKey(scope?.featureId ?? 0, src ?? "", kind),
+    queryFn: ({ signal }) => forgeImageBlob(scope?.featureId ?? 0, src ?? "", kind, signal),
+    enabled: scoped && !direct && enabled,
+    // Near-viewport instances share one request, but the bytes leave the query
+    // cache as soon as the last visible instance unmounts. A malicious PR must
+    // not pin an unbounded gallery of blobs for minutes after scrolling past it.
     staleTime: 5 * 60_000,
-    // Keep the blob around for Virtuoso remounts, but not for half an hour —
-    // a PR full of screenshots would otherwise pin tens of MB in the query cache.
-    cacheTime: 10 * 60_000,
+    cacheTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     // A forge that refused this image once will refuse it again; a retry storm
@@ -91,6 +123,19 @@ function useForgeImage(src: string | undefined): ForgeImageState {
   };
 }
 
+function claimAutomaticImage(
+  scope: ForgeImageScopeState,
+  src: string,
+  kind: ForgeImageKind,
+): boolean {
+  const bucket = kind === "avatar" ? scope.automaticAvatars : scope.automaticContent;
+  const limit = kind === "avatar" ? MAX_AUTOMATIC_AVATARS : MAX_AUTOMATIC_CONTENT_IMAGES;
+  if (bucket.has(src)) return true;
+  if (bucket.size >= limit) return false;
+  bucket.add(src);
+  return true;
+}
+
 /**
  * `img` renderer for markdown inside a pull request.
  *
@@ -99,8 +144,51 @@ function useForgeImage(src: string | undefined): ForgeImageState {
  * the reason in its tooltip.
  */
 export function ForgeMarkdownImage(props: MarkdownImageProps): ReactElement {
-  const { url, errorMessage, direct, scoped } = useForgeImage(props.src);
-  if (direct || !scoped) return <PlainMarkdownImage {...props} />;
+  const scope = useContext(ForgeImageFeature);
+  if (!props.src || isDirectSource(props.src) || !scope) {
+    return <PlainMarkdownImage {...props} />;
+  }
+  return <DeferredForgeMarkdownImage key={props.src} scope={scope} {...props} />;
+}
+
+function DeferredForgeMarkdownImage({
+  scope,
+  ...props
+}: MarkdownImageProps & { scope: ForgeImageScopeState }): ReactElement {
+  const viewportRootRef = useRef<HTMLElement | null>(null);
+  const { setRef, inView } = useInViewport(viewportRootRef, "300px 0px");
+  const [manualLoad, setManualLoad] = useState(false);
+  const [automaticLoad] = useState(() => claimAutomaticImage(scope, props.src ?? "", "content"));
+  const label = props.alt || props.src || "image";
+  if (!automaticLoad && !manualLoad) {
+    return (
+      <span ref={setRef}>
+        <button
+          type="button"
+          onClick={() => setManualLoad(true)}
+          className="my-2 inline-flex max-w-full items-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+        >
+          <ImageIcon className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">Load {label}</span>
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span ref={setRef}>
+      {inView ? (
+        <LoadedForgeMarkdownImage {...props} />
+      ) : (
+        <ForgeImageNotice label={label}>
+          <ImageIcon className="size-3.5 shrink-0" aria-hidden />
+        </ForgeImageNotice>
+      )}
+    </span>
+  );
+}
+
+function LoadedForgeMarkdownImage(props: MarkdownImageProps): ReactElement {
+  const { url, errorMessage } = useForgeImage(props.src, "content", true);
   const label = props.alt || props.src || "image";
   if (errorMessage) {
     return (
@@ -155,19 +243,31 @@ export function ForgeAvatar({
   className?: string;
 }): ReactElement {
   const name = user.display_name ?? user.username;
-  const { url, errorMessage } = useForgeImage(user.avatar_url ?? undefined);
+  const scope = useContext(ForgeImageFeature);
+  const viewportRootRef = useRef<HTMLElement | null>(null);
+  const { setRef, inView } = useInViewport(viewportRootRef, "300px 0px");
+  const [automaticLoad] = useState(() =>
+    scope && user.avatar_url ? claimAutomaticImage(scope, user.avatar_url, "avatar") : false,
+  );
   return (
     <span
-      title={errorMessage ?? undefined}
+      ref={setRef}
       className={cn(
         "relative grid size-5 shrink-0 place-items-center overflow-hidden rounded-full bg-muted text-[10px] font-semibold text-foreground",
         className,
       )}
     >
       {authorInitials(name)}
-      {url && (
-        <img src={url} alt="" aria-hidden className="absolute inset-0 size-full object-cover" />
-      )}
+      {inView && automaticLoad && user.avatar_url && <ForgeAvatarImage src={user.avatar_url} />}
+    </span>
+  );
+}
+
+function ForgeAvatarImage({ src }: { src: string }): ReactElement | null {
+  const { url, errorMessage } = useForgeImage(src, "avatar", true);
+  return (
+    <span title={errorMessage ?? undefined} className="pointer-events-none absolute inset-0">
+      {url && <img src={url} alt="" aria-hidden className="size-full object-cover" />}
     </span>
   );
 }

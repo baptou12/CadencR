@@ -18,15 +18,20 @@
 
 mod target;
 
+use std::net::IpAddr;
+use std::time::Duration;
+
 use axum::extract::{Query, State};
 use axum::response::Response;
 use futures::StreamExt;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, LOCATION};
 use reqwest::{RequestBuilder, StatusCode, Url};
 use serde::Deserialize;
+use tokio::sync::Semaphore;
 
-use self::target::{ensure_fetchable, is_forge_owned_host, resolve_image_url};
+use self::target::{ensure_fetchable, ensure_public_ip, is_forge_owned_origin, resolve_image_url};
 use super::auth::forge_to_app_error;
+use super::provider::ForgeError;
 use super::repository::{feature_forge_context, FeatureForge};
 use crate::app_state::AppState;
 use crate::domain::git::host::GitHost;
@@ -35,10 +40,21 @@ use crate::shared::image_file::image_response;
 
 /// Avatars are tiny and attachments are screenshots; anything past this is a
 /// video or a mistake, and buffering it would cost the user's memory twice.
-const MAX_FORGE_IMAGE_BYTES: usize = 15 * 1024 * 1024;
+const MAX_FORGE_CONTENT_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_FORGE_AVATAR_BYTES: usize = 512 * 1024;
+const MAX_CONCURRENT_FORGE_IMAGES: usize = 4;
+static FORGE_IMAGE_DOWNLOADS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_FORGE_IMAGES);
 /// GitHub answers `github.com/user-attachments/assets/<id>` with a redirect to
 /// a signed asset host, which can itself redirect once more.
 const MAX_IMAGE_REDIRECTS: usize = 4;
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForgeImageKind {
+    Avatar,
+    #[default]
+    Content,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ForgeImageParams {
@@ -46,6 +62,8 @@ pub struct ForgeImageParams {
     /// The `src` exactly as the pull request body wrote it — absolute,
     /// protocol-relative, or relative to the repository.
     pub url: String,
+    #[serde(default)]
+    pub kind: ForgeImageKind,
 }
 
 pub async fn get_forge_image_handler(
@@ -67,7 +85,11 @@ pub async fn get_forge_image_handler(
         head_sha.as_deref(),
         &params.url,
     )?;
-    let (bytes, mime) = fetch_image(&forge, target).await?;
+    let max_bytes = match params.kind {
+        ForgeImageKind::Avatar => MAX_FORGE_AVATAR_BYTES,
+        ForgeImageKind::Content => MAX_FORGE_CONTENT_IMAGE_BYTES,
+    };
+    let (bytes, mime) = fetch_image(&forge, target, max_bytes).await?;
     image_response(bytes, &mime)
 }
 
@@ -76,39 +98,77 @@ pub async fn get_forge_image_handler(
 /// Redirects are followed here rather than by reqwest because the client-wide
 /// policy forbids them: the credentials decision has to be re-made at every
 /// hop, so that a forge URL redirecting to a CDN drops the token on the way.
-async fn fetch_image(forge: &FeatureForge, start: Url) -> Result<(Vec<u8>, String), AppError> {
+async fn fetch_image(
+    forge: &FeatureForge,
+    start: Url,
+    max_bytes: usize,
+) -> Result<(Vec<u8>, String), AppError> {
+    let _permit = FORGE_IMAGE_DOWNLOADS
+        .acquire()
+        .await
+        .expect("forge image semaphore is never closed");
     let mut url = start;
     for _ in 0..=MAX_IMAGE_REDIRECTS {
         ensure_fetchable(&url)?;
-        let host = url.host_str().unwrap_or_default().to_string();
+        let client = pinned_image_client(&url).await?;
         let request = authenticate(
             forge,
-            forge
-                .context
-                .http
-                .get(url.as_str())
-                .header(ACCEPT, "image/*"),
-            is_forge_owned_host(&forge.context.remote, forge.kind, &host),
+            client.get(url.as_str()).header(ACCEPT, "image/*"),
+            is_forge_owned_origin(&forge.context.remote, forge.kind, &url),
         )?;
-        let response = forge
-            .context
-            .http
-            .send(request)
-            .await
-            .map_err(forge_to_app_error)?;
+        let response = request.send().await.map_err(|error| {
+            forge_to_app_error(ForgeError::Http(format!(
+                "forge image request failed: {error}"
+            )))
+        })?;
         match redirect_target(&response, &url)? {
             Some(next) => {
-                // Redirect bodies are empty in practice; draining them lets
-                // reqwest reuse the connection for the next hop.
-                let _ = response.bytes().await;
+                // Never drain an untrusted redirect body: it can be chunked and
+                // arbitrarily large, bypassing the terminal image-size limit.
+                drop(response);
                 url = next;
             }
-            None => return read_image(response).await,
+            None => return read_image(response, max_bytes).await,
         }
     }
     Err(AppError::BadRequest(
         "The forge kept redirecting this image".into(),
     ))
+}
+
+/// Resolve one request hop, reject every private result, and pin the accepted
+/// addresses into a fresh client. Reqwest therefore cannot perform a second,
+/// unconstrained lookup after validation (the DNS-rebinding TOCTOU).
+async fn pinned_image_client(url: &Url) -> Result<reqwest::Client, AppError> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| AppError::BadRequest("Image URL is missing a host".into()))?;
+    let mut builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .user_agent(concat!("Cadencr/", env!("CARGO_PKG_VERSION")))
+        .timeout(Duration::from_secs(20));
+    if host.parse::<IpAddr>().is_err() {
+        let port = url.port_or_known_default().unwrap_or(443);
+        let addresses = tokio::net::lookup_host((host, port))
+            .await
+            .map_err(|error| {
+                AppError::BadRequest(format!("Could not resolve image host {host}: {error}"))
+            })?
+            .collect::<Vec<_>>();
+        if addresses.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "Image host {host} did not resolve to an address"
+            )));
+        }
+        for address in &addresses {
+            ensure_public_ip(address.ip(), host)?;
+        }
+        builder = builder.resolve_to_addrs(host, &addresses);
+    }
+    builder
+        .build()
+        .map_err(|error| AppError::Internal(format!("Image client setup failed: {error}")))
 }
 
 /// Attach the forge credentials, in the header shape that forge expects.
@@ -162,7 +222,10 @@ fn redirect_target(response: &reqwest::Response, current: &Url) -> Result<Option
         .map_err(|error| AppError::BadRequest(format!("Unreadable image redirect: {error}")))
 }
 
-async fn read_image(response: reqwest::Response) -> Result<(Vec<u8>, String), AppError> {
+async fn read_image(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<(Vec<u8>, String), AppError> {
     let status = response.status();
     if !status.is_success() {
         return Err(image_failure(status));
@@ -176,9 +239,9 @@ async fn read_image(response: reqwest::Response) -> Result<(Vec<u8>, String), Ap
     }
     if response
         .content_length()
-        .is_some_and(|length| length > MAX_FORGE_IMAGE_BYTES as u64)
+        .is_some_and(|length| length > max_bytes as u64)
     {
-        return Err(too_large());
+        return Err(too_large(max_bytes));
     }
     // Streamed rather than `bytes()`: a response with no `content-length` would
     // otherwise be buffered whole before anyone could object to its size.
@@ -187,8 +250,8 @@ async fn read_image(response: reqwest::Response) -> Result<(Vec<u8>, String), Ap
     while let Some(chunk) = chunks.next().await {
         let chunk =
             chunk.map_err(|error| AppError::Internal(format!("Image download failed: {error}")))?;
-        if bytes.len() + chunk.len() > MAX_FORGE_IMAGE_BYTES {
-            return Err(too_large());
+        if bytes.len() + chunk.len() > max_bytes {
+            return Err(too_large(max_bytes));
         }
         bytes.extend_from_slice(&chunk);
     }
@@ -219,11 +282,8 @@ fn image_failure(status: StatusCode) -> AppError {
     }
 }
 
-fn too_large() -> AppError {
-    AppError::BadRequest(format!(
-        "Image exceeds the {} MB limit",
-        MAX_FORGE_IMAGE_BYTES / (1024 * 1024)
-    ))
+fn too_large(max_bytes: usize) -> AppError {
+    AppError::BadRequest(format!("Image exceeds the {} KB limit", max_bytes / 1024))
 }
 
 #[cfg(test)]

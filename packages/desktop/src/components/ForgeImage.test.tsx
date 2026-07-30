@@ -52,6 +52,7 @@ describe("ForgeMarkdownImage", () => {
         params: {
           feature_id: 7,
           url: "https://user-images.githubusercontent.com/1/shot.png",
+          kind: "content",
         },
         responseType: "blob",
       }),
@@ -90,6 +91,26 @@ describe("ForgeMarkdownImage", () => {
 
     expect(screen.getByAltText("Loose")).toHaveAttribute("src", "https://example.com/a.png");
     expect(mocks.customInstance).not.toHaveBeenCalled();
+  });
+
+  it("bounds automatic content loads and leaves extra images user-controlled", async () => {
+    const sources = ["One", "Two", "Three", "Four", "Five"];
+    const { user } = render(
+      <ForgeImageScope featureId={7}>
+        {sources.map((label) => (
+          <ForgeMarkdownImage
+            key={label}
+            src={`https://images.example.com/${label}.png`}
+            alt={label}
+          />
+        ))}
+      </ForgeImageScope>,
+    );
+
+    await waitFor(() => expect(mocks.customInstance).toHaveBeenCalledTimes(4));
+    const load = screen.getByRole("button", { name: "Load Five" });
+    await user.click(load);
+    await waitFor(() => expect(mocks.customInstance).toHaveBeenCalledTimes(5));
   });
 });
 
