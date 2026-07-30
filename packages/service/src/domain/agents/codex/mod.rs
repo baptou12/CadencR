@@ -214,11 +214,10 @@ async fn probe_models() -> Result<Vec<CodexModel>, RuntimeError> {
 }
 
 fn app_server_spawn_options(env: Option<HashMap<String, String>>) -> AppServerSpawnOptions {
-    AppServerSpawnOptions {
-        env,
-        enable_features: vec![DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE.to_string()],
-        ..AppServerSpawnOptions::default()
-    }
+    AppServerSpawnOptions::builder()
+        .maybe_env(env)
+        .enable_features(vec![DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE.to_string()])
+        .build()
 }
 
 async fn start_or_resume_thread(
