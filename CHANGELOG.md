@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.9.1 - 2026-07-30
+
+Previous release: v0.9.0 - 2026-07-28
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed renderer crashes and repeated reconnect waves during long, tool-heavy conversations by deferring off-screen diff rendering, showing oversized inline diffs without expensive highlighting, preserving reconnect backoff, releasing abandoned session transports, and making overloaded WebSocket clients wait and retry cleanly instead of entering a reconnect storm.
+- [**Desktop**] Fixed images in GitHub and GitLab pull-request descriptions and review comments failing to load, including images from private repositories, while bounding automatic and off-screen image work, keeping forge credentials on the exact connected origin, blocking local-network proxy targets, and aligning each review-thread selection control with its first comment’s author details.
+
 ## v0.9.0 - 2026-07-28
 
 Previous release: v0.8.1 - 2026-07-24
