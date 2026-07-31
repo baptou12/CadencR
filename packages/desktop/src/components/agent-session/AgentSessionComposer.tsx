@@ -1,4 +1,4 @@
-import { memo, type RefObject, type ReactElement } from "react";
+import { memo, useCallback, useMemo, type RefObject, type ReactElement } from "react";
 import { parseThinkingEffort } from "@/shared/thinking-effort";
 import { normalizeContextWindow } from "@/types/agent";
 import { AgentPromptBar, type AgentPromptBarHandle } from "../AgentPromptBar";
@@ -189,6 +189,34 @@ function AgentSessionPrompt(
   },
 ): ReactElement {
   const session = props.sessionProps;
+  const selectReferencedWorktree = useCallback(
+    (branch: string): void => {
+      session.onWorktreeBranchChange?.(branch);
+      session.onWorktreeModeChange?.("branch_worktree");
+    },
+    [session.onWorktreeBranchChange, session.onWorktreeModeChange],
+  );
+  const referencedWorktreeSelection = useMemo(
+    () =>
+      session.blocks.length === 0 &&
+      session.worktreeMode != null &&
+      session.onWorktreeBranchChange &&
+      session.onWorktreeModeChange
+        ? {
+            mode: session.worktreeMode,
+            selectedBranch: session.worktreeSelectedBranch ?? null,
+            onSelect: selectReferencedWorktree,
+          }
+        : undefined,
+    [
+      selectReferencedWorktree,
+      session.blocks.length,
+      session.onWorktreeBranchChange,
+      session.onWorktreeModeChange,
+      session.worktreeMode,
+      session.worktreeSelectedBranch,
+    ],
+  );
   return (
     <AgentPromptBar
       ref={props.promptBarRef}
@@ -225,6 +253,7 @@ function AgentSessionPrompt(
       slashCommandsLoading={session.slashCommandsLoading}
       promptCommandPolicy={session.promptCommandPolicy}
       pendingPermission={session.pendingPermission}
+      referencedWorktreeSelection={referencedWorktreeSelection}
       onPermissionDecision={session.onPermissionDecision}
       isSubmittingPermission={session.isSubmittingPermission}
     />

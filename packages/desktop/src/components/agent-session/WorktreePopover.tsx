@@ -16,7 +16,7 @@
  * `worktree_reuse_branch` settings (and an optional checkout) before the first
  * `prompt.send` envelope — see `resolveWorktreeChoice` in `lib/worktree-mode`.
  */
-import { memo, useCallback, useState, type ReactElement } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { CheckIcon, ChevronDownIcon, GitBranchIcon, Loader2 } from "lucide-react";
 
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -36,6 +36,40 @@ import { WORKTREE_GROUP, WORKTREE_SEGMENT_ACTIVE } from "./meta-bar-chip-styles"
 import { SlidingText } from "@/components/SlidingText";
 
 const EMPTY_BRANCHES: BranchInfo[] = [];
+
+const REUSE_FLASH_MS = 420;
+
+/** One-shot pulse when a reusable worktree selection lands after mount. */
+function useWorktreeReuseFlash(isReusable: boolean, selectedBranch: string | null): boolean {
+  const [reuseFlash, setReuseFlash] = useState(false);
+  const skipReuseFlash = useRef(true);
+  const reuseFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (skipReuseFlash.current) {
+      skipReuseFlash.current = false;
+      return;
+    }
+    if (!isReusable || selectedBranch == null) {
+      setReuseFlash(false);
+      return;
+    }
+    setReuseFlash(true);
+    if (reuseFlashTimer.current != null) clearTimeout(reuseFlashTimer.current);
+    reuseFlashTimer.current = setTimeout(() => {
+      setReuseFlash(false);
+      reuseFlashTimer.current = null;
+    }, REUSE_FLASH_MS);
+    return () => {
+      if (reuseFlashTimer.current != null) {
+        clearTimeout(reuseFlashTimer.current);
+        reuseFlashTimer.current = null;
+      }
+    };
+  }, [isReusable, selectedBranch]);
+
+  return reuseFlash;
+}
 
 interface WorktreeButtonGroupProps {
   projectId: number;
@@ -156,9 +190,16 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
 }: WorktreeButtonGroupProps): ReactElement {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const branchesQuery = useListBranches({ project_id: projectId }, { query: { enabled: open } });
+  const branchesQuery = useListBranches(
+    { project_id: projectId },
+    { query: { enabled: open || selectedBranch != null } },
+  );
   const branches = branchesQuery.data ?? EMPTY_BRANCHES;
   const state = branchWorktreeState({ selectedBranch, defaultBranch, branches, projectPath });
+  const reuseFlash = useWorktreeReuseFlash(
+    mode === "branch_worktree" && state.hasWorktree,
+    selectedBranch,
+  );
 
   const selectBranch = useCallback(
     (next: string | null) => {
@@ -213,7 +254,7 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
   const effectHint = firstPromptBranchEffect({ mode, selectedBranch, defaultBranch });
 
   return (
-    <div className={WORKTREE_GROUP}>
+    <div className={cn(WORKTREE_GROUP, reuseFlash && "worktree-reuse-flash")}>
       <BranchPicker
         open={open}
         query={query}

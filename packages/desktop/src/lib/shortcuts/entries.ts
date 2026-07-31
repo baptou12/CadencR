@@ -304,6 +304,12 @@ const APP_SHORTCUTS = [
     description: "Re-enable auto-scroll",
     scope: "agent",
   },
+  {
+    id: "agent-use-referenced-worktree",
+    keys: ["mod", "shift", "w"],
+    description: "Reuse referenced conversation worktree",
+    scope: "agent",
+  },
   { id: "agent-stop", keys: ["escape"], description: "Stop running agent", scope: "agent" },
 
   // ─── Plan approval ───────────────────────────────────────────────────
