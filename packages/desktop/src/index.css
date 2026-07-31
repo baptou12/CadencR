@@ -15,6 +15,7 @@
 @import "./theme-frost.css";
 @import "./theme-square.css";
 @import "./pierre-tree.css";
+@import "./agent-stream-perf.css";
 
 /* Reveal-on-hover only where hover actually exists. On touch devices (no hover)
  * `can-hover:` rules never apply, so hover-gated affordances stay fully visible

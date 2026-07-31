@@ -5,7 +5,6 @@ import {
   recordHeavyInlineMounted,
   recordHeavyInlineUnmounted,
   recordHeavyInlineUpdated,
-  recordHeavyInlineVisible,
   recordPierreCleaned,
   recordPierreCreated,
   recordPierreRenderCompleted,
@@ -38,27 +37,24 @@ describe("diff-render-diagnostics", () => {
     expect(countTextLines("one\ntwo\n")).toBe(3);
   });
 
-  it("updates heavy-inline maxima without changing mount or visibility counts", () => {
+  it("updates heavy-inline maxima without changing mount counts", () => {
     const before = getDiffRenderDiagnostics();
     const blockId = "diagnostics-heavy-inline-update";
     const patchChars = before.maxPatchChars + 1;
     const patchLines = before.maxPatchLines + 1;
 
     recordHeavyInlineMounted(blockId);
-    recordHeavyInlineVisible(blockId, true);
     recordHeavyInlineUpdated(blockId, patchChars, patchLines);
     recordHeavyInlineUpdated(blockId, patchChars + 1, patchLines + 1);
 
     const updated = getDiffRenderDiagnostics();
     expect(updated.heavyInlineMounts - before.heavyInlineMounts).toBe(1);
     expect(updated.heavyInlineMounted - before.heavyInlineMounted).toBe(1);
-    expect(updated.heavyInlineVisible - before.heavyInlineVisible).toBe(1);
     expect(updated.maxPatchChars).toBe(patchChars + 1);
     expect(updated.maxPatchLines).toBe(patchLines + 1);
 
     recordHeavyInlineUnmounted(blockId);
     const unmounted = getDiffRenderDiagnostics();
     expect(unmounted.heavyInlineMounted).toBe(before.heavyInlineMounted);
-    expect(unmounted.heavyInlineVisible).toBe(before.heavyInlineVisible);
   });
 });
