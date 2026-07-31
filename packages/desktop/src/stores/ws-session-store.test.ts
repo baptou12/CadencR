@@ -1523,6 +1523,26 @@ describe("ws-session-store", () => {
     expect(useWsSessionStore.getState().sessions["s1"].currentThinkingEffort).toBeUndefined();
   });
 
+  it("updates fast mode only after the backend confirms it", async () => {
+    const { store, ws } = await connectInitializedSession();
+
+    const pending = store.setFastMode("s1", true);
+    const envelope = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(envelope.action).toBe("fast_mode.set");
+    expect(envelope.payload).toMatchObject({ session_id: "srv-1", enabled: true });
+    expect(useWsSessionStore.getState().sessions["s1"].fastMode).toBe(false);
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "fast_mode.set.ok",
+      ref: envelope.id,
+      payload: { enabled: true },
+    });
+    await pending;
+
+    expect(useWsSessionStore.getState().sessions["s1"].fastMode).toBe(true);
+  });
+
   it("sets hasFileChanges when Write tool_call block is received", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");

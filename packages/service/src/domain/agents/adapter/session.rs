@@ -78,6 +78,11 @@ pub trait AgentRuntimeSession: Send + Sync {
     async fn set_thinking_effort(&self, _effort: Option<String>) -> Result<(), RuntimeError> {
         Ok(())
     }
+    async fn set_fast_mode(&self, _enabled: bool) -> Result<(), RuntimeError> {
+        Err(RuntimeError::new(
+            "fast mode changes are not supported by this runtime",
+        ))
+    }
     async fn respond_permission(
         &self,
         _response: RuntimePermissionResponse,

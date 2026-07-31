@@ -67,6 +67,10 @@ export interface MetaBarProps {
   currentThinkingEffort?: ThinkingEffortLevel;
   supportedThinkingEfforts?: ThinkingEffortLevel[];
   onThinkingEffortChange?: (thinkingEffort?: ThinkingEffortLevel) => void;
+  supportsFastMode?: boolean;
+  fastMode?: boolean;
+  isFastModePending?: boolean;
+  onFastModeChange?: (enabled: boolean) => void;
   showClaudeProfileSelector?: boolean;
   claudeProfile?: string;
   claudeProfiles?: ClaudeCodeProfile[];
@@ -213,6 +217,10 @@ function MetaBarPrimary({ props, state }: { props: MetaBarProps; state: MetaBarS
           currentThinkingEffort={props.currentThinkingEffort}
           supportedThinkingEfforts={props.supportedThinkingEfforts ?? []}
           onThinkingEffortChange={props.onThinkingEffortChange}
+          supportsFastMode={props.supportsFastMode ?? false}
+          fastMode={props.fastMode ?? false}
+          isFastModePending={props.isFastModePending ?? false}
+          onFastModeChange={props.onFastModeChange}
           onModelSelected={props.onModelSelected}
         />
       )}

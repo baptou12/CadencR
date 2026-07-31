@@ -768,6 +768,15 @@ export interface EffortSetPayload {
   thinking_effort?: EffortSetPayloadThinkingEffort;
 }
 
+export interface FastModeSetOkPayload {
+  enabled: boolean;
+}
+
+export interface FastModeSetPayload {
+  enabled: boolean;
+  session_id: string;
+}
+
 /**
  * Provider access mode on the latest agent session (`codex_permission_mode`
 is the legacy storage name; the contract here is provider-neutral).
@@ -3275,14 +3284,10 @@ export interface UpsertProfileRequest {
 }
 
 /**
- * Provider usage data operations that failed, surfaced to the user.
-
-Recording is awaited so writes preserve provider event order, but a stats
-failure must never fail an agent turn. Failures are counted here and
-reported on the next `/api/usage-stats` read instead of being swallowed.
+ * Provider usage operations that failed, surfaced to the user.
  */
 export interface UsageRecordingIssue {
-  /** Failed provider usage operations seen since this service start. */
+  /** Failures seen in this run plus durable losses from earlier runs. */
   failures: number;
   /** Message from the most recent failure. */
   last_error: string;
@@ -3427,6 +3432,7 @@ export const WsSessionAction = {
   compactstarted: "compact.started",
   modelsetok: "model.set.ok",
   effortsetok: "effort.set.ok",
+  fast_modesetok: "fast_mode.set.ok",
   modechanged: "mode.changed",
   profilechanged: "profile.changed",
   branchrewound: "branch.rewound",

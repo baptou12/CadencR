@@ -148,6 +148,7 @@ pub struct RuntimeSpawnConfig {
     pub access_mode: Option<RuntimeAccessMode>,
     pub model: Option<String>,
     pub thinking_effort: Option<String>,
+    pub fast_mode: bool,
     pub system_prompt: Option<String>,
     pub resume_session_id: Option<String>,
     /// Allows a provider process to switch into its dangerous Bypass mode
@@ -170,6 +171,7 @@ impl Default for RuntimeSpawnConfig {
             access_mode: None,
             model: None,
             thinking_effort: None,
+            fast_mode: false,
             system_prompt: None,
             resume_session_id: None,
             allow_bypass_permissions: false,

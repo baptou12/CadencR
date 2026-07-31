@@ -16,6 +16,7 @@ async fn migration_preserves_existing_custom_models_with_unknown_effort() {
          CURRENT_TIMESTAMP); \
          CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT \
          NULL); \
+         CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT); \
          CREATE TABLE agent_session_message_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, \
          target_session_id INTEGER NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT \
          'pending'); \

@@ -22,6 +22,7 @@ async fn legacy_schema(pool: &SqlitePool) {
     sqlx::raw_sql(
         "CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, path TEXT NOT NULL);
          CREATE TABLE features (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL);
+         CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT);
          CREATE TABLE scheduled_messages (
              id INTEGER PRIMARY KEY AUTOINCREMENT,
              feature_id INTEGER NOT NULL,

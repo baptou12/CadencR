@@ -29,6 +29,9 @@ export interface AgentSessionComposerProps {
   providers: AgentSessionMetaProps["providers"];
   canChangeProvider: boolean;
   supportedThinkingEfforts: AgentSessionMetaProps["supportedThinkingEfforts"];
+  supportsFastMode: boolean;
+  isFastModePending: boolean;
+  onFastModeChange: (enabled: boolean) => Promise<void>;
   projectPath: string | undefined;
   isAgentWorking: boolean;
   agentTabActive: boolean;
@@ -156,6 +159,10 @@ function AgentSessionMeta(
       currentThinkingEffort={parseThinkingEffort(session.currentThinkingEffort)}
       supportedThinkingEfforts={props.supportedThinkingEfforts}
       onThinkingEffortChange={session.onThinkingEffortChange}
+      supportsFastMode={props.supportsFastMode}
+      fastMode={session.fastMode ?? false}
+      isFastModePending={props.isFastModePending}
+      onFastModeChange={props.onFastModeChange}
       showClaudeProfileSelector={props.showClaudeProfileSelector}
       claudeProfile={props.claudeProfile}
       claudeProfiles={props.claudeProfiles}

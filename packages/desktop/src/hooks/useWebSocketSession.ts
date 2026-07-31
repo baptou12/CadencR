@@ -84,6 +84,7 @@ export interface UseWebSocketSessionReturn {
   currentProviderId: string;
   currentModelId: string;
   currentThinkingEffort?: string;
+  fastMode: boolean;
   currentProfile?: string;
   runtimeProvider: string;
   runtimeSessionId: string;
@@ -91,6 +92,7 @@ export interface UseWebSocketSessionReturn {
   hasFileChanges: boolean;
   setModel: (modelId: string, providerId: string) => void;
   setThinkingEffort: (thinkingEffort?: string) => void;
+  setFastMode: (enabled: boolean) => Promise<void>;
   setProfile: (profile: string) => void;
   setProvider: (providerId: string) => void;
   sendPrompt: (text: string, options?: PromptDispatchOptions) => void;
@@ -125,6 +127,7 @@ type SessionActions = Pick<
   | "setProvider"
   | "setModel"
   | "setThinkingEffort"
+  | "setFastMode"
   | "setProfile"
   | "setPermissionMode"
   | "setAccessMode"
@@ -266,6 +269,7 @@ function useSessionActions(sessionId: string): SessionActions {
         s.setModel(sessionId, modelId, providerId),
       setThinkingEffort: (thinkingEffort?: string): void =>
         s.setThinkingEffort(sessionId, thinkingEffort),
+      setFastMode: (enabled: boolean): Promise<void> => s.setFastMode(sessionId, enabled),
       setProfile: (profile: string): void => s.setProfile(sessionId, profile),
       setPermissionMode: (mode: PermissionMode): void => s.setPermissionMode(sessionId, mode),
       setAccessMode: (mode: AccessMode): void => s.setAccessMode(sessionId, mode),
@@ -321,6 +325,7 @@ function useSessionSnapshot(
       currentProviderId: session?.currentProviderId ?? "",
       currentModelId: session?.currentModelId ?? "",
       currentThinkingEffort: session?.currentThinkingEffort,
+      fastMode: session?.fastMode ?? false,
       currentProfile: session?.currentProfile,
       runtimeProvider: session?.runtimeProvider ?? "",
       runtimeSessionId: session?.runtimeSessionId ?? "",

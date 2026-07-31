@@ -23,6 +23,7 @@ mod claude_access;
 pub(in crate::domain::ws_session) mod commands;
 mod connection;
 mod dispatch;
+mod fast_mode_support;
 pub(crate) mod helpers;
 pub(crate) mod post_plan_mode;
 mod session_branch;
