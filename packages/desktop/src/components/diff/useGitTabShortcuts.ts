@@ -1,4 +1,29 @@
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
+import { shouldIgnoreGitShortcut } from "@/lib/shortcuts/git-shortcut-guards";
+import type { ShortcutId } from "@/lib/shortcuts/registry";
+
+type GitTabShortcutId = Extract<
+  ShortcutId,
+  | "diff-toggle-sidebar"
+  | "diff-send-comments"
+  | "diff-send-review-comments"
+  | "git-previous-review-thread"
+  | "git-next-review-thread"
+>;
+
+function useGitTabCommand(id: GitTabShortcutId, action: () => void, enabled: boolean): void {
+  useScopedGlobalShortcutById(
+    id,
+    (event) => {
+      if (event.repeat || shouldIgnoreGitShortcut(event)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      action();
+    },
+    "git",
+    { enabled },
+  );
+}
 
 export interface GitTabShortcutTargets {
   enabled: boolean;
@@ -33,62 +58,20 @@ export function useGitTabShortcuts({
   nextReview,
   canNavigateReviews,
 }: GitTabShortcutTargets): void {
-  useScopedGlobalShortcutById(
-    "diff-toggle-sidebar",
-    (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (event.repeat) return;
-      toggleFileList();
-    },
-    "git",
-    { enabled: enabled && !isFileListCollapseLoading },
-  );
+  useGitTabCommand("diff-toggle-sidebar", toggleFileList, enabled && !isFileListCollapseLoading);
 
-  useScopedGlobalShortcutById(
+  useGitTabCommand(
     "diff-send-comments",
-    (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (event.repeat) return;
+    () => {
       if (isPr) sendReviewThreads();
       else sendDrafts();
     },
-    "git",
-    { enabled },
+    enabled,
   );
 
-  useScopedGlobalShortcutById(
-    "diff-send-review-comments",
-    (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (event.repeat) return;
-      sendReviewThreads();
-    },
-    "git",
-    { enabled: enabled && canSendReviewThreads },
-  );
+  useGitTabCommand("diff-send-review-comments", sendReviewThreads, enabled && canSendReviewThreads);
 
-  useScopedGlobalShortcutById(
-    "git-previous-review-thread",
-    (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (!event.repeat) previousReview();
-    },
-    "git",
-    { enabled: enabled && canNavigateReviews },
-  );
+  useGitTabCommand("git-previous-review-thread", previousReview, enabled && canNavigateReviews);
 
-  useScopedGlobalShortcutById(
-    "git-next-review-thread",
-    (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (!event.repeat) nextReview();
-    },
-    "git",
-    { enabled: enabled && canNavigateReviews },
-  );
+  useGitTabCommand("git-next-review-thread", nextReview, enabled && canNavigateReviews);
 }
