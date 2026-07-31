@@ -1,5 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/*
+ * Streamdown ships its wrappers as Tailwind utility classes (including
+ * arbitrary variants like `[&>*:first-child]:mt-0`). Tailwind skips
+ * node_modules when auto-detecting sources, so its dist has to be named
+ * explicitly or those classes are never generated.
+ */
+@source "../../../node_modules/streamdown/dist";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/figtree";
 @import "./theme.css";

@@ -88,6 +88,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
           <Markdown
             content={displayContent}
             cacheKey={cacheKey}
+            isStreaming={isStreaming}
             className="text-xs text-muted-foreground"
           />
         </div>
