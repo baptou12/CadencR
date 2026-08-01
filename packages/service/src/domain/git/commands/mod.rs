@@ -48,6 +48,7 @@ pub use merge_ops::{
 };
 pub use pty::{commit_streaming, push_args, push_streaming};
 pub use pty_input::SensitiveInput;
+pub(crate) use stash::commit_diff::untracked_parent as stash_untracked_parent;
 pub use stash::{apply_stash, drop_stash, list_stashes, pop_stash, push_stash};
 pub use worktree_health::{get_worktree_info, is_live_worktree, worktree_path_matches};
 pub use worktree_ops::{
