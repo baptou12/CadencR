@@ -70,18 +70,12 @@ const COLLAPSIBLE_ROOT_CLASS = "shrink-0";
 // reachable, but only if you thought to scroll the composer. That scroll stays
 // as a backstop for chrome that can't shrink at all; it should no longer engage.
 //
-// `-mt-6 pt-6` is layout-neutral (the negative margin cancels the padding) and
-// exists only to keep the scroll container from clipping `MetaBar`'s own
-// `-mt-6`, the overhang that fades the chip row into the transcript above.
-// Without the extra 24px of padding box, `overflow-y-auto` shears the top off
-// the chips.
-//
 // The home-indicator clearance sits on this root so it applies whichever
 // optional row happens to be last. It used to hang off `ComposerContextUsage`,
 // which returns null until a session reports context usage — so before the
 // first prompt the bottom chips sat flush against the screen edge.
 const FULL_PAGE_ROOT_CLASS =
-  "-mt-6 flex min-h-0 flex-col overflow-y-auto pt-6 pb-[env(safe-area-inset-bottom)]";
+  "flex min-h-0 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]";
 
 // Bottom safe-area clearance lives on the composer root (see above), so this row
 // only owns its own spacing — the same in both layouts.
@@ -92,10 +86,8 @@ export const AgentSessionComposer = memo(function AgentSessionComposer(
 ): ReactElement {
   const { contextUsage } = props.sessionProps;
   const schedules = useSessionSchedules(props.sessionProps.featureId, props.sessionProps.projectId);
-  // When the schedule banner sits above the chips, the meta bar's "blend into
-  // the conversation" fade (negative margin + gradient) would overpaint it.
-  // Drop it to a standalone bar so the banner reads as a clean row above the
-  // chips.
+  // A schedule banner above the chips reads better with the tighter row, so the
+  // bar drops to its standalone padding.
   const scheduledActive = props.shouldShowPromptBar && schedules.armed.length > 0;
   const metaBar = props.hasMeta ? (
     <AgentSessionMeta {...props} metaVariant={scheduledActive ? "standalone" : "session"} />
@@ -110,7 +102,6 @@ export const AgentSessionComposer = memo(function AgentSessionComposer(
 
   return (
     <div className={props.collapsible ? COLLAPSIBLE_ROOT_CLASS : FULL_PAGE_ROOT_CLASS}>
-      {props.collapsible && !props.hasMeta && <ComposerFade />}
       {props.shouldShowPromptBar && schedules.element}
       {metaBar}
       {promptBar}
@@ -296,22 +287,6 @@ function AgentSessionSecondary(props: AgentSessionComposerProps): ReactElement {
       claudeProfilesError={props.claudeProfilesError}
       activeClaudeProfile={props.activeClaudeProfile}
       onClaudeProfileChange={props.onClaudeProfileChange}
-    />
-  );
-}
-
-function ComposerFade(): ReactElement {
-  return (
-    <div
-      className="pointer-events-none h-16 -mt-16"
-      style={{
-        background:
-          "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.7) 8%, hsl(var(--background) / 0.9) 20%, hsl(var(--background)) 40%)",
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
-        maskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
-        WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 25%)",
-      }}
     />
   );
 }
