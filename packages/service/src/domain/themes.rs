@@ -1,0 +1,25 @@
+//! User-authored color themes.
+//!
+//! A theme is pure data — a closed set of design-token values plus an xterm
+//! palette — stored as `~/.cadencr/themes/<id>/theme.json`. There is no code to
+//! sandbox, which is why themes are the first extensibility step; what this
+//! module establishes is the pipeline the later ones reuse: read from a
+//! user-owned directory, validate hard, surface failures, watch for edits.
+//!
+//! The renderer never touches the filesystem for these — it may be talking to a
+//! remote backend — so everything goes through `routes`.
+
+pub mod color;
+pub mod models;
+pub mod paths;
+pub mod routes;
+pub mod store;
+pub mod tokens;
+pub mod validate;
+pub mod watcher;
+
+#[cfg(test)]
+mod test_support;
+
+pub use routes::themes_router;
+pub use watcher::ThemesChangeEvent;

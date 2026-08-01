@@ -1,7 +1,9 @@
 #![allow(clippy::single_match)]
 
+pub mod atomic_file;
 pub mod db;
 pub mod env_file;
+pub mod file_watch;
 pub mod git_cli;
 pub mod image_file;
 pub mod login_env;

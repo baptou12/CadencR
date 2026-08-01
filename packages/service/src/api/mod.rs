@@ -24,6 +24,7 @@ use crate::domain::projects::routes::projects_router;
 use crate::domain::schedules::routes::schedules_router;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
+use crate::domain::themes::themes_router;
 use crate::domain::usage_stats::routes::usage_stats_router;
 use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
@@ -123,6 +124,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(imports_router())
         .merge(lsp_router())
         .merge(usage_stats_router())
+        .merge(themes_router())
         .merge(prompt_commands_router())
         // VAPID public key — shared, so the frontend can fetch it on either
         // listener. Subscription management (device-keyed) is remote-only and

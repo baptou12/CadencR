@@ -36,6 +36,8 @@ use crate::domain::schedules::routes as schedules_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
 use crate::domain::terminal::routes as terminal_routes;
+use crate::domain::themes::models as themes_models;
+use crate::domain::themes::routes as themes_routes;
 use crate::domain::usage_stats::health as usage_stats_health;
 use crate::domain::usage_stats::models as usage_stats_models;
 use crate::domain::usage_stats::routes as usage_stats_routes;
@@ -184,12 +186,25 @@ use crate::domain::ws_session::routes as ws_routes;
         remote_routes::revoke_handler,
         remote_routes::set_tunnel_host_handler,
         remote_routes::pair_handler,
+        themes_routes::list_themes_handler,
+        themes_routes::create_theme_handler,
+        themes_routes::write_theme_handler,
+        themes_routes::delete_theme_handler,
         push_routes::vapid_key_handler,
         push_routes::subscribe_handler,
         push_routes::unsubscribe_handler,
     ),
     components(schemas(
         HealthResponse,
+        themes_models::UserTheme,
+        themes_models::ThemeDocument,
+        themes_models::ThemeAppearance,
+        themes_models::ThemeIssue,
+        themes_models::XtermPalette,
+        themes_models::CreateThemeRequest,
+        themes_models::WriteThemeRequest,
+        themes_models::WriteThemeResponse,
+        themes_models::DeleteThemeResponse,
         crate::domain::agents::runtime::AgentCatalogResponse,
         crate::domain::agents::runtime::ProviderCatalogEntry,
         crate::domain::agents::runtime::ModelCatalogEntry,

@@ -9,6 +9,7 @@
 import { invalidateByExactUrl, invalidateByUrlPrefix, queryClient } from "@/lib/queryClient";
 import { createLeadingSettleCoalescer } from "@/lib/coalesceInvalidation";
 import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
+import { scheduleThemeInvalidation } from "@/lib/themeInvalidation";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 import { invalidateScheduleLists } from "@/lib/schedules/invalidate";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
@@ -301,6 +302,15 @@ export function handleAppEnvelope(
     // are deliberately left alone — a run that spawned one emits `Created` and
     // a run into an existing one emits `Reordered`, both handled below.
     invalidateScheduleLists(queryClient);
+    return true;
+  }
+  if (domain === "app" && action === "theme_event") {
+    // A user theme's `theme.json` changed on disk. Leading-edge so the live
+    // preview updates on the first event — a delay here reads as "my edit
+    // didn't take" — plus a trailing refetch so a burst (an editor saving on
+    // every keystroke) settles on the final content without one full
+    // re-read-and-revalidate of every theme file per keystroke.
+    scheduleThemeInvalidation(queryClient);
     return true;
   }
   if (domain === "app" && action === "feature_event") {

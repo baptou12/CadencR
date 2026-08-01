@@ -1,4 +1,5 @@
-import { DEFAULT_THEME_ID, getTheme } from "./registry";
+import { DEFAULT_THEME_ID, getTheme, parseThemeId } from "./registry";
+import { injectThemeCssVars } from "./inject";
 import type { ThemeId } from "./types";
 import {
   isFollowSystemThemeEnabled,
@@ -13,6 +14,10 @@ import {
  * Tailwind's semantic tokens key off this attribute, so changing it instantly
  * re-skins the entire UI (CodeMirror's theme rules, app chrome, etc.).
  *
+ * Themes that carry their tokens as data (every user theme, plus the ported
+ * first-party ones) additionally have those values injected as a CSS rule for
+ * the same selector — see `inject.ts`.
+ *
  * `data-appearance` mirrors the theme's light/dark classification so chrome
  * that can't rely on Tailwind's media-query `dark:` variant (e.g. mono logos)
  * can invert correctly for Cadencr themes.
@@ -26,11 +31,24 @@ const FOLLOW_SYSTEM_STORAGE_KEY = "cadencr.theme.followSystem";
 const SYSTEM_LIGHT_STORAGE_KEY = "cadencr.theme.systemLight";
 const SYSTEM_DARK_STORAGE_KEY = "cadencr.theme.systemDark";
 
-/** Sets the document's active theme attribute. Idempotent. */
+/**
+ * Sets the document's active theme attribute and injects the theme's token
+ * values when it carries them as data. Idempotent.
+ *
+ * The injection happens *before* the attribute flips so the rule is already in
+ * the stylesheet when the selector starts matching — otherwise a data-carried
+ * theme would paint one frame with no tokens at all.
+ */
 export function applyThemeToDocument(themeId: ThemeId): void {
   if (typeof document === "undefined") return;
-  document.documentElement.dataset.theme = themeId;
-  document.documentElement.dataset.appearance = getTheme(themeId).appearance;
+  // A user theme that was deleted, disabled or failed validation is not
+  // applicable; resolving through `parseThemeId` (rather than setting an
+  // attribute nothing styles) keeps a bad theme file from leaving the UI
+  // unpainted.
+  const theme = getTheme(parseThemeId(themeId));
+  injectThemeCssVars(theme);
+  document.documentElement.dataset.theme = theme.id;
+  document.documentElement.dataset.appearance = theme.appearance;
 }
 
 /**

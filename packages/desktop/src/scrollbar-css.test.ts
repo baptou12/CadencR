@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DRACULA_THEME } from "./lib/themes/dracula";
 
 describe("scrollbar CSS", () => {
   const indexCss = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
@@ -20,7 +21,10 @@ describe("scrollbar CSS", () => {
   });
 
   it("declares the browser color scheme for each app theme", () => {
-    expect(themeCss).toMatch(/:root\[data-theme="dracula"\]\s*{[^}]*color-scheme:\s*dark;/s);
+    // Dracula carries its tokens as data, so its `color-scheme` comes from the
+    // declared appearance and is injected by `applyThemeToDocument` (see
+    // `lib/themes/inject.ts`) rather than authored in this stylesheet.
+    expect(DRACULA_THEME.appearance).toBe("dark");
     expect(themeCss).toMatch(/:root\[data-theme="aurora"\]\s*{[^}]*color-scheme:\s*light;/s);
     // CadencR Dark doubles as the `data-theme`-absent first-paint default.
     expect(cadencrCss).toMatch(
@@ -80,11 +84,13 @@ describe("scrollbar CSS", () => {
   });
 
   it("keeps Dracula hover and active accents subdued", () => {
-    expect(themeCss).toMatch(
-      /:root\[data-theme="dracula"\]\s*{[^}]*--accent:\s*oklch\(0\.34 0\.032 277\.821\);/s,
-    );
-    expect(themeCss).toMatch(
-      /:root\[data-theme="dracula"\]\s*{[^}]*--sidebar-accent:\s*oklch\(0\.34 0\.032 277\.821\);/s,
-    );
+    // Same invariant as before Dracula moved off this stylesheet — only the
+    // source of truth changed.
+    expect(DRACULA_THEME.cssVars?.["--accent"]).toBe("oklch(0.34 0.032 277.821)");
+    expect(DRACULA_THEME.cssVars?.["--sidebar-accent"]).toBe("oklch(0.34 0.032 277.821)");
+  });
+
+  it("no longer carries a Dracula block, so the data path is its only source", () => {
+    expect(themeCss).not.toMatch(/:root\[data-theme="dracula"\]\s*{/);
   });
 });

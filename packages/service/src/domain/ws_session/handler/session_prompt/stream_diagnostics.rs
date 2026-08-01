@@ -97,11 +97,7 @@ impl StreamDiagnostics {
 /// `~/.cadencr/diagnostics` in production (sibling of the settings dir); an
 /// isolated per-test dir in test builds via the settings-dir test override.
 fn diagnostics_dir() -> PathBuf {
-    let settings = crate::domain::settings_store::dir::global_dir();
-    settings
-        .parent()
-        .map(|parent| parent.join("diagnostics"))
-        .unwrap_or_else(|| settings.join("diagnostics"))
+    crate::domain::settings_store::dir::sibling_dir("diagnostics")
 }
 
 #[cfg(test)]

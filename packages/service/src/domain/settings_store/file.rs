@@ -127,34 +127,10 @@ pub fn serialize_document(map: &serde_json::Map<String, serde_json::Value>) -> S
     text
 }
 
-/// Atomically write `content` to `path`: write a sibling temp file, then rename
-/// over the target. A reader therefore never observes a partially written file.
+/// Atomically write `content` to `path`. Thin alias over the shared helper so
+/// callers in this module keep reading in settings terms.
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), AppError> {
-    let parent = path.parent().ok_or_else(|| {
-        AppError::Internal(format!("settings path has no parent: {}", path.display()))
-    })?;
-    std::fs::create_dir_all(parent).map_err(|e| {
-        AppError::Internal(format!(
-            "failed to create settings dir {}: {e}",
-            parent.display()
-        ))
-    })?;
-
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("settings.json");
-    let tmp = parent.join(format!(".{file_name}.tmp"));
-    std::fs::write(&tmp, content)
-        .map_err(|e| AppError::Internal(format!("failed to write settings temp file: {e}")))?;
-    std::fs::rename(&tmp, path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        AppError::Internal(format!(
-            "failed to commit settings file {}: {e}",
-            path.display()
-        ))
-    })?;
-    Ok(())
+    crate::shared::atomic_file::write_atomic(path, content)
 }
 
 #[cfg(test)]

@@ -188,6 +188,13 @@ async fn main() -> anyhow::Result<()> {
             // live refresh to connected clients.
             domain::settings_store::watcher::start(&settings_dir, state.settings_events_tx.clone());
 
+            // Same idea for user themes: editing `theme.json` in your own editor
+            // re-injects the tokens live, with no reload.
+            domain::themes::watcher::start(
+                &domain::themes::paths::themes_dir(),
+                state.theme_events_tx.clone(),
+            );
+
             // Background Web Push dispatcher: turns agent finished / needs-input
             // transitions into native push for backgrounded remote PWAs. Cheap
             // when no subscriptions exist; runs for the process lifetime.

@@ -597,6 +597,16 @@ export interface CreateProjectRequest {
   path: string;
 }
 
+export type CreateThemeRequestCssVars = { [key: string]: string };
+
+export interface CreateThemeRequest {
+  appearance: ThemeAppearance;
+  cssVars: CreateThemeRequestCssVars;
+  /** Human-readable name; the on-disk id is slugified from it. */
+  label: string;
+  xterm: XtermPalette;
+}
+
 export interface CreateWorktreeBody {
   feature_id: number;
   feature_title: string;
@@ -678,6 +688,10 @@ export interface CustomActionVariable {
 
 export interface CustomModelsResponse {
   models: ModelCatalogEntry[];
+}
+
+export interface DeleteThemeResponse {
+  success: boolean;
 }
 
 export interface DeletedResponse {
@@ -3170,6 +3184,57 @@ while leaving a busy one alone. */
 }
 
 /**
+ * Light/dark classification. Drives `color-scheme`, the logo variant and the
+editor's built-in fallback styling.
+ */
+export type ThemeAppearance = (typeof ThemeAppearance)[keyof typeof ThemeAppearance];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeAppearance = {
+  light: "light",
+  dark: "dark",
+} as const;
+
+/**
+ * `--token` → CSS color value. Ordered so a round-trip through the editor
+doesn't reshuffle the file.
+ */
+export type ThemeDocumentCssVars = { [key: string]: string };
+
+/**
+ * A user theme exactly as it is stored in `~/.cadencr/themes/<id>/theme.json`.
+
+This is the whole extensibility surface of step 1: pure data, no behavior.
+`css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
+values must parse as CSS colors — a theme can never introduce arbitrary CSS.
+ */
+export interface ThemeDocument {
+  appearance: ThemeAppearance;
+  /** `--token` → CSS color value. Ordered so a round-trip through the editor
+doesn't reshuffle the file. */
+  cssVars: ThemeDocumentCssVars;
+  label: string;
+  xterm: XtermPalette;
+}
+
+/**
+ * The offending token (`--background`), or `None` for document-level
+problems such as invalid JSON.
+ */
+export type ThemeIssueToken = string | null;
+
+/**
+ * Why a theme can't be applied. Every issue is surfaced in the gallery; a
+theme with any issue is never registered as applicable.
+ */
+export interface ThemeIssue {
+  message: string;
+  /** The offending token (`--background`), or `None` for document-level
+problems such as invalid JSON. */
+  token?: ThemeIssueToken;
+}
+
+/**
  * Which side of a diff a review thread's `line` counts on. Mirrors GitHub's
 `LEFT`/`RIGHT`, GitLab's `old_line`/`new_line`, and Bitbucket's
 `inline.from`/`inline.to`, so the desktop diff can anchor a remote thread to
@@ -3468,6 +3533,34 @@ export interface UserMessagePayload {
 }
 
 /**
+ * The document's declared name, kept even when validation failed so the
+gallery can say *which* theme broke. `None` only when the file isn't
+parseable JSON at all.
+ */
+export type UserThemeLabel = string | null;
+
+export type UserThemeTheme = null | ThemeDocument;
+
+/**
+ * One entry in the theme gallery.
+ */
+export interface UserTheme {
+  /** Raw file text, for the JSON editor and for export-to-file. */
+  content: string;
+  /** Directory slug under `~/.cadencr/themes/`. The renderer applies it as
+`user:<id>`. */
+  id: string;
+  issues: ThemeIssue[];
+  /** The document's declared name, kept even when validation failed so the
+gallery can say *which* theme broke. `None` only when the file isn't
+parseable JSON at all. */
+  label?: UserThemeLabel;
+  /** Absolute path to `theme.json`, so the gallery can show and copy it. */
+  path: string;
+  theme?: UserThemeTheme;
+}
+
+/**
  * `GET /api/push/vapid-key` response: the server's VAPID public key, base64url,
 for the browser's `pushManager.subscribe({ applicationServerKey })`.
  */
@@ -3507,6 +3600,14 @@ export interface WriteSettingsFileRequest {
 
 export interface WriteSettingsFileResponse {
   warnings: SettingWarning[];
+}
+
+export interface WriteThemeRequest {
+  content: string;
+}
+
+export interface WriteThemeResponse {
+  theme: UserTheme;
 }
 
 /**
@@ -3550,6 +3651,36 @@ export const WsSessionAction = {
   prompt_received: "prompt_received",
   stream_status: "stream_status",
 } as const;
+
+/**
+ * The xterm.js palette. Terminals are canvas-rendered and can't read CSS
+variables, so every theme carries the palette explicitly.
+ */
+export interface XtermPalette {
+  background: string;
+  black: string;
+  blue: string;
+  brightBlack: string;
+  brightBlue: string;
+  brightCyan: string;
+  brightGreen: string;
+  brightMagenta: string;
+  brightRed: string;
+  brightWhite: string;
+  brightYellow: string;
+  cursor: string;
+  cursorAccent: string;
+  cyan: string;
+  foreground: string;
+  green: string;
+  magenta: string;
+  red: string;
+  selectionBackground: string;
+  selectionForeground: string;
+  selectionInactiveBackground: string;
+  white: string;
+  yellow: string;
+}
 
 export type GetAgentCatalogParams = {
   /**
@@ -14784,6 +14915,245 @@ export function useListTerminalSessions<
 
   return query;
 }
+
+export const listThemes = (signal?: AbortSignal) => {
+  return customInstance<UserTheme[]>({ url: `/api/themes`, method: "GET", signal });
+};
+
+export const getListThemesQueryKey = () => {
+  return [`/api/themes`] as const;
+};
+
+export const getListThemesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listThemes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listThemes>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListThemesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listThemes>>> = ({ signal }) =>
+    listThemes(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listThemes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListThemesQueryResult = NonNullable<Awaited<ReturnType<typeof listThemes>>>;
+export type ListThemesQueryError = ErrorType<unknown>;
+
+export function useListThemes<
+  TData = Awaited<ReturnType<typeof listThemes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listThemes>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListThemesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const createTheme = (createThemeRequest: CreateThemeRequest, signal?: AbortSignal) => {
+  return customInstance<UserTheme>({
+    url: `/api/themes`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createThemeRequest,
+    signal,
+  });
+};
+
+export const getCreateThemeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTheme>>,
+    TError,
+    { data: CreateThemeRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTheme>>,
+  TError,
+  { data: CreateThemeRequest },
+  TContext
+> => {
+  const mutationKey = ["createTheme"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTheme>>,
+    { data: CreateThemeRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTheme(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateThemeMutationResult = NonNullable<Awaited<ReturnType<typeof createTheme>>>;
+export type CreateThemeMutationBody = CreateThemeRequest;
+export type CreateThemeMutationError = ErrorType<unknown>;
+
+export const useCreateTheme = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTheme>>,
+    TError,
+    { data: CreateThemeRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTheme>>,
+  TError,
+  { data: CreateThemeRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateThemeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const writeTheme = (id: string, writeThemeRequest: WriteThemeRequest) => {
+  return customInstance<WriteThemeResponse>({
+    url: `/api/themes/${id}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: writeThemeRequest,
+  });
+};
+
+export const getWriteThemeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof writeTheme>>,
+    TError,
+    { id: string; data: WriteThemeRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof writeTheme>>,
+  TError,
+  { id: string; data: WriteThemeRequest },
+  TContext
+> => {
+  const mutationKey = ["writeTheme"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof writeTheme>>,
+    { id: string; data: WriteThemeRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return writeTheme(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WriteThemeMutationResult = NonNullable<Awaited<ReturnType<typeof writeTheme>>>;
+export type WriteThemeMutationBody = WriteThemeRequest;
+export type WriteThemeMutationError = ErrorType<unknown>;
+
+export const useWriteTheme = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof writeTheme>>,
+    TError,
+    { id: string; data: WriteThemeRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof writeTheme>>,
+  TError,
+  { id: string; data: WriteThemeRequest },
+  TContext
+> => {
+  const mutationOptions = getWriteThemeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const deleteTheme = (id: string) => {
+  return customInstance<DeleteThemeResponse>({ url: `/api/themes/${id}`, method: "DELETE" });
+};
+
+export const getDeleteThemeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTheme>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteTheme>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteTheme"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTheme>>, { id: string }> = (
+    props,
+  ) => {
+    const { id } = props ?? {};
+
+    return deleteTheme(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteThemeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTheme>>>;
+
+export type DeleteThemeMutationError = ErrorType<unknown>;
+
+export const useDeleteTheme = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTheme>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteTheme>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getDeleteThemeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getUsageStats = (params?: GetUsageStatsParams, signal?: AbortSignal) => {
   return customInstance<UsageStatsResponse>({

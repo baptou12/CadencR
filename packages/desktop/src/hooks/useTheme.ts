@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { useDebouncedSettingFromMap } from "@/hooks/useDebouncedSetting";
 import { useSystemAppearance } from "@/hooks/useSystemAppearance";
@@ -19,6 +19,8 @@ import {
   type ThemeDefinition,
   type ThemeId,
 } from "@/lib/themes";
+import { getUserThemesVersion, subscribeUserThemes } from "@/lib/themes/user-registry";
+import { useUserThemeRegistry } from "@/hooks/useUserThemes";
 
 interface UseThemeResult {
   themeId: ThemeId;
@@ -50,6 +52,11 @@ interface UseThemeResult {
  * the round-trip.
  */
 export function useTheme(): UseThemeResult {
+  // User themes are registered asynchronously (see `useUserThemeRegistry`), so
+  // resolving a `user:` id — and re-resolving it after a live file edit — has to
+  // re-render this hook. `theme` below is the registry's own object, so its
+  // identity changing is what tells `useThemeSync` to re-apply.
+  useSyncExternalStore(subscribeUserThemes, getUserThemesVersion, getUserThemesVersion);
   const workspaceSettings = useGetWorkspaceSettings();
   const settingsMap = useMemo(
     () => settingsArrayToMap(workspaceSettings.data),
@@ -145,6 +152,7 @@ export function useTheme(): UseThemeResult {
  */
 export function useThemeSync(): void {
   const theme = useTheme();
+  useUserThemeRegistry();
   const didToastSystemThemeErrorRef = useRef(false);
 
   useEffect(() => {
@@ -155,8 +163,12 @@ export function useThemeSync(): void {
       systemLightTheme: theme.systemLightThemeId,
       systemDarkTheme: theme.systemDarkThemeId,
     });
+    // `theme.theme` is in the deps deliberately: editing a user theme's file
+    // changes its token values without changing its id, and re-applying is what
+    // re-injects them.
   }, [
     theme.themeId,
+    theme.theme,
     theme.followSystemTheme,
     theme.manualThemeId,
     theme.systemLightThemeId,

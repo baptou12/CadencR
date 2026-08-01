@@ -1,5 +1,5 @@
 import { registerCustomTheme } from "@pierre/diffs";
-import type { ThemeId } from "@/lib/themes";
+import { getTheme, type ThemeId } from "@/lib/themes";
 import { buildPierreTheme } from "./pierre-theme-builder";
 import {
   CADENCR_AURORA_DIFF_THEME,
@@ -385,5 +385,14 @@ export function getPierreThemeName(themeId: ThemeId): PierreThemeName {
       return CADENCR_CATPPUCCIN_MOCHA_DIFF_THEME;
     case "catppuccin-latte":
       return CADENCR_CATPPUCCIN_LATTE_DIFF_THEME;
+    default:
+      // User-authored themes. The diff surface itself is painted from CSS
+      // tokens and so already follows the theme; only Pierre's syntax palette
+      // is a registered JS object, and a user theme has no entry. Fall back to
+      // the CadencR palette for the matching appearance rather than leaving
+      // dark syntax colors on a light diff.
+      return getTheme(themeId).appearance === "light"
+        ? CADENCR_LIGHT_DIFF_THEME
+        : CADENCR_DARK_DIFF_THEME;
   }
 }

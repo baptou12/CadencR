@@ -61,6 +61,7 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   // need not have open, so nothing else tells the sidebar its rules moved.
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.schedule_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.settings_events", {})));
+  ws.send(JSON.stringify(createEnvelope("app", "subscribe.theme_events", {})));
   connection.unsubscribeForgeVisibility = subscribeForgeStatus(ws);
   void hydratePrStatuses();
   if (!isBrowserRemote()) {

@@ -17,6 +17,7 @@ import { AgentVerbositySettings } from "@/components/settings/AgentVerbositySett
 import { AgentSummaryModeToggle } from "@/components/settings/AgentSummaryModeToggle";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
 import { FontSelector } from "@/components/settings/FontSelector";
+import { ThemeLibrary } from "@/components/theme/ThemeLibrary";
 import { FileTreeIconSetSelector } from "@/components/settings/FileTreeIconSetSelector";
 import { LspServerList } from "@/components/settings/LspServerList";
 import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
@@ -171,6 +172,12 @@ function AppearanceSection(): React.JSX.Element {
           <AnimationsToggle divided />
         </SettingsSubsection>
         <FontSelector />
+        <SettingsSubsection
+          title="Theme library"
+          description="Duplicate any built-in theme to make it your own, then edit its JSON — here or in your editor — and watch the app update as you save. Your themes appear in the picker alongside the built-ins."
+        >
+          <ThemeLibrary />
+        </SettingsSubsection>
         <SettingsSubsection
           title="Agent output verbosity"
           description="Control how much of each agent turn stays expanded in the stream. Switching modes does not affect what the agent does — only how its output is rendered."

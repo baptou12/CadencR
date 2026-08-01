@@ -11,21 +11,47 @@ export const WARNING_BANNER_CLASS =
   "rounded-lg border border-[color-mix(in_oklab,var(--acc-orange)_35%,transparent)] bg-[color-mix(in_oklab,var(--acc-orange)_8%,var(--card))] px-3 py-2.5";
 
 /**
- * Non-blocking warning banner for a settings file (unknown keys, invalid
- * values). The app keeps working — these are advisory, surfaced from the
- * backend loader.
+ * The blocking counterpart, in `--acc-red`.
+ *
+ * Spelled out rather than interpolated from a token name: Tailwind only emits
+ * an arbitrary-value utility it can find as a literal string in the source, so
+ * a class assembled at runtime would silently render with no surface at all.
+ */
+const BLOCKING_BANNER_CLASS =
+  "rounded-lg border border-[color-mix(in_oklab,var(--acc-red)_35%,transparent)] bg-[color-mix(in_oklab,var(--acc-red)_8%,var(--card))] px-3 py-2.5";
+
+/**
+ * Banner listing what a JSON document the backend loaded takes issue with.
+ *
+ * Two tones, and the distinction is meaningful: `warning` (orange) is advisory
+ * — the document still took effect; `blocking` (red) means it did *not*, and
+ * the user needs to know that rather than wonder why their edit did nothing.
  */
 export function SettingsWarningsBanner({
   warnings,
+  tone = "warning",
+  title,
 }: {
   warnings: SettingWarning[];
+  tone?: "warning" | "blocking";
+  /** Overrides the default "N settings warnings" heading. */
+  title?: string;
 }): React.JSX.Element | null {
   if (warnings.length === 0) return null;
+  const blocking = tone === "blocking";
+  const heading =
+    title ??
+    (warnings.length === 1 ? "1 settings warning" : `${warnings.length} settings warnings`);
   return (
-    <div className={cn(WARNING_BANNER_CLASS, "text-xs")}>
-      <div className="flex items-center gap-1.5 font-medium text-[var(--acc-orange)]">
+    <div className={cn(blocking ? BLOCKING_BANNER_CLASS : WARNING_BANNER_CLASS, "text-xs")}>
+      <div
+        className={cn(
+          "flex items-center gap-1.5 font-medium",
+          blocking ? "text-[var(--acc-red)]" : "text-[var(--acc-orange)]",
+        )}
+      >
         <AlertTriangle className="size-3.5" aria-hidden />
-        {warnings.length === 1 ? "1 settings warning" : `${warnings.length} settings warnings`}
+        {heading}
       </div>
       <ul className="mt-1.5 space-y-1 text-muted-foreground">
         {warnings.map((w, i) => (

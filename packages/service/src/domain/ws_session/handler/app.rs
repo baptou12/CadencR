@@ -18,6 +18,7 @@ pub(super) async fn handle_app_action(
         "subscribe.feature_events" => handle_subscribe_feature_events(sender, app_state),
         "subscribe.schedule_events" => handle_subscribe_schedule_events(sender, app_state),
         "subscribe.settings_events" => handle_subscribe_settings_events(sender, app_state),
+        "subscribe.theme_events" => handle_subscribe_theme_events(sender, app_state),
         "subscribe.forge_status" => {
             super::app_forge::subscribe_forge_status(envelope, sender, app_state).await
         }
@@ -284,6 +285,19 @@ fn handle_subscribe_settings_events(sender: &WsSender, app_state: &AppState) {
         sender,
         app_state.settings_events_tx.subscribe(),
         "settings_event",
+        OnLag::ResendBare,
+    );
+}
+
+/// User-theme file changes. Kept off `settings_events` on purpose: a theme edit
+/// must re-inject tokens promptly for the live preview to feel like an editor,
+/// while the settings stream fans out into the model/provider/agent-catalog
+/// refetch wave and is coalesced harder.
+fn handle_subscribe_theme_events(sender: &WsSender, app_state: &AppState) {
+    forward_app_events(
+        sender,
+        app_state.theme_events_tx.subscribe(),
+        "theme_event",
         OnLag::ResendBare,
     );
 }

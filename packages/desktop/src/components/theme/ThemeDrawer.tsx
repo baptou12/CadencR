@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
+import { allThemes } from "@/lib/themes";
 import { ThemePicker } from "@/components/theme/ThemePicker";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +84,12 @@ function ThemeDrawerContent({ onClose }: { onClose: () => void }): React.JSX.Ele
     setSystemDarkTheme,
     isLoading,
   } = useTheme();
+  // Built-ins plus the user's registered themes — the picker makes no
+  // distinction, which is the point of the theme library: a theme you wrote sits
+  // alongside the shipped ones. Read from the registry rather than the query so
+  // the list can only offer themes `getTheme` can actually resolve; `useTheme`
+  // above subscribes to it, so this re-renders when it changes.
+  const themes = allThemes();
   const followSystemId = "theme-drawer-follow-system";
 
   return (
@@ -126,6 +133,7 @@ function ThemeDrawerContent({ onClose }: { onClose: () => void }): React.JSX.Ele
         {followSystemTheme ? (
           <div className="space-y-5">
             <ThemePicker
+              themes={themes}
               title="Light system theme"
               selectedThemeId={systemLightThemeId}
               onSelect={setSystemLightTheme}
@@ -133,6 +141,7 @@ function ThemeDrawerContent({ onClose }: { onClose: () => void }): React.JSX.Ele
               autoFocus
             />
             <ThemePicker
+              themes={themes}
               title="Dark system theme"
               selectedThemeId={systemDarkThemeId}
               onSelect={setSystemDarkTheme}
@@ -141,6 +150,7 @@ function ThemeDrawerContent({ onClose }: { onClose: () => void }): React.JSX.Ele
           </div>
         ) : (
           <ThemePicker
+            themes={themes}
             title="All UI theme"
             selectedThemeId={manualThemeId}
             onSelect={setTheme}
