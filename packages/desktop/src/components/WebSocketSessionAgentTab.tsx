@@ -19,6 +19,12 @@ interface SessionAgentTabProps {
   agentVisible: boolean;
   hotkeysEnabled: boolean;
   hasAccessModes: boolean;
+  /**
+   * Offer the branch / worktree choice on the first prompt. Off for
+   * conversations whose working directory isn't a repository — the theme
+   * studio's, which runs in the theme's own folder.
+   */
+  worktreeControls?: boolean;
   onSend: (
     text: string,
     attachments?: PromptAttachmentPayload[],
@@ -56,6 +62,7 @@ export function SessionAgentTab({
   agentVisible,
   hotkeysEnabled,
   hasAccessModes,
+  worktreeControls = true,
   onSend,
 }: SessionAgentTabProps): ReactElement {
   return (
@@ -128,8 +135,8 @@ export function SessionAgentTab({
         hasMore={controls.ws.hasMore}
         onLoadOlder={controls.ws.loadOlderMessages}
         worktreeMode={controls.worktreeMode}
-        onWorktreeModeChange={controls.setWorktreeMode}
-        worktreeProjectId={projectId}
+        onWorktreeModeChange={worktreeControls ? controls.setWorktreeMode : undefined}
+        worktreeProjectId={worktreeControls ? projectId : undefined}
         worktreeDefaultBranch={data.defaultBranch}
         worktreeProjectPath={data.projectPath}
         worktreeSelectedBranch={controls.selectedBranch}

@@ -22,6 +22,7 @@ pub mod store;
 pub mod tokens;
 pub mod validate;
 pub mod watcher;
+pub mod workspace;
 
 #[cfg(test)]
 mod test_support;

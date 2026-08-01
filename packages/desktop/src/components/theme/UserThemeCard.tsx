@@ -97,7 +97,7 @@ export function UserThemeCard({
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="xs" className="gap-1.5" onClick={onEdit}>
           <Code2 className="size-3.5" />
-          Edit JSON
+          Edit
         </Button>
         <Button
           variant="outline"

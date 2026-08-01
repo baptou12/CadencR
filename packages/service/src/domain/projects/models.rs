@@ -3,6 +3,15 @@ use utoipa::ToSchema;
 
 pub use crate::domain::agents::runtime::ProviderSettings as ProjectProviderSettings;
 
+/// `projects.kind` for a project Cadencr created to give an agent a working
+/// directory that isn't a user repository — today, one per user theme.
+///
+/// Deliberately invisible: every listing selects `kind = 'user'` (the column
+/// default, so nothing the user added is affected), which keeps these out of
+/// the sidebar, the unified agents grid and the MCP workspace tools. They are
+/// created and deleted alongside whatever owns them.
+pub const SYSTEM_PROJECT_KIND: &str = "system";
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Project {
     pub id: i64,

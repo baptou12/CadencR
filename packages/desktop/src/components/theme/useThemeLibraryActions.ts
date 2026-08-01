@@ -9,7 +9,8 @@ import type { ThemeDefinition } from "@/lib/themes";
 import { readThemeCssVars, userThemeLabel } from "@/lib/themes/user-theme";
 
 interface ThemeLibraryActions {
-  duplicate: (source: ThemeDefinition) => void;
+  /** Copy `source` into a new theme; `onCreated` receives it once it exists. */
+  duplicate: (source: ThemeDefinition, onCreated?: (created: UserTheme) => void) => void;
   remove: (theme: UserTheme) => void;
   exportTheme: (theme: UserTheme) => void;
   isDuplicating: boolean;
@@ -23,6 +24,8 @@ interface ThemeLibraryActions {
  * Duplication is the only way to create a theme, on purpose: it seeds the
  * complete, already-valid token set of a working theme, so the user always
  * edits from something that renders rather than assembling 104 tokens by hand.
+ * The copy is made server-side before the studio opens, because the agent that
+ * edits it alongside the user needs a real folder to work in.
  */
 export function useThemeLibraryActions(): ThemeLibraryActions {
   const queryClient = useQueryClient();
@@ -35,7 +38,7 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
   }, [queryClient]);
 
   const duplicate = useCallback(
-    (source: ThemeDefinition): void => {
+    (source: ThemeDefinition, onCreated?: (created: UserTheme) => void): void => {
       let cssVars;
       try {
         cssVars = readThemeCssVars(source.id, source.cssVars);
@@ -56,6 +59,7 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
           onSuccess: (created) => {
             refresh();
             toast.success(`Created “${userThemeLabel(created)}”`);
+            onCreated?.(created);
           },
           onError: (error) => toast.error(apiErrorMessage(error, "Failed to duplicate theme")),
         },

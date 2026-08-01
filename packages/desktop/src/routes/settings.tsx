@@ -174,7 +174,7 @@ function AppearanceSection(): React.JSX.Element {
         <FontSelector />
         <SettingsSubsection
           title="Theme library"
-          description="Duplicate any built-in theme to make it your own, then edit its JSON — here or in your editor — and watch the app update as you save. Your themes appear in the picker alongside the built-ins."
+          description="Start from any theme you like and make it your own. The editor opens with an agent beside it, so you can change the JSON by hand or just describe what you want — either way the app repaints as you go. Your themes appear in the picker alongside the built-ins."
         >
           <ThemeLibrary />
         </SettingsSubsection>

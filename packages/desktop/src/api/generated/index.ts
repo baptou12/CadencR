@@ -3235,6 +3235,17 @@ problems such as invalid JSON. */
 }
 
 /**
+ * Where a theme's conversation lives. The renderer needs all three to mount an
+agent session: the ws session id is derived from `feature_id`.
+ */
+export interface ThemeWorkspace {
+  /** The theme directory — the agent's working directory. */
+  cwd: string;
+  feature_id: number;
+  project_id: number;
+}
+
+/**
  * Which side of a diff a review thread's `line` counts on. Mirrors GitHub's
 `LEFT`/`RIGHT`, GitLab's `old_line`/`new_line`, and Bitbucket's
 `inline.from`/`inline.to`, so the desktop diff can anchor a remote thread to
@@ -15151,6 +15162,78 @@ export const useDeleteTheme = <TError = ErrorType<unknown>, TContext = unknown>(
   TContext
 > => {
   const mutationOptions = getDeleteThemeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+/**
+ * @summary The conversation this theme is edited in, created on first use. A POST
+because it can create rows; repeating it always returns the same ids.
+ */
+export const themeWorkspace = (id: string, signal?: AbortSignal) => {
+  return customInstance<ThemeWorkspace>({
+    url: `/api/themes/${id}/workspace`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getThemeWorkspaceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof themeWorkspace>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof themeWorkspace>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["themeWorkspace"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof themeWorkspace>>, { id: string }> = (
+    props,
+  ) => {
+    const { id } = props ?? {};
+
+    return themeWorkspace(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ThemeWorkspaceMutationResult = NonNullable<Awaited<ReturnType<typeof themeWorkspace>>>;
+
+export type ThemeWorkspaceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary The conversation this theme is edited in, created on first use. A POST
+because it can create rows; repeating it always returns the same ids.
+ */
+export const useThemeWorkspace = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof themeWorkspace>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof themeWorkspace>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getThemeWorkspaceMutationOptions(options);
 
   return useMutation(mutationOptions);
 };

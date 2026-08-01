@@ -1,5 +1,5 @@
-use axum::extract::{Json, Path};
-use axum::routing::{get, put};
+use axum::extract::{Json, Path, State};
+use axum::routing::{get, post, put};
 use axum::Router;
 
 use crate::app_state::AppState;
@@ -9,6 +9,7 @@ use super::models::{
     CreateThemeRequest, DeleteThemeResponse, UserTheme, WriteThemeRequest, WriteThemeResponse,
 };
 use super::store;
+use super::workspace::{self, ThemeWorkspace};
 
 pub fn themes_router() -> Router<AppState> {
     Router::new()
@@ -20,6 +21,7 @@ pub fn themes_router() -> Router<AppState> {
             "/api/themes/{id}",
             put(write_theme_handler).delete(delete_theme_handler),
         )
+        .route("/api/themes/{id}/workspace", post(theme_workspace_handler))
 }
 
 #[utoipa::path(get, path = "/api/themes", responses((status = 200, body = Vec<UserTheme>)))]
@@ -59,8 +61,25 @@ pub async fn write_theme_handler(
     responses((status = 200, body = DeleteThemeResponse))
 )]
 pub async fn delete_theme_handler(
+    State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<DeleteThemeResponse>, AppError> {
     store::delete(&id).await?;
+    workspace::remove(&state.write_pool, &id).await;
     Ok(Json(DeleteThemeResponse { success: true }))
+}
+
+/// The conversation this theme is edited in, created on first use. A POST
+/// because it can create rows; repeating it always returns the same ids.
+#[utoipa::path(
+    post,
+    path = "/api/themes/{id}/workspace",
+    params(("id" = String, Path,)),
+    responses((status = 200, body = ThemeWorkspace))
+)]
+pub async fn theme_workspace_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<ThemeWorkspace>, AppError> {
+    Ok(Json(workspace::ensure(&state.write_pool, &id).await?))
 }

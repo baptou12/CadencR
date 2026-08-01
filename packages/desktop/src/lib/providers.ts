@@ -18,6 +18,17 @@ export type ProviderId = (typeof PROVIDER_IDS)[keyof typeof PROVIDER_IDS];
 
 export const DEFAULT_PROVIDER_ID: ProviderId = PROVIDER_IDS.CLAUDE_CODE;
 
+/**
+ * Providers where `/compact` is a session action Cadencr performs rather than a
+ * slash command the runtime understands. Every surface that accepts a prompt
+ * has to make the same call, so the set lives with the other provider facts.
+ */
+export const COMPACT_ACTION_PROVIDERS: ReadonlySet<string> = new Set([
+  PROVIDER_IDS.OPENCODE,
+  PROVIDER_IDS.CODEX_CLI,
+  PROVIDER_IDS.CURSOR,
+]);
+
 export type ProviderIconVariant = "color" | "mono";
 
 export interface ProviderMetadata {
