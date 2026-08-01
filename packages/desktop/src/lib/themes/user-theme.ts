@@ -76,6 +76,16 @@ export function toThemeDefinitions(themes: UserTheme[]): ThemeDefinition[] {
  * theme, read the computed custom properties off `<html>`, and flip back. Both
  * writes happen in one synchronous task, so no frame is ever painted with the
  * wrong theme.
+ *
+ * The risk this can't detect at runtime is a theme with no matching rule: the
+ * flip then falls through to the bare `:root` block and reads the *default*
+ * palette under another theme's name. It is not detectable by comparing against
+ * an unmatchable id, because CadencR Dark deliberately *is* the `:root` block
+ * (`theme-cadencr.css` declares `:root, :root[data-theme="cadencr-dark"]`) and
+ * any theme may legitimately share a token with it. So that invariant — every
+ * built-in carries `cssVars` or has a block of its own — is enforced where it
+ * can be checked exactly, by `registry.test.ts`, and what remains here is the
+ * one failure a runtime read can see: tokens that resolve to nothing at all.
  */
 export function readThemeCssVars(themeId: string, cssVars?: ThemeCssVars): ThemeCssVars {
   if (cssVars) return { ...cssVars };
@@ -83,14 +93,12 @@ export function readThemeCssVars(themeId: string, cssVars?: ThemeCssVars): Theme
   const previous = root.dataset.theme;
   try {
     const fromTheme = readTokensWithThemeApplied(root, themeId);
-    // No stylesheet rule matched: `data-theme` fell through to the bare `:root`
-    // fallback and we just read the *default* palette under this theme's name.
-    // Silently duplicating the wrong colours would be the worst outcome, so
-    // compare against a deliberately unmatchable id and refuse.
-    const fallback = readTokensWithThemeApplied(root, "__cadencr_no_such_theme__");
-    if (fromTheme["--background"] === fallback["--background"]) {
+    const missing = THEME_TOKEN_KEYS.filter((key) => fromTheme[key] === "");
+    if (missing.length > 0) {
+      const shown = missing.slice(0, 3).join(", ");
+      const rest = missing.length > 3 ? ` and ${missing.length - 3} more` : "";
       throw new Error(
-        `Theme "${themeId}" has no token values to copy — it defines neither cssVars nor a stylesheet block.`,
+        `Theme "${themeId}" has no value for ${shown}${rest} — its stylesheet may not have loaded.`,
       );
     }
     return fromTheme;

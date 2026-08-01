@@ -114,12 +114,12 @@ describe("readThemeCssVars", () => {
 
   it("refuses to copy a theme whose values it cannot actually read", () => {
     // Themes whose values live in CSS are read by briefly flipping
-    // `data-theme`. With no stylesheet loaded (jsdom, or a theme that has
-    // neither `cssVars` nor a block) the flip reads the bare-`:root` fallback —
-    // which would silently duplicate the *default* palette under this theme's
-    // name. It has to fail loudly instead.
+    // `data-theme`. With no stylesheet loaded at all (jsdom here; a failed
+    // stylesheet in the app) every token resolves to nothing, and creating a
+    // theme out of empty values would fail validation server-side with a far
+    // less useful message. It has to fail loudly here instead.
     window.document.documentElement.dataset.theme = "frost-dark";
-    expect(() => readThemeCssVars("monokai")).toThrow(/no token values to copy/);
+    expect(() => readThemeCssVars("monokai")).toThrow(/has no value for --background/);
   });
 
   it("restores the previous theme even when the read fails", () => {

@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_THEME_ID, THEME_LIST, getTheme, isThemeId, parseThemeId } from "./registry";
 
@@ -23,6 +25,25 @@ describe("theme registry", () => {
     expect(ids).toContain("paper-owl");
     expect(ids).toContain("catppuccin-mocha");
     expect(ids).toContain("catppuccin-latte");
+  });
+
+  it("gives every built-in somewhere to read its tokens from", () => {
+    // Duplicating a built-in seeds the new theme from its token values, taken
+    // either from `cssVars` or — for the themes still authored in CSS — by
+    // briefly applying the theme and reading the computed properties. That read
+    // can't tell "no rule matched" from "this theme shares the `:root` values",
+    // since CadencR Dark *is* the `:root` block. So the guarantee it depends on
+    // is asserted here: a built-in with neither would silently duplicate the
+    // default palette under its name.
+    const cssDir = join(process.cwd(), "src");
+    const css = readdirSync(cssDir)
+      .filter((name) => name.endsWith(".css"))
+      .map((name) => readFileSync(join(cssDir, name), "utf8"))
+      .join("\n");
+    const unreadable = THEME_LIST.filter(
+      (theme) => !theme.cssVars && !css.includes(`[data-theme="${theme.id}"]`),
+    );
+    expect(unreadable.map((theme) => theme.id)).toEqual([]);
   });
 
   it("isThemeId narrows to known ids", () => {
