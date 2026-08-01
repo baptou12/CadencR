@@ -121,7 +121,11 @@ export function ReferencedWorktreeTip({
       onClick={useWorktree}
       title={`Reuse ${worktree.path} when you send your first message`}
       aria-label={ariaLabel}
-      className="mb-2 w-full min-w-0 justify-start border-border bg-[var(--chip-worktree-bg)] px-2.5 text-left text-[11px] text-[var(--chip-worktree-fg)] shadow-sm hover:bg-[var(--chip-worktree-bg-hover)] hover:text-[var(--chip-worktree-fg)] focus-visible:ring-[var(--chip-worktree-fg)]/40"
+      // `--primary`, not the `--chip-worktree-*` trio: those tokens tone the
+      // *state* chips that report which worktree a session is on, while this row
+      // is a call to action attached to the send you are about to make. It reads
+      // as the theme's action color — same one the send button carries.
+      className="mb-2 w-full min-w-0 justify-start border-primary/30 bg-primary/10 px-2.5 text-left text-[11px] text-primary shadow-sm hover:bg-primary/15 hover:text-primary focus-visible:ring-primary/40"
     >
       <GitBranchIcon className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 truncate">
