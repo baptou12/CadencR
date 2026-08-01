@@ -88,7 +88,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "theme_system_light",
     "theme_system_dark",
     // JSON array of user-theme ids (the directory slugs under
-    // `~/.cadencr/themes/`) the user disabled. A disabled theme stays on disk
+    // `~/.cadencr/plugins/themes/`) the user disabled. A disabled theme stays on disk
     // and in the gallery but is hidden from the picker. Opt-out rather than
     // opt-in so a freshly created theme is immediately usable.
     "theme_user_disabled",

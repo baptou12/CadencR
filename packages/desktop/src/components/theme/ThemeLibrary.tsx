@@ -154,7 +154,7 @@ function ThemeJsonEditor({
         onSave={async (content) => {
           const response = await write.mutateAsync({ id: theme.id, data: { content } });
           return response.theme.issues.map((issue) => ({
-            key: issue.token,
+            key: issue.token ?? "",
             message: issue.token ? `${issue.token}: ${issue.message}` : issue.message,
           }));
         }}

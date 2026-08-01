@@ -1,4 +1,4 @@
-//! Read/write user themes under `~/.cadencr/themes/<id>/theme.json`.
+//! Read/write user themes under `~/.cadencr/plugins/themes/<id>/theme.json`.
 //!
 //! Reads always go to disk (no cache) so an external edit shows up on the next
 //! request, matching how the settings store behaves. Writes are atomic

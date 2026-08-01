@@ -7,14 +7,18 @@ use crate::shared::slug::slugify;
 
 pub const THEME_FILE_NAME: &str = "theme.json";
 
-/// `~/.cadencr/themes` in production — never inside the app bundle, whose
-/// resources are read-only and replaced wholesale on update. User content has
-/// to outlive that.
+/// `~/.cadencr/plugins/themes` in production — never inside the app bundle,
+/// whose resources are read-only and replaced wholesale on update. User content
+/// has to outlive that.
+///
+/// Themes are the first thing a user can author, not the last, so they live
+/// under a `plugins/` root the later extensibility steps share rather than as
+/// another top-level sibling of `settings/` and `lsp/`.
 pub fn themes_dir() -> PathBuf {
-    crate::domain::settings_store::dir::sibling_dir("themes")
+    crate::domain::settings_store::dir::sibling_dir("plugins").join("themes")
 }
 
-/// `~/.cadencr/themes/<id>/theme.json`.
+/// `~/.cadencr/plugins/themes/<id>/theme.json`.
 pub fn theme_file(id: &str) -> Result<PathBuf, AppError> {
     Ok(theme_dir(id)?.join(THEME_FILE_NAME))
 }
@@ -70,7 +74,9 @@ mod tests {
     }
 
     #[test]
-    fn themes_dir_is_named_themes() {
-        assert_eq!(themes_dir().file_name().unwrap(), "themes");
+    fn themes_dir_lives_under_the_plugins_root() {
+        let dir = themes_dir();
+        assert_eq!(dir.file_name().unwrap(), "themes");
+        assert_eq!(dir.parent().unwrap().file_name().unwrap(), "plugins");
     }
 }

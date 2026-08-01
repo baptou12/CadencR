@@ -42,7 +42,7 @@ pub struct XtermPalette {
     pub bright_white: String,
 }
 
-/// A user theme exactly as it is stored in `~/.cadencr/themes/<id>/theme.json`.
+/// A user theme exactly as stored in `~/.cadencr/plugins/themes/<id>/theme.json`.
 ///
 /// This is the whole extensibility surface of step 1: pure data, no behavior.
 /// `css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
@@ -96,7 +96,7 @@ impl ThemeIssue {
 /// One entry in the theme gallery.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UserTheme {
-    /// Directory slug under `~/.cadencr/themes/`. The renderer applies it as
+    /// Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as
     /// `user:<id>`.
     pub id: String,
     /// Absolute path to `theme.json`, so the gallery can show and copy it.

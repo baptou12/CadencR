@@ -3202,7 +3202,7 @@ doesn't reshuffle the file.
 export type ThemeDocumentCssVars = { [key: string]: string };
 
 /**
- * A user theme exactly as it is stored in `~/.cadencr/themes/<id>/theme.json`.
+ * A user theme exactly as stored in `~/.cadencr/plugins/themes/<id>/theme.json`.
 
 This is the whole extensibility surface of step 1: pure data, no behavior.
 `css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
@@ -3547,7 +3547,7 @@ export type UserThemeTheme = null | ThemeDocument;
 export interface UserTheme {
   /** Raw file text, for the JSON editor and for export-to-file. */
   content: string;
-  /** Directory slug under `~/.cadencr/themes/`. The renderer applies it as
+  /** Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as
 `user:<id>`. */
   id: string;
   issues: ThemeIssue[];

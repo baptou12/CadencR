@@ -1,4 +1,5 @@
-//! Watches `~/.cadencr/themes` and broadcasts when a `theme.json` changes.
+//! Watches `~/.cadencr/plugins/themes` and broadcasts when a `theme.json`
+//! changes.
 //!
 //! This is what makes "edit the file, see it live" work: the user keeps the
 //! theme open in their own editor, and every save re-validates and re-injects
@@ -31,7 +32,7 @@ pub struct ThemesChangeEvent {
 /// directory is created first: `notify` can't watch a path that doesn't exist,
 /// and a user's first theme would otherwise never reload live.
 pub fn start(dir: &Path, tx: broadcast::Sender<ThemesChangeEvent>) {
-    if let Err(e) = std::fs::create_dir_all(dir) {
+    if let Err(e) = crate::remote::secure_fs::create_dir_owner_only(dir) {
         warn!(dir = %dir.display(), "failed to create themes dir: {e}");
         return;
     }
