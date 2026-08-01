@@ -3,6 +3,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { FeatureDeleteDialog } from "@/components/FeatureDeleteDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ImageLightboxHost } from "@/components/ImageLightbox";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
 import { SchedulesShortcut } from "@/components/SchedulesShortcut";
@@ -82,6 +83,7 @@ export function RootOverlays({
       <Toaster position="top-center" />
       <PostUpdateChangelogDialog />
       <ThemeDrawer />
+      <ImageLightboxHost />
       <ArchiveFeatureDialog
         open={archiveConfirmAction != null}
         feature={archiveConfirmAction?.feature}

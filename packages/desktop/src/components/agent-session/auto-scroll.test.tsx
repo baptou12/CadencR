@@ -129,6 +129,7 @@ vi.mock("@/hooks/useImageAttachments", () => ({
     addFiles: vi.fn(),
     removeAttachment: vi.fn(),
     clearAttachments: vi.fn(),
+    restoreAttachments: vi.fn(),
     dragHandlers: {},
     isDragging: false,
   })),
