@@ -21,6 +21,10 @@ Frontend path alias: `@` → `packages/desktop/src/`. Frontend ↔ backend is HT
 
 ## Gotchas
 
+**Never remove any database.** Not the dev DB, not the production DB, not a custom `CADENCR_DB_PATH` — never delete, truncate, overwrite, or replace a database file. No exceptions.
+
+**Never roll back without explicit approval.** Do not reset, revert, or restore away changes unless the user has sent exactly: `I approve this rollback`. Paraphrases do not count.
+
 **Never run bare `cargo`.** Use `pnpm rust -- <args>` (or `node scripts/cargo-env.mjs cargo …`). The wrapper pins `CARGO_TARGET_DIR` to this worktree and strips `RUSTC_WRAPPER`/`SCCACHE_*`; bare cargo triggers a cold rebuild and mixes artifacts across branches.
 
 **`pnpm start` is not an alias for `pnpm dev`.** `start` is desktop-only: it builds the service binary once and never runs it, so the frontend talks to nothing unless a service is already up. `pnpm dev` runs both (plus the landing site). The first `pnpm dev` in a fresh worktree cold-builds the whole Rust tree — `pnpm dev:precompile` does that ahead of time.
@@ -171,6 +175,12 @@ Keep Rust unit tests inline, behind `#[cfg(test)]` in the file they cover — no
 _Applies to: `**/*.tsx`_
 
 Power users drive this app from the keyboard, so a feature that can only be triggered by mouse is incomplete if a binding would make sense. When adding one, use the `keyboard-shortcuts` skill — the registry pipeline has non-QWERTY (`e.code` vs `e.key`) and help-modal requirements that are easy to get wrong.
+
+### no-destructive-ops
+
+**Never remove any database.** Never delete, truncate, overwrite, replace, or `rm` a Cadencr database file — not the dev DB (`packages/service/cadencr.local.db`), not the production DB (`~/.cadencr/database/cadencr.db`), not any custom `CADENCR_DB_PATH` / `--db-path` target. There is no exception for "just resetting local state" or "it's only the dev DB."
+
+**Never roll back changes without explicit user approval.** Do not `git reset`, `git revert`, `git checkout --` / `git restore`, or otherwise undo committed or uncommitted work unless the user has replied with exactly this phrase: `I approve this rollback`. Paraphrases, implied consent, "go ahead", or approving a related plan do not count.
 
 ### no-optimistic-updates
 _Applies to: `packages/desktop/src/**`_
