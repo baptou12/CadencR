@@ -46,7 +46,7 @@ pub use merge::{get_current_branch, get_original_branch};
 pub use merge_ops::{
     check_merge_conflicts, force_delete_branch, is_branch_merged, parse_conflict_files,
 };
-pub use pty::{commit_streaming, push_streaming};
+pub use pty::{commit_streaming, push_args, push_streaming};
 pub use pty_input::SensitiveInput;
 pub use stash::{apply_stash, drop_stash, list_stashes, pop_stash, push_stash};
 pub use worktree_health::{get_worktree_info, is_live_worktree, worktree_path_matches};

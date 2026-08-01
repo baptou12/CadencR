@@ -2131,7 +2131,26 @@ export const ProviderStatus = {
 
 export interface PushBody {
   feature_id: number;
+  /** Optional force mode; omitted or `"none"` performs a plain push. */
+  force?: PushForceMode;
 }
+
+/**
+ * How hard the push may overwrite the remote branch.
+
+`ForceWithLease` is the safe force: git refuses when the remote moved
+since our last fetch. `Force` overwrites unconditionally and is the
+destructive escape hatch. Absent field ⇒ [`PushForceMode::None`], so
+existing clients keep the plain `git push` behavior.
+ */
+export type PushForceMode = (typeof PushForceMode)[keyof typeof PushForceMode];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PushForceMode = {
+  none: "none",
+  force: "force",
+  "force-with-lease": "force-with-lease",
+} as const;
 
 /**
  * User-typed bytes for an interactive `git push` prompt. The backend
