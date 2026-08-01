@@ -1,12 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   applyBlockContentBudget,
+  BLOCK_CONTENT_MAX_CHARS,
   clampJsonText,
   clampTailText,
   clampText,
   TRUNCATION_NOTICE,
 } from "./block-content-budget";
+import { promptImageSrc, resetPromptBlobCacheForTest } from "./prompt-image-cache";
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { buildUserMessageContent, parseUserMessageContent } from "@/types/agent-types";
+
+afterEach(() => resetPromptBlobCacheForTest());
 
 function block(overrides: Partial<AgentBlockData> = {}): AgentBlockData {
   return { id: "b1", type: "text", content: "hello", ...overrides };
@@ -155,6 +160,46 @@ describe("applyBlockContentBudget", () => {
     expect(result.truncatedContent).toBe(true);
     const parsed = JSON.parse(result.toolArgs ?? "") as Record<string, unknown>;
     expect(parsed.file_path).toBe("/tmp/a.ts");
+  });
+
+  // Regression: a 3.3 MB prompt-with-screenshot was raw-clamped as prose, which
+  // spliced the notice into the middle of the envelope. It stopped parsing, so
+  // `parseUserMessageContent` fell back to "render it as text" and the bubble
+  // showed a wall of base64 instead of the image. Observed in production on the
+  // "Polish Meeting Mode UX" conversation.
+  it("keeps a screenshot prompt renderable instead of dumping its envelope", () => {
+    const content = buildUserMessageContent("Please fix the alignment here", [
+      { base64: "A".repeat(3_000_000), fileName: "shot.png", kind: "image", mimeType: "image/png" },
+    ]);
+    const input = block({ id: "msg-42", type: "user_message", content });
+
+    const result = applyBlockContentBudget(input);
+
+    expect(result.content.length).toBeLessThan(BLOCK_CONTENT_MAX_CHARS);
+    expect(result.content).not.toContain(TRUNCATION_NOTICE);
+    const parsed = parseUserMessageContent(result.content);
+    expect(parsed.text).toBe("Please fix the alignment here");
+    expect(parsed.images).toHaveLength(1);
+    expect(promptImageSrc(parsed.images[0])).toMatch(/^blob:/);
+  });
+
+  // Off-loading a payload is not truncation — nothing was dropped, so the block
+  // must not claim it was.
+  it("does not flag an off-loaded prompt as truncated", () => {
+    const content = buildUserMessageContent("small one", [
+      { base64: "A".repeat(64), fileName: "a.png", kind: "image", mimeType: "image/png" },
+    ]);
+    const result = applyBlockContentBudget(block({ type: "user_message", content }));
+    expect(result.truncatedContent).toBeUndefined();
+  });
+
+  it("clamps a genuinely huge text-only prompt, keeping the envelope parseable", () => {
+    const content = JSON.stringify([{ type: "text", text: "w".repeat(500_000) }]);
+    const result = applyBlockContentBudget(block({ type: "user_message", content }), 4000);
+
+    expect(result.truncatedContent).toBe(true);
+    expect(() => JSON.parse(result.content)).not.toThrow();
+    expect(parseUserMessageContent(result.content).text).toContain(TRUNCATION_NOTICE);
   });
 
   it("reproduces the production worst case without retaining it", () => {

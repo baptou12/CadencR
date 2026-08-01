@@ -19,6 +19,7 @@
  */
 
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { extractPromptBlobs } from "@/lib/prompt-image-cache";
 
 /**
  * Maximum characters retained for a single block's `content` or `toolArgs`.
@@ -208,6 +209,27 @@ export function clampJsonText(text: string, max: number = BLOCK_CONTENT_MAX_CHAR
   return clampText(text, max);
 }
 
+/** Move attachment payloads to the blob cache, keeping the block reference when there are none. */
+function withExtractedPromptBlobs(block: AgentBlockData): AgentBlockData {
+  const content = extractPromptBlobs(block.content);
+  return content === block.content ? block : { ...block, content };
+}
+
+/**
+ * Clamp a completed `user_message` envelope, keeping it parseable.
+ *
+ * Unlike tool content, a user message is never a half-streamed fragment, so an
+ * envelope that fails to parse here is genuinely prose that happens to start
+ * with `[` — raw-clamping that is correct, where doing the same to real JSON
+ * would leave `parseUserMessageContent` dumping the envelope at the user as
+ * text.
+ */
+function clampUserMessageText(text: string, max: number): ClampedText {
+  const attempt = clampJsonStructurally(text, max);
+  if (attempt.status === "clamped") return attempt.result;
+  return clampText(text, max);
+}
+
 /**
  * Apply the budget to one block. Returns the *same reference* when nothing had
  * to be cut so `React.memo` and the store's in-place merge paths are unaffected
@@ -217,22 +239,29 @@ export function applyBlockContentBudget(
   block: AgentBlockData,
   max: number = BLOCK_CONTENT_MAX_CHARS,
 ): AgentBlockData {
-  const overContent = block.content.length > max;
-  const overArgs = (block.toolArgs?.length ?? 0) > max;
-  if (!overContent && !overArgs) return block;
+  // Attachment payloads are lifted out before anything is measured: they are
+  // the only reason a user message is ever over budget, and clamping one would
+  // corrupt the envelope that carries it. This is not truncation — the payload
+  // is preserved, just not in the block. See `prompt-image-cache`.
+  const subject = block.type === "user_message" ? withExtractedPromptBlobs(block) : block;
+  const overContent = subject.content.length > max;
+  const overArgs = (subject.toolArgs?.length ?? 0) > max;
+  if (!overContent && !overArgs) return subject;
 
-  const next = { ...block };
+  const next = { ...subject };
   if (overContent) {
     // `tool_call` content and `toolArgs` are both JSON envelopes on every
-    // provider; text/thinking/user_message are prose.
+    // provider; text/thinking are prose, and a user message is either.
     const clamped =
-      block.type === "tool_call" || block.type === "tool_result"
-        ? clampJsonText(block.content, max)
-        : clampText(block.content, max);
+      subject.type === "tool_call" || subject.type === "tool_result"
+        ? clampJsonText(subject.content, max)
+        : subject.type === "user_message"
+          ? clampUserMessageText(subject.content, max)
+          : clampText(subject.content, max);
     next.content = clamped.text;
   }
-  if (overArgs && block.toolArgs) {
-    next.toolArgs = clampJsonText(block.toolArgs, max).text;
+  if (overArgs && subject.toolArgs) {
+    next.toolArgs = clampJsonText(subject.toolArgs, max).text;
   }
   next.truncatedContent = true;
   return next;
