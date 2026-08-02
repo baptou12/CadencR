@@ -59,8 +59,17 @@ pub async fn project_file(
     pool: &SqlitePool,
     project_id: i64,
 ) -> Result<PathBuf, AppError> {
-    let stem = sanitize_stem(&project_name(pool, project_id).await?);
-    Ok(dir.join(format!("{stem}{PROJECT_SUFFIX}")))
+    Ok(project_file_for_name(
+        dir,
+        &project_name(pool, project_id).await?,
+    ))
+}
+
+/// The settings file a project *named* `name` resolves to, without asking the
+/// database. A rename needs both the file the old name points at and the one
+/// the new name will point at, and only one of those is in the `projects` row.
+pub fn project_file_for_name(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{}{PROJECT_SUFFIX}", sanitize_stem(name)))
 }
 
 /// Whether another project (different id) maps to the same settings file as

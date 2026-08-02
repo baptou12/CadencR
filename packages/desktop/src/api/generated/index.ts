@@ -3239,6 +3239,10 @@ problems such as invalid JSON. */
 conversation; the ws session id is derived from `feature_id`.
  */
 export interface ThemeWorkspace {
+  /** Whether this call created the conversation. The renderer arranges the
+panes — the theme file beside the agent — only on that first open, so a
+layout the user rearranged afterwards is theirs to keep. */
+  created: boolean;
   /** The theme directory — the project root, and the agent's cwd. */
   cwd: string;
   feature_id: number;

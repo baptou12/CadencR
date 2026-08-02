@@ -44,6 +44,9 @@ const COMMIT_IDENTITY: [(&str, &str); 4] = [
 /// is nobody's change.
 const GITIGNORE: &str = ".*.tmp\n";
 
+const DEFAULT_WORKTREE_MODE: &str = "default_worktree_mode";
+const WORKTREE_SKIP: &str = "skip";
+
 /// Where a theme is edited. The renderer needs all three to route to the
 /// conversation; the ws session id is derived from `feature_id`.
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
@@ -52,6 +55,10 @@ pub struct ThemeWorkspace {
     pub feature_id: i64,
     /// The theme directory — the project root, and the agent's cwd.
     pub cwd: String,
+    /// Whether this call created the conversation. The renderer arranges the
+    /// panes — the theme file beside the agent — only on that first open, so a
+    /// layout the user rearranged afterwards is theirs to keep.
+    pub created: bool,
 }
 
 /// The theme's project, creating it if this is the first time the theme has been
@@ -71,11 +78,18 @@ pub async fn ensure(pool: &SqlitePool, theme_id: &str) -> Result<ThemeWorkspace,
     // Not only at creation: the theme may have been renamed while nothing was
     // watching — by the user's own editor, or before this ran at all.
     rename_project(pool, project_id, &name).await?;
-    let feature_id = ensure_feature(pool, project_id, &label).await?;
+    let (feature_id, created) = ensure_feature(pool, project_id, &label).await?;
+    // Asserted on every open, not only at creation. These two settings are what
+    // keep the agent editing the live theme, and a failure between creating the
+    // project and writing them would otherwise leave them missing for good —
+    // the next conversation started here would get a worktree and repaint
+    // nothing.
+    apply_worktree_settings(pool, project_id, feature_id).await?;
     Ok(ThemeWorkspace {
         project_id,
         feature_id,
         cwd,
+        created,
     })
 }
 
@@ -84,17 +98,28 @@ pub async fn ensure(pool: &SqlitePool, theme_id: &str) -> Result<ThemeWorkspace,
 /// Renaming a theme is editing one string in a file, which an agent does without
 /// telling anyone. Riding the watcher's event means the sidebar follows the same
 /// write that repaints the app.
+///
+/// A rename re-broadcasts the event it just handled, which is what tells the
+/// clients to refetch: they are subscribed to this same channel and received the
+/// original notification *while* this rename was still running, so a refetch on
+/// it would race the `UPDATE` and usually lose. The echo arrives after, and
+/// terminates — handling it finds the name already current and sends nothing.
 pub async fn watch_renames(
     pool: SqlitePool,
     mut events: broadcast::Receiver<super::ThemesChangeEvent>,
+    renamed: broadcast::Sender<super::ThemesChangeEvent>,
 ) {
     loop {
         match events.recv().await {
-            Ok(event) => {
-                if let Err(e) = sync_project_name(&pool, &event.id).await {
-                    tracing::warn!(theme_id = %event.id, "failed to rename theme project: {e}");
+            Ok(event) => match sync_project_name(&pool, &event.id).await {
+                Ok(true) => {
+                    let _ = renamed.send(event);
                 }
-            }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::warn!(theme_id = %event.id, "failed to rename theme project: {e}")
+                }
+            },
             // A burst of saves outran the buffer; the next event still carries
             // the current label, so there is nothing to catch up on.
             Err(broadcast::error::RecvError::Lagged(_)) => {}
@@ -103,58 +128,61 @@ pub async fn watch_renames(
     }
 }
 
-/// Follow a renamed theme in the sidebar.
+/// Follow a renamed theme in the sidebar. `true` when the project was actually
+/// renamed — most theme edits are colors, and leave the name alone.
 ///
 /// The label lives in the file, so it can change without anyone calling an API —
 /// an agent rewriting `theme.json` is the normal case.
-pub async fn sync_project_name(pool: &SqlitePool, theme_id: &str) -> Result<(), AppError> {
+pub async fn sync_project_name(pool: &SqlitePool, theme_id: &str) -> Result<bool, AppError> {
     let Ok(dir) = paths::theme_dir(theme_id) else {
-        return Ok(());
+        return Ok(false);
     };
     let cwd = dir.to_string_lossy().to_string();
     let Some(project_id) = find_project(pool, &cwd).await? else {
-        return Ok(());
+        return Ok(false);
     };
     let theme = super::store::get(theme_id).await?;
     let name = project_name(theme_label(&theme).as_deref(), theme_id);
     rename_project(pool, project_id, &name).await
 }
 
-async fn rename_project(pool: &SqlitePool, project_id: i64, name: &str) -> Result<(), AppError> {
-    let renamed = sqlx::query("UPDATE projects SET name = ? WHERE id = ? AND name != ?")
+async fn rename_project(pool: &SqlitePool, project_id: i64, name: &str) -> Result<bool, AppError> {
+    let current: Option<String> = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?")
+        .bind(project_id)
+        .fetch_optional(pool)
+        .await?;
+    if current.as_deref() == Some(name) {
+        return Ok(false);
+    }
+    // A project's settings live in a file named after the project, so the
+    // document has to travel with the name — otherwise every setting on this
+    // project (its provider, its model, …) is left behind in a file the app
+    // will never read again. Before the rename, so a failure changes nothing.
+    crate::domain::settings_store::project_rename(pool, project_id, name).await?;
+    sqlx::query("UPDATE projects SET name = ? WHERE id = ?")
         .bind(name)
         .bind(project_id)
-        .bind(name)
         .execute(pool)
-        .await?
-        .rows_affected();
-    // A project's settings live in a file named after the project, so a rename
-    // moves them. Re-assert the ones this project can't work without.
-    if renamed > 0 {
-        apply_project_defaults(pool, project_id).await?;
-    }
-    Ok(())
+        .await?;
+    // The document may have stayed put — it can already belong to a project of
+    // the new name. Re-assert what a theme project cannot work without.
+    apply_project_defaults(pool, project_id).await?;
+    Ok(true)
 }
 
-/// Drop the project for a deleted theme. Best-effort by design: the theme file
-/// is already gone, and leaving a project pointing at a directory that no longer
-/// exists is worse than failing to report a cleanup error.
-pub async fn remove(pool: &SqlitePool, theme_id: &str) {
-    let Ok(dir) = paths::theme_dir(theme_id) else {
-        return;
-    };
+/// Drop the project for a deleted theme.
+///
+/// Runs *before* the theme folder is trashed, and reports its failures rather
+/// than logging them: a project left pointing at a folder that is no longer
+/// there is exactly the state the user would need to be told about. Failing
+/// here leaves the theme itself untouched, so the delete can simply be retried.
+pub async fn remove(pool: &SqlitePool, theme_id: &str) -> Result<(), AppError> {
+    let dir = paths::theme_dir(theme_id)?;
     let cwd = dir.to_string_lossy().to_string();
-    match find_project(pool, &cwd).await {
-        Ok(Some(project_id)) => {
-            if let Err(e) =
-                crate::domain::projects::repository::delete_project(pool, project_id).await
-            {
-                tracing::warn!(theme_id, project_id, "failed to delete theme project: {e}");
-            }
-        }
-        Ok(None) => {}
-        Err(e) => tracing::warn!(theme_id, "failed to look up theme project: {e}"),
-    }
+    let Some(project_id) = find_project(pool, &cwd).await? else {
+        return Ok(());
+    };
+    crate::domain::projects::repository::delete_project(pool, project_id).await
 }
 
 fn theme_label(theme: &super::models::UserTheme) -> Option<String> {
@@ -219,37 +247,67 @@ async fn ensure_project(pool: &SqlitePool, name: &str, cwd: &str) -> Result<i64,
     if let Some(id) = find_project(pool, cwd).await? {
         return Ok(id);
     }
-    let project_id: i64 =
+    Ok(
         sqlx::query_scalar("INSERT INTO projects (name, path, kind) VALUES (?, ?, ?) RETURNING id")
             .bind(name)
             .bind(cwd)
             .bind(THEME_PROJECT_KIND)
             .fetch_one(pool)
-            .await?;
-    apply_project_defaults(pool, project_id).await?;
-    Ok(project_id)
+            .await?,
+    )
 }
 
-/// Every conversation started here, not just the first, has to edit the theme in
-/// place — see the module header.
-async fn apply_project_defaults(pool: &SqlitePool, project_id: i64) -> Result<(), AppError> {
-    crate::domain::projects::repository::set_project_setting(
+/// Both halves of "edit the theme where it lives": the project default, so every
+/// conversation started here inherits it, and the conversation's own setting.
+async fn apply_worktree_settings(
+    pool: &SqlitePool,
+    project_id: i64,
+    feature_id: i64,
+) -> Result<(), AppError> {
+    apply_project_defaults(pool, project_id).await?;
+    crate::domain::features::repository::upsert_feature_setting(
         pool,
-        project_id,
-        "default_worktree_mode",
-        "skip",
+        feature_id,
+        "worktree_mode",
+        WORKTREE_SKIP,
     )
     .await
 }
 
-async fn ensure_feature(pool: &SqlitePool, project_id: i64, title: &str) -> Result<i64, AppError> {
+/// Every conversation started here, not just the first, has to edit the theme in
+/// place — see the module header.
+///
+/// Read before write, unlike most setters: the settings dir is watched, and a
+/// write that changes nothing still fans a settings refetch across every open
+/// conversation. This runs on every open, so the common case has to be silent.
+async fn apply_project_defaults(pool: &SqlitePool, project_id: i64) -> Result<(), AppError> {
+    let current =
+        crate::domain::settings_store::project_get(pool, project_id, DEFAULT_WORKTREE_MODE).await?;
+    if current.as_deref() == Some(WORKTREE_SKIP) {
+        return Ok(());
+    }
+    crate::domain::projects::repository::set_project_setting(
+        pool,
+        project_id,
+        DEFAULT_WORKTREE_MODE,
+        WORKTREE_SKIP,
+    )
+    .await
+}
+
+/// The theme's conversation, and whether this call is what created it.
+async fn ensure_feature(
+    pool: &SqlitePool,
+    project_id: i64,
+    title: &str,
+) -> Result<(i64, bool), AppError> {
     let existing: Option<i64> =
         sqlx::query_scalar("SELECT id FROM features WHERE project_id = ? ORDER BY id LIMIT 1")
             .bind(project_id)
             .fetch_optional(pool)
             .await?;
     if let Some(id) = existing {
-        return Ok(id);
+        return Ok((id, false));
     }
     let feature_id: i64 = sqlx::query_scalar(
         "INSERT INTO features (project_id, title, status, type) \
@@ -259,13 +317,7 @@ async fn ensure_feature(pool: &SqlitePool, project_id: i64, title: &str) -> Resu
     .bind(title)
     .fetch_one(pool)
     .await?;
-    sqlx::query(
-        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, 'worktree_mode', 'skip')",
-    )
-    .bind(feature_id)
-    .execute(pool)
-    .await?;
-    Ok(feature_id)
+    Ok((feature_id, true))
 }
 
 #[cfg(test)]
@@ -412,8 +464,9 @@ mod tests {
         let workspace = ensure(&pool, &id).await.expect("ensures");
 
         rename_theme_file(&id, "Vamp");
-        sync_project_name(&pool, &id).await.expect("syncs");
+        let renamed = sync_project_name(&pool, &id).await.expect("syncs");
 
+        assert!(renamed, "the caller re-broadcasts on the strength of this");
         assert_eq!(
             project_name_of(&pool, workspace.project_id).await,
             "Theme: Vamp"
@@ -431,11 +484,109 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_edit_that_leaves_the_label_alone_renames_nothing() {
+        // What keeps the re-broadcast from looping: the echo is handled like
+        // any other event, finds the name already current, and says so — which
+        // is also the common case, since most theme edits are colors.
+        let pool = pool().await;
+        let id = create_theme("My Theme").await;
+        ensure(&pool, &id).await.expect("ensures");
+
+        let renamed = sync_project_name(&pool, &id).await.expect("syncs");
+
+        assert!(!renamed);
+    }
+
+    #[tokio::test]
+    async fn renaming_the_theme_keeps_the_settings_made_on_its_project() {
+        let pool = pool().await;
+        let id = create_theme("My Theme").await;
+        let workspace = ensure(&pool, &id).await.expect("ensures");
+        crate::domain::settings_store::project_set(
+            &pool,
+            workspace.project_id,
+            "model_session",
+            "claude-opus-5",
+        )
+        .await
+        .expect("sets a project setting");
+
+        rename_theme_file(&id, "Vamp");
+        sync_project_name(&pool, &id).await.expect("syncs");
+
+        // The settings document is named after the project, so without moving
+        // it every choice made here would be stranded in the old file.
+        let model = crate::domain::settings_store::project_get(
+            &pool,
+            workspace.project_id,
+            "model_session",
+        )
+        .await
+        .expect("project settings");
+        assert_eq!(model.as_deref(), Some("claude-opus-5"));
+    }
+
+    #[tokio::test]
+    async fn reopening_restores_settings_a_failed_first_open_never_wrote() {
+        let pool = pool().await;
+        let id = create_theme("My Theme").await;
+        let workspace = ensure(&pool, &id).await.expect("ensures");
+        // Stand in for a failure between creating the project and configuring
+        // it: without them the next conversation started here gets a worktree
+        // and the running app repaints from a file nobody is editing.
+        sqlx::query("DELETE FROM feature_settings WHERE feature_id = ?")
+            .bind(workspace.feature_id)
+            .execute(&pool)
+            .await
+            .expect("clears");
+        crate::domain::settings_store::project_set(
+            &pool,
+            workspace.project_id,
+            "default_worktree_mode",
+            "worktree",
+        )
+        .await
+        .expect("clears");
+
+        ensure(&pool, &id).await.expect("ensures again");
+
+        let feature_mode: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_mode'",
+        )
+        .bind(workspace.feature_id)
+        .fetch_optional(&pool)
+        .await
+        .expect("feature worktree_mode");
+        let project_mode = crate::domain::settings_store::project_get(
+            &pool,
+            workspace.project_id,
+            "default_worktree_mode",
+        )
+        .await
+        .expect("project settings");
+        assert_eq!(
+            (feature_mode.as_deref(), project_mode.as_deref()),
+            (Some("skip"), Some("skip"))
+        );
+    }
+
+    #[tokio::test]
+    async fn only_the_first_open_arranges_the_panes() {
+        let pool = pool().await;
+        let id = create_theme("My Theme").await;
+        assert!(ensure(&pool, &id).await.expect("ensures").created);
+        assert!(
+            !ensure(&pool, &id).await.expect("ensures again").created,
+            "a layout the user rearranged is theirs to keep"
+        );
+    }
+
+    #[tokio::test]
     async fn deleting_a_theme_takes_its_project_with_it() {
         let pool = pool().await;
         let id = create_theme("My Theme").await;
         let workspace = ensure(&pool, &id).await.expect("ensures");
-        remove(&pool, &id).await;
+        remove(&pool, &id).await.expect("removes");
 
         let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE id = ?")
             .bind(workspace.project_id)

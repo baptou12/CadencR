@@ -201,6 +201,7 @@ async fn main() -> anyhow::Result<()> {
             tokio::spawn(domain::themes::workspace::watch_renames(
                 state.write_pool.clone(),
                 state.theme_events_tx.subscribe(),
+                state.theme_events_tx.clone(),
             ));
 
             // Background Web Push dispatcher: turns agent finished / needs-input
