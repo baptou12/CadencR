@@ -23,7 +23,7 @@ const THEME_INVALIDATION_SETTLE_MS = 150;
  * `/api/projects/…` — a project's settings, its model config — is affected by
  * a theme file, and sweeping the prefix would refetch all of it on every save.
  */
-export function invalidateThemes(client: QueryClient): Promise<void> {
+function invalidateThemes(client: QueryClient): Promise<void> {
   return Promise.all([
     client.invalidateQueries({ queryKey: getListThemesQueryKey() }),
     client.invalidateQueries({ queryKey: getListProjectsQueryKey() }),

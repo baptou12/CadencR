@@ -7,7 +7,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useUserThemes } from "@/hooks/useUserThemes";
 import type { ThemeDefinition } from "@/lib/themes";
 import { userThemeId, userThemeLabel } from "@/lib/themes/user-theme";
-import { ThemeBasePicker } from "./ThemeBasePicker";
+import { CreateThemeDialog } from "./CreateThemeDialog";
 import { UserThemeCard } from "./UserThemeCard";
 import { useOpenThemeProject } from "./useOpenThemeProject";
 import { useReleaseTheme } from "./useReleaseTheme";
@@ -27,7 +27,7 @@ export function ThemeLibrary(): React.JSX.Element {
   const actions = useThemeLibraryActions();
   const { open, openingId } = useOpenThemeProject();
   const release = useReleaseTheme();
-  const [picking, setPicking] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<UserTheme | null>(null);
 
   const toggleEnabled = useCallback(
@@ -41,9 +41,9 @@ export function ThemeLibrary(): React.JSX.Element {
   );
 
   const createFrom = useCallback(
-    (base: ThemeDefinition): void => {
-      actions.duplicate(base, (created) => {
-        setPicking(false);
+    (base: ThemeDefinition, label: string): void => {
+      actions.duplicate(base, label, (created) => {
+        setCreating(false);
         open(created);
       });
     },
@@ -52,7 +52,7 @@ export function ThemeLibrary(): React.JSX.Element {
 
   return (
     <div className="space-y-4">
-      <Button size="sm" className="gap-1.5" onClick={() => setPicking(true)}>
+      <Button size="sm" className="gap-1.5" onClick={() => setCreating(true)}>
         <Plus className="size-3.5" />
         Create theme
       </Button>
@@ -90,12 +90,12 @@ export function ThemeLibrary(): React.JSX.Element {
         </div>
       )}
 
-      {picking ? (
-        <ThemeBasePicker
+      {creating ? (
+        <CreateThemeDialog
           userThemes={enabledThemes}
           isCreating={actions.isDuplicating || openingId !== null}
-          onPick={createFrom}
-          onClose={() => setPicking(false)}
+          onCreate={createFrom}
+          onClose={() => setCreating(false)}
         />
       ) : null}
 

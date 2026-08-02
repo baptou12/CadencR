@@ -1,9 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useCreateTheme, useDeleteTheme, type UserTheme } from "@/api/generated";
+import {
+  getListThemesQueryKey,
+  useCreateTheme,
+  useDeleteTheme,
+  type UserTheme,
+} from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { invalidateThemes } from "@/lib/themeInvalidation";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { downloadJsonFile } from "@/lib/download";
 import type { ThemeDefinition } from "@/lib/themes";
@@ -11,8 +15,15 @@ import { readThemeCssVars, userThemeLabel } from "@/lib/themes/user-theme";
 import { useReleaseTheme } from "./useReleaseTheme";
 
 interface ThemeLibraryActions {
-  /** Copy `source` into a new theme; `onCreated` receives it once it exists. */
-  duplicate: (source: ThemeDefinition, onCreated?: (created: UserTheme) => void) => void;
+  /**
+   * Copy `source` into a new theme called `label`; `onCreated` receives it once
+   * it exists.
+   */
+  duplicate: (
+    source: ThemeDefinition,
+    label: string,
+    onCreated?: (created: UserTheme) => void,
+  ) => void;
   remove: (theme: UserTheme) => void;
   exportTheme: (theme: UserTheme) => void;
   isDuplicating: boolean;
@@ -28,6 +39,10 @@ interface ThemeLibraryActions {
  * edits from something that renders rather than assembling 104 tokens by hand.
  * The copy is made server-side before the studio opens, because the agent that
  * edits it alongside the user needs a real folder to work in.
+ *
+ * What it is *called* comes from the user, not from the source: the label picks
+ * the id, the folder and the project name, all of which are awkward to change
+ * afterwards.
  */
 export function useThemeLibraryActions(): ThemeLibraryActions {
   const queryClient = useQueryClient();
@@ -36,12 +51,15 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
   const release = useReleaseTheme();
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Only the theme list. Both paths below deal with the project a theme owns
+  // themselves — a create has none yet (the workspace endpoint makes it, and
+  // refreshes the sidebar), and a delete sweeps it explicitly.
   const refresh = useCallback((): void => {
-    void invalidateThemes(queryClient);
+    void queryClient.invalidateQueries({ queryKey: getListThemesQueryKey() });
   }, [queryClient]);
 
   const duplicate = useCallback(
-    (source: ThemeDefinition, onCreated?: (created: UserTheme) => void): void => {
+    (source: ThemeDefinition, label: string, onCreated?: (created: UserTheme) => void): void => {
       let cssVars;
       try {
         cssVars = readThemeCssVars(source.id, source.cssVars);
@@ -52,7 +70,7 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
       create.mutate(
         {
           data: {
-            label: `${source.label} (copy)`,
+            label,
             appearance: source.appearance,
             cssVars,
             xterm: source.xterm,
