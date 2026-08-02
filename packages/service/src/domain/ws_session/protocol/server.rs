@@ -34,6 +34,8 @@ pub struct SessionInitializedPayload {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_effort: Option<String>,
+    #[serde(default)]
+    pub fast_mode: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -294,6 +296,11 @@ pub struct ModelSetOkPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EffortSetOkPayload {
     pub thinking_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct FastModeSetOkPayload {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

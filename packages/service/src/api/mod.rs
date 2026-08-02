@@ -18,12 +18,15 @@ use crate::domain::features::routes::features_router;
 use crate::domain::git::routes::git_router;
 use crate::domain::imports::routes::imports_router;
 use crate::domain::lsp::lsp_router;
+use crate::domain::ports::routes::ports_router;
 use crate::domain::projects::routes::projects_router;
-use crate::domain::scheduled_messages::routes::scheduled_messages_router;
+use crate::domain::schedules::routes::schedules_router;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
+use crate::domain::usage_stats::routes::usage_stats_router;
 use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
+use crate::domain::ws_session::routes::prompt_commands_router;
 use crate::error::AppError;
 use axum::extract::{Query, State};
 use axum::routing::{any, get, put};
@@ -102,10 +105,11 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(workspace_router())
         .merge(projects_router())
         .merge(features_router())
+        .merge(ports_router())
         .merge(feature_layouts_router())
         .merge(diff_comments_router())
         .merge(sessions_router())
-        .merge(scheduled_messages_router())
+        .merge(schedules_router())
         .merge(terminal_router())
         .merge(editor_router())
         .merge(format_router())
@@ -116,6 +120,8 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(discovery_router())
         .merge(imports_router())
         .merge(lsp_router())
+        .merge(usage_stats_router())
+        .merge(prompt_commands_router())
         // VAPID public key — shared, so the frontend can fetch it on either
         // listener. Subscription management (device-keyed) is remote-only and
         // merged separately in `build_remote_router`.

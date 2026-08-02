@@ -1,12 +1,10 @@
-import { useEffect, useId, useMemo, useRef } from "react";
+import { useEffect, useId, useMemo, type CSSProperties } from "react";
 import { FileWarningIcon } from "lucide-react";
 import { PatchDiffView } from "@/components/diff/PatchDiffView";
-import { useInViewport } from "@/hooks/useInViewport";
 import {
   recordHeavyInlineMounted,
   recordHeavyInlineUnmounted,
   recordHeavyInlineUpdated,
-  recordHeavyInlineVisible,
 } from "@/lib/diff-render-diagnostics";
 import { formatBytes, utf8ByteLength } from "@/lib/diff-thresholds";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
@@ -18,6 +16,13 @@ interface InlineDiffBodyProps {
   themeAppearance: ThemeAppearance;
   themeId: ThemeId;
 }
+
+/** Matches the `leading-5` rows Pierre and the plain-text fallback both render. */
+const DIFF_LINE_HEIGHT_PX = 20;
+/** Mirrors the `max-h-[500px]` both diff bodies scroll inside, below. */
+const DIFF_MAX_HEIGHT_PX = 500;
+/** Header/border of the scroll container, which the line count doesn't cover. */
+const DIFF_CHROME_HEIGHT_PX = 24;
 
 // Unlike the Git diff's opt-in progressive renderer, this path deliberately
 // avoids mounting Pierre at all after the user expands a crash-risk inline diff.
@@ -39,6 +44,24 @@ function LargeInlineDiff({ patch, patchLines }: Pick<InlineDiffBodyProps, "patch
   );
 }
 
+/**
+ * Renders an inline diff eagerly, letting the browser skip layout, style and
+ * paint while it is off-screen (`deferred-paint`).
+ *
+ * This used to be gated behind an `IntersectionObserver` that decided whether to
+ * *mount* the diff at all. That was a second virtualization layer stacked on the
+ * stream's own, and the two disagreed: the observer measured against the browser
+ * viewport while Virtuoso mounts rows well outside it, so a diff the user was
+ * looking at could still be showing the "deferred" placeholder. Worse, resolving
+ * a short placeholder into a 500px diff changed the row's height *after* it had
+ * been measured — the conversation jumping while scrolling up.
+ *
+ * The trade is deliberate, not free: Pierre now instantiates for every expanded
+ * diff in Virtuoso's mount window, which is wider than the old 600px observer
+ * margin, and `content-visibility` skips rendering work but not React rendering
+ * or patch parsing. What it buys is a height that no longer changes after
+ * measurement, which is the actual bug.
+ */
 export function InlineDiffBody({
   isLarge,
   patch,
@@ -47,11 +70,6 @@ export function InlineDiffBody({
   themeId,
 }: InlineDiffBodyProps) {
   const blockId = useId();
-  const viewportRootRef = useRef<HTMLElement | null>(null);
-  const { setRef: viewportRef, inView: isNearViewport } = useInViewport(
-    viewportRootRef,
-    "600px 0px",
-  );
 
   useEffect(() => {
     if (!isLarge) return;
@@ -63,17 +81,21 @@ export function InlineDiffBody({
     if (isLarge) recordHeavyInlineUpdated(blockId, patch.length, patchLines);
   }, [blockId, isLarge, patch.length, patchLines]);
 
-  useEffect(() => {
-    if (isLarge) recordHeavyInlineVisible(blockId, isNearViewport);
-  }, [blockId, isLarge, isNearViewport]);
+  // First-paint estimate only; `contain-intrinsic-size: auto` replaces it with
+  // the real measured height as soon as the diff has rendered once.
+  const style = useMemo(
+    (): CSSProperties => ({
+      ["--cadencr-intrinsic-height" as string]: `${Math.min(
+        DIFF_MAX_HEIGHT_PX,
+        patchLines * DIFF_LINE_HEIGHT_PX + DIFF_CHROME_HEIGHT_PX,
+      )}px`,
+    }),
+    [patchLines],
+  );
 
   return (
-    <div ref={viewportRef} data-testid="inline-diff-body">
-      {!isNearViewport ? (
-        <div className="px-3 py-3 text-xs text-[var(--editor-comment)]">
-          Diff renderer deferred until this change is near the viewport.
-        </div>
-      ) : isLarge ? (
+    <div className="deferred-paint" style={style} data-testid="inline-diff-body">
+      {isLarge ? (
         <LargeInlineDiff patch={patch} patchLines={patchLines} />
       ) : (
         <PatchDiffView

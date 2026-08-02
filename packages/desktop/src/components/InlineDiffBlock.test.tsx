@@ -318,7 +318,6 @@ describe("InlineDiffBlock large diff safety", () => {
     expect(afterMount.heavyInlineMounts - before.heavyInlineMounts).toBe(1);
     expect(afterUpdate.heavyInlineMounts).toBe(afterMount.heavyInlineMounts);
     expect(afterUpdate.heavyInlineMounted).toBe(afterMount.heavyInlineMounted);
-    expect(afterUpdate.heavyInlineVisible).toBe(afterMount.heavyInlineVisible);
   });
 });
 

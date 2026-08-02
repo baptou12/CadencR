@@ -9,14 +9,12 @@ export interface DiffRenderDiagnosticsSnapshot {
   maxPatchLines: number;
   maxCleanupDurationMs: number;
   heavyInlineMounted: number;
-  heavyInlineVisible: number;
   heavyInlineMounts: number;
 }
 
 const livePierre = new Set<string>();
 const pendingPierre = new Map<string, number>();
 const mountedHeavyInline = new Set<string>();
-const visibleHeavyInline = new Set<string>();
 
 let pierreCreated = 0;
 let pierreCleaned = 0;
@@ -40,7 +38,6 @@ export function getDiffRenderDiagnostics(): DiffRenderDiagnosticsSnapshot {
     maxPatchLines,
     maxCleanupDurationMs,
     heavyInlineMounted: mountedHeavyInline.size,
-    heavyInlineVisible: visibleHeavyInline.size,
     heavyInlineMounts,
   };
 }
@@ -105,14 +102,8 @@ export function recordHeavyInlineUpdated(
   maxPatchLines = Math.max(maxPatchLines, patchLines);
 }
 
-export function recordHeavyInlineVisible(blockId: string, visible: boolean): void {
-  if (visible) visibleHeavyInline.add(blockId);
-  else visibleHeavyInline.delete(blockId);
-}
-
 export function recordHeavyInlineUnmounted(blockId: string): void {
   mountedHeavyInline.delete(blockId);
-  visibleHeavyInline.delete(blockId);
 }
 
 declare global {
