@@ -11,6 +11,7 @@ use crate::error::AppError;
 use crate::shared::git_cli::run_git_background;
 
 use super::stash::commit_diff;
+use super::untracked::count_untracked_lines;
 use super::util::FIRST_PARENT_MERGES;
 
 /// Get list of changed files with per-file stats.
@@ -151,10 +152,20 @@ pub(crate) async fn get_uncommitted_entries(
     let staged_stats = parse_numstat(&staged_num);
     let unstaged_stats = parse_numstat(&unstaged_num);
 
-    Ok(parse_porcelain_v2_entries(&porcelain)
+    let mut entries: Vec<_> = parse_porcelain_v2_entries(&porcelain)
         .into_iter()
         .map(|entry| attach_stats(entry, &staged_stats, &unstaged_stats))
-        .collect())
+        .collect();
+    // Same sequential count as `get_stats` — `git diff --numstat` skips these.
+    for entry in entries
+        .iter_mut()
+        .filter(|e| e.stage_state == FileStageState::Untracked)
+    {
+        if let Some(lines) = count_untracked_lines(&worktree_path.join(&entry.path)).await {
+            entry.additions = lines as i32;
+        }
+    }
+    Ok(entries)
 }
 
 pub(crate) fn parse_numstat(numstat: &str) -> HashMap<String, (i32, i32)> {
@@ -378,10 +389,35 @@ mod tests {
             find(&files, "untracked").stage_state,
             FileStageState::Untracked
         );
+        assert_eq!(
+            (
+                find(&files, "untracked").additions,
+                find(&files, "untracked").deletions
+            ),
+            (1, 0),
+            "untracked text files must get a synthesized +N numstat"
+        );
         assert_eq!(find(&files, "deleted").status, "D");
         let renamed = find(&files, "new");
         assert_eq!(renamed.old_file.as_deref(), Some("old"));
         assert!(renamed.status.starts_with('R'));
+    }
+
+    #[tokio::test]
+    async fn untracked_files_get_line_count_numstats() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path();
+        init(repo);
+        std::fs::write(repo.join("fresh.rs"), b"one\ntwo\nthree\n").unwrap();
+
+        let files = get_uncommitted_changed_files(repo).await.unwrap();
+        assert_eq!(
+            (
+                find(&files, "fresh.rs").additions,
+                find(&files, "fresh.rs").deletions
+            ),
+            (3, 0)
+        );
     }
 
     #[tokio::test]
