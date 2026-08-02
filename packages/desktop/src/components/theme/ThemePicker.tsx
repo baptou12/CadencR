@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ThemeSwatch } from "./ThemeSwatch";
+import { ThemeCard } from "./ThemeCard";
 import { type ThemeDefinition, type ThemeId } from "@/lib/themes";
 
 /**
@@ -138,49 +138,14 @@ export function ThemePicker({
               key={theme.id}
               theme={theme}
               selected={theme.id === selectedThemeId}
-              onSelect={onSelect}
               disabled={disabled}
+              tabIndex={theme.id === selectedThemeId ? 0 : -1}
+              onSelect={() => onSelect(theme.id)}
+              className="w-24 shrink-0 snap-start p-1.5"
             />
           ))}
         </div>
       </div>
     </section>
-  );
-}
-
-interface ThemeCardProps {
-  theme: ThemeDefinition;
-  selected: boolean;
-  onSelect: (id: ThemeId) => void;
-  disabled: boolean;
-}
-
-function ThemeCard({ theme, selected, onSelect, disabled }: ThemeCardProps): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      data-theme-card={theme.id}
-      tabIndex={selected ? 0 : -1}
-      disabled={disabled}
-      onClick={() => onSelect(theme.id)}
-      className={cn(
-        "flex w-24 shrink-0 snap-start flex-col items-start gap-1.5 rounded-md border p-1.5 text-left transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        selected
-          ? "border-primary/60 bg-primary/8"
-          : "border-border bg-background hover:bg-muted/40",
-      )}
-    >
-      <ThemeSwatch theme={theme} />
-      <div className="min-w-0">
-        <div className="truncate text-[11px] font-medium leading-tight">{theme.label}</div>
-        <div className="text-[10px] text-muted-foreground capitalize leading-tight">
-          {theme.appearance}
-        </div>
-      </div>
-    </button>
   );
 }
