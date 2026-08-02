@@ -25,6 +25,8 @@ mod seed;
 mod support;
 #[cfg(test)]
 mod test_fixtures;
+#[cfg(test)]
+mod usage_token_schema_migration_tests;
 mod version_guard;
 pub(crate) use support::table_exists;
 use support::{backup_database, emit_phase, has_pending_migrations};
