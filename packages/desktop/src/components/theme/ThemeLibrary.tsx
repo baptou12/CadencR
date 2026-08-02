@@ -8,8 +8,8 @@ import { useUserThemes } from "@/hooks/useUserThemes";
 import type { ThemeDefinition } from "@/lib/themes";
 import { userThemeId, userThemeLabel } from "@/lib/themes/user-theme";
 import { ThemeBasePicker } from "./ThemeBasePicker";
-import { ThemeStudio } from "./ThemeStudioDialog";
 import { UserThemeCard } from "./UserThemeCard";
+import { useOpenThemeProject } from "./useOpenThemeProject";
 import { useThemeLibraryActions } from "./useThemeLibraryActions";
 
 /**
@@ -17,14 +17,14 @@ import { useThemeLibraryActions } from "./useThemeLibraryActions";
  * makes another.
  *
  * Creating and editing are the same act here — a new theme is a copy of an
- * existing one, opened straight into the studio, where the JSON and an agent
- * that can rewrite it sit side by side.
+ * existing one, opened straight into its own project, where the file, an agent
+ * and the diff of what either of them changed all sit together.
  */
 export function ThemeLibrary(): React.JSX.Element {
   const { entries, enabledThemes, isLoading, isEnabled, setEnabled, error } = useUserThemes();
   const { themeId } = useTheme();
   const actions = useThemeLibraryActions();
-  const editing = useThemeEditing(entries);
+  const { open, openingId } = useOpenThemeProject();
   const [picking, setPicking] = useState(false);
   const [deleting, setDeleting] = useState<UserTheme | null>(null);
 
@@ -32,10 +32,10 @@ export function ThemeLibrary(): React.JSX.Element {
     (base: ThemeDefinition): void => {
       actions.duplicate(base, (created) => {
         setPicking(false);
-        editing.open(created);
+        open(created);
       });
     },
-    [actions, editing],
+    [actions, open],
   );
 
   return (
@@ -68,8 +68,9 @@ export function ThemeLibrary(): React.JSX.Element {
               isActive={themeId === userThemeId(entry.id)}
               isEnabled={isEnabled(entry.id)}
               isDeleting={actions.deletingId === entry.id}
+              isOpening={openingId === entry.id}
               onToggleEnabled={(enabled) => setEnabled(entry.id, enabled)}
-              onEdit={() => editing.open(entry)}
+              onEdit={() => open(entry)}
               onExport={() => actions.exportTheme(entry)}
               onDelete={() => setDeleting(entry)}
             />
@@ -80,44 +81,21 @@ export function ThemeLibrary(): React.JSX.Element {
       {picking ? (
         <ThemeBasePicker
           userThemes={enabledThemes}
-          isCreating={actions.isDuplicating}
+          isCreating={actions.isDuplicating || openingId !== null}
           onPick={createFrom}
           onClose={() => setPicking(false)}
         />
       ) : null}
 
-      {editing.theme ? <ThemeStudio theme={editing.theme} onClose={editing.close} /> : null}
-
       <ConfirmDialog
         open={deleting !== null}
-        onOpenChange={(open) => !open && setDeleting(null)}
+        onOpenChange={(open_) => !open_ && setDeleting(null)}
         title={deleting ? `Delete “${userThemeLabel(deleting)}”?` : ""}
-        description="The theme file and the conversation you edited it in are removed. Export it first if you want to keep a copy."
+        description="The theme file, its project and everything you built in it are removed. Export it first if you want to keep a copy."
         confirmText="Delete"
         variant="destructive"
         onConfirm={() => deleting && actions.remove(deleting)}
       />
     </div>
   );
-}
-
-/**
- * Which theme the studio is open on.
- *
- * Tracked by *id* and re-read from the list on every render, so that when the
- * agent rewrites the file — and the watcher refetches — the open studio sees
- * the new content. Holding the entry itself would freeze it at open time. The
- * entry passed to `open` is only a stand-in for the beat before a freshly
- * created theme appears in the list.
- */
-function useThemeEditing(entries: UserTheme[]): {
-  theme: UserTheme | null;
-  open: (theme: UserTheme) => void;
-  close: () => void;
-} {
-  const [pending, setPending] = useState<UserTheme | null>(null);
-  const open = useCallback((theme: UserTheme): void => setPending(theme), []);
-  const close = useCallback((): void => setPending(null), []);
-  const theme = pending ? (entries.find((entry) => entry.id === pending.id) ?? pending) : null;
-  return { theme, open, close };
 }

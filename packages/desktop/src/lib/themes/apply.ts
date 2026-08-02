@@ -1,6 +1,5 @@
 import { DEFAULT_THEME_ID, getTheme, parseThemeId } from "./registry";
 import { injectThemeCssVars } from "./inject";
-import { isThemePreviewActive, setThemePreviewFallback } from "./preview";
 import type { ThemeId } from "./types";
 import {
   isFollowSystemThemeEnabled,
@@ -48,14 +47,6 @@ export function applyThemeToDocument(themeId: ThemeId): void {
   // unpainted.
   const theme = getTheme(parseThemeId(themeId));
   injectThemeCssVars(theme);
-  // The theme studio paints from an unsaved draft, and every save it makes
-  // lands here through the registry. Claiming the attribute back would blank
-  // the preview between keystrokes, so defer to it and leave the selection for
-  // it to restore on close.
-  if (isThemePreviewActive()) {
-    setThemePreviewFallback(theme.id, theme.appearance);
-    return;
-  }
   document.documentElement.dataset.theme = theme.id;
   document.documentElement.dataset.appearance = theme.appearance;
 }

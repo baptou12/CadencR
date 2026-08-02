@@ -1,4 +1,4 @@
-import { Code2, Copy, Download, Trash2 } from "lucide-react";
+import { Code2, Copy, Download, Loader2, Trash2 } from "lucide-react";
 import type { UserTheme } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -12,6 +12,8 @@ interface UserThemeCardProps {
   isActive: boolean;
   isEnabled: boolean;
   isDeleting: boolean;
+  /** Its project is being opened — resolving it can create one. */
+  isOpening: boolean;
   onToggleEnabled: (enabled: boolean) => void;
   onEdit: () => void;
   onExport: () => void;
@@ -31,6 +33,7 @@ export function UserThemeCard({
   isActive,
   isEnabled,
   isDeleting,
+  isOpening,
   onToggleEnabled,
   onEdit,
   onExport,
@@ -94,35 +97,62 @@ export function UserThemeCard({
         }))}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="xs" className="gap-1.5" onClick={onEdit}>
+      <CardActions
+        path={theme.path}
+        isDeleting={isDeleting}
+        isOpening={isOpening}
+        onEdit={onEdit}
+        onExport={onExport}
+        onDelete={onDelete}
+      />
+    </div>
+  );
+}
+
+/** What you can do with a theme file. */
+function CardActions({
+  path,
+  isDeleting,
+  isOpening,
+  onEdit,
+  onExport,
+  onDelete,
+}: Pick<UserThemeCardProps, "isDeleting" | "isOpening" | "onEdit" | "onExport" | "onDelete"> & {
+  path: string;
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="xs" className="gap-1.5" disabled={isOpening} onClick={onEdit}>
+        {isOpening ? (
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        ) : (
           <Code2 className="size-3.5" />
-          Edit
-        </Button>
-        <Button
-          variant="outline"
-          size="xs"
-          className="gap-1.5"
-          onClick={() => void copyToClipboard(theme.path, "Theme path copied")}
-        >
-          <Copy className="size-3.5" />
-          Copy path
-        </Button>
-        <Button variant="outline" size="xs" className="gap-1.5" onClick={onExport}>
-          <Download className="size-3.5" />
-          Export
-        </Button>
-        <Button
-          variant="ghost"
-          size="xs"
-          className="gap-1.5 text-[var(--acc-red)] hover:text-[var(--acc-red)]"
-          disabled={isDeleting}
-          onClick={onDelete}
-        >
-          <Trash2 className="size-3.5" />
-          Delete
-        </Button>
-      </div>
+        )}
+        Edit
+      </Button>
+      <Button
+        variant="outline"
+        size="xs"
+        className="gap-1.5"
+        onClick={() => void copyToClipboard(path, "Theme path copied")}
+      >
+        <Copy className="size-3.5" />
+        Copy path
+      </Button>
+      <Button variant="outline" size="xs" className="gap-1.5" onClick={onExport}>
+        <Download className="size-3.5" />
+        Export
+      </Button>
+      <Button
+        variant="ghost"
+        size="xs"
+        className="gap-1.5 text-[var(--acc-red)] hover:text-[var(--acc-red)]"
+        disabled={isDeleting}
+        onClick={onDelete}
+      >
+        <Trash2 className="size-3.5" />
+        Delete
+      </Button>
     </div>
   );
 }

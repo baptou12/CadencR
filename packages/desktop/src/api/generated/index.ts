@@ -3235,11 +3235,11 @@ problems such as invalid JSON. */
 }
 
 /**
- * Where a theme's conversation lives. The renderer needs all three to mount an
-agent session: the ws session id is derived from `feature_id`.
+ * Where a theme is edited. The renderer needs all three to route to the
+conversation; the ws session id is derived from `feature_id`.
  */
 export interface ThemeWorkspace {
-  /** The theme directory — the agent's working directory. */
+  /** The theme directory — the project root, and the agent's cwd. */
   cwd: string;
   feature_id: number;
   project_id: number;
@@ -15167,8 +15167,9 @@ export const useDeleteTheme = <TError = ErrorType<unknown>, TContext = unknown>(
 };
 
 /**
- * @summary The conversation this theme is edited in, created on first use. A POST
-because it can create rows; repeating it always returns the same ids.
+ * @summary The project this theme is edited in, created on first use. A POST because it
+can create a project, a conversation and a git repository; repeating it
+always returns the same ids.
  */
 export const themeWorkspace = (id: string, signal?: AbortSignal) => {
   return customInstance<ThemeWorkspace>({
@@ -15217,8 +15218,9 @@ export type ThemeWorkspaceMutationResult = NonNullable<Awaited<ReturnType<typeof
 export type ThemeWorkspaceMutationError = ErrorType<unknown>;
 
 /**
- * @summary The conversation this theme is edited in, created on first use. A POST
-because it can create rows; repeating it always returns the same ids.
+ * @summary The project this theme is edited in, created on first use. A POST because it
+can create a project, a conversation and a git repository; repeating it
+always returns the same ids.
  */
 export const useThemeWorkspace = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
   mutation?: UseMutationOptions<

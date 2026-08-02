@@ -111,7 +111,7 @@ async fn load_candidates(
            INNER JOIN features f ON f.id = s.feature_id
            INNER JOIN projects p ON p.id = f.project_id
            LEFT JOIN agent_messages am ON am.session_id = s.id
-           WHERE f.status = 'active' AND p.kind = 'user'"#,
+           WHERE f.status = 'active'"#,
     );
 
     sql.push_str(" AND (f.is_pinned != 0 OR (1 = 1");
@@ -308,13 +308,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn conversations_in_system_projects_never_show_up() {
+    async fn conversations_in_theme_projects_show_up_like_any_other() {
         // A theme is edited in a real conversation rooted at the theme's own
-        // folder. It belongs in the theme studio and nowhere else — least of
-        // all in the grid of the user's actual work.
+        // folder, in a project the user can see. An agent restyling the app is
+        // work in progress like any other, so the grid lists it.
         let pool = setup_pool().await;
         sqlx::query(
-            "INSERT INTO projects (id, name, path, kind) VALUES (1, 'p', '/p', 'user'), (2, 'my-theme', '/themes/my-theme', 'system')",
+            "INSERT INTO projects (id, name, path, kind) VALUES (1, 'p', '/p', 'user'), (2, 'My Theme', '/themes/my-theme', 'theme')",
         )
         .execute(&pool)
         .await
@@ -340,8 +340,9 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result.agents.len(), 1);
-        assert_eq!(result.agents[0].feature.id, 1);
+        let mut features: Vec<i64> = result.agents.iter().map(|agent| agent.feature.id).collect();
+        features.sort_unstable();
+        assert_eq!(features, vec![1, 2]);
     }
 
     #[tokio::test]

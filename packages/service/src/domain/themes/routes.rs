@@ -69,8 +69,9 @@ pub async fn delete_theme_handler(
     Ok(Json(DeleteThemeResponse { success: true }))
 }
 
-/// The conversation this theme is edited in, created on first use. A POST
-/// because it can create rows; repeating it always returns the same ids.
+/// The project this theme is edited in, created on first use. A POST because it
+/// can create a project, a conversation and a git repository; repeating it
+/// always returns the same ids.
 #[utoipa::path(
     post,
     path = "/api/themes/{id}/workspace",

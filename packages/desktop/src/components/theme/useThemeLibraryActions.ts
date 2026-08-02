@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useCreateTheme, useDeleteTheme, type UserTheme } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { invalidateThemes } from "@/lib/themeInvalidation";
+import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { downloadJsonFile } from "@/lib/download";
 import type { ThemeDefinition } from "@/lib/themes";
 import { readThemeCssVars, userThemeLabel } from "@/lib/themes/user-theme";
@@ -76,6 +77,9 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
         {
           onSuccess: () => {
             refresh();
+            // The theme's project went with it, so the sidebar is now showing a
+            // project that no longer exists.
+            void invalidateByUrlPrefix(queryClient, ["/api/projects", "/api/features"]);
             toast.success(`Deleted “${userThemeLabel(theme)}”`);
           },
           onError: (error) => toast.error(apiErrorMessage(error, "Failed to delete theme")),

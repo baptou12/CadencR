@@ -20,7 +20,6 @@ pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, AppError> 
            SELECT p.id, p.name, p.path, p.branch_prefix, p.created_at
            FROM projects p
            LEFT JOIN latest_project_activity activity ON activity.project_id = p.id
-           WHERE p.kind = 'user'
            ORDER BY COALESCE(activity.activity_at, datetime(p.created_at)) DESC, p.id DESC"#,
     )
     .fetch_all(pool)

@@ -47,29 +47,19 @@ function buildRule(themeId: string, cssVars: ThemeCssVars, appearance: ThemeAppe
  * Write (or clear) the injected token rule. Idempotent: re-injecting the same
  * theme rewrites identical text, and a theme without `cssVars` empties the
  * element so a previously-injected theme can't leak into it.
- *
- * `elementId` exists so an unsaved draft can be previewed from a *second*
- * element without evicting the applied theme's rule — the two target different
- * `data-theme` values, so only one can ever match at a time.
  */
-export function injectThemeCssVars(theme: ThemeDefinition, elementId = STYLE_ELEMENT_ID): void {
+export function injectThemeCssVars(theme: ThemeDefinition): void {
   if (typeof document === "undefined") return;
   const css = theme.cssVars ? buildRule(theme.id, theme.cssVars, theme.appearance) : "";
-  let element = document.getElementById(elementId);
+  let element = document.getElementById(STYLE_ELEMENT_ID);
   if (!element) {
     if (css === "") return;
     element = document.createElement("style");
-    element.id = elementId;
+    element.id = STYLE_ELEMENT_ID;
     // Prepended to <head> so the app stylesheets — which carry the
     // theme-family overrides — still win on equal specificity, exactly as when
     // these values lived in `theme.css`.
     document.head.prepend(element);
   }
   if (element.textContent !== css) element.textContent = css;
-}
-
-/** Drop an injected rule entirely, element and all. */
-export function removeInjectedCssVars(elementId: string): void {
-  if (typeof document === "undefined") return;
-  document.getElementById(elementId)?.remove();
 }

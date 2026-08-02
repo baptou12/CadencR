@@ -37,8 +37,8 @@ export function ThemeBasePicker({
         <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle className="text-base font-semibold">Create theme</DialogTitle>
           <DialogDescription>
-            Pick the theme to start from. You get a complete copy of its colors to edit — the
-            original is untouched.
+            Pick the theme to start from. You get a complete copy of its colors in a project of its
+            own, and the app puts it on so you can see your changes — the original is untouched.
           </DialogDescription>
         </DialogHeader>
         <div className="grid max-h-[60vh] grid-cols-2 gap-2 overflow-y-auto p-4 sm:grid-cols-4">

@@ -195,6 +195,14 @@ async fn main() -> anyhow::Result<()> {
                 state.theme_events_tx.clone(),
             );
 
+            // A theme is built in a project named after it, and renaming a theme
+            // is editing its file — so the same event that reloads the theme
+            // renames the project in the sidebar.
+            tokio::spawn(domain::themes::workspace::watch_renames(
+                state.write_pool.clone(),
+                state.theme_events_tx.subscribe(),
+            ));
+
             // Background Web Push dispatcher: turns agent finished / needs-input
             // transitions into native push for backgrounded remote PWAs. Cheap
             // when no subscriptions exist; runs for the process lifetime.
