@@ -49,6 +49,7 @@ mod turn_start;
 mod turn_steer_recovery;
 mod worktree_config;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -67,15 +68,14 @@ use self::session::CodexSession;
 use self::thread_params::{thread_resume_params, thread_start_params};
 use self::timeouts::{with_probe_timeout, PROBE_TIMEOUT};
 use super::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAccessMode, RuntimeCompactionStrategy,
-    RuntimeError, RuntimePermissionRequest, RuntimePromptCommandPlacement,
-    RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger, RuntimeSlashCommand,
-    RuntimeSpawnConfig, RuntimeUserShellStrategy,
+    static_config_paths, AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAccessMode,
+    RuntimeCompactionStrategy, RuntimeError, RuntimePermissionRequest,
+    RuntimePromptCommandPlacement, RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger,
+    RuntimeSlashCommand, RuntimeSpawnConfig, RuntimeUserShellStrategy,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 pub struct CodexAdapter;
-pub static CODEX_ADAPTER: CodexAdapter = CodexAdapter;
 pub const PROVIDER_ID: &str = "codex_cli";
 const PROVIDER_LABEL: &str = "Codex CLI";
 const CATALOG_TTL: Duration = Duration::from_secs(30);
@@ -300,8 +300,8 @@ impl AgentRuntimeAdapter for CodexAdapter {
         true
     }
 
-    fn worktree_config_paths(&self) -> &'static [&'static str] {
-        worktree_config::CONFIG_PATHS
+    fn worktree_config_paths(&self) -> Vec<Cow<'static, str>> {
+        static_config_paths(worktree_config::CONFIG_PATHS)
     }
 
     async fn runtime_slash_commands(
@@ -336,18 +336,18 @@ impl AgentRuntimeAdapter for CodexAdapter {
         true
     }
 
-    fn access_mode_setting_key(&self) -> Option<&'static str> {
-        Some(self::model::ACCESS_MODE_SETTING_KEY)
+    fn access_mode_setting_key(&self) -> Option<Cow<'static, str>> {
+        Some(Cow::Borrowed(self::model::ACCESS_MODE_SETTING_KEY))
     }
 
     fn applies_access_mode_in_place(&self) -> bool {
         true
     }
 
-    fn default_permission_mode_wire(&self) -> &'static str {
+    fn default_permission_mode_wire(&self) -> Cow<'static, str> {
         // Codex's chip lands on "Default" (workspace-write + on-request),
         // matching `defaultEditModeFor` in lib/provider-modes.ts.
-        "default"
+        Cow::Borrowed("default")
     }
 
     async fn spawn(

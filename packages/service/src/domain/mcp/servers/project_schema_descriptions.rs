@@ -56,7 +56,7 @@ pub(super) fn property_description(tool_name: &str, property: &str) -> String {
 
 fn model_description() -> String {
     let claude_guidance = provider_alias_metadata("claude_code")
-        .map(|metadata| metadata.model_guidance)
-        .unwrap_or("Claude Code uses catalog aliases such as opus or sonnet.");
+        .map(|metadata| metadata.model_guidance.into_owned())
+        .unwrap_or_else(|| "Claude Code uses catalog aliases such as opus or sonnet.".to_string());
     format!("Provider-specific model id. {claude_guidance} Codex uses gpt-* ids; Cursor uses `agent models` ids; OpenCode often uses provider/model ids. Call project_list_agent_providers when unsure.")
 }

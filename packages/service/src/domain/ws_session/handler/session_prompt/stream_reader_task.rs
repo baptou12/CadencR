@@ -160,7 +160,7 @@ impl StreamReaderTask {
                     }
                     self.handle_runtime_event(
                         &mut state,
-                        runtime_adapter,
+                        runtime_adapter.as_deref(),
                         &mut persistence,
                         runtime_event,
                     )

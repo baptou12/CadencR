@@ -9,20 +9,20 @@ mod tool_names;
 mod worktree_config;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::borrow::Cow;
 
 use self::permissions::{
     parse_permission_request as parse_acp_permission_request, permission_options,
 };
 use super::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
-    RuntimePermissionRequest, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
-    RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSpawnConfig,
-    RuntimeUserShellStrategy,
+    static_config_paths, AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy,
+    RuntimeError, RuntimePermissionRequest, RuntimePromptCommandPlacement,
+    RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger, RuntimeSlashCommand,
+    RuntimeSpawnConfig, RuntimeUserShellStrategy,
 };
 
 pub struct OpenCodeAdapter;
 
-pub static OPENCODE_ADAPTER: OpenCodeAdapter = OpenCodeAdapter;
 pub const PROVIDER_ID: &str = "opencode";
 
 fn normalize_resume_session_id(session_id: &str) -> Option<String> {
@@ -116,8 +116,8 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         });
     }
 
-    fn worktree_config_paths(&self) -> &'static [&'static str] {
-        worktree_config::CONFIG_PATHS
+    fn worktree_config_paths(&self) -> Vec<Cow<'static, str>> {
+        static_config_paths(worktree_config::CONFIG_PATHS)
     }
 
     async fn runtime_slash_commands(

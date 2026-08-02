@@ -129,7 +129,7 @@ fn recoverable_fallback_mode(
                 runtime_provider,
                 &permission_mode_wire(failed_mode),
             )?;
-            Some(parse_permission_mode(fallback_wire))
+            Some(parse_permission_mode(&fallback_wire))
         }
         _ => None,
     }
@@ -146,11 +146,11 @@ fn plan_post_plan_mode_transition(handle: &SdkHandle) -> Option<PostPlanModeTran
         .as_deref()
         .or(handle.desired_model.as_deref());
     let target_wire = post_plan_approval_mode_wire(&handle.runtime_provider, model_for_gate);
-    let target_mode = parse_permission_mode(target_wire);
+    let target_mode = parse_permission_mode(&target_wire);
 
     if handle.spawned_permission_mode.as_ref() == Some(&target_mode) {
         debug!(
-            target_mode = target_wire,
+            target_mode = %target_wire,
             "post-plan-approval: runtime already in target mode"
         );
         return None;

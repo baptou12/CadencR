@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
@@ -9,7 +10,9 @@ pub enum RuntimeError {
     /// directories that were probed so the host can render an actionable
     /// message and prompt the user to set an explicit path via onboarding.
     CliNotFound {
-        provider: &'static str,
+        /// Owned so a runtime-registered provider can report its own CLI name
+        /// without a compile-time literal.
+        provider: Cow<'static, str>,
         searched: Vec<PathBuf>,
     },
     /// The provider's CLI accepted the protocol envelope but rejected the
@@ -57,8 +60,11 @@ impl RuntimeError {
 
     /// Build a structured "CLI not found" error so the host can surface an
     /// actionable message + a link to the binary picker in onboarding.
-    pub fn cli_not_found(provider: &'static str, searched: Vec<PathBuf>) -> Self {
-        Self::CliNotFound { provider, searched }
+    pub fn cli_not_found(provider: impl Into<Cow<'static, str>>, searched: Vec<PathBuf>) -> Self {
+        Self::CliNotFound {
+            provider: provider.into(),
+            searched,
+        }
     }
 }
 
@@ -127,9 +133,9 @@ mod tests {
         assert!(matches!(
             error,
             RuntimeError::CliNotFound {
-                provider: "opencode",
-                searched: actual,
-            } if actual == searched
+                ref provider,
+                searched: ref actual,
+            } if provider == "opencode" && *actual == searched
         ));
     }
 }

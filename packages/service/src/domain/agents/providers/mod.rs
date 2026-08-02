@@ -1,6 +1,7 @@
 mod model_validation;
 pub(crate) mod opencode;
 mod ownership;
+mod registry;
 
 use sqlx::SqlitePool;
 use std::path::Path;
@@ -16,26 +17,14 @@ pub use model_validation::{
     provider_aliases, provider_model_catalog_entry, resolve_model_or_error_for_profile,
     valid_provider_ids, validate_thinking_level_or_error,
 };
+pub use registry::{provider_registry, ProviderAdapterHandle};
 
-/// All registered runtime adapters. Add new providers here.
-static ADAPTERS: &[(&str, &dyn AgentRuntimeAdapter)] = &[
-    (
-        super::claude_code::PROVIDER_ID,
-        &super::claude_code::CLAUDE_CODE_ADAPTER,
-    ),
-    (super::codex::PROVIDER_ID, &super::codex::CODEX_ADAPTER),
-    (super::cursor::PROVIDER_ID, &super::cursor::CURSOR_ADAPTER),
-    (
-        super::opencode::PROVIDER_ID,
-        &super::opencode::OPENCODE_ADAPTER,
-    ),
-];
-
-pub fn runtime_adapter(provider_id: &str) -> Option<&'static dyn AgentRuntimeAdapter> {
-    ADAPTERS
-        .iter()
-        .find(|(id, _)| *id == provider_id)
-        .map(|(_, adapter)| *adapter)
+/// Resolve a provider id to its registered adapter.
+///
+/// The returned handle owns its adapter for `'static`, so callers may keep it
+/// across `.await` points and move it onto spawned tasks.
+pub fn runtime_adapter(provider_id: &str) -> Option<ProviderAdapterHandle> {
+    provider_registry().adapter(provider_id)
 }
 
 /// Resolve a legacy model-only selection from provider-owned catalog entries.
@@ -143,8 +132,9 @@ pub async fn provider_catalog_entries_live_for_cwd(
     cwd: Option<&Path>,
     profile: Option<&str>,
 ) -> Vec<super::runtime::ProviderCatalogEntry> {
-    futures::future::join_all(ADAPTERS.iter().map(|(_, adapter)| async move {
-        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, *adapter).await
+    futures::future::join_all(provider_registry().adapters().map(|adapter| async move {
+        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, adapter.as_adapter())
+            .await
     }))
     .await
 }
@@ -174,7 +164,7 @@ pub async fn provider_default_model(read_pool: &SqlitePool, provider_id: &str) -
 }
 
 pub fn spawn_runtime_startup_warmups() {
-    for (_, adapter) in ADAPTERS {
+    for adapter in provider_registry().adapters() {
         adapter.spawn_startup_warmup();
     }
 }
@@ -184,9 +174,9 @@ pub async fn notify_worktree_created_for_all_providers(
     worktree_path: &std::path::Path,
 ) -> Result<(), super::adapter::RuntimeError> {
     futures::future::try_join_all(
-        ADAPTERS
-            .iter()
-            .map(|(_, adapter)| adapter.on_worktree_created(source_project_path, worktree_path)),
+        provider_registry()
+            .adapters()
+            .map(|adapter| adapter.on_worktree_created(source_project_path, worktree_path)),
     )
     .await?;
     Ok(())
@@ -213,16 +203,15 @@ pub async fn runtime_session_finished_text(
     provider_id: &str,
     runtime_session_id: &str,
 ) -> Option<String> {
-    runtime_adapter(provider_id)?
-        .session_finished_text(runtime_session_id)
-        .await
+    let adapter = runtime_adapter(provider_id)?;
+    adapter.session_finished_text(runtime_session_id).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        merge_extra_models, notify_worktree_created_for_all_providers, resolve_effective_provider,
-        runtime_adapter, ADAPTERS,
+        merge_extra_models, notify_worktree_created_for_all_providers, provider_registry,
+        resolve_effective_provider, runtime_adapter,
     };
     use crate::domain::agents::runtime::ModelCatalogEntry;
 
@@ -254,12 +243,20 @@ mod tests {
         assert!(runtime_adapter("unknown").is_none());
     }
 
+    /// Catalog resolution fans out over the registry, so the response order
+    /// must equal registration order — the provider picker renders it as-is.
+    ///
+    /// Uses the static `catalog_entry()` fan-out rather than the live one: the
+    /// live path shells out to each provider CLI and writes the process-global
+    /// probe caches that `seed_static_catalog_for_tests` drives for other tests
+    /// in this binary.
     #[test]
-    fn all_adapters_have_catalog_entries() {
-        for (id, adapter) in ADAPTERS {
-            let entry = adapter.catalog_entry();
-            assert_eq!(&entry.id, id, "catalog entry id mismatch for {id}");
-        }
+    fn catalog_entries_preserve_registry_order() {
+        let ids: Vec<String> = provider_registry()
+            .adapters()
+            .map(|adapter| adapter.catalog_entry().id)
+            .collect();
+        assert_eq!(ids, provider_registry().provider_ids());
     }
 
     #[tokio::test]

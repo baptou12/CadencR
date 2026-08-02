@@ -240,7 +240,9 @@ mod tests {
         // mode without a permission prompt on every edit.
         let adapter = new_test_adapter();
         assert_eq!(
-            adapter.post_plan_approval_fallback_mode_wire("auto"),
+            adapter
+                .post_plan_approval_fallback_mode_wire("auto")
+                .as_deref(),
             Some("acceptEdits")
         );
     }

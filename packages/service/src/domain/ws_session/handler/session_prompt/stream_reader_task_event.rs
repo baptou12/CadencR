@@ -26,7 +26,7 @@ impl StreamReaderTask {
     pub(super) async fn handle_runtime_event(
         &self,
         state: &mut StreamReaderState,
-        runtime_adapter: Option<&'static dyn AgentRuntimeAdapter>,
+        runtime_adapter: Option<&dyn AgentRuntimeAdapter>,
         persistence: &mut WsSessionPersistence,
         runtime_event: RuntimeEvent,
     ) {
@@ -116,7 +116,7 @@ impl StreamReaderTask {
 
     async fn handle_permission_request(
         &self,
-        runtime_adapter: Option<&'static dyn AgentRuntimeAdapter>,
+        runtime_adapter: Option<&dyn AgentRuntimeAdapter>,
         runtime_event: &RuntimeEvent,
     ) -> bool {
         let Some(request) = runtime_adapter
@@ -276,7 +276,7 @@ impl StreamReaderTask {
     async fn persist_and_forward_event(
         &self,
         state: &mut StreamReaderState,
-        runtime_adapter: Option<&'static dyn AgentRuntimeAdapter>,
+        runtime_adapter: Option<&dyn AgentRuntimeAdapter>,
         persistence: &mut WsSessionPersistence,
         runtime_event: &RuntimeEvent,
         interrupted_generation: Option<u64>,

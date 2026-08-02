@@ -2,7 +2,7 @@ use axum::extract::ws::Message;
 use tracing::error;
 
 use super::super::super::protocol::*;
-use super::super::helpers::{default_permission_mode_wire, parse_session_id, send_error};
+use super::super::helpers::{parse_session_id, send_error};
 use super::super::types::{QueryState, SdkSessions, WsSender};
 use super::session_has_messages;
 use crate::app_state::AppState;
@@ -167,7 +167,8 @@ pub(crate) async fn handle_provider_set(
 
     let configured_access_mode = adapter.configured_access_mode(&app_state.read_pool).await;
     let configured_access_wire = configured_access_mode.as_ref().map(access_mode_wire);
-    let new_mode_wire = default_permission_mode_wire(&payload.provider);
+    let new_mode_wire = adapter.default_permission_mode_wire();
+    let new_mode_wire = new_mode_wire.as_ref();
     if let Err(error) = persist_provider_selection(
         &app_state.write_pool,
         db_session_id,

@@ -26,11 +26,18 @@ pub async fn list_agent_providers(ctx: &McpContext) -> Result<serde_json::Value,
 fn provider_doc(catalog: ProviderCatalogEntry) -> serde_json::Value {
     let metadata = provider_alias_metadata(&catalog.id);
     let aliases = metadata
-        .map(|metadata| metadata.aliases.to_vec())
+        .as_ref()
+        .map(|metadata| {
+            metadata
+                .aliases
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
     let model_guidance = metadata
-        .map(|metadata| metadata.model_guidance)
-        .unwrap_or("Use model ids from this provider's catalog.");
+        .map(|metadata| metadata.model_guidance.into_owned())
+        .unwrap_or_else(|| "Use model ids from this provider's catalog.".to_string());
     let common_models = catalog
         .models
         .iter()

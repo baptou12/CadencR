@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -173,8 +174,12 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Called once at startup for background warmup (e.g. starting sidecar processes).
     fn spawn_startup_warmup(&self) {}
 
-    fn worktree_config_paths(&self) -> &'static [&'static str] {
-        &[]
+    /// Provider config paths copied into a new worktree, relative to the
+    /// project root. Owned so a runtime-registered provider can describe its
+    /// paths from installation data; built-ins wrap their compiled list with
+    /// [`static_config_paths`].
+    fn worktree_config_paths(&self) -> Vec<Cow<'static, str>> {
+        Vec::new()
     }
 
     async fn on_worktree_created(
@@ -191,7 +196,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
             &label,
             source_project_path,
             worktree_path,
-            paths,
+            &paths,
         )
         .await
     }
@@ -277,7 +282,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Workspace setting used as the default for new conversations. Keeping
     /// this on the adapter avoids provider ids and setting keys in shared
     /// session orchestration.
-    fn access_mode_setting_key(&self) -> Option<&'static str> {
+    fn access_mode_setting_key(&self) -> Option<Cow<'static, str>> {
         None
     }
 
@@ -312,7 +317,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         let setting_key = self.access_mode_setting_key()?;
         let configured = crate::domain::settings::resolve_setting(
             read_pool,
-            setting_key,
+            setting_key.as_ref(),
             None,
             None,
             Some(access_mode_wire(&RuntimeAccessMode::Default)),
@@ -329,8 +334,8 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Wire string the chip lands on for this provider after a session
     /// switches to it (post-`provider.set`). Mirrors `defaultEditModeFor` in
     /// `lib/provider-modes.ts`. Default matches the FE catalog's fallback.
-    fn default_permission_mode_wire(&self) -> &'static str {
-        "acceptEdits"
+    fn default_permission_mode_wire(&self) -> Cow<'static, str> {
+        Cow::Borrowed("acceptEdits")
     }
 
     /// Wire string the chip should land on after a plan is approved
@@ -339,7 +344,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// classifier-backed mode only when the active model can actually run
     /// it. Defaults to `default_permission_mode_wire` so adapters opt in
     /// explicitly to a plan-approval-specific override.
-    fn post_plan_approval_mode_wire(&self, _model: Option<&str>) -> &'static str {
+    fn post_plan_approval_mode_wire(&self, _model: Option<&str>) -> Cow<'static, str> {
         self.default_permission_mode_wire()
     }
 
@@ -356,7 +361,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     fn post_plan_approval_fallback_mode_wire(
         &self,
         _failed_mode_wire: &str,
-    ) -> Option<&'static str> {
+    ) -> Option<Cow<'static, str>> {
         None
     }
 
