@@ -310,6 +310,8 @@ export function handleAppEnvelope(
     // didn't take" — plus a trailing refetch so a burst (an editor saving on
     // every keystroke) settles on the final content without one full
     // re-read-and-revalidate of every theme file per keystroke.
+    // The same file holds the label the theme's project is named after, so the
+    // sidebar's list is refetched with it.
     scheduleThemeInvalidation(queryClient);
     return true;
   }

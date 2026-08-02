@@ -8,6 +8,7 @@ import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { downloadJsonFile } from "@/lib/download";
 import type { ThemeDefinition } from "@/lib/themes";
 import { readThemeCssVars, userThemeLabel } from "@/lib/themes/user-theme";
+import { useReleaseTheme } from "./useReleaseTheme";
 
 interface ThemeLibraryActions {
   /** Copy `source` into a new theme; `onCreated` receives it once it exists. */
@@ -32,6 +33,7 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
   const queryClient = useQueryClient();
   const create = useCreateTheme();
   const remove = useDeleteTheme();
+  const release = useReleaseTheme();
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const refresh = useCallback((): void => {
@@ -76,18 +78,22 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
         { id: theme.id },
         {
           onSuccess: () => {
+            // Nothing can wear it now, and a selection left pointing at it
+            // would silently resolve to the default — or come back to life if
+            // a new theme ever landed on the same id.
+            release(theme);
             refresh();
             // The theme's project went with it, so the sidebar is now showing a
             // project that no longer exists.
             void invalidateByUrlPrefix(queryClient, ["/api/projects", "/api/features"]);
-            toast.success(`Deleted “${userThemeLabel(theme)}”`);
+            toast.success(`Deleted “${userThemeLabel(theme)}” — it's in the Trash`);
           },
           onError: (error) => toast.error(apiErrorMessage(error, "Failed to delete theme")),
           onSettled: () => setDeletingId(null),
         },
       );
     },
-    [remove, refresh],
+    [remove, refresh, release, queryClient],
   );
 
   const exportTheme = useCallback((theme: UserTheme): void => {

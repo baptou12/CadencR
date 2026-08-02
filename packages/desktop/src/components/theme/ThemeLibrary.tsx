@@ -10,6 +10,7 @@ import { userThemeId, userThemeLabel } from "@/lib/themes/user-theme";
 import { ThemeBasePicker } from "./ThemeBasePicker";
 import { UserThemeCard } from "./UserThemeCard";
 import { useOpenThemeProject } from "./useOpenThemeProject";
+import { useReleaseTheme } from "./useReleaseTheme";
 import { useThemeLibraryActions } from "./useThemeLibraryActions";
 
 /**
@@ -25,8 +26,19 @@ export function ThemeLibrary(): React.JSX.Element {
   const { themeId } = useTheme();
   const actions = useThemeLibraryActions();
   const { open, openingId } = useOpenThemeProject();
+  const release = useReleaseTheme();
   const [picking, setPicking] = useState(false);
   const [deleting, setDeleting] = useState<UserTheme | null>(null);
+
+  const toggleEnabled = useCallback(
+    (theme: UserTheme, enabled: boolean): void => {
+      setEnabled(theme.id, enabled);
+      // A hidden theme can't be worn: keeping it selected would paint the
+      // default while the setting still claims otherwise.
+      if (!enabled) release(theme);
+    },
+    [release, setEnabled],
+  );
 
   const createFrom = useCallback(
     (base: ThemeDefinition): void => {
@@ -69,7 +81,7 @@ export function ThemeLibrary(): React.JSX.Element {
               isEnabled={isEnabled(entry.id)}
               isDeleting={actions.deletingId === entry.id}
               isOpening={openingId === entry.id}
-              onToggleEnabled={(enabled) => setEnabled(entry.id, enabled)}
+              onToggleEnabled={(enabled) => toggleEnabled(entry, enabled)}
               onEdit={() => open(entry)}
               onExport={() => actions.exportTheme(entry)}
               onDelete={() => setDeleting(entry)}
@@ -91,7 +103,7 @@ export function ThemeLibrary(): React.JSX.Element {
         open={deleting !== null}
         onOpenChange={(open_) => !open_ && setDeleting(null)}
         title={deleting ? `Delete “${userThemeLabel(deleting)}”?` : ""}
-        description="The theme file, its project and everything you built in it are removed. Export it first if you want to keep a copy."
+        description="Its project goes too, and the theme folder — file, git history and all — moves to the Trash."
         confirmText="Delete"
         variant="destructive"
         onConfirm={() => deleting && actions.remove(deleting)}

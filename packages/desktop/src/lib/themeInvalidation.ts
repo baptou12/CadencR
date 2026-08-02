@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { getListThemesQueryKey } from "@/api/generated";
+import { getListProjectsQueryKey, getListThemesQueryKey } from "@/api/generated";
 import { createLeadingSettleCoalescer } from "./coalesceInvalidation";
 
 /**
@@ -13,8 +13,21 @@ import { createLeadingSettleCoalescer } from "./coalesceInvalidation";
  */
 const THEME_INVALIDATION_SETTLE_MS = 150;
 
+/**
+ * The themes, and the project list that carries their names.
+ *
+ * A theme's label is the name of its project in the sidebar, and the backend
+ * renames the project from the same write that repaints the app — so a rename
+ * made in the file (by the user's editor, or by the agent) reaches the sidebar
+ * only if the list is refetched too. Both keys are exact: nothing else under
+ * `/api/projects/…` — a project's settings, its model config — is affected by
+ * a theme file, and sweeping the prefix would refetch all of it on every save.
+ */
 export function invalidateThemes(client: QueryClient): Promise<void> {
-  return client.invalidateQueries({ queryKey: getListThemesQueryKey() });
+  return Promise.all([
+    client.invalidateQueries({ queryKey: getListThemesQueryKey() }),
+    client.invalidateQueries({ queryKey: getListProjectsQueryKey() }),
+  ]).then(() => undefined);
 }
 
 const themeCoalescer = createLeadingSettleCoalescer<QueryClient>(
