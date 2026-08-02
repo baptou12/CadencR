@@ -38,6 +38,7 @@ pub mod imports;
 pub mod lsp;
 pub mod mcp;
 pub mod permission_bridge;
+pub mod ports;
 pub mod projects;
 pub mod push;
 pub mod remote;

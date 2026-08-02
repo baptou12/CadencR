@@ -160,6 +160,18 @@ export interface AgentSessionRow {
 }
 
 /**
+ * A single TCP port held open by one of a feature's processes.
+ */
+export interface AllocatedPort {
+  pid: number;
+  /** @minimum 0 */
+  port: number;
+  /** Executable name as reported by the OS (`node`, `vite`, `python3`, …). */
+  process: string;
+  source: PortSource;
+}
+
+/**
  * Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`).
  */
 export type BinaryDiscoveryResponseProviders = { [key: string]: ProviderDiscovery };
@@ -964,6 +976,14 @@ export const FeaturePlanAction = {
   request_changes: "request_changes",
   reject: "reject",
 } as const;
+
+/**
+ * Ports currently allocated by one feature, ordered ascending by port.
+ */
+export interface FeaturePorts {
+  feature_id: number;
+  ports: AllocatedPort[];
+}
 
 export interface FeatureRespondGateRequest {
   decision: FeatureGateDecision;
@@ -1821,6 +1841,18 @@ export interface PermissionRespondPayload {
   session_id: string;
   updated_input?: unknown;
 }
+
+/**
+ * How a listening process was traced back to its feature.
+ */
+export type PortSource = (typeof PortSource)[keyof typeof PortSource];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PortSource = {
+  terminal: "terminal",
+  agent: "agent",
+  workspace: "workspace",
+} as const;
 
 export type PrCommentUrl = string | null;
 
@@ -3138,8 +3170,9 @@ is the porcelain v2 letter mapped to a friendly token: `"added"`,
 `"modified"`, `"deleted"`, `"renamed"`, or `"untracked"`.
 
 `additions`/`deletions` are filled from `git diff --numstat` (sum of staged
-and unstaged sides). They are `0` for untracked files (numstat doesn't
-cover them) and for binary files (where numstat reports `-`).
+and unstaged sides). Untracked files get `additions` from a streamed line
+count (git's numstat never covers them) and `deletions: 0`. Binary files
+stay at `0` (numstat reports `-`; untracked binaries are skipped the same way).
  */
 export interface UncommittedFile {
   additions?: number;
@@ -6776,6 +6809,61 @@ export function useListPinnedFeatures<
   query?: UseQueryOptions<Awaited<ReturnType<typeof listPinnedFeatures>>, TError, TData>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListPinnedFeaturesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * @summary Global rather than project-scoped: the scan is machine-wide either way, and
+one shared query key keeps a multi-project sidebar to a single poll.
+ */
+export const listFeaturePorts = (signal?: AbortSignal) => {
+  return customInstance<FeaturePorts[]>({ url: `/api/features/ports`, method: "GET", signal });
+};
+
+export const getListFeaturePortsQueryKey = () => {
+  return [`/api/features/ports`] as const;
+};
+
+export const getListFeaturePortsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listFeaturePorts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listFeaturePorts>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListFeaturePortsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listFeaturePorts>>> = ({ signal }) =>
+    listFeaturePorts(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listFeaturePorts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListFeaturePortsQueryResult = NonNullable<Awaited<ReturnType<typeof listFeaturePorts>>>;
+export type ListFeaturePortsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Global rather than project-scoped: the scan is machine-wide either way, and
+one shared query key keeps a multi-project sidebar to a single poll.
+ */
+
+export function useListFeaturePorts<
+  TData = Awaited<ReturnType<typeof listFeaturePorts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listFeaturePorts>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListFeaturePortsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

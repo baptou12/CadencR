@@ -20,6 +20,8 @@ use crate::domain::features::routes as features_routes;
 use crate::domain::imports::models as imports_models;
 use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
+use crate::domain::ports::models as ports_models;
+use crate::domain::ports::routes as ports_routes;
 use crate::domain::projects::icon as projects_icon;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
@@ -88,6 +90,7 @@ use crate::domain::ws_session::routes as ws_routes;
         projects_icon::scan_project_icons_handler,
         features_routes::list_features_handler,
         features_routes::list_feature_activity_handler,
+        ports_routes::list_feature_ports_handler,
         features_routes::list_pinned_features_handler,
         features_routes::create_feature_handler,
         features_routes::get_feature_handler,
@@ -253,6 +256,9 @@ use crate::domain::ws_session::routes as ws_routes;
         features_models::SetFeatureModelSettingRequest,
         features_models::SetFeatureProviderSettingRequest,
         features_routes::SuccessResponse,
+        ports_models::AllocatedPort,
+        ports_models::FeaturePorts,
+        ports_models::PortSource,
         crate::domain::features::pending_gate::FeaturePendingGateResponse,
         crate::domain::features::pending_gate::FeatureRespondGateRequest,
         crate::domain::features::pending_gate::FeatureRespondGateResponse,

@@ -18,6 +18,7 @@ use crate::domain::features::routes::features_router;
 use crate::domain::git::routes::git_router;
 use crate::domain::imports::routes::imports_router;
 use crate::domain::lsp::lsp_router;
+use crate::domain::ports::routes::ports_router;
 use crate::domain::projects::routes::projects_router;
 use crate::domain::schedules::routes::schedules_router;
 use crate::domain::sessions::routes::sessions_router;
@@ -104,6 +105,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(workspace_router())
         .merge(projects_router())
         .merge(features_router())
+        .merge(ports_router())
         .merge(feature_layouts_router())
         .merge(diff_comments_router())
         .merge(sessions_router())

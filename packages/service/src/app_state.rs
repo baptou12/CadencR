@@ -20,6 +20,7 @@ use crate::domain::imports::jobs::ImportJobRegistry;
 use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
 use crate::domain::mcp::loopback::is_loopback_host;
+use crate::domain::ports::cache::PortScanCache;
 use crate::domain::push::PushNotifier;
 use crate::domain::schedules::models::ScheduleRanEvent;
 use crate::domain::session_status::SessionStatusBroadcaster;
@@ -140,6 +141,9 @@ pub struct AppState {
     /// Process-wide PR/MR detection cache, populated by the forge poller and
     /// read by both the sidebar bootstrap endpoint and on-demand PR routes.
     pub forge_status: Arc<ForgeStatusCache>,
+    /// Last machine-wide listening-port scan, shared so concurrent sidebar
+    /// pollers coalesce onto one `lsof` sweep.
+    pub port_scan: Arc<PortScanCache>,
     /// Shared conditional-GET/rate-limit transport for all forge adapters.
     pub forge_http: Arc<ForgeHttp>,
     /// Owner-only token-file access for forge authentication.
@@ -273,6 +277,7 @@ impl AppState {
             custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
             git_watcher: Arc::new(GitWatcherRegistry::new()),
             forge_status: Arc::new(ForgeStatusCache::default()),
+            port_scan: Arc::new(PortScanCache::default()),
             forge_http: Arc::new(ForgeHttp::default()),
             forge_auth: Arc::new(ForgeAuthStore::default()),
             forge_events_tx,
@@ -336,6 +341,7 @@ impl AppState {
             custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
             git_watcher: Arc::new(GitWatcherRegistry::new()),
             forge_status: Arc::new(ForgeStatusCache::default()),
+            port_scan: Arc::new(PortScanCache::default()),
             forge_http: Arc::new(ForgeHttp::default()),
             forge_auth: Arc::new(ForgeAuthStore::default()),
             forge_events_tx,
