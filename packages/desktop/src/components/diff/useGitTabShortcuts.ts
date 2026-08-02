@@ -29,6 +29,8 @@ export interface GitTabShortcutTargets {
   enabled: boolean;
   toggleFileList: () => void;
   isFileListCollapseLoading: boolean;
+  /** True on the list views, which render no file list to collapse. */
+  isListView: boolean;
   /** True on the PR view, which has no local drafts to send. */
   isPr: boolean;
   sendDrafts: () => void;
@@ -50,6 +52,7 @@ export function useGitTabShortcuts({
   enabled,
   toggleFileList,
   isFileListCollapseLoading,
+  isListView,
   isPr,
   sendDrafts,
   sendReviewThreads,
@@ -58,7 +61,11 @@ export function useGitTabShortcuts({
   nextReview,
   canNavigateReviews,
 }: GitTabShortcutTargets): void {
-  useGitTabCommand("diff-toggle-sidebar", toggleFileList, enabled && !isFileListCollapseLoading);
+  useGitTabCommand(
+    "diff-toggle-sidebar",
+    toggleFileList,
+    enabled && !isListView && !isFileListCollapseLoading,
+  );
 
   useGitTabCommand(
     "diff-send-comments",
