@@ -19,6 +19,7 @@ function Harness(overrides: Partial<GitTabShortcutTargets>) {
   useGitTabShortcuts({
     enabled: true,
     isFileListCollapseLoading: false,
+    isListView: false,
     isPr: false,
     canSendReviewThreads: true,
     canNavigateReviews: true,
@@ -126,6 +127,25 @@ describe("useGitTabShortcuts", () => {
     expect(callbacks.nextReview).not.toHaveBeenCalled();
     expect(callbacks.sendDrafts).not.toHaveBeenCalled();
     expect(callbacks.sendReviewThreads).not.toHaveBeenCalled();
+  });
+
+  it("stops toggling the file list in the views that have none", () => {
+    const { rerender } = render(
+      <FeatureLayoutProvider featureId={FEATURE_ID}>
+        <Harness />
+      </FeatureLayoutProvider>,
+    );
+
+    dispatchMod("e", "KeyE");
+    expect(callbacks.toggleFileList).toHaveBeenCalledOnce();
+
+    rerender(
+      <FeatureLayoutProvider featureId={FEATURE_ID}>
+        <Harness isListView />
+      </FeatureLayoutProvider>,
+    );
+    dispatchMod("e", "KeyE");
+    expect(callbacks.toggleFileList).toHaveBeenCalledOnce();
   });
 
   it("lets an open dialog own Mod+Enter instead of swallowing it in the Git tab", () => {
