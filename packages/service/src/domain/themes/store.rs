@@ -149,15 +149,21 @@ pub async fn write(id: &str, content: &str) -> Result<UserTheme, AppError> {
     get(id).await
 }
 
+/// To the trash, not gone. The folder is a git repository the user built a
+/// theme in — the palette, its history and the conversation about it — so a
+/// mis-click has to be recoverable the way it is everywhere else on their
+/// machine.
 pub async fn delete(id: &str) -> Result<(), AppError> {
     let dir = paths::theme_dir(id)?;
-    fs::remove_dir_all(&dir).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            AppError::NotFound(format!("theme `{id}` not found"))
-        } else {
-            AppError::Internal(format!("failed to delete {}: {e}", dir.display()))
-        }
-    })
+    // Only a missing directory is a 404 — a folder that is there but can't be
+    // read is a failure the user has to hear about, not "no such theme".
+    if let Err(e) = fs::metadata(&dir).await {
+        return Err(match e.kind() {
+            std::io::ErrorKind::NotFound => AppError::NotFound(format!("theme `{id}` not found")),
+            _ => AppError::Internal(format!("failed to read theme `{id}`: {e}")),
+        });
+    }
+    crate::shared::trash::move_to_trash(&dir).await
 }
 
 /// Append `-2`, `-3`, … until the slug is free, so duplicating the same theme

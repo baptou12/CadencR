@@ -64,8 +64,11 @@ pub async fn delete_theme_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<DeleteThemeResponse>, AppError> {
+    // The project goes first: if that fails the theme is still on disk, so the
+    // user can simply delete it again. The other order would leave a project
+    // pointing at a folder that is already in the trash.
+    workspace::remove(&state.write_pool, &id).await?;
     store::delete(&id).await?;
-    workspace::remove(&state.write_pool, &id).await;
     Ok(Json(DeleteThemeResponse { success: true }))
 }
 

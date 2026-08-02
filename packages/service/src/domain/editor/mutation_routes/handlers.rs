@@ -235,32 +235,9 @@ pub async fn trash_editor_path_handler(
         resolve_feature_editor_root(&state.read_pool, body.project_id, body.feature_id).await?;
     let abs_path = service::validate_path(&project_root, &body.path)?;
 
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        trash_path(&abs_path).map_err(|e| AppError::Internal(format!("Trash failed: {e}")))
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
+    crate::shared::trash::move_to_trash(&abs_path).await?;
 
     Ok(axum::Json(TrashPathResponse { success: true }))
-}
-
-/// Move a path to the OS trash. On macOS we explicitly use `NSFileManager`
-/// rather than the default `Finder` (AppleScript) backend, because Finder
-/// requires the `com.apple.security.automation.apple-events` entitlement
-/// (granted via TCC prompt or a signed/notarized bundle). Unsigned dev
-/// builds otherwise fail with `errAEEventNotPermitted (-1743)`.
-fn trash_path(abs_path: &std::path::Path) -> Result<(), trash::Error> {
-    #[cfg(target_os = "macos")]
-    {
-        use trash::macos::{DeleteMethod, TrashContextExtMacos};
-        let mut ctx = trash::TrashContext::default();
-        ctx.set_delete_method(DeleteMethod::NsFileManager);
-        ctx.delete(abs_path)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        trash::delete(abs_path)
-    }
 }
 
 #[utoipa::path(get, path = "/api/editor/root",

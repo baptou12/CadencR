@@ -14,5 +14,6 @@ pub mod ssh_env;
 pub mod terminal_shell;
 #[cfg(test)]
 pub mod test_env;
+pub mod trash;
 pub mod user_shell;
 pub mod worktree_paths;
