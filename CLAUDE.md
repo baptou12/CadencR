@@ -35,7 +35,7 @@ Frontend path alias: `@` → `packages/desktop/src/`. Frontend ↔ backend is HT
 
 **One WS envelope.** Every message in both directions is `WsEnvelope { id, domain, action, ref, payload }` (`packages/service/src/domain/ws_session/protocol.rs`); replies echo `ref`. Stream payloads carry a monotonic `seq` — the frontend detects gaps and resyncs (`packages/desktop/src/stores/ws-*.ts`).
 
-**Adding a provider is one registry edit.** `static ADAPTERS` in `packages/service/src/domain/agents/providers/mod.rs`. SDK crates carry transport only; provider-specific behavior belongs in that provider's adapter.
+**Adding a built-in provider is one registry edit.** `BUILTIN_PROVIDERS` in `packages/service/src/domain/agents/providers/registry.rs` — an ordered factory table; registration order is user-visible. Lookups go through `provider_registry()` / `runtime_adapter()`, which return a `ProviderAdapterHandle` (owned, `'static`, `Deref`s to the trait). SDK crates carry transport only; provider-specific behavior belongs in that provider's adapter directory (`agents/<provider>/`).
 
 **Check `packages/service/src/shared/` first** (`git_cli`, `worktree_paths`, `slug`, `db`, `env`) before writing a backend helper.
 

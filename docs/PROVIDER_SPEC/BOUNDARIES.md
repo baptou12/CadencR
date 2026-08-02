@@ -256,7 +256,7 @@ all files in one change.
 
 | Area                                                                                             | Current coupling                                                                                                                                                                     | Required direction                                                                                                                           |
 | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/service/src/domain/agents/providers/mod.rs`                                            | Compile-time `ADAPTERS` list                                                                                                                                                         | Runtime registry with built-in factories and installed generic ACP descriptors                                                               |
+| `packages/service/src/domain/agents/providers/registry.rs`                                       | **Partly resolved.** Runtime `ProviderRegistry` built from a `BUILTIN_PROVIDERS` factory table; the compile-time `ADAPTERS` list is gone                                             | Remaining: installed generic ACP descriptors join the same registry                                                                          |
 | `packages/service/src/domain/agents/acp/runtime/lifecycle.rs`                                    | Hard-coded ACP v1 initialization, client filesystem/terminal, load, and modes                                                                                                        | Version-selected v1/v2 lifecycle modules                                                                                                     |
 | `packages/service/src/domain/agents/acp/incoming.rs`                                             | Typed v1 requests (permission, fs; terminal deliberately raw); session-update notifications stay fully raw                                                                           | Versioned, typed codecs that preserve unknown fields                                                                                         |
 | `packages/service/src/domain/agents/acp/runtime/turn_lifecycle.rs`                               | Assumes a v1 prompt response completes a turn                                                                                                                                        | Lifecycle state machine selected by negotiated version                                                                                       |
@@ -329,14 +329,20 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       around them.
 - [x] Land `docs/PLUGIN_STRATEGY.md` in the repository so the parent plan is
       versioned alongside this document.
-- [ ] Define the allowed locations for built-in provider IDs and add a temporary
-      inventory of existing violations.
+- [x] Define the allowed locations for built-in provider IDs and add a temporary
+      inventory of existing violations —
+      `docs/PROVIDER_SPEC/PROVIDER_ID_INVENTORY.md` covers non-test service Rust.
+      The desktop package and the CI scanner (Phase 9) are still open.
 
 ### Phase 1 — Separate marketplace, discovery, and runtime registration
 
-- [ ] Replace the static adapter list with a runtime `ProviderRegistry`.
-- [ ] Register built-in providers through factories using the same catalog shape
-      consumed for installed providers.
+- [x] Replace the static adapter list with a runtime `ProviderRegistry`
+      (`providers/registry.rs`). Lookups return an owned `'static`
+      `ProviderAdapterHandle`; registration order stays user-visible.
+- [x] Register built-in providers through factories using the same catalog shape
+      consumed for installed providers. Stateless built-ins are already
+      registry-owned (`ProviderAdapterHandle::owned`); Claude Code stays a shared
+      `static` because its probe caches live inside the adapter value.
 - [ ] Add a generic ACP provider factory created from a validated installation
       record; adding one must require no Rust or TypeScript source change.
 - [ ] Validate agent entries against the current ACP Registry schema
@@ -352,9 +358,10 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 - [ ] Persist the user's default provider by catalog ID; do not compile a default
       such as `claude_code` into shared UI or service logic
       (`agents/runtime.rs::DEFAULT_PROVIDER`).
-- [ ] Update project `CLAUDE.md` ("Adding a provider is one registry edit") and
+- [x] Update project `CLAUDE.md` ("Adding a provider is one registry edit") and
       `.claude/rules/provider-boundaries.md` when the registry becomes runtime
-      data; regenerate the mirror with `pnpm build:agents-md`.
+      data; regenerate the mirror with `pnpm build:agents-md`. The rule's stale
+      adapter path was corrected at the same time.
 - [ ] Keep registry metadata, local executable overrides, and ACP capabilities as
       three distinct sources of truth.
 
