@@ -94,7 +94,8 @@ pub trait AgentRuntimeSession: Send + Sync {
     fn permission_response_kind(&self, _request_id: &str) -> RuntimePermissionResponseKind {
         RuntimePermissionResponseKind::Normal
     }
-    #[allow(dead_code)]
+    /// Pid of the runtime's own process, when it has one. Port attribution
+    /// walks process ancestry from it to find servers the agent started.
     fn pid(&self) -> Option<u32>;
 }
 

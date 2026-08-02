@@ -66,6 +66,7 @@ vi.mock("../api/generated", () => ({
   useListFeatures: vi.fn(() => ({ data: [] })),
   useListPinnedFeatures: vi.fn(() => ({ data: [] })),
   useListFeatureActivity: vi.fn(() => ({ data: [], error: null })),
+  useListFeaturePorts: vi.fn(() => ({ data: [], error: null })),
   useCreateFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
