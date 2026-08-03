@@ -12,7 +12,7 @@
 
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
 use crate::domain::agents::providers::provider_registry;
@@ -21,7 +21,7 @@ use super::installation::HostInstallation;
 use super::rejection::DescriptorRejection;
 use super::startup_load;
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct InstalledProvidersResponse {
     /// Directory the descriptors were read from. Present even when empty so the
     /// user knows where to put one.
@@ -30,7 +30,7 @@ pub struct InstalledProvidersResponse {
     pub rejected: Vec<InstalledProviderRejection>,
 }
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct InstalledProviderEntry {
     /// Catalog id, owned by the portable ACP registry entry.
     pub id: String,
@@ -53,7 +53,7 @@ pub struct InstalledProviderEntry {
     pub executable: String,
 }
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct InstalledProviderRejection {
     pub source_path: String,
     /// The id the descriptor claimed, when it parsed far enough to claim one.

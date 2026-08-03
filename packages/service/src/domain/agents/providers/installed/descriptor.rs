@@ -6,8 +6,10 @@
 //! - [`AcpAgentEntry`] is the **portable** payload. It mirrors the ACP Registry
 //!   entry format (`agent.schema.json`: `id`, `name`, `version`, `description`,
 //!   `repository`, `website`, `authors`, `license`, `icon`, `distribution`) and
-//!   keeps every unrecognised field in `extra`, so an entry can round-trip
-//!   through Cadencr without losing data it does not consume yet.
+//!   keeps every unrecognised root field in `extra`, so an entry can round-trip
+//!   through Cadencr without losing data it does not consume yet. Registry
+//!   imports use [`AcpAgentEntry::validate_registry_entry`]; local descriptors
+//!   use a deliberately separate profile that permits an omitted distribution.
 //! - [`ProviderDescriptor`] is the **host** envelope: a Cadencr `schema_version`
 //!   plus the host-local [`HostInstallationSpec`] (enablement and the resolved
 //!   local executable). Nothing in the envelope belongs in the portable payload,
@@ -22,10 +24,10 @@
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
-use super::rejection::{DescriptorError, RejectionCode};
+mod validation;
 
 /// Host envelope versions this build understands.
 pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
@@ -38,32 +40,6 @@ pub const ACP_BINARY_TARGETS: &[&str] = &[
     "linux-x86_64",
     "windows-aarch64",
     "windows-x86_64",
-];
-
-/// Field names the ACP handshake owns.
-///
-/// A descriptor carrying one of these reads as if it configured the agent, but
-/// cannot: `initialize` and `session/new` are authoritative, so the value would
-/// be silently ignored. Refusing the file is the honest outcome — a silently
-/// dropped `"models"` key is exactly the capability inversion
-/// `docs/PROVIDER_SPEC/BOUNDARIES.md` forbids. Compared after stripping case
-/// and separators, so `authMethods` and `auth_methods` are both caught.
-///
-/// Deliberately only the plural nouns the boundary rule itself names. Guessing
-/// at singulars (`mode`, `model`, `permission`) would refuse entries over words
-/// the registry may one day use for something else entirely.
-const PROTOCOL_OWNED_FIELDS: &[&str] = &[
-    "accessmodes",
-    "auth",
-    "authmethods",
-    "capabilities",
-    "defaultmodel",
-    "models",
-    "modes",
-    "permissionmodes",
-    "permissions",
-    "slashcommands",
-    "thinkinglevels",
 ];
 
 /// One descriptor file: a Cadencr host envelope wrapping a portable entry.
@@ -87,20 +63,40 @@ pub struct AcpAgentEntry {
     pub name: String,
     pub version: String,
     pub description: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub repository: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub website: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub authors: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub license: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub icon: Option<String>,
-    /// Optional here, required by the registry schema: a hand-written local
-    /// install has nothing to download. When present it is validated in full so
-    /// the entry stays exportable to the registry unchanged.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Optional in the Rust shape because a hand-written local install has
+    /// nothing to download. The registry-import validation profile requires it;
+    /// the local-install profile does not.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub distribution: Option<AcpDistribution>,
     /// Every field this build does not model, preserved verbatim.
     #[serde(flatten)]
@@ -108,20 +104,38 @@ pub struct AcpAgentEntry {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AcpDistribution {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub binary: Option<BTreeMap<String, AcpBinaryTarget>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub npx: Option<AcpPackageDistribution>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub uvx: Option<AcpPackageDistribution>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AcpBinaryTarget {
     pub archive: String,
     pub cmd: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
@@ -130,6 +144,7 @@ pub struct AcpBinaryTarget {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AcpPackageDistribution {
     pub package: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -165,6 +180,19 @@ fn enabled_by_default() -> bool {
     true
 }
 
+/// JSON Schema optional properties may be absent, but an explicit `null` is
+/// not a value of their declared type. Serde's ordinary `Option<T>` collapses
+/// those two cases, so registry fields use this deserializer to preserve the
+/// schema distinction: `#[serde(default)]` handles absence, while a present
+/// value must deserialize as `T`.
+fn deserialize_non_null_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
 /// A launch target: program plus argument vector. Never a shell string —
 /// marketplace data must not be interpolated into a command line.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -179,85 +207,7 @@ pub struct LocalExecutableSpec {
     pub env: BTreeMap<String, String>,
 }
 
-impl ProviderDescriptor {
-    /// Validate the envelope and the portable entry it carries.
-    pub fn validate(&self) -> Result<(), DescriptorError> {
-        if self.schema_version != SUPPORTED_SCHEMA_VERSION {
-            return Err(DescriptorError::new(
-                RejectionCode::UnsupportedSchemaVersion,
-                format!(
-                    "descriptor schema_version {} is not supported by this build (expected {})",
-                    self.schema_version, SUPPORTED_SCHEMA_VERSION
-                ),
-            ));
-        }
-        self.agent.validate()
-    }
-}
-
-impl AcpAgentEntry {
-    /// Enforce the ACP Registry agent entry rules Cadencr can check offline.
-    pub fn validate(&self) -> Result<(), DescriptorError> {
-        if !is_registry_id(&self.id) {
-            return Err(schema_violation(format!(
-                "agent id {:?} must match the ACP registry pattern ^[a-z][a-z0-9-]*$",
-                self.id
-            )));
-        }
-        if self.name.trim().is_empty() {
-            return Err(schema_violation("agent name must not be empty"));
-        }
-        if self.description.trim().is_empty() {
-            return Err(schema_violation("agent description must not be empty"));
-        }
-        if !is_semver_prefixed(&self.version) {
-            return Err(schema_violation(format!(
-                "agent version {:?} must start with a semantic version (MAJOR.MINOR.PATCH)",
-                self.version
-            )));
-        }
-        if let Some(key) = self.extra.keys().find(|key| is_protocol_owned_field(key)) {
-            return Err(schema_violation(format!(
-                "agent field {key:?} describes a capability the ACP handshake owns; \
-                 remove it — models, modes, permissions, and auth come from \
-                 initialize and session/new, never from a descriptor"
-            )));
-        }
-        match &self.distribution {
-            Some(distribution) => distribution.validate(),
-            None => Ok(()),
-        }
-    }
-}
-
 impl AcpDistribution {
-    fn validate(&self) -> Result<(), DescriptorError> {
-        let no_binary = self.binary.as_ref().is_none_or(BTreeMap::is_empty);
-        if no_binary && self.npx.is_none() && self.uvx.is_none() {
-            return Err(schema_violation(
-                "agent distribution must declare at least one of binary, npx, or uvx",
-            ));
-        }
-        for (platform, target) in self.binary.iter().flatten() {
-            if !ACP_BINARY_TARGETS.contains(&platform.as_str()) {
-                return Err(schema_violation(format!(
-                    "unknown binary distribution target {platform:?}"
-                )));
-            }
-            target.validate(platform)?;
-        }
-        for (label, package) in [("npx", &self.npx), ("uvx", &self.uvx)] {
-            if let Some(package) = package {
-                if package.package.trim().is_empty() {
-                    return Err(schema_violation(format!(
-                        "{label} distribution package must not be empty"
-                    )));
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Whether the entry declares a way to run on this OS/architecture.
     ///
     /// Package distributions are platform-independent, so declaring one is
@@ -270,30 +220,6 @@ impl AcpDistribution {
             (Some(binary), Some(target)) => binary.contains_key(target),
             _ => false,
         }
-    }
-}
-
-impl AcpBinaryTarget {
-    fn validate(&self, platform: &str) -> Result<(), DescriptorError> {
-        if self.archive.trim().is_empty() {
-            return Err(schema_violation(format!(
-                "binary target {platform} is missing an archive URL"
-            )));
-        }
-        if self.cmd.trim().is_empty() {
-            return Err(schema_violation(format!(
-                "binary target {platform} is missing a cmd"
-            )));
-        }
-        if let Some(sha256) = &self.sha256 {
-            let valid = sha256.len() == 64 && sha256.chars().all(|c| c.is_ascii_hexdigit());
-            if !valid {
-                return Err(schema_violation(format!(
-                    "binary target {platform} sha256 must be 64 hex characters"
-                )));
-            }
-        }
-        Ok(())
     }
 }
 
@@ -318,50 +244,12 @@ pub fn current_binary_target() -> Option<&'static str> {
         .find(|target| *target == host)
 }
 
-fn schema_violation(message: impl Into<String>) -> DescriptorError {
-    DescriptorError::new(RejectionCode::DescriptorSchemaViolation, message)
-}
-
-/// Match a preserved registry field against [`PROTOCOL_OWNED_FIELDS`] ignoring
-/// case and separators, so no spelling of the same idea slips through.
-fn is_protocol_owned_field(key: &str) -> bool {
-    let normalized: String = key
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .map(|c| c.to_ascii_lowercase())
-        .collect();
-    PROTOCOL_OWNED_FIELDS.contains(&normalized.as_str())
-}
-
-fn is_registry_id(id: &str) -> bool {
-    let mut chars = id.chars();
-    chars.next().is_some_and(|first| first.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
-/// The registry pattern is `^[0-9]+\.[0-9]+\.[0-9]+` — anchored at the start
-/// only, so pre-release and build suffixes are allowed to follow.
-fn is_semver_prefixed(version: &str) -> bool {
-    let mut segments = version.splitn(3, '.');
-    let (Some(major), Some(minor), Some(rest)) =
-        (segments.next(), segments.next(), segments.next())
-    else {
-        return false;
-    };
-    let patch: String = rest.chars().take_while(char::is_ascii_digit).collect();
-    !major.is_empty()
-        && !minor.is_empty()
-        && !patch.is_empty()
-        && major.chars().all(|c| c.is_ascii_digit())
-        && minor.chars().all(|c| c.is_ascii_digit())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        current_binary_target, AcpAgentEntry, ProviderDescriptor, RejectionCode, ACP_BINARY_TARGETS,
-    };
+    use super::super::rejection::RejectionCode;
+    use super::{current_binary_target, AcpAgentEntry, ProviderDescriptor, ACP_BINARY_TARGETS};
     use serde_json::json;
+    use std::path::PathBuf;
 
     fn descriptor(value: serde_json::Value) -> ProviderDescriptor {
         serde_json::from_value(value).expect("descriptor should deserialize")
@@ -374,6 +262,12 @@ mod tests {
             "version": "1.2.3",
             "description": "An ACP agent",
         })
+    }
+
+    fn registry_fixture(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/acp_registry/v1")
+            .join(name)
     }
 
     #[test]
@@ -394,6 +288,24 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    #[test]
+    fn local_and_registry_profiles_disagree_only_where_documented() {
+        let parsed = descriptor(json!({
+            "schema_version": 1,
+            "agent": valid_agent(),
+            "installation": { "executable": { "command": "/usr/local/bin/acme" } },
+        }));
+        parsed
+            .validate()
+            .expect("a local install may omit distribution");
+        let error = parsed
+            .agent
+            .validate_registry_entry()
+            .expect_err("a registry import must declare distribution");
+        assert_eq!(error.code, RejectionCode::DescriptorSchemaViolation);
+        assert!(error.message.contains("distribution"), "{}", error.message);
     }
 
     #[test]
@@ -475,6 +387,164 @@ mod tests {
         descriptor(json!({ "schema_version": 1, "agent": agent }))
             .validate()
             .expect("npx distribution should validate");
+
+        let mut agent = valid_agent();
+        agent["distribution"] = json!({
+            "binary": {},
+            "npx": { "package": "@acme/agent@1.2.3" },
+        });
+        let error = descriptor(json!({ "schema_version": 1, "agent": agent }))
+            .validate()
+            .expect_err("a present binary map must satisfy minProperties");
+        assert_eq!(error.code, RejectionCode::DescriptorSchemaViolation);
+    }
+
+    #[test]
+    fn validates_every_registry_uri_field() {
+        for field in ["repository", "website"] {
+            let mut agent = valid_agent();
+            agent["distribution"] = json!({ "npx": { "package": "acme-agent" } });
+            agent[field] = json!("not a uri");
+            let error = descriptor(json!({ "schema_version": 1, "agent": agent }))
+                .agent
+                .validate_registry_entry()
+                .expect_err("invalid URI should be rejected");
+            assert!(error.message.contains(field), "{}", error.message);
+        }
+
+        let mut agent = valid_agent();
+        agent["distribution"] = json!({
+            "binary": {
+                "linux-x86_64": { "archive": "not a uri", "cmd": "acme" },
+            },
+        });
+        let error = descriptor(json!({ "schema_version": 1, "agent": agent }))
+            .agent
+            .validate_registry_entry()
+            .expect_err("invalid archive URI should be rejected");
+        assert!(error.message.contains("archive"), "{}", error.message);
+    }
+
+    #[test]
+    fn nested_registry_objects_reject_unknown_fields() {
+        for agent in [
+            json!({
+                "id": "acme-agent",
+                "name": "Acme Agent",
+                "version": "1.0.0",
+                "description": "d",
+                "distribution": { "futureDistribution": {} },
+            }),
+            json!({
+                "id": "acme-agent",
+                "name": "Acme Agent",
+                "version": "1.0.0",
+                "description": "d",
+                "distribution": {
+                    "binary": {
+                        "linux-x86_64": {
+                            "archive": "https://example.com/acme.tar.gz",
+                            "cmd": "acme",
+                            "futureTarget": true,
+                        },
+                    },
+                },
+            }),
+            json!({
+                "id": "acme-agent",
+                "name": "Acme Agent",
+                "version": "1.0.0",
+                "description": "d",
+                "distribution": {
+                    "npx": { "package": "acme-agent", "futurePackage": true },
+                },
+            }),
+        ] {
+            let error = serde_json::from_value::<AcpAgentEntry>(agent)
+                .expect_err("nested additionalProperties must be false");
+            assert!(error.to_string().contains("unknown field"), "{error}");
+        }
+    }
+
+    #[test]
+    fn optional_registry_properties_reject_explicit_null() {
+        for (field, value) in [
+            ("repository", json!(null)),
+            ("website", json!(null)),
+            ("license", json!(null)),
+            ("icon", json!(null)),
+            ("distribution", json!(null)),
+        ] {
+            let mut agent = valid_agent();
+            agent[field] = value;
+            let error = serde_json::from_value::<AcpAgentEntry>(agent)
+                .expect_err("an explicit null is not an omitted schema property");
+            assert!(error.to_string().contains("null"), "{field}: {error}");
+        }
+
+        for distribution in [
+            json!({ "binary": null, "npx": { "package": "acme" } }),
+            json!({ "npx": null, "uvx": { "package": "acme" } }),
+            json!({ "uvx": null, "npx": { "package": "acme" } }),
+            json!({
+                "binary": {
+                    "linux-x86_64": {
+                        "archive": "https://example.com/acme.tar.gz",
+                        "cmd": "acme",
+                        "sha256": null,
+                    },
+                },
+            }),
+        ] {
+            let mut agent = valid_agent();
+            agent["distribution"] = distribution;
+            serde_json::from_value::<AcpAgentEntry>(agent)
+                .expect_err("nested optional schema properties reject null");
+        }
+    }
+
+    #[test]
+    fn pinned_registry_entry_validates_and_round_trips_losslessly() {
+        let raw = std::fs::read_to_string(registry_fixture("claude-acp.agent.json"))
+            .expect("pinned registry entry");
+        let original: serde_json::Value = serde_json::from_str(&raw).expect("fixture JSON");
+        let entry: AcpAgentEntry = serde_json::from_value(original.clone()).expect("entry shape");
+        entry
+            .validate_registry_entry()
+            .expect("pinned upstream entry should validate");
+        assert_eq!(serde_json::to_value(entry).unwrap(), original);
+    }
+
+    #[test]
+    fn pinned_schema_records_the_constraints_implemented_here() {
+        let raw = std::fs::read_to_string(registry_fixture("agent.schema.json"))
+            .expect("pinned registry schema");
+        let schema: serde_json::Value = serde_json::from_str(&raw).expect("schema JSON");
+        assert_eq!(
+            schema["$id"],
+            "https://cdn.agentclientprotocol.com/registry/v1/latest/agent.schema.json"
+        );
+        assert!(schema["required"]
+            .as_array()
+            .expect("required")
+            .iter()
+            .any(|field| field == "distribution"));
+        assert_eq!(
+            schema["properties"]["distribution"]["additionalProperties"],
+            false
+        );
+        assert_eq!(
+            schema["definitions"]["binaryDistribution"]["minProperties"],
+            1
+        );
+        assert_eq!(
+            schema["definitions"]["binaryTarget"]["additionalProperties"],
+            false
+        );
+        assert_eq!(
+            schema["definitions"]["packageDistribution"]["additionalProperties"],
+            false
+        );
     }
 
     #[test]
@@ -585,5 +655,22 @@ mod tests {
         let exported = serde_json::to_value(&entry).unwrap();
         assert_eq!(exported["futureField"]["nested"][2], 3);
         assert_eq!(exported["license"], "MIT");
+    }
+
+    #[test]
+    fn registry_profile_preserves_unknown_root_fields_without_applying_host_policy() {
+        let entry: AcpAgentEntry = serde_json::from_value(json!({
+            "id": "acme-agent",
+            "name": "Acme Agent",
+            "version": "1.0.0",
+            "description": "d",
+            "distribution": { "npx": { "package": "acme-agent" } },
+            "models": ["future-registry-field"],
+        }))
+        .unwrap();
+        entry
+            .validate_registry_entry()
+            .expect("the upstream root schema permits additional properties");
+        assert_eq!(entry.extra["models"][0], "future-registry-field");
     }
 }
