@@ -50,23 +50,6 @@ pub struct AcpServerRequestResolution {
     pub followup: Option<Value>,
 }
 
-#[cfg(test)]
-pub(crate) struct DefaultFlattenHooks;
-
-#[cfg(test)]
-#[async_trait]
-impl AcpProviderHooks for DefaultFlattenHooks {
-    fn normalize_tool_name(&self, raw: &str) -> String {
-        raw.to_string()
-    }
-    fn normalize_tool_input(&self, _tool_name: &str, input: Value) -> Value {
-        input
-    }
-    fn mode_for_permission_mode(&self, _mode: RuntimePermissionMode) -> Option<String> {
-        None
-    }
-}
-
 #[async_trait]
 pub trait AcpProviderHooks: Send + Sync {
     /// Provider-specific authentication immediately after `initialize` and
@@ -406,28 +389,5 @@ fn unwrap_text_block(block: &Value) -> Option<&str> {
     match kind {
         "text" => block.get("text").and_then(Value::as_str),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{AcpProviderHooks, DefaultFlattenHooks};
-    use serde_json::{json, Value};
-
-    #[test]
-    fn default_flatten_tool_result_content_joins_text_blocks() {
-        let hooks = DefaultFlattenHooks;
-        let payload = hooks.flatten_tool_result_content(&[
-            json!({ "type": "text", "text": "first" }),
-            json!({ "type": "text", "text": "second" }),
-        ]);
-        assert_eq!(payload, Value::String("first\nsecond".to_string()));
-    }
-
-    #[test]
-    fn default_flatten_tool_result_content_preserves_structured_blocks() {
-        let hooks = DefaultFlattenHooks;
-        let blocks = vec![json!({ "type": "diff", "path": "a.rs" })];
-        assert_eq!(hooks.flatten_tool_result_content(&blocks), json!(blocks));
     }
 }

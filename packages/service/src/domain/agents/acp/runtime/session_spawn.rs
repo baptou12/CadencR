@@ -55,6 +55,15 @@ pub async fn spawn_acp_runtime_session(
         context_window,
         hooks,
     } = args;
+    // `session/new` carries the workspace root, and every ACP path also sets it
+    // as the child's working directory. An empty one would reach the agent as a
+    // relative cwd and fail deep inside the handshake, so refuse it here where
+    // all four ACP providers get the same stable error.
+    if config.cwd.as_os_str().is_empty() {
+        return Err(RuntimeError::new(
+            "an ACP session needs a workspace directory",
+        ));
+    }
     let client = AcpClient::spawn(
         AcpSpawnOptions::builder()
             .command(command)

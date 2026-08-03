@@ -79,3 +79,95 @@ pub fn parse_permission_options(raw: Option<&Value>) -> Option<Vec<RuntimePermis
         .collect::<Vec<_>>();
     (!parsed.is_empty()).then_some(parsed)
 }
+
+/// The single decoder for the envelope [`permission_raw_event`] wrote, with the
+/// one thing adapters legitimately differ on left open: what to do when the
+/// agent offered no options.
+///
+/// Keeping decode in one place means adding a field to [`permission_raw_event`]
+/// is a one-line change here rather than a hunt through every reader.
+/// `fallback_options` supplies provider-owned defaults (Cursor names its own
+/// allow/deny choices). Passing `None` rejects such an envelope instead of
+/// inventing choices — a generic ACP provider must never show the user options
+/// its agent did not offer.
+pub fn parse_acp_permission_request(
+    raw: &Value,
+    fallback_options: Option<Vec<RuntimePermissionOption>>,
+) -> Option<RuntimePermissionRequest> {
+    if raw.get("type").and_then(Value::as_str) != Some("acp_permission_request") {
+        return None;
+    }
+    let text = |key: &str| raw.get(key).and_then(Value::as_str).map(ToOwned::to_owned);
+    Some(RuntimePermissionRequest {
+        request_id: text("request_id")?,
+        tool_use_id: text("call_id"),
+        tool_name: text("tool_name")?,
+        tool_input: raw.get("tool_input").cloned().unwrap_or_else(|| json!({})),
+        description: text("description"),
+        pattern: None,
+        preview: text("preview"),
+        options: parse_permission_options(raw.get("options")).or(fallback_options)?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_acp_permission_request, permission_raw_event};
+    use crate::domain::agents::adapter::{
+        RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
+    };
+    use serde_json::json;
+
+    fn request() -> RuntimePermissionRequest {
+        RuntimePermissionRequest {
+            request_id: "req-1".to_string(),
+            tool_use_id: Some("call-1".to_string()),
+            tool_name: "Bash".to_string(),
+            tool_input: json!({ "command": "git status" }),
+            description: Some("Run git status".to_string()),
+            pattern: None,
+            preview: Some("git status".to_string()),
+            options: vec![RuntimePermissionOption {
+                decision: RuntimePermissionDecision::AllowOnce,
+                option_id: Some("allow".to_string()),
+                label: "Allow".to_string(),
+                description: "Approve once".to_string(),
+                collect_feedback: false,
+            }],
+        }
+    }
+
+    /// The envelope the runtime emits must survive a round trip, otherwise a
+    /// generic ACP provider's permission prompts would never reach the user.
+    #[test]
+    fn round_trips_the_runtime_permission_envelope() {
+        let raw = permission_raw_event(&request(), &json!({ "sessionId": "s-1" }));
+        let parsed = parse_acp_permission_request(&raw, None).expect("envelope should parse");
+        assert_eq!(parsed.request_id, "req-1");
+        assert_eq!(parsed.tool_use_id.as_deref(), Some("call-1"));
+        assert_eq!(parsed.tool_name, "Bash");
+        assert_eq!(parsed.tool_input, json!({ "command": "git status" }));
+        assert_eq!(parsed.preview.as_deref(), Some("git status"));
+        assert_eq!(parsed.options.len(), 1);
+        assert_eq!(parsed.options[0].option_id.as_deref(), Some("allow"));
+    }
+
+    #[test]
+    fn ignores_other_events_and_option_less_envelopes() {
+        assert!(parse_acp_permission_request(&json!({ "type": "other" }), None).is_none());
+        let option_less = json!({
+            "type": "acp_permission_request",
+            "request_id": "req-1",
+            "tool_name": "Bash",
+        });
+        assert!(parse_acp_permission_request(&option_less, None).is_none());
+        // A provider that names its own choices answers the same envelope.
+        assert_eq!(
+            parse_acp_permission_request(&option_less, Some(request().options))
+                .expect("fallback options make the envelope answerable")
+                .options
+                .len(),
+            1
+        );
+    }
+}

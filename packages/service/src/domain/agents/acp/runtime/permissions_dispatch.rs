@@ -205,8 +205,8 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{dispatch_permission_request_with_cache, PendingPermissions, SessionPermissions};
-    use crate::domain::agents::acp::runtime::provider_hooks::DefaultFlattenHooks;
     use crate::domain::agents::acp::runtime::session_permissions::PermissionKey;
+    use crate::domain::agents::acp::runtime::StandardAcpHooks;
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo, AcpEvent};
     use crate::domain::agents::adapter::{
         RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
@@ -294,7 +294,7 @@ mod tests {
 
         dispatch_permission_request_with_cache(
             &client,
-            &DefaultFlattenHooks,
+            &StandardAcpHooks,
             &pending,
             &session_permissions,
             Some("s-cache".to_string()),
@@ -340,7 +340,7 @@ mod tests {
 
         dispatch_permission_request_with_cache(
             &client,
-            &DefaultFlattenHooks,
+            &StandardAcpHooks,
             &pending,
             &session_permissions,
             Some("s-cache".to_string()),
@@ -375,7 +375,7 @@ mod tests {
 
         let error = dispatch_permission_request_with_cache(
             &client,
-            &DefaultFlattenHooks,
+            &StandardAcpHooks,
             &pending,
             &session_permissions,
             Some("s-closed".to_string()),

@@ -12,7 +12,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 
 use self::permissions::{
-    parse_permission_request as parse_acp_permission_request, permission_options,
+    parse_permission_request as parse_opencode_permission_request, permission_options,
 };
 use super::adapter::{
     static_config_paths, AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy,
@@ -57,7 +57,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
     }
 
     fn parse_permission_request(&self, raw: &Value) -> Option<RuntimePermissionRequest> {
-        parse_acp_permission_request(raw).map(|request| RuntimePermissionRequest {
+        parse_opencode_permission_request(raw).map(|request| RuntimePermissionRequest {
             request_id: request.request_id,
             tool_use_id: request.call_id,
             tool_name: request.tool_name,
