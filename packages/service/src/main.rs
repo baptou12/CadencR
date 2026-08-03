@@ -110,6 +110,11 @@ async fn main() -> anyhow::Result<()> {
             // CWD-relative `./cadencr-settings/settings.json`.
             let settings_dir = std::fs::canonicalize(&settings_dir).unwrap_or(settings_dir);
             domain::settings_store::init(settings_dir.clone());
+            // Bind the provider registry to that settings dir immediately: it
+            // scans `<settings-dir>/providers` exactly once, and a lazy first
+            // lookup before this point would cache an empty scan of the
+            // uninitialized fallback path for the life of the process.
+            domain::agents::providers::provider_registry();
             domain::settings_store::migrate::migrate_from_sqlite(&read_pool, &settings_dir).await;
             // Claude Code profiles moved out of SQLite into the nested `profiles`
             // section of settings.json — copy any legacy rows over, then drop the

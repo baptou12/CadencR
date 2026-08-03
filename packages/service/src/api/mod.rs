@@ -6,6 +6,7 @@ pub mod openapi;
 use crate::app_state::{AppState, BrowserBridgeConfig};
 use crate::domain::agents::claude_code::routes::claude_code_router;
 use crate::domain::agents::discovery::routes::discovery_router;
+use crate::domain::agents::providers::installed::routes::installed_providers_router;
 use crate::domain::agents::runtime::AgentCatalogResponse;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
@@ -118,6 +119,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(claude_code_router())
         .merge(custom_actions_router())
         .merge(discovery_router())
+        .merge(installed_providers_router())
         .merge(imports_router())
         .merge(lsp_router())
         .merge(usage_stats_router())

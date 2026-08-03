@@ -174,12 +174,16 @@ impl ProviderRegistry {
         }
     }
 
-    /// The registry as it exists today: built-in providers only.
-    pub fn with_builtins() -> Self {
+    /// The registry this process runs on: built-ins first, then every enabled
+    /// local ACP installation the startup scan validated.
+    ///
+    /// Order matters twice over. It is user-visible (the picker and the catalog
+    /// render it as-is), and registering built-ins first is what makes "a
+    /// descriptor cannot take a built-in's id" true by construction rather than
+    /// by a special case.
+    pub fn startup() -> Self {
         Self::from_providers(
-            BUILTIN_PROVIDERS
-                .iter()
-                .map(|(id, factory)| RegisteredProvider::new(*id, factory())),
+            builtin_registrations().chain(super::installed::installed_registrations()),
         )
     }
 
@@ -211,11 +215,23 @@ impl ProviderRegistry {
     }
 }
 
+/// Catalog ids compiled into this build, in registration order. Read by the
+/// descriptor loader so an installed entry cannot claim a built-in's id.
+pub fn builtin_provider_ids() -> Vec<&'static str> {
+    BUILTIN_PROVIDERS.iter().map(|(id, _)| *id).collect()
+}
+
+fn builtin_registrations() -> impl Iterator<Item = RegisteredProvider> {
+    BUILTIN_PROVIDERS
+        .iter()
+        .map(|(id, factory)| RegisteredProvider::new(*id, factory()))
+}
+
 /// The process-wide registry. Initialized on first use from the built-in
-/// factories; installed providers join here in a later increment.
+/// factories plus the startup descriptor scan.
 pub fn provider_registry() -> &'static ProviderRegistry {
     static REGISTRY: OnceLock<ProviderRegistry> = OnceLock::new();
-    REGISTRY.get_or_init(ProviderRegistry::with_builtins)
+    REGISTRY.get_or_init(ProviderRegistry::startup)
 }
 
 #[cfg(test)]
@@ -425,6 +441,83 @@ mod tests {
 
         assert!(registry.provider_ids().is_empty());
         assert!(registry.adapter("installed_example").is_none());
+    }
+
+    /// With nothing installed, the startup registry is exactly the built-in
+    /// one — the descriptor scan must not perturb the shipped catalog.
+    #[test]
+    fn startup_registry_equals_the_builtins_when_nothing_is_installed() {
+        assert!(super::super::installed::startup_load()
+            .registrable()
+            .next()
+            .is_none());
+        assert_eq!(
+            ProviderRegistry::startup().provider_ids(),
+            super::builtin_provider_ids()
+        );
+    }
+
+    /// Built-ins register first, so a descriptor claiming one of their ids
+    /// loses — the id keeps resolving to the built-in adapter, not to the
+    /// installed one that advertised the same catalog id.
+    #[test]
+    fn a_builtin_id_always_wins_over_a_later_registration() {
+        use crate::domain::agents::adapter::AgentRuntimeAdapter;
+        let impostor = crate::domain::agents::providers::installed::GenericAcpAdapter::new(
+            std::sync::Arc::new(installed_impostor()),
+        );
+        assert_eq!(impostor.catalog_entry().label, "Impostor");
+
+        let registry = ProviderRegistry::from_providers(super::builtin_registrations().chain([
+            RegisteredProvider::new("cursor", ProviderAdapterHandle::owned(impostor)),
+        ]));
+
+        assert_eq!(
+            registry.provider_ids(),
+            vec!["claude_code", "codex_cli", "cursor", "opencode"]
+        );
+        assert_eq!(
+            registry
+                .adapter("cursor")
+                .expect("cursor")
+                .catalog_entry()
+                .label,
+            crate::domain::agents::cursor::CursorAdapter
+                .catalog_entry()
+                .label,
+            "the built-in registration must keep ownership of its id"
+        );
+    }
+
+    /// An installed descriptor that claims `cursor`, built the way the loader
+    /// would build it.
+    #[cfg(test)]
+    fn installed_impostor(
+    ) -> crate::domain::agents::providers::installed::installation::HostInstallation {
+        let descriptor = serde_json::from_value(serde_json::json!({
+            "schema_version": 1,
+            "agent": {
+                "id": "cursor",
+                "name": "Impostor",
+                "version": "9.9.9",
+                "description": "claims a built-in id",
+            },
+            "installation": { "executable": { "command": "/nonexistent/cadencr/impostor" } },
+        }))
+        .expect("valid descriptor");
+        crate::domain::agents::providers::installed::installation::HostInstallation::from_descriptor(
+            descriptor,
+            std::path::Path::new("/p/cursor.json"),
+        )
+        .expect("valid installation")
+    }
+
+    #[test]
+    fn builtin_provider_ids_match_the_registered_order() {
+        assert_eq!(
+            super::builtin_provider_ids(),
+            vec!["claude_code", "codex_cli", "cursor", "opencode"]
+        );
     }
 
     #[test]

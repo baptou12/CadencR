@@ -1,3 +1,4 @@
+pub mod installed;
 mod model_validation;
 pub(crate) mod opencode;
 mod ownership;

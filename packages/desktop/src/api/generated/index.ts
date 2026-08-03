@@ -1498,6 +1498,62 @@ export interface ImportedRecord {
   source_session_id: string;
 }
 
+/**
+ * Stable SCREAMING_SNAKE code when the install cannot launch; `null` when
+it can. This is the only availability signal — the catalog's
+`unavailable` status is derived from the same fact.
+ */
+export type InstalledProviderEntryQuarantineCode = string | null;
+
+/**
+ * Why the install cannot launch, when it cannot.
+ */
+export type InstalledProviderEntryQuarantineMessage = string | null;
+
+export interface InstalledProviderEntry {
+  description: string;
+  enabled: boolean;
+  /** The resolved program. The argument vector is deliberately absent: an
+argument can carry a credential (`--token …`) and, unlike a fixed set of
+env names, there is no generic way to redact one safely. */
+  executable: string;
+  /** Catalog id, owned by the portable ACP registry entry. */
+  id: string;
+  name: string;
+  /** Stable SCREAMING_SNAKE code when the install cannot launch; `null` when
+it can. This is the only availability signal — the catalog's
+`unavailable` status is derived from the same fact. */
+  quarantine_code?: InstalledProviderEntryQuarantineCode;
+  /** Why the install cannot launch, when it cannot. */
+  quarantine_message?: InstalledProviderEntryQuarantineMessage;
+  /** Whether the provider actually joined the runtime registry this boot. */
+  registered: boolean;
+  source_path: string;
+  version: string;
+}
+
+/**
+ * The id the descriptor claimed, when it parsed far enough to claim one.
+ */
+export type InstalledProviderRejectionProviderId = string | null;
+
+export interface InstalledProviderRejection {
+  /** Stable SCREAMING_SNAKE code. */
+  code: string;
+  message: string;
+  /** The id the descriptor claimed, when it parsed far enough to claim one. */
+  provider_id?: InstalledProviderRejectionProviderId;
+  source_path: string;
+}
+
+export interface InstalledProvidersResponse {
+  /** Directory the descriptors were read from. Present even when empty so the
+user knows where to put one. */
+  directory: string;
+  installed: InstalledProviderEntry[];
+  rejected: InstalledProviderRejection[];
+}
+
 export interface IsEmptyResponse {
   empty: boolean;
 }
@@ -3980,6 +4036,58 @@ export function useBinaryDiscovery<
   query?: UseQueryOptions<Awaited<ReturnType<typeof binaryDiscovery>>, TError, TData>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getBinaryDiscoveryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const installedProviders = (signal?: AbortSignal) => {
+  return customInstance<InstalledProvidersResponse>({
+    url: `/api/agents/installed-providers`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getInstalledProvidersQueryKey = () => {
+  return [`/api/agents/installed-providers`] as const;
+};
+
+export const getInstalledProvidersQueryOptions = <
+  TData = Awaited<ReturnType<typeof installedProviders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof installedProviders>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getInstalledProvidersQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof installedProviders>>> = ({ signal }) =>
+    installedProviders(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof installedProviders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type InstalledProvidersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof installedProviders>>
+>;
+export type InstalledProvidersQueryError = ErrorType<unknown>;
+
+export function useInstalledProviders<
+  TData = Awaited<ReturnType<typeof installedProviders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof installedProviders>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getInstalledProvidersQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

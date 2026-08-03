@@ -6,6 +6,7 @@ use utoipa::OpenApi;
 use crate::app_state::AppState;
 use crate::domain::agents::claude_code::routes as claude_code_routes;
 use crate::domain::agents::discovery::routes as discovery_routes;
+use crate::domain::agents::providers::installed::routes as installed_provider_routes;
 use crate::domain::custom_actions::models as custom_actions_models;
 use crate::domain::custom_actions::routes as custom_actions_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
@@ -158,6 +159,7 @@ use crate::domain::ws_session::routes as ws_routes;
         terminal_routes::kill_terminal_sessions_handler,
         super::get_agent_catalog,
         discovery_routes::binary_discovery_handler,
+        installed_provider_routes::installed_providers_handler,
         claude_code_routes::list_profiles_handler,
         claude_code_routes::upsert_profile_handler,
         claude_code_routes::delete_profile_handler,
@@ -196,6 +198,9 @@ use crate::domain::ws_session::routes as ws_routes;
         discovery_routes::ProviderDiscovery,
         discovery_routes::DiscoveredCandidate,
         discovery_routes::DiscoveredSource,
+        installed_provider_routes::InstalledProvidersResponse,
+        installed_provider_routes::InstalledProviderEntry,
+        installed_provider_routes::InstalledProviderRejection,
         editor_routes::ReadFileResponse,
         editor_routes::WriteFileRequest,
         editor_routes::WriteFileResponse,
