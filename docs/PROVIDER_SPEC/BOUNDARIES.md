@@ -1,9 +1,9 @@
 # Cadencr Provider Boundary and Marketplace Migration Plan
 
-> - **Status:** Draft architecture decision and implementation backlog
-> - **Last reviewed:** 2026-08-02
+> - **Status:** Accepted direction; runtime registry and local ACP backend implemented, roadmap active
+> - **Last reviewed:** 2026-08-03
 > - **Scope:** Service, desktop, provider SDKs, CLI discovery, persistence, WebSocket APIs, and the provider marketplace
-> - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the shipped local-install format and its refusal codes
+> - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the implemented local-backend format and its refusal codes
 > - **Parent plan:** `docs/PLUGIN_STRATEGY.md` — this document is step 2 ("bring your own agent") of the four-step extensibility ladder; the ladder's marketplace phasing, signing, and renderer invariants govern here too
 
 ## Executive decision
@@ -298,12 +298,34 @@ The first shippable increment (ladder step 2, "bring your own agent") is:
 
 - the Phase 0 parity fixtures and provider-ID inventory covering every built-in
   registration, discovery, and spawn path touched by the slice;
-- Phase 1 — the runtime registry and generic ACP provider factory (**shipped**);
+- the Phase 1 backend slice — the runtime registry, startup descriptor loader,
+  and generic ACP provider factory (**implemented**);
 - the minimum of Phase 8 — checksum verification, executable-plus-argument
   launch, and quarantine of incompatible versions (**launch and quarantine
-  shipped**; checksums land with downloads, which the local-executable slice
+  implemented**; checksums land with downloads, which the local-executable slice
   does not perform);
-- the fake minimal ACP v1 executable test from Phase 9 (**shipped**).
+- the fake minimal ACP v1 executable test from Phase 9 (**implemented**).
+
+The local descriptor slice is a backend substrate, not yet the complete
+user-facing step 2b. The backend provides the first two closure items below; the third
+remains the next step:
+
+1. **Schema profiles are explicit (closed).** The local profile permits an
+   omitted `distribution`; `AcpAgentEntry::validate_registry_entry` requires and
+   validates the constraints represented by the pinned upstream v1 shape. URI formats, non-null typed
+   properties, nested `additionalProperties: false`, binary `minProperties`,
+   top-level lossless round-tripping, and a current upstream agent snapshot are
+   fixture-backed under `tests/fixtures/acp_registry/v1/`.
+2. **Host surfaces have automated coverage (closed).** The fake agent now
+   crosses authenticated `GET /api/agents/installed-providers` and the real
+   `/ws` session protocol over an ephemeral server. The test asserts a visible
+   rejection, a visible quarantined install, session initialization, streamed
+   text, completion, cancellation, and persisted runtime identity.
+3. **Capability-driven UX is still missing.** The startup catalog can expose the
+   provider identity and availability, but it has no provider-origin metadata or
+   source badge, and negotiated session configuration is not yet projected into
+   a generic desktop control surface. The desktop has no installed-provider
+   diagnostics or management screen.
 
 Phases 3, 4, and 6 (the canonical event model) are a separately tracked
 workstream with their own migration plan. Phase 2's v2 client is deferred until
@@ -352,18 +374,22 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       and registers each enabled entry through one `GenericAcpAdapter`.
 - [x] Validate agent entries against the current ACP Registry schema
       (`agent.schema.json`); the Cadencr registry itself is multi-content
-      (`docs/PLUGIN_STRATEGY.md` §7), so keep its envelope outside the portable
-      ACP agent payload and define a lossless import/export mapping. The host
-      envelope (`schema_version` + `installation`) wraps the portable entry
-      rather than extending it, and unknown registry fields round-trip through
-      `AcpAgentEntry::extra`.
+      (`docs/PLUGIN_STRATEGY.md` §7), so its envelope stays outside the portable
+      ACP agent payload. Local validation may omit `distribution`; strict
+      registry validation requires the constraints represented by the pinned v1
+      shape, including URI
+      formats, typed non-null properties, nested field refusal, binary target
+      cardinality, platform keys, and checksum syntax.
 - [x] Preserve registry fields rather than copying a subset into provider-specific
-      tables.
+      tables. Known fields retain their portable shapes and unknown root fields
+      round-trip through `AcpAgentEntry::extra`; the pinned `claude-acp` entry
+      and a future root field are fixture-backed lossless cases. Nested unknown
+      fields are rejected because the upstream schema explicitly forbids them.
 - [~] Store resolved distribution, version, arguments, environment references,
-      checksum, and install status as structured data. Identity, distribution,
-      resolved executable/arguments/env, enablement, and compatibility state are
-      structured on `HostInstallation`; checksums arrive with downloads
-      (Phase 8), and env is still literal rather than by reference.
+  checksum, and install status as structured data. Identity, distribution,
+  resolved executable/arguments/env, enablement, and compatibility state are
+  structured on `HostInstallation`; checksums arrive with downloads
+  (Phase 8), and env is still literal rather than by reference.
 - [ ] Generalize CLI discovery to owned runtime data; remove the four fixed path
       fields and per-SDK override installation.
 - [ ] Persist the user's default provider by catalog ID; do not compile a default
@@ -505,7 +531,11 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 
 ### Phase 8 — Add marketplace safety and conformance
 
-- [ ] Validate identity and distribution data before installation.
+- [x] Validate identity and distribution data before installation. The local
+      profile and strict ACP Registry profile share ids, versions, URI fields,
+      distribution shapes, platform keys, and checksum syntax; the strict
+      profile additionally requires `distribution` exactly as the pinned v1
+      schema does. Download and integrity policy remain separate items below.
 - [ ] Select only a distribution compatible with the current OS and architecture.
 - [ ] Verify declared checksums and record the exact installed artifact, under
       per-id versioned install directories following the LSP downloader
@@ -566,8 +596,13 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       `tests/installed_acp_provider_test.rs` (catalog placement after the
       built-ins, session creation, streamed prompt, cancellation, and a
       duplicate-id refusal). The full refusal and quarantine matrix is covered by
-      the unit tests in `providers/installed/`; the HTTP and WebSocket surfaces
-      are still only verified by hand.
+      the unit tests in `providers/installed/`.
+- [x] Drive the fake installed provider through the authenticated
+      `GET /api/agents/installed-providers` route and the real WebSocket session
+      protocol in automated integration tests, including a visible rejection
+      and quarantine response. The WebSocket assertion covers initialization,
+      streamed content, terminal completion, cancellation, and persisted
+      provider/runtime ids.
 - [ ] Add a rich ACP fixture to exercise permissions, plans, tools, diffs, MCP,
       usage/cost, configuration, commands, resume, and v2 lifecycle behavior.
 
@@ -620,11 +655,12 @@ on provider identity.
 
 The provider boundary is complete when all of the following are true:
 
-- [ ] A user can install a valid third-party ACP provider from registry or local
-      descriptor data without rebuilding Cadencr.
-- [ ] The provider appears, initializes, exposes its capabilities, starts a
-      session, streams a prompt, and cancels without any provider-specific source
-      change.
+- [~] A local descriptor can register a third-party ACP provider without
+  rebuilding Cadencr; registry installation and desktop management remain
+  open.
+- [~] The provider appears in the backend catalog, initializes, starts a session,
+  streams a prompt, and cancels without provider-specific source changes;
+  generic capability/configuration projection remains open.
 - [ ] ACP v1 remains the stable default and v2 can run side-by-side behind its
       explicit feature flag.
 - [ ] Claude Code and Codex retain the detailed behavior documented in their
