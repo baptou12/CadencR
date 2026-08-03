@@ -1,7 +1,7 @@
 # Built-in provider-ID leakage inventory (service)
 
 > - **Status:** Temporary inventory — deleted when the Phase 9 CI scanner replaces it
-> - **Last reviewed:** 2026-08-02
+> - **Last reviewed:** 2026-08-03
 > - **Scope of this file:** non-test Rust under `packages/service/src`
 > - **Parent:** `docs/PROVIDER_SPEC/BOUNDARIES.md` (Phase 0, "Define the allowed
 >   locations for built-in provider IDs and add a temporary inventory of existing
@@ -60,6 +60,10 @@ provider identity.
   (`mcp/tools/project_providers.rs`) follow the registry automatically.
 - `canonical_provider_id()` tests registry membership rather than the alias
   table for known ids.
+- Installed ACP providers join that same registry from
+  `providers/installed/`, which contains no built-in provider id outside its
+  `#[cfg(test)]` modules: identity comes from the descriptor, and the built-in
+  ids it must not collide with are read from `builtin_provider_ids()`.
 
 ## Not covered here
 

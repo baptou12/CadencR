@@ -3,6 +3,7 @@
 > - **Status:** Draft architecture decision and implementation backlog
 > - **Last reviewed:** 2026-08-02
 > - **Scope:** Service, desktop, provider SDKs, CLI discovery, persistence, WebSocket APIs, and the provider marketplace
+> - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the shipped local-install format and its refusal codes
 > - **Parent plan:** `docs/PLUGIN_STRATEGY.md` — this document is step 2 ("bring your own agent") of the four-step extensibility ladder; the ladder's marketplace phasing, signing, and renderer invariants govern here too
 
 ## Executive decision
@@ -256,7 +257,7 @@ all files in one change.
 
 | Area                                                                                             | Current coupling                                                                                                                                                                     | Required direction                                                                                                                           |
 | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/service/src/domain/agents/providers/registry.rs`                                       | **Partly resolved.** Runtime `ProviderRegistry` built from a `BUILTIN_PROVIDERS` factory table; the compile-time `ADAPTERS` list is gone                                             | Remaining: installed generic ACP descriptors join the same registry                                                                          |
+| `packages/service/src/domain/agents/providers/registry.rs`                                       | **Resolved.** `ProviderRegistry::startup()` is built from the `BUILTIN_PROVIDERS` factory table plus validated local ACP descriptors (`providers/installed/`)                        | Remaining work is distribution (downloads, checksums, signing), not registration                                                             |
 | `packages/service/src/domain/agents/acp/runtime/lifecycle.rs`                                    | Hard-coded ACP v1 initialization, client filesystem/terminal, load, and modes                                                                                                        | Version-selected v1/v2 lifecycle modules                                                                                                     |
 | `packages/service/src/domain/agents/acp/incoming.rs`                                             | Typed v1 requests (permission, fs; terminal deliberately raw); session-update notifications stay fully raw                                                                           | Versioned, typed codecs that preserve unknown fields                                                                                         |
 | `packages/service/src/domain/agents/acp/runtime/turn_lifecycle.rs`                               | Assumes a v1 prompt response completes a turn                                                                                                                                        | Lifecycle state machine selected by negotiated version                                                                                       |
@@ -297,10 +298,12 @@ The first shippable increment (ladder step 2, "bring your own agent") is:
 
 - the Phase 0 parity fixtures and provider-ID inventory covering every built-in
   registration, discovery, and spawn path touched by the slice;
-- Phase 1 — the runtime registry and generic ACP provider factory;
+- Phase 1 — the runtime registry and generic ACP provider factory (**shipped**);
 - the minimum of Phase 8 — checksum verification, executable-plus-argument
-  launch, and quarantine of incompatible versions;
-- the fake minimal ACP v1 executable test from Phase 9.
+  launch, and quarantine of incompatible versions (**launch and quarantine
+  shipped**; checksums land with downloads, which the local-executable slice
+  does not perform);
+- the fake minimal ACP v1 executable test from Phase 9 (**shipped**).
 
 Phases 3, 4, and 6 (the canonical event model) are a separately tracked
 workstream with their own migration plan. Phase 2's v2 client is deferred until
@@ -343,16 +346,24 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       consumed for installed providers. Stateless built-ins are already
       registry-owned (`ProviderAdapterHandle::owned`); Claude Code stays a shared
       `static` because its probe caches live inside the adapter value.
-- [ ] Add a generic ACP provider factory created from a validated installation
+- [x] Add a generic ACP provider factory created from a validated installation
       record; adding one must require no Rust or TypeScript source change.
-- [ ] Validate agent entries against the current ACP Registry schema
+      `providers/installed/` loads `<settings-dir>/providers/*.json` at startup
+      and registers each enabled entry through one `GenericAcpAdapter`.
+- [x] Validate agent entries against the current ACP Registry schema
       (`agent.schema.json`); the Cadencr registry itself is multi-content
       (`docs/PLUGIN_STRATEGY.md` §7), so keep its envelope outside the portable
-      ACP agent payload and define a lossless import/export mapping.
-- [ ] Preserve registry fields rather than copying a subset into provider-specific
+      ACP agent payload and define a lossless import/export mapping. The host
+      envelope (`schema_version` + `installation`) wraps the portable entry
+      rather than extending it, and unknown registry fields round-trip through
+      `AcpAgentEntry::extra`.
+- [x] Preserve registry fields rather than copying a subset into provider-specific
       tables.
-- [ ] Store resolved distribution, version, arguments, environment references,
-      checksum, and install status as structured data.
+- [~] Store resolved distribution, version, arguments, environment references,
+      checksum, and install status as structured data. Identity, distribution,
+      resolved executable/arguments/env, enablement, and compatibility state are
+      structured on `HostInstallation`; checksums arrive with downloads
+      (Phase 8), and env is still literal rather than by reference.
 - [ ] Generalize CLI discovery to owned runtime data; remove the four fixed path
       fields and per-SDK override installation.
 - [ ] Persist the user's default provider by catalog ID; do not compile a default
@@ -362,8 +373,10 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       `.claude/rules/provider-boundaries.md` when the registry becomes runtime
       data; regenerate the mirror with `pnpm build:agents-md`. The rule's stale
       adapter path was corrected at the same time.
-- [ ] Keep registry metadata, local executable overrides, and ACP capabilities as
-      three distinct sources of truth.
+- [x] Keep registry metadata, local executable overrides, and ACP capabilities as
+      three distinct sources of truth — `descriptor.rs`, `installation.rs`, and
+      the negotiated session in `acp/runtime/` respectively. A descriptor cannot
+      declare models, modes, permissions, or auth.
 
 ### Phase 2 — Implement versioned ACP clients
 
@@ -510,16 +523,24 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       a security permission manifest.
 - [ ] Sign the registry index and ship a launch-fetched blocklist kill-switch
       before third-party content ships (`docs/PLUGIN_STRATEGY.md` §7, M1–M2).
-- [ ] Launch executable plus argument arrays directly; never interpolate a shell
-      command from marketplace data.
+- [x] Launch executable plus argument arrays directly; never interpolate a shell
+      command from marketplace data. `GenericAcpAdapter::spawn` execs the
+      resolved absolute path with its argument vector; relative commands are
+      refused rather than resolved through `PATH`. This is a deliberate
+      divergence from the built-in ACP adapters' `login_shell_exec_command`,
+      documented at the call site so it is not "fixed" back.
 - [ ] Store secrets by reference, redact them from logs, and show environment and
       filesystem implications before first launch.
 - [ ] Apply process resource, lifecycle, and working-directory policy independently
       of ACP capabilities.
 - [ ] Run a bounded conformance probe: launch, initialize, capabilities, create a
       disposable session if permitted, cancel, and clean shutdown.
-- [ ] Quarantine or clearly mark incompatible versions instead of crashing the
-      provider catalog.
+- [x] Quarantine or clearly mark incompatible versions instead of crashing the
+      provider catalog. A valid descriptor whose executable is missing, is not
+      executable, or targets another platform stays registered and renders
+      unavailable with its reason; a descriptor whose identity or schema cannot
+      be trusted is refused outright. Both carry a stable SCREAMING_SNAKE code
+      and are reported at `GET /api/agents/installed-providers`.
 - [ ] Preserve local transcripts and installation history on disable or uninstall.
 - [ ] Distinguish ACP conformance from trust, publisher verification, and sandbox
       policy; protocol compliance is not a security endorsement.
@@ -539,8 +560,14 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       variants, `_meta`, tri-state patches, cancellation races, and process exits.
 - [ ] Run Claude Code and Codex golden parity suites before removing any legacy
       path.
-- [ ] Add a fake minimal ACP v1 executable in integration tests and prove it can be
-      installed and used without changing a provider list.
+- [x] Add a fake minimal ACP v1 executable in integration tests and prove it can be
+      installed and used without changing a provider list —
+      `packages/service/tests/fixtures/fake_acp_agent.py` plus
+      `tests/installed_acp_provider_test.rs` (catalog placement after the
+      built-ins, session creation, streamed prompt, cancellation, and a
+      duplicate-id refusal). The full refusal and quarantine matrix is covered by
+      the unit tests in `providers/installed/`; the HTTP and WebSocket surfaces
+      are still only verified by hand.
 - [ ] Add a rich ACP fixture to exercise permissions, plans, tools, diffs, MCP,
       usage/cost, configuration, commands, resume, and v2 lifecycle behavior.
 

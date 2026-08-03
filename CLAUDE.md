@@ -37,6 +37,8 @@ Frontend path alias: `@` → `packages/desktop/src/`. Frontend ↔ backend is HT
 
 **Adding a built-in provider is one registry edit.** `BUILTIN_PROVIDERS` in `packages/service/src/domain/agents/providers/registry.rs` — an ordered factory table; registration order is user-visible. Lookups go through `provider_registry()` / `runtime_adapter()`, which return a `ProviderAdapterHandle` (owned, `'static`, `Deref`s to the trait). SDK crates carry transport only; provider-specific behavior belongs in that provider's adapter directory (`agents/<provider>/`).
 
+**Adding an ACP provider is no code edit at all.** `ProviderRegistry::startup()` appends every enabled descriptor under `<settings-dir>/providers/*.json` (`agents/providers/installed/`), each backed by the one `GenericAcpAdapter`. Descriptors are read once at startup and must name a local executable — no downloads, no reload. A descriptor may not declare models, modes, permissions, or auth: those are negotiated over ACP. Built-ins register first, so a descriptor can never take their ids; refusals surface with a stable code at `GET /api/agents/installed-providers`.
+
 **Check `packages/service/src/shared/` first** (`git_cli`, `worktree_paths`, `slug`, `db`, `env`) before writing a backend helper.
 
 **Generated files are never hand-edited:** `packages/desktop/src/routes/routeTree.gen.ts` (TanStack Router) and `packages/desktop/src/api/generated/index.ts` (orval — committed). `packages/service/openapi.json` is derived and gitignored.
@@ -73,6 +75,6 @@ Use the `qa` skill to drive the UI, and `finish-job` to simplify, check coverage
 ## Going deeper
 
 - `DESIGN.md` — source of truth for desktop visual design (tokens, themes, typography, component anatomy). Read before user-facing visual work.
-- `docs/REWIND_AND_FORK.md`, `docs/PROVIDER_SPEC/` — subsystem specs. `CONTRIBUTING.md` — contribution workflow.
+- `docs/REWIND_AND_FORK.md`, `docs/PROVIDER_SPEC/` — subsystem specs (`INSTALLED_ACP_PROVIDERS.md` is the local ACP descriptor format). `CONTRIBUTING.md` — contribution workflow.
 - Skills: `db`, `qa`, `release`, `migration-safety`, `keyboard-shortcuts`, `finish-job`.
 - `.claude/rules/*.md` — path-scoped rules that load automatically when you touch matching files.
