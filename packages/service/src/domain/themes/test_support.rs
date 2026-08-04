@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use super::chrome::ThemeChrome;
 use super::models::{ThemeAppearance, ThemeDocument, XtermPalette};
 
 pub fn dracula_css_vars() -> BTreeMap<String, String> {
@@ -151,9 +152,11 @@ pub fn dracula_xterm() -> XtermPalette {
 
 pub fn valid_document() -> ThemeDocument {
     ThemeDocument {
+        schema: None,
         label: "My Dracula".to_string(),
         appearance: ThemeAppearance::Dark,
         css_vars: dracula_css_vars(),
         xterm: dracula_xterm(),
+        chrome: ThemeChrome::default(),
     }
 }

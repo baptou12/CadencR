@@ -15,6 +15,7 @@
  * the editor follows `data-theme` on the document automatically.
  */
 
+import type { ThemeChrome } from "./chrome";
 import type { ThemeCssVars } from "./tokens";
 
 /** Built-in themes shipped with the app. User themes carry a `user:` id. */
@@ -108,6 +109,19 @@ export interface ThemeDefinition {
    * Every user theme sets this; first-party themes are being ported over.
    */
   cssVars?: ThemeCssVars;
+  /**
+   * Chassis, tabs and background texture — the shape of the theme rather than
+   * its palette (see `chrome.ts`). Absent means the plain default every theme
+   * but the CadencR and Frost pairs has always had; read it through
+   * `chromeOf()` rather than dereferencing it.
+   */
+  chrome?: ThemeChrome;
+  /**
+   * Texture asset file name → `data:` URL, as read from the theme's own folder
+   * by the backend. Only user themes have any; a `chrome.texture.image` whose
+   * file is missing never gets this far, because that is a validation failure.
+   */
+  assets?: Record<string, string>;
   /** Used by the settings picker to render a small swatch preview. */
   swatch: {
     background: string;

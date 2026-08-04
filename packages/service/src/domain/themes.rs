@@ -14,10 +14,15 @@
 //! The renderer never touches the filesystem for these — it may be talking to a
 //! remote backend — so everything goes through `routes`.
 
+pub mod assets;
+pub mod check;
+pub mod chrome;
 pub mod color;
 pub mod models;
 pub mod paths;
 pub mod routes;
+pub mod scaffold;
+pub mod schema;
 pub mod store;
 pub mod tokens;
 pub mod validate;

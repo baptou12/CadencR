@@ -1,6 +1,6 @@
 //! Where user themes live on disk, and what an id is allowed to be.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 use crate::shared::slug::slugify;
@@ -18,11 +18,6 @@ pub fn themes_dir() -> PathBuf {
     crate::domain::settings_store::dir::sibling_dir("plugins").join("themes")
 }
 
-/// `~/.cadencr/plugins/themes/<id>/theme.json`.
-pub fn theme_file(id: &str) -> Result<PathBuf, AppError> {
-    Ok(theme_dir(id)?.join(THEME_FILE_NAME))
-}
-
 pub fn theme_dir(id: &str) -> Result<PathBuf, AppError> {
     if !is_valid_id(id) {
         return Err(AppError::BadRequest(format!(
@@ -30,6 +25,18 @@ pub fn theme_dir(id: &str) -> Result<PathBuf, AppError> {
         )));
     }
     Ok(themes_dir().join(id))
+}
+
+/// The id a theme folder carries: its directory name, which is what
+/// [`theme_dir`] joined to produce it.
+///
+/// Empty for a path that has no final component, which no theme directory does
+/// — but the callers all need a `&str` for a message or a response field, not a
+/// reason to fail.
+pub fn id_of(dir: &Path) -> &str {
+    dir.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
 }
 
 /// A theme id is a lowercase slug — exactly what `shared::slug::slugify`

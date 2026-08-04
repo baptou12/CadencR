@@ -10,8 +10,9 @@ import {
 import { apiErrorMessage } from "@/lib/api-errors";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { downloadJsonFile } from "@/lib/download";
-import type { ThemeDefinition } from "@/lib/themes";
-import { readThemeCssVars, userThemeLabel } from "@/lib/themes/user-theme";
+import { type ThemeDefinition } from "@/lib/themes";
+import { chromeOf } from "@/lib/themes/chrome";
+import { readThemeCssVars, userThemeLabel, userThemeSlug } from "@/lib/themes/user-theme";
 import { useReleaseTheme } from "./useReleaseTheme";
 
 interface ThemeLibraryActions {
@@ -74,6 +75,14 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
             appearance: source.appearance,
             cssVars,
             xterm: source.xterm,
+            // The shape of the theme, not just its colors: without this a copy
+            // of CadencR Dark loses the rail and its segmented tabs, and a copy
+            // of Frost loses the field drifting behind the app.
+            chrome: chromeOf(source),
+            // A texture's image lives in the source theme's folder, so the file
+            // has to be copied alongside the document that names it. Built-ins
+            // have no folder — and no image — so this is only ever a user theme.
+            copyAssetsFrom: userThemeSlug(source.id),
           },
         },
         {

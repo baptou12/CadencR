@@ -1,13 +1,17 @@
 //! The validation gate every theme passes before it can be applied.
 //!
-//! Three checks, in order:
-//! 1. **Schema** — the document parses, and `cssVars` holds exactly the known
-//!    token keys (no unknown keys, none missing).
+//! Four checks, in order:
+//! 1. **Schema** — the document parses, and `cssVars` holds known token keys:
+//!    every required one, no unknown ones, and any of the optional chrome
+//!    tokens the theme chose to color.
 //! 2. **Colors** — every value resolves to a CSS color. Single-level
 //!    `var(--other-token)` references are resolved first, because that is how
 //!    the first-party themes are authored (`--editor-fg: var(--code-fg)`) and a
 //!    duplicate should stay editable in the same idiom.
 //! 3. **Contrast** — key foreground/background pairs clear WCAG AA.
+//! 4. **Chrome** — the chassis/tabs/texture vocabulary in `chrome.rs`: known
+//!    enum values, colors that parse, numbers in range, a texture asset that
+//!    names a file in the theme's own folder.
 //!
 //! A theme that fails any of them is listed in the gallery with its issues and
 //! never registered, so a bad file can't leave the UI unpainted.
@@ -16,12 +20,12 @@ use std::collections::BTreeMap;
 
 use super::color::{contrast_ratio, parse_color, LinearRgba};
 use super::models::{ThemeDocument, ThemeIssue};
-use super::tokens::{is_required_token, CONTRAST_PAIRS, REQUIRED_TOKENS};
+use super::tokens::{is_known_token, CONTRAST_PAIRS, REQUIRED_TOKENS};
 
 /// Values longer than this are not colors; the cap also bounds what the
 /// renderer ever injects into a stylesheet.
-const MAX_VALUE_LEN: usize = 256;
-const MAX_LABEL_LEN: usize = 64;
+pub const MAX_VALUE_LEN: usize = 256;
+pub const MAX_LABEL_LEN: usize = 64;
 
 pub fn validate(document: &ThemeDocument) -> Vec<ThemeIssue> {
     let mut issues = validate_label(document);
@@ -29,6 +33,7 @@ pub fn validate(document: &ThemeDocument) -> Vec<ThemeIssue> {
     let resolved = resolve_and_parse(&document.css_vars, &mut issues);
     issues.extend(validate_contrast(&resolved));
     issues.extend(validate_xterm(document));
+    issues.extend(super::chrome::validate(&document.chrome));
     issues
 }
 
@@ -48,7 +53,7 @@ fn validate_label(document: &ThemeDocument) -> Vec<ThemeIssue> {
 fn validate_keys(css_vars: &BTreeMap<String, String>) -> Vec<ThemeIssue> {
     let mut issues = Vec::new();
     for key in css_vars.keys() {
-        if !is_required_token(key.as_str()) {
+        if !is_known_token(key.as_str()) {
             issues.push(ThemeIssue::new(
                 key,
                 "unknown design token — a theme may only set the documented tokens",
@@ -74,7 +79,7 @@ fn resolve_and_parse(
 ) -> BTreeMap<String, LinearRgba> {
     let mut resolved = BTreeMap::new();
     for (key, raw) in css_vars {
-        if !is_required_token(key.as_str()) {
+        if !is_known_token(key.as_str()) {
             continue;
         }
         if raw.len() > MAX_VALUE_LEN {
@@ -106,7 +111,7 @@ fn resolve_value(css_vars: &BTreeMap<String, String>, raw: &str) -> Result<Strin
         let Some(target) = var_reference(&value) else {
             return Ok(value);
         };
-        if !is_required_token(target.as_str()) {
+        if !is_known_token(target.as_str()) {
             return Err(format!("`var({target})` is not a known design token"));
         }
         let Some(next) = css_vars.get(&target) else {
@@ -225,6 +230,48 @@ mod tests {
         let messages = messages(&document);
         assert!(messages.iter().any(|m| m.contains("--evil: unknown")));
         assert!(messages.iter().any(|m| m.contains("--ring: missing")));
+    }
+
+    /// The chrome tokens a theme may set but needn't: present, they are held to
+    /// the same standard as any other color; absent, the theme is still valid.
+    #[test]
+    fn accepts_the_optional_chrome_tokens_without_requiring_them() {
+        use crate::domain::themes::tokens::OPTIONAL_TOKENS;
+
+        assert_eq!(validate(&valid_document()).len(), 0);
+
+        let mut document = valid_document();
+        for token in OPTIONAL_TOKENS {
+            document
+                .css_vars
+                .insert((*token).into(), "oklch(0.3 0.01 260)".into());
+        }
+        assert_eq!(messages(&document), Vec::<String>::new());
+
+        document
+            .css_vars
+            .insert("--tab-track-bg".into(), "not-a-color".into());
+        assert!(
+            messages(&document)
+                .iter()
+                .any(|m| m.starts_with("--tab-track-bg")),
+            "{:?}",
+            messages(&document)
+        );
+    }
+
+    /// The shadows the chrome layer also reads are `box-shadow` values, not
+    /// colors, so they stay out of the vocabulary rather than being accepted
+    /// and then failing to parse.
+    #[test]
+    fn still_rejects_the_chrome_tokens_that_are_not_colors() {
+        let mut document = valid_document();
+        document
+            .css_vars
+            .insert("--tab-active-shadow".into(), "0 1px 2px #000".into());
+        assert!(messages(&document)
+            .iter()
+            .any(|m| m.contains("--tab-active-shadow: unknown")));
     }
 
     #[test]

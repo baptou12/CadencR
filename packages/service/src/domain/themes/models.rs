@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::chrome::ThemeChrome;
+
 /// Light/dark classification. Drives `color-scheme`, the logo variant and the
 /// editor's built-in fallback styling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -50,12 +52,23 @@ pub struct XtermPalette {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeDocument {
+    /// Points at the JSON Schema Cadencr keeps beside this file, so an editor
+    /// completes and checks the document as it is typed (see `schema.rs`).
+    /// Optional and round-tripped rather than required: a theme written before
+    /// this existed, or one whose author deleted the line, is still a theme.
+    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
     pub label: String,
     pub appearance: ThemeAppearance,
     /// `--token` → CSS color value. Ordered so a round-trip through the editor
     /// doesn't reshuffle the file.
     pub css_vars: BTreeMap<String, String>,
     pub xterm: XtermPalette,
+    /// Chassis, tabs and background texture (see `chrome.rs`). Defaulted, so a
+    /// theme file written before chrome existed still parses — it simply gets
+    /// the plain chrome every non-CadencR, non-Frost theme already had.
+    #[serde(default)]
+    pub chrome: ThemeChrome,
 }
 
 /// Why a theme can't be applied. Every issue is surfaced in the gallery; a
@@ -111,6 +124,12 @@ pub struct UserTheme {
     /// issues shown, but it is never applied.
     pub theme: Option<ThemeDocument>,
     pub issues: Vec<ThemeIssue>,
+    /// Asset file name → `data:` URL, for the files the theme's chrome
+    /// references. Inlined rather than served from a URL: the renderer may be
+    /// talking to a remote backend, its CSP allows `data:` images, and a
+    /// stylesheet `url()` can't carry the API token anyway. Empty for the
+    /// themes — nearly all of them — that reference no asset.
+    pub assets: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -121,6 +140,13 @@ pub struct CreateThemeRequest {
     pub appearance: ThemeAppearance,
     pub css_vars: BTreeMap<String, String>,
     pub xterm: XtermPalette,
+    #[serde(default)]
+    pub chrome: ThemeChrome,
+    /// Id of the user theme being duplicated, when there is one. Its asset
+    /// files are copied into the new theme's folder — a texture the user can
+    /// see is part of what they picked, so it has to come along.
+    #[serde(default)]
+    pub copy_assets_from: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

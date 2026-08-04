@@ -1,0 +1,307 @@
+/* -------------------------------------------------------------------------
+ * Theme chrome — the shape of a theme, as opposed to its palette.
+ *
+ * Three traits a theme declares as data (`chrome` in `theme.json`, or
+ * `ThemeDefinition.chrome` for a built-in) and `applyThemeToDocument` publishes
+ * on <html>:
+ *
+ *   data-chassis="rail"      the page tucks into the sidebar rail
+ *   data-tabs="segmented"    pane tabs are a segmented control, not an underline
+ *   data-texture-base        the texture owns the backdrop root (see below)
+ *
+ * The texture's own layers are elements rendered by <AmbientBackground/>, not
+ * rules here — only their stacking, drift and pause behavior lives in this file.
+ *
+ * Every rule below keys off those attributes and NEVER off a theme id. That is
+ * the whole point: these looks used to be hardcoded against `cadencr-*` and
+ * `frost-*`, so a theme duplicated from one of them arrived with the colors and
+ * none of the shape. Any theme can now ask for any of it.
+ *
+ * The CadencR pair's *material* — pane elevation, lamplight, machined wells,
+ * prompt chrome — stays in `theme-cadencr-material.css`: it depends on tokens
+ * only those themes declare, and it is a look rather than a structural choice.
+ * ------------------------------------------------------------------------- */
+
+/* ── Chassis: rail ───────────────────────────────────────────────────────
+ * The feature view and the unified-agents page read as a machined instrument
+ * case: the sidebar and the page header share one continuous rail-colored
+ * chassis (same surface, no separating hairline), and the content below the
+ * header tucks into it as a raised "page" whose rounded top-left corner is
+ * the visible connection between the two headers. Scoped to full-page chrome
+ * (`data-feature-chrome="standard"`), never the embedded unified-grid cards.
+ *
+ * `--pane-border` is an optional theme token: a theme that opts into the rail
+ * may color its page edge, and one that stays quiet falls back to `--border`.
+ * `--page-shadow` is not — it holds a `box-shadow` value rather than a color,
+ * and a theme's vocabulary is colors, so it stays Cadencr's.
+ *
+ * DESKTOP ONLY. The whole conceit is "the page tucks into the sidebar rail",
+ * so it needs a sidebar beside it. On phones (`AppShell`'s mobile branch) the
+ * sidebar is an off-canvas drawer and the page is full-bleed, so the rail-
+ * colored band has nothing to join: it renders as a detached strip above a
+ * bordered, shadowed card — i.e. a second header stacked under the real one.
+ * The breakpoint matches `useIsMobile` (max-width: 767px), which is what
+ * flips `AppShell` to the drawer layout. Below it these rules simply don't
+ * apply and the components' own Tailwind classes stand, so a rail theme gets
+ * the same flat mobile chrome as every other one. */
+@media (min-width: 768px) {
+  :root[data-chassis="rail"] [data-feature-chrome="standard"] {
+    background-color: var(--sidebar);
+  }
+  :root[data-chassis="rail"] [data-feature-chrome="standard"] [data-worktree-setup] {
+    background-color: transparent;
+  }
+  :root[data-chassis="rail"] [data-feature-chrome="standard"] [data-feature-layout-shell] {
+    background-color: var(--background);
+    border-top: 1px solid var(--pane-border, var(--border));
+    border-left: 1px solid var(--pane-border, var(--border));
+    border-top-left-radius: 14px;
+    box-shadow: var(--page-shadow, none);
+    transition: border-top-left-radius 220ms var(--ease-fluid);
+  }
+
+  /* Once the sidebar is gone, the page reaches the window edge and should no
+   * longer expose a chassis-colored wedge. The global animation kill-switch
+   * makes this radius change instant when fluid animations are disabled. */
+  :root[data-chassis="rail"][data-sidebar-collapsed="true"]
+    [data-feature-chrome="standard"]
+    [data-feature-layout-shell] {
+    border-top-left-radius: 0;
+  }
+
+  /* The feature page header matches the sidebar header band: same height (the
+   * `data-mac-controls` variant mirrors SidebarHeader's taller macOS layout),
+   * while its content stays centered across the full band. Unified agents opts
+   * out — its filter bar wraps and needs bottom breathing room (rule below). */
+  :root[data-chassis="rail"] [data-feature-header]:not([data-unified-agents-header]) {
+    min-height: 4rem;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  :root[data-chassis="rail"]
+    [data-feature-header][data-mac-controls]:not([data-unified-agents-header]) {
+    min-height: 4.5rem;
+    padding-top: 0;
+  }
+
+  /* Unified agents shares the chassis color but keeps vertical padding so the
+   * filter field (which can wrap to multiple chip lines) doesn't kiss the page
+   * card. Mac builds keep the traffic-light clearance on top. */
+  :root[data-chassis="rail"] [data-feature-header][data-unified-agents-header] {
+    min-height: 4rem;
+    padding-top: 0.75rem;
+    padding-bottom: 0.875rem;
+    background-color: transparent;
+    border-bottom-color: transparent;
+  }
+  :root[data-chassis="rail"] [data-feature-header][data-unified-agents-header][data-mac-controls] {
+    min-height: 0;
+    padding-top: 2.25rem;
+    padding-bottom: 0.875rem;
+  }
+
+  /* Collapsed sidebar: chrome is a short strip under the traffic lights — don't
+   * force the open-sidebar 4.5rem band (that left empty space under the lockup).
+   * Vertical padding stays on the header components (`pt-1.5 pb-1.5`). */
+  :root[data-chassis="rail"][data-sidebar-collapsed="true"]
+    [data-feature-header][data-mac-controls] {
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  /* Seamless chassis: the sidebar's own hairline would cut the shared band in
+   * two. The page card's left border takes over as the content boundary. On
+   * mobile the sidebar is a drawer floating over the content, so it keeps its
+   * own hairline to separate itself from what's underneath. */
+  :root[data-chassis="rail"] [data-app-sidebar] {
+    border-right-color: transparent;
+  }
+
+  /* Collapse the app-shell sidebar↔main resize handle to zero layout width so
+   * it doesn't paint a 1px seam through the shared header band. Hit-testing
+   * stays via the handle's ::after (see ui/resizable.tsx). Nested feature-split
+   * handles are untouched — only `[data-app-shell-handle]` matches. */
+  :root[data-chassis="rail"] [data-slot="resizable-handle"][data-app-shell-handle] {
+    width: 0;
+  }
+}
+
+/* ── Tabs: segmented ─────────────────────────────────────────────────────
+ * Full segmented control — same vocabulary as GitTabToggle. The strip drops
+ * the underline hairline-as-indicator; tabs sit in a left-aligned recessed
+ * track; the active segment is a solid raised pill. The primary color marks
+ * only the focused pane's active icon. Unfocused panes keep a solid active
+ * pill (no ghost wash) so the selection stays readable.
+ *
+ * The `--tab-track-*` and `--tab-active-bg` tokens are optional theme tokens: a
+ * theme that asks for segmented tabs may color them, and one that doesn't gets
+ * the fallbacks below, which derive the same relationship from tokens every
+ * theme has. Change the fallbacks and you change every quiet theme at once —
+ * to recolor one theme, set the tokens in its `theme.json`.
+ *
+ * The two surfaces are mixed from `--foreground` into `--background` rather
+ * than taken from `--muted` and `--card`, which are the obvious choices and the
+ * wrong ones: they are the SAME color in the CadencR pair (#1a1b1d both), so a
+ * theme duplicated from it would draw its selected pill invisibly against its
+ * own track. Mixing guarantees the two are a fixed distance apart in any
+ * palette, and works in either direction — `--foreground` is by definition the
+ * high-contrast opposite of `--background`. The 4% / 16% gap also clears the 6%
+ * hover wash below, so hovering an inactive tab never reads as selecting it. */
+:root[data-tabs="segmented"] [data-pane-tab-strip] {
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom-color: var(--pane-border, var(--border));
+  min-height: 0;
+}
+:root[data-tabs="segmented"] [data-pane-tab-strip] [data-slot="tabs"] {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+}
+:root[data-tabs="segmented"] [data-pane-tab-strip] [data-slot="tabs-list"] {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--tab-track-border, var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  background-color: var(
+    --tab-track-bg,
+    color-mix(in srgb, var(--foreground) 4%, var(--background))
+  );
+  color: var(--muted-foreground);
+}
+:root[data-tabs="segmented"] [data-pane-tab-strip] [data-slot="tabs-trigger"] {
+  margin: 0;
+  height: auto;
+  min-height: 0;
+  padding: 5px 10px;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+/* Reserve end space for the absolute dock-close control on floating panes. */
+:root[data-tabs="segmented"]
+  [data-pane-frame="floating"]
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"] {
+  padding-inline-end: 2rem;
+}
+:root[data-tabs="segmented"] [data-pane-tab-strip] [data-slot="tabs-trigger"]::after {
+  content: none;
+}
+:root[data-tabs="segmented"]
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"]:not([data-state="active"]):hover {
+  color: var(--foreground);
+  background-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+:root[data-tabs="segmented"] [data-pane-tab-strip] [data-slot="tabs-trigger"][data-state="active"] {
+  background-color: var(
+    --tab-active-bg,
+    color-mix(in srgb, var(--foreground) 16%, var(--background))
+  );
+  color: var(--foreground);
+  box-shadow: var(--tab-active-shadow, none);
+}
+:root[data-tabs="segmented"]
+  [data-pane-id][data-pane-focused="true"]
+  [data-pane-tab-strip]
+  [data-slot="tabs-trigger"][data-state="active"]
+  svg {
+  color: var(--primary);
+}
+
+/* ── Texture ─────────────────────────────────────────────────────────────
+ * The layers <AmbientBackground/> renders when the theme declares one. Their
+ * colors, strengths, blends and geometry all arrive as inline styles from the
+ * theme's data; what lives here is only the stacking, the drift paths and the
+ * pause rules — the parts that are the same whatever the theme asked for.
+ *
+ * Opaque backdrop root: a *partial*-alpha `body` background silently disables
+ * every `backdrop-filter` beneath it (a translucent backdrop root has nothing
+ * to blur). So `:root` takes the texture's opaque base — it paints behind the
+ * ambient layer and is never itself visible — and `body` goes fully
+ * transparent. The page tint a translucent body used to cast is the veil
+ * layer instead.
+ *
+ * Gated on `data-texture-base`, NOT on `data-texture`: a texture may be halos
+ * or an image with no base at all, and then there is no opaque color to hand
+ * the backdrop root. Taking `body`'s background away anyway would leave the
+ * canvas painting the browser default white behind the whole app. */
+:root[data-texture-base] {
+  background-color: var(--ambient-base);
+}
+:root[data-texture-base] body {
+  background-color: transparent;
+}
+
+.ambient,
+.texture-image,
+.grain,
+.ambient-veil {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.ambient {
+  overflow: hidden;
+}
+.ambient-veil {
+  background-color: var(--background);
+}
+.halo {
+  position: absolute;
+  border-radius: 50%;
+  animation-timing-function: steps(120, jump-none);
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+/* Each halo drifts via `steps(120, …)` rather than smooth easing: the motion is
+ * a 28–42s crawl, so 120 discrete steps over the duration (~3-4fps) is visually
+ * identical to per-vsync easing but caps composited frames at a few per second
+ * instead of the display's full refresh rate — the actual battery cost. */
+@keyframes cadencr-drift-1 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(8vw, 6vh) scale(1.1);
+  }
+}
+@keyframes cadencr-drift-2 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-6vw, 10vh) scale(0.95);
+  }
+}
+@keyframes cadencr-drift-3 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(10vw, -8vh) scale(1.08);
+  }
+}
+
+/* Freeze the drift when the window is hidden or unfocused
+ * (`data-ambient-paused` is toggled by <AmbientBackground/>). The drift runs at
+ * the display refresh rate, so without this a backgrounded or off-screen window
+ * keeps the GPU compositing a fresh frame every vsync for motion no one can see. */
+:root[data-ambient-paused] .halo {
+  animation-play-state: paused;
+}

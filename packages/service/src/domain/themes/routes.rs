@@ -34,7 +34,15 @@ pub async fn create_theme_handler(
     Json(body): Json<CreateThemeRequest>,
 ) -> Result<Json<UserTheme>, AppError> {
     Ok(Json(
-        store::create(&body.label, body.appearance, body.css_vars, body.xterm).await?,
+        store::create()
+            .label(&body.label)
+            .appearance(body.appearance)
+            .css_vars(body.css_vars)
+            .xterm(body.xterm)
+            .chrome(body.chrome)
+            .maybe_copy_assets_from(body.copy_assets_from.as_deref())
+            .call()
+            .await?,
     ))
 }
 

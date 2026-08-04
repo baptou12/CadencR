@@ -1,7 +1,13 @@
-import type { ThemeDocument, UserTheme } from "@/api/generated";
+import type { ThemeChrome as ApiThemeChrome, ThemeDocument, UserTheme } from "@/api/generated";
+import { PLAIN_CHROME, type ThemeChrome } from "./chrome";
 import { CADENCR_THEME_LOGOS } from "./logos";
-import { THEME_TOKEN_KEYS, type ThemeCssVars } from "./tokens";
-import { USER_THEME_ID_PREFIX, type ThemeDefinition, type UserThemeId } from "./types";
+import { THEME_OPTIONAL_TOKEN_KEYS, THEME_TOKEN_KEYS, type ThemeCssVars } from "./tokens";
+import {
+  isUserThemeId,
+  USER_THEME_ID_PREFIX,
+  type ThemeDefinition,
+  type UserThemeId,
+} from "./types";
 
 /**
  * Bridge between the theme *file* (what the API returns) and the theme
@@ -17,6 +23,16 @@ export function userThemeId(id: string): UserThemeId {
 }
 
 /**
+ * The inverse: the on-disk folder name behind a `user:` id, or `undefined` for
+ * a built-in. Kept beside `userThemeId` so both halves of the encoding stay in
+ * one place — a caller that slices the prefix off by hand is a caller that will
+ * still be slicing it if the prefix ever changes.
+ */
+export function userThemeSlug(id: string): string | undefined {
+  return isUserThemeId(id) ? id.slice(USER_THEME_ID_PREFIX.length) : undefined;
+}
+
+/**
  * What to call a theme in the UI. The declared label when the file parsed —
  * even if validation then rejected it, so a broken theme is still identifiable
  * — falling back to its on-disk id.
@@ -25,7 +41,11 @@ export function userThemeLabel(entry: UserTheme): string {
   return entry.theme?.label ?? entry.label ?? entry.id;
 }
 
-export function toThemeDefinition(id: string, document: ThemeDocument): ThemeDefinition {
+export function toThemeDefinition(
+  id: string,
+  document: ThemeDocument,
+  assets: Record<string, string> = {},
+): ThemeDefinition {
   return {
     id: userThemeId(id),
     label: document.label,
@@ -34,6 +54,8 @@ export function toThemeDefinition(id: string, document: ThemeDocument): ThemeDef
     // light/dark classification, exactly as the first-party themes do.
     logo: CADENCR_THEME_LOGOS[document.appearance],
     cssVars: document.cssVars as ThemeCssVars,
+    chrome: toThemeChrome(document.chrome),
+    assets,
     swatch: {
       background: document.cssVars["--background"] ?? "",
       foreground: document.cssVars["--foreground"] ?? "",
@@ -41,6 +63,30 @@ export function toThemeDefinition(id: string, document: ThemeDocument): ThemeDef
       accent: document.cssVars["--acc-pink"] ?? document.cssVars["--primary"] ?? "",
     },
     xterm: document.xterm,
+  };
+}
+
+/**
+ * Fill in a chrome block the file left partly unsaid.
+ *
+ * Every field is optional over the wire — the backend defaults them so a theme
+ * written before chrome existed still loads — while the renderer wants a total
+ * value it can read without a chain of `?.`. An older theme therefore lands on
+ * exactly the plain chrome it had before.
+ */
+function toThemeChrome(chrome: ApiThemeChrome | undefined): ThemeChrome {
+  if (!chrome) return PLAIN_CHROME;
+  const texture = chrome.texture;
+  return {
+    chassis: chrome.chassis ?? PLAIN_CHROME.chassis,
+    tabs: chrome.tabs ?? PLAIN_CHROME.tabs,
+    texture: {
+      base: texture?.base ?? null,
+      halos: texture?.halos ?? [],
+      image: texture?.image ?? null,
+      grain: texture?.grain ?? null,
+      veil: texture?.veil ?? false,
+    },
   };
 }
 
@@ -64,7 +110,9 @@ export function findUnapplicableSelection(
 
 /** The definitions for every entry that passed validation, in gallery order. */
 export function toThemeDefinitions(themes: UserTheme[]): ThemeDefinition[] {
-  return themes.flatMap((entry) => (entry.theme ? [toThemeDefinition(entry.id, entry.theme)] : []));
+  return themes.flatMap((entry) =>
+    entry.theme ? [toThemeDefinition(entry.id, entry.theme, entry.assets)] : [],
+  );
 }
 
 /**
@@ -108,9 +156,21 @@ export function readThemeCssVars(themeId: string, cssVars?: ThemeCssVars): Theme
   }
 }
 
+/**
+ * The optional chrome tokens are read the same way and kept only when the source
+ * theme actually declares them. That is what carries CadencR Dark's tab colors
+ * into a duplicate: they live in `theme-cadencr.css`, so without this the copy
+ * arrives with `tabs: "segmented"` and falls back to the neutral derived track —
+ * the shape, again, without its colors. A theme that declares none of them
+ * yields none, and the fallback is the right answer.
+ */
 function readTokensWithThemeApplied(root: HTMLElement, themeId: string): ThemeCssVars {
   root.dataset.theme = themeId;
   const computed = window.getComputedStyle(root);
-  const entries = THEME_TOKEN_KEYS.map((key) => [key, computed.getPropertyValue(key).trim()]);
-  return Object.fromEntries(entries) as ThemeCssVars;
+  const read = (key: string) => computed.getPropertyValue(key).trim();
+  const required = THEME_TOKEN_KEYS.map((key) => [key, read(key)]);
+  const optional = THEME_OPTIONAL_TOKEN_KEYS.map((key) => [key, read(key)]).filter(
+    ([, value]) => value !== "",
+  );
+  return Object.fromEntries([...required, ...optional]) as ThemeCssVars;
 }

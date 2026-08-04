@@ -56,6 +56,16 @@ async fn main() -> anyhow::Result<()> {
             domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id, *session_id)
                 .await?;
         }
+        Some(Command::CheckTheme { path }) => {
+            // Deliberately no database and no settings dir: the check reads one
+            // folder and answers about it, so it has to work from an agent's
+            // shell with nothing configured.
+            let report = domain::themes::check::run(path).await;
+            print!("{}", report.text());
+            if !report.applicable {
+                std::process::exit(1);
+            }
+        }
         None => {
             if cfg!(debug_assertions) {
                 let dotenv_path = dev_env::require_dev_env_file(dotenv_path)?;

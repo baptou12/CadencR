@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DRACULA_THEME } from "./lib/themes/dracula";
+import { THEME_OPTIONAL_TOKEN_KEYS } from "./lib/themes/tokens";
 
 describe("scrollbar CSS", () => {
   const indexCss = readFileSync(join(process.cwd(), "src/index.css"), "utf8");
@@ -11,6 +12,10 @@ describe("scrollbar CSS", () => {
     join(process.cwd(), "src/theme-cadencr-material.css"),
     "utf8",
   );
+  const chromeCss = readFileSync(join(process.cwd(), "src/theme-chrome.css"), "utf8");
+  // Comments in this file explain the fallbacks at length, naming the tokens
+  // they deliberately avoid — so any assertion about the *rules* reads them out.
+  const chromeRules = chromeCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
   it("keeps native scrollbar tracks transparent instead of browser-white", () => {
     expect(indexCss).toContain("::-webkit-scrollbar");
@@ -53,9 +58,64 @@ describe("scrollbar CSS", () => {
   });
 
   it("reserves end padding on floating-pane tabs for the dock-close control", () => {
-    expect(cadencrMaterialCss).toMatch(
+    expect(chromeCss).toMatch(
       /\[data-pane-frame="floating"\]\s*\[data-pane-tab-strip\]\s*\[data-slot="tabs-trigger"\]\s*{[^}]*padding-inline-end:\s*2rem;/s,
     );
+  });
+
+  it("keys the chrome layer on the theme's declared shape, never on a theme id", () => {
+    // The whole point of chrome being data: chassis, tabs and texture belong to
+    // whatever theme asks for them. A `data-theme` selector creeping back in
+    // here is the regression that made a duplicated theme lose its shape.
+    expect(indexCss).toContain('@import "./theme-chrome.css";');
+    expect(chromeCss).not.toMatch(/\[data-theme=/);
+    expect(chromeCss).toContain('[data-chassis="rail"]');
+    expect(chromeCss).toContain('[data-tabs="segmented"]');
+  });
+
+  it("gives a theme that opts into the rail or segmented tabs a fallback for every chrome token", () => {
+    // Four of these are optional *theme* tokens and two are shadows the app
+    // keeps. Either way a theme may leave them unset, and referenced bare, one
+    // asking for that shape would get a control with no track and no edge.
+    for (const token of [
+      "--pane-border",
+      "--page-shadow",
+      "--tab-track-bg",
+      "--tab-track-border",
+      "--tab-active-bg",
+      "--tab-active-shadow",
+    ]) {
+      // The formatter breaks a long `var()` across lines, so both patterns
+      // have to tolerate whitespace around the token name.
+      expect(chromeCss, `${token} must carry a fallback`).not.toMatch(
+        new RegExp(`var\\(\\s*${token}\\s*\\)`),
+      );
+      expect(chromeCss).toMatch(new RegExp(`var\\(\\s*${token}\\s*,`));
+    }
+  });
+
+  it("derives the segmented-tab fallbacks from --foreground, so a quiet theme is untinted", () => {
+    // These four tokens are the theme's to set (`THEME_OPTIONAL_TOKEN_KEYS`);
+    // what is asserted here is what a theme that sets *none* of them gets.
+    //
+    // Mixing `--foreground` into `--background` is the only pair guaranteed to
+    // be far apart in any palette — `--muted` and `--card` are the same color in
+    // the CadencR pair, and `--primary` would paint every quiet theme's tabs in
+    // an accent it never asked for. This is also the regression: an agent asked
+    // to recolor one theme's tabs edited these fallbacks instead, which is a
+    // change to every theme at once and one no installed Cadencr can receive.
+    for (const key of THEME_OPTIONAL_TOKEN_KEYS) {
+      expect(chromeCss, `${key} must be a token a theme can set`).toMatch(
+        new RegExp(`var\\(\\s*${key}\\s*,`),
+      );
+    }
+    const fallbacks = chromeRules.match(/var\(\s*--tab-(?:track-bg|active-bg)\s*,[^;]+;/gs) ?? [];
+    expect(fallbacks).toHaveLength(2);
+    for (const fallback of fallbacks) {
+      expect(fallback).toContain("var(--foreground)");
+      expect(fallback).toContain("var(--background)");
+      expect(fallback).not.toContain("var(--primary)");
+    }
   });
 
   it("keeps the sidebar worktree group off palette tokens that collide with --sidebar", () => {

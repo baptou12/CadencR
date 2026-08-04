@@ -597,10 +597,22 @@ export interface CreateProjectRequest {
   path: string;
 }
 
+/**
+ * Id of the user theme being duplicated, when there is one. Its asset
+files are copied into the new theme's folder — a texture the user can
+see is part of what they picked, so it has to come along.
+ */
+export type CreateThemeRequestCopyAssetsFrom = string | null;
+
 export type CreateThemeRequestCssVars = { [key: string]: string };
 
 export interface CreateThemeRequest {
   appearance: ThemeAppearance;
+  chrome?: ThemeChrome;
+  /** Id of the user theme being duplicated, when there is one. Its asset
+files are copied into the new theme's folder — a texture the user can
+see is part of what they picked, so it has to come along. */
+  copyAssetsFrom?: CreateThemeRequestCopyAssetsFrom;
   cssVars: CreateThemeRequestCssVars;
   /** Human-readable name; the on-disk id is slugified from it. */
   label: string;
@@ -3196,6 +3208,52 @@ export const ThemeAppearance = {
 } as const;
 
 /**
+ * How a texture layer composites over what is behind it. The CSS
+`mix-blend-mode` values that are useful for a background wash.
+ */
+export type ThemeBlend = (typeof ThemeBlend)[keyof typeof ThemeBlend];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeBlend = {
+  normal: "normal",
+  multiply: "multiply",
+  screen: "screen",
+  overlay: "overlay",
+  "soft-light": "soft-light",
+  "hard-light": "hard-light",
+  difference: "difference",
+  luminosity: "luminosity",
+} as const;
+
+/**
+ * How the page meets the sidebar.
+ */
+export type ThemeChassis = (typeof ThemeChassis)[keyof typeof ThemeChassis];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeChassis = {
+  flat: "flat",
+  rail: "rail",
+} as const;
+
+/**
+ * The shape of a theme, as opposed to its palette.
+ */
+export interface ThemeChrome {
+  chassis?: ThemeChassis;
+  tabs?: ThemeTabs;
+  texture?: ThemeTexture;
+}
+
+/**
+ * Points at the JSON Schema Cadencr keeps beside this file, so an editor
+completes and checks the document as it is typed (see `schema.rs`).
+Optional and round-tripped rather than required: a theme written before
+this existed, or one whose author deleted the line, is still a theme.
+ */
+export type ThemeDocumentSchema = string | null;
+
+/**
  * `--token` → CSS color value. Ordered so a round-trip through the editor
 doesn't reshuffle the file.
  */
@@ -3209,13 +3267,80 @@ This is the whole extensibility surface of step 1: pure data, no behavior.
 values must parse as CSS colors — a theme can never introduce arbitrary CSS.
  */
 export interface ThemeDocument {
+  /** Points at the JSON Schema Cadencr keeps beside this file, so an editor
+completes and checks the document as it is typed (see `schema.rs`).
+Optional and round-tripped rather than required: a theme written before
+this existed, or one whose author deleted the line, is still a theme. */
+  $schema?: ThemeDocumentSchema;
   appearance: ThemeAppearance;
+  /** Chassis, tabs and background texture (see `chrome.rs`). Defaulted, so a
+theme file written before chrome existed still parses — it simply gets
+the plain chrome every non-CadencR, non-Frost theme already had. */
+  chrome?: ThemeChrome;
   /** `--token` → CSS color value. Ordered so a round-trip through the editor
 doesn't reshuffle the file. */
   cssVars: ThemeDocumentCssVars;
   label: string;
   xterm: XtermPalette;
 }
+
+/**
+ * Fine noise laid over the field. The speckle itself is generated; a theme
+picks its color, strength, tile size and how it composites.
+ */
+export interface ThemeGrain {
+  blend: ThemeBlend;
+  color: string;
+  opacity: number;
+  /** Tile size in px. Smaller reads as finer grain. */
+  scale: number;
+}
+
+/**
+ * One drifting, heavily-blurred field of color.
+
+Position is the halo's *center*, as a percentage of the viewport, so a
+texture reads the same on any window shape. `size` is a diameter in `vw`.
+ */
+export interface ThemeHalo {
+  /** Gaussian blur radius, in px. */
+  blur: number;
+  color: string;
+  /** Seconds for one drift cycle. `0` holds the halo still. */
+  drift: number;
+  opacity: number;
+  /** Diameter, in `vw`. */
+  size: number;
+  /** Center, as a percentage of viewport width. */
+  x: number;
+  /** Center, as a percentage of viewport height. */
+  y: number;
+}
+
+/**
+ * An image from the theme's own folder, laid over the field.
+ */
+export interface ThemeImage {
+  /** File name inside the theme directory — `paper.png`, never a path or URL. */
+  asset: string;
+  blend: ThemeBlend;
+  fit: ThemeImageFit;
+  opacity: number;
+  /** Tile size in px. Ignored unless `fit` is `tile`. */
+  scale: number;
+}
+
+/**
+ * How an image texture fills the window.
+ */
+export type ThemeImageFit = (typeof ThemeImageFit)[keyof typeof ThemeImageFit];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeImageFit = {
+  tile: "tile",
+  cover: "cover",
+  contain: "contain",
+} as const;
 
 /**
  * The offending token (`--background`), or `None` for document-level
@@ -3232,6 +3357,44 @@ export interface ThemeIssue {
   /** The offending token (`--background`), or `None` for document-level
 problems such as invalid JSON. */
   token?: ThemeIssueToken;
+}
+
+/**
+ * How the active pane tab is drawn.
+ */
+export type ThemeTabs = (typeof ThemeTabs)[keyof typeof ThemeTabs];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeTabs = {
+  underline: "underline",
+  segmented: "segmented",
+} as const;
+
+/**
+ * Flat color behind every layer. `None` leaves the page background alone.
+ */
+export type ThemeTextureBase = string | null;
+
+export type ThemeTextureGrain = null | ThemeGrain;
+
+export type ThemeTextureImage = null | ThemeImage;
+
+/**
+ * Everything painted behind the app, bottom to top: a flat base, drifting
+halos, an image, grain, then an optional veil that dims the lot back down so
+the UI on top stays readable.
+
+The default is empty — no layers, nothing rendered, nothing to pay for.
+ */
+export interface ThemeTexture {
+  /** Flat color behind every layer. `None` leaves the page background alone. */
+  base?: ThemeTextureBase;
+  grain?: ThemeTextureGrain;
+  halos?: ThemeHalo[];
+  image?: ThemeTextureImage;
+  /** Wash the finished field with the page background, so surfaces above it
+keep their contrast. This is what keeps a lively texture legible. */
+  veil?: boolean;
 }
 
 /**
@@ -3548,6 +3711,15 @@ export interface UserMessagePayload {
 }
 
 /**
+ * Asset file name → `data:` URL, for the files the theme's chrome
+references. Inlined rather than served from a URL: the renderer may be
+talking to a remote backend, its CSP allows `data:` images, and a
+stylesheet `url()` can't carry the API token anyway. Empty for the
+themes — nearly all of them — that reference no asset.
+ */
+export type UserThemeAssets = { [key: string]: string };
+
+/**
  * The document's declared name, kept even when validation failed so the
 gallery can say *which* theme broke. `None` only when the file isn't
 parseable JSON at all.
@@ -3560,6 +3732,12 @@ export type UserThemeTheme = null | ThemeDocument;
  * One entry in the theme gallery.
  */
 export interface UserTheme {
+  /** Asset file name → `data:` URL, for the files the theme's chrome
+references. Inlined rather than served from a URL: the renderer may be
+talking to a remote backend, its CSP allows `data:` images, and a
+stylesheet `url()` can't carry the API token anyway. Empty for the
+themes — nearly all of them — that reference no asset. */
+  assets: UserThemeAssets;
   /** Raw file text, for the JSON editor and for export-to-file. */
   content: string;
   /** Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as

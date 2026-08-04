@@ -36,6 +36,14 @@ function readRustTokens() {
   return tokensBetween(readFileSync(RS_FILE, "utf8"), "pub const REQUIRED_TOKENS: &[&str] = &[");
 }
 
+function readTsOptionalTokens() {
+  return tokensBetween(readFileSync(TS_FILE, "utf8"), "export const THEME_OPTIONAL_TOKEN_KEYS = [");
+}
+
+function readRustOptionalTokens() {
+  return tokensBetween(readFileSync(RS_FILE, "utf8"), "pub const OPTIONAL_TOKENS: &[&str] = &[");
+}
+
 test("the frontend and service theme token lists are identical", () => {
   const ts = readTsTokens();
   const rs = readRustTokens();
@@ -43,10 +51,28 @@ test("the frontend and service theme token lists are identical", () => {
   assert.deepEqual(rs, ts, "packages/service/.../tokens.rs must match lib/themes/tokens.ts");
 });
 
+test("the optional chrome token lists are identical too", () => {
+  const ts = readTsOptionalTokens();
+  const rs = readRustOptionalTokens();
+  assert.ok(ts.length > 0, "expected an optional token list");
+  assert.deepEqual(rs, ts, "the OPTIONAL_TOKENS lists drifted");
+});
+
+test("no token appears in both tiers", () => {
+  // A token in both would be required and optional at once: the service would
+  // demand it and the schema would say it may be left out.
+  const required = new Set(readTsTokens());
+  for (const token of readTsOptionalTokens()) {
+    assert.ok(!required.has(token), `${token} is in both token tiers`);
+  }
+});
+
 test("neither list repeats a token", () => {
   for (const [label, tokens] of [
     ["tokens.ts", readTsTokens()],
     ["tokens.rs", readRustTokens()],
+    ["tokens.ts (optional)", readTsOptionalTokens()],
+    ["tokens.rs (optional)", readRustOptionalTokens()],
   ]) {
     assert.equal(new Set(tokens).size, tokens.length, `${label} has a duplicate token`);
   }

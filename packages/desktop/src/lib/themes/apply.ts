@@ -1,6 +1,7 @@
 import { DEFAULT_THEME_ID, getTheme, parseThemeId } from "./registry";
 import { injectThemeCssVars } from "./inject";
-import type { ThemeId } from "./types";
+import { chromeOf, type ThemeChrome } from "./chrome";
+import type { ThemeDefinition, ThemeId } from "./types";
 import {
   isFollowSystemThemeEnabled,
   readBrowserSystemAppearance,
@@ -49,6 +50,35 @@ export function applyThemeToDocument(themeId: ThemeId): void {
   injectThemeCssVars(theme);
   document.documentElement.dataset.theme = theme.id;
   document.documentElement.dataset.appearance = theme.appearance;
+  applyThemeChrome(theme);
+}
+
+/**
+ * Publish the theme's chassis and tab style as attributes the stylesheets key
+ * off, and the texture's base color as the one custom property that has to be
+ * on `<html>` itself (the backdrop root must be opaque for `backdrop-filter`
+ * to paint — see `theme-frost.css`). The texture's *layers* are rendered by
+ * `<AmbientBackground/>`, which reads the same theme.
+ */
+function applyThemeChrome(theme: ThemeDefinition): void {
+  const root = document.documentElement;
+  const chrome: ThemeChrome = chromeOf(theme);
+  root.dataset.chassis = chrome.chassis;
+  root.dataset.tabs = chrome.tabs;
+
+  // Published only when the texture declares an opaque base, not whenever it
+  // paints something: taking over the backdrop root is safe only when there is
+  // a color to put there. Keyed on "has a texture at all", a texture of halos
+  // alone would strip the page background from both `<html>` and `<body>` and
+  // leave the canvas showing through as the browser default white.
+  const { base } = chrome.texture;
+  if (base === null) {
+    root.style.removeProperty("--ambient-base");
+    delete root.dataset.textureBase;
+  } else {
+    root.style.setProperty("--ambient-base", base);
+    root.dataset.textureBase = "on";
+  }
 }
 
 /**

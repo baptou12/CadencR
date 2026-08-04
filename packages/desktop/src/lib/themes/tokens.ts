@@ -129,7 +129,30 @@ export const THEME_TOKEN_KEYS = [
 
 export type ThemeTokenKey = (typeof THEME_TOKEN_KEYS)[number];
 
-/** A complete token set. Every key is required — a theme is duplicated from a
- *  working one, so a missing token means the file was hand-edited into an
- *  incomplete state and must not be applied. */
-export type ThemeCssVars = Record<ThemeTokenKey, string>;
+/**
+ * Tokens a theme *may* set. Mirrors `OPTIONAL_TOKENS` in the service.
+ *
+ * These color the shapes a theme opts into through `chrome` — the segmented tab
+ * control and the rail's page edge — and `theme-chrome.css` derives a fallback
+ * from the palette for any a theme leaves out. They are optional because most
+ * themes draw neither shape and shouldn't have to name colors for chrome they
+ * never paint.
+ *
+ * `--tab-active-shadow` and `--page-shadow` stay out: they are `box-shadow`
+ * values rather than colors, and the theme vocabulary is colors.
+ */
+export const THEME_OPTIONAL_TOKEN_KEYS = [
+  "--tab-track-bg",
+  "--tab-track-border",
+  "--tab-active-bg",
+  "--pane-border",
+] as const;
+
+export type ThemeOptionalTokenKey = (typeof THEME_OPTIONAL_TOKEN_KEYS)[number];
+
+/** A complete token set. Every required key must be present — a theme is
+ *  duplicated from a working one, so a missing token means the file was
+ *  hand-edited into an incomplete state and must not be applied. The optional
+ *  chrome tokens are carried the same way when a theme declares them. */
+export type ThemeCssVars = Record<ThemeTokenKey, string> &
+  Partial<Record<ThemeOptionalTokenKey, string>>;

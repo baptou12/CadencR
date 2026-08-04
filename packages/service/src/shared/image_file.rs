@@ -31,6 +31,26 @@ pub fn image_mime_for_path(path: &Path) -> Option<&'static str> {
     }
 }
 
+/// The same allowlist plus SVG, for the places that render through an `<img>`
+/// tag rather than the editor: project icons and theme textures.
+///
+/// SVG cannot simply join the list above — that one is kept in lockstep with the
+/// frontend's `isImageFile` helper, so widening it would also change the editor
+/// and Git diff image routes. Serving it here is safe because an `<img>` neither
+/// executes scripts nor loads external references.
+///
+/// `.icns` is in neither list: Chromium cannot decode it, so offering one as a
+/// choice would render an empty box.
+pub fn image_or_svg_mime_for_path(path: &Path) -> Option<&'static str> {
+    if path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
+    {
+        return Some("image/svg+xml");
+    }
+    image_mime_for_path(path)
+}
+
 /// Build a raw image response whose stable URL always revalidates its bytes.
 pub fn image_response(bytes: Vec<u8>, mime: &str) -> Result<Response, AppError> {
     let len = bytes.len();

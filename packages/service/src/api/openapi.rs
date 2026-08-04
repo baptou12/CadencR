@@ -36,6 +36,7 @@ use crate::domain::schedules::routes as schedules_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
 use crate::domain::terminal::routes as terminal_routes;
+use crate::domain::themes::chrome as themes_chrome;
 use crate::domain::themes::models as themes_models;
 use crate::domain::themes::routes as themes_routes;
 use crate::domain::usage_stats::health as usage_stats_health;
@@ -200,6 +201,15 @@ use crate::domain::ws_session::routes as ws_routes;
         themes_models::UserTheme,
         themes_models::ThemeDocument,
         themes_models::ThemeAppearance,
+        themes_chrome::ThemeChrome,
+        themes_chrome::ThemeChassis,
+        themes_chrome::ThemeTabs,
+        themes_chrome::ThemeTexture,
+        themes_chrome::ThemeHalo,
+        themes_chrome::ThemeGrain,
+        themes_chrome::ThemeImage,
+        themes_chrome::ThemeBlend,
+        themes_chrome::ThemeImageFit,
         themes_models::ThemeIssue,
         themes_models::XtermPalette,
         themes_models::CreateThemeRequest,

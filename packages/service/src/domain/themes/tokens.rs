@@ -1,6 +1,11 @@
 //! The closed set of design tokens a theme may set, plus the contrast pairs
 //! every theme must clear.
 //!
+//! Two tiers. [`REQUIRED_TOKENS`] is the palette every theme must define in
+//! full. [`OPTIONAL_TOKENS`] is the shorter list the *chrome* layer reads: a
+//! theme that opts into a shape may color it, and a theme that doesn't say
+//! nothing and gets the stylesheet's fallback.
+//!
 //! This mirrors `packages/desktop/src/lib/themes/tokens.ts` — the renderer
 //! needs the list to duplicate a built-in theme, the service needs it to
 //! validate what lands on disk. `scripts/theme-tokens.test.mjs` fails the build
@@ -124,6 +129,34 @@ pub const REQUIRED_TOKENS: &[&str] = &[
     "--terminal-warning-button-bg-hover",
 ];
 
+/// Tokens a theme *may* define, and the app has an answer for when it doesn't.
+///
+/// These are the colors `theme-chrome.css` reads for the shapes a theme opts
+/// into — the segmented tab control and the rail's page edge. They were declared
+/// by the CadencR pair alone, in a stylesheet, which left a duplicated theme
+/// with the shape and none of its colors: segmented tabs fell back to a
+/// deliberately neutral mix, and the only way to change that was to edit the
+/// app's own stylesheet. That is not a change anyone with an installed Cadencr
+/// can make, and it would have applied to every theme at once. So the tokens
+/// belong to the theme instead.
+///
+/// Optional, not required, because most themes take the underline tabs and the
+/// flat chassis and would otherwise be forced to name colors for chrome they
+/// never draw. Every one still has to be a real color, and an unknown key is
+/// still an error — this widens the vocabulary, it does not open it.
+///
+/// `--tab-active-shadow` and `--page-shadow` are deliberately absent: they hold
+/// `box-shadow` values, not colors, and the gate here parses colors. They stay
+/// the stylesheet's business.
+pub const OPTIONAL_TOKENS: &[&str] = &[
+    // Segmented tabs — the recessed track and the raised pill on top of it.
+    "--tab-track-bg",
+    "--tab-track-border",
+    "--tab-active-bg",
+    // The rail chassis' page edge, and the hairline around raised panes.
+    "--pane-border",
+];
+
 /// Foreground/background pairs that must stay legible.
 ///
 /// Thresholds are **calibrated against the fourteen first-party themes**, not
@@ -206,9 +239,16 @@ impl ContrastPair {
 /// every theme on every list — a linear scan of 104 strings turns that into
 /// thousands of comparisons per request.
 static TOKEN_SET: std::sync::LazyLock<std::collections::HashSet<&'static str>> =
-    std::sync::LazyLock::new(|| REQUIRED_TOKENS.iter().copied().collect());
+    std::sync::LazyLock::new(|| {
+        REQUIRED_TOKENS
+            .iter()
+            .chain(OPTIONAL_TOKENS)
+            .copied()
+            .collect()
+    });
 
-pub fn is_required_token(key: &str) -> bool {
+/// Whether a theme is allowed to set this token at all — either tier.
+pub fn is_known_token(key: &str) -> bool {
     TOKEN_SET.contains(key)
 }
 
@@ -219,15 +259,35 @@ mod tests {
 
     #[test]
     fn token_list_has_no_duplicates() {
-        let unique: HashSet<_> = REQUIRED_TOKENS.iter().collect();
-        assert_eq!(unique.len(), REQUIRED_TOKENS.len());
+        let all: Vec<_> = REQUIRED_TOKENS.iter().chain(OPTIONAL_TOKENS).collect();
+        let unique: HashSet<_> = all.iter().collect();
+        assert_eq!(unique.len(), all.len());
+    }
+
+    /// A contrast pair is measured on every theme, so both sides have to be
+    /// tokens every theme has. An optional token can be absent, and a pair
+    /// naming one would silently never be checked.
+    #[test]
+    fn contrast_pairs_reference_required_tokens() {
+        for pair in CONTRAST_PAIRS {
+            assert!(
+                REQUIRED_TOKENS.contains(&pair.foreground),
+                "{}",
+                pair.foreground
+            );
+            assert!(
+                REQUIRED_TOKENS.contains(&pair.background),
+                "{}",
+                pair.background
+            );
+        }
     }
 
     #[test]
-    fn contrast_pairs_reference_known_tokens() {
-        for pair in CONTRAST_PAIRS {
-            assert!(is_required_token(pair.foreground), "{}", pair.foreground);
-            assert!(is_required_token(pair.background), "{}", pair.background);
-        }
+    fn both_tiers_are_settable_and_nothing_else_is() {
+        assert!(is_known_token("--background"));
+        assert!(is_known_token("--tab-track-bg"));
+        assert!(!is_known_token("--tab-active-shadow"));
+        assert!(!is_known_token("--evil"));
     }
 }

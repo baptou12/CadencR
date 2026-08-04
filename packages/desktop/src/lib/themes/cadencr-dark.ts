@@ -1,5 +1,6 @@
 import type { ThemeDefinition } from "./types";
 import { CADENCR_THEME_LOGOS } from "./logos";
+import { NO_TEXTURE } from "./chrome";
 
 /**
  * CadencR Dark — the Emerald Reserve brand default. A near-black sidebar rail
@@ -15,6 +16,10 @@ export const CADENCR_DARK_THEME: ThemeDefinition = {
   label: "CadencR Dark",
   appearance: "dark",
   logo: CADENCR_THEME_LOGOS.dark,
+  // The instrument-case shape: the page tucks into the sidebar rail, and pane
+  // tabs are a segmented control rather than an underline. Carried as data so
+  // a theme duplicated from this one is still shaped like it.
+  chrome: { chassis: "rail", tabs: "segmented", texture: NO_TEXTURE },
   swatch: {
     background: "#131416",
     foreground: "#eff0f2",

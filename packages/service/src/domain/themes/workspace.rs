@@ -29,7 +29,7 @@ use crate::domain::projects::models::THEME_PROJECT_KIND;
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git, run_git_with_env};
 
-use super::paths;
+use super::{paths, scaffold};
 
 /// Cadencr authors the first commit itself: a fresh theme repository inherits no
 /// identity of its own, and `git commit` refuses without one.
@@ -73,6 +73,10 @@ pub async fn ensure(pool: &SqlitePool, theme_id: &str) -> Result<ThemeWorkspace,
     let label = theme_label(&theme).unwrap_or_else(|| theme_id.to_string());
 
     ensure_repository(&dir).await?;
+    // After the repository, so the first commit is the theme alone. The agent
+    // that is about to work here has only this folder to go on, and `theme.json`
+    // does not explain itself — see `scaffold`.
+    scaffold::refresh(&dir).await?;
     let name = project_name(Some(&label), theme_id);
     let project_id = ensure_project(pool, &name, &cwd).await?;
     // Not only at creation: the theme may have been renamed while nothing was
@@ -336,21 +340,23 @@ mod tests {
     }
 
     async fn create_theme(label: &str) -> String {
-        super::super::store::create(
-            label,
-            super::super::models::ThemeAppearance::Dark,
-            dracula_css_vars(),
-            dracula_xterm(),
-        )
-        .await
-        .expect("creates")
-        .id
+        super::super::store::create()
+            .label(label)
+            .appearance(super::super::models::ThemeAppearance::Dark)
+            .css_vars(dracula_css_vars())
+            .xterm(dracula_xterm())
+            .call()
+            .await
+            .expect("creates")
+            .id
     }
 
     /// Retitle the theme the way anything outside the API does it: by editing
     /// the file.
     fn rename_theme_file(id: &str, label: &str) {
-        let file = paths::theme_file(id).expect("path");
+        let file = paths::theme_dir(id)
+            .expect("path")
+            .join(paths::THEME_FILE_NAME);
         let renamed = std::fs::read_to_string(&file)
             .expect("read")
             .replace("\"My Theme\"", &format!("\"{label}\""));
@@ -418,6 +424,48 @@ mod tests {
             .await
             .expect("status");
         assert_eq!(status.trim(), "", "unexpected pending changes");
+    }
+
+    /// The agent that opens this folder has nothing but the folder. Both
+    /// reference files have to be in it — and out of the user's git, or every
+    /// theme's first Git tab opens on two files they didn't write.
+    #[tokio::test]
+    async fn the_reference_and_schema_are_there_and_invisible_to_git() {
+        use crate::domain::themes::scaffold::REFERENCE_FILE_NAME;
+        use crate::domain::themes::schema::SCHEMA_FILE_NAME;
+
+        let pool = pool().await;
+        let id = create_theme("My Theme").await;
+        let workspace = ensure(&pool, &id).await.expect("ensures");
+        let dir = Path::new(&workspace.cwd);
+
+        assert!(dir.join(REFERENCE_FILE_NAME).exists());
+        assert!(dir.join(SCHEMA_FILE_NAME).exists());
+        let status = run_git(&["status", "--porcelain", "--untracked-files=all"], dir)
+            .await
+            .expect("status");
+        assert_eq!(
+            status.trim(),
+            "",
+            "the reference files must not be git's business"
+        );
+    }
+
+    /// A theme made before the reference existed gets it on the next open —
+    /// which is the only reason `ensure` refreshes rather than seeding once.
+    #[tokio::test]
+    async fn reopening_restores_a_reference_that_was_deleted() {
+        use crate::domain::themes::scaffold::REFERENCE_FILE_NAME;
+
+        let pool = pool().await;
+        let id = create_theme("My Theme").await;
+        let workspace = ensure(&pool, &id).await.expect("ensures");
+        let reference = Path::new(&workspace.cwd).join(REFERENCE_FILE_NAME);
+        std::fs::remove_file(&reference).expect("removes");
+
+        ensure(&pool, &id).await.expect("ensures again");
+
+        assert!(reference.exists());
     }
 
     #[tokio::test]

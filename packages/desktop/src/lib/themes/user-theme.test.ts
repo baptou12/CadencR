@@ -112,6 +112,23 @@ describe("readThemeCssVars", () => {
     expect(window.document.documentElement.dataset.theme).toBe("frost-dark");
   });
 
+  it("carries the optional chrome tokens the source theme declares, and no empty ones", () => {
+    // Read off the live document, so seed them the way a stylesheet would.
+    const root = window.document.documentElement;
+    root.style.setProperty("--tab-track-bg", "#0f1012");
+    for (const [key, value] of Object.entries(DRACULA_THEME.cssVars ?? {})) {
+      root.style.setProperty(key, value);
+    }
+    try {
+      const vars = readThemeCssVars("cadencr-dark");
+      expect(vars["--tab-track-bg"]).toBe("#0f1012");
+      // Declared by no stylesheet here, so it must be absent rather than "".
+      expect("--pane-border" in vars).toBe(false);
+    } finally {
+      root.removeAttribute("style");
+    }
+  });
+
   it("refuses to copy a theme whose values it cannot actually read", () => {
     // Themes whose values live in CSS are read by briefly flipping
     // `data-theme`. With no stylesheet loaded at all (jsdom here; a failed

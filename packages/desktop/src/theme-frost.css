@@ -10,12 +10,18 @@
  * floating over a slow-drifting field of blurred colored halos, with a single
  * icy-azure accent. See the "Frost Glass Design Language" brief.
  *
+ * The drifting field itself is NOT here: it is theme *data*
+ * (`chrome.texture` on both Frost definitions, rendered by
+ * `<AmbientBackground/>` and laid out by `theme-chrome.css`), so a theme
+ * duplicated from Frost keeps the field instead of arriving over a blank page.
+ * What stays in this file is the glass: blur, translucency, and the surfaces
+ * that depend on having something behind them to frost.
+ *
  * --- How the glass stays OFF for every other theme ---
  * All glass knobs default to a no-op in the base `:root` block below
- * (`backdrop-filter: none`, transparent halos, zero opacity). Only the two
- * frost blocks switch them ON. The `.glass-surface` utility and the ambient
- * layer are therefore SAFE to mount/apply in every theme — outside frost they
- * render nothing extra. The six existing themes are byte-for-byte unchanged.
+ * (`backdrop-filter: none`). Only the two frost blocks switch them ON, so the
+ * `.glass-surface` utility is SAFE to use in every theme — outside frost it
+ * renders nothing extra.
  *
  * --- Never write `-webkit-backdrop-filter` in this file ---
  * The production build runs Lightning CSS (via @tailwindcss/vite), which
@@ -34,15 +40,6 @@
   --glass-shadow: none; /* inset highlight + accent-tinted cast (prompt bar) */
   --glass-shadow-pane: none; /* inset rim + neutral (colourless) float for split panes */
   --glass-shadow-overlay: none; /* softened cast for floating overlays (popovers, dialogs) */
-
-  /* Ambient halo field — invisible by default. */
-  --ambient-base: transparent;
-  --ambient-1: transparent;
-  --ambient-2: transparent;
-  --ambient-3: transparent;
-  --ambient-opacity: 0;
-  --grain-opacity: 0;
-  --grain-blend: overlay; /* how the frost grain composites over the field */
 }
 
 /* -------------------------------------------------------------------------
@@ -68,13 +65,6 @@
   --glass-shadow-overlay:
     0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 16px 40px -24px oklch(0.6 0.08 230 / 0.18),
     0 8px 24px -16px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --ambient-base: oklch(0.165 0.018 262);
-  --ambient-1: oklch(0.6 0.12 230 / 0.55);
-  --ambient-2: oklch(0.56 0.11 285 / 0.46);
-  --ambient-3: oklch(0.62 0.1 200 / 0.46);
-  --ambient-opacity: 0.56;
-  --grain-opacity: 0.36;
-  --grain-blend: screen; /* adds a fine cool-white frost speckle on the dark field */
 
   /* Tailwind semantic tokens. Surfaces are translucent so the halos bleed
    * through; foregrounds stay near-white-cool for contrast over the field. */
@@ -242,13 +232,6 @@
    * halos (chroma ~0.06–0.08) all but vanished once the 50%-white ambient veil
    * washed over them; pushing chroma up and lightness down lets the blue /
    * violet / teal fields actually read as colour on the bright field. */
-  --ambient-base: oklch(0.974 0.014 250);
-  --ambient-1: oklch(0.79 0.16 245 / 0.7);
-  --ambient-2: oklch(0.81 0.15 300 / 0.6);
-  --ambient-3: oklch(0.83 0.14 200 / 0.6);
-  --ambient-opacity: 0.68;
-  --grain-opacity: 0.19;
-  --grain-blend: multiply; /* fine frosted-paper grain that reads on the near-white field */
 
   /* Tailwind semantic tokens. */
   --background: oklch(0.98 0.008 255 / 0.5);
@@ -652,158 +635,9 @@
  * `--background` token (see `theme.css`), which tripped exactly this and left
  * all the glass flat.
  *
- * Fix without losing the ambient field:
- *   - `:root` (html) gets an OPAQUE base — it's the backdrop root, so this is
- *     what re-enables the blur. It paints behind the ambient layer, so it's
- *     never visible itself.
- *   - `body` becomes fully TRANSPARENT (not the 0.55 tint). A *partial*-alpha
- *     body is what broke the blur; a transparent one does not.
- *   - The page tint the translucent body used to cast over the field moves to
- *     the `.ambient-veil` layer below, so the look is unchanged. Without it the
- *     un-dimmed halos + grain read far too bright and the noise too coarse.
- * Scoped to the frost themes; every other theme is untouched.
+ * The fix is not here, because it is not Frost-specific: a theme whose texture
+ * declares a `base` gets an opaque `:root`, a fully transparent `body`, and the
+ * page tint it used to cast moved onto the veil layer — see the texture section
+ * of `theme-chrome.css`. Frost's own texture sets that base, which is what
+ * keeps its blur painting. A glassy theme of your own must do the same.
  * ------------------------------------------------------------------------- */
-:root[data-theme="frost-dark"],
-:root[data-theme="frost-light"] {
-  background-color: var(--ambient-base);
-}
-:root[data-theme="frost-dark"] body,
-:root[data-theme="frost-light"] body {
-  background-color: transparent;
-}
-
-/* -------------------------------------------------------------------------
- * Ambient living background — drifting halos + film grain.
- *
- * Mounted once at the app root by <AmbientBackground/>. Both layers are
- * `display: none` outside the frost themes, so they cost nothing (no paint, no
- * animation) in every other theme. Halo drift freezes automatically when
- * `html[data-animations="off"]` is set (the global motion kill-switch in
- * `theme.css` zeroes every animation-duration), which also covers OS
- * `prefers-reduced-motion`.
- * ------------------------------------------------------------------------- */
-.ambient,
-.grain,
-.ambient-veil {
-  display: none;
-}
-:root[data-theme="frost-dark"] .ambient,
-:root[data-theme="frost-light"] .ambient,
-:root[data-theme="frost-dark"] .grain,
-:root[data-theme="frost-light"] .grain,
-:root[data-theme="frost-dark"] .ambient-veil,
-:root[data-theme="frost-light"] .ambient-veil {
-  display: block;
-}
-
-/* The page tint that used to live on the translucent `body` background (see the
- * "Opaque backdrop root" note above). Rendered last in <AmbientBackground/>, so
- * it dims the halos + grain just as the old body tint did, while `body` itself
- * stays non-translucent and the blur keeps painting. `--background` is the exact
- * token `body` carried, so the look is identical and stays in sync per theme. */
-.ambient-veil {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-color: var(--background);
-}
-
-.ambient {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  overflow: hidden;
-  /* Flat base + a faint top-center glow so the large calm areas (the agent
-   * reading column) read as a lit field with depth rather than a flat slab.
-   * The white wash is negligible on the bright Frost Light base and a subtle
-   * lift on Frost Dark. */
-  background:
-    radial-gradient(120% 75% at 50% -8%, rgba(255, 255, 255, 0.05), transparent 58%),
-    var(--ambient-base);
-}
-.ambient::before,
-.ambient::after,
-.ambient .halo {
-  content: "";
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: var(--ambient-opacity);
-}
-/* Each halo drifts via `steps(120, …)` rather than smooth easing: the motion is
- * a 28–42s crawl, so 120 discrete steps over the duration (~3-4fps) is visually
- * identical to per-vsync easing but caps composited frames at a few per second
- * instead of the display's full refresh rate — the actual battery cost. */
-.ambient::before {
-  width: 72vw;
-  height: 72vw;
-  top: -16vw;
-  left: -8vw;
-  background: radial-gradient(circle, var(--ambient-1), transparent 70%);
-  animation: frost-drift1 28s steps(120, jump-none) infinite alternate;
-}
-.ambient::after {
-  width: 66vw;
-  height: 66vw;
-  top: 8vh;
-  right: -12vw;
-  background: radial-gradient(circle, var(--ambient-2), transparent 70%);
-  animation: frost-drift2 36s steps(120, jump-none) infinite alternate;
-}
-.ambient .halo {
-  width: 62vw;
-  height: 62vw;
-  bottom: -22vw;
-  left: 18vw;
-  background: radial-gradient(circle, var(--ambient-3), transparent 70%);
-  animation: frost-drift3 42s steps(120, jump-none) infinite alternate;
-}
-.grain {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: var(--grain-opacity);
-  mix-blend-mode: var(--grain-blend);
-  /* fractalNoise speckle, tinted a single cool blue-grey via feColorMatrix
-   * (the constant row outputs RGB ≈ 0.62 0.66 0.78 at alpha 0.7). The tint is
-   * intentionally shared by both frost variants; per-theme presence is tuned by
-   * --grain-opacity / --grain-blend rather than by recolouring the noise. */
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.62 0 0 0 0 0.66 0 0 0 0 0.78 0 0 0 0.7 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-}
-@keyframes frost-drift1 {
-  from {
-    transform: translate(0, 0) scale(1);
-  }
-  to {
-    transform: translate(8vw, 6vh) scale(1.1);
-  }
-}
-@keyframes frost-drift2 {
-  from {
-    transform: translate(0, 0) scale(1);
-  }
-  to {
-    transform: translate(-6vw, 10vh) scale(0.95);
-  }
-}
-@keyframes frost-drift3 {
-  from {
-    transform: translate(0, 0) scale(1);
-  }
-  to {
-    transform: translate(10vw, -8vh) scale(1.08);
-  }
-}
-
-/* Freeze the halo drift when the window is hidden or unfocused
- * (`data-ambient-paused` is toggled by <AmbientBackground/>). The drift runs at
- * the display refresh rate, so without this a backgrounded or off-screen window
- * keeps the GPU compositing a fresh frame every vsync for motion no one can see. */
-:root[data-ambient-paused] .ambient::before,
-:root[data-ambient-paused] .ambient::after,
-:root[data-ambient-paused] .ambient .halo {
-  animation-play-state: paused;
-}
