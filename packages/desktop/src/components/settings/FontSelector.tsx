@@ -1,27 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { useMonoFont } from "@/lib/fonts/mono-font-setting";
 import { useSystemFonts } from "@/lib/fonts/useSystemFonts";
 import { MONO_FONT_PREVIEW } from "@/lib/fonts/constants";
 import { SettingsSubsection } from "./SettingsSubsection";
+import { FontComboboxList } from "./FontComboboxList";
 
 const DEFAULT_LABEL = "Default";
 
 export function FontSelector(): React.JSX.Element {
   const { family, resolved, setFamily, isLoading: isSettingLoading } = useMonoFont();
   const [showAll, setShowAll] = useState(false);
-  const { fonts, isLoading: isFontsLoading, error } = useSystemFonts(showAll);
+  const { fonts, isLoading: isFontsLoading, error, load } = useSystemFonts();
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -33,13 +26,30 @@ export function FontSelector(): React.JSX.Element {
   const isLoading = isSettingLoading || isFontsLoading;
   const currentLabel = isLoading ? "Loading…" : (family ?? DEFAULT_LABEL);
 
+  // queryLocalFonts() requires transient user activation, so the query must
+  // be kicked off from a click/toggle handler — never on mount.
+  const handleOpenChange = (nextOpen: boolean): void => {
+    setOpen(nextOpen);
+    if (nextOpen) load(showAll);
+  };
+
+  const handleShowAllChange = (nextShowAll: boolean): void => {
+    setShowAll(nextShowAll);
+    load(nextShowAll);
+  };
+
+  const handleSelect = (nextFamily: string): void => {
+    setFamily(nextFamily);
+    setOpen(false);
+  };
+
   return (
     <SettingsSubsection
       title="Monospace font"
       description="Applies to the terminal, editor, and code snippets."
     >
       <div className="flex flex-col gap-3">
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover open={open} onOpenChange={handleOpenChange}>
           <PopoverTrigger asChild>
             <button
               type="button"
@@ -62,45 +72,12 @@ export function FontSelector(): React.JSX.Element {
               window.setTimeout(() => inputRef.current?.focus(), 0);
             }}
           >
-            <Command shouldFilter>
-              <CommandInput ref={inputRef} placeholder="Search fonts…" className="h-9 text-xs" />
-              <CommandList className="max-h-56">
-                <CommandEmpty className="py-3 text-center text-xs">No matching fonts.</CommandEmpty>
-                <CommandGroup>
-                  <CommandItem
-                    value=""
-                    className="text-xs"
-                    onSelect={() => {
-                      setFamily("");
-                      setOpen(false);
-                    }}
-                  >
-                    <span className="flex-1 truncate">{DEFAULT_LABEL}</span>
-                    {family === null && <CheckIcon className="size-3" />}
-                  </CommandItem>
-                  {fonts.map((f) => (
-                    <CommandItem
-                      key={f}
-                      value={f}
-                      className="text-xs"
-                      style={{ fontFamily: `"${f}"` }}
-                      onSelect={() => {
-                        setFamily(f);
-                        setOpen(false);
-                      }}
-                    >
-                      <span className="flex-1 truncate">{f}</span>
-                      {family === f && <CheckIcon className="size-3" />}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
+            <FontComboboxList inputRef={inputRef} fonts={fonts} family={family} onSelect={handleSelect} />
           </PopoverContent>
         </Popover>
 
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Switch checked={showAll} onCheckedChange={setShowAll} />
+          <Switch checked={showAll} onCheckedChange={handleShowAllChange} />
           Show all fonts (not just monospace)
         </label>
 

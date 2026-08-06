@@ -9,7 +9,8 @@ let monoState = {
   setFamily,
   isLoading: false,
 };
-let systemState = { fonts: ["Fira Code", "JetBrains Mono"], isLoading: false, error: false };
+const load = vi.fn();
+let systemState = { fonts: ["Fira Code", "JetBrains Mono"], isLoading: false, error: false, load };
 const toastError = vi.fn();
 
 vi.mock("@/lib/fonts/mono-font-setting", () => ({ useMonoFont: () => monoState }));
@@ -19,8 +20,9 @@ vi.mock("sonner", () => ({ toast: { error: (m: string) => toastError(m) } }));
 beforeEach(() => {
   setFamily.mockClear();
   toastError.mockClear();
+  load.mockClear();
   monoState = { family: null, resolved: "monospace", setFamily, isLoading: false };
-  systemState = { fonts: ["Fira Code", "JetBrains Mono"], isLoading: false, error: false };
+  systemState = { fonts: ["Fira Code", "JetBrains Mono"], isLoading: false, error: false, load };
 });
 
 describe("FontSelector", () => {
@@ -29,6 +31,13 @@ describe("FontSelector", () => {
     render(<FontSelector />);
     const preview = screen.getByTestId("mono-font-preview");
     expect(preview).toHaveStyle({ fontFamily: `"Fira Code", monospace` });
+  });
+
+  it("loads fonts only once the combobox is opened by the user", () => {
+    render(<FontSelector />);
+    expect(load).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("combobox"));
+    expect(load).toHaveBeenCalledWith(false);
   });
 
   it("lists detected fonts each rendered in their own family and persists a choice", () => {
@@ -41,7 +50,7 @@ describe("FontSelector", () => {
   });
 
   it("shows a warning and toasts once when detection fails", () => {
-    systemState = { fonts: [], isLoading: false, error: true };
+    systemState = { fonts: [], isLoading: false, error: true, load };
     render(<FontSelector />);
     expect(screen.getByText(/detection unavailable/i)).toBeInTheDocument();
     expect(toastError).toHaveBeenCalledTimes(1);
