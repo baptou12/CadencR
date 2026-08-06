@@ -19,9 +19,9 @@ import { SettingsSubsection } from "./SettingsSubsection";
 const DEFAULT_LABEL = "Default";
 
 export function FontSelector(): React.JSX.Element {
-  const { family, resolved, setFamily } = useMonoFont();
+  const { family, resolved, setFamily, isLoading: isSettingLoading } = useMonoFont();
   const [showAll, setShowAll] = useState(false);
-  const { fonts, error } = useSystemFonts(showAll);
+  const { fonts, isLoading: isFontsLoading, error } = useSystemFonts(showAll);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -30,7 +30,8 @@ export function FontSelector(): React.JSX.Element {
     if (error) toast.error("Font detection unavailable — using the default font.");
   }, [error]);
 
-  const currentLabel = family ?? DEFAULT_LABEL;
+  const isLoading = isSettingLoading || isFontsLoading;
+  const currentLabel = isLoading ? "Loading…" : (family ?? DEFAULT_LABEL);
 
   return (
     <SettingsSubsection
@@ -45,7 +46,9 @@ export function FontSelector(): React.JSX.Element {
               role="combobox"
               aria-label="Monospace font"
               aria-expanded={open}
-              className="inline-flex h-8 min-w-48 items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 text-xs shadow-xs outline-none hover:bg-accent"
+              aria-busy={isLoading}
+              disabled={isLoading}
+              className="inline-flex h-8 min-w-48 items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 text-xs shadow-xs outline-none hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="truncate">{currentLabel}</span>
               <ChevronDownIcon className="size-3 opacity-70" />
