@@ -17,6 +17,7 @@ type ServiceProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 export type SidecarPhase =
   | "starting_service"
+  | "waiting_for_service"
   | "backing_up"
   | "backup_failed"
   | "migrating"
@@ -67,6 +68,26 @@ export function createDevSidecarHandle(): SidecarHandle {
     authToken,
     stop: () => Promise.resolve(),
   };
+}
+
+/**
+ * Turbo starts the dev service and Electron concurrently. A large copied
+ * database can still be migrating when Electron becomes ready, so wait for the
+ * authenticated health endpoint before any startup API call (including Browser
+ * bridge registration). Production does this inside `spawnProductionSidecar`.
+ */
+export async function waitForDevSidecar(
+  handle: SidecarHandle,
+  onStatus: (update: SidecarStatusUpdate) => void = () => {},
+): Promise<void> {
+  if (!handle.authToken) {
+    throw new Error("Cannot start Cadencr: development service auth token is missing.");
+  }
+  const watchdog = createStartupWatchdog();
+  recordStartupProgress(watchdog, "waiting_for_service");
+  onStatus({ phase: "waiting_for_service" });
+  await waitForHealthy(handle.baseUrl, handle.authToken, () => false, watchdog);
+  onStatus({ phase: "loading_app" });
 }
 
 export function productionDbPath(): string {

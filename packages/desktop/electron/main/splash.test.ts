@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { renderSplashHtml } from "./splash";
 
 describe("renderSplashHtml", () => {
+  it("announces startup status while keeping a single activity animation", () => {
+    const html = renderSplashHtml("0.11.0");
+
+    expect(html).toContain('role="status" aria-live="polite"');
+    expect(html.match(/@keyframes/g)).toHaveLength(1);
+  });
+
   it("renders recovery action links without an open-folder action", () => {
     const html = renderSplashHtml("0.6.1", {
       title: "Cadencr can't open this database safely",

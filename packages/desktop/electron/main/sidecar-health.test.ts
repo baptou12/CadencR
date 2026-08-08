@@ -26,6 +26,9 @@ describe("sidecar startup watchdog", () => {
     expect(startupAbsoluteTimeoutMs("backing_up")).toBeGreaterThan(
       startupStallTimeoutMs("backing_up"),
     );
+    const watchdog = createStartupWatchdog(0);
+    recordStartupProgress(watchdog, "migrating", 1_000);
+    expect(startupWatchdogFailure(watchdog, 31_000)).toBeNull();
   });
 
   it("probes slowly while startup is known to be inside SQLite work", () => {
@@ -34,6 +37,21 @@ describe("sidecar startup watchdog", () => {
     );
     expect(startupHealthIntervalMs("compacting_database")).toBe(
       startupHealthIntervalMs("migrating"),
+    );
+    expect(startupHealthIntervalMs("waiting_for_service")).toBe(
+      startupHealthIntervalMs("starting_service"),
+    );
+  });
+
+  it("bounds external dev-service waiting without using unreachable heartbeat deadlines", () => {
+    expect(startupStallTimeoutMs("waiting_for_service")).toBeGreaterThan(
+      startupStallTimeoutMs("starting_service"),
+    );
+    expect(startupStallTimeoutMs("waiting_for_service")).toBeLessThan(
+      startupStallTimeoutMs("migrating"),
+    );
+    expect(startupAbsoluteTimeoutMs("waiting_for_service")).toBe(
+      startupStallTimeoutMs("waiting_for_service"),
     );
   });
 

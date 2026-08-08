@@ -15,6 +15,7 @@ import {
   type StartupRecoveryAction,
   type StartupRecoveryActionId,
 } from "./startup-recovery";
+import type { SidecarPhase } from "./sidecar";
 
 // The splash loads from a data: URL before the renderer exists, so the brand
 // font (Figtree — the "CADENCR" wordmark face) must be embedded inline rather
@@ -39,15 +40,7 @@ const SPLASH_HEIGHT = 400;
 const ERROR_SPLASH_WIDTH = 640;
 const ERROR_SPLASH_HEIGHT = 500;
 
-export type SplashPhase =
-  | "starting"
-  | "starting_service"
-  | "backing_up"
-  | "backup_failed"
-  | "migrating"
-  | "compacting_database"
-  | "importing_usage"
-  | "loading_app";
+export type SplashPhase = "starting" | SidecarPhase;
 
 interface PhaseCopy {
   title: string;
@@ -72,6 +65,10 @@ export interface SplashErrorState {
 const PHASE_COPY: Record<SplashPhase, PhaseCopy> = {
   starting: { title: "Starting Cadencr", detail: "Preparing the workspace…" },
   starting_service: { title: "Starting Cadencr", detail: "Bringing up the backend service…" },
+  waiting_for_service: {
+    title: "Waiting for the local service",
+    detail: "The backend is still starting. A copied database may need a one-time update.",
+  },
   backing_up: {
     title: "Backing up your database",
     detail: "Saving a snapshot before applying updates.",
@@ -356,7 +353,7 @@ ${renderSplashStyles()}
   <div class="name">Cadencr</div>
   <div class="version">v${escapeHtml(version)}</div>
   <div class="title" id="title">${escapeHtml(initialError?.title ?? "Starting Cadencr")}</div>
-  <div class="detail" id="detail">${escapeHtml(initialError?.detail ?? "Preparing the workspace…")}</div>
+  <div class="detail" id="detail" role="status" aria-live="polite">${escapeHtml(initialError?.detail ?? "Preparing the workspace…")}</div>
   <div class="actions" id="actions">${renderActionHtml(initialError?.actions ?? [])}</div>
 </body>
 </html>`;

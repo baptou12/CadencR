@@ -3,6 +3,7 @@ import type { SidecarPhase } from "./sidecar";
 const HEALTH_INTERVAL_MS = 500;
 const DATABASE_HEALTH_INTERVAL_MS = 5_000;
 const NORMAL_PHASE_TIMEOUT_MS = 2 * 60 * 1_000;
+const DEV_SERVICE_TIMEOUT_MS = 10 * 60 * 1_000;
 const DATABASE_STALL_TIMEOUT_MS = 30 * 60 * 1_000;
 const DATABASE_ABSOLUTE_TIMEOUT_MS = 2 * 60 * 60 * 1_000;
 
@@ -14,6 +15,38 @@ export interface StartupWatchdog {
   phase: SidecarPhase;
   phaseStartedAt: number;
   lastProgressAt: number;
+}
+
+interface StartupPolicy {
+  stallTimeoutMs: number;
+  absoluteTimeoutMs: number;
+  healthIntervalMs: number;
+}
+
+function startupPolicy(phase: SidecarPhase): StartupPolicy {
+  switch (phase) {
+    case "waiting_for_service":
+      return {
+        stallTimeoutMs: DEV_SERVICE_TIMEOUT_MS,
+        absoluteTimeoutMs: DEV_SERVICE_TIMEOUT_MS,
+        healthIntervalMs: HEALTH_INTERVAL_MS,
+      };
+    case "backing_up":
+    case "migrating":
+    case "compacting_database":
+    case "importing_usage":
+      return {
+        stallTimeoutMs: DATABASE_STALL_TIMEOUT_MS,
+        absoluteTimeoutMs: DATABASE_ABSOLUTE_TIMEOUT_MS,
+        healthIntervalMs: DATABASE_HEALTH_INTERVAL_MS,
+      };
+    default:
+      return {
+        stallTimeoutMs: NORMAL_PHASE_TIMEOUT_MS,
+        absoluteTimeoutMs: NORMAL_PHASE_TIMEOUT_MS,
+        healthIntervalMs: HEALTH_INTERVAL_MS,
+      };
+  }
 }
 
 export function createStartupWatchdog(now = Date.now()): StartupWatchdog {
@@ -31,39 +64,15 @@ export function recordStartupProgress(
 }
 
 export function startupStallTimeoutMs(phase: SidecarPhase): number {
-  switch (phase) {
-    case "backing_up":
-    case "migrating":
-    case "compacting_database":
-    case "importing_usage":
-      return DATABASE_STALL_TIMEOUT_MS;
-    default:
-      return NORMAL_PHASE_TIMEOUT_MS;
-  }
+  return startupPolicy(phase).stallTimeoutMs;
 }
 
 export function startupAbsoluteTimeoutMs(phase: SidecarPhase): number {
-  switch (phase) {
-    case "backing_up":
-    case "migrating":
-    case "compacting_database":
-    case "importing_usage":
-      return DATABASE_ABSOLUTE_TIMEOUT_MS;
-    default:
-      return NORMAL_PHASE_TIMEOUT_MS;
-  }
+  return startupPolicy(phase).absoluteTimeoutMs;
 }
 
 export function startupHealthIntervalMs(phase: SidecarPhase): number {
-  switch (phase) {
-    case "backing_up":
-    case "migrating":
-    case "compacting_database":
-    case "importing_usage":
-      return DATABASE_HEALTH_INTERVAL_MS;
-    default:
-      return HEALTH_INTERVAL_MS;
-  }
+  return startupPolicy(phase).healthIntervalMs;
 }
 
 export function startupWatchdogFailure(watchdog: StartupWatchdog, now = Date.now()): string | null {
