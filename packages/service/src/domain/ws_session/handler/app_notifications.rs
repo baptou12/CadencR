@@ -5,10 +5,11 @@ use super::app::{forward_app_events, OnLag};
 use super::WsSender;
 use crate::app_state::AppState;
 
-/// Send a running sweep snapshot before forwarding lifecycle updates.
+/// Send the latest running progress before forwarding lifecycle updates.
 pub(super) fn subscribe_storage_maintenance(sender: &WsSender, app_state: &AppState) {
     // Subscribe first so a completion emitted while reading the snapshot stays
-    // queued. A duplicate Started is harmless because the toast id is stable.
+    // queued. A duplicate update is harmless because the frontend store replaces
+    // its single maintenance status.
     let rx = app_state.storage_maintenance_events_tx.subscribe();
     if let Some(event) = app_state.storage_maintenance_events_tx.active() {
         let payload = serde_json::to_value(event).unwrap_or_else(|_| serde_json::json!({}));

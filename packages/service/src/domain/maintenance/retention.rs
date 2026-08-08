@@ -36,7 +36,7 @@ pub use runner::run;
 #[cfg(test)]
 use super::compaction;
 #[cfg(test)]
-use super::StorageMaintenanceEvent;
+use super::{StorageMaintenanceEvent, StorageMaintenanceTask};
 #[cfg(test)]
 use policy::{window_days, DEFAULT_DAYS};
 #[cfg(test)]
@@ -80,15 +80,25 @@ mod tests {
         assert_eq!(
             receiver.recv().await.unwrap(),
             StorageMaintenanceEvent::Started {
-                features: 1,
-                window_days: DEFAULT_DAYS,
+                task: StorageMaintenanceTask::Cleanup,
+                completed: 0,
+                total: 1,
+            }
+        );
+        assert_eq!(
+            receiver.recv().await.unwrap(),
+            StorageMaintenanceEvent::Progress {
+                task: StorageMaintenanceTask::Cleanup,
+                completed: 1,
+                total: 1,
             }
         );
         assert_eq!(
             receiver.recv().await.unwrap(),
             StorageMaintenanceEvent::Completed {
-                features: 1,
-                rewritten_messages: 1,
+                task: StorageMaintenanceTask::Cleanup,
+                completed: 1,
+                total: 1,
             }
         );
     }
@@ -118,9 +128,9 @@ mod tests {
         assert_eq!(
             receiver.recv().await.unwrap(),
             StorageMaintenanceEvent::Cancelled {
-                completed_features: 0,
-                remaining_features: 1,
-                rewritten_messages: 0,
+                task: StorageMaintenanceTask::Cleanup,
+                completed: 0,
+                total: 1,
             }
         );
     }
@@ -134,9 +144,41 @@ mod tests {
         assert_eq!(
             receiver.recv().await.unwrap(),
             StorageMaintenanceEvent::Failed {
-                completed_features: 0,
-                failed_features: 0,
-                rewritten_messages: 0,
+                task: StorageMaintenanceTask::Cleanup,
+                completed: 0,
+                total: 0,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_cleanup_does_not_report_the_feature_as_completed() {
+        let pool = test_pool().await;
+        archived_feature(&pool, 1, 60).await;
+        sqlx::query(
+            "CREATE TRIGGER reject_compaction_stamp BEFORE UPDATE OF compacted_at ON features
+             BEGIN SELECT RAISE(FAIL, 'transient write failure'); END",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (events, mut receiver) = event_channel();
+
+        assert_eq!(run_for_test(&pool, &events, DEFAULT_DAYS).await, 0);
+        assert!(matches!(
+            receiver.recv().await.unwrap(),
+            StorageMaintenanceEvent::Started { .. }
+        ));
+        assert!(matches!(
+            receiver.recv().await.unwrap(),
+            StorageMaintenanceEvent::Progress { .. }
+        ));
+        assert_eq!(
+            receiver.recv().await.unwrap(),
+            StorageMaintenanceEvent::Failed {
+                task: StorageMaintenanceTask::Cleanup,
+                completed: 0,
+                total: 1,
             }
         );
     }

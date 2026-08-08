@@ -36,7 +36,12 @@ LIMIT ?
 
 /// Walk from the persisted cursor, off-loading every inline image found.
 /// Returns the number of rows rewritten.
-pub async fn run(pool: &SqlitePool) -> u64 {
+#[cfg(test)]
+async fn run(pool: &SqlitePool) -> u64 {
+    run_with_progress(pool, |_| {}).await
+}
+
+pub(super) async fn run_with_progress(pool: &SqlitePool, progress: impl Fn(i64)) -> u64 {
     let mut cursor = state::get_i64(pool, state::IMAGE_BACKFILL_CURSOR, 0).await;
     let mut rewritten = 0u64;
 
@@ -65,6 +70,7 @@ pub async fn run(pool: &SqlitePool) -> u64 {
                 Ok(Some(high_water)) if high_water > cursor => {
                     cursor = high_water;
                     state::set_i64(pool, state::IMAGE_BACKFILL_CURSOR, cursor).await;
+                    progress(cursor);
                 }
                 Ok(_) => {}
                 Err(e) => tracing::warn!(cursor, "image backfill high-water query failed: {e}"),
@@ -130,6 +136,7 @@ pub async fn run(pool: &SqlitePool) -> u64 {
         }
 
         state::set_i64(pool, state::IMAGE_BACKFILL_CURSOR, cursor).await;
+        progress(cursor);
         tokio::time::sleep(BATCH_PAUSE).await;
     }
 

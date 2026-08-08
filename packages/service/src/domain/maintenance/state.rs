@@ -17,6 +17,9 @@ pub const IMAGE_BACKFILL_CURSOR: &str = "image_backfill_cursor";
 /// consider returning SQLite freelist pages to the filesystem.
 pub const DATABASE_COMPACTION_REQUESTED: &str = "database_compaction_requested";
 
+/// Whether the historical lossless backfills have reached their initial high-water mark.
+pub const INITIAL_OPTIMIZATION_COMPLETED: &str = "initial_optimization_completed";
+
 pub async fn get(pool: &SqlitePool, key: &str) -> Option<String> {
     match sqlx::query_scalar::<_, String>("SELECT value FROM maintenance_state WHERE key = ?")
         .bind(key)

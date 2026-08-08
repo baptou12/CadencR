@@ -114,7 +114,12 @@ async fn strip_window(
 /// Walk from the persisted cursor to the current max id, stripping as we go.
 /// Returns the number of rows rewritten. Errors are logged and end the pass:
 /// the cursor stays put, so the next launch resumes from the same place.
-pub async fn run(pool: &SqlitePool) -> u64 {
+#[cfg(test)]
+async fn run(pool: &SqlitePool) -> u64 {
+    run_with_progress(pool, |_| {}).await
+}
+
+pub(super) async fn run_with_progress(pool: &SqlitePool, progress: impl Fn(i64)) -> u64 {
     let max_id = match sqlx::query_scalar::<_, Option<i64>>("SELECT MAX(id) FROM agent_messages")
         .fetch_one(pool)
         .await
@@ -152,6 +157,7 @@ pub async fn run(pool: &SqlitePool) -> u64 {
         }
         cursor = upto;
         state::set_i64(pool, state::TOOL_OUTPUT_BACKFILL_CURSOR, cursor).await;
+        progress(cursor);
         tokio::time::sleep(WINDOW_PAUSE).await;
     }
 

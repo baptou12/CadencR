@@ -86,8 +86,9 @@ async fn test_app_subscribe_forwards_storage_maintenance_updates() {
     dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
     app_state.storage_maintenance_events_tx.emit(
         crate::domain::maintenance::StorageMaintenanceEvent::Started {
-            features: 3,
-            window_days: 30,
+            task: crate::domain::maintenance::StorageMaintenanceTask::Cleanup,
+            completed: 0,
+            total: 3,
         },
     );
 
@@ -102,8 +103,9 @@ async fn test_app_subscribe_forwards_storage_maintenance_updates() {
     assert_eq!(env.domain, "app");
     assert_eq!(env.action, "storage_maintenance");
     assert_eq!(env.payload["phase"], "started");
-    assert_eq!(env.payload["features"], 3);
-    assert_eq!(env.payload["window_days"], 30);
+    assert_eq!(env.payload["task"], "cleanup");
+    assert_eq!(env.payload["completed"], 0);
+    assert_eq!(env.payload["total"], 3);
 }
 
 #[tokio::test]
@@ -113,8 +115,16 @@ async fn test_storage_maintenance_subscription_snapshots_a_running_sweep() {
     let app_state = make_test_app_state().await;
     app_state.storage_maintenance_events_tx.emit(
         crate::domain::maintenance::StorageMaintenanceEvent::Started {
-            features: 5,
-            window_days: 60,
+            task: crate::domain::maintenance::StorageMaintenanceTask::Cleanup,
+            completed: 0,
+            total: 5,
+        },
+    );
+    app_state.storage_maintenance_events_tx.emit(
+        crate::domain::maintenance::StorageMaintenanceEvent::Progress {
+            task: crate::domain::maintenance::StorageMaintenanceTask::Cleanup,
+            completed: 2,
+            total: 5,
         },
     );
 
@@ -136,13 +146,15 @@ async fn test_storage_maintenance_subscription_snapshots_a_running_sweep() {
     };
     let env: WsEnvelope = serde_json::from_str(&text).unwrap();
     assert_eq!(env.action, "storage_maintenance");
-    assert_eq!(env.payload["phase"], "started");
-    assert_eq!(env.payload["features"], 5);
+    assert_eq!(env.payload["phase"], "progress");
+    assert_eq!(env.payload["completed"], 2);
+    assert_eq!(env.payload["total"], 5);
 
     app_state.storage_maintenance_events_tx.emit(
         crate::domain::maintenance::StorageMaintenanceEvent::Completed {
-            features: 5,
-            rewritten_messages: 2,
+            task: crate::domain::maintenance::StorageMaintenanceTask::Cleanup,
+            completed: 5,
+            total: 5,
         },
     );
     assert!(app_state.storage_maintenance_events_tx.active().is_none());

@@ -4,22 +4,45 @@ interface ProgressBarProps {
   completed: number;
   total: number;
   className?: string;
+  indicatorClassName?: string;
+  "aria-label"?: string;
+  showCount?: boolean;
 }
 
-export function ProgressBar({ completed, total, className }: ProgressBarProps) {
+export function ProgressBar({
+  completed,
+  total,
+  className,
+  indicatorClassName,
+  "aria-label": ariaLabel = "Progress",
+  showCount = true,
+}: ProgressBarProps) {
   if (total <= 0) return null;
+  const safeCompleted = Math.min(Math.max(completed, 0), total);
 
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <div className="flex-1 h-1.5 rounded-full bg-gray-800 overflow-hidden">
+      <div
+        role="progressbar"
+        aria-label={ariaLabel}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={safeCompleted}
+        className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800"
+      >
         <div
-          className="h-full rounded-full bg-green-500 transition-all duration-300"
-          style={{ width: `${(completed / total) * 100}%` }}
+          className={cn(
+            "h-full rounded-full bg-green-500 transition-all duration-300",
+            indicatorClassName,
+          )}
+          style={{ width: `${(safeCompleted / total) * 100}%` }}
         />
       </div>
-      <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
-        {completed}/{total}
-      </span>
+      {showCount && (
+        <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+          {safeCompleted}/{total}
+        </span>
+      )}
     </div>
   );
 }

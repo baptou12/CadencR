@@ -121,8 +121,8 @@ pub struct AppState {
     /// host clients turn this into a "device connected" toast. Emitted once per
     /// device-connection (deduped at the live-session registry), not per socket.
     pub remote_events_tx: broadcast::Sender<crate::domain::remote::models::RemoteConnectedEvent>,
-    /// User-visible lifecycle for archived-conversation storage compaction.
-    /// Every app client subscribes so a running sweep has explicit progress.
+    /// User-visible lifecycle for first-run optimization and later cleanup.
+    /// Every app client subscribes so long-running work has explicit progress.
     pub storage_maintenance_events_tx: StorageMaintenanceBroadcaster,
     /// Shared file watcher (one project at a time).
     pub file_watcher: SharedFileWatcher,

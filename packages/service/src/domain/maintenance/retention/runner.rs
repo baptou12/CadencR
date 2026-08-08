@@ -1,7 +1,9 @@
 use sqlx::SqlitePool;
 
 use super::super::compaction;
-use super::super::{StorageMaintenanceBroadcaster, StorageMaintenanceEvent};
+use super::super::{
+    StorageMaintenanceBroadcaster, StorageMaintenanceEvent, StorageMaintenanceTask,
+};
 use super::policy::PolicyGuard;
 use super::queries::{DUE_FEATURES_SQL, FEATURE_MESSAGE_IDS_SQL, FEATURE_MESSAGE_SQL};
 
@@ -12,6 +14,38 @@ pub(super) const MESSAGE_BATCH: i64 = 16;
 /// Pause between batches, so a long sweep never monopolizes the single writer
 /// while the user is driving an agent.
 const BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(50);
+
+#[derive(Default)]
+struct SweepProgress {
+    total: u64,
+    processed: u64,
+    failed: u64,
+    cancelled: bool,
+}
+
+impl SweepProgress {
+    fn terminal_event(&self) -> StorageMaintenanceEvent {
+        if self.cancelled {
+            StorageMaintenanceEvent::Cancelled {
+                task: StorageMaintenanceTask::Cleanup,
+                completed: self.processed,
+                total: self.total,
+            }
+        } else if self.failed == 0 {
+            StorageMaintenanceEvent::Completed {
+                task: StorageMaintenanceTask::Cleanup,
+                completed: self.processed,
+                total: self.total,
+            }
+        } else {
+            StorageMaintenanceEvent::Failed {
+                task: StorageMaintenanceTask::Cleanup,
+                completed: self.processed.saturating_sub(self.failed),
+                total: self.total,
+            }
+        }
+    }
+}
 
 /// Compact every feature whose retention window has elapsed. Returns the number
 /// of message rows rewritten.
@@ -38,9 +72,9 @@ async fn run_with_days(
         Err(e) => {
             tracing::warn!("retention: failed to list features due for compaction: {e}");
             events.emit(StorageMaintenanceEvent::Failed {
-                completed_features: 0,
-                failed_features: 0,
-                rewritten_messages: 0,
+                task: StorageMaintenanceTask::Cleanup,
+                completed: 0,
+                total: 0,
             });
             return 0;
         }
@@ -50,19 +84,21 @@ async fn run_with_days(
     }
 
     events.emit(StorageMaintenanceEvent::Started {
-        features: due.len() as u64,
-        window_days: days,
+        task: StorageMaintenanceTask::Cleanup,
+        completed: 0,
+        total: due.len() as u64,
     });
 
-    let total_features = due.len() as u64;
+    let mut sweep = SweepProgress {
+        total: due.len() as u64,
+        ..SweepProgress::default()
+    };
     let mut rewritten = 0u64;
     let mut compacted_features = 0u64;
-    let mut failed_features = 0u64;
-    let mut cancelled = false;
     for feature_id in due {
         if !policy.is_current(days) {
             tracing::info!("retention: policy changed, stopping active sweep");
-            cancelled = true;
+            sweep.cancelled = true;
             break;
         }
         match compact_feature_guarded(pool, feature_id, days, policy).await {
@@ -79,7 +115,7 @@ async fn run_with_days(
                             "retention: feature became ineligible before completion stamp"
                         ),
                         Err(error) => {
-                            failed_features += 1;
+                            sweep.failed += 1;
                             tracing::warn!(
                                 feature_id,
                                 "retention: failed to stamp compacted_at: {error}"
@@ -88,37 +124,25 @@ async fn run_with_days(
                     }
                 } else {
                     tracing::info!("retention: policy changed, stopping active sweep");
-                    cancelled = true;
+                    sweep.cancelled = true;
                     break;
                 }
             }
             // Leave `compacted_at` unset so the next sweep retries this feature.
             Err(e) => {
-                failed_features += 1;
+                sweep.failed += 1;
                 tracing::warn!(feature_id, "retention: compaction failed: {e}");
             }
         }
+        sweep.processed += 1;
+        events.emit(StorageMaintenanceEvent::Progress {
+            task: StorageMaintenanceTask::Cleanup,
+            completed: sweep.processed,
+            total: sweep.total,
+        });
     }
 
-    let event = if cancelled {
-        StorageMaintenanceEvent::Cancelled {
-            completed_features: compacted_features,
-            remaining_features: total_features.saturating_sub(compacted_features + failed_features),
-            rewritten_messages: rewritten,
-        }
-    } else if failed_features == 0 {
-        StorageMaintenanceEvent::Completed {
-            features: compacted_features,
-            rewritten_messages: rewritten,
-        }
-    } else {
-        StorageMaintenanceEvent::Failed {
-            completed_features: compacted_features,
-            failed_features,
-            rewritten_messages: rewritten,
-        }
-    };
-    events.emit(event);
+    events.emit(sweep.terminal_event());
 
     if rewritten > 0 {
         tracing::info!(
