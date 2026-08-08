@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use sqlx::{AssertSqlSafe, Row, SqlitePool};
 
-use crate::shared::startup_progress::emit_phase;
+use crate::shared::startup_progress::run_phase;
 
 pub(super) async fn has_pending_migrations(
     pool: &SqlitePool,
@@ -23,6 +23,22 @@ pub(super) async fn has_pending_migrations(
         }
     }
     Ok(false)
+}
+
+pub(super) async fn is_upgrade_migration_pending(
+    pool: &SqlitePool,
+    version: i64,
+) -> anyhow::Result<bool> {
+    if !table_exists(pool, "_sqlx_migrations").await? {
+        return Ok(false);
+    }
+    let applied: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM _sqlx_migrations WHERE version = ? AND success = TRUE",
+    )
+    .bind(version)
+    .fetch_one(pool)
+    .await?;
+    Ok(applied == 0)
 }
 
 pub(crate) async fn table_exists(pool: &SqlitePool, table_name: &str) -> anyhow::Result<bool> {
@@ -67,8 +83,7 @@ pub(super) async fn table_has_column(
 /// and reported after minutes of I/O. Checking up front turns it into an
 /// actionable message. The margin is the database's own size plus a little
 /// headroom: the migration that follows also needs WAL space.
-fn ensure_room_for_backup(db_path: &Path, dir: &Path) -> anyhow::Result<()> {
-    let db_bytes = std::fs::metadata(db_path)?.len();
+fn ensure_room_for_backup(db_bytes: u64, dir: &Path) -> anyhow::Result<()> {
     let Some(available) = crate::shared::disk_space::available_bytes(dir) else {
         // No answer from the platform is not a reason to block a launch; the
         // VACUUM will surface a real failure if there genuinely is no room.
@@ -107,7 +122,6 @@ pub(super) async fn backup_database(
     let name = super::backup_rotation::naming::backup_file_name(db_path, version, &timestamp)
         .ok_or_else(|| anyhow::anyhow!("unsafe database backup name or app version: {version}"))?;
     let backup = dir.join(&name);
-    emit_phase("backing_up", &backup.display().to_string());
     if backup.exists() {
         if !backup.is_file() {
             anyhow::bail!(
@@ -128,24 +142,22 @@ pub(super) async fn backup_database(
         // `.partial` suffix precisely so it can't be mistaken for one.
         std::fs::remove_file(&staging)?;
     }
-    ensure_room_for_backup(db_path, dir)?;
+    let db_bytes = std::fs::metadata(db_path)?.len();
+    ensure_room_for_backup(db_bytes, dir)?;
 
     let staging_str = staging
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("backup path is not valid UTF-8: {}", staging.display()))?;
-    let heartbeat_detail = backup.display().to_string();
-    let heartbeat = tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-            emit_phase("backing_up", &heartbeat_detail);
-        }
-    });
-    let result = sqlx::query("VACUUM INTO ?")
-        .bind(staging_str)
-        .execute(pool)
-        .await;
-    heartbeat.abort();
-    result?;
+    let detail = format!(
+        "Creating a {} safety copy before applying database updates.",
+        crate::shared::disk_space::human_bytes(db_bytes)
+    );
+    run_phase(
+        "backing_up",
+        &detail,
+        sqlx::query("VACUUM INTO ?").bind(staging_str).execute(pool),
+    )
+    .await?;
     std::fs::rename(&staging, &backup)?;
     Ok(Some(backup))
 }
@@ -154,6 +166,30 @@ pub(super) async fn backup_database(
 mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn special_upgrade_copy_requires_an_existing_migration_history() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        assert!(!is_upgrade_migration_pending(&pool, 42).await.unwrap());
+
+        sqlx::query(
+            "CREATE TABLE _sqlx_migrations (version BIGINT PRIMARY KEY, success BOOLEAN NOT NULL)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(is_upgrade_migration_pending(&pool, 42).await.unwrap());
+
+        sqlx::query("INSERT INTO _sqlx_migrations (version, success) VALUES (42, TRUE)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!is_upgrade_migration_pending(&pool, 42).await.unwrap());
+    }
 
     #[tokio::test]
     async fn unsafe_version_is_rejected_before_vacuum() {

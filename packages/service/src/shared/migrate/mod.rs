@@ -35,6 +35,7 @@ use crate::shared::startup_progress::emit_phase;
 pub(crate) use backup_rotation::naming::source_database_file_name as backup_source_database_file_name;
 pub(crate) use support::table_exists;
 use support::{backup_database, has_pending_migrations};
+const NARROW_AGENT_MESSAGES_FTS_VERSION: i64 = 20260803122000;
 /// Inputs for a single startup migration pass.
 pub struct MigrationContext<'a> {
     pub pool: &'a SqlitePool,
@@ -69,7 +70,11 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
     }
     version_guard::ensure_database_not_newer(ctx.pool, &migrator).await?;
 
-    if has_pending_migrations(ctx.pool, &migrator).await? {
+    let has_pending = has_pending_migrations(ctx.pool, &migrator).await?;
+    let rebuilds_conversation_search = has_pending
+        && support::is_upgrade_migration_pending(ctx.pool, NARROW_AGENT_MESSAGES_FTS_VERSION)
+            .await?;
+    if has_pending {
         if let Some(db_path) = ctx.db_path {
             match backup_database(ctx.pool, db_path, ctx.app_version).await {
                 Ok(Some(backup)) => {
@@ -99,12 +104,21 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
                 }
             }
         }
-        emit_phase("migrating", "");
     }
 
     checksum_repair::repair_known_sqlx_checksum_mismatches(ctx.pool, &migrator).await?;
     seed::repair_agent_messages_content_column(ctx.pool).await?;
-    migrator.run(ctx.pool).await?;
+    if has_pending {
+        let detail = if rebuilds_conversation_search {
+            "Rebuilding conversation search without bulky tool results. Conversation data is not being deleted."
+        } else {
+            "Applying database schema updates. Your conversations are preserved."
+        };
+        crate::shared::startup_progress::run_phase("migrating", detail, migrator.run(ctx.pool))
+            .await?;
+    } else {
+        migrator.run(ctx.pool).await?;
+    }
     seed::repair_agent_messages_perf_indexes(ctx.pool).await?;
 
     info!("Database migrations completed successfully");

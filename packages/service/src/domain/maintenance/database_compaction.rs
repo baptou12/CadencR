@@ -3,8 +3,9 @@
 //! Background maintenance shortens rows and drops index entries, but SQLite in
 //! `auto_vacuum=NONE` keeps those pages on its freelist. `VACUUM` is the only
 //! supported in-place operation that returns them to the filesystem. It runs on
-//! the next startup, before the read pool or HTTP server exists, and only when a
-//! prior sweep explicitly requested it.
+//! the next startup after the initial background optimization has finished,
+//! before the read pool or HTTP server exists, and only when a prior sweep
+//! explicitly requested it.
 
 use std::path::Path;
 
@@ -36,7 +37,27 @@ pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Resu
         return Ok(0);
     }
 
-    ensure_healthy(pool).await?;
+    // The FTS migration requests a compaction, but the first background pass is
+    // about to free more pages by deduplicating tool output and off-loading
+    // images. Vacuuming before that pass would rewrite a multi-gigabyte database
+    // twice across two launches and make the upgrade splash substantially
+    // longer for no durability benefit. Keep the request set and reclaim all of
+    // those pages together after the resumable optimization reaches its marker.
+    if state::get(pool, state::INITIAL_OPTIMIZATION_COMPLETED)
+        .await
+        .as_deref()
+        != Some("1")
+    {
+        tracing::info!("database compaction deferred until initial optimization completes");
+        return Ok(0);
+    }
+
+    crate::shared::startup_progress::run_phase(
+        "compacting_database",
+        "Checking database integrity before reclaiming unused space.",
+        ensure_healthy(pool),
+    )
+    .await?;
     let page_size = pragma_u64(pool, "PRAGMA page_size").await?;
     let page_count = pragma_u64(pool, "PRAGMA page_count").await?;
     let free_pages = pragma_u64(pool, "PRAGMA freelist_count").await?;
@@ -68,16 +89,27 @@ pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Resu
         );
     }
 
-    crate::shared::startup_progress::emit_phase("compacting_database", "");
     tracing::info!(
         reclaimable_bytes = reclaimable,
         "compacting SQLite freelist at startup"
     );
-    sqlx::query("VACUUM")
-        .execute(pool)
-        .await
-        .context("SQLite VACUUM failed; the original database remains usable")?;
-    ensure_healthy(pool).await?;
+    let detail = format!(
+        "Rewriting the database to reclaim {} of unused space. Conversations are preserved.",
+        disk_space::human_bytes(reclaimable)
+    );
+    crate::shared::startup_progress::run_phase(
+        "compacting_database",
+        &detail,
+        sqlx::query("VACUUM").execute(pool),
+    )
+    .await
+    .context("SQLite VACUUM failed; the original database remains usable")?;
+    crate::shared::startup_progress::run_phase(
+        "compacting_database",
+        "Verifying database integrity after reclaiming space.",
+        ensure_healthy(pool),
+    )
+    .await?;
 
     state::set(pool, state::DATABASE_COMPACTION_REQUESTED, "0").await;
     let after = std::fs::metadata(db_path)?.len();
@@ -133,23 +165,28 @@ mod tests {
         pool
     }
 
-    #[tokio::test]
-    async fn vacuum_reclaims_only_free_pages_and_preserves_rows() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let pool = file_pool(tmp.path()).await;
+    async fn seed_fragmented_payloads(pool: &SqlitePool) -> Vec<u8> {
         let payload = vec![0xAB; 128 * 1024];
         for id in 1..=24i64 {
             sqlx::query("INSERT INTO payloads (id, body) VALUES (?, ?)")
                 .bind(id)
                 .bind(&payload)
-                .execute(&pool)
+                .execute(pool)
                 .await
                 .unwrap();
         }
         sqlx::query("DELETE FROM payloads WHERE id <= 20")
-            .execute(&pool)
+            .execute(pool)
             .await
             .unwrap();
+        payload
+    }
+
+    #[tokio::test]
+    async fn vacuum_reclaims_only_free_pages_and_preserves_rows() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let pool = file_pool(tmp.path()).await;
+        let payload = seed_fragmented_payloads(&pool).await;
         for id in 21..=24i64 {
             sqlx::query("INSERT INTO payload_refs (id, payload_id, label) VALUES (?, ?, ?)")
                 .bind(id)
@@ -160,6 +197,7 @@ mod tests {
                 .unwrap();
         }
         state::set(&pool, state::DATABASE_COMPACTION_REQUESTED, "1").await;
+        state::set(&pool, state::INITIAL_OPTIMIZATION_COMPLETED, "1").await;
         let schema_before = sqlite_schema(&pool).await;
 
         let before = std::fs::metadata(tmp.path()).unwrap().len();
@@ -221,5 +259,27 @@ mod tests {
         let pool = file_pool(tmp.path()).await;
 
         assert_eq!(run_if_requested(&pool, tmp.path()).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn waits_for_initial_optimization_before_vacuuming() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let pool = file_pool(tmp.path()).await;
+        seed_fragmented_payloads(&pool).await;
+        state::set(&pool, state::DATABASE_COMPACTION_REQUESTED, "1").await;
+        let before = std::fs::metadata(tmp.path()).unwrap().len();
+
+        assert_eq!(run_if_requested(&pool, tmp.path()).await.unwrap(), 0);
+        assert_eq!(std::fs::metadata(tmp.path()).unwrap().len(), before);
+        assert_eq!(
+            state::get(&pool, state::DATABASE_COMPACTION_REQUESTED)
+                .await
+                .as_deref(),
+            Some("1"),
+            "the pending compaction must survive until the backfill finishes"
+        );
+
+        state::set(&pool, state::INITIAL_OPTIMIZATION_COMPLETED, "1").await;
+        assert!(run_if_requested(&pool, tmp.path()).await.unwrap() > 0);
     }
 }
