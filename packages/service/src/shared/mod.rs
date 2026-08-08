@@ -2,6 +2,7 @@
 
 pub mod atomic_file;
 pub mod db;
+pub mod disk_space;
 pub mod env_file;
 pub mod file_watch;
 pub mod git_cli;
@@ -11,6 +12,7 @@ pub mod migrate;
 pub mod security;
 pub mod slug;
 pub mod ssh_env;
+pub mod startup_progress;
 pub mod terminal_shell;
 #[cfg(test)]
 pub mod test_env;

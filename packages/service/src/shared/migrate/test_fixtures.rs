@@ -1,4 +1,40 @@
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
+
+use super::support;
+
+pub(crate) async fn seed_applied_migrations_before(pool: &SqlitePool, version: i64) {
+    sqlx::query(
+        "CREATE TABLE _sqlx_migrations (
+            version BIGINT PRIMARY KEY,
+            description TEXT NOT NULL,
+            installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            success BOOLEAN NOT NULL,
+            checksum BLOB NOT NULL,
+            execution_time BIGINT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let migrator = sqlx::migrate!("./migrations");
+    for migration in migrator
+        .iter()
+        .filter(|migration| migration.version < version)
+    {
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations
+             (version, description, installed_on, success, checksum, execution_time)
+             VALUES (?, ?, CURRENT_TIMESTAMP, TRUE, ?, 0)",
+        )
+        .bind(migration.version)
+        .bind(&*migration.description)
+        .bind(&*migration.checksum)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+}
 
 /// Declare the tables the schedules migration (20260724120000) FKs into.
 ///
@@ -14,6 +50,12 @@ use sqlx::SqlitePool;
 /// pre-creating it would make it fail. Later-baselined fixtures declare it
 /// themselves, in their own era-accurate shape.
 ///
+/// The archived_at migration (20260803120000) additionally backfills from the
+/// message history, so `agent_sessions` / `agent_messages` must exist and
+/// `features` must carry `status` and `created_at`. Fixtures that predate those
+/// columns get them added here rather than in each fixture, so the next
+/// late migration only has one place to update.
+///
 /// `IF NOT EXISTS` so this can be applied uniformly.
 pub(crate) async fn create_schedules_migration_prerequisites(pool: &SqlitePool) {
     sqlx::raw_sql(
@@ -25,8 +67,64 @@ pub(crate) async fn create_schedules_migration_prerequisites(pool: &SqlitePool) 
         CREATE TABLE IF NOT EXISTS features (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            feature_id INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS agent_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'assistant',
+            content TEXT NOT NULL DEFAULT '',
+            message_type TEXT NOT NULL DEFAULT 'text',
+            created_at TEXT
         );"#,
     )
+    .execute(pool)
+    .await
+    .unwrap();
+    // A fixture that declared these tables itself gets nothing from the
+    // CREATE IF NOT EXISTS above, so patch the columns in separately.
+    ensure_column(pool, "features", "status", "TEXT NOT NULL DEFAULT 'active'").await;
+    ensure_column(pool, "features", "created_at", "TEXT").await;
+    ensure_column(
+        pool,
+        "agent_sessions",
+        "feature_id",
+        "INTEGER NOT NULL DEFAULT 1",
+    )
+    .await;
+    ensure_column(pool, "agent_messages", "created_at", "TEXT").await;
+    // The FTS narrowing migration (20260803122000) filters on message_type in
+    // both its triggers and its repopulate.
+    ensure_column(
+        pool,
+        "agent_messages",
+        "message_type",
+        "TEXT NOT NULL DEFAULT 'text'",
+    )
+    .await;
+}
+
+/// Add `column` to `table` when the fixture's baseline predates it.
+///
+/// `ALTER TABLE ADD COLUMN` rejects non-constant defaults, so timestamp columns
+/// are added nullable rather than defaulting to `datetime('now')`. The archived_at
+/// backfill already `COALESCE`s over both, and a fixture row with no timestamp
+/// simply isn't eligible for retention — which is the correct outcome anyway.
+async fn ensure_column(pool: &SqlitePool, table: &str, column: &str, ddl_type: &str) {
+    if !support::table_exists(pool, table).await.unwrap()
+        || support::table_has_column(pool, table, column)
+            .await
+            .unwrap()
+    {
+        return;
+    }
+    // Table/column names are test-local literals, never user input.
+    sqlx::query(AssertSqlSafe(format!(
+        "ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"
+    )))
     .execute(pool)
     .await
     .unwrap();

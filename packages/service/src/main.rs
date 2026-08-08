@@ -100,6 +100,17 @@ async fn main() -> anyhow::Result<()> {
                 app_version: config.app_version.as_deref(),
             })
             .await?;
+            if let Err(error) = domain::maintenance::database_compaction::run_if_requested(
+                &write_pool,
+                std::path::Path::new(&db_path),
+            )
+            .await
+            {
+                // Compaction is an optimization, never a startup dependency. A
+                // failed VACUUM leaves SQLite's original file intact and the
+                // persisted request set so a later launch can retry safely.
+                tracing::warn!("database compaction skipped: {error}");
+            }
             domain::usage_stats::history_import::run_once(&write_pool).await;
             let read_pool = db::create_read_pool(&db_path).await?;
 
@@ -125,6 +136,14 @@ async fn main() -> anyhow::Result<()> {
             // lookup before this point would cache an empty scan of the
             // uninitialized fallback path for the life of the process.
             domain::agents::providers::provider_registry();
+            // Off-loaded image payloads live beside the database and settings
+            // (`~/.cadencr/blobs` in production). Created eagerly so the first
+            // screenshot of a session doesn't race directory creation.
+            let blob_dir = domain::blobs::dir::derive_from_db_path(&db_path);
+            if let Err(e) = std::fs::create_dir_all(&blob_dir) {
+                tracing::warn!(dir = %blob_dir.display(), "failed to create blob dir: {e}");
+            }
+            domain::blobs::dir::init(blob_dir);
             domain::settings_store::migrate::migrate_from_sqlite(&read_pool, &settings_dir).await;
             // Claude Code profiles moved out of SQLite into the nested `profiles`
             // section of settings.json — copy any legacy rows over, then drop the
@@ -218,6 +237,13 @@ async fn main() -> anyhow::Result<()> {
             // transitions into native push for backgrounded remote PWAs. Cheap
             // when no subscriptions exist; runs for the process lifetime.
             tokio::spawn(domain::push::dispatcher::run(state.clone()));
+            // Storage maintenance: reclaims duplicated/expired message payloads
+            // in the background. Detached and delayed so it never competes with
+            // startup or blocks the write pool during a turn.
+            domain::maintenance::spawn(
+                state.write_pool.clone(),
+                state.storage_maintenance_events_tx.clone(),
+            );
 
             // Push user-selected CLI binary paths into the SDK overrides
             // BEFORE the warmup runs — the opencode warmup spawns the server

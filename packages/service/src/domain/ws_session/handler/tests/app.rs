@@ -73,6 +73,82 @@ async fn test_app_subscribe_forwards_broadcast_updates() {
 }
 
 #[tokio::test]
+async fn test_app_subscribe_forwards_storage_maintenance_updates() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+
+    let envelope = make_envelope(
+        "app",
+        "subscribe.storage_maintenance_events",
+        serde_json::json!({}),
+    );
+    dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+    app_state.storage_maintenance_events_tx.emit(
+        crate::domain::maintenance::StorageMaintenanceEvent::Started {
+            features: 3,
+            window_days: 30,
+        },
+    );
+
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let Message::Text(text) = msg else {
+        panic!("expected text message");
+    };
+    let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+    assert_eq!(env.domain, "app");
+    assert_eq!(env.action, "storage_maintenance");
+    assert_eq!(env.payload["phase"], "started");
+    assert_eq!(env.payload["features"], 3);
+    assert_eq!(env.payload["window_days"], 30);
+}
+
+#[tokio::test]
+async fn test_storage_maintenance_subscription_snapshots_a_running_sweep() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+    app_state.storage_maintenance_events_tx.emit(
+        crate::domain::maintenance::StorageMaintenanceEvent::Started {
+            features: 5,
+            window_days: 60,
+        },
+    );
+
+    dispatch_envelope(
+        make_envelope(
+            "app",
+            "subscribe.storage_maintenance_events",
+            serde_json::json!({}),
+        ),
+        &tx,
+        &sdk_sessions,
+        &app_state,
+    )
+    .await;
+
+    let msg = rx.recv().await.unwrap();
+    let Message::Text(text) = msg else {
+        panic!("expected text message");
+    };
+    let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+    assert_eq!(env.action, "storage_maintenance");
+    assert_eq!(env.payload["phase"], "started");
+    assert_eq!(env.payload["features"], 5);
+
+    app_state.storage_maintenance_events_tx.emit(
+        crate::domain::maintenance::StorageMaintenanceEvent::Completed {
+            features: 5,
+            rewritten_messages: 2,
+        },
+    );
+    assert!(app_state.storage_maintenance_events_tx.active().is_none());
+}
+
+#[tokio::test]
 async fn test_app_unknown_action_does_not_error() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));

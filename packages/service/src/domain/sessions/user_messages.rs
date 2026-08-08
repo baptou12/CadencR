@@ -1,81 +1,18 @@
 use sqlx::SqliteConnection;
 use uuid::Uuid;
 
-use crate::error::AppError;
+mod delivery;
+mod models;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PersistedUserMessage {
-    pub id: i64,
-    pub message_uuid: String,
-    pub content: String,
-    pub created_at: String,
-    pub delivery_state: Option<String>,
-    pub inserted: bool,
-}
-
-pub struct NewUserMessage<'a> {
-    pub session_id: i64,
-    pub content: &'a str,
-    pub message_uuid: Uuid,
-    pub delivery_state: Option<&'a str>,
-}
+pub use delivery::{resolve_pending_delivery_states, update_delivery_state};
+use models::CanonicalUserMessageRow;
+pub use models::{NewUserMessage, PersistUserMessageError, PersistedUserMessage};
 
 pub fn canonical_user_message_uuid(value: Option<&str>) -> Result<Uuid, uuid::Error> {
     value
         .map(Uuid::parse_str)
         .transpose()
         .map(|uuid| uuid.unwrap_or_else(Uuid::new_v4))
-}
-
-#[derive(Debug)]
-pub enum PersistUserMessageError {
-    Database(sqlx::Error),
-    MissingSessionId,
-    IdentityConflict {
-        session_id: i64,
-        message_uuid: String,
-    },
-}
-
-impl std::fmt::Display for PersistUserMessageError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Database(error) => write!(f, "failed to persist user message: {error}"),
-            Self::MissingSessionId => write!(f, "cannot persist user message without a session id"),
-            Self::IdentityConflict {
-                session_id,
-                message_uuid,
-            } => write!(
-                f,
-                "message UUID {message_uuid} already exists with different content in session {session_id}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for PersistUserMessageError {}
-
-impl From<sqlx::Error> for PersistUserMessageError {
-    fn from(error: sqlx::Error) -> Self {
-        Self::Database(error)
-    }
-}
-
-impl From<PersistUserMessageError> for AppError {
-    fn from(error: PersistUserMessageError) -> Self {
-        match error {
-            PersistUserMessageError::Database(error) => AppError::DatabaseError(error.to_string()),
-            PersistUserMessageError::MissingSessionId => {
-                AppError::Internal("cannot persist user message without a session id".to_string())
-            }
-            PersistUserMessageError::IdentityConflict {
-                session_id,
-                message_uuid,
-            } => AppError::Conflict(format!(
-                "message UUID {message_uuid} already has different content in session {session_id}"
-            )),
-        }
-    }
 }
 
 /// Insert one canonical user message or return the existing identical row.
@@ -116,7 +53,9 @@ pub async fn persist_user_message(
     .bind(&message_uuid)
     .fetch_one(&mut *connection)
     .await?;
-    if existing.content != message.content {
+    if existing.content != message.content
+        && !same_logical_content(&existing.content, message.content).await
+    {
         return Err(PersistUserMessageError::IdentityConflict {
             session_id: message.session_id,
             message_uuid,
@@ -125,62 +64,22 @@ pub async fn persist_user_message(
     Ok(existing.into_persisted(false))
 }
 
-#[derive(sqlx::FromRow)]
-struct CanonicalUserMessageRow {
-    id: i64,
-    message_uuid: String,
-    content: String,
-    created_at: String,
-    delivery_state: Option<String>,
-}
-
-impl CanonicalUserMessageRow {
-    fn into_persisted(self, inserted: bool) -> PersistedUserMessage {
-        PersistedUserMessage {
-            id: self.id,
-            message_uuid: self.message_uuid,
-            content: self.content,
-            created_at: self.created_at,
-            delivery_state: self.delivery_state,
-            inserted,
-        }
-    }
-}
-
-pub async fn update_delivery_state(
-    pool: &sqlx::SqlitePool,
-    session_id: i64,
-    message_uuid: &str,
-    state: &str,
-) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        "UPDATE agent_messages SET delivery_state = ?
-         WHERE session_id = ? AND message_uuid = ?
-           AND (? = 'received_agent' OR delivery_state IS NULL OR delivery_state = 'pending_agent')",
-    )
-    .bind(state)
-    .bind(session_id)
-    .bind(message_uuid)
-    .bind(state)
-    .execute(pool)
-    .await?;
-    Ok(result.rows_affected() == 1)
-}
-
-pub async fn resolve_pending_delivery_states(
-    pool: &sqlx::SqlitePool,
-    session_id: i64,
-    state: &str,
-) -> Result<u64, sqlx::Error> {
-    Ok(sqlx::query(
-        "UPDATE agent_messages SET delivery_state = ?
-         WHERE session_id = ? AND delivery_state = 'pending_agent'",
-    )
-    .bind(state)
-    .bind(session_id)
-    .execute(pool)
-    .await?
-    .rows_affected())
+/// Blob maintenance may replace an inline image body with its content-addressed
+/// reference after the original send. A retry intentionally reuses the UUID
+/// and reconstructs the inline body, so compare both forms after applying the
+/// same lossless off-load transform before declaring an identity conflict.
+async fn same_logical_content(existing: &str, incoming: &str) -> bool {
+    let existing = existing.to_string();
+    let incoming = incoming.to_string();
+    tokio::task::spawn_blocking(move || {
+        let existing_canonical = crate::domain::blobs::canonicalize_content(&existing)
+            .unwrap_or_else(|| existing.to_string());
+        let incoming_canonical = crate::domain::blobs::canonicalize_content(&incoming)
+            .unwrap_or_else(|| incoming.to_string());
+        existing_canonical == incoming_canonical
+    })
+    .await
+    .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -352,6 +251,57 @@ mod tests {
             error,
             PersistUserMessageError::IdentityConflict { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn failed_image_message_retry_matches_after_blob_backfill() {
+        use base64::Engine as _;
+
+        let (pool, session_id) = setup().await;
+        let message_uuid = Uuid::new_v4();
+        let mut connection = pool.acquire().await.unwrap();
+        let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        bytes.extend(std::iter::repeat_n(0xCD, 8_192));
+        let payload = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let inline = serde_json::json!([{
+            "type": "image",
+            "source": { "type": "base64", "media_type": "image/png", "data": payload }
+        }])
+        .to_string();
+
+        let first = persist_user_message(
+            &mut connection,
+            NewUserMessage {
+                session_id,
+                content: &inline,
+                message_uuid,
+                delivery_state: Some("delivery_failed"),
+            },
+        )
+        .await
+        .unwrap();
+        let offloaded = crate::domain::blobs::offload_content(&inline).unwrap();
+        sqlx::query("UPDATE agent_messages SET content = ? WHERE id = ?")
+            .bind(&offloaded)
+            .bind(first.id)
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+
+        let retry = persist_user_message(
+            &mut connection,
+            NewUserMessage {
+                session_id,
+                content: &inline,
+                message_uuid,
+                delivery_state: Some("delivery_failed"),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!retry.inserted);
+        assert_eq!(retry.id, first.id);
+        assert_eq!(retry.content, offloaded);
     }
 
     #[tokio::test]

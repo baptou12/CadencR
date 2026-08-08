@@ -19,6 +19,7 @@ mod access;
 mod active_turns;
 mod app;
 mod app_forge;
+mod app_notifications;
 mod claude_access;
 pub(in crate::domain::ws_session) mod commands;
 mod connection;

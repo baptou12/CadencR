@@ -112,6 +112,7 @@ pub struct WsSessionPersistence {
 include!("persistence/session_bootstrap.rs");
 include!("persistence/session_tool_input_buffer.rs");
 include!("persistence/session_mergeable_blocks.rs");
+include!("persistence/session_events/compact.rs");
 include!("persistence/session_events.rs");
 // session_events' `#[cfg(test)]` suite is too large to keep inline under the
 // 400-line cap; its overflow tests are split into these two included files
@@ -120,6 +121,7 @@ include!("persistence/session_events_compact_tests.rs");
 include!("persistence/session_events_reconcile_tests.rs");
 include!("persistence/session_error_messages.rs");
 include!("persistence/session_tool_reconciliation.rs");
+include!("persistence/session_tool_output_dedup.rs");
 include!("persistence/session_subagents.rs");
 include!("persistence/session_queries.rs");
 include!("persistence/session_state.rs");

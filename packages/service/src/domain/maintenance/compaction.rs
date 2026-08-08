@@ -1,0 +1,92 @@
+//! The lossy transform used by archived-feature retention.
+//!
+//! Retention may persist only the exact Bash-output truncation already applied
+//! on the read path. Reusing that implementation is intentional: it prevents a
+//! maintenance sweep from trimming nested JSON, tool arguments, content blocks,
+//! or output from tools that the UI otherwise shows in full.
+
+use crate::domain::sessions::repository::truncation::{
+    is_bash_tool_name, truncate_bash_output, BASH_OUTPUT_MAX_LINES,
+};
+
+/// Return the read-path representation when it is shorter, otherwise `None`.
+pub fn compact_content(content: &str, tool_name: Option<&str>) -> Option<String> {
+    if !is_bash_tool_name(tool_name) {
+        return None;
+    }
+
+    let (truncated, was_truncated) = truncate_bash_output(content, BASH_OUTPUT_MAX_LINES);
+    was_truncated.then_some(truncated)
+}
+
+/// Keep large JSON/string work off the async runtime.
+pub async fn compact_bash_content_async(content: String) -> Option<String> {
+    match tokio::task::spawn_blocking(move || compact_content(&content, Some("Bash"))).await {
+        Ok(compacted) => compacted,
+        Err(error) => {
+            tracing::warn!("retention compaction task failed: {error}");
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn huge_log() -> String {
+        (0..5_000)
+            .map(|line| format!("line {line} of a very long build log"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn persists_exactly_the_bash_read_path_representation() {
+        let content = serde_json::json!({
+            "command": "pnpm build",
+            "aggregatedOutput": huge_log(),
+        })
+        .to_string();
+        let (displayed, was_truncated) = truncate_bash_output(&content, BASH_OUTPUT_MAX_LINES);
+
+        assert!(was_truncated);
+        assert_eq!(compact_content(&content, Some("Bash")), Some(displayed));
+    }
+
+    #[test]
+    fn leaves_nested_and_content_block_text_untouched() {
+        for content in [
+            serde_json::json!({ "result": { "text": huge_log() } }).to_string(),
+            serde_json::json!([{ "type": "text", "text": huge_log() }]).to_string(),
+        ] {
+            assert!(compact_content(&content, Some("Bash")).is_none());
+        }
+    }
+
+    #[test]
+    fn truncates_bare_bash_output_exactly_like_the_read_path() {
+        let content = huge_log();
+        let expected = truncate_bash_output(&content, BASH_OUTPUT_MAX_LINES).0;
+
+        assert_eq!(compact_content(&content, Some("Bash")), Some(expected));
+    }
+
+    #[test]
+    fn leaves_non_bash_tools_and_arguments_untouched() {
+        let output = serde_json::json!({ "output": huge_log() }).to_string();
+        let arguments = serde_json::json!({ "command": huge_log() }).to_string();
+
+        assert!(compact_content(&output, Some("Read")).is_none());
+        assert!(compact_content(&output, None).is_none());
+        assert!(compact_content(&arguments, Some("Bash")).is_none());
+    }
+
+    #[test]
+    fn is_idempotent() {
+        let content = serde_json::json!({ "output": huge_log() }).to_string();
+        let once = compact_content(&content, Some("Bash")).expect("first pass compacts");
+
+        assert!(compact_content(&once, Some("Bash")).is_none());
+    }
+}

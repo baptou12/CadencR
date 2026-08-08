@@ -17,7 +17,9 @@ pub(super) async fn handle_app_action(
         }
         "subscribe.feature_events" => handle_subscribe_feature_events(sender, app_state),
         "subscribe.schedule_events" => handle_subscribe_schedule_events(sender, app_state),
-        "subscribe.settings_events" => handle_subscribe_settings_events(sender, app_state),
+        "subscribe.settings_events" => {
+            super::app_notifications::subscribe_settings_events(sender, app_state)
+        }
         "subscribe.theme_events" => handle_subscribe_theme_events(sender, app_state),
         "subscribe.forge_status" => {
             super::app_forge::subscribe_forge_status(envelope, sender, app_state).await
@@ -25,7 +27,12 @@ pub(super) async fn handle_app_action(
         "forge_visibility" => {
             super::app_forge::update_forge_visibility(envelope, sender, app_state).await
         }
-        "subscribe.remote_events" => handle_subscribe_remote_events(sender, app_state),
+        "subscribe.remote_events" => {
+            super::app_notifications::subscribe_remote_events(sender, app_state)
+        }
+        "subscribe.storage_maintenance_events" => {
+            super::app_notifications::subscribe_storage_maintenance(sender, app_state)
+        }
         "subscribe.file_watcher" => {
             handle_subscribe_file_watcher(envelope, sender, app_state).await
         }
@@ -199,7 +206,7 @@ async fn handle_subscribe_session_status(
 }
 
 /// How a subscriber recovers when the broadcast channel drops events under it.
-enum OnLag {
+pub(super) enum OnLag {
     /// Re-send a bare event. Safe for cues whose payload only narrows *what* to
     /// refetch: the client falls back to refetching everything, which is still
     /// correct, just broader.
@@ -217,7 +224,7 @@ enum OnLag {
 /// name and what a lagged subscriber deserves. Keeping one loop is what stops
 /// four near-identical ones from drifting apart. `session_status` stays separate:
 /// it has a seq and re-snapshots on lag.
-fn forward_app_events<T: serde::Serialize + Clone + Send + 'static>(
+pub(super) fn forward_app_events<T: serde::Serialize + Clone + Send + 'static>(
     sender: &WsSender,
     mut rx: tokio::sync::broadcast::Receiver<T>,
     action: &'static str,
@@ -278,17 +285,6 @@ fn handle_subscribe_schedule_events(sender: &WsSender, app_state: &AppState) {
     );
 }
 
-/// Settings-file change events — a settings JSON file changed on disk, via our
-/// own write or an external editor.
-fn handle_subscribe_settings_events(sender: &WsSender, app_state: &AppState) {
-    forward_app_events(
-        sender,
-        app_state.settings_events_tx.subscribe(),
-        "settings_event",
-        OnLag::ResendBare,
-    );
-}
-
 /// User-theme file changes. Kept off `settings_events` on purpose: a theme edit
 /// must re-inject tokens promptly for the live preview to feel like an editor,
 /// while the settings stream fans out into the model/provider/agent-catalog
@@ -299,19 +295,6 @@ fn handle_subscribe_theme_events(sender: &WsSender, app_state: &AppState) {
         app_state.theme_events_tx.subscribe(),
         "theme_event",
         OnLag::ResendBare,
-    );
-}
-
-/// Remote device-connection events, which the host turns into a "device
-/// connected" toast. Only the host (loopback) UI subscribes, so a device never
-/// toasts for its own connection. A missed event is a missed toast, not stale
-/// state — hence [`OnLag::Skip`].
-fn handle_subscribe_remote_events(sender: &WsSender, app_state: &AppState) {
-    forward_app_events(
-        sender,
-        app_state.remote_events_tx.subscribe(),
-        "remote_connected",
-        OnLag::Skip,
     );
 }
 

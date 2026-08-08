@@ -25,6 +25,7 @@
 )]
 
 pub mod agents;
+pub mod blobs;
 pub mod checkpoints;
 pub mod custom_actions;
 pub mod diff_comments;
@@ -36,6 +37,7 @@ pub mod gate_registry;
 pub mod git;
 pub mod imports;
 pub mod lsp;
+pub mod maintenance;
 pub mod mcp;
 pub mod permission_bridge;
 pub mod ports;

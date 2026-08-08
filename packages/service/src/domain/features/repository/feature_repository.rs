@@ -183,16 +183,29 @@ pub async fn update_generated_title(
     Ok(result.rows_affected() > 0)
 }
 
+/// Stamp `archived_at` on the way into `archived` and clear it on the way out,
+/// so un-archiving a feature restarts its retention clock instead of leaving it
+/// eligible for compaction the moment it is archived again. `compacted_at` is
+/// cleared alongside: a revived feature has no stale sweep record.
 pub async fn update_status(
     pool: &SqlitePool,
     id: i64,
     status: FeatureStatus,
 ) -> Result<(), AppError> {
-    let result = sqlx::query("UPDATE features SET status = ? WHERE id = ?")
-        .bind(status.as_str())
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let archive_clause = if status == FeatureStatus::Archived {
+        // COALESCE so re-archiving an already-archived feature is idempotent
+        // and doesn't silently extend its retention window.
+        "archived_at = COALESCE(archived_at, datetime('now'))"
+    } else {
+        "archived_at = NULL, compacted_at = NULL"
+    };
+    let result = sqlx::query(AssertSqlSafe(format!(
+        "UPDATE features SET status = ?, {archive_clause} WHERE id = ?"
+    )))
+    .bind(status.as_str())
+    .bind(id)
+    .execute(pool)
+    .await?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound(format!("feature {id} not found")));
     }

@@ -3,16 +3,7 @@ use std::path::{Path, PathBuf};
 
 use sqlx::{AssertSqlSafe, Row, SqlitePool};
 
-/// Marker line consumed by the Electron sidecar to drive the splash status.
-/// One line, fixed prefix; keep the format stable - the parser in
-/// `packages/desktop/electron/main/sidecar.ts::parsePhaseLine` matches it.
-pub(super) fn emit_phase(name: &str, detail: &str) {
-    if detail.is_empty() {
-        println!("CADENCR_PHASE {name}");
-    } else {
-        println!("CADENCR_PHASE {name} {detail}");
-    }
-}
+use crate::shared::startup_progress::emit_phase;
 
 pub(super) async fn has_pending_migrations(
     pool: &SqlitePool,
@@ -69,6 +60,32 @@ pub(super) async fn table_has_column(
     Ok(table_columns(pool, table_name).await?.contains(column_name))
 }
 
+/// Fail before `VACUUM INTO` if the volume can't hold another copy.
+///
+/// Without this the snapshot runs until SQLite returns `SQLITE_FULL`, which
+/// reads as "the backup failed" — indistinguishable from a permissions problem
+/// and reported after minutes of I/O. Checking up front turns it into an
+/// actionable message. The margin is the database's own size plus a little
+/// headroom: the migration that follows also needs WAL space.
+fn ensure_room_for_backup(db_path: &Path, dir: &Path) -> anyhow::Result<()> {
+    let db_bytes = std::fs::metadata(db_path)?.len();
+    let Some(available) = crate::shared::disk_space::available_bytes(dir) else {
+        // No answer from the platform is not a reason to block a launch; the
+        // VACUUM will surface a real failure if there genuinely is no room.
+        return Ok(());
+    };
+    let needed = db_bytes.saturating_add(db_bytes / 10);
+    if available < needed {
+        anyhow::bail!(
+            "not enough free disk space for a pre-migration backup: {} available, {} needed in {}",
+            crate::shared::disk_space::human_bytes(available),
+            crate::shared::disk_space::human_bytes(needed),
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
 pub(super) async fn backup_database(
     pool: &SqlitePool,
     db_path: &Path,
@@ -80,28 +97,55 @@ pub(super) async fn backup_database(
     let dir = db_path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("db path has no parent directory: {}", db_path.display()))?;
-    let version = app_version.unwrap_or("unknown");
+    // Falling back to a literal like "unknown" would file every snapshot taken
+    // outside a packaged build under one synthetic version, and rotation keeps
+    // the newest snapshot *per version* — so the whole history would collapse to
+    // a single file. The crate version is the honest answer and keeps versions
+    // distinct.
+    let version = app_version.unwrap_or(env!("CARGO_PKG_VERSION"));
     let timestamp = chrono::Local::now().format("%Y-%m-%d-%H").to_string();
-    let backup = dir.join(format!("{version}.{timestamp}.cadencr.backup.db"));
+    let name = super::backup_rotation::naming::backup_file_name(db_path, version, &timestamp)
+        .ok_or_else(|| anyhow::anyhow!("unsafe database backup name or app version: {version}"))?;
+    let backup = dir.join(&name);
+    emit_phase("backing_up", &backup.display().to_string());
     if backup.exists() {
+        if !backup.is_file() {
+            anyhow::bail!(
+                "pre-migration backup path is not a regular file: {}",
+                backup.display()
+            );
+        }
         return Ok(Some(backup));
     }
 
     // `VACUUM INTO` produces a single consistent snapshot that includes
     // anything pending in the WAL; a plain file copy of the `.db` would miss
     // uncommitted data in the `.db-wal` sibling.
-    let staging = dir.join(format!("{version}.{timestamp}.cadencr.backup.db.partial"));
+    let staging = dir.join(format!("{name}.partial"));
     if staging.exists() {
+        // A leftover from a backup that ran out of disk. It is a truncated
+        // snapshot, never a restore candidate — `parse_snapshot` rejects the
+        // `.partial` suffix precisely so it can't be mistaken for one.
         std::fs::remove_file(&staging)?;
     }
+    ensure_room_for_backup(db_path, dir)?;
 
     let staging_str = staging
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("backup path is not valid UTF-8: {}", staging.display()))?;
-    sqlx::query("VACUUM INTO ?")
+    let heartbeat_detail = backup.display().to_string();
+    let heartbeat = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            emit_phase("backing_up", &heartbeat_detail);
+        }
+    });
+    let result = sqlx::query("VACUUM INTO ?")
         .bind(staging_str)
         .execute(pool)
-        .await?;
+        .await;
+    heartbeat.abort();
+    result?;
     std::fs::rename(&staging, &backup)?;
     Ok(Some(backup))
 }
@@ -112,7 +156,7 @@ mod tests {
     use sqlx::sqlite::SqlitePoolOptions;
 
     #[tokio::test]
-    async fn backup_path_is_bound_even_when_version_contains_a_quote() {
+    async fn unsafe_version_is_rejected_before_vacuum() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("source.db");
         let database_url = format!("sqlite://{}?mode=rwc", db_path.display());
@@ -130,12 +174,9 @@ mod tests {
             .await
             .unwrap();
 
-        let backup = backup_database(&pool, &db_path, Some("v'quoted"))
+        let error = backup_database(&pool, &db_path, Some("v'quoted"))
             .await
-            .expect("bound VACUUM path should succeed")
-            .expect("file database should be backed up");
-
-        assert!(backup.is_file());
-        assert!(backup.file_name().unwrap().to_string_lossy().contains('\''));
+            .unwrap_err();
+        assert!(error.to_string().contains("unsafe database backup name"));
     }
 }
