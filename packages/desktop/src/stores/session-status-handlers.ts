@@ -17,6 +17,7 @@ import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/
 import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
+import { showStorageMaintenanceToast } from "@/lib/storage-maintenance-toast";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import type { SessionStatusEntry } from "@/stores/session-status-store";
 
@@ -283,6 +284,10 @@ export function handleAppEnvelope(
   }
   if (domain === "app" && action === "remote_connected") {
     showRemoteConnectedToast();
+    return true;
+  }
+  if (domain === "app" && action === "storage_maintenance") {
+    showStorageMaintenanceToast(payload);
     return true;
   }
   if (domain === "app" && action === "settings_event") {

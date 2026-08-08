@@ -2,8 +2,9 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CopyIcon, CheckIcon, RotateCcwIcon, GitBranchIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { fetchBlob } from "@/lib/blob-ref";
 import { copyAs } from "@/lib/markdown-export";
-import { readPromptBlobBase64 } from "@/lib/prompt-image-cache";
+import { readBlobBase64, readPromptBlobBase64 } from "@/lib/prompt-image-cache";
 import { parseUserMessageContent, type PromptAttachmentPayload } from "@/types/agent-types";
 import { cn } from "@/lib/utils";
 import type { AgentBlockData } from "../AgentBlock";
@@ -103,9 +104,16 @@ function useUserMessageRetry(
 ) {
   const [retryingMessageUuid, setRetryingMessageUuid] = useState<string | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const available = [...content.images, ...content.attachments].every(
-    (payload) => payload.base64 !== undefined || payload.ref !== undefined,
-  );
+  // Images have a third source — the on-disk blob store the backend off-loads
+  // them to — which file attachments don't, so the two lists check separately.
+  const available =
+    content.images.every(
+      (image) =>
+        image.base64 !== undefined || image.ref !== undefined || image.blobHash !== undefined,
+    ) &&
+    content.attachments.every(
+      (attachment) => attachment.base64 !== undefined || attachment.ref !== undefined,
+    );
   const visible =
     wsSessionId != null &&
     block.messageUuid != null &&
@@ -148,15 +156,28 @@ function useUserMessageRetry(
 }
 
 /**
- * Resolve an inline payload, or pull it back out of the blob cache. Throws
- * rather than resolving `undefined` for an evicted ref: re-sending the prompt
- * with its screenshot quietly missing is worse than not re-sending it.
+ * Resolve an inline payload, or pull it back out of the in-memory prompt cache
+ * or the on-disk blob store. Throws rather than resolving `undefined` for a
+ * payload it can't rebuild: re-sending the prompt with its screenshot quietly
+ * missing is worse than not re-sending it.
  */
 async function payloadBase64(
-  source: { base64?: string; ref?: string },
+  source: { base64?: string; ref?: string; blobHash?: string },
   label: string,
 ): Promise<string> {
   if (source.base64 !== undefined) return source.base64;
+  // A message old enough for the image off-load to have run keeps its bytes in
+  // the blob store, not in the prompt cache. Without this a failed send could
+  // never be retried once maintenance had swept the row.
+  if (source.blobHash !== undefined) {
+    try {
+      const base64 = await readBlobBase64(await fetchBlob(source.blobHash));
+      if (base64.length > 0) return base64;
+    } catch (error) {
+      throw new Error(`${label} could not be read from storage`, { cause: error });
+    }
+    throw new Error(`${label} could not be read from storage`);
+  }
   const restored = source.ref ? await readPromptBlobBase64(source.ref) : undefined;
   if (restored === undefined) throw new Error(`${label} is no longer held in memory`);
   return restored;

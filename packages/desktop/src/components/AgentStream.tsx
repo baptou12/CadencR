@@ -345,6 +345,7 @@ export const AgentStream = memo(function AgentStream({
         <ConversationSearch
           enabled={searchEnabled}
           items={displayItems}
+          toolResultMap={toolResultMap}
           virtuosoRef={streamRefs.localVirtuosoRef}
           scrollerRef={streamRefs.scrollerElRef}
         />

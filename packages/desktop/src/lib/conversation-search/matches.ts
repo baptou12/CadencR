@@ -1,7 +1,7 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { DisplayItem } from "@/components/agentStreamDisplay";
 import { DEFAULT_BASH_LINES } from "@/components/BashBlock";
-import { extractBashCommand, extractBashOutput } from "@/lib/tool-adapter";
+import { extractBashCommand, extractBashOutput, extractBashResultOutput } from "@/lib/tool-adapter";
 
 /** Keep only the last `max` lines — tool output renders collapsed to its tail. */
 function lastLines(text: string, max: number): string {
@@ -28,17 +28,28 @@ export interface ConversationMatch {
  * (not the rendered markdown) so off-screen rows — which mount and render in
  * full once scrolled to — are still findable.
  *
- * Bash is the exception: its `toolArgs` is a JSON payload that embeds the whole
- * command output, but the row renders only the command plus the output's last
- * {@link DEFAULT_BASH_LINES} lines (see `BashBlock`). Searching the raw payload
+ * Bash is the exception: the row renders only the command plus the output's last
+ * {@link DEFAULT_BASH_LINES} lines (see `BashBlock`). Searching the whole output
  * would count hundreds of occurrences that aren't in the DOM, inflating the
  * count and making navigation land repeatedly on the last visible match. So we
  * search exactly what the row shows: the command and that visible output tail.
  *
+ * That output has to be resolved the same way `AgentBlock` resolves it for
+ * rendering — paired `tool_result` first, the tool_call's own payload only as a
+ * fallback. Once a command finishes, the backend drops the duplicate copy off
+ * the tool_call (`session_tool_output_dedup.rs`), so the result row is the only
+ * place the output still lives; reading `toolArgs` alone would silently stop
+ * matching completed commands. `tool_result` blocks are filtered out of the
+ * display list before it reaches search (`useAgentStreamData`), so they can't
+ * make up the difference on their own.
+ *
  * Dividers and turn summaries carry no user-authored prose, so they're
  * excluded.
  */
-export function blockSearchableText(block: AgentBlockData): string {
+export function blockSearchableText(
+  block: AgentBlockData,
+  toolResultMap?: ReadonlyMap<string, AgentBlockData>,
+): string {
   switch (block.type) {
     case "turn_summary":
     case "compact_divider":
@@ -46,12 +57,20 @@ export function blockSearchableText(block: AgentBlockData): string {
       return "";
     case "tool_call": {
       const command = extractBashCommand(block.toolArgs);
-      const output = extractBashOutput(block.toolArgs);
-      if (command !== undefined || output !== undefined) {
+      const inlineOutput = extractBashOutput(block.toolArgs);
+      // Only the provider-normalized Bash tool resolves its text from the
+      // result row — that's where dedup moved its output to. Argument shape is
+      // not a tool identity: MCP/custom tools may legitimately have `command`
+      // or `output` fields while rendering their full arguments.
+      if (block.toolName === "Bash") {
+        const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
+        const output =
+          (result ? extractBashResultOutput(result.content) : undefined) ?? inlineOutput;
         const tail = lastLines(output ?? "", DEFAULT_BASH_LINES);
         return [block.toolName, command, tail].filter(Boolean).join(" ");
       }
-      // Non-Bash tools render their name + args (output, when any, is small).
+      // Every other tool renders its name + args; its result is a separate
+      // block that search reaches on its own.
       return [block.toolName, block.toolArgs, block.content].filter(Boolean).join(" ");
     }
     default:
@@ -87,6 +106,7 @@ function countOccurrences(haystackLower: string, needleLower: string): number {
 export function computeConversationMatches(
   items: readonly DisplayItem[],
   query: string,
+  toolResultMap?: ReadonlyMap<string, AgentBlockData>,
 ): ConversationMatch[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
@@ -94,7 +114,10 @@ export function computeConversationMatches(
   const matches: ConversationMatch[] = [];
   for (let rowIndex = 0; rowIndex < items.length; rowIndex += 1) {
     for (const block of blocksOf(items[rowIndex])) {
-      const occurrences = countOccurrences(blockSearchableText(block).toLowerCase(), needle);
+      const occurrences = countOccurrences(
+        blockSearchableText(block, toolResultMap).toLowerCase(),
+        needle,
+      );
       for (let occurrenceInBlock = 0; occurrenceInBlock < occurrences; occurrenceInBlock += 1) {
         matches.push({ blockId: block.id, rowIndex, occurrenceInBlock });
       }

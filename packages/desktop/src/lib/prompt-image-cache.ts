@@ -124,17 +124,21 @@ export function promptImageSrc(image: ParsedUserMessageImage): string | null {
   return null;
 }
 
-/** Re-encode a cached payload as base64 — used when a prompt is re-sent. */
-export async function readPromptBlobBase64(ref: string): Promise<string | undefined> {
-  const entry = cache.get(ref);
-  if (!entry) return undefined;
+/** Re-encode a blob as base64 without its `data:` URL prefix. */
+export async function readBlobBase64(blob: Blob): Promise<string> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener("load", () => resolve(reader.result as string));
     reader.addEventListener("error", () => reject(reader.error ?? new Error("read failed")));
-    reader.readAsDataURL(entry.blob);
+    reader.readAsDataURL(blob);
   });
   return dataUrl.slice(dataUrl.indexOf(",") + 1);
+}
+
+/** Re-encode a cached payload as base64 — used when a prompt is re-sent. */
+export async function readPromptBlobBase64(ref: string): Promise<string | undefined> {
+  const entry = cache.get(ref);
+  return entry ? readBlobBase64(entry.blob) : undefined;
 }
 
 function stashImageBlock(block: RawUserMessageBlock): RawUserMessageBlock | null {

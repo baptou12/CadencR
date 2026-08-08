@@ -1,5 +1,6 @@
 import { memo, type RefObject } from "react";
 import type { VirtuosoHandle } from "react-virtuoso";
+import type { AgentBlockData } from "@/components/AgentBlock";
 import type { DisplayItem } from "@/components/agentStreamDisplay";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { useConversationSearch } from "@/hooks/useConversationSearch";
@@ -9,6 +10,8 @@ interface ConversationSearchProps {
   /** Whether the agent tab is focused — gates both the shortcut and the bar. */
   enabled: boolean;
   items: readonly DisplayItem[];
+  /** Paired tool results — Bash rows are searched on the output they render. */
+  toolResultMap?: ReadonlyMap<string, AgentBlockData>;
   virtuosoRef: RefObject<VirtuosoHandle | null>;
   scrollerRef: RefObject<HTMLElement | null>;
 }
@@ -22,10 +25,11 @@ interface ConversationSearchProps {
 export const ConversationSearch = memo(function ConversationSearch({
   enabled,
   items,
+  toolResultMap,
   virtuosoRef,
   scrollerRef,
 }: ConversationSearchProps) {
-  const search = useConversationSearch({ items, virtuosoRef, scrollerRef });
+  const search = useConversationSearch({ items, toolResultMap, virtuosoRef, scrollerRef });
 
   useScopedGlobalShortcutById(
     "conversation-search",

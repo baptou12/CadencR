@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildStartupRecovery,
   findLatestPreMigrationBackup,
+  managedBackupFileName,
   restoreBackupOverDatabase,
 } from "./startup-recovery";
 
@@ -37,7 +38,7 @@ describe("buildStartupRecovery", () => {
   it("includes restore backup when a backup candidate exists", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "cadencr-recovery-test-"));
     const dbPath = path.join(dir, "cadencr.db");
-    const backupPath = path.join(dir, "0.6.0.2026-06-22-10.cadencr.backup.db");
+    const backupPath = path.join(dir, managedBackupFileName(dbPath, "0.6.0", "2026-06-22-10"));
     writeFileSync(dbPath, "broken");
     writeFileSync(backupPath, "backup");
 
@@ -81,13 +82,39 @@ describe("findLatestPreMigrationBackup", () => {
   it("selects the newest cadencr backup beside the database", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "cadencr-backups-test-"));
     const dbPath = path.join(dir, "cadencr.db");
-    const oldBackup = path.join(dir, "0.6.0.2026-06-22-08.cadencr.backup.db");
-    const newBackup = path.join(dir, "0.6.1.2026-06-22-10.cadencr.backup.db");
+    const oldBackup = path.join(dir, managedBackupFileName(dbPath, "0.6.0", "2026-06-22-08"));
+    const newBackup = path.join(dir, managedBackupFileName(dbPath, "0.6.1", "2026-06-22-10"));
     writeFileSync(dbPath, "db");
     writeFileSync(oldBackup, "old");
     writeFileSync(newBackup, "new");
 
     expect(findLatestPreMigrationBackup(dbPath)?.path).toBe(newBackup);
+  });
+
+  it("ignores snapshot-like files without a generated version and timestamp", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "cadencr-recovery-"));
+    const dbPath = path.join(dir, "cadencr.db");
+    writeFileSync(dbPath, "live");
+    writeFileSync(path.join(dir, "notes.2026-06-22-10.cadencr.backup.db"), "not a backup");
+    writeFileSync(path.join(dir, "0.6.0.not-a-date.cadencr.backup.db"), "not a backup");
+
+    expect(findLatestPreMigrationBackup(dbPath)).toBeNull();
+  });
+
+  it("never offers another custom database's managed backup", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "cadencr-scoped-backups-"));
+    const firstDb = path.join(dir, "first.db");
+    const secondDb = path.join(dir, "second.db");
+    writeFileSync(firstDb, "first");
+    writeFileSync(secondDb, "second");
+    writeFileSync(
+      path.join(dir, managedBackupFileName(secondDb, "0.6.1", "2026-06-22-10")),
+      "second backup",
+    );
+    // A legacy backup has no source identity and is intentionally ambiguous.
+    writeFileSync(path.join(dir, "0.6.0.2026-06-22-08.cadencr.backup.db"), "legacy");
+
+    expect(findLatestPreMigrationBackup(firstDb)).toBeNull();
   });
 });
 

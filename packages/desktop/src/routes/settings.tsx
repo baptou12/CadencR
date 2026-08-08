@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
 import { BrowserSection } from "@/components/settings/BrowserSection";
+import { StorageSection } from "@/components/settings/StorageSection";
 import { McpSection } from "@/components/settings/McpSection";
 import { InterfaceSection } from "@/components/settings/InterfaceSection";
 import { GitSection } from "@/components/settings/GitSection";
@@ -106,6 +107,7 @@ function SettingsPage() {
           <InterfaceSection />
           <NotificationsSection />
           <BrowserSection />
+          <StorageSection />
           <McpSection />
           <RuntimeSettingsSection />
           <GitSection />

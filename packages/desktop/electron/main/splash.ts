@@ -45,6 +45,7 @@ export type SplashPhase =
   | "backing_up"
   | "backup_failed"
   | "migrating"
+  | "compacting_database"
   | "importing_usage"
   | "loading_app";
 
@@ -76,12 +77,17 @@ const PHASE_COPY: Record<SplashPhase, PhaseCopy> = {
     detail: "Saving a snapshot before applying updates.",
   },
   backup_failed: {
-    title: "Continuing without a backup",
-    detail: "Pre-migration backup failed; updates will still be applied.",
+    title: "Couldn't back up your database",
+    detail:
+      "Updates were not applied, so your data is unchanged. This is usually low disk space — free some up and reopen Cadencr.",
   },
   migrating: {
     title: "Updating your database",
     detail: "Applying schema changes. This may take a moment.",
+  },
+  compacting_database: {
+    title: "Reclaiming database space",
+    detail: "Safely compacting unused pages. Your conversations are preserved.",
   },
   importing_usage: {
     title: "Importing usage history",

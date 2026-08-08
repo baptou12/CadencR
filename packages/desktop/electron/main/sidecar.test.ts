@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { describeStartupFailure, parsePhaseLine, serviceArgs, serviceEnv } from "./sidecar";
+import {
+  describeStartupFailure,
+  parsePhaseLine,
+  rethrowAfterCleanup,
+  serviceArgs,
+  serviceEnv,
+} from "./sidecar";
 
 describe("sidecar process arguments", () => {
   it("does not expose the auth token on argv", () => {
@@ -73,6 +79,13 @@ describe("parsePhaseLine", () => {
     });
   });
 
+  it("recognizes startup database compaction", () => {
+    expect(parsePhaseLine("CADENCR_PHASE compacting_database")).toEqual({
+      phase: "compacting_database",
+      detail: undefined,
+    });
+  });
+
   it("recognizes the one-time usage history import", () => {
     expect(parsePhaseLine("CADENCR_PHASE importing_usage")).toEqual({
       phase: "importing_usage",
@@ -108,5 +121,29 @@ describe("describeStartupFailure", () => {
     expect(message).toContain("restore a pre-migration backup");
     expect(message).not.toContain("health check");
     expect(message).not.toContain("Open data folder");
+  });
+});
+
+describe("failed startup cleanup", () => {
+  it("awaits process cleanup before rethrowing the startup failure", async () => {
+    const order: string[] = [];
+    const failure = new Error("health timeout");
+
+    await expect(
+      rethrowAfterCleanup(failure, async () => {
+        await Promise.resolve();
+        order.push("stopped");
+      }),
+    ).rejects.toBe(failure);
+
+    expect(order).toEqual(["stopped"]);
+  });
+
+  it("surfaces cleanup failure without hiding the startup failure", async () => {
+    await expect(
+      rethrowAfterCleanup(new Error("health timeout"), async () => {
+        throw new Error("kill failed");
+      }),
+    ).rejects.toThrow(/health timeout[\s\S]*kill failed/);
   });
 });
