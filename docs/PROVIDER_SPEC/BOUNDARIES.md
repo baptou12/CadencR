@@ -1,7 +1,7 @@
 # Cadencr Provider Boundary and Marketplace Migration Plan
 
 > - **Status:** Accepted direction; runtime registry and local ACP backend implemented, roadmap active
-> - **Last reviewed:** 2026-08-03
+> - **Last reviewed:** 2026-08-09 against `v0.11.0`
 > - **Scope:** Service, desktop, provider SDKs, CLI discovery, persistence, WebSocket APIs, and the provider marketplace
 > - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the implemented local-backend format and its refusal codes
 > - **Parent plan:** `docs/PLUGIN_STRATEGY.md` — this document is step 2 ("bring your own agent") of the four-step extensibility ladder; the ladder's marketplace phasing, signing, and renderer invariants govern here too
@@ -333,6 +333,40 @@ ACP v2 leaves draft: nothing in "install a third-party ACP agent" requires v2,
 and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 `knip` gates until something consumes it.
 
+### Implementation audit — 2026-08-09
+
+The checkboxes below describe the complete provider-boundary program, not the
+merge gate for the local-descriptor backend. At the current `v0.11.0` baseline,
+the runtime registry and local ACP execution path are real production code, but
+the canonical event model, capability-driven desktop, distribution installer,
+and CI boundary enforcement remain future increments.
+
+| Workstream                            | Current state                                                                                                                                                                | Next acceptance boundary                                                                                                                        |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local ACP backend                     | Shipped: startup descriptors, generic adapter, direct execution, quarantine, diagnostics API, authenticated HTTP/WS integration tests                                        | Preserve this v1 path while later slices add UI and distribution                                                                                |
+| Built-in regression guardrails        | Provider documents and unit/integration tests exist, but no complete Claude/Codex golden parity suite and `FEATURES.md` is still a stale universal-requirements document     | Freeze the paths the next frontend/canonical change will touch before refactoring them                                                          |
+| Installed-provider desktop            | Dynamic catalog entries can appear in existing selectors, but installed origin, source, diagnostics, enablement, and lifecycle are not presented or managed                  | Add catalog origin plus an installed-provider diagnostics view without exposing launch secrets                                                  |
+| Negotiated capabilities/configuration | ACP v1 setup reads typed config options internally and observes authoritative replacements after model changes; the desktop still receives model/mode/access-specific shapes | Add a provider-neutral per-session capability/config snapshot and opaque `set_config_option` operation                                          |
+| Canonical events and ACP v2           | Not started; current ACP runtime is fixed to v1 and still projects Claude-shaped/index-based runtime events                                                                  | Keep v2 deferred; design the versioned canonical state migration as a separate workstream                                                       |
+| Marketplace distribution/security     | Local absolute executables only; schema validation, launch hardening, quarantine, and API redaction exist                                                                    | Downloads, integrity, signing, blocklist, process policy, install history, and conformance probing are still required before remote agents ship |
+| Boundary enforcement                  | Runtime registry removes the central static provider list; remaining service leaks are hand-inventoried and desktop leaks remain widespread                                  | Add the provider-ID/dependency CI scanner only after the next containment slice establishes its allowlist                                       |
+
+Recommended increments from this baseline:
+
+1. close the skipped Phase 0 guardrails: rewrite `FEATURES.md` as a capability
+   coverage ledger and add focused Claude/Codex parity fixtures for the paths the
+   next slice will touch;
+2. ship the first user-visible step 2b slice: catalog origin plus an
+   installed-provider diagnostics screen backed by
+   `GET /api/agents/installed-providers`;
+3. add the generic ACP v1 session configuration bridge and desktop controls,
+   preserving opaque option IDs and treating every returned option list as
+   authoritative;
+4. add local descriptor lifecycle operations (add, enable, disable, remove) with
+   transcript preservation before building remote marketplace downloads;
+5. then resume the independent Phase 3/4/6 canonical-event workstream. Do not
+   pull ACP v2, downloads, signing, or third-party UI into the first step 2b PR.
+
 ### Phase 0 — Freeze parity and define ownership
 
 - [ ] Convert each built-in provider document into executable or fixture-backed
@@ -420,7 +454,10 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       runtime session.
 - [ ] Require a Cadencr feature flag in addition to successful v2 negotiation.
 - [ ] Support v1 and v2 sessions concurrently in the same application process.
-- [ ] Replace `serde_json::Value` parsing of known ACP events with typed decoding.
+- [~] Replace `serde_json::Value` parsing of known ACP events with typed decoding.
+  Initialization and session setup use typed ACP v1 requests/responses, and
+  permission/filesystem requests have typed decoders; session updates,
+  terminal traffic, and several extension paths remain raw `Value`.
 - [ ] Preserve unknown enum/union variants, extension methods, `_meta`, and
       unrecognized fields required for forwarding.
 - [ ] Implement v2 prompt acknowledgement and state updates without v1
@@ -458,8 +495,11 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 
 - [ ] Replace separate model, mode, effort, and provider-mode methods with generic
       configuration option reads and writes.
-- [ ] Treat the option list returned after each update as authoritative; providers
-      may change dependent choices after a model or mode change.
+- [~] Treat the option list returned after each update as authoritative; providers
+  may change dependent choices after a model or mode change. The ACP runtime
+  decodes and observes replacement `configOptions` after model updates, but
+  that state is still adapter-hook-local and is not projected to a generic
+  desktop session snapshot.
 - [ ] Preserve opaque option IDs and render provider-supplied labels/descriptions.
 - [ ] Map known categories such as model, mode, model configuration, and thought
       level to consistent UI placement without hard-coding provider IDs.
@@ -472,30 +512,46 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 
 ### Phase 5 — Contain backend provider behavior
 
-- [ ] Move Claude profile environment, model aliasing, bypass re-arming, plan-mode
-      behavior, compaction, resume, and import rules into the Claude adapter.
-- [ ] Move Codex permission/sandbox/collaboration mapping, command discovery,
-      attachment translation, compaction, resume, and import rules into the Codex
-      adapter.
-- [ ] Move Cursor metadata repair, model/mode synchronization, and tool
-      normalization into the Cursor adapter.
-- [ ] Move OpenCode question side-channel, agent modes, tool normalization, and
-      permission fallback into the OpenCode adapter.
-- [ ] Replace provider-name branches in `ws_session`, MCP spawn, auto-name, import,
-      and session initialization with adapter capabilities or registry dispatch.
+- [~] Move Claude profile environment, model aliasing, bypass re-arming, plan-mode
+  behavior, compaction, resume, and import rules into the Claude adapter.
+  Most runtime decisions dispatch through the adapter now; shared session
+  config/profile fields, auto-name environment selection, and importer paths
+  keep this incomplete.
+- [~] Move Codex permission/sandbox/collaboration mapping, command discovery,
+  attachment translation, compaction, resume, and import rules into the Codex
+  adapter.
+  The adapter owns substantial runtime mapping, while MCP spawn policy,
+  shared attachment/config shapes, and importer/orchestration seams remain.
+- [~] Move Cursor metadata repair, model/mode synchronization, and tool
+  normalization into the Cursor adapter.
+  The Cursor hooks own the named translations, but the shared ACP hook trait
+  is still shaped around Cursor metadata/config companions.
+- [~] Move OpenCode question side-channel, agent modes, tool normalization, and
+  permission fallback into the OpenCode adapter.
+  The OpenCode adapter owns the implementations, while the shared ACP runtime
+  still exposes question, fallback-permission, and tool override hooks made
+  for those quirks.
+- [~] Replace provider-name branches in `ws_session`, MCP spawn, auto-name, import,
+  and session initialization with adapter capabilities or registry dispatch.
+  Registry dispatch closed the central lookup path, but the temporary service
+  inventory and desktop violations still identify live identity branches.
 - [ ] Remove provider-specific error variants from the shared adapter error type;
       adapters should attach a stable generic code plus provider diagnostics.
-- [ ] Split the kitchen-sink adapter trait into small interfaces such as catalog,
-      launch, session, configuration, persistence, and optional built-in
-      extensions, following the existing `SessionBranching` seam
-      (`adapter/branching.rs`, `docs/REWIND_AND_FORK.md` §7.1) as the template.
+- [~] Split the kitchen-sink adapter trait into small interfaces such as catalog,
+  launch, session, configuration, persistence, and optional built-in
+  extensions, following the existing `SessionBranching` seam
+  (`adapter/branching.rs`, `docs/REWIND_AND_FORK.md` §7.1) as the template.
+  `SessionBranching` proves the optional-interface seam; the rest remains on
+  `AgentRuntimeAdapter`.
 - [ ] Ensure shared ACP runtime hooks describe protocol-version behavior only, not
       named provider quirks.
 
 ### Phase 6 — Remove frontend provider knowledge
 
-- [ ] Load names, icons, descriptions, availability, settings, and capabilities
-      from the service catalog.
+- [~] Load names, icons, descriptions, availability, settings, and capabilities
+  from the service catalog. Provider IDs, labels, availability, models, modes,
+  and access modes already flow from the catalog, while icons, descriptions,
+  origin, settings schemas, and negotiated capabilities do not.
 - [ ] Replace four settings panels with a schema-driven installed-provider view;
       keep custom built-in screens only as catalog-linked extensions.
 - [ ] Render session configuration options generically and place related categories
@@ -509,13 +565,19 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       strings.
 - [ ] Run provider-specific repair before canonical events cross the service
       boundary; delete Cursor/OpenCode repair logic from shared frontend parsing.
-- [ ] Represent unsupported controls as absent or disabled with a reason from the
-      capability model.
-- [ ] Preserve responsive streaming by selecting narrow store slices and applying
-      canonical upserts without rebuilding complete histories.
-- [ ] Hold the renderer invariant: packaged CSP `script-src 'self'` never widens
+- [~] Represent unsupported controls as absent or disabled with a reason from the
+  capability model. Catalog availability and empty option lists already hide
+  or disable some choices, but provider-ID tables still decide many controls
+  and no negotiated session capability snapshot exists.
+- [~] Preserve responsive streaming by selecting narrow store slices and applying
+  canonical upserts without rebuilding complete histories. Narrow store
+  selection is established on hot paths; canonical identified upserts do not
+  exist yet.
+- [x] Hold the renderer invariant: packaged CSP `script-src 'self'` never widens
       and no third-party JavaScript runs in the renderer; any built-in frontend
-      extension hook is first-party only.
+      extension hook is first-party only. `electron/main/csp.ts` enforces the
+      packaged policy and `csp.test.ts` guards it; installed providers are external
+      ACP processes and cannot contribute renderer code.
 
 ### Phase 7 — Keep SDKs transport-only
 
@@ -523,11 +585,15 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       model catalogs, permission policy, and workflow behavior.
 - [ ] Retain only protocol framing, process transport, generated wire types, and
       protocol-specific serialization in SDK crates.
-- [ ] Put provider-native to canonical translation in the provider's service
-      adapter.
-- [ ] Keep a generic ACP adapter free of named-provider hooks.
-- [ ] Avoid requiring a new SDK crate for a marketplace provider that already
-      speaks ACP.
+- [~] Put provider-native to canonical translation in the provider's service
+  adapter. Built-in adapters own substantial translation, but the shared ACP
+  hook surface and frontend repair/tool-name paths show the move is incomplete.
+- [x] Keep a generic ACP adapter free of named-provider hooks.
+      `GenericAcpAdapter` uses `StandardAcpHooks`, whose required behavior is
+      provider-neutral pass-through and whose optional hooks all decline.
+- [x] Avoid requiring a new SDK crate for a marketplace provider that already
+      speaks ACP. Every installed descriptor uses the same service-owned
+      `GenericAcpAdapter` and shared ACP client.
 
 ### Phase 8 — Add marketplace safety and conformance
 
@@ -559,8 +625,11 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       refused rather than resolved through `PATH`. This is a deliberate
       divergence from the built-in ACP adapters' `login_shell_exec_command`,
       documented at the call site so it is not "fixed" back.
-- [ ] Store secrets by reference, redact them from logs, and show environment and
-      filesystem implications before first launch.
+- [~] Store secrets by reference, redact them from logs, and show environment and
+  filesystem implications before first launch. The diagnostics API omits the
+  argument vector and all environment names/values, but descriptors still
+  contain literal values and there is no first-launch consent surface or
+  complete process-log redaction policy.
 - [ ] Apply process resource, lifecycle, and working-directory policy independently
       of ACP capabilities.
 - [ ] Run a bounded conformance probe: launch, initialize, capabilities, create a
@@ -572,8 +641,11 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
       be trusted is refused outright. Both carry a stable SCREAMING_SNAKE code
       and are reported at `GET /api/agents/installed-providers`.
 - [ ] Preserve local transcripts and installation history on disable or uninstall.
-- [ ] Distinguish ACP conformance from trust, publisher verification, and sandbox
-      policy; protocol compliance is not a security endorsement.
+- [x] Distinguish ACP conformance from trust, publisher verification, and sandbox
+      policy; protocol compliance is not a security endorsement. The installation
+      model and its documentation explicitly separate machine compatibility,
+      negotiated runtime capability, future conformance probes, and the not-yet-
+      implemented trust/signing/sandbox policies.
 
 ### Phase 9 — Enforce the boundary in CI
 
@@ -585,9 +657,14 @@ and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 - [ ] Fail CI when shared service or desktop code branches on a provider ID.
 - [ ] Add dependency rules: shared runtime may depend on adapter contracts, but it
       may not import named provider modules; SDK crates may not depend on the service.
-- [ ] Validate every marketplace fixture against the registry schema.
-- [ ] Add v1 and v2 protocol fixture suites, including malformed messages, unknown
-      variants, `_meta`, tri-state patches, cancellation races, and process exits.
+- [~] Validate every marketplace fixture against the registry schema. The pinned
+  upstream v1 schema and `claude-acp` snapshot are validated and round-trip
+  tested; the multi-content marketplace fixture set does not exist yet.
+- [~] Add v1 and v2 protocol fixture suites, including malformed messages, unknown
+  variants, `_meta`, tri-state patches, cancellation races, and process exits.
+  A deterministic minimal v1 executable covers initialization, streaming,
+  cancellation, and process use; v2 and the rich malformed/forward-compatible
+  matrix remain open.
 - [ ] Run Claude Code and Codex golden parity suites before removing any legacy
       path.
 - [x] Add a fake minimal ACP v1 executable in integration tests and prove it can be
@@ -665,16 +742,23 @@ The provider boundary is complete when all of the following are true:
       explicit feature flag.
 - [ ] Claude Code and Codex retain the detailed behavior documented in their
       provider specs and golden fixtures.
-- [ ] Cursor and OpenCode behavior remains contained behind their adapters.
+- [~] Cursor and OpenCode behavior remains contained behind their adapters. Their
+  implementations live there, but the shared ACP hook surface and frontend
+  provider-specific repair/config paths still encode their quirks.
 - [ ] No raw or Claude-shaped provider event crosses the service-to-desktop
       boundary.
 - [ ] Unknown ACP fields, variants, and `_meta` survive processing without a crash
       or accidental loss.
 - [ ] All session controls and renderers are capability- or data-driven rather
       than provider-ID-driven.
-- [ ] Unsupported features are absent or explained instead of failing late.
+- [~] Unsupported features are absent or explained instead of failing late. The
+  generic adapter declines optional trait capabilities and quarantine reasons
+  are visible, but the desktop lacks a negotiated capability model and generic
+  installed-provider diagnostics UI.
 - [ ] The provider-ID and dependency boundary checks pass in CI.
-- [ ] The generic v1 fixture, v2 draft fixture, and all built-in parity suites pass.
+- [~] The generic v1 fixture, v2 draft fixture, and all built-in parity suites pass.
+  The minimal generic v1 fixture passes; the v2 draft and built-in golden
+  parity suites have not been created.
 - [ ] Installation, first launch, interaction, restart, disable, and uninstall are
       verified in the running desktop application.
 
