@@ -109,10 +109,9 @@ async fn main() -> anyhow::Result<()> {
             }
             domain::blobs::dir::init(blob_dir);
 
-            // Finish the resumable lossless backfills before serving requests.
-            // Any pages they free can then be reclaimed by VACUUM during this
-            // same startup instead of requiring a second application restart.
-            domain::maintenance::startup::run_initial_optimization(&write_pool).await;
+            // Reclaim pages requested by a completed background maintenance
+            // pass. An incomplete initial optimization keeps the request set
+            // for a later startup instead of delaying this one.
             if let Err(error) = domain::maintenance::database_compaction::run_if_requested(
                 &write_pool,
                 std::path::Path::new(&db_path),
@@ -242,14 +241,6 @@ async fn main() -> anyhow::Result<()> {
             // transitions into native push for backgrounded remote PWAs. Cheap
             // when no subscriptions exist; runs for the process lifetime.
             tokio::spawn(domain::push::dispatcher::run(state.clone()));
-            // Later incremental lossless work and opt-in archived-conversation
-            // cleanup stay in the background. Detached and delayed so they do
-            // not compete with session restore or the first active turn.
-            domain::maintenance::spawn(
-                state.write_pool.clone(),
-                state.storage_maintenance_events_tx.clone(),
-            );
-
             // Push user-selected CLI binary paths into the SDK overrides
             // BEFORE the warmup runs — the opencode warmup spawns the server
             // process, which needs to honor the override on first launch.
@@ -287,6 +278,8 @@ async fn main() -> anyhow::Result<()> {
             let pty_manager = state.pty_manager.clone();
             let remote_for_shutdown = state.remote.clone();
             let write_pool_for_shutdown = state.write_pool.clone();
+            let maintenance_pool = state.write_pool.clone();
+            let maintenance_events = state.storage_maintenance_events_tx.clone();
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
@@ -301,6 +294,10 @@ async fn main() -> anyhow::Result<()> {
                     tracing::warn!("set_nodelay failed: {err}");
                 }
             });
+            // Start maintenance only after the listener is ready. The scheduler
+            // adds its own delay so it cannot compete with session restore or
+            // the user's first active turn.
+            domain::maintenance::spawn(maintenance_pool, maintenance_events);
             // Shutdown ordering lives in `shutdown`: the signal future only
             // closes the listener, then teardown and the HTTP drain run together.
             let (drain_tx, drain_rx) = tokio::sync::oneshot::channel();

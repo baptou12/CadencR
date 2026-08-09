@@ -2,9 +2,9 @@
 //!
 //! Background maintenance shortens rows and drops index entries, but SQLite in
 //! `auto_vacuum=NONE` keeps those pages on its freelist. `VACUUM` is the only
-//! supported in-place operation that returns them to the filesystem. It runs on
+//! supported in-place operation that returns them to the filesystem. It runs
 //! after the initial lossless optimization has finished, before the read pool
-//! or HTTP server exists, and only when a prior pass explicitly requested it.
+//! or HTTP server exists, and only when a prior maintenance pass requested it.
 
 use std::path::Path;
 
@@ -36,10 +36,9 @@ pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Resu
         return Ok(0);
     }
 
-    // Keep the request set unless the resumable lossless optimization reached
-    // its durable marker. Startup normally runs that pass immediately before
-    // this function, allowing one launch to reclaim all pages together. A
-    // partial failure safely defers VACUUM until a later retry completes it.
+    // Background maintenance may already have requested compaction while its
+    // resumable initial pass is still incomplete. Preserve that request and
+    // let the application open; the next startup after completion will retry.
     if state::get(pool, state::INITIAL_OPTIMIZATION_COMPLETED)
         .await
         .as_deref()

@@ -1,13 +1,9 @@
 //! Background storage maintenance.
 //!
-//! Cadencr's database grows without bound: every agent turn appends tool calls
-//! and results verbatim, and nothing has ever removed any of it. On a real
-//! installation that reached 5.5 GB, of which `agent_messages` was 3.6 GB and
-//! its FTS index another 1.5 GB.
+//! Cadencr's database grows without bound because every agent turn appends tool
+//! calls and results. This job keeps that historical data under control.
 //!
-//! This job runs the passes that keep that in check. Each pass is independent,
-//! resumable, and best-effort — a failure costs disk space, never correctness,
-//! so nothing here is allowed to fail startup or a turn.
+//! Passes are resumable and best-effort: failures cost disk space, not correctness.
 //!
 //! Passes are deliberately ordered cheapest-and-safest first:
 //!
@@ -22,11 +18,9 @@
 //!    archived long enough ago. It runs last so the lossless passes have
 //!    already shrunk whatever they can, leaving it less to trim.
 //!
-//! Everything here runs on the write pool, so passes pause between batches
-//! rather than holding SQLite's single writer for long stretches. The first
-//! historical backfill reports its exact phase on the startup splash. If it
-//! must resume after startup, and for every later retention sweep, determinate
-//! progress is published in the desktop's global sidebar.
+//! Background passes use the write pool after the HTTP server starts and pause
+//! between batches rather than holding SQLite's single writer for long
+//! stretches. Their progress appears in the desktop's global sidebar.
 
 pub mod compaction;
 pub mod database_compaction;
@@ -34,7 +28,6 @@ pub mod image_backfill;
 pub mod retention;
 pub mod routes;
 mod scheduler;
-pub mod startup;
 pub mod state;
 pub mod tool_output_backfill;
 
