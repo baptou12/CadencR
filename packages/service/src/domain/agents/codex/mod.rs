@@ -17,6 +17,7 @@ mod event_raw;
 #[cfg(test)]
 mod event_raw_tests;
 mod event_reasoning;
+mod event_reasoning_state;
 mod event_state;
 mod event_subagent_activity;
 mod event_subagent_routes;

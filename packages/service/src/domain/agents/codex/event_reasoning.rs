@@ -1,21 +1,28 @@
 use serde_json::Value;
 
 use super::event_json::{runtime_stream_event, thread_id};
+use super::event_reasoning_state::ReasoningSection;
 use super::event_state::IndexState;
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeStreamEvent,
 };
 
+pub(super) enum ReasoningDeltaKind {
+    Summary,
+    Content,
+}
+
 pub(super) fn reasoning_delta_event(
+    kind: ReasoningDeltaKind,
     params: Value,
-    _model: Option<&str>,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
     let Some(item_id) = params.get("itemId").and_then(Value::as_str) else {
         return Vec::new();
     };
     let delta = params.get("delta").and_then(Value::as_str).unwrap_or("");
-    let cleaned = index_state.reasoning_delta_without_marker(item_id, delta);
+    let section = kind.section(&params);
+    let cleaned = index_state.reasoning.delta(item_id, section, delta);
     if cleaned.is_empty() {
         return Vec::new();
     }
@@ -34,6 +41,33 @@ pub(super) fn reasoning_delta_event(
     vec![runtime_stream_event(session_id, event)]
 }
 
+pub(super) fn reasoning_summary_part_added(params: Value, index_state: &mut IndexState) {
+    let Some(item_id) = params.get("itemId").and_then(Value::as_str) else {
+        return;
+    };
+    let Some(summary_index) = params.get("summaryIndex").and_then(Value::as_u64) else {
+        return;
+    };
+    index_state
+        .reasoning
+        .announce_section(item_id, ReasoningSection::Summary(summary_index));
+}
+
+impl ReasoningDeltaKind {
+    fn section(self, params: &Value) -> Option<ReasoningSection> {
+        match self {
+            Self::Summary => params
+                .get("summaryIndex")
+                .and_then(Value::as_u64)
+                .map(ReasoningSection::Summary),
+            Self::Content => params
+                .get("contentIndex")
+                .and_then(Value::as_u64)
+                .map(ReasoningSection::Content),
+        }
+    }
+}
+
 pub(super) fn reasoning_item_event(
     params: Value,
     completed: bool,
@@ -49,7 +83,7 @@ pub(super) fn reasoning_item_event(
     else {
         return Vec::new();
     };
-    let pending = index_state.take_reasoning_pending(item_id);
+    let pending = index_state.reasoning.finish(item_id);
     let block_started = index_state.has_index(item_id);
     if !block_started && pending.is_none() {
         return Vec::new();
@@ -104,13 +138,27 @@ mod tests {
             .collect()
     }
 
-    fn delta(method: &str, text: &str, indexes: &mut IndexState) -> Vec<RuntimeEvent> {
+    fn text_delta(content_index: u64, text: &str, indexes: &mut IndexState) -> Vec<RuntimeEvent> {
         notification_events(
-            method,
+            "item/reasoning/textDelta",
             json!({
                 "threadId": "thread",
                 "itemId": "reasoning_1",
+                "contentIndex": content_index,
                 "delta": text
+            }),
+            None,
+            indexes,
+        )
+    }
+
+    fn summary_part_added(summary_index: u64, indexes: &mut IndexState) -> Vec<RuntimeEvent> {
+        notification_events(
+            "item/reasoning/summaryPartAdded",
+            json!({
+                "threadId": "thread",
+                "itemId": "reasoning_1",
+                "summaryIndex": summary_index
             }),
             None,
             indexes,
@@ -128,6 +176,19 @@ mod tests {
                 "threadId": "thread",
                 "itemId": "reasoning_1",
                 "summaryIndex": summary_index,
+                "delta": text
+            }),
+            None,
+            indexes,
+        )
+    }
+
+    fn unindexed_delta(method: &str, text: &str, indexes: &mut IndexState) -> Vec<RuntimeEvent> {
+        notification_events(
+            method,
+            json!({
+                "threadId": "thread",
+                "itemId": "reasoning_1",
                 "delta": text
             }),
             None,
@@ -160,30 +221,77 @@ mod tests {
     }
 
     #[test]
-    fn multiple_summary_parts_preserve_paragraphs_in_order() {
+    fn summary_part_boundaries_insert_paragraphs() {
         let mut indexes = IndexState::default();
-        let mut events = summary_delta(
-            0,
-            "**Comparing event paths**\n\nFirst detail.",
+        let mut events = summary_part_added(0, &mut indexes);
+        events.extend(unindexed_delta(
+            "item/reasoning/summaryTextDelta",
+            "**Comparing event paths**",
             &mut indexes,
-        );
-        events.extend(summary_delta(
-            1,
-            "\n\n**Checking persistence**\n\nSecond detail.",
+        ));
+        events.extend(summary_part_added(1, &mut indexes));
+        events.extend(unindexed_delta(
+            "item/reasoning/summaryTextDelta",
+            "**Checking persistence**",
             &mut indexes,
         ));
 
         assert_eq!(
             thinking_content(&events),
-            "**Comparing event paths**\n\nFirst detail.\n\n\
-             **Checking persistence**\n\nSecond detail."
+            "**Comparing event paths**\n\n**Checking persistence**"
         );
+    }
+
+    #[test]
+    fn summary_index_change_is_a_boundary_fallback() {
+        let mut indexes = IndexState::default();
+        let mut events = summary_delta(0, "**First phase**", &mut indexes);
+        events.extend(summary_delta(1, "**Second phase**", &mut indexes));
+
+        assert_eq!(
+            thinking_content(&events),
+            "**First phase**\n\n**Second phase**"
+        );
+    }
+
+    #[test]
+    fn missing_index_continues_the_visible_section() {
+        let mut indexes = IndexState::default();
+        let mut events = summary_delta(0, "**First", &mut indexes);
+        events.extend(unindexed_delta(
+            "item/reasoning/summaryTextDelta",
+            " phase**",
+            &mut indexes,
+        ));
+
+        assert_eq!(thinking_content(&events), "**First phase**");
+    }
+
+    #[test]
+    fn boundary_reuses_existing_newlines() {
+        let mut indexes = IndexState::default();
+        let mut events = summary_delta(0, "**First phase**\n\n<!-- -->", &mut indexes);
+        events.extend(summary_delta(1, "**Second phase**", &mut indexes));
+
+        assert_eq!(
+            thinking_content(&events),
+            "**First phase**\n\n**Second phase**"
+        );
+    }
+
+    #[test]
+    fn raw_reasoning_content_indexes_insert_paragraphs() {
+        let mut indexes = IndexState::default();
+        let mut events = text_delta(0, "first", &mut indexes);
+        events.extend(text_delta(1, "second", &mut indexes));
+
+        assert_eq!(thinking_content(&events), "first\n\nsecond");
     }
 
     #[test]
     fn marker_only_delta_does_not_start_thinking_block() {
         let mut indexes = IndexState::default();
-        assert!(delta("item/reasoning/textDelta", "<!-- -->", &mut indexes).is_empty());
+        assert!(text_delta(0, "<!-- -->", &mut indexes).is_empty());
         assert!(complete(&mut indexes).is_empty());
     }
 
@@ -205,8 +313,8 @@ mod tests {
     #[test]
     fn later_text_is_emitted_as_delta_for_started_block() {
         let mut indexes = IndexState::default();
-        let first = delta("item/reasoning/textDelta", "first", &mut indexes);
-        let second = delta("item/reasoning/textDelta", " second", &mut indexes);
+        let first = text_delta(0, "first", &mut indexes);
+        let second = text_delta(0, " second", &mut indexes);
 
         assert!(matches!(
             first[0].stream_event(),
@@ -224,16 +332,9 @@ mod tests {
         const MARKER: &str = "<!-- -->";
         for split in 1..MARKER.len() {
             let mut indexes = IndexState::default();
-            let mut events = delta(
-                "item/reasoning/textDelta",
-                &format!("summary\n\n{}", &MARKER[..split]),
-                &mut indexes,
-            );
-            events.extend(delta(
-                "item/reasoning/textDelta",
-                &MARKER[split..],
-                &mut indexes,
-            ));
+            let mut events =
+                text_delta(0, &format!("summary\n\n{}", &MARKER[..split]), &mut indexes);
+            events.extend(text_delta(0, &MARKER[split..], &mut indexes));
             assert_eq!(thinking_content(&events), "summary\n\n", "split {split}");
         }
     }
@@ -241,18 +342,14 @@ mod tests {
     #[test]
     fn whitespace_only_chunks_are_preserved() {
         let mut indexes = IndexState::default();
-        let events = delta("item/reasoning/textDelta", "\n\n", &mut indexes);
+        let events = text_delta(0, "\n\n", &mut indexes);
         assert_eq!(thinking_content(&events), "\n\n");
     }
 
     #[test]
     fn completion_flushes_unmatched_marker_prefix_before_stop() {
         let mut indexes = IndexState::default();
-        let mut events = delta(
-            "item/reasoning/textDelta",
-            "comparison ends with <",
-            &mut indexes,
-        );
+        let mut events = text_delta(0, "comparison ends with <", &mut indexes);
         events.extend(complete(&mut indexes));
 
         assert_eq!(thinking_content(&events), "comparison ends with <");
