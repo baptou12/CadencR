@@ -60,7 +60,11 @@ export function secureWebContents(webContents: WebContents): void {
  * match against `Electron.Permission`.
  */
 function isAllowedPermission(permission: string): boolean {
-  return permission === "clipboard-sanitized-write" || permission === "local-fonts";
+  return (
+    permission === "clipboard-sanitized-write" ||
+    permission === "clipboard-read" ||
+    permission === "local-fonts"
+  );
 }
 
 async function openApprovedExternalUrl(rawUrl: string): Promise<void> {
