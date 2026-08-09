@@ -227,6 +227,13 @@ describe("resize-coordinator handle registry + document pointerdown", () => {
     window.dispatchEvent(new PointerEvent("pointerup"));
     expect(listener).toHaveBeenLastCalledWith(false);
 
+    // Same, 6 px left of `left` — the tolerance is symmetric.
+    fireDocPointerDown(394, 400);
+    expect(listener).toHaveBeenLastCalledWith(true);
+
+    window.dispatchEvent(new PointerEvent("pointerup"));
+    expect(listener).toHaveBeenLastCalledWith(false);
+
     unsub();
     unregisterHandle(handle);
   });
@@ -239,6 +246,10 @@ describe("resize-coordinator handle registry + document pointerdown", () => {
 
     // On the line (Y inside), 50 px right of `right` — well outside the 8 px X tolerance.
     fireDocPointerDown(850, 400);
+    expect(listener).not.toHaveBeenCalled();
+
+    // Same on the other side, 50 px left of `left`.
+    fireDocPointerDown(350, 400);
     expect(listener).not.toHaveBeenCalled();
 
     unsub();
