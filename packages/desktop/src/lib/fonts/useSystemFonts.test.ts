@@ -40,6 +40,28 @@ describe("useSystemFonts", () => {
     expect(result.current.fonts).toEqual(["Arial", "Menlo"]);
   });
 
+  it("reuses the enumeration and the monospace measurements across loads", async () => {
+    const query = vi.fn(() =>
+      Promise.resolve([{ family: "Menlo" }, { family: "Arial" }, { family: "Menlo" }]),
+    );
+    window.queryLocalFonts = query;
+    const isMonospaceSpy = vi.spyOn(mono, "isMonospace").mockImplementation((f) => f !== "Arial");
+
+    const { result } = renderHook(() => useSystemFonts());
+    act(() => result.current.load(false));
+    await waitFor(() => expect(result.current.fonts).toEqual(["Menlo"]));
+
+    act(() => result.current.load(true));
+    expect(result.current.fonts).toEqual(["Arial", "Menlo"]);
+
+    act(() => result.current.load(false));
+    expect(result.current.fonts).toEqual(["Menlo"]);
+
+    expect(query).toHaveBeenCalledTimes(1);
+    // Two distinct families measured once each, despite three load() calls.
+    expect(isMonospaceSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("sets error and empty list when the API is missing", async () => {
     const { result } = renderHook(() => useSystemFonts());
     act(() => result.current.load(false));
