@@ -12,7 +12,7 @@ const ICON_SETS: readonly IconSetEntry[] = [
   {
     value: "minimal",
     label: "Minimal",
-    description: "Single generic file/folder icon — least visual noise.",
+    description: "Single generic file and folder icon with minimal visual noise.",
   },
   {
     value: "standard",

@@ -81,7 +81,7 @@ export function CreateThemeDialog({
           <DialogTitle className="text-base font-semibold">Create theme</DialogTitle>
           <DialogDescription>
             Name your theme and pick the one to start from. You get a complete copy of its colors in
-            a project of its own, and the app puts it on so you can see your changes — the original
+            a project of its own, and the app puts it on so you can see your changes. The original
             is untouched.
           </DialogDescription>
         </DialogHeader>

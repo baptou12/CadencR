@@ -36,7 +36,7 @@ export function InterfaceSection(): React.JSX.Element {
           label="UI zoom"
           description={
             isMobile ? (
-              "Scales the interface on this device only — separate from the desktop app's zoom."
+              "Scales the interface on this device only. This is separate from the desktop app's zoom."
             ) : (
               <>
                 Affects sidebar, editor, terminal, and chrome together.

@@ -182,7 +182,7 @@ function AppearanceSection(): React.JSX.Element {
         </SettingsSubsection>
         <SettingsSubsection
           title="Agent output verbosity"
-          description="Control how much of each agent turn stays expanded in the stream. Switching modes does not affect what the agent does — only how its output is rendered."
+          description="Control how much of each agent turn stays expanded in the stream. Switching modes does not affect what the agent does. It only changes how the output is rendered."
         >
           <AgentVerbositySettings />
           <AgentSummaryModeToggle />

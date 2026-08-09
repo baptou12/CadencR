@@ -88,8 +88,8 @@ export function UserThemeCard({
         tone="blocking"
         title={
           theme.issues.length === 1
-            ? "Not applied — 1 problem"
-            : `Not applied — ${theme.issues.length} problems`
+            ? "Not applied: 1 problem"
+            : `Not applied: ${theme.issues.length} problems`
         }
         warnings={theme.issues.map((issue) => ({
           key: issue.token ?? "",

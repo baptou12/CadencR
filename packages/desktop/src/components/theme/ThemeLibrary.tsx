@@ -68,7 +68,7 @@ export function ThemeLibrary(): React.JSX.Element {
         </p>
       ) : entries.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No themes yet. Create one from any theme you already like — you get its complete, working
+          No themes yet. Create one from any theme you already like. You get its complete, working
           set of colors to change.
         </p>
       ) : (
@@ -103,7 +103,7 @@ export function ThemeLibrary(): React.JSX.Element {
         open={deleting !== null}
         onOpenChange={(open_) => !open_ && setDeleting(null)}
         title={deleting ? `Delete “${userThemeLabel(deleting)}”?` : ""}
-        description="Its project goes too, and the theme folder — file, git history and all — moves to the Trash."
+        description="Its project goes too. The complete theme folder moves to the Trash, including its file and git history."
         confirmText="Delete"
         variant="destructive"
         onConfirm={() => deleting && actions.remove(deleting)}

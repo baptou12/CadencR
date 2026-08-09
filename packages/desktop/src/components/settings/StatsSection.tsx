@@ -55,7 +55,7 @@ export function StatsSection(): React.JSX.Element {
     <SettingsSection
       id="stats"
       title="Usage stats"
-      description="Provider-reported token usage, kept independently of your conversations — archiving or deleting a conversation does not erase it."
+      description="Provider-reported token usage is kept independently of your conversations. Archiving or deleting a conversation does not erase it."
     >
       <SettingsCard>
         <SettingsSubsection
