@@ -1,5 +1,12 @@
 import { CheckIcon } from "lucide-react";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandList, CommandItem } from "@/components/ui/command";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandList,
+  CommandItem,
+} from "@/components/ui/command";
 
 const DEFAULT_LABEL = "Default";
 
@@ -10,7 +17,12 @@ interface FontComboboxListProps {
   onSelect: (family: string) => void;
 }
 
-export function FontComboboxList({ inputRef, fonts, family, onSelect }: FontComboboxListProps): React.JSX.Element {
+export function FontComboboxList({
+  inputRef,
+  fonts,
+  family,
+  onSelect,
+}: FontComboboxListProps): React.JSX.Element {
   return (
     <Command shouldFilter>
       <CommandInput ref={inputRef} placeholder="Search fonts…" className="h-9 text-xs" />

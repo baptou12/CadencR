@@ -72,7 +72,12 @@ export function FontSelector(): React.JSX.Element {
               window.setTimeout(() => inputRef.current?.focus(), 0);
             }}
           >
-            <FontComboboxList inputRef={inputRef} fonts={fonts} family={family} onSelect={handleSelect} />
+            <FontComboboxList
+              inputRef={inputRef}
+              fonts={fonts}
+              family={family}
+              onSelect={handleSelect}
+            />
           </PopoverContent>
         </Popover>
 
