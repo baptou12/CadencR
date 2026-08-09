@@ -212,4 +212,36 @@ describe("resize-coordinator handle registry + document pointerdown", () => {
     unsub();
     unregisterHandle(handle);
   });
+
+  it("treats clicks within HIT_TOLERANCE_PX of a horizontal handle's X bounds as a drag start", () => {
+    // Bounded-width handle so X-axis tolerance can be exercised independently of Y.
+    const handle = makeHandle("horizontal", { left: 400, top: 400, right: 800, bottom: 401 });
+    registerHandle(handle);
+    const listener = vi.fn();
+    const unsub = subscribeResize(listener);
+
+    // On the line (Y inside), 6 px right of `right` — inside the 8 px X tolerance.
+    fireDocPointerDown(806, 400);
+    expect(listener).toHaveBeenCalledWith(true);
+
+    window.dispatchEvent(new PointerEvent("pointerup"));
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    unsub();
+    unregisterHandle(handle);
+  });
+
+  it("ignores clicks outside the X tolerance window on a horizontal handle", () => {
+    const handle = makeHandle("horizontal", { left: 400, top: 400, right: 800, bottom: 401 });
+    registerHandle(handle);
+    const listener = vi.fn();
+    const unsub = subscribeResize(listener);
+
+    // On the line (Y inside), 50 px right of `right` — well outside the 8 px X tolerance.
+    fireDocPointerDown(850, 400);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsub();
+    unregisterHandle(handle);
+  });
 });
