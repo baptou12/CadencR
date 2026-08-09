@@ -218,6 +218,25 @@ export interface AllocatedPort {
   source: PortSource;
 }
 
+export interface ArchivedCleanupRunResponse {
+  /**
+   * Archived conversations currently eligible under the saved policy.
+   * @minimum 0
+   */
+  eligible_features: number;
+  status: ArchivedCleanupRunStatus;
+}
+
+export type ArchivedCleanupRunStatus =
+  (typeof ArchivedCleanupRunStatus)[keyof typeof ArchivedCleanupRunStatus];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ArchivedCleanupRunStatus = {
+  started: "started",
+  already_running: "already_running",
+  nothing_due: "nothing_due",
+} as const;
+
 /**
  * Keyed by the discovery id declared by each provider registration.
  */
@@ -15381,6 +15400,58 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
   TContext
 > => {
   const mutationOptions = getSaveSessionDraftMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const runArchivedCleanup = (signal?: AbortSignal) => {
+  return customInstance<ArchivedCleanupRunResponse>({
+    url: `/api/storage-maintenance/archived-cleanup/run`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getRunArchivedCleanupMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runArchivedCleanup>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<Awaited<ReturnType<typeof runArchivedCleanup>>, TError, void, TContext> => {
+  const mutationKey = ["runArchivedCleanup"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof runArchivedCleanup>>, void> = () => {
+    return runArchivedCleanup();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunArchivedCleanupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runArchivedCleanup>>
+>;
+
+export type RunArchivedCleanupMutationError = ErrorType<void>;
+
+export const useRunArchivedCleanup = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runArchivedCleanup>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationResult<Awaited<ReturnType<typeof runArchivedCleanup>>, TError, void, TContext> => {
+  const mutationOptions = getRunArchivedCleanupMutationOptions(options);
 
   return useMutation(mutationOptions);
 };

@@ -1,17 +1,33 @@
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { ArchivedCleanupRunStatus, type ArchivedCleanupRunResponse } from "@/api/generated";
 import { fireEvent, render, screen } from "@/test-utils";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import {
+  applyStorageMaintenanceEvent,
+  clearStorageMaintenanceStatus,
+} from "@/stores/storage-maintenance-store";
 import { StorageSection } from "./StorageSection";
 
 vi.mock("@/hooks/useDebouncedSetting", () => ({
   useDebouncedSetting: vi.fn(),
 }));
 
+const apiMocks = vi.hoisted(() => ({
+  mutate: vi.fn(),
+  useRunArchivedCleanup: vi.fn(),
+}));
+
+vi.mock("@/api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/generated")>()),
+  useRunArchivedCleanup: apiMocks.useRunArchivedCleanup,
+}));
+
 type SettingSetter = (value: string) => void;
 
 const setters = new Map<string, Mock<SettingSetter>>();
 const values = new Map<string, string | null>();
+let runData: ArchivedCleanupRunResponse | undefined;
 
 function setter(key: string): Mock<SettingSetter> {
   const existing = setters.get(key);
@@ -29,8 +45,20 @@ function daysField(): HTMLInputElement {
   return screen.getByRole("spinbutton", { name: /days before an archived feature/i });
 }
 
+function runNowButton(): HTMLButtonElement {
+  return screen.getByRole("button", { name: /run now/i });
+}
+
 describe("StorageSection", () => {
   beforeEach(() => {
+    apiMocks.mutate.mockReset();
+    apiMocks.useRunArchivedCleanup.mockReset();
+    runData = undefined;
+    apiMocks.useRunArchivedCleanup.mockImplementation(() => ({
+      mutate: apiMocks.mutate,
+      isPending: false,
+      data: runData,
+    }));
     setters.clear();
     values.clear();
     vi.mocked(useDebouncedSetting).mockImplementation((key: string) => ({
@@ -41,6 +69,8 @@ describe("StorageSection", () => {
     }));
   });
 
+  afterEach(() => clearStorageMaintenanceStatus());
+
   it("shows compaction off with a disabled 30-day window before anything is saved", () => {
     render(<StorageSection />);
 
@@ -49,6 +79,7 @@ describe("StorageSection", () => {
     expect(toggle()).not.toBeChecked();
     expect(daysField()).toHaveValue(30);
     expect(daysField()).toBeDisabled();
+    expect(runNowButton()).toBeDisabled();
   });
 
   it("waits for backend confirmation instead of updating the policy optimistically", () => {
@@ -103,5 +134,54 @@ describe("StorageSection", () => {
     render(<StorageSection />);
 
     expect(daysField()).toHaveValue(90);
+  });
+
+  it("starts cleanup only after the persisted policy is enabled", async () => {
+    values.set("retention_compact_archived_enabled", "true");
+    render(<StorageSection />);
+
+    await userEvent.click(runNowButton());
+
+    expect(apiMocks.mutate).toHaveBeenCalledOnce();
+  });
+
+  it("shows the backend-confirmed manual-run result", () => {
+    values.set("retention_compact_archived_enabled", "true");
+    const view = render(<StorageSection />);
+
+    runData = {
+      status: ArchivedCleanupRunStatus.started,
+      eligible_features: 2,
+    };
+    view.rerender(<StorageSection />);
+
+    expect(screen.getByText(/cleanup started for 2 archived conversations/i)).toBeInTheDocument();
+  });
+
+  it.each([
+    [ArchivedCleanupRunStatus.already_running, /storage maintenance is already running/i],
+    [ArchivedCleanupRunStatus.nothing_due, /no archived conversations currently need cleanup/i],
+  ])("shows the %s result returned by the backend", (status, message) => {
+    values.set("retention_compact_archived_enabled", "true");
+    const view = render(<StorageSection />);
+
+    runData = { status, eligible_features: 0 };
+    view.rerender(<StorageSection />);
+
+    expect(screen.getByText(message)).toBeInTheDocument();
+  });
+
+  it("does not start a second sweep while backend progress is active", () => {
+    values.set("retention_compact_archived_enabled", "true");
+    applyStorageMaintenanceEvent({
+      phase: "progress",
+      task: "cleanup",
+      completed: 1,
+      total: 4,
+    });
+
+    render(<StorageSection />);
+
+    expect(screen.getByRole("button", { name: /cleanup running/i })).toBeDisabled();
   });
 });

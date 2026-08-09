@@ -136,6 +136,13 @@ describe("parsePhaseLine", () => {
     });
   });
 
+  it("recognizes the initial lossless storage optimization", () => {
+    expect(parsePhaseLine("CADENCR_PHASE optimizing_storage Moving verified duplicates")).toEqual({
+      phase: "optimizing_storage",
+      detail: "Moving verified duplicates",
+    });
+  });
+
   it("recognizes the one-time usage history import", () => {
     expect(parsePhaseLine("CADENCR_PHASE importing_usage")).toEqual({
       phase: "importing_usage",

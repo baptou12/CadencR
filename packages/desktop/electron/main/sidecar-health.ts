@@ -33,6 +33,7 @@ function startupPolicy(phase: SidecarPhase): StartupPolicy {
       };
     case "backing_up":
     case "migrating":
+    case "optimizing_storage":
     case "compacting_database":
     case "importing_usage":
       return {

@@ -24,17 +24,24 @@
 //!
 //! Everything here runs on the write pool, so passes pause between batches
 //! rather than holding SQLite's single writer for long stretches. The first
-//! historical backfill and every later retention sweep publish determinate
-//! progress for the desktop's global sidebar.
+//! historical backfill reports its exact phase on the startup splash. If it
+//! must resume after startup, and for every later retention sweep, determinate
+//! progress is published in the desktop's global sidebar.
 
 pub mod compaction;
 pub mod database_compaction;
 pub mod image_backfill;
 pub mod retention;
+pub mod routes;
+mod scheduler;
+pub mod startup;
 pub mod state;
 pub mod tool_output_backfill;
 
+pub use scheduler::spawn;
+
 use sqlx::SqlitePool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use tokio::sync::broadcast;
 
@@ -81,6 +88,17 @@ pub enum StorageMaintenanceEvent {
 pub struct StorageMaintenanceBroadcaster {
     tx: broadcast::Sender<StorageMaintenanceEvent>,
     active: Arc<RwLock<Option<StorageMaintenanceEvent>>>,
+    running: Arc<AtomicBool>,
+}
+
+pub(super) struct StorageMaintenanceRunGuard {
+    running: Arc<AtomicBool>,
+}
+
+impl Drop for StorageMaintenanceRunGuard {
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::Release);
+    }
 }
 
 impl StorageMaintenanceBroadcaster {
@@ -89,6 +107,7 @@ impl StorageMaintenanceBroadcaster {
         Self {
             tx,
             active: Arc::new(RwLock::new(None)),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -121,6 +140,15 @@ impl StorageMaintenanceBroadcaster {
         }
         // No connected desktop is a normal state during startup and shutdown.
         let _ = self.tx.send(event);
+    }
+
+    pub(super) fn try_begin_run(&self) -> Option<StorageMaintenanceRunGuard> {
+        self.running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+            .then(|| StorageMaintenanceRunGuard {
+                running: Arc::clone(&self.running),
+            })
     }
 }
 
@@ -162,16 +190,17 @@ fn advanced(start: i64, cursor: i64, high_water: i64) -> u64 {
     remaining(start, cursor.min(high_water))
 }
 
-/// Delay before the first sweep, so maintenance never competes with session
-/// restore, worktree scanning, and the rest of a cold launch.
-const STARTUP_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// Gap between sweeps. Long: the passes are cursor-based, so a sweep with
-/// nothing to do is nearly free, and there is no urgency to reclaiming bytes.
-const SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
-
 /// Run every maintenance pass once.
 pub async fn run_once(pool: &SqlitePool, events: &StorageMaintenanceBroadcaster) {
+    let optimized = run_lossless_optimization(pool, Some(events)).await;
+    let compacted = run_cleanup(pool, events).await;
+    request_database_compaction(pool, optimized.saturating_add(compacted)).await;
+}
+
+pub(super) async fn run_lossless_optimization(
+    pool: &SqlitePool,
+    events: Option<&StorageMaintenanceBroadcaster>,
+) -> u64 {
     let show_optimization = state::get(pool, state::INITIAL_OPTIMIZATION_COMPLETED)
         .await
         .as_deref()
@@ -181,11 +210,13 @@ pub async fn run_once(pool: &SqlitePool, events: &StorageMaintenanceBroadcaster)
             Ok(plan) => Some(plan),
             Err(error) => {
                 tracing::warn!("failed to prepare initial storage optimization: {error}");
-                events.emit(StorageMaintenanceEvent::Failed {
-                    task: StorageMaintenanceTask::Optimization,
-                    completed: 0,
-                    total: 0,
-                });
+                if let Some(events) = events {
+                    events.emit(StorageMaintenanceEvent::Failed {
+                        task: StorageMaintenanceTask::Optimization,
+                        completed: 0,
+                        total: 0,
+                    });
+                }
                 None
             }
         }
@@ -193,11 +224,13 @@ pub async fn run_once(pool: &SqlitePool, events: &StorageMaintenanceBroadcaster)
         None
     };
     if let Some(plan) = optimization.filter(|plan| plan.total() > 0) {
-        events.emit(StorageMaintenanceEvent::Started {
-            task: StorageMaintenanceTask::Optimization,
-            completed: 0,
-            total: plan.total(),
-        });
+        if let Some(events) = events {
+            events.emit(StorageMaintenanceEvent::Started {
+                task: StorageMaintenanceTask::Optimization,
+                completed: 0,
+                total: plan.total(),
+            });
+        }
     }
 
     let stripped = tool_output_backfill::run_with_progress(pool, |cursor| {
@@ -222,6 +255,19 @@ pub async fn run_once(pool: &SqlitePool, events: &StorageMaintenanceBroadcaster)
         );
     }
     finish_initial_optimization(pool, events, optimization).await;
+    stripped.saturating_add(offloaded)
+}
+
+pub(super) async fn run_cleanup_once(
+    pool: &SqlitePool,
+    events: &StorageMaintenanceBroadcaster,
+) -> u64 {
+    let compacted = run_cleanup(pool, events).await;
+    request_database_compaction(pool, compacted).await;
+    compacted
+}
+
+async fn run_cleanup(pool: &SqlitePool, events: &StorageMaintenanceBroadcaster) -> u64 {
     let compacted = retention::run(pool, events).await;
     if compacted > 0 {
         tracing::info!(
@@ -229,7 +275,11 @@ pub async fn run_once(pool: &SqlitePool, events: &StorageMaintenanceBroadcaster)
             "storage maintenance: archived features compacted"
         );
     }
-    if stripped > 0 || offloaded > 0 || compacted > 0 {
+    compacted
+}
+
+pub(super) async fn request_database_compaction(pool: &SqlitePool, changed: u64) {
+    if changed > 0 {
         // `VACUUM` cannot run while the service is serving reads and writes.
         // Request one for the next startup, where only the write pool exists.
         state::set(pool, state::DATABASE_COMPACTION_REQUESTED, "1").await;
@@ -237,7 +287,7 @@ pub async fn run_once(pool: &SqlitePool, events: &StorageMaintenanceBroadcaster)
 }
 
 fn emit_optimization_progress(
-    events: &StorageMaintenanceBroadcaster,
+    events: Option<&StorageMaintenanceBroadcaster>,
     plan: Option<OptimizationPlan>,
     tool_cursor: i64,
     image_cursor: Option<i64>,
@@ -245,16 +295,18 @@ fn emit_optimization_progress(
     let Some(plan) = plan.filter(|plan| plan.total() > 0) else {
         return;
     };
-    events.emit(StorageMaintenanceEvent::Progress {
-        task: StorageMaintenanceTask::Optimization,
-        completed: plan.completed(tool_cursor, image_cursor.unwrap_or(plan.image_start)),
-        total: plan.total(),
-    });
+    if let Some(events) = events {
+        events.emit(StorageMaintenanceEvent::Progress {
+            task: StorageMaintenanceTask::Optimization,
+            completed: plan.completed(tool_cursor, image_cursor.unwrap_or(plan.image_start)),
+            total: plan.total(),
+        });
+    }
 }
 
 async fn finish_initial_optimization(
     pool: &SqlitePool,
-    events: &StorageMaintenanceBroadcaster,
+    events: Option<&StorageMaintenanceBroadcaster>,
     plan: Option<OptimizationPlan>,
 ) {
     let Some(plan) = plan else { return };
@@ -264,33 +316,20 @@ async fn finish_initial_optimization(
     let total = plan.total();
     if completed >= total {
         state::set(pool, state::INITIAL_OPTIMIZATION_COMPLETED, "1").await;
-        if total > 0 {
+        if let Some(events) = events.filter(|_| total > 0) {
             events.emit(StorageMaintenanceEvent::Completed {
                 task: StorageMaintenanceTask::Optimization,
                 completed,
                 total,
             });
         }
-    } else if total > 0 {
+    } else if let Some(events) = events.filter(|_| total > 0) {
         events.emit(StorageMaintenanceEvent::Failed {
             task: StorageMaintenanceTask::Optimization,
             completed,
             total,
         });
     }
-}
-
-/// Spawn the periodic maintenance loop. Detached: the caller doesn't wait on it
-/// and it has no shutdown signal, because every pass is safe to abandon
-/// mid-flight — the cursor simply stays where it was.
-pub fn spawn(pool: SqlitePool, events: StorageMaintenanceBroadcaster) {
-    tokio::spawn(async move {
-        tokio::time::sleep(STARTUP_DELAY).await;
-        loop {
-            run_once(&pool, &events).await;
-            tokio::time::sleep(SWEEP_INTERVAL).await;
-        }
-    });
 }
 
 #[cfg(test)]
@@ -351,5 +390,16 @@ mod tests {
             total: 10,
         });
         assert!(events.active().is_none());
+    }
+
+    #[test]
+    fn broadcaster_allows_only_one_maintenance_run_at_a_time() {
+        let events = StorageMaintenanceBroadcaster::new(4);
+        let run = events.try_begin_run().expect("first run");
+
+        assert!(events.try_begin_run().is_none());
+
+        drop(run);
+        assert!(events.try_begin_run().is_some());
     }
 }

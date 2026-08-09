@@ -47,6 +47,11 @@ interface PhaseCopy {
   detail: string;
 }
 
+const STARTING_COPY: PhaseCopy = {
+  title: "Starting Cadencr",
+  detail: "Preparing the workspace…",
+};
+
 type SplashUpdateKind = "phase" | "error";
 
 interface PendingSplashUpdate {
@@ -63,12 +68,11 @@ export interface SplashErrorState {
 }
 
 const PHASE_COPY: Record<SplashPhase, PhaseCopy> = {
-  starting: { title: "Starting Cadencr", detail: "Preparing the workspace…" },
+  starting: STARTING_COPY,
   starting_service: { title: "Starting Cadencr", detail: "Bringing up the backend service…" },
-  waiting_for_service: {
-    title: "Waiting for the local service",
-    detail: "The backend is still starting. A copied database may need a one-time update.",
-  },
+  // Dev Electron cannot see the independently-started service's stdout, so it
+  // must keep the original neutral splash copy until a concrete phase is known.
+  waiting_for_service: STARTING_COPY,
   backing_up: {
     title: "Backing up your database",
     detail: "Saving a snapshot before applying updates.",
@@ -82,6 +86,11 @@ const PHASE_COPY: Record<SplashPhase, PhaseCopy> = {
     title: "Updating your database",
     detail: "Applying schema changes. This may take a moment.",
   },
+  optimizing_storage: {
+    title: "Optimizing conversation storage",
+    detail:
+      "Removing verified duplicate terminal output and moving pasted images out of the database. Conversations are preserved.",
+  },
   compacting_database: {
     title: "Reclaiming database space",
     detail: "Safely compacting unused pages. Your conversations are preserved.",
@@ -92,6 +101,10 @@ const PHASE_COPY: Record<SplashPhase, PhaseCopy> = {
   },
   loading_app: { title: "Almost there", detail: "Loading your workspace…" },
 };
+
+export function splashCopyForPhase(phase: SplashPhase): PhaseCopy {
+  return PHASE_COPY[phase];
+}
 
 export interface SplashHandle {
   window: BrowserWindow;
@@ -182,7 +195,7 @@ export function createSplashWindow(version: string): SplashHandle {
   return {
     window: win,
     setPhase(phase, detail) {
-      const copy = PHASE_COPY[phase];
+      const copy = splashCopyForPhase(phase);
       update("phase", copy.title, detail ?? copy.detail, []);
     },
     setError(title, detail, actions) {

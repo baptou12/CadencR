@@ -1,6 +1,14 @@
-import { Archive, CalendarClock, LoaderCircle } from "lucide-react";
+import { Archive, CalendarClock, LoaderCircle, Play } from "lucide-react";
+import {
+  ArchivedCleanupRunStatus,
+  useRunArchivedCleanup,
+  type ArchivedCleanupRunResponse,
+} from "@/api/generated";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { toastError } from "@/lib/api-errors";
+import { useStorageMaintenanceStore } from "@/stores/storage-maintenance-store";
 import { IconTile } from "./IconTile";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsRow } from "./SettingsRow";
@@ -36,6 +44,11 @@ export function StorageSection(): React.JSX.Element {
   const daysSetting = useDebouncedSetting(DAYS_KEY, 0, { immediateCache: false });
 
   const enabled = enabledSetting.value === null ? DEFAULT_ENABLED : enabledSetting.value === "true";
+  const settingsBusy =
+    enabledSetting.isLoading ||
+    enabledSetting.isSaving ||
+    daysSetting.isLoading ||
+    daysSetting.isSaving;
 
   return (
     <SettingsSection id="storage" title="Storage" subtitle="Retention · Archived features">
@@ -55,7 +68,7 @@ export function StorageSection(): React.JSX.Element {
                 )}
               </span>
             }
-            description="Opt in to shortening long Bash output after a thread has been quiet for the configured period. The feature, its sessions, and the conversation are kept — no rows are deleted, and what you and the agent wrote is never touched."
+            description="Opt in to shortening long Bash output after a thread has been quiet for the configured period. The feature, its sessions, and the conversation are kept. No rows are deleted, and what you and the agent wrote is never touched."
             checked={enabled}
             onCheckedChange={(checked) => enabledSetting.setValue(checked ? "true" : "false")}
             disabled={enabledSetting.isLoading || enabledSetting.isSaving}
@@ -79,10 +92,76 @@ export function StorageSection(): React.JSX.Element {
               />
             }
           />
+          <SettingsRow
+            divided
+            align="start"
+            icon={
+              <IconTile tint="green">
+                <Play className="size-4" />
+              </IconTile>
+            }
+            label="Run cleanup now"
+            description="Check eligible archived conversations immediately instead of waiting for the next automatic sweep. The saved retention window and all safety checks still apply."
+            control={<ManualCleanupControl enabled={enabled} settingsBusy={settingsBusy} />}
+          />
         </SettingsSubsection>
       </SettingsCard>
     </SettingsSection>
   );
+}
+
+function ManualCleanupControl({
+  enabled,
+  settingsBusy,
+}: {
+  enabled: boolean;
+  settingsBusy: boolean;
+}): React.JSX.Element {
+  const maintenanceRunning = useStorageMaintenanceStore((state) => {
+    const phase = state.status?.phase;
+    return phase === "started" || phase === "progress";
+  });
+  const runCleanup = useRunArchivedCleanup({
+    mutation: {
+      onError: (error) => toastError(error, "Could not start archived conversation cleanup"),
+    },
+  });
+  const runMessage = runCleanup.data ? runResultMessage(runCleanup.data) : null;
+
+  return (
+    <div className="flex max-w-52 flex-col items-end gap-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!enabled || settingsBusy || maintenanceRunning || runCleanup.isPending}
+        onClick={() => runCleanup.mutate()}
+      >
+        {runCleanup.isPending ? (
+          <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+        ) : (
+          <Play aria-hidden className="size-3.5" />
+        )}
+        {maintenanceRunning ? "Cleanup running" : "Run now"}
+      </Button>
+      {runMessage && (
+        <p aria-live="polite" className="text-right text-[11px] text-muted-foreground">
+          {runMessage}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function runResultMessage(response: ArchivedCleanupRunResponse): string {
+  switch (response.status) {
+    case ArchivedCleanupRunStatus.started:
+      return `Cleanup started for ${response.eligible_features} archived conversation${response.eligible_features === 1 ? "" : "s"}. Progress appears above Settings.`;
+    case ArchivedCleanupRunStatus.already_running:
+      return "Storage maintenance is already running.";
+    case ArchivedCleanupRunStatus.nothing_due:
+      return "No archived conversations currently need cleanup.";
+  }
 }
 
 function RetentionDaysControl({

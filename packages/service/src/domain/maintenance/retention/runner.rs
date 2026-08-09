@@ -60,14 +60,9 @@ async fn run_with_days(
     pool: &SqlitePool,
     events: &StorageMaintenanceBroadcaster,
     days: i64,
-    policy: PolicyGuard,
+    mut policy: PolicyGuard,
 ) -> u64 {
-    let due = match sqlx::query_scalar::<_, i64>(DUE_FEATURES_SQL)
-        .bind(format!("-{days} days"))
-        .bind(format!("-{days} days"))
-        .fetch_all(pool)
-        .await
-    {
+    let due = match due_features(pool, days).await {
         Ok(ids) => ids,
         Err(e) => {
             tracing::warn!("retention: failed to list features due for compaction: {e}");
@@ -101,7 +96,7 @@ async fn run_with_days(
             sweep.cancelled = true;
             break;
         }
-        match compact_feature_guarded(pool, feature_id, days, policy).await {
+        match compact_feature_guarded(pool, feature_id, days, &mut policy).await {
             Ok(rows) => {
                 rewritten += rows;
                 // A user can disable retention or increase the quiet period
@@ -164,7 +159,8 @@ pub(super) async fn compact_feature(
     feature_id: i64,
     days: i64,
 ) -> Result<u64, sqlx::Error> {
-    compact_feature_guarded(pool, feature_id, days, PolicyGuard::testing(|_| true)).await
+    let mut policy = PolicyGuard::testing(|_| true);
+    compact_feature_guarded(pool, feature_id, days, &mut policy).await
 }
 
 #[cfg(test)]
@@ -174,14 +170,15 @@ pub(super) async fn compact_feature_with_policy(
     days: i64,
     check: fn(i64) -> bool,
 ) -> Result<u64, sqlx::Error> {
-    compact_feature_guarded(pool, feature_id, days, PolicyGuard::testing(check)).await
+    let mut policy = PolicyGuard::testing(check);
+    compact_feature_guarded(pool, feature_id, days, &mut policy).await
 }
 
 async fn compact_feature_guarded(
     pool: &SqlitePool,
     feature_id: i64,
     days: i64,
-    policy: PolicyGuard,
+    policy: &mut PolicyGuard,
 ) -> Result<u64, sqlx::Error> {
     let mut cursor = 0i64;
     let mut rewritten = 0u64;
@@ -242,6 +239,20 @@ async fn compact_feature_guarded(
 
         tokio::time::sleep(BATCH_PAUSE).await;
     }
+}
+
+async fn due_features(pool: &SqlitePool, days: i64) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(DUE_FEATURES_SQL)
+        .bind(format!("-{days} days"))
+        .bind(format!("-{days} days"))
+        .fetch_all(pool)
+        .await
+}
+
+pub(super) async fn due_feature_count(pool: &SqlitePool, days: i64) -> Result<u64, sqlx::Error> {
+    due_features(pool, days)
+        .await
+        .map(|features| features.len() as u64)
 }
 
 /// Persist one lossy rewrite only while its owning feature is still eligible.

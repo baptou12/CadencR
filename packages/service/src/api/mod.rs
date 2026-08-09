@@ -129,6 +129,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(imports_router())
         .merge(lsp_router())
         .merge(usage_stats_router())
+        .merge(crate::domain::maintenance::routes::routes())
         .merge(themes_router())
         .merge(prompt_commands_router())
         // VAPID public key — shared, so the frontend can fetch it on either

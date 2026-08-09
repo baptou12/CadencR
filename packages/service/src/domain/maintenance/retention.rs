@@ -33,6 +33,17 @@ mod test_support;
 
 pub use runner::run;
 
+/// Number of archived features due under the currently persisted policy.
+/// `None` means cleanup is disabled or the settings document is unreadable.
+pub(super) async fn due_feature_count_if_enabled(
+    pool: &sqlx::SqlitePool,
+) -> Result<Option<u64>, sqlx::Error> {
+    let Some(days) = policy::window_days() else {
+        return Ok(None);
+    };
+    runner::due_feature_count(pool, days).await.map(Some)
+}
+
 #[cfg(test)]
 use super::compaction;
 #[cfg(test)]

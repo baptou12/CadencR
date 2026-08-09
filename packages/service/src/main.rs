@@ -100,6 +100,19 @@ async fn main() -> anyhow::Result<()> {
                 app_version: config.app_version.as_deref(),
             })
             .await?;
+            // The one-time image backfill needs its destination before it can
+            // run. Production uses `~/.cadencr/blobs`; an ad-hoc/dev database
+            // gets an isolated directory named after that exact database.
+            let blob_dir = domain::blobs::dir::derive_from_db_path(&db_path);
+            if let Err(e) = std::fs::create_dir_all(&blob_dir) {
+                tracing::warn!(dir = %blob_dir.display(), "failed to create blob dir: {e}");
+            }
+            domain::blobs::dir::init(blob_dir);
+
+            // Finish the resumable lossless backfills before serving requests.
+            // Any pages they free can then be reclaimed by VACUUM during this
+            // same startup instead of requiring a second application restart.
+            domain::maintenance::startup::run_initial_optimization(&write_pool).await;
             if let Err(error) = domain::maintenance::database_compaction::run_if_requested(
                 &write_pool,
                 std::path::Path::new(&db_path),
@@ -136,14 +149,6 @@ async fn main() -> anyhow::Result<()> {
             // lookup before this point would cache an empty scan of the
             // uninitialized fallback path for the life of the process.
             domain::agents::providers::provider_registry();
-            // Off-loaded image payloads live beside the database and settings
-            // (`~/.cadencr/blobs` in production). Created eagerly so the first
-            // screenshot of a session doesn't race directory creation.
-            let blob_dir = domain::blobs::dir::derive_from_db_path(&db_path);
-            if let Err(e) = std::fs::create_dir_all(&blob_dir) {
-                tracing::warn!(dir = %blob_dir.display(), "failed to create blob dir: {e}");
-            }
-            domain::blobs::dir::init(blob_dir);
             domain::settings_store::migrate::migrate_from_sqlite(&read_pool, &settings_dir).await;
             // Claude Code profiles moved out of SQLite into the nested `profiles`
             // section of settings.json — copy any legacy rows over, then drop the
@@ -237,9 +242,9 @@ async fn main() -> anyhow::Result<()> {
             // transitions into native push for backgrounded remote PWAs. Cheap
             // when no subscriptions exist; runs for the process lifetime.
             tokio::spawn(domain::push::dispatcher::run(state.clone()));
-            // Storage maintenance: reclaims duplicated/expired message payloads
-            // in the background. Detached and delayed so it never competes with
-            // startup or blocks the write pool during a turn.
+            // Later incremental lossless work and opt-in archived-conversation
+            // cleanup stay in the background. Detached and delayed so they do
+            // not compete with session restore or the first active turn.
             domain::maintenance::spawn(
                 state.write_pool.clone(),
                 state.storage_maintenance_events_tx.clone(),

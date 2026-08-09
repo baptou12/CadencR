@@ -3,9 +3,8 @@
 //! Background maintenance shortens rows and drops index entries, but SQLite in
 //! `auto_vacuum=NONE` keeps those pages on its freelist. `VACUUM` is the only
 //! supported in-place operation that returns them to the filesystem. It runs on
-//! the next startup after the initial background optimization has finished,
-//! before the read pool or HTTP server exists, and only when a prior sweep
-//! explicitly requested it.
+//! after the initial lossless optimization has finished, before the read pool
+//! or HTTP server exists, and only when a prior pass explicitly requested it.
 
 use std::path::Path;
 
@@ -37,12 +36,10 @@ pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Resu
         return Ok(0);
     }
 
-    // The FTS migration requests a compaction, but the first background pass is
-    // about to free more pages by deduplicating tool output and off-loading
-    // images. Vacuuming before that pass would rewrite a multi-gigabyte database
-    // twice across two launches and make the upgrade splash substantially
-    // longer for no durability benefit. Keep the request set and reclaim all of
-    // those pages together after the resumable optimization reaches its marker.
+    // Keep the request set unless the resumable lossless optimization reached
+    // its durable marker. Startup normally runs that pass immediately before
+    // this function, allowing one launch to reclaim all pages together. A
+    // partial failure safely defers VACUUM until a later retry completes it.
     if state::get(pool, state::INITIAL_OPTIMIZATION_COMPLETED)
         .await
         .as_deref()

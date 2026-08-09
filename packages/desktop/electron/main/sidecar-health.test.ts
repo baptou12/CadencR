@@ -23,6 +23,7 @@ describe("sidecar startup watchdog", () => {
       startupStallTimeoutMs("starting_service"),
     );
     expect(startupStallTimeoutMs("compacting_database")).toBe(startupStallTimeoutMs("migrating"));
+    expect(startupStallTimeoutMs("optimizing_storage")).toBe(startupStallTimeoutMs("migrating"));
     expect(startupAbsoluteTimeoutMs("backing_up")).toBeGreaterThan(
       startupStallTimeoutMs("backing_up"),
     );
@@ -36,6 +37,9 @@ describe("sidecar startup watchdog", () => {
       startupHealthIntervalMs("starting_service"),
     );
     expect(startupHealthIntervalMs("compacting_database")).toBe(
+      startupHealthIntervalMs("migrating"),
+    );
+    expect(startupHealthIntervalMs("optimizing_storage")).toBe(
       startupHealthIntervalMs("migrating"),
     );
     expect(startupHealthIntervalMs("waiting_for_service")).toBe(
