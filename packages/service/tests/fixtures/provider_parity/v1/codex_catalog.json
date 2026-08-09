@@ -1,0 +1,43 @@
+{
+  "id": "codex_cli",
+  "label": "Codex CLI",
+  "status": "available",
+  "models": [
+    {
+      "id": "gpt-parity-default",
+      "label": "GPT Parity Default",
+      "description": "Default parity model",
+      "supports_effort": true,
+      "supported_effort_levels": ["low", "high"],
+      "default_effort_level": "high",
+      "supports_fast_mode": false
+    },
+    {
+      "id": "gpt-parity-fast",
+      "label": "GPT Parity Fast",
+      "description": "Fast parity model",
+      "supports_effort": true,
+      "supported_effort_levels": ["medium", "xhigh"],
+      "default_effort_level": "medium",
+      "supports_fast_mode": true
+    }
+  ],
+  "access_modes": [
+    {
+      "id": "default",
+      "label": "Default",
+      "description": "Runs in the workspace-write sandbox. Codex asks you to review command, network, or file access when approval is needed."
+    },
+    {
+      "id": "fullAccess",
+      "label": "Full Access",
+      "description": "Disables sandboxing and approval prompts. Codex can run commands and access files or network without asking first."
+    },
+    {
+      "id": "autoReview",
+      "label": "Auto Review",
+      "description": "Keeps the workspace-write sandbox, but lets Codex automatically review approval requests instead of routing each one to you."
+    }
+  ],
+  "default_model": "gpt-parity-default"
+}

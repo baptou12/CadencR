@@ -392,9 +392,57 @@ impl AgentRuntimeAdapter for CodexAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_server_spawn_options, model_entry, CodexAdapter};
+    use super::{app_server_spawn_options, catalog_from_models, model_entry, CodexAdapter};
     use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeUserShellStrategy};
-    use codex_app_server_sdk_rs::CodexModel;
+    use codex_app_server_sdk_rs::{CodexModel, CodexServiceTier};
+    use serde_json::Value;
+
+    #[test]
+    fn catalog_projection_matches_phase_zero_parity_fixture() {
+        let catalog = catalog_from_models(vec![
+            CodexModel {
+                id: "gpt-parity-default".to_string(),
+                label: "GPT Parity Default".to_string(),
+                description: Some("Default parity model".to_string()),
+                supported_efforts: vec![
+                    "low".to_string(),
+                    "high".to_string(),
+                    "high".to_string(),
+                    String::new(),
+                ],
+                default_effort: Some("high".to_string()),
+                service_tiers: vec![CodexServiceTier {
+                    id: "standard".to_string(),
+                    name: "Standard".to_string(),
+                    description: None,
+                }],
+                context_window: Some(200_000),
+                is_default: true,
+            },
+            CodexModel {
+                id: "gpt-parity-fast".to_string(),
+                label: "GPT Parity Fast".to_string(),
+                description: Some("Fast parity model".to_string()),
+                supported_efforts: vec!["medium".to_string(), "xhigh".to_string()],
+                default_effort: Some("medium".to_string()),
+                service_tiers: vec![CodexServiceTier {
+                    id: "priority".to_string(),
+                    name: "Fast".to_string(),
+                    description: Some("Faster service tier".to_string()),
+                }],
+                context_window: Some(1_000_000),
+                is_default: false,
+            },
+        ]);
+        let actual = serde_json::to_value(catalog).expect("Codex catalog should serialize");
+        let expected: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/provider_parity/v1/codex_catalog.json"
+        )))
+        .expect("Codex parity fixture should be valid JSON");
+
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn preserves_reasoning_efforts_advertised_by_codex() {

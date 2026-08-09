@@ -358,7 +358,7 @@ fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     use super::super::events::normalize_event;
     use super::super::test_support::new_test_adapter;
@@ -366,6 +366,19 @@ mod tests {
         AgentRuntimeAdapter, RuntimePromptCommandPlacement, RuntimeSkillReferenceTrigger,
         RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeUserShellStrategy,
     };
+
+    #[test]
+    fn fallback_catalog_matches_phase_zero_parity_fixture() {
+        let actual = serde_json::to_value(new_test_adapter().catalog_entry())
+            .expect("Claude fallback catalog should serialize");
+        let expected: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/provider_parity/v1/claude_code_catalog.json"
+        )))
+        .expect("Claude parity fixture should be valid JSON");
+
+        assert_eq!(actual, expected);
+    }
 
     fn init_event(model: &str) -> crate::domain::agents::adapter::RuntimeEvent {
         normalize_event(

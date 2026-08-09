@@ -344,7 +344,7 @@ and CI boundary enforcement remain future increments.
 | Workstream                            | Current state                                                                                                                                                                | Next acceptance boundary                                                                                                                        |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local ACP backend                     | Shipped: startup descriptors, generic adapter, direct execution, quarantine, diagnostics API, authenticated HTTP/WS integration tests                                        | Preserve this v1 path while later slices add UI and distribution                                                                                |
-| Built-in regression guardrails        | Provider documents and unit/integration tests exist, but no complete Claude/Codex golden parity suite and `FEATURES.md` is still a stale universal-requirements document     | Freeze the paths the next frontend/canonical change will touch before refactoring them                                                          |
+| Built-in regression guardrails        | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze the next UI slice; complete stream/workflow golden suites remain open      | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                            |
 | Installed-provider desktop            | Dynamic catalog entries can appear in existing selectors, but installed origin, source, diagnostics, enablement, and lifecycle are not presented or managed                  | Add catalog origin plus an installed-provider diagnostics view without exposing launch secrets                                                  |
 | Negotiated capabilities/configuration | ACP v1 setup reads typed config options internally and observes authoritative replacements after model changes; the desktop still receives model/mode/access-specific shapes | Add a provider-neutral per-session capability/config snapshot and opaque `set_config_option` operation                                          |
 | Canonical events and ACP v2           | Not started; current ACP runtime is fixed to v1 and still projects Claude-shaped/index-based runtime events                                                                  | Keep v2 deferred; design the versioned canonical state migration as a separate workstream                                                       |
@@ -353,36 +353,45 @@ and CI boundary enforcement remain future increments.
 
 Recommended increments from this baseline:
 
-1. close the skipped Phase 0 guardrails: rewrite `FEATURES.md` as a capability
-   coverage ledger and add focused Claude/Codex parity fixtures for the paths the
-   next slice will touch;
-2. ship the first user-visible step 2b slice: catalog origin plus an
+The focused Phase 0 guardrail for the next slice is complete: `FEATURES.md` is a
+coverage ledger, and deterministic Claude/Codex catalog fixtures pin the
+service-to-desktop shape that origin metadata will extend. The remaining
+increments are:
+
+1. ship the first user-visible step 2b slice: catalog origin plus an
    installed-provider diagnostics screen backed by
    `GET /api/agents/installed-providers`;
-3. add the generic ACP v1 session configuration bridge and desktop controls,
+2. add the generic ACP v1 session configuration bridge and desktop controls,
    preserving opaque option IDs and treating every returned option list as
    authoritative;
-4. add local descriptor lifecycle operations (add, enable, disable, remove) with
+3. add local descriptor lifecycle operations (add, enable, disable, remove) with
    transcript preservation before building remote marketplace downloads;
-5. then resume the independent Phase 3/4/6 canonical-event workstream. Do not
+4. then resume the independent Phase 3/4/6 canonical-event workstream. Do not
    pull ACP v2, downloads, signing, or third-party UI into the first step 2b PR.
 
 ### Phase 0 — Freeze parity and define ownership
 
-- [ ] Convert each built-in provider document into executable or fixture-backed
-      parity cases, prioritizing Claude Code and Codex.
+- [~] Convert each built-in provider document into executable or fixture-backed
+  parity cases, prioritizing Claude Code and Codex. Deterministic v1 catalog
+  fixtures now pin Claude's bootstrap identity/models/default and Codex's rich
+  model/access-mode projection. Cursor/OpenCode catalog fixtures and the wider
+  workflow/stream cases below remain open.
 - [ ] Record golden streams for text, thinking, tools, command output, edits,
       permissions, plans, subagents, usage, compaction, cancellation, resume, and
       errors.
-- [ ] Classify every existing feature as one of:
-  - ACP baseline;
-  - ACP optional capability;
-  - host/marketplace policy;
-  - contained built-in extension;
-  - unsupported until standardized.
-- [ ] Reclassify `FEATURES.md` from universal requirements to a coverage ledger,
+- [~] Classify every existing feature as ACP baseline, ACP optional capability,
+  host/marketplace policy, contained built-in extension, or unsupported until
+  standardized. The 16 capabilities inherited from `FEATURES.md` now have an
+  explicit class, with its mixed live-targeting/resume row split into separate
+  baseline and optional entries. Identity/install state, prompt content types,
+  auth, terminal presentation, session history, and other rows from the broader
+  parity table still need to be incorporated before this inventory is exhaustive.
+- [x] Reclassify `FEATURES.md` from universal requirements to a coverage ledger,
       rewrite its "Adding a new provider" section, and fix its stale
-      `adapter.rs` path and `RuntimeAdapter` trait name.
+      `adapter.rs` path and `RuntimeAdapter` trait name. The ledger now identifies
+      ACP baseline/optional behavior, contained extensions, and honest per-provider
+      coverage; marketplace ACP providers explicitly require no Cadencr SDK or
+      source change.
 - [ ] Fix or explicitly annotate OpenCode's documented regressions (MCP servers
       not loading, plan approval unimplemented) before freezing golden fixtures
       around them.

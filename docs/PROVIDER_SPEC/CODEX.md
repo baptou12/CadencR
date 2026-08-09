@@ -1,5 +1,11 @@
 # Provider status — Codex
 
+The Phase 0 catalog contract is pinned by
+[`codex_catalog.json`](../../packages/service/tests/fixtures/provider_parity/v1/codex_catalog.json)
+and asserted by an inline adapter test. It covers identity, model capability
+projection, access modes, and default selection using deterministic synthetic
+app-server models rather than a local CLI probe.
+
 Status of the Codex adapter against [`FEATURES.md`](./FEATURES.md).
 
 The adapter lives in `packages/service/src/domain/agents/codex/` and
