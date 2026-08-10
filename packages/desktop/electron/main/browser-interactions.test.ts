@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import {
   clickTarget,
@@ -5,6 +6,7 @@ import {
   hoverTarget,
   resolveTarget,
   waitFor,
+  waitForLoad,
 } from "./browser-interactions";
 
 interface MockWebContents {
@@ -94,5 +96,21 @@ describe("waitFor", () => {
       found: true,
       elapsedMs: 120,
     });
+  });
+});
+
+describe("waitForLoad", () => {
+  it("rejects and cleans up when the tab closes during navigation", async () => {
+    const wc = Object.assign(new EventEmitter(), mockWebContents(null), {
+      isLoading: vi.fn(() => true),
+      isDestroyed: vi.fn(() => false),
+    });
+
+    const waiting = waitForLoad(asWebContents(wc));
+    wc.emit("destroyed");
+
+    await expect(waiting).rejects.toThrow("Browser tab closed");
+    expect(wc.listenerCount("did-stop-loading")).toBe(0);
+    expect(wc.listenerCount("destroyed")).toBe(0);
   });
 });
