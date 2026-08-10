@@ -12,6 +12,7 @@ import {
   defaultWorktreeMode,
   firstPromptBranchEffect,
   isWorktreeModeDisabled,
+  nextWorktreeMode,
   resolveWorktreeChoice,
 } from "./worktree-mode";
 
@@ -111,6 +112,57 @@ describe("isWorktreeModeDisabled", () => {
     for (const mode of ["on_branch", "from_branch", "from_branch_worktree"] as const) {
       expect(isWorktreeModeDisabled(mode, state)).toBe(false);
     }
+  });
+});
+
+describe("nextWorktreeMode", () => {
+  const usable = {
+    effectiveBranch: "feat/x",
+    hasWorktree: false,
+    isOnProjectPath: false,
+    isLocal: true,
+  };
+  const onProjectPath = { ...usable, isOnProjectPath: true };
+
+  it("walks the full matrix in registry order and wraps around", () => {
+    expect(nextWorktreeMode("on_branch", usable)).toBe("branch_worktree");
+    expect(nextWorktreeMode("branch_worktree", usable)).toBe("from_branch");
+    expect(nextWorktreeMode("from_branch", usable)).toBe("from_branch_worktree");
+    expect(nextWorktreeMode("from_branch_worktree", usable)).toBe("on_branch");
+  });
+
+  it("skips branch_worktree when the branch sits on the project path", () => {
+    // The common case: no explicit pick, so the effective branch is the one
+    // already checked out — git can't put it in a second worktree.
+    expect(nextWorktreeMode("on_branch", onProjectPath)).toBe("from_branch");
+    expect(nextWorktreeMode("from_branch_worktree", onProjectPath)).toBe("on_branch");
+  });
+
+  it("honors a restricted mode list", () => {
+    const modes = ["on_branch", "branch_worktree"] as const;
+    expect(nextWorktreeMode("on_branch", usable, modes)).toBe("branch_worktree");
+    expect(nextWorktreeMode("branch_worktree", usable, modes)).toBe("on_branch");
+  });
+
+  it("returns null when nothing else is selectable", () => {
+    expect(nextWorktreeMode("on_branch", usable, ["on_branch"])).toBeNull();
+    expect(
+      nextWorktreeMode("on_branch", onProjectPath, ["on_branch", "branch_worktree"]),
+    ).toBeNull();
+  });
+
+  it("starts from the head of the list when the current mode is not offered", () => {
+    // The schedule chip drops "From branch"; a target still carrying it must
+    // cycle to something valid rather than stall.
+    expect(nextWorktreeMode("from_branch", usable, ["on_branch", "branch_worktree"])).toBe(
+      "on_branch",
+    );
+  });
+
+  it("escapes a current mode that has since become disabled", () => {
+    // Picking a branch that's already checked out at the project path leaves
+    // branch_worktree selected-but-disabled until something moves it.
+    expect(nextWorktreeMode("branch_worktree", onProjectPath)).toBe("on_branch");
   });
 });
 

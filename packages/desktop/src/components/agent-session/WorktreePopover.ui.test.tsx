@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import type { BranchInfo } from "@/api/generated";
 import type { WorktreeMode } from "@/lib/worktree-mode";
 import { WorktreeButtonGroup } from "./WorktreePopover";
@@ -28,6 +28,7 @@ function renderGroup(args: {
   projectPath?: string;
   onModeChange?: () => void;
   onSelectedBranchChange?: () => void;
+  enableModeShortcut?: boolean;
 }): ReturnType<typeof render> {
   mocks.mockUseListBranches.mockReturnValue({
     data: args.branches,
@@ -44,8 +45,17 @@ function renderGroup(args: {
       onModeChange={args.onModeChange ?? vi.fn()}
       selectedBranch={args.selectedBranch}
       onSelectedBranchChange={args.onSelectedBranchChange ?? vi.fn()}
+      enableModeShortcut={args.enableModeShortcut}
     />,
   );
+}
+
+/**
+ * ⌘⌥W. Callers vary `code` to pin that the match is made on `event.key`, not on
+ * the QWERTY-physical `event.code` — on AZERTY the labelled W reports `KeyZ`.
+ */
+function pressCycleShortcut(code = "KeyW"): void {
+  fireEvent.keyDown(document.body, { key: "w", metaKey: true, altKey: true, code });
 }
 
 describe("WorktreeButtonGroup", () => {
@@ -117,6 +127,76 @@ describe("WorktreeButtonGroup", () => {
     await user.click(screen.getByRole("button", { name: /branch \/ worktree behavior/i }));
     await user.click(await screen.findByText("From branch with worktree"));
     expect(onModeChange).toHaveBeenCalledWith("from_branch_worktree");
+  });
+
+  it("cycles to the next behavior on ⌘⌥W", () => {
+    const onModeChange = vi.fn();
+    renderGroup({
+      branches: [branch("feat/x")],
+      selectedBranch: "feat/x",
+      mode: "on_branch",
+      onModeChange,
+    });
+    pressCycleShortcut();
+    expect(onModeChange).toHaveBeenCalledWith("branch_worktree");
+  });
+
+  it("matches on the labelled W, not the QWERTY-physical key (AZERTY)", () => {
+    const onModeChange = vi.fn();
+    renderGroup({
+      branches: [branch("feat/x")],
+      selectedBranch: "feat/x",
+      mode: "on_branch",
+      onModeChange,
+    });
+    pressCycleShortcut("KeyZ");
+    expect(onModeChange).toHaveBeenCalledWith("branch_worktree");
+  });
+
+  it("skips a behavior the picker greys out", () => {
+    // No pick, so the effective branch is the one checked out at the project
+    // path — "New worktree" is disabled, and the cycle must step over it.
+    const onModeChange = vi.fn();
+    renderGroup({ branches: [], selectedBranch: null, mode: "on_branch", onModeChange });
+    pressCycleShortcut();
+    expect(onModeChange).toHaveBeenCalledWith("from_branch");
+  });
+
+  it("does not bind the cycle shortcut when the host opts out", () => {
+    const onModeChange = vi.fn();
+    renderGroup({
+      branches: [branch("feat/x")],
+      selectedBranch: "feat/x",
+      mode: "on_branch",
+      onModeChange,
+      enableModeShortcut: false,
+    });
+    pressCycleShortcut();
+    expect(onModeChange).not.toHaveBeenCalled();
+  });
+
+  it("advertises the cycle shortcut in the menu footer, and hides it when opted out", async () => {
+    const { user, rerender } = renderGroup({
+      branches: [],
+      selectedBranch: null,
+      mode: "on_branch",
+    });
+    await user.click(screen.getByRole("button", { name: /branch \/ worktree behavior/i }));
+    expect(await screen.findByText("Cycle")).toBeInTheDocument();
+
+    rerender(
+      <WorktreeButtonGroup
+        projectId={1}
+        defaultBranch="main"
+        projectPath="/repo"
+        mode="on_branch"
+        onModeChange={vi.fn()}
+        selectedBranch={null}
+        onSelectedBranchChange={vi.fn()}
+        enableModeShortcut={false}
+      />,
+    );
+    expect(screen.queryByText("Cycle")).not.toBeInTheDocument();
   });
 
   it("spells out that an on_branch switch is deferred until the first message", async () => {

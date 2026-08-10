@@ -65,6 +65,9 @@ export function ScheduleWorktreeChip({
         onChange(applyScheduleWorktree(target, branchMode(mode, next), next, defaultBranch))
       }
       worktreeModes={SCHEDULE_WORKTREE_MODES}
+      // This chip renders outside `FeatureLayoutContext`, so the "agent" scope
+      // gate can't hold it — it would answer the cycle key from anywhere.
+      enableModeShortcut={false}
     />
   );
 }

@@ -68,6 +68,8 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
   worktreeProjectPath,
   worktreeSelectedBranch,
   onWorktreeBranchChange,
+  worktreeModes,
+  enableModeShortcut,
 }: MetaBarSecondaryProps) {
   const hasTodos = todos && todos.length > 0;
   const hasInfo = runtimeSessionId && onPause;
@@ -88,6 +90,8 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
           onWorktreeModeChange={onWorktreeModeChange}
           worktreeSelectedBranch={worktreeSelectedBranch}
           onWorktreeBranchChange={onWorktreeBranchChange}
+          worktreeModes={worktreeModes}
+          enableModeShortcut={enableModeShortcut}
         />
       )}
 

@@ -97,6 +97,26 @@ export function isWorktreeModeDisabled(mode: WorktreeMode, state: BranchWorktree
   return state.isOnProjectPath || !state.isLocal;
 }
 
+/**
+ * Next behavior for the `agent-worktree-mode` cycle shortcut. Mirrors
+ * {@link nextProviderMode}: filter to what's selectable, then step one place
+ * and wrap. Anything {@link isWorktreeModeDisabled} greys out is skipped — the
+ * keyboard must never land on a choice the picker refuses. Returns `null` when
+ * there is nothing else to move to.
+ */
+export function nextWorktreeMode(
+  current: WorktreeMode,
+  state: BranchWorktreeState,
+  modes: readonly WorktreeMode[] = WORKTREE_MODES,
+): WorktreeMode | null {
+  const selectable = modes.filter((mode) => !isWorktreeModeDisabled(mode, state));
+  if (selectable.length === 0) return null;
+  // `indexOf` of -1 (current disabled, or not offered by this host) steps to
+  // index 0 — the first selectable mode, which is what we want.
+  const next = selectable[(selectable.indexOf(current) + 1) % selectable.length];
+  return next === current ? null : next;
+}
+
 export interface WorktreeModeDescriptor {
   mode: WorktreeMode;
   label: string;

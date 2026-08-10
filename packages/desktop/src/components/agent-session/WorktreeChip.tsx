@@ -16,6 +16,14 @@ export interface WorktreeChipProps {
   /** Subset of behaviors to offer — see `WorktreeButtonGroup`. Defaults to all
    *  four, i.e. the full session chip. */
   worktreeModes?: readonly WorktreeMode[];
+  /**
+   * Bind the `agent-worktree-mode` cycle shortcut, and advertise it in the mode
+   * popover. On by default for the session chip. The schedule editor turns it
+   * off: it renders outside `FeatureLayoutContext`, where the `"agent"` scope
+   * gate is inert (`useIsTabFocused`), so its chip would answer the key from
+   * anywhere — including over a session chip already bound to it.
+   */
+  enableModeShortcut?: boolean;
 }
 
 /**
@@ -33,6 +41,7 @@ export const WorktreeChip = memo(function WorktreeChip({
   worktreeSelectedBranch,
   onWorktreeBranchChange,
   worktreeModes,
+  enableModeShortcut,
 }: WorktreeChipProps) {
   if (
     worktreeProjectId == null ||
@@ -52,6 +61,7 @@ export const WorktreeChip = memo(function WorktreeChip({
       selectedBranch={worktreeSelectedBranch ?? null}
       onSelectedBranchChange={onWorktreeBranchChange}
       modes={worktreeModes}
+      enableModeShortcut={enableModeShortcut}
     />
   );
 });
