@@ -160,7 +160,9 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
   return (
     <div
       className={cn(
-        "flex items-center gap-1.5 px-3",
+        // `@container`: Fast mode drops its text label by this bar's width,
+        // not the window — the agent pane is often a narrow side column.
+        "@container flex items-center gap-1.5 px-3",
         props.variant === "standalone" ? "py-2" : "py-3",
       )}
     >

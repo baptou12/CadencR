@@ -311,7 +311,7 @@ describe("MetaBar mode chip", () => {
   it("renders fast mode beside the thinking control and toggles it accessibly", async () => {
     const user = userEvent.setup();
     const onFastModeChange = vi.fn();
-    renderChip({
+    const { container } = renderChip({
       currentProviderId: PROVIDER_IDS.CODEX_CLI,
       currentModelId: "gpt-5.6-sol",
       currentModelLabel: "GPT-5.6 Sol",
@@ -332,6 +332,8 @@ describe("MetaBar mode chip", () => {
     expect(toggle).toHaveAttribute("data-state", "off");
     expect(toggle.className).not.toMatch(/bg-primary|text-primary/);
     expect(toggle.className).toMatch(/chip-violet-soft/);
+    expect(container.firstElementChild?.className).toMatch(/@container/);
+    expect(screen.getByText("Fast").className).toMatch(/@max-\[40rem\]:hidden/);
 
     await user.click(toggle);
     expect(onFastModeChange).toHaveBeenCalledWith(true);
