@@ -17,7 +17,9 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cadencr_service::domain::agents::adapter::AgentRuntimeAdapter;
+use cadencr_service::domain::agents::adapter::{
+    AgentRuntimeAdapter, RuntimeSessionConfigKind, RuntimeSessionConfigValue,
+};
 use cadencr_service::domain::agents::providers::installed;
 use cadencr_service::domain::agents::providers::installed::rejection::{
     QuarantineCode, RejectionCode,
@@ -26,8 +28,9 @@ use cadencr_service::domain::agents::providers::installed::routes::InstalledProv
 use cadencr_service::domain::agents::providers::provider_registry;
 use cadencr_service::domain::agents::runtime::ProviderStatus;
 use cadencr_service::domain::ws_session::protocol::{
-    PromptSendPayload, SessionActionPayload, SessionEndedPayload, SessionInitPayload,
-    SessionInitializedPayload, SessionMessagePayload, WsEnvelope, WsSessionAction,
+    PromptSendPayload, SessionActionPayload, SessionConfigSetPayload, SessionConfigSnapshotPayload,
+    SessionEndedPayload, SessionInitPayload, SessionInitializedPayload, SessionMessagePayload,
+    WsEnvelope, WsSessionAction,
 };
 use common::{start_migrated_test_server, TEST_AUTH_TOKEN};
 use futures::{SinkExt, StreamExt};
@@ -41,6 +44,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 const PROVIDER_ID: &str = "fake-acp-agent";
+const CONFIG_PROVIDER_ID: &str = "fake-config-acp-agent";
 const QUARANTINED_PROVIDER_ID: &str = "quarantined-acp-agent";
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -238,6 +242,9 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
         "fake-acp-agent.json",
         &descriptor(PROVIDER_ID, &agent),
     );
+    let mut config_descriptor = descriptor(CONFIG_PROVIDER_ID, &agent);
+    config_descriptor["installation"]["executable"]["args"] = json!(["--session-config"]);
+    write_descriptor(&providers, "fake-config-acp-agent.json", &config_descriptor);
     // A second descriptor claiming a built-in id must lose to the built-in.
     write_descriptor(&providers, "cursor.json", &descriptor("cursor", &agent));
     write_descriptor(
@@ -261,6 +268,7 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
             "cursor",
             "opencode",
             PROVIDER_ID,
+            CONFIG_PROVIDER_ID,
             QUARANTINED_PROVIDER_ID,
         ],
         "built-ins keep their order and the install is appended"
@@ -419,5 +427,99 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
     .await;
     let (_, ended) = collect_ws_turn(&mut socket).await;
     assert_eq!(ended.reason, "turn_interrupted");
+
+    // The optional ACP v1 configuration bridge is exercised through the same
+    // authenticated public WebSocket, without a desktop consumer or a
+    // provider-specific adapter.
+    sqlx::query(
+        "INSERT INTO features (id, project_id, title, type) \
+         VALUES (2, 1, 'Configured ACP Feature', 'ws-session')",
+    )
+    .execute(&server.pool)
+    .await
+    .expect("configured ACP feature");
+    sqlx::query(
+        "INSERT INTO feature_settings (feature_id, key, value) \
+         VALUES (2, 'worktree_path', ?)",
+    )
+    .bind(server.repo_path().to_string_lossy().as_ref())
+    .execute(&server.pool)
+    .await
+    .expect("configured ACP worktree path");
+    let init_id = send_session_payload(
+        &mut socket,
+        "init",
+        SessionInitPayload {
+            provider: Some(CONFIG_PROVIDER_ID.to_string()),
+            model: None,
+            thinking_effort: None,
+            permission_mode: None,
+            system_prompt: None,
+            cwd: Some(server.repo_path().to_string_lossy().into_owned()),
+            feature_id: Some(2),
+        },
+    )
+    .await;
+    let initialized_envelope = next_session_action(&mut socket, WsSessionAction::Initialized).await;
+    assert_eq!(
+        initialized_envelope.r#ref.as_deref(),
+        Some(init_id.as_str())
+    );
+    let initialized: SessionInitializedPayload =
+        serde_json::from_value(initialized_envelope.payload)
+            .expect("configured session.initialized payload should match its DTO");
+    assert_eq!(initialized.provider.as_deref(), Some(CONFIG_PROVIDER_ID));
+    let config_session_id = initialized.session_id;
+    send_session_payload(
+        &mut socket,
+        "prompt.send",
+        prompt_payload(&config_session_id, "start configured runtime"),
+    )
+    .await;
+    let (streamed_text, ended) = collect_ws_turn(&mut socket).await;
+    assert_eq!(streamed_text, "Hello from the fake ACP agent.");
+    assert_eq!(ended.reason, "turn_complete");
+
+    let get_id = send_session_payload(
+        &mut socket,
+        "config.get",
+        SessionActionPayload {
+            session_id: config_session_id.clone(),
+            message_uuid: None,
+        },
+    )
+    .await;
+    let snapshot_envelope = next_session_action(&mut socket, WsSessionAction::ConfigSnapshot).await;
+    assert_eq!(snapshot_envelope.r#ref.as_deref(), Some(get_id.as_str()));
+    let snapshot: SessionConfigSnapshotPayload = serde_json::from_value(snapshot_envelope.payload)
+        .expect("configuration snapshot should match its DTO");
+    assert_eq!(snapshot.config.options[0].id, "safe_mode");
+    assert!(matches!(
+        snapshot.config.options[0].kind,
+        RuntimeSessionConfigKind::Boolean {
+            current_value: false
+        }
+    ));
+
+    let set_id = send_session_payload(
+        &mut socket,
+        "config.set",
+        SessionConfigSetPayload {
+            session_id: config_session_id,
+            config_id: "safe_mode".to_string(),
+            value: RuntimeSessionConfigValue::Boolean(true),
+        },
+    )
+    .await;
+    let snapshot_envelope = next_session_action(&mut socket, WsSessionAction::ConfigSnapshot).await;
+    assert_eq!(snapshot_envelope.r#ref.as_deref(), Some(set_id.as_str()));
+    let snapshot: SessionConfigSnapshotPayload = serde_json::from_value(snapshot_envelope.payload)
+        .expect("updated configuration snapshot should match its DTO");
+    assert!(matches!(
+        snapshot.config.options[0].kind,
+        RuntimeSessionConfigKind::Boolean {
+            current_value: true
+        }
+    ));
     socket.close(None).await.expect("WebSocket should close");
 }

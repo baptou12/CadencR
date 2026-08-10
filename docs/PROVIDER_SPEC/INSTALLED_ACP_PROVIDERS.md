@@ -1,7 +1,7 @@
 # Installed ACP providers (local descriptors)
 
-> - **Status:** Backend contract implemented — capability DTO and desktop closure remain (`docs/PLUGIN_STRATEGY.md` §3)
-> - **Last reviewed:** 2026-08-03
+> - **Status:** Backend contract and live session configuration bridge implemented; desktop closure deferred (`docs/PLUGIN_STRATEGY.md` §3)
+> - **Last reviewed:** 2026-08-09
 > - **Code:** `packages/service/src/domain/agents/providers/installed/`
 
 An ACP agent joins Cadencr's provider list by dropping a descriptor file next to
@@ -97,13 +97,15 @@ honored and is not.
 
 ## What this build does and does not do
 
-| Supported                                          | Deferred                                 |
-| -------------------------------------------------- | ---------------------------------------- |
-| ACP v1, negotiated by the shared client            | ACP v2                                   |
-| An explicitly selected local executable            | Downloads, archive extraction, checksums |
-| Startup loading                                    | Hot install / reload                     |
-| Enable / disable via `installation.enabled`        | Marketplace publishing and desktop UI    |
-| Strict v1 validation and lossless typed round-trip | Registry ingestion/export workflow       |
+| Supported                                                                                      | Deferred                                                     |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| ACP v1, negotiated by the shared client                                                        | ACP v2                                                       |
+| An explicitly selected local executable                                                        | Downloads, archive extraction, checksums                     |
+| Startup loading                                                                                | Hot install / reload                                         |
+| Enable / disable via `installation.enabled`                                                    | Marketplace publishing and desktop UI                        |
+| Strict v1 validation and lossless typed round-trip                                             | Registry ingestion/export workflow                           |
+| Provider-neutral live select/boolean configuration snapshot plus authenticated WS get/set      | Desktop controls and installed-provider diagnostics          |
+| Opaque option IDs and authoritative replacement from each `session/set_config_option` response | Migration of legacy model/mode/effort controls to the bridge |
 
 ## Requirements on the agent
 
@@ -115,6 +117,11 @@ workspace can offer; they are never an admission requirement. The current
 startup scan does not preflight this handshake: an executable that fails it is
 accepted by the loader and fails visibly when first spawned. A bounded
 conformance probe remains Phase 8 work.
+The client advertises ACP v1 boolean configuration support. Options returned by
+`session/new` or `session/load` become the live provider-neutral snapshot, and a
+successful `session/set_config_option` response replaces that snapshot with its
+complete `configOptions` list. Descriptors still cannot declare any of these
+values.
 `packages/service/tests/fixtures/fake_acp_agent.py` is a working minimal
 example. `tests/installed_acp_provider_test.rs` exercises it through the
 runtime registry and the authenticated HTTP + real WebSocket host surfaces,

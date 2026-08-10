@@ -2538,6 +2538,109 @@ export interface RunResponse {
   run_id: number;
 }
 
+export type RuntimeSessionConfigChoicesOneOfLayout =
+  (typeof RuntimeSessionConfigChoicesOneOfLayout)[keyof typeof RuntimeSessionConfigChoicesOneOfLayout];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigChoicesOneOfLayout = {
+  ungrouped: "ungrouped",
+} as const;
+
+export type RuntimeSessionConfigChoicesOneOf = {
+  layout: RuntimeSessionConfigChoicesOneOfLayout;
+  options: RuntimeSessionConfigSelectOption[];
+};
+
+export type RuntimeSessionConfigChoicesOneOfThreeLayout =
+  (typeof RuntimeSessionConfigChoicesOneOfThreeLayout)[keyof typeof RuntimeSessionConfigChoicesOneOfThreeLayout];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigChoicesOneOfThreeLayout = {
+  grouped: "grouped",
+} as const;
+
+export type RuntimeSessionConfigChoicesOneOfThree = {
+  groups: RuntimeSessionConfigSelectGroup[];
+  layout: RuntimeSessionConfigChoicesOneOfThreeLayout;
+};
+
+export type RuntimeSessionConfigChoices =
+  | RuntimeSessionConfigChoicesOneOf
+  | RuntimeSessionConfigChoicesOneOfThree;
+
+export type RuntimeSessionConfigKindOneOfType =
+  (typeof RuntimeSessionConfigKindOneOfType)[keyof typeof RuntimeSessionConfigKindOneOfType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigKindOneOfType = {
+  select: "select",
+} as const;
+
+export type RuntimeSessionConfigKindOneOf = {
+  choices: RuntimeSessionConfigChoices;
+  current_value: string;
+  type: RuntimeSessionConfigKindOneOfType;
+};
+
+export type RuntimeSessionConfigKindOneOfThreeType =
+  (typeof RuntimeSessionConfigKindOneOfThreeType)[keyof typeof RuntimeSessionConfigKindOneOfThreeType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigKindOneOfThreeType = {
+  boolean: "boolean",
+} as const;
+
+export type RuntimeSessionConfigKindOneOfThree = {
+  current_value: boolean;
+  type: RuntimeSessionConfigKindOneOfThreeType;
+};
+
+export type RuntimeSessionConfigKind =
+  | RuntimeSessionConfigKindOneOf
+  | RuntimeSessionConfigKindOneOfThree;
+
+/**
+ * ACP semantic category (`model`, `thought_level`, custom `_...`, etc.).
+Kept as an opaque string so newer protocol categories round-trip.
+ */
+export type RuntimeSessionConfigOptionAllOfCategory = string | null;
+
+export type RuntimeSessionConfigOptionAllOfDescription = string | null;
+
+export type RuntimeSessionConfigOptionAllOf = {
+  _meta?: unknown;
+  /** ACP semantic category (`model`, `thought_level`, custom `_...`, etc.).
+Kept as an opaque string so newer protocol categories round-trip. */
+  category?: RuntimeSessionConfigOptionAllOfCategory;
+  description?: RuntimeSessionConfigOptionAllOfDescription;
+  id: string;
+  name: string;
+};
+
+export type RuntimeSessionConfigOption = RuntimeSessionConfigKind & RuntimeSessionConfigOptionAllOf;
+
+export interface RuntimeSessionConfigSelectGroup {
+  _meta?: unknown;
+  id: string;
+  name: string;
+  options: RuntimeSessionConfigSelectOption[];
+}
+
+export type RuntimeSessionConfigSelectOptionDescription = string | null;
+
+export interface RuntimeSessionConfigSelectOption {
+  _meta?: unknown;
+  description?: RuntimeSessionConfigSelectOptionDescription;
+  name: string;
+  value: string;
+}
+
+export interface RuntimeSessionConfigSnapshot {
+  options: RuntimeSessionConfigOption[];
+}
+
+export type RuntimeSessionConfigValue = string | boolean;
+
 export interface RuntimeSessionIdPayload {
   runtime_session_id: string;
 }
@@ -2845,6 +2948,17 @@ export type SessionActionPayloadMessageUuid = string | null;
 
 export interface SessionActionPayload {
   message_uuid?: SessionActionPayloadMessageUuid;
+  session_id: string;
+}
+
+export interface SessionConfigSetPayload {
+  config_id: string;
+  session_id: string;
+  value: RuntimeSessionConfigValue;
+}
+
+export interface SessionConfigSnapshotPayload {
+  config: RuntimeSessionConfigSnapshot;
   session_id: string;
 }
 
@@ -3834,6 +3948,7 @@ export const WsSessionAction = {
   compactstarted: "compact.started",
   modelsetok: "model.set.ok",
   effortsetok: "effort.set.ok",
+  configsnapshot: "config.snapshot",
   fast_modesetok: "fast_mode.set.ok",
   modechanged: "mode.changed",
   profilechanged: "profile.changed",

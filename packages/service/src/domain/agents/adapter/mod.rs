@@ -6,6 +6,7 @@ mod event;
 mod event_types;
 mod permission;
 mod session;
+mod session_config;
 mod user_shell;
 
 pub use adapter_trait::AgentRuntimeAdapter;
@@ -34,5 +35,10 @@ pub(crate) use session::test_support::DummySession;
 pub use session::{
     AgentRuntimeSession, RuntimeMessageRx, RuntimeSessionHandle, RuntimeSessionWeakHandle,
     RuntimeToolPermissionHandler,
+};
+pub use session_config::{
+    RuntimeSessionConfigChoices, RuntimeSessionConfigKind, RuntimeSessionConfigOption,
+    RuntimeSessionConfigSelectGroup, RuntimeSessionConfigSelectOption,
+    RuntimeSessionConfigSnapshot, RuntimeSessionConfigValue,
 };
 pub use user_shell::RuntimeUserShellStrategy;

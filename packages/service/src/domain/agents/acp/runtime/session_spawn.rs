@@ -22,6 +22,7 @@ use super::prompt_receipts::PendingPromptReceipts;
 use super::provider_hooks::AcpProviderHooks;
 use super::server_requests::{spawn_event_loop, EventLoopConfig};
 use super::session::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};
+use super::session_config::AcpSessionConfigState;
 use super::session_permissions::SessionPermissions;
 use super::spawn_initial_config::{apply_initial_model, apply_initial_thinking_effort};
 use super::spawn_initial_mode::apply_initial_permission_mode;
@@ -98,13 +99,10 @@ pub async fn spawn_acp_runtime_session(
     apply_initial_permission_mode(&session, &negotiated, &config).await?;
     // Push the user-selected model and thinking effort to the agent before
     // the first `session/prompt`, otherwise the agent runs at its own
-    // default. The two requests are independent (disjoint locks; only the
-    // atomic `supports_set_config_option` is shared and writes are
-    // idempotent) so we race them to save one RPC of spawn latency.
-    tokio::try_join!(
-        apply_initial_model(&session, &negotiated, &config),
-        apply_initial_thinking_effort(&session, &negotiated, &config),
-    )?;
+    // default. Model goes first because its authoritative response may replace
+    // the effort choices that the second update must validate and select.
+    apply_initial_model(&session, &negotiated, &config).await?;
+    apply_initial_thinking_effort(&session, &negotiated, &config).await?;
 
     emit_init_event(&tx, &negotiated).await;
     if config.resume_session_id.is_some() {
@@ -122,6 +120,7 @@ pub async fn spawn_acp_runtime_session(
             current_model: Arc::clone(&session.current_model),
             current_effort: Arc::clone(&session.current_effort),
             current_mode: Arc::clone(&session.current_mode),
+            session_config: session.session_config.clone(),
             cwd: config.cwd.clone(),
             closing: Arc::clone(&session.closing),
             pending_permissions: Arc::clone(&session.pending_permissions),
@@ -243,6 +242,10 @@ impl AcpRuntimeSession {
                     .or_else(|| hooks.default_mode_id().map(ToOwned::to_owned))
                     .unwrap_or_default(),
             )),
+            session_config: AcpSessionConfigState::new(
+                negotiated.session_config.clone(),
+                hooks.clone(),
+            ),
             supports_set_config_option: Arc::new(AtomicBool::new(true)),
             supports_set_mode: Arc::new(AtomicBool::new(true)),
             pending_permissions: PendingPermissions::default(),

@@ -17,6 +17,7 @@ mod permission_user_message;
 mod power;
 mod profile;
 mod provider;
+mod session_config;
 
 pub(super) use access_mode::handle_access_mode_set;
 pub(super) use effort::handle_effort_set;
@@ -28,6 +29,7 @@ pub(crate) use permission_dispatch::handle_permission_respond;
 pub(super) use power::{handle_resume, handle_retry_worktree_setup, handle_suspend};
 pub(super) use profile::handle_profile_set;
 pub(super) use provider::handle_provider_set;
+pub(super) use session_config::{handle_session_config_get, handle_session_config_set};
 
 use axum::extract::ws::Message;
 use serde::Serialize;

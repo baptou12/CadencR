@@ -307,8 +307,9 @@ The first shippable increment (ladder step 2, "bring your own agent") is:
 - the fake minimal ACP v1 executable test from Phase 9 (**implemented**).
 
 The local descriptor slice is a backend substrate, not yet the complete
-user-facing step 2b. The backend provides the first two closure items below; the third
-remains the next step:
+user-facing step 2b. The backend now provides all three contract foundations
+below; the desktop closure is deliberately deferred so this work can merge into
+`v0.11.0` without committing to unfinished marketplace UI:
 
 1. **Schema profiles are explicit (closed).** The local profile permits an
    omitted `distribution`; `AcpAgentEntry::validate_registry_entry` requires and
@@ -321,11 +322,13 @@ remains the next step:
    `/ws` session protocol over an ephemeral server. The test asserts a visible
    rejection, a visible quarantined install, session initialization, streamed
    text, completion, cancellation, and persisted runtime identity.
-3. **Capability-driven UX is still missing.** The startup catalog can expose the
-   provider identity and availability, but it has no provider-origin metadata or
-   source badge, and negotiated session configuration is not yet projected into
-   a generic desktop control surface. The desktop has no installed-provider
-   diagnostics or management screen.
+3. **The generic session-configuration contract exists; its UX is deferred.**
+   ACP `session/new` / `session/load` configuration is projected into a
+   provider-neutral live snapshot, and authenticated WebSocket `config.get` /
+   `config.set` operations preserve opaque option IDs and replace the snapshot
+   with every authoritative list returned by the agent. The desktop does not
+   consume this contract yet and still has no provider-origin badge,
+   installed-provider diagnostics, management screen, or generic controls.
 
 Phases 3, 4, and 6 (the canonical event model) are a separately tracked
 workstream with their own migration plan. Phase 2's v2 client is deferred until
@@ -341,33 +344,32 @@ the runtime registry and local ACP execution path are real production code, but
 the canonical event model, capability-driven desktop, distribution installer,
 and CI boundary enforcement remain future increments.
 
-| Workstream                            | Current state                                                                                                                                                                | Next acceptance boundary                                                                                                                        |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local ACP backend                     | Shipped: startup descriptors, generic adapter, direct execution, quarantine, diagnostics API, authenticated HTTP/WS integration tests                                        | Preserve this v1 path while later slices add UI and distribution                                                                                |
-| Built-in regression guardrails        | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze the next UI slice; complete stream/workflow golden suites remain open      | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                            |
-| Installed-provider desktop            | Dynamic catalog entries can appear in existing selectors, but installed origin, source, diagnostics, enablement, and lifecycle are not presented or managed                  | Add catalog origin plus an installed-provider diagnostics view without exposing launch secrets                                                  |
-| Negotiated capabilities/configuration | ACP v1 setup reads typed config options internally and observes authoritative replacements after model changes; the desktop still receives model/mode/access-specific shapes | Add a provider-neutral per-session capability/config snapshot and opaque `set_config_option` operation                                          |
-| Canonical events and ACP v2           | Not started; current ACP runtime is fixed to v1 and still projects Claude-shaped/index-based runtime events                                                                  | Keep v2 deferred; design the versioned canonical state migration as a separate workstream                                                       |
-| Marketplace distribution/security     | Local absolute executables only; schema validation, launch hardening, quarantine, and API redaction exist                                                                    | Downloads, integrity, signing, blocklist, process policy, install history, and conformance probing are still required before remote agents ship |
-| Boundary enforcement                  | Runtime registry removes the central static provider list; remaining service leaks are hand-inventoried and desktop leaks remain widespread                                  | Add the provider-ID/dependency CI scanner only after the next containment slice establishes its allowlist                                       |
+| Workstream                            | Current state                                                                                                                                                                               | Next acceptance boundary                                                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local ACP backend                     | Shipped: startup descriptors, generic adapter, direct execution, quarantine, diagnostics API, and authenticated HTTP/WS integration tests                                                    | Preserve this v1 path while later slices add UI and distribution                                                                                |
+| Built-in regression guardrails        | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze later UI work; complete stream/workflow golden suites remain open                           | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                            |
+| Installed-provider desktop            | Dynamic catalog entries can appear in existing selectors, but installed origin, source, diagnostics, enablement, and lifecycle are not presented or managed                                 | Deferred for the `v0.11.0` merge; later add catalog origin and diagnostics without exposing launch secrets                                      |
+| Negotiated capabilities/configuration | ACP v1 setup exposes a provider-neutral per-session select/boolean snapshot and opaque authenticated WS get/set operations; full returned lists are authoritative; no desktop consumer exists | Later render the snapshot without provider-ID branches, then migrate legacy model/mode/effort controls                                          |
+| Canonical events and ACP v2           | Not started; current ACP runtime is fixed to v1 and still projects Claude-shaped/index-based runtime events                                                                                 | Keep v2 deferred; design the versioned canonical state migration as a separate workstream                                                       |
+| Marketplace distribution/security     | Local absolute executables only; schema validation, launch hardening, quarantine, and API redaction exist                                                                                   | Downloads, integrity, signing, blocklist, process policy, install history, and conformance probing are still required before remote agents ship |
+| Boundary enforcement                  | Runtime registry removes the central static provider list; remaining service leaks are hand-inventoried and desktop leaks remain widespread                                                 | Add the provider-ID/dependency CI scanner only after the next containment slice establishes its allowlist                                       |
 
 Recommended increments from this baseline:
 
-The focused Phase 0 guardrail for the next slice is complete: `FEATURES.md` is a
-coverage ledger, and deterministic Claude/Codex catalog fixtures pin the
-service-to-desktop shape that origin metadata will extend. The remaining
-increments are:
+The focused Phase 0 guardrail and backend ACP v1 configuration bridge are
+complete. For the `v0.11.0` merge, user-facing marketplace work is intentionally
+skipped rather than shipping a partial diagnostics or control surface. The
+remaining increments are:
 
-1. ship the first user-visible step 2b slice: catalog origin plus an
-   installed-provider diagnostics screen backed by
-   `GET /api/agents/installed-providers`;
-2. add the generic ACP v1 session configuration bridge and desktop controls,
-   preserving opaque option IDs and treating every returned option list as
-   authoritative;
-3. add local descriptor lifecycle operations (add, enable, disable, remove) with
-   transcript preservation before building remote marketplace downloads;
-4. then resume the independent Phase 3/4/6 canonical-event workstream. Do not
-   pull ACP v2, downloads, signing, or third-party UI into the first step 2b PR.
+1. keep catalog-origin, installed-provider diagnostics, and generic session
+   controls deferred until the marketplace UI can be delivered coherently;
+2. add local descriptor lifecycle operations (add, enable, disable, remove)
+   with transcript preservation before building remote marketplace downloads;
+3. continue the independent Phase 3/4/6 canonical-event workstream behind
+   provider-neutral types;
+4. add downloads, integrity, signing, blocklist, and sandbox/process policy only
+   as a later security-gated distribution slice. ACP v2 remains deferred while
+   its specification is draft.
 
 ### Phase 0 — Freeze parity and define ownership
 
@@ -502,14 +504,15 @@ increments are:
 
 ### Phase 4 — Make session controls capability-driven
 
-- [ ] Replace separate model, mode, effort, and provider-mode methods with generic
-      configuration option reads and writes.
-- [~] Treat the option list returned after each update as authoritative; providers
-  may change dependent choices after a model or mode change. The ACP runtime
-  decodes and observes replacement `configOptions` after model updates, but
-  that state is still adapter-hook-local and is not projected to a generic
-  desktop session snapshot.
-- [ ] Preserve opaque option IDs and render provider-supplied labels/descriptions.
+- [~] Replace separate model, mode, effort, and provider-mode methods with
+      generic configuration option reads and writes. ACP sessions now expose
+      provider-neutral `config.get` / `config.set`; the legacy methods and all
+      desktop consumers remain in place until the UI migration.
+- [x] Treat the option list returned after each ACP update as authoritative;
+      providers may change dependent choices after a model or mode change. The
+      live runtime snapshot is replaced, never request-patched.
+- [~] Preserve opaque option IDs and provider-supplied labels/descriptions. The
+      backend DTO does; rendering is intentionally deferred.
 - [ ] Map known categories such as model, mode, model configuration, and thought
       level to consistent UI placement without hard-coding provider IDs.
 - [ ] Generate prompt controls from advertised content capabilities.

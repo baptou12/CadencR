@@ -13,7 +13,8 @@ use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
     RuntimePermissionMode, RuntimePermissionRequest, RuntimePermissionResponse,
-    RuntimePermissionResponseKind, RuntimeSlashCommand,
+    RuntimePermissionResponseKind, RuntimeSessionConfigSnapshot, RuntimeSessionConfigValue,
+    RuntimeSlashCommand,
 };
 
 use super::extensions;
@@ -115,8 +116,18 @@ impl AcpProviderHooks for CursorAcpAdapter {
         lock_mutex(&self.model_config).model_config_value(model)
     }
 
-    fn model_config_companions(&self, model: &str) -> Vec<(String, String)> {
+    fn model_config_companions(&self, model: &str) -> Vec<(String, RuntimeSessionConfigValue)> {
         lock_mutex(&self.model_config).companions(model)
+    }
+
+    fn legacy_model_from_session_config(
+        &self,
+        _model_value: &str,
+        _snapshot: &RuntimeSessionConfigSnapshot,
+    ) -> Option<String> {
+        // Cursor's catalog model includes companion fast/thinking parameters,
+        // while ACP exposes the base model and companions as separate options.
+        None
     }
 
     fn model_encodes_thinking_effort(&self, model: &str) -> bool {
@@ -236,7 +247,7 @@ mod tests {
     use crate::domain::agents::adapter::{
         RuntimeAccessMode, RuntimeContentBlock, RuntimePermissionDecision, RuntimePermissionMode,
         RuntimePermissionRequest, RuntimePermissionResponse, RuntimePermissionResponseKind,
-        RuntimeStreamEvent,
+        RuntimeSessionConfigSnapshot, RuntimeSessionConfigValue, RuntimeStreamEvent,
     };
     use agent_client_protocol::schema::v1::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
@@ -333,14 +344,26 @@ mod tests {
         );
         assert_eq!(
             adapter.model_config_companions("composer-2.5"),
-            vec![("fast".to_string(), "false".to_string())]
+            vec![(
+                "fast".to_string(),
+                RuntimeSessionConfigValue::Select("false".to_string())
+            )]
         );
         assert_eq!(
             adapter.model_config_companions("composer-2.5-fast"),
-            vec![("fast".to_string(), "true".to_string())]
+            vec![(
+                "fast".to_string(),
+                RuntimeSessionConfigValue::Select("true".to_string())
+            )]
         );
         assert!(adapter.model_encodes_thinking_effort("gpt-5.3-codex-high"));
         assert!(!adapter.model_encodes_thinking_effort("composer-2.5"));
+        assert!(adapter
+            .legacy_model_from_session_config(
+                "composer-2.5",
+                &RuntimeSessionConfigSnapshot::default()
+            )
+            .is_none());
         let meta = adapter.client_capabilities_meta();
         assert_eq!(meta.get("parameterizedModelPicker"), Some(&json!(true)));
     }

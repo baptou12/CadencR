@@ -15,6 +15,7 @@ use agent_client_protocol::schema::v1::{
 };
 
 use crate::domain::agents::acp::runtime::thought_level::is_thought_level_config_name;
+use crate::domain::agents::adapter::RuntimeSessionConfigValue;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CatalogModelParts {
@@ -27,9 +28,24 @@ pub(super) struct CatalogModelParts {
 #[derive(Debug, Default)]
 pub(super) struct CursorModelConfigState {
     model_values: HashMap<String, String>,
-    has_fast_option: bool,
+    fast_option_kind: Option<CompanionValueKind>,
     thought_level_config_id: Option<String>,
-    thinking_config_id: Option<String>,
+    thinking_config: Option<(String, CompanionValueKind)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CompanionValueKind {
+    Select,
+    Boolean,
+}
+
+impl CompanionValueKind {
+    fn value(self, value: bool) -> RuntimeSessionConfigValue {
+        match self {
+            Self::Select => RuntimeSessionConfigValue::Select(value.to_string()),
+            Self::Boolean => RuntimeSessionConfigValue::Boolean(value),
+        }
+    }
 }
 
 impl CursorModelConfigState {
@@ -52,11 +68,11 @@ impl CursorModelConfigState {
             self.model_values.clear();
         }
         if saw_fast {
-            self.has_fast_option = false;
+            self.fast_option_kind = None;
         }
         if saw_thought {
             self.thought_level_config_id = None;
-            self.thinking_config_id = None;
+            self.thinking_config = None;
         }
 
         for option in options {
@@ -66,14 +82,14 @@ impl CursorModelConfigState {
                     self.record_model_option(option);
                 }
                 Some(SessionConfigOptionCategory::ModelConfig) if id == "fast" => {
-                    self.has_fast_option = true;
+                    self.record_fast_option(option);
                 }
                 Some(SessionConfigOptionCategory::ThoughtLevel) => {
                     self.record_thought_level_option(option);
                 }
                 _ => {
                     if id == "fast" {
-                        self.has_fast_option = true;
+                        self.record_fast_option(option);
                     }
                 }
             }
@@ -85,7 +101,7 @@ impl CursorModelConfigState {
         self.model_config_value_for_parts(model, &parts)
     }
 
-    pub(super) fn companions(&self, model: &str) -> Vec<(String, String)> {
+    pub(super) fn companions(&self, model: &str) -> Vec<(String, RuntimeSessionConfigValue)> {
         self.companions_for_parts(&parse_catalog_model(model))
     }
 
@@ -110,27 +126,27 @@ impl CursorModelConfigState {
         parts.base.clone()
     }
 
-    fn companions_for_parts(&self, parts: &CatalogModelParts) -> Vec<(String, String)> {
+    fn companions_for_parts(
+        &self,
+        parts: &CatalogModelParts,
+    ) -> Vec<(String, RuntimeSessionConfigValue)> {
         let mut companions = Vec::new();
-        if self.has_fast_option {
+        if let Some(kind) = self.fast_option_kind {
             let fast = parts.fast.unwrap_or(false);
-            companions.push((
-                "fast".to_string(),
-                if fast { "true" } else { "false" }.to_string(),
-            ));
+            companions.push(("fast".to_string(), kind.value(fast)));
         }
-        if let (Some(config_id), Some(thinking)) =
-            (self.thinking_config_id.as_ref(), parts.thinking)
+        if let (Some((config_id, kind)), Some(thinking)) =
+            (self.thinking_config.as_ref(), parts.thinking)
         {
-            companions.push((
-                config_id.clone(),
-                if thinking { "true" } else { "false" }.to_string(),
-            ));
+            companions.push((config_id.clone(), kind.value(thinking)));
         }
         if let (Some(config_id), Some(effort)) =
             (self.thought_level_config_id.as_ref(), parts.effort.as_ref())
         {
-            companions.push((config_id.clone(), effort.clone()));
+            companions.push((
+                config_id.clone(),
+                RuntimeSessionConfigValue::Select(effort.clone()),
+            ));
         }
         companions
     }
@@ -158,15 +174,26 @@ impl CursorModelConfigState {
         });
     }
 
+    fn record_fast_option(&mut self, option: &SessionConfigOption) {
+        self.fast_option_kind = Some(match option.kind {
+            SessionConfigKind::Boolean(_) => CompanionValueKind::Boolean,
+            _ => CompanionValueKind::Select,
+        });
+    }
+
     fn record_thought_level_option(&mut self, option: &SessionConfigOption) {
         let id = option.id.0.to_string();
+        if matches!(option.kind, SessionConfigKind::Boolean(_)) {
+            self.thinking_config = Some((id, CompanionValueKind::Boolean));
+            return;
+        }
         let values = select_values(option);
         let boolean_only = !values.is_empty()
             && values
                 .iter()
                 .all(|value| matches!(value.as_str(), "true" | "false"));
         if boolean_only {
-            self.thinking_config_id = Some(id);
+            self.thinking_config = Some((id, CompanionValueKind::Select));
             return;
         }
         let preferred = is_thought_level_config_name(&id);
@@ -280,6 +307,7 @@ fn normalized_model_ref(model: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{parse_catalog_model, CursorModelConfigState};
+    use crate::domain::agents::adapter::RuntimeSessionConfigValue;
     use agent_client_protocol::schema::v1::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };
@@ -355,17 +383,29 @@ mod tests {
         );
         assert_eq!(
             state.companions("composer-2.5"),
-            vec![("fast".to_string(), "false".to_string())]
+            vec![(
+                "fast".to_string(),
+                RuntimeSessionConfigValue::Select("false".to_string())
+            )]
         );
         assert_eq!(
             state.companions("composer-2.5-fast"),
-            vec![("fast".to_string(), "true".to_string())]
+            vec![(
+                "fast".to_string(),
+                RuntimeSessionConfigValue::Select("true".to_string())
+            )]
         );
         assert_eq!(
             state.companions("cursor-grok-4.5-high"),
             vec![
-                ("fast".to_string(), "false".to_string()),
-                ("effort".to_string(), "high".to_string()),
+                (
+                    "fast".to_string(),
+                    RuntimeSessionConfigValue::Select("false".to_string())
+                ),
+                (
+                    "effort".to_string(),
+                    RuntimeSessionConfigValue::Select("high".to_string())
+                ),
             ]
         );
         assert_eq!(state.thinking_effort_config_id().as_deref(), Some("effort"));
@@ -401,7 +441,40 @@ mod tests {
         assert_eq!(state.model_config_value("composer-2.5"), "composer-2.5");
         assert_eq!(
             state.companions("composer-2.5"),
-            vec![("fast".to_string(), "false".to_string())]
+            vec![(
+                "fast".to_string(),
+                RuntimeSessionConfigValue::Select("false".to_string())
+            )]
+        );
+    }
+
+    #[test]
+    fn boolean_thought_level_option_stays_boolean() {
+        let mut state = CursorModelConfigState::default();
+        state.observe(
+            &[SessionConfigOption::boolean("thinking", "Thinking", false)
+                .category(SessionConfigOptionCategory::ThoughtLevel)],
+        );
+
+        assert_eq!(
+            state.companions("claude-opus-4-8-thinking"),
+            vec![(
+                "thinking".to_string(),
+                RuntimeSessionConfigValue::Boolean(true)
+            )]
+        );
+        assert!(state.thinking_effort_config_id().is_none());
+    }
+
+    #[test]
+    fn boolean_fast_option_stays_boolean() {
+        let mut state = CursorModelConfigState::default();
+        state.observe(&[SessionConfigOption::boolean("fast", "Fast", false)
+            .category(SessionConfigOptionCategory::ModelConfig)]);
+
+        assert_eq!(
+            state.companions("composer-2.5-fast"),
+            vec![("fast".to_string(), RuntimeSessionConfigValue::Boolean(true))]
         );
     }
 }

@@ -1,6 +1,6 @@
 use super::capability_probe::{request_optional_method_value, ProbeResult};
 use crate::domain::agents::acp::AcpClient;
-use crate::domain::agents::adapter::RuntimeError;
+use crate::domain::agents::adapter::{RuntimeError, RuntimeSessionConfigValue};
 use serde_json::{json, Value};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -42,13 +42,14 @@ pub async fn set_config_option_model_value(
         set_local_config_value(current_model, Some(new_model)).await;
         return Ok(None);
     };
+    let wire_value = RuntimeSessionConfigValue::Select(config_value.to_string());
     set_config_option(
         client,
         session_id,
         current_model,
         supports_flag,
         config_id,
-        Some(config_value),
+        Some(wire_value),
         Some(new_model),
     )
     .await
@@ -61,22 +62,22 @@ pub async fn set_config_option_thinking_effort(
     supports_flag: &Arc<AtomicBool>,
     config_id: Option<String>,
     new_effort: Option<&str>,
-) -> Result<(), RuntimeError> {
+) -> Result<Option<Value>, RuntimeError> {
     let Some(config_id) = config_id else {
         set_local_config_value(current_effort, new_effort).await;
-        return Ok(());
+        return Ok(None);
     };
+    let wire_value = new_effort.map(|value| RuntimeSessionConfigValue::Select(value.to_string()));
     set_config_option(
         client,
         session_id,
         current_effort,
         supports_flag,
         &config_id,
-        new_effort,
+        wire_value,
         new_effort,
     )
     .await
-    .map(|_| ())
 }
 async fn set_config_option(
     client: &AcpClient,
@@ -84,14 +85,20 @@ async fn set_config_option(
     current: &Arc<RwLock<Option<String>>>,
     supports_flag: &Arc<AtomicBool>,
     config_id: &str,
-    wire_value: Option<&str>,
+    wire_value: Option<RuntimeSessionConfigValue>,
     stored_value: Option<&str>,
 ) -> Result<Option<Value>, RuntimeError> {
     if value_is_already_current(current, stored_value).await {
         return Ok(None);
     }
-    let result =
-        send_set_config_option(client, session_id, supports_flag, config_id, wire_value).await?;
+    let result = send_set_config_option(
+        client,
+        session_id,
+        supports_flag,
+        config_id,
+        wire_value.as_ref(),
+    )
+    .await?;
     *current.write().await = stored_value.map(ToOwned::to_owned);
     Ok(result)
 }
@@ -100,9 +107,11 @@ pub(super) async fn send_set_config_option(
     session_id: &str,
     supports_flag: &Arc<AtomicBool>,
     config_id: &str,
-    value: Option<&str>,
+    value: Option<&RuntimeSessionConfigValue>,
 ) -> Result<Option<Value>, RuntimeError> {
-    let value_payload = value.map_or(Value::Null, |v| Value::String(v.to_string()));
+    let value_payload = value.map_or(Value::Null, |value| {
+        serde_json::to_value(value).expect("runtime session config values should serialize")
+    });
     let params = json!({
         "sessionId": session_id,
         "configId": config_id,

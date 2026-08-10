@@ -2,23 +2,28 @@
 //!
 //! ACP agents announce authoritative model / thinking-effort changes via
 //! a `session/update` whose `sessionUpdate == "config_option_update"`. The
-//! payload mirrors the request shape: `configOption: { name, value }`.
+//! current ACP v1 payload carries the complete authoritative `configOptions`
+//! list. The older `configOption: { name, value }` shape remains accepted for
+//! compatibility with agent builds predating that contract.
 //!
 //! Two halves:
 //! - `map_config_option_update` (sync) is called from the event-mapper to
 //!   produce the public `RuntimeEvent` (a benign `Other` so observers see
 //!   the raw envelope without leaking provider shape upstream).
-//! - `mirror_config_option_update` (async) is called from the event loop
-//!   alongside the existing `current_mode_update` mirroring so the agent's
-//!   authoritative model/effort lands in the session locks.
+//! - `mirror_config_snapshot` (async) projects known categories into the
+//!   legacy model/effort locks while generic callers read the full snapshot.
+//! - `mirror_legacy_config_update` keeps the older single-option shape alive.
 
 use std::sync::Arc;
 
-use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::domain::agents::adapter::{RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata};
+use crate::domain::agents::adapter::{
+    RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeSessionConfigKind,
+    RuntimeSessionConfigSnapshot, RuntimeSessionConfigValue,
+};
 
+use super::provider_hooks::AcpProviderHooks;
 use super::thought_level::is_thought_level_config_name;
 
 /// Build the `RuntimeEvent` for a `config_option_update` notification.
@@ -30,37 +35,66 @@ pub fn map_config_option_update(metadata: RuntimeEventMetadata) -> RuntimeEvent 
     RuntimeEvent::new(metadata, RuntimeEventKind::Other)
 }
 
-/// Mirror a `config_option_update` body into the session's local state.
-///
 /// Unrecognised option names are logged at `debug` and ignored. Explicit
 /// `null` values clear the corresponding override. Skips the write if the
 /// value is already current — this fires on every `session/update` and we
 /// don't want to take the writer lock for a no-op.
-pub async fn mirror_config_option_update(
-    body: &Value,
+pub async fn mirror_legacy_config_update(
+    config_id: &str,
+    value: Option<&RuntimeSessionConfigValue>,
     current_model: &Arc<RwLock<Option<String>>>,
     current_effort: &Arc<RwLock<Option<String>>>,
 ) {
-    let option = body.get("configOption");
-    let name = option
-        .and_then(|o| o.get("name"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let value = option.and_then(|o| o.get("value"));
-    if name == "model" {
-        let next = value.and_then(Value::as_str).map(ToOwned::to_owned);
-        write_if_changed(current_model, next).await;
+    if config_id == "model" {
+        if let Some(next) = legacy_select_value(value) {
+            write_if_changed(current_model, next).await;
+        }
         return;
     }
-    if is_thought_level_config_name(name) {
-        let next = match value {
-            Some(Value::Null) | None => None,
-            Some(v) => v.as_str().map(ToOwned::to_owned),
+    if is_thought_level_config_name(config_id) {
+        if let Some(next) = legacy_select_value(value) {
+            write_if_changed(current_effort, next).await;
+        }
+        return;
+    }
+    tracing::debug!(option = config_id, "ignoring unknown config_option_update");
+}
+
+fn legacy_select_value(value: Option<&RuntimeSessionConfigValue>) -> Option<Option<String>> {
+    match value {
+        Some(RuntimeSessionConfigValue::Select(value)) => Some(Some(value.clone())),
+        None => Some(None),
+        Some(RuntimeSessionConfigValue::Boolean(_)) => None,
+    }
+}
+
+/// Mirror every known legacy field from a complete authoritative snapshot.
+pub async fn mirror_config_snapshot(
+    snapshot: &RuntimeSessionConfigSnapshot,
+    hooks: &dyn AcpProviderHooks,
+    current_model: &Arc<RwLock<Option<String>>>,
+    current_effort: &Arc<RwLock<Option<String>>>,
+) {
+    for option in &snapshot.options {
+        let RuntimeSessionConfigKind::Select { current_value, .. } = &option.kind else {
+            continue;
         };
-        write_if_changed(current_effort, next).await;
-        return;
+        match option.category.as_deref() {
+            Some("model") => {
+                if let Some(model) = hooks.legacy_model_from_session_config(current_value, snapshot)
+                {
+                    write_if_changed(current_model, Some(model)).await;
+                }
+            }
+            Some("thought_level") => {
+                write_if_changed(current_effort, Some(current_value.clone())).await
+            }
+            _ if is_thought_level_config_name(&option.id) => {
+                write_if_changed(current_effort, Some(current_value.clone())).await
+            }
+            _ => {}
+        }
     }
-    tracing::debug!(option = name, "ignoring unknown config_option_update");
 }
 
 /// Take the writer lock only when the new value differs. Hot-path
@@ -75,8 +109,8 @@ pub(super) async fn write_if_changed(slot: &Arc<RwLock<Option<String>>>, next: O
 
 #[cfg(test)]
 mod tests {
-    use super::{map_config_option_update, mirror_config_option_update};
-    use crate::domain::agents::adapter::RuntimeEventMetadata;
+    use super::{map_config_option_update, mirror_legacy_config_update};
+    use crate::domain::agents::adapter::{RuntimeEventMetadata, RuntimeSessionConfigValue};
     use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -104,8 +138,8 @@ mod tests {
     async fn model_update_writes_current_model() {
         let model = Arc::new(RwLock::new(Some("old".to_string())));
         let effort = Arc::new(RwLock::new(None));
-        let body = json!({ "configOption": { "name": "model", "value": "anthropic/claude-4.7" } });
-        mirror_config_option_update(&body, &model, &effort).await;
+        let value = RuntimeSessionConfigValue::Select("anthropic/claude-4.7".to_string());
+        mirror_legacy_config_update("model", Some(&value), &model, &effort).await;
         assert_eq!(model.read().await.as_deref(), Some("anthropic/claude-4.7"));
         assert!(effort.read().await.is_none());
     }
@@ -114,8 +148,8 @@ mod tests {
     async fn thinking_effort_update_writes_effort() {
         let model = Arc::new(RwLock::new(None));
         let effort = Arc::new(RwLock::new(None));
-        let body = json!({ "configOption": { "name": "thinkingEffort", "value": "high" } });
-        mirror_config_option_update(&body, &model, &effort).await;
+        let value = RuntimeSessionConfigValue::Select("high".to_string());
+        mirror_legacy_config_update("thinkingEffort", Some(&value), &model, &effort).await;
         assert_eq!(effort.read().await.as_deref(), Some("high"));
     }
 
@@ -123,8 +157,7 @@ mod tests {
     async fn null_thinking_effort_clears_local_value() {
         let model = Arc::new(RwLock::new(None));
         let effort = Arc::new(RwLock::new(Some("high".to_string())));
-        let body = json!({ "configOption": { "name": "thinkingEffort", "value": null } });
-        mirror_config_option_update(&body, &model, &effort).await;
+        mirror_legacy_config_update("thinkingEffort", None, &model, &effort).await;
         assert!(effort.read().await.is_none());
     }
 
@@ -132,8 +165,8 @@ mod tests {
     async fn unknown_option_is_ignored() {
         let model = Arc::new(RwLock::new(Some("keep".to_string())));
         let effort = Arc::new(RwLock::new(Some("medium".to_string())));
-        let body = json!({ "configOption": { "name": "exotic", "value": 42 } });
-        mirror_config_option_update(&body, &model, &effort).await;
+        let value = RuntimeSessionConfigValue::Boolean(true);
+        mirror_legacy_config_update("exotic", Some(&value), &model, &effort).await;
         assert_eq!(model.read().await.as_deref(), Some("keep"));
         assert_eq!(effort.read().await.as_deref(), Some("medium"));
     }

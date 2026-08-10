@@ -83,6 +83,14 @@ async fn handle_session_action(
         "effort.set" => {
             session_control::handle_effort_set(envelope, sender, sdk_sessions, app_state).await
         }
+        "config.get" => {
+            session_control::handle_session_config_get(envelope, sender, sdk_sessions, app_state)
+                .await
+        }
+        "config.set" => {
+            session_control::handle_session_config_set(envelope, sender, sdk_sessions, app_state)
+                .await
+        }
         "fast_mode.set" => {
             session_control::handle_fast_mode_set(envelope, sender, sdk_sessions, app_state).await
         }

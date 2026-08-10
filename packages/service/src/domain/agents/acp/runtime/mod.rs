@@ -40,6 +40,7 @@ mod server_request_extensions;
 mod server_request_response;
 pub mod server_requests;
 pub mod session;
+mod session_config;
 pub mod session_permissions;
 pub mod session_spawn;
 #[cfg(test)]

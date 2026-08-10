@@ -12,7 +12,8 @@ use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimeMcpServerStatus,
     RuntimePermissionDecision, RuntimePermissionMode, RuntimePermissionRequest,
-    RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSlashCommand, RuntimeUsage,
+    RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionConfigSnapshot,
+    RuntimeSessionConfigValue, RuntimeSlashCommand, RuntimeUsage,
 };
 
 use super::events_stream_blocks::EventIndexer;
@@ -112,8 +113,19 @@ pub trait AcpProviderHooks: Send + Sync {
     }
 
     /// Extra set_config_option pairs after the model response (Cursor fast / thought-level).
-    fn model_config_companions(&self, _model: &str) -> Vec<(String, String)> {
+    fn model_config_companions(&self, _model: &str) -> Vec<(String, RuntimeSessionConfigValue)> {
         Vec::new()
+    }
+
+    /// Project a model config value into the legacy catalog-model domain.
+    /// Providers with parameterized model IDs return `None` until they can
+    /// reconstruct the complete catalog selection from the snapshot.
+    fn legacy_model_from_session_config(
+        &self,
+        model_value: &str,
+        _snapshot: &RuntimeSessionConfigSnapshot,
+    ) -> Option<String> {
+        Some(model_value.to_string())
     }
 
     /// Catalog model already encodes effort applied via companions; skip spawn effort RPC.
