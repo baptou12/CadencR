@@ -98,11 +98,23 @@ impl CatalogEntry {
     /// Build a `DiscoverySpec` that `cli-discovery` consumes.
     pub fn discovery_spec(&self) -> DiscoverySpec {
         DiscoverySpec {
-            bin_name: self.bin_name,
-            well_known_relative_to_home: self.well_known_relative_to_home.to_vec(),
-            well_known_absolute: self.well_known_absolute.to_vec(),
-            version_args: self.version_args,
-            version_must_contain: self.version_must_contain,
+            bin_name: self.bin_name.to_string(),
+            well_known_relative_to_home: self
+                .well_known_relative_to_home
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            well_known_absolute: self
+                .well_known_absolute
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            version_args: self
+                .version_args
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            version_must_contain: self.version_must_contain.map(str::to_string),
         }
     }
 }

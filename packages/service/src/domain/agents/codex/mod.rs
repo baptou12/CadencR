@@ -41,6 +41,7 @@ mod permissions;
 mod prompt_receipts;
 mod raw_tool_names;
 mod responses;
+mod runtime_error;
 mod session;
 mod session_permissions;
 mod thread_params;

@@ -5,6 +5,7 @@ use std::path::Path;
 
 use sqlx::SqlitePool;
 
+use super::registry::provider_identifier_key;
 use super::{provider_catalog_entry_live_for_settings, provider_registry, runtime_adapter};
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry};
 
@@ -20,36 +21,16 @@ pub struct ProviderAliasMetadata {
 }
 
 impl ProviderAliasMetadata {
-    fn borrowed(entry: &BuiltinAliases) -> Self {
-        let (provider_id, aliases, model_guidance) = *entry;
-        Self {
-            provider_id: Cow::Borrowed(provider_id),
-            aliases: aliases.iter().copied().map(Cow::Borrowed).collect(),
-            model_guidance: Cow::Borrowed(model_guidance),
-        }
+    fn from_registration(provider: &super::registry::RegisteredProvider) -> Option<Self> {
+        let metadata = provider.metadata();
+        let model_guidance = metadata.model_guidance()?;
+        Some(Self {
+            provider_id: Cow::Owned(provider.id().to_string()),
+            aliases: metadata.aliases().to_vec(),
+            model_guidance: Cow::Owned(model_guidance.to_string()),
+        })
     }
 }
-
-/// `(provider_id, aliases, model_guidance)` for a compiled-in provider.
-type BuiltinAliases = (&'static str, &'static [&'static str], &'static str);
-
-const PROVIDER_ALIAS_METADATA: &[BuiltinAliases] = &[
-    (
-        "claude_code",
-        &["claude", "claude-code", "Claude Code", "anthropic"],
-        "Use catalog aliases such as opus, opus[1m], sonnet, haiku, or default.",
-    ),
-    (
-        "codex_cli",
-        &["codex", "codex-cli", "Codex CLI", "openai"],
-        "Use bare Codex/OpenAI-style model ids advertised by the Codex app-server, for example gpt-5.5.",
-    ),
-    (
-        "opencode",
-        &["open-code", "OpenCode", "open"],
-        "Use OpenCode provider/model ids such as default/default or other ids shown by OpenCode's model catalog.",
-    ),
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderModelValidationError {
@@ -133,20 +114,19 @@ impl fmt::Display for ProviderModelValidationError {
 }
 
 pub fn canonical_provider_id(provider_id: &str) -> Option<String> {
-    let normalized = normalized_ref(provider_id);
-    if provider_registry().contains(provider_id) {
-        return Some(provider_id.to_string());
-    }
+    let normalized = provider_identifier_key(provider_id);
 
-    PROVIDER_ALIAS_METADATA
+    provider_registry()
         .iter()
-        .find(|(provider_id, aliases, _)| {
-            normalized_ref(provider_id) == normalized
-                || aliases
+        .find(|provider| {
+            provider_identifier_key(provider.id()) == normalized
+                || provider
+                    .metadata()
+                    .aliases()
                     .iter()
-                    .any(|alias| normalized_ref(alias) == normalized)
+                    .any(|alias| provider_identifier_key(alias) == normalized)
         })
-        .map(|(provider_id, _, _)| (*provider_id).to_string())
+        .map(|provider| provider.id().to_string())
 }
 
 pub fn valid_provider_ids() -> Vec<String> {
@@ -154,22 +134,28 @@ pub fn valid_provider_ids() -> Vec<String> {
 }
 
 pub fn provider_aliases() -> Vec<(String, Vec<String>)> {
-    PROVIDER_ALIAS_METADATA
+    provider_registry()
         .iter()
-        .map(|(provider_id, aliases, _)| {
+        .filter(|provider| !provider.metadata().aliases().is_empty())
+        .map(|provider| {
             (
-                (*provider_id).to_string(),
-                aliases.iter().map(|alias| (*alias).to_string()).collect(),
+                provider.id().to_string(),
+                provider
+                    .metadata()
+                    .aliases()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
             )
         })
         .collect()
 }
 
 pub fn provider_alias_metadata(provider_id: &str) -> Option<ProviderAliasMetadata> {
-    PROVIDER_ALIAS_METADATA
+    provider_registry()
         .iter()
-        .find(|(id, _, _)| *id == provider_id)
-        .map(ProviderAliasMetadata::borrowed)
+        .find(|provider| provider.id() == provider_id)
+        .and_then(ProviderAliasMetadata::from_registration)
 }
 
 pub fn canonical_provider_or_error(
@@ -292,16 +278,39 @@ pub async fn provider_model_catalog_entry(
 }
 
 fn suggested_provider_id(provider_id: &str) -> Option<String> {
-    let requested = normalized_ref(provider_id);
-    PROVIDER_ALIAS_METADATA
+    let requested = provider_identifier_key(provider_id);
+    provider_registry()
         .iter()
-        .find(|(provider_id, aliases, _)| {
-            normalized_ref(provider_id).contains(&requested)
-                || aliases
+        .find(|provider| {
+            provider_identifier_key(provider.id()).contains(&requested)
+                || provider
+                    .metadata()
+                    .aliases()
                     .iter()
-                    .any(|alias| normalized_ref(alias).contains(&requested))
+                    .any(|alias| provider_identifier_key(alias).contains(&requested))
         })
-        .map(|(provider_id, _, _)| (*provider_id).to_string())
+        .map(|provider| provider.id().to_string())
+}
+
+#[cfg(test)]
+mod alias_resolution_tests {
+    use super::canonical_provider_id;
+
+    #[test]
+    fn builtin_aliases_resolve_to_their_canonical_provider() {
+        assert_eq!(
+            canonical_provider_id("claude").as_deref(),
+            Some("claude_code")
+        );
+        assert_eq!(
+            canonical_provider_id("Claude Code").as_deref(),
+            Some("claude_code")
+        );
+        assert_eq!(
+            canonical_provider_id("openai").as_deref(),
+            Some("codex_cli")
+        );
+    }
 }
 
 fn available_model_ids(
@@ -315,13 +324,5 @@ fn available_model_ids(
         .map(|model| model.id.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect()
-}
-
-fn normalized_ref(value: &str) -> String {
-    value
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
         .collect()
 }

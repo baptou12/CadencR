@@ -7,14 +7,22 @@
 //! a later increment can add installed (marketplace) providers without changing
 //! the shape of any lookup site.
 //!
-//! See `docs/PROVIDER_SPEC/BOUNDARIES.md` (Phase 1). Only the registration
-//! mechanism is runtime here; nothing is user-installable yet.
+//! See `docs/PROVIDER_SPEC/BOUNDARIES.md` (Phase 1). Built-ins supply factories
+//! and host metadata here; validated local ACP descriptors append owned adapters
+//! during startup.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::ops::Deref;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
+use cli_discovery::DiscoverySpec;
+
 use crate::domain::agents::adapter::AgentRuntimeAdapter;
+
+mod builtin_metadata;
+use builtin_metadata::{claude_metadata, codex_metadata, cursor_metadata, opencode_metadata};
 
 /// A cloneable, `'static` handle to a registered adapter.
 ///
@@ -81,12 +89,63 @@ impl std::fmt::Debug for ProviderAdapterHandle {
 /// or build a fresh value; a future installed-provider factory will build an
 /// `Owned` handle from a validated installation record.
 type ProviderAdapterFactory = fn() -> ProviderAdapterHandle;
+type ProviderMetadataFactory = fn() -> ProviderRegistrationMetadata;
+
+/// Optional host discovery metadata owned by one provider registration.
+#[derive(Clone, Debug)]
+pub struct ProviderDiscoveryMetadata {
+    discovery_id: Cow<'static, str>,
+    setting_key: Cow<'static, str>,
+    spec: DiscoverySpec,
+    apply_override: fn(Option<PathBuf>),
+}
+
+impl ProviderDiscoveryMetadata {
+    pub fn discovery_id(&self) -> &str {
+        &self.discovery_id
+    }
+
+    pub fn setting_key(&self) -> &str {
+        &self.setting_key
+    }
+
+    pub fn spec(&self) -> &DiscoverySpec {
+        &self.spec
+    }
+
+    pub fn apply_override(&self, path: Option<PathBuf>) {
+        (self.apply_override)(path);
+    }
+}
+
+/// Provider-owned metadata consumed generically by shared host services.
+#[derive(Clone, Debug, Default)]
+pub struct ProviderRegistrationMetadata {
+    aliases: Vec<Cow<'static, str>>,
+    model_guidance: Option<Cow<'static, str>>,
+    discovery: Option<ProviderDiscoveryMetadata>,
+}
+
+impl ProviderRegistrationMetadata {
+    pub fn aliases(&self) -> &[Cow<'static, str>] {
+        &self.aliases
+    }
+
+    pub fn model_guidance(&self) -> Option<&str> {
+        self.model_guidance.as_deref()
+    }
+
+    pub fn discovery(&self) -> Option<&ProviderDiscoveryMetadata> {
+        self.discovery.as_ref()
+    }
+}
 
 /// One entry in the registry: the catalog id plus the adapter that owns it.
 #[derive(Clone, Debug)]
 pub struct RegisteredProvider {
     id: Cow<'static, str>,
     adapter: ProviderAdapterHandle,
+    metadata: ProviderRegistrationMetadata,
 }
 
 impl RegisteredProvider {
@@ -94,7 +153,13 @@ impl RegisteredProvider {
         Self {
             id: id.into(),
             adapter,
+            metadata: ProviderRegistrationMetadata::default(),
         }
+    }
+
+    fn with_metadata(mut self, metadata: ProviderRegistrationMetadata) -> Self {
+        self.metadata = metadata;
+        self
     }
 
     pub fn id(&self) -> &str {
@@ -104,6 +169,16 @@ impl RegisteredProvider {
     pub fn adapter(&self) -> &ProviderAdapterHandle {
         &self.adapter
     }
+
+    pub fn metadata(&self) -> &ProviderRegistrationMetadata {
+        &self.metadata
+    }
+}
+
+struct BuiltinProvider {
+    id: &'static str,
+    adapter: ProviderAdapterFactory,
+    metadata: ProviderMetadataFactory,
 }
 
 /// The compiled-in providers, in catalog order. Registration order is
@@ -111,24 +186,34 @@ impl RegisteredProvider {
 /// this list stays ordered and the registry never sorts it.
 ///
 /// Adding a built-in provider is still one edit here.
-static BUILTIN_PROVIDERS: &[(&str, ProviderAdapterFactory)] = &[
+static BUILTIN_PROVIDERS: &[BuiltinProvider] = &[
     // Claude Code caches its model catalog and slash commands *inside* the
     // adapter value, so every caller must see the same instance.
-    (super::super::claude_code::PROVIDER_ID, || {
-        ProviderAdapterHandle::borrowed(&super::super::claude_code::CLAUDE_CODE_ADAPTER)
-    }),
+    BuiltinProvider {
+        id: super::super::claude_code::PROVIDER_ID,
+        adapter: || {
+            ProviderAdapterHandle::borrowed(&super::super::claude_code::CLAUDE_CODE_ADAPTER)
+        },
+        metadata: claude_metadata,
+    },
     // The remaining built-ins hold no inline state (their caches are
     // module-level), so the registry constructs them the same way it will
     // construct an installed provider.
-    (super::super::codex::PROVIDER_ID, || {
-        ProviderAdapterHandle::owned(super::super::codex::CodexAdapter)
-    }),
-    (super::super::cursor::PROVIDER_ID, || {
-        ProviderAdapterHandle::owned(super::super::cursor::CursorAdapter)
-    }),
-    (super::super::opencode::PROVIDER_ID, || {
-        ProviderAdapterHandle::owned(super::super::opencode::OpenCodeAdapter)
-    }),
+    BuiltinProvider {
+        id: super::super::codex::PROVIDER_ID,
+        adapter: || ProviderAdapterHandle::owned(super::super::codex::CodexAdapter),
+        metadata: codex_metadata,
+    },
+    BuiltinProvider {
+        id: super::super::cursor::PROVIDER_ID,
+        adapter: || ProviderAdapterHandle::owned(super::super::cursor::CursorAdapter),
+        metadata: cursor_metadata,
+    },
+    BuiltinProvider {
+        id: super::super::opencode::PROVIDER_ID,
+        adapter: || ProviderAdapterHandle::owned(super::super::opencode::OpenCodeAdapter),
+        metadata: opencode_metadata,
+    },
 ];
 
 /// Ordered set of runtime providers available to this process.
@@ -138,11 +223,12 @@ pub struct ProviderRegistry {
 }
 
 impl ProviderRegistry {
-    /// Build a registry from an ordered list of entries. A duplicate of an
-    /// already-registered id is ignored, so the first registration (built-ins)
-    /// keeps ownership of its catalog id.
+    /// Build a registry from an ordered list of entries. Any canonical id or
+    /// alias collision is ignored, so the first registration (built-ins at
+    /// startup) keeps ownership of its complete public namespace.
     pub fn from_providers(providers: impl IntoIterator<Item = RegisteredProvider>) -> Self {
         let mut registered: Vec<RegisteredProvider> = Vec::new();
+        let mut registered_identifiers: HashSet<String> = HashSet::new();
         for provider in providers {
             let adapter_id = provider.adapter().catalog_entry().id;
             if adapter_id != provider.id() {
@@ -153,20 +239,27 @@ impl ProviderRegistry {
                 );
                 continue;
             }
-            if registered
+            let identifiers: HashSet<String> = std::iter::once(provider.id())
+                .chain(
+                    provider
+                        .metadata()
+                        .aliases()
+                        .iter()
+                        .map(|alias| alias.as_ref()),
+                )
+                .map(provider_identifier_key)
+                .collect();
+            if identifiers
                 .iter()
-                .any(|existing| existing.id() == provider.id())
+                .any(|identifier| registered_identifiers.contains(identifier))
             {
-                // Unreachable for built-ins (each id is its adapter's
-                // `PROVIDER_ID` const) but reachable once providers are
-                // installable, so dropping the later duplicate keeps the first
-                // registration's ownership of the id.
                 tracing::warn!(
                     provider_id = provider.id(),
-                    "duplicate provider registration ignored"
+                    "provider registration ignored because its public identifier conflicts with an earlier registration"
                 );
                 continue;
             }
+            registered_identifiers.extend(identifiers);
             registered.push(provider);
         }
         Self {
@@ -213,18 +306,73 @@ impl ProviderRegistry {
             .map(|provider| provider.id().to_string())
             .collect()
     }
+
+    /// The first registration is the process default. Built-in order is a
+    /// frozen user-visible contract, and installed providers are appended.
+    pub fn default_provider_id(&self) -> &str {
+        self.providers
+            .first()
+            .expect("the provider registry always has a built-in")
+            .id()
+    }
+
+    pub fn discoveries(&self) -> impl Iterator<Item = (&str, &ProviderDiscoveryMetadata)> {
+        self.iter().filter_map(|provider| {
+            provider
+                .metadata()
+                .discovery()
+                .map(|discovery| (provider.id(), discovery))
+        })
+    }
 }
 
 /// Catalog ids compiled into this build, in registration order. Read by the
 /// descriptor loader so an installed entry cannot claim a built-in's id.
 pub fn builtin_provider_ids() -> Vec<&'static str> {
-    BUILTIN_PROVIDERS.iter().map(|(id, _)| *id).collect()
+    BUILTIN_PROVIDERS
+        .iter()
+        .map(|provider| provider.id)
+        .collect()
+}
+
+/// Every public name owned by a built-in provider: canonical ids first, then
+/// aliases. Installed providers reserve this whole namespace so an exact
+/// third-party id can never shadow an alias such as `claude` or `openai`.
+pub fn builtin_provider_identifiers() -> &'static [String] {
+    static IDENTIFIERS: OnceLock<Vec<String>> = OnceLock::new();
+    IDENTIFIERS.get_or_init(|| {
+        let mut identifiers: Vec<String> = builtin_provider_ids()
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect();
+        identifiers.extend(BUILTIN_PROVIDERS.iter().flat_map(|provider| {
+            let metadata = (provider.metadata)();
+            metadata
+                .aliases()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        }));
+        identifiers
+    })
+}
+
+/// Provider references are compared the same way throughout resolution and
+/// descriptor reservation: punctuation, spacing, and ASCII case do not create
+/// distinct public names.
+pub(super) fn provider_identifier_key(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn builtin_registrations() -> impl Iterator<Item = RegisteredProvider> {
-    BUILTIN_PROVIDERS
-        .iter()
-        .map(|(id, factory)| RegisteredProvider::new(*id, factory()))
+    BUILTIN_PROVIDERS.iter().map(|provider| {
+        RegisteredProvider::new(provider.id, (provider.adapter)())
+            .with_metadata((provider.metadata)())
+    })
 }
 
 /// The process-wide registry. Initialized on first use from the built-in
@@ -236,8 +384,10 @@ pub fn provider_registry() -> &'static ProviderRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::{provider_registry, ProviderAdapterHandle, ProviderRegistry, RegisteredProvider};
-    use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+    use super::{
+        builtin_provider_identifiers, provider_identifier_key, provider_registry,
+        ProviderAdapterHandle, ProviderRegistry, RegisteredProvider,
+    };
 
     /// Parity freeze: the registry exposes exactly the providers the static
     /// `ADAPTERS` slice used to, in the same order. Ordering is user-visible.
@@ -280,7 +430,7 @@ mod tests {
     /// catalog would silently fall back to an arbitrary first entry.
     #[test]
     fn default_provider_is_registered() {
-        assert!(provider_registry().contains(DEFAULT_PROVIDER));
+        assert!(provider_registry().contains(provider_registry().default_provider_id()));
     }
 
     /// The property that matters, independent of which handle variant a
@@ -464,7 +614,7 @@ mod tests {
     fn a_builtin_id_always_wins_over_a_later_registration() {
         use crate::domain::agents::adapter::AgentRuntimeAdapter;
         let impostor = crate::domain::agents::providers::installed::GenericAcpAdapter::new(
-            std::sync::Arc::new(installed_impostor()),
+            std::sync::Arc::new(installed_impostor("cursor")),
         );
         assert_eq!(impostor.catalog_entry().label, "Impostor");
 
@@ -489,15 +639,35 @@ mod tests {
         );
     }
 
-    /// An installed descriptor that claims `cursor`, built the way the loader
-    /// would build it.
+    #[test]
+    fn a_builtin_alias_always_wins_over_a_later_registration() {
+        use crate::domain::agents::adapter::AgentRuntimeAdapter;
+        let impostor = crate::domain::agents::providers::installed::GenericAcpAdapter::new(
+            std::sync::Arc::new(installed_impostor("claude")),
+        );
+        assert_eq!(impostor.catalog_entry().id, "claude");
+
+        let registry = ProviderRegistry::from_providers(super::builtin_registrations().chain([
+            RegisteredProvider::new("claude", ProviderAdapterHandle::owned(impostor)),
+        ]));
+
+        assert_eq!(
+            registry.provider_ids(),
+            vec!["claude_code", "codex_cli", "cursor", "opencode"]
+        );
+        assert!(registry.adapter("claude").is_none());
+    }
+
+    /// An installed descriptor that claims the supplied public identifier,
+    /// built the way the loader would build it.
     #[cfg(test)]
     fn installed_impostor(
+        provider_id: &str,
     ) -> crate::domain::agents::providers::installed::installation::HostInstallation {
         let descriptor = serde_json::from_value(serde_json::json!({
             "schema_version": 1,
             "agent": {
-                "id": "cursor",
+                "id": provider_id,
                 "name": "Impostor",
                 "version": "9.9.9",
                 "description": "claims a built-in id",
@@ -507,7 +677,7 @@ mod tests {
         .expect("valid descriptor");
         crate::domain::agents::providers::installed::installation::HostInstallation::from_descriptor(
             descriptor,
-            std::path::Path::new("/p/cursor.json"),
+            std::path::Path::new("/p/provider.json"),
         )
         .expect("valid installation")
     }
@@ -518,6 +688,19 @@ mod tests {
             super::builtin_provider_ids(),
             vec!["claude_code", "codex_cli", "cursor", "opencode"]
         );
+    }
+
+    #[test]
+    fn builtin_public_identifiers_include_normalized_aliases() {
+        let identifiers = builtin_provider_identifiers();
+        for expected in ["claude_code", "claude", "anthropic", "codex_cli", "openai"] {
+            assert!(
+                identifiers.iter().any(|value| value == expected),
+                "{expected}"
+            );
+        }
+        assert_eq!(provider_identifier_key("Claude Code"), "claudecode");
+        assert_eq!(provider_identifier_key("claude-code"), "claudecode");
     }
 
     #[test]

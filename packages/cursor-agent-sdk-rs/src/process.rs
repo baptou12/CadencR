@@ -9,10 +9,10 @@ use crate::SdkError;
 /// in January 2026. The installer places it in `~/.local/bin`.
 pub fn cursor_discovery_spec() -> DiscoverySpec {
     DiscoverySpec {
-        bin_name: "agent",
-        well_known_relative_to_home: vec![".local/bin"],
-        well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin"],
-        version_args: &["--version"],
+        bin_name: "agent".into(),
+        well_known_relative_to_home: vec![".local/bin".into()],
+        well_known_absolute: vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+        version_args: vec!["--version".into()],
         // Cursor versions are date/hash strings such as
         // `2026.03.11-6dfa30c` and do not include a stable product marker.
         version_must_contain: None,
@@ -84,7 +84,10 @@ mod tests {
     fn discovery_spec_includes_cursor_installer_location() {
         let spec = cursor_discovery_spec();
         assert_eq!(spec.bin_name, "agent");
-        assert!(spec.well_known_relative_to_home.contains(&".local/bin"));
+        assert!(spec
+            .well_known_relative_to_home
+            .iter()
+            .any(|path| path == ".local/bin"));
     }
 
     #[tokio::test]

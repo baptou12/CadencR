@@ -6,8 +6,7 @@ use super::{
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
-use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-use crate::domain::agents::{resolve_effective_provider, runtime_adapter};
+use crate::domain::agents::{default_provider_id, resolve_effective_provider, runtime_adapter};
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
 use std::sync::Arc;
@@ -86,10 +85,10 @@ pub(super) async fn handle_init(
         &crate::domain::agents::runtime::runtime_setting_key("session"),
         Some(feature_id),
         Some(project_id),
-        Some(DEFAULT_PROVIDER),
+        Some(default_provider_id()),
     )
     .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    .unwrap_or_else(|| default_provider_id().to_string());
     let initial_provider = payload
         .provider
         .clone()

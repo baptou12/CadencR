@@ -8,10 +8,10 @@ use crate::domain::agents::codex::{
     PROVIDER_ID as CODEX_PROVIDER_ID,
 };
 use crate::domain::agents::providers::{
-    canonical_provider_or_error, provider_model_catalog_entry, resolve_effective_provider,
-    resolve_model_or_error_for_profile, runtime_adapter,
+    canonical_provider_or_error, default_provider_id, provider_model_catalog_entry,
+    resolve_effective_provider, resolve_model_or_error_for_profile, runtime_adapter,
 };
-use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
+use crate::domain::agents::runtime::runtime_setting_key;
 use crate::domain::settings;
 use crate::error::AppError;
 
@@ -235,10 +235,10 @@ async fn effective_spawn_provider(
         &runtime_setting_key("session"),
         feature_scope,
         Some(target_project.id),
-        Some(DEFAULT_PROVIDER),
+        Some(default_provider_id()),
     )
     .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    .unwrap_or_else(|| default_provider_id().to_string());
     resolve_effective_provider(
         &state.read_pool,
         Some(std::path::Path::new(&target_project.path)),

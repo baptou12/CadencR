@@ -9,6 +9,7 @@ mod acp;
 mod catalog;
 mod commands;
 mod permissions;
+mod runtime_error;
 mod worktree_config;
 
 use async_trait::async_trait;

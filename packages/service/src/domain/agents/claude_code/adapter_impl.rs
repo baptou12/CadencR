@@ -91,6 +91,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         true
     }
 
+    fn uses_legacy_permission_channel_on_response_error(&self) -> bool {
+        true
+    }
+
     async fn runtime_slash_commands(
         &self,
         cwd: &str,
@@ -210,6 +214,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
     fn profile_name_for_new_session(&self) -> Option<String> {
         Some(super::profiles::get_active_profile_name())
+    }
+
+    fn environment_for_new_session(&self) -> Option<std::collections::HashMap<String, String>> {
+        super::profiles::resolve_active_profile_env().1
     }
 
     async fn extra_models(&self, read_pool: &sqlx::SqlitePool) -> Vec<ModelCatalogEntry> {
@@ -507,6 +515,11 @@ mod tests {
     fn adapter_advertises_prompt_receipts() {
         let adapter = new_test_adapter();
         assert!(adapter.supports_prompt_receipts());
+    }
+
+    #[test]
+    fn adapter_owns_the_legacy_permission_channel_fallback() {
+        assert!(new_test_adapter().uses_legacy_permission_channel_on_response_error());
     }
 
     #[test]

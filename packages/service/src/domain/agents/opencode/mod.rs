@@ -4,6 +4,7 @@ mod branching;
 pub(in crate::domain::agents::opencode) mod commands;
 pub(crate) mod permissions;
 mod questions;
+mod runtime_error;
 mod stream_synthesizer;
 mod tool_names;
 mod worktree_config;

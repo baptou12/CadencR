@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::adapter::AgentRuntimeAdapter;
-use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, ProviderStatus, DEFAULT_PROVIDER};
+use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, ProviderStatus};
 
 const LEGACY_OWNERSHIP_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -28,6 +28,10 @@ pub fn runtime_adapter(provider_id: &str) -> Option<ProviderAdapterHandle> {
     provider_registry().adapter(provider_id)
 }
 
+pub fn default_provider_id() -> &'static str {
+    provider_registry().default_provider_id()
+}
+
 /// Resolve a legacy model-only selection from provider-owned catalog entries.
 ///
 /// Modern callers persist or send the provider alongside the model. This
@@ -43,7 +47,7 @@ pub async fn resolve_effective_provider(
     // A non-default configured provider is an explicit user selection. The
     // legacy ownership fallback only exists for historical model-only rows
     // whose provider remained at the original default.
-    if provider_id != DEFAULT_PROVIDER {
+    if provider_id != default_provider_id() {
         return provider_id;
     }
     let Some(model) = model else {
@@ -114,10 +118,10 @@ pub async fn provider_catalog_live_for_cwd(
 
     let default_provider = providers
         .iter()
-        .find(|provider| provider.id == DEFAULT_PROVIDER)
+        .find(|provider| provider.id == default_provider_id())
         .or_else(|| providers.first())
         .map(|provider| provider.id.clone())
-        .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+        .unwrap_or_else(|| default_provider_id().to_string());
 
     AgentCatalogResponse {
         default_provider,
