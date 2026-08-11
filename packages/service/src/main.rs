@@ -104,24 +104,42 @@ async fn main() -> anyhow::Result<()> {
             // run. Production uses `~/.cadencr/blobs`; an ad-hoc/dev database
             // gets an isolated directory named after that exact database.
             let blob_dir = domain::blobs::dir::derive_from_db_path(&db_path);
-            if let Err(e) = std::fs::create_dir_all(&blob_dir) {
-                tracing::warn!(dir = %blob_dir.display(), "failed to create blob dir: {e}");
+            if let Err(error) = domain::blobs::store::ensure_root(&blob_dir) {
+                // Blob writes repeat the durable-directory check and fail open:
+                // inline content stays in SQLite if storage is unavailable.
+                tracing::warn!(dir = %blob_dir.display(), "failed to prepare blob dir: {error}");
             }
             domain::blobs::dir::init(blob_dir);
 
             // Reclaim pages requested by a completed background maintenance
             // pass. An incomplete initial optimization keeps the request set
             // for a later startup instead of delaying this one.
-            if let Err(error) = domain::maintenance::database_compaction::run_if_requested(
+            match domain::maintenance::database_compaction::run_if_requested(
                 &write_pool,
                 std::path::Path::new(&db_path),
             )
             .await
             {
-                // Compaction is an optimization, never a startup dependency. A
-                // failed VACUUM leaves SQLite's original file intact and the
-                // persisted request set so a later launch can retry safely.
-                tracing::warn!("database compaction skipped: {error}");
+                Ok(_) => {}
+                Err(
+                    domain::maintenance::database_compaction::DatabaseCompactionError::Integrity(
+                        error,
+                    ),
+                ) => {
+                    return Err(anyhow::Error::new(error).context(
+                        "Database integrity verification failed. Cadencr stopped before accepting new writes. Restore a recent safety backup or contact support.",
+                    ));
+                }
+                Err(
+                    domain::maintenance::database_compaction::DatabaseCompactionError::Operational(
+                        error,
+                    ),
+                ) => {
+                    // Compaction is an optimization, never a startup dependency. A
+                    // failed VACUUM leaves SQLite's original file intact and the
+                    // persisted request set so a later launch can retry safely.
+                    tracing::warn!("database compaction skipped: {error}");
+                }
             }
             domain::usage_stats::history_import::run_once(&write_pool).await;
             let read_pool = db::create_read_pool(&db_path).await?;

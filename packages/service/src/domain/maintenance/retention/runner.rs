@@ -7,12 +7,10 @@ use super::super::{
 use super::policy::PolicyGuard;
 use super::queries::{DUE_FEATURES_SQL, FEATURE_MESSAGE_IDS_SQL, FEATURE_MESSAGE_SQL};
 
-/// Message ids loaded per batch. Payloads are fetched one at a time after this
-/// small id page, because the eligible rows can each be many megabytes.
+/// Message ids per batch. Large payloads are fetched individually afterward.
 pub(super) const MESSAGE_BATCH: i64 = 16;
 
-/// Pause between batches, so a long sweep never monopolizes the single writer
-/// while the user is driving an agent.
+/// Yield the writer between batches while the user is driving an agent.
 const BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(50);
 
 #[derive(Default)]
@@ -21,6 +19,27 @@ struct SweepProgress {
     processed: u64,
     failed: u64,
     cancelled: bool,
+}
+
+struct FeatureCompaction {
+    rewritten: u64,
+    complete: bool,
+}
+
+impl FeatureCompaction {
+    fn interrupted(rewritten: u64) -> Self {
+        Self {
+            rewritten,
+            complete: false,
+        }
+    }
+
+    fn complete(rewritten: u64) -> Self {
+        Self {
+            rewritten,
+            complete: true,
+        }
+    }
 }
 
 impl SweepProgress {
@@ -97,12 +116,13 @@ async fn run_with_days(
             break;
         }
         match compact_feature_guarded(pool, feature_id, days, &mut policy).await {
-            Ok(rows) => {
-                rewritten += rows;
+            Ok(result) => {
+                rewritten += result.rewritten;
                 // A user can disable retention or increase the quiet period
                 // while this feature is being walked. Do not stamp it complete
                 // under a policy that is no longer the one they approved.
-                if policy.is_current(days) {
+                let policy_current = policy.is_current(days);
+                if result.complete && policy_current {
                     match stamp_compacted(pool, feature_id, days).await {
                         Ok(true) => compacted_features += 1,
                         Ok(false) => tracing::info!(
@@ -117,10 +137,15 @@ async fn run_with_days(
                             );
                         }
                     }
-                } else {
+                } else if !policy_current {
                     tracing::info!("retention: policy changed, stopping active sweep");
                     sweep.cancelled = true;
                     break;
+                } else {
+                    tracing::info!(
+                        feature_id,
+                        "retention: feature changed during compaction; leaving it pending"
+                    );
                 }
             }
             // Leave `compacted_at` unset so the next sweep retries this feature.
@@ -160,7 +185,9 @@ pub(super) async fn compact_feature(
     days: i64,
 ) -> Result<u64, sqlx::Error> {
     let mut policy = PolicyGuard::testing(|_| true);
-    compact_feature_guarded(pool, feature_id, days, &mut policy).await
+    compact_feature_guarded(pool, feature_id, days, &mut policy)
+        .await
+        .map(|result| result.rewritten)
 }
 
 #[cfg(test)]
@@ -171,7 +198,9 @@ pub(super) async fn compact_feature_with_policy(
     check: fn(i64) -> bool,
 ) -> Result<u64, sqlx::Error> {
     let mut policy = PolicyGuard::testing(check);
-    compact_feature_guarded(pool, feature_id, days, &mut policy).await
+    compact_feature_guarded(pool, feature_id, days, &mut policy)
+        .await
+        .map(|result| result.rewritten)
 }
 
 async fn compact_feature_guarded(
@@ -179,7 +208,7 @@ async fn compact_feature_guarded(
     feature_id: i64,
     days: i64,
     policy: &mut PolicyGuard,
-) -> Result<u64, sqlx::Error> {
+) -> Result<FeatureCompaction, sqlx::Error> {
     let mut cursor = 0i64;
     let mut rewritten = 0u64;
 
@@ -190,14 +219,14 @@ async fn compact_feature_guarded(
         // compacted at the next batch boundary rather than at the end.
         if !policy.is_current(days) {
             tracing::info!(feature_id, "retention: policy changed, stopping feature");
-            return Ok(rewritten);
+            return Ok(FeatureCompaction::interrupted(rewritten));
         }
         if !still_eligible(pool, feature_id, days).await? {
             tracing::info!(
                 feature_id,
                 "retention: feature became active or received recent activity, stopping"
             );
-            return Ok(rewritten);
+            return Ok(FeatureCompaction::interrupted(rewritten));
         }
 
         let ids = sqlx::query_scalar::<_, i64>(FEATURE_MESSAGE_IDS_SQL)
@@ -207,7 +236,7 @@ async fn compact_feature_guarded(
             .fetch_all(pool)
             .await?;
         if ids.is_empty() {
-            return Ok(rewritten);
+            return Ok(FeatureCompaction::complete(rewritten));
         }
 
         for id in ids {
@@ -219,21 +248,21 @@ async fn compact_feature_guarded(
             else {
                 continue;
             };
-            let Some(compacted) = compaction::compact_bash_content_async(content).await else {
+            let Some(snapshot) = compaction::compact_bash_content_async(content).await else {
                 continue;
             };
             if !policy.is_current(days) {
                 tracing::info!(feature_id, "retention: policy changed, stopping feature");
-                return Ok(rewritten);
+                return Ok(FeatureCompaction::interrupted(rewritten));
             }
-            if store_compacted_if_eligible(pool, feature_id, id, &compacted, days).await? {
+            if store_compacted_if_eligible(pool, feature_id, id, &snapshot, days).await? {
                 rewritten += 1;
-            } else if !still_eligible(pool, feature_id, days).await? {
+            } else {
                 tracing::info!(
                     feature_id,
-                    "retention: feature became active or received recent activity before a message update, stopping"
+                    "retention: message or feature changed before update; leaving it pending"
                 );
-                return Ok(rewritten);
+                return Ok(FeatureCompaction::interrupted(rewritten));
             }
         }
 
@@ -257,19 +286,20 @@ pub(super) async fn due_feature_count(pool: &SqlitePool, days: i64) -> Result<u6
 
 /// Persist one lossy rewrite only while its owning feature is still eligible.
 ///
-/// The archive and latest-activity checks are part of the same SQLite statement
-/// as the update. A separate preflight leaves a race where `update_status` can
-/// restore the feature, or a schedule can add a message, before this write.
+/// The archive, latest-activity, and original-content checks are part of the
+/// same SQLite statement as the update. Separate preflights leave races where
+/// `update_status` can restore the feature, a schedule can add a message, or a
+/// running shell can replace the message after cleanup loaded it.
 pub(super) async fn store_compacted_if_eligible(
     pool: &SqlitePool,
     feature_id: i64,
     message_id: i64,
-    compacted: &str,
+    snapshot: &compaction::CompactedSnapshot,
     days: i64,
 ) -> Result<bool, sqlx::Error> {
     sqlx::query(
         "UPDATE agent_messages SET content = ? \
-         WHERE id = ? AND EXISTS ( \
+         WHERE id = ? AND content = ? AND EXISTS ( \
            SELECT 1 FROM agent_sessions s \
            JOIN features f ON f.id = s.feature_id \
            WHERE s.id = agent_messages.session_id \
@@ -283,8 +313,9 @@ pub(super) async fn store_compacted_if_eligible(
              ) \
          )",
     )
-    .bind(compacted)
+    .bind(&snapshot.replacement)
     .bind(message_id)
+    .bind(&snapshot.original)
     .bind(feature_id)
     .bind(format!("-{days} days"))
     .bind(format!("-{days} days"))

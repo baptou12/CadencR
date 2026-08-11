@@ -5,6 +5,7 @@ pub mod db;
 pub mod disk_space;
 pub mod env_file;
 pub mod file_watch;
+pub mod fs_durability;
 pub mod git_cli;
 pub mod image_file;
 pub mod login_env;

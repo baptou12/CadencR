@@ -9,7 +9,9 @@ pub(super) struct Snapshot {
     pub path: PathBuf,
     pub identity: String,
     pub version: String,
-    /// `%Y-%m-%d-%H`, which sorts lexicographically in chronological order.
+    /// A validated timestamp token that sorts lexicographically in chronological
+    /// order. New snapshots include seconds and a UUID; legacy hourly names stay
+    /// readable so existing safety copies remain managed.
     pub timestamp: String,
 }
 
@@ -107,25 +109,20 @@ pub(super) fn valid_version(version: &str) -> bool {
 }
 
 fn valid_timestamp(timestamp: &str) -> bool {
-    if timestamp.len() != 13 {
-        return false;
+    if timestamp.len() == 13 {
+        let Some((date, hour)) = timestamp.rsplit_once('-') else {
+            return false;
+        };
+        return chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
+            && hour.len() == 2
+            && hour.parse::<u8>().is_ok_and(|hour| hour <= 23);
     }
-    let bytes = timestamp.as_bytes();
-    if bytes[4] != b'-' || bytes[7] != b'-' || bytes[10] != b'-' {
+    let Some((date_time, unique)) = timestamp.rsplit_once('-') else {
         return false;
-    }
-    if bytes
-        .iter()
-        .enumerate()
-        .any(|(index, byte)| !matches!(index, 4 | 7 | 10) && !byte.is_ascii_digit())
-    {
-        return false;
-    }
-    let parse = |range: std::ops::Range<usize>| timestamp.get(range)?.parse::<u32>().ok();
-    matches!(parse(0..4), Some(1..=9999))
-        && matches!(parse(5..7), Some(1..=12))
-        && matches!(parse(8..10), Some(1..=31))
-        && matches!(parse(11..13), Some(0..=23))
+    };
+    chrono::NaiveDateTime::parse_from_str(date_time, "%Y-%m-%d-%H-%M-%S")
+        .is_ok_and(|parsed| parsed.format("%Y-%m-%d-%H-%M-%S").to_string() == date_time)
+        && uuid::Uuid::parse_str(unique).is_ok_and(|uuid| uuid.simple().to_string() == unique)
 }
 
 #[cfg(test)]
@@ -152,8 +149,20 @@ mod tests {
             "db-zz.0.9.1.2026-08-06-10.cadencr.backup.db",
             "db-61.unsafe/version.2026-08-06-10.cadencr.backup.db",
             "db-61.0.9.1.2026-99-99-99.cadencr.backup.db",
+            "db-61.0.9.1.2026-04-31-10.cadencr.backup.db",
+            "db-61.0.9.1.2026-8-11-19-42-07-0123456789abcdef0123456789abcdef.cadencr.backup.db",
+            "db-61.0.9.1.2026-08-11-19-42-07-ABCDEF0123456789ABCDEF0123456789.cadencr.backup.db",
         ] {
             assert!(parse_snapshot(Path::new(name)).is_none(), "{name}");
         }
+    }
+
+    #[test]
+    fn round_trips_unique_second_resolution_timestamp() {
+        let timestamp = "2026-08-11-19-42-07-0123456789abcdef0123456789abcdef";
+        let name = backup_file_name(Path::new("/db/cadencr.db"), "0.11.0", timestamp).unwrap();
+        let parsed = parse_snapshot(Path::new(&name)).unwrap();
+
+        assert_eq!(parsed.timestamp, timestamp);
     }
 }

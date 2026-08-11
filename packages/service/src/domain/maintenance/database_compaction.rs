@@ -12,7 +12,8 @@ use anyhow::Context as _;
 use sqlx::SqlitePool;
 
 use super::state;
-use crate::shared::disk_space;
+use crate::shared::db::QuickCheckError;
+use crate::shared::{db, disk_space};
 
 #[cfg(not(test))]
 const MIN_RECLAIM_BYTES: u64 = 64 * 1024 * 1024;
@@ -20,14 +21,48 @@ const MIN_RECLAIM_BYTES: u64 = 64 * 1024 * 1024;
 const MIN_RECLAIM_BYTES: u64 = 1;
 const MIN_RECLAIM_PERCENT: u64 = 5;
 
+#[derive(Debug)]
+pub enum DatabaseCompactionError {
+    Integrity(QuickCheckError),
+    Operational(anyhow::Error),
+}
+
+impl std::fmt::Display for DatabaseCompactionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Integrity(error) => error.fmt(formatter),
+            Self::Operational(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for DatabaseCompactionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Integrity(error) => Some(error),
+            Self::Operational(error) => Some(error.as_ref()),
+        }
+    }
+}
+
+impl From<anyhow::Error> for DatabaseCompactionError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Operational(error)
+    }
+}
+
 /// Compact the database if a completed maintenance sweep left enough free
 /// pages to justify a rewrite. Returns bytes actually removed from the file.
 ///
 /// The operation never swaps, renames, truncates, or removes the database from
 /// application code. SQLite performs its transactional `VACUUM` internally;
-/// on any preflight or execution failure the request remains set for a later
-/// startup and the caller can continue using the original database.
-pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Result<u64> {
+/// Operational preflight or execution failures leave the request set for a
+/// later startup. A failed integrity report is classified separately so the
+/// caller can stop before accepting new writes.
+pub async fn run_if_requested(
+    pool: &SqlitePool,
+    db_path: &Path,
+) -> Result<u64, DatabaseCompactionError> {
     if state::get(pool, state::DATABASE_COMPACTION_REQUESTED)
         .await
         .as_deref()
@@ -69,7 +104,9 @@ pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Resu
     let dir = db_path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("database path has no parent: {}", db_path.display()))?;
-    let db_bytes = std::fs::metadata(db_path)?.len();
+    let db_bytes = std::fs::metadata(db_path)
+        .context("read database metadata before compaction")?
+        .len();
     let available = disk_space::available_bytes(dir).ok_or_else(|| {
         anyhow::anyhow!(
             "cannot determine free disk space for database compaction in {}",
@@ -78,11 +115,12 @@ pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Resu
     })?;
     let needed = db_bytes.saturating_add(db_bytes / 10);
     if available < needed {
-        anyhow::bail!(
+        return Err(anyhow::anyhow!(
             "not enough free disk space to compact the database safely: {} available, {} needed",
             disk_space::human_bytes(available),
             disk_space::human_bytes(needed)
-        );
+        )
+        .into());
     }
 
     tracing::info!(
@@ -108,7 +146,9 @@ pub async fn run_if_requested(pool: &SqlitePool, db_path: &Path) -> anyhow::Resu
     .await?;
 
     state::set(pool, state::DATABASE_COMPACTION_REQUESTED, "0").await;
-    let after = std::fs::metadata(db_path)?.len();
+    let after = std::fs::metadata(db_path)
+        .context("read database metadata after compaction")?
+        .len();
     Ok(db_bytes.saturating_sub(after))
 }
 
@@ -117,14 +157,14 @@ async fn pragma_u64(pool: &SqlitePool, sql: &'static str) -> anyhow::Result<u64>
     u64::try_from(value).context("SQLite returned a negative page statistic")
 }
 
-async fn ensure_healthy(pool: &SqlitePool) -> anyhow::Result<()> {
-    let rows = sqlx::query_scalar::<_, String>("PRAGMA quick_check")
-        .fetch_all(pool)
-        .await?;
-    if rows.len() == 1 && rows[0] == "ok" {
-        return Ok(());
+async fn ensure_healthy(pool: &SqlitePool) -> Result<(), DatabaseCompactionError> {
+    match db::run_quick_check(pool).await {
+        Ok(()) => Ok(()),
+        Err(error @ QuickCheckError::Corrupt(_)) => Err(DatabaseCompactionError::Integrity(error)),
+        Err(error @ QuickCheckError::Query(_)) => Err(DatabaseCompactionError::Operational(
+            anyhow::Error::new(error),
+        )),
     }
-    anyhow::bail!("database quick_check failed: {}", rows.join("; "))
 }
 
 #[cfg(test)]
@@ -236,7 +276,7 @@ mod tests {
                 .as_deref(),
             Some("0")
         );
-        ensure_healthy(&pool).await.unwrap();
+        db::run_quick_check(&pool).await.unwrap();
     }
 
     async fn sqlite_schema(pool: &SqlitePool) -> Vec<(String, String, String)> {

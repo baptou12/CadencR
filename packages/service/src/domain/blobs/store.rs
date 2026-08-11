@@ -11,6 +11,8 @@
 //! already-present hash short-circuits: identical content by definition needs no
 //! rewrite.
 
+mod durability;
+
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
@@ -65,14 +67,21 @@ pub fn put(bytes: &[u8]) -> Result<BlobHash, AppError> {
     put_in(&blob_dir(), bytes)
 }
 
+/// Create the process blob root and make its directory entry durable before
+/// background maintenance can replace inline payloads with blob references.
+pub fn ensure_root(root: &Path) -> Result<(), AppError> {
+    durability::ensure_blob_directories(root, root)
+        .map_err(blob_io("create durable blob directory"))
+}
+
 fn put_in(root: &Path, bytes: &[u8]) -> Result<BlobHash, AppError> {
     let hash = hash_bytes(bytes);
     let path = path_for_in(root, &hash);
     let shard = path
         .parent()
         .ok_or_else(|| AppError::Internal("blob path has no parent".into()))?;
-    std::fs::create_dir_all(shard)
-        .map_err(|e| AppError::Internal(format!("failed to create blob shard: {e}")))?;
+    durability::ensure_blob_directories(root, shard)
+        .map_err(blob_io("create durable blob shard"))?;
 
     if verify_blob(&path, &hash).map_err(blob_io("verify existing blob"))? {
         return Ok(hash);
@@ -103,7 +112,7 @@ fn put_in(root: &Path, bytes: &[u8]) -> Result<BlobHash, AppError> {
             "committed blob {hash} failed integrity verification"
         )));
     }
-    sync_directory(shard)
+    crate::shared::fs_durability::sync_directory(shard)
         .map_err(|e| AppError::Internal(format!("failed to sync blob directory: {e}")))?;
     Ok(hash)
 }
@@ -166,16 +175,6 @@ fn cleanup_staging(path: &Path) {
             tracing::warn!(staging = %path.display(), "failed to clean blob staging file: {error}");
         }
     }
-}
-
-#[cfg(unix)]
-fn sync_directory(path: &std::path::Path) -> std::io::Result<()> {
-    std::fs::File::open(path)?.sync_all()
-}
-
-#[cfg(not(unix))]
-fn sync_directory(_path: &std::path::Path) -> std::io::Result<()> {
-    Ok(())
 }
 
 /// Write `bytes` and flush them to the device before returning.

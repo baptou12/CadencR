@@ -9,6 +9,11 @@ use crate::domain::sessions::repository::truncation::{
     is_bash_tool_name, truncate_bash_output, BASH_OUTPUT_MAX_LINES,
 };
 
+pub(super) struct CompactedSnapshot {
+    pub original: String,
+    pub replacement: String,
+}
+
 /// Return the read-path representation when it is shorter, otherwise `None`.
 pub fn compact_content(content: &str, tool_name: Option<&str>) -> Option<String> {
     if !is_bash_tool_name(tool_name) {
@@ -19,9 +24,19 @@ pub fn compact_content(content: &str, tool_name: Option<&str>) -> Option<String>
     was_truncated.then_some(truncated)
 }
 
-/// Keep large JSON/string work off the async runtime.
-pub async fn compact_bash_content_async(content: String) -> Option<String> {
-    match tokio::task::spawn_blocking(move || compact_content(&content, Some("Bash"))).await {
+/// Keep large JSON/string work off the async runtime while preserving the exact
+/// snapshot that produced the compacted value. The retention writer uses that
+/// snapshot for a compare-and-set update, so a live shell cannot be overwritten
+/// by work computed from older output.
+pub(super) async fn compact_bash_content_async(content: String) -> Option<CompactedSnapshot> {
+    match tokio::task::spawn_blocking(move || {
+        compact_content(&content, Some("Bash")).map(|replacement| CompactedSnapshot {
+            original: content,
+            replacement,
+        })
+    })
+    .await
+    {
         Ok(compacted) => compacted,
         Err(error) => {
             tracing::warn!("retention compaction task failed: {error}");

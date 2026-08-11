@@ -302,7 +302,10 @@ mod tests {
         archived_feature(&pool, 1, 400).await;
         let original = huge_output();
         insert_message(&pool, 1, 1, "tool_result", &original).await;
-        let compacted = compaction::compact_content(&original, Some("Bash")).unwrap();
+        let snapshot = compaction::CompactedSnapshot {
+            replacement: compaction::compact_content(&original, Some("Bash")).unwrap(),
+            original: original.clone(),
+        };
 
         // This models the exact gap that existed between loading a batch and
         // issuing each UPDATE.
@@ -312,7 +315,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            !store_compacted_if_eligible(&pool, 1, 1, &compacted, DEFAULT_DAYS)
+            !store_compacted_if_eligible(&pool, 1, 1, &snapshot, DEFAULT_DAYS)
                 .await
                 .unwrap()
         );
@@ -325,7 +328,10 @@ mod tests {
         archived_feature(&pool, 1, 400).await;
         let original = huge_output();
         insert_message(&pool, 1, 1, "tool_result", &original).await;
-        let compacted = compaction::compact_content(&original, Some("Bash")).unwrap();
+        let snapshot = compaction::CompactedSnapshot {
+            replacement: compaction::compact_content(&original, Some("Bash")).unwrap(),
+            original: original.clone(),
+        };
 
         sqlx::query(
             "INSERT INTO agent_messages \
@@ -337,12 +343,41 @@ mod tests {
         .unwrap();
 
         assert!(
-            !store_compacted_if_eligible(&pool, 1, 1, &compacted, DEFAULT_DAYS)
+            !store_compacted_if_eligible(&pool, 1, 1, &snapshot, DEFAULT_DAYS)
                 .await
                 .unwrap()
         );
         assert!(!stamp_compacted(&pool, 1, DEFAULT_DAYS).await.unwrap());
         assert_eq!(content_of(&pool, 1).await, original);
+        assert!(compacted_at(&pool, 1).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_loaded_message_cannot_overwrite_newer_shell_output() {
+        let pool = test_pool().await;
+        archived_feature(&pool, 1, 400).await;
+        let original = huge_output();
+        insert_message(&pool, 1, 1, "tool_result", &original).await;
+        let snapshot = compaction::CompactedSnapshot {
+            replacement: compaction::compact_content(&original, Some("Bash")).unwrap(),
+            original: original.clone(),
+        };
+        let newer = format!("{original}\nnew output written by the running shell");
+
+        // Managed shell rows are updated in place without changing created_at.
+        // This models that write landing after cleanup loaded its snapshot.
+        sqlx::query("UPDATE agent_messages SET content = ? WHERE id = 1")
+            .bind(&newer)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(
+            !store_compacted_if_eligible(&pool, 1, 1, &snapshot, DEFAULT_DAYS)
+                .await
+                .unwrap()
+        );
+        assert_eq!(content_of(&pool, 1).await, newer);
         assert!(compacted_at(&pool, 1).await.is_none());
     }
 
