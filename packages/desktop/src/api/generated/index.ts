@@ -17,6 +17,53 @@ import type {
 
 import { customInstance } from "../client";
 import type { ErrorType } from "../client";
+/**
+ * ACP Registry agent entry. Field names and shapes follow
+<https://github.com/agentclientprotocol/registry> `agent.schema.json`.
+ */
+export interface AcpAgentEntry {
+  authors?: string[];
+  description: string;
+  /** Optional in the Rust shape because a hand-written local install has
+nothing to download. The registry-import validation profile requires it;
+the local-install profile does not. */
+  distribution?: AcpDistribution;
+  icon?: string;
+  id: string;
+  license?: string;
+  name: string;
+  repository?: string;
+  version: string;
+  website?: string;
+  [key: string]: unknown;
+}
+
+export type AcpBinaryTargetEnv = { [key: string]: string };
+
+export interface AcpBinaryTarget {
+  archive: string;
+  args?: string[];
+  cmd: string;
+  env?: AcpBinaryTargetEnv;
+  sha256?: string;
+}
+
+export type AcpDistributionBinary = { [key: string]: AcpBinaryTarget };
+
+export interface AcpDistribution {
+  binary?: AcpDistributionBinary;
+  npx?: AcpPackageDistribution;
+  uvx?: AcpPackageDistribution;
+}
+
+export type AcpPackageDistributionEnv = { [key: string]: string };
+
+export interface AcpPackageDistribution {
+  args?: string[];
+  env?: AcpPackageDistributionEnv;
+  package: string;
+}
+
 export type AgentBlockChildBlocksAnyOfItem = { [key: string]: unknown };
 
 /**
@@ -172,12 +219,12 @@ export interface AllocatedPort {
 }
 
 /**
- * Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`).
+ * Keyed by the discovery id declared by each provider registration.
  */
 export type BinaryDiscoveryResponseProviders = { [key: string]: ProviderDiscovery };
 
 export interface BinaryDiscoveryResponse {
-  /** Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`). */
+  /** Keyed by the discovery id declared by each provider registration. */
   providers: BinaryDiscoveryResponseProviders;
 }
 
@@ -1473,6 +1520,18 @@ that grabbed our port before we could bind. */
   status: string;
 }
 
+export type HostInstallationSpecExecutable = null | LocalExecutableSpec;
+
+/**
+ * Host-local installation policy. Never part of the portable entry.
+ */
+export interface HostInstallationSpec {
+  /** A disabled install stays on disk and stays visible, but does not join
+the runtime registry. */
+  enabled?: boolean;
+  executable?: HostInstallationSpecExecutable;
+}
+
 export interface ImagePayload {
   base64: string;
   mimeType: string;
@@ -1559,6 +1618,19 @@ it can. This is the only availability signal — the catalog's
 }
 
 /**
+ * A descriptor mutation is durable immediately, while runtime activation is
+intentionally deferred until restart so the registry stays immutable.
+ */
+export interface InstalledProviderMutationResponse {
+  active_after_restart: boolean;
+  active_now: boolean;
+  enabled_after_restart: boolean;
+  provider_id: string;
+  /** Whether the durable next-boot activation differs from this process. */
+  restart_required: boolean;
+}
+
+/**
  * The id the descriptor claimed, when it parsed far enough to claim one.
  */
 export type InstalledProviderRejectionProviderId = string | null;
@@ -1616,6 +1688,24 @@ export interface ListImportConversationsResponse {
 
 export interface ListServersResponse {
   servers: ServerProbe[];
+}
+
+/**
+ * Literal environment applied to the child. Mirrors the ACP distribution
+`env` shape. Values are redacted from logs and never leave the service.
+ */
+export type LocalExecutableSpecEnv = { [key: string]: string };
+
+/**
+ * A launch target: program plus argument vector. Never a shell string —
+marketplace data must not be interpolated into a command line.
+ */
+export interface LocalExecutableSpec {
+  args?: string[];
+  command: string;
+  /** Literal environment applied to the child. Mirrors the ACP distribution
+`env` shape. Values are redacted from logs and never leave the service. */
+  env?: LocalExecutableSpecEnv;
 }
 
 export interface LspRootResponse {
@@ -2188,6 +2278,19 @@ export interface ProviderCatalogEntry {
   modes?: ProviderModeCatalogEntry[];
   status: ProviderStatus;
   status_message?: ProviderCatalogEntryStatusMessage;
+}
+
+/**
+ * One descriptor file: a Cadencr host envelope wrapping a portable entry.
+
+The envelope is host-owned, so an unknown key here is a mistake rather than
+a field from a newer registry: refuse it instead of ignoring it.
+ */
+export interface ProviderDescriptor {
+  agent: AcpAgentEntry;
+  installation?: HostInstallationSpec;
+  /** @minimum 0 */
+  schema_version: number;
 }
 
 /**
@@ -3091,6 +3194,10 @@ export interface SetFeatureProviderSettingRequest {
 export interface SetFeatureSettingRequest {
   key: string;
   value: string;
+}
+
+export interface SetInstalledProviderEnabledRequest {
+  enabled: boolean;
 }
 
 export interface SetModelSettingRequest {
@@ -4534,6 +4641,210 @@ export function useInstalledProviders<
 
   return query;
 }
+
+export const installProvider = (providerDescriptor: ProviderDescriptor, signal?: AbortSignal) => {
+  return customInstance<InstalledProviderMutationResponse>({
+    url: `/api/agents/installed-providers`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: providerDescriptor,
+    signal,
+  });
+};
+
+export const getInstallProviderMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof installProvider>>,
+    TError,
+    { data: ProviderDescriptor },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof installProvider>>,
+  TError,
+  { data: ProviderDescriptor },
+  TContext
+> => {
+  const mutationKey = ["installProvider"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof installProvider>>,
+    { data: ProviderDescriptor }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return installProvider(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InstallProviderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof installProvider>>
+>;
+export type InstallProviderMutationBody = ProviderDescriptor;
+export type InstallProviderMutationError = ErrorType<void>;
+
+export const useInstallProvider = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof installProvider>>,
+    TError,
+    { data: ProviderDescriptor },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof installProvider>>,
+  TError,
+  { data: ProviderDescriptor },
+  TContext
+> => {
+  const mutationOptions = getInstallProviderMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const removeProvider = (providerId: string) => {
+  return customInstance<InstalledProviderMutationResponse>({
+    url: `/api/agents/installed-providers/${providerId}`,
+    method: "DELETE",
+  });
+};
+
+export const getRemoveProviderMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeProvider>>,
+    TError,
+    { providerId: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeProvider>>,
+  TError,
+  { providerId: string },
+  TContext
+> => {
+  const mutationKey = ["removeProvider"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeProvider>>,
+    { providerId: string }
+  > = (props) => {
+    const { providerId } = props ?? {};
+
+    return removeProvider(providerId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveProviderMutationResult = NonNullable<Awaited<ReturnType<typeof removeProvider>>>;
+
+export type RemoveProviderMutationError = ErrorType<void>;
+
+export const useRemoveProvider = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeProvider>>,
+    TError,
+    { providerId: string },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeProvider>>,
+  TError,
+  { providerId: string },
+  TContext
+> => {
+  const mutationOptions = getRemoveProviderMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const setProviderEnabled = (
+  providerId: string,
+  setInstalledProviderEnabledRequest: SetInstalledProviderEnabledRequest,
+) => {
+  return customInstance<InstalledProviderMutationResponse>({
+    url: `/api/agents/installed-providers/${providerId}/enabled`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: setInstalledProviderEnabledRequest,
+  });
+};
+
+export const getSetProviderEnabledMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setProviderEnabled>>,
+    TError,
+    { providerId: string; data: SetInstalledProviderEnabledRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setProviderEnabled>>,
+  TError,
+  { providerId: string; data: SetInstalledProviderEnabledRequest },
+  TContext
+> => {
+  const mutationKey = ["setProviderEnabled"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setProviderEnabled>>,
+    { providerId: string; data: SetInstalledProviderEnabledRequest }
+  > = (props) => {
+    const { providerId, data } = props ?? {};
+
+    return setProviderEnabled(providerId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetProviderEnabledMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setProviderEnabled>>
+>;
+export type SetProviderEnabledMutationBody = SetInstalledProviderEnabledRequest;
+export type SetProviderEnabledMutationError = ErrorType<void>;
+
+export const useSetProviderEnabled = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setProviderEnabled>>,
+    TError,
+    { providerId: string; data: SetInstalledProviderEnabledRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setProviderEnabled>>,
+  TError,
+  { providerId: string; data: SetInstalledProviderEnabledRequest },
+  TContext
+> => {
+  const mutationOptions = getSetProviderEnabledMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getUnifiedAgents = (params?: GetUnifiedAgentsParams, signal?: AbortSignal) => {
   return customInstance<UnifiedAgentsResponse>({

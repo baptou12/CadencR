@@ -30,6 +30,19 @@ const PROTOCOL_OWNED_FIELDS: &[&str] = &[
     "thinkinglevels",
 ];
 
+/// Validate an id before using it as a descriptor file name. This is the same
+/// contract as the portable ACP Registry entry, exposed for lifecycle routes
+/// so an HTTP path segment can never escape the providers directory.
+pub fn validate_provider_id(id: &str) -> Result<(), DescriptorError> {
+    if is_registry_id(id) {
+        Ok(())
+    } else {
+        Err(schema_violation(format!(
+            "provider id {id:?} must match the ACP registry pattern ^[a-z][a-z0-9-]*$"
+        )))
+    }
+}
+
 #[derive(Clone, Copy)]
 enum PortableValidationProfile {
     LocalInstall,
@@ -82,12 +95,7 @@ impl AcpAgentEntry {
         &self,
         profile: PortableValidationProfile,
     ) -> Result<(), DescriptorError> {
-        if !is_registry_id(&self.id) {
-            return Err(schema_violation(format!(
-                "agent id {:?} must match the ACP registry pattern ^[a-z][a-z0-9-]*$",
-                self.id
-            )));
-        }
+        validate_provider_id(&self.id)?;
         if self.name.is_empty() {
             return Err(schema_violation("agent name must not be empty"));
         }

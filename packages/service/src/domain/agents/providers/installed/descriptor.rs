@@ -28,6 +28,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
 mod validation;
+pub use validation::validate_provider_id;
 
 /// Host envelope versions this build understands.
 pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
@@ -46,7 +47,7 @@ pub const ACP_BINARY_TARGETS: &[&str] = &[
 ///
 /// The envelope is host-owned, so an unknown key here is a mistake rather than
 /// a field from a newer registry: refuse it instead of ignoring it.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderDescriptor {
     pub schema_version: u32,
@@ -57,7 +58,7 @@ pub struct ProviderDescriptor {
 
 /// ACP Registry agent entry. Field names and shapes follow
 /// <https://github.com/agentclientprotocol/registry> `agent.schema.json`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct AcpAgentEntry {
     pub id: String,
     pub name: String,
@@ -68,12 +69,14 @@ pub struct AcpAgentEntry {
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub repository: Option<String>,
     #[serde(
         default,
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub website: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub authors: Vec<String>,
@@ -82,12 +85,14 @@ pub struct AcpAgentEntry {
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub license: Option<String>,
     #[serde(
         default,
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub icon: Option<String>,
     /// Optional in the Rust shape because a hand-written local install has
     /// nothing to download. The registry-import validation profile requires it;
@@ -97,13 +102,14 @@ pub struct AcpAgentEntry {
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub distribution: Option<AcpDistribution>,
     /// Every field this build does not model, preserved verbatim.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AcpDistribution {
     #[serde(
@@ -111,22 +117,25 @@ pub struct AcpDistribution {
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub binary: Option<BTreeMap<String, AcpBinaryTarget>>,
     #[serde(
         default,
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub npx: Option<AcpPackageDistribution>,
     #[serde(
         default,
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub uvx: Option<AcpPackageDistribution>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AcpBinaryTarget {
     pub archive: String,
@@ -136,6 +145,7 @@ pub struct AcpBinaryTarget {
         deserialize_with = "deserialize_non_null_option",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schema(nullable = false)]
     pub sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
@@ -143,7 +153,7 @@ pub struct AcpBinaryTarget {
     pub env: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AcpPackageDistribution {
     pub package: String,
@@ -154,7 +164,7 @@ pub struct AcpPackageDistribution {
 }
 
 /// Host-local installation policy. Never part of the portable entry.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HostInstallationSpec {
     /// A disabled install stays on disk and stays visible, but does not join
@@ -195,7 +205,7 @@ where
 
 /// A launch target: program plus argument vector. Never a shell string —
 /// marketplace data must not be interpolated into a command line.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LocalExecutableSpec {
     pub command: String,

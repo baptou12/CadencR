@@ -9,8 +9,8 @@
 //!
 //! Scope of this increment, deliberately narrow:
 //!
-//! - descriptors are read **once at startup** from one directory; there is no
-//!   hot install or reload;
+//! - descriptors are read **once at startup** from one directory; lifecycle
+//!   routes mutate durable files but activation is explicitly restart-gated;
 //! - the launch target is an **explicitly selected local executable**; nothing
 //!   is downloaded, extracted, or checksummed here;
 //! - the protocol is **ACP v1**, negotiated by the shared client.
@@ -23,6 +23,7 @@
 pub mod adapter;
 pub mod descriptor;
 pub mod installation;
+pub mod lifecycle;
 pub mod loader;
 pub mod rejection;
 pub mod routes;
@@ -37,7 +38,14 @@ use super::registry::{ProviderAdapterHandle, RegisteredProvider};
 use crate::domain::settings_store;
 
 pub use adapter::GenericAcpAdapter;
-pub use loader::{load_from_dir, InstalledLoadOutcome};
+pub use loader::InstalledLoadOutcome;
+
+/// Scan descriptors against the complete built-in public namespace. Keeping
+/// this reservation policy at one entry point prevents diagnostics, startup,
+/// and lifecycle rescans from disagreeing about aliases.
+fn load_descriptors(directory: &std::path::Path) -> InstalledLoadOutcome {
+    loader::load_from_dir(directory, super::registry::builtin_provider_identifiers())
+}
 
 /// Where descriptors live: a `providers/` directory beside the JSON settings.
 ///
@@ -66,10 +74,7 @@ pub fn startup_load() -> Arc<InstalledLoadOutcome> {
     if let Some(scanned) = scans.get(&directory) {
         return scanned.clone();
     }
-    let outcome = Arc::new(load_from_dir(
-        &directory,
-        &super::registry::builtin_provider_ids(),
-    ));
+    let outcome = Arc::new(load_descriptors(&directory));
     outcome.log();
     scans.insert(directory, outcome.clone());
     outcome

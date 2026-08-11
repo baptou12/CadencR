@@ -24,7 +24,9 @@ use cadencr_service::domain::agents::providers::installed;
 use cadencr_service::domain::agents::providers::installed::rejection::{
     QuarantineCode, RejectionCode,
 };
-use cadencr_service::domain::agents::providers::installed::routes::InstalledProvidersResponse;
+use cadencr_service::domain::agents::providers::installed::routes::{
+    InstalledProviderMutationResponse, InstalledProvidersResponse,
+};
 use cadencr_service::domain::agents::providers::provider_registry;
 use cadencr_service::domain::agents::runtime::ProviderStatus;
 use cadencr_service::domain::ws_session::protocol::{
@@ -247,6 +249,11 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
     write_descriptor(&providers, "fake-config-acp-agent.json", &config_descriptor);
     // A second descriptor claiming a built-in id must lose to the built-in.
     write_descriptor(&providers, "cursor.json", &descriptor("cursor", &agent));
+    // Disabled entries reserve names too, and aliases are part of the built-in
+    // namespace: this must not be able to hijack `claude` on a later enable.
+    let mut alias_collision = descriptor("claude", &agent);
+    alias_collision["installation"]["enabled"] = json!(false);
+    write_descriptor(&providers, "claude.json", &alias_collision);
     write_descriptor(
         &providers,
         "quarantined-acp-agent.json",
@@ -286,9 +293,14 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
     // The colliding descriptor was refused, and `cursor` still resolves to the
     // built-in adapter.
     let rejections = &installed::startup_load().rejections;
-    assert_eq!(rejections.len(), 1, "{rejections:?}");
-    assert_eq!(rejections[0].code.as_str(), "DUPLICATE_PROVIDER_ID");
-    assert_eq!(rejections[0].provider_id.as_deref(), Some("cursor"));
+    assert_eq!(rejections.len(), 2, "{rejections:?}");
+    for rejected_id in ["claude", "cursor"] {
+        let rejection = rejections
+            .iter()
+            .find(|rejection| rejection.provider_id.as_deref() == Some(rejected_id))
+            .unwrap_or_else(|| panic!("missing rejection for {rejected_id}"));
+        assert_eq!(rejection.code.as_str(), "DUPLICATE_PROVIDER_ID");
+    }
     assert_eq!(
         registry
             .adapter("cursor")
@@ -331,12 +343,36 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
         quarantined.quarantine_code.as_deref(),
         Some(QuarantineCode::ExecutableNotFound.as_str())
     );
-    let collision = diagnostics
-        .rejected
-        .iter()
-        .find(|rejection| rejection.provider_id.as_deref() == Some("cursor"))
-        .expect("built-in collision diagnostics");
-    assert_eq!(collision.code, RejectionCode::DuplicateProviderId.as_str());
+    for rejected_id in ["claude", "cursor"] {
+        let collision = diagnostics
+            .rejected
+            .iter()
+            .find(|rejection| rejection.provider_id.as_deref() == Some(rejected_id))
+            .unwrap_or_else(|| panic!("missing diagnostics rejection for {rejected_id}"));
+        assert_eq!(collision.code, RejectionCode::DuplicateProviderId.as_str());
+    }
+
+    let rejected_enable = server
+        .client
+        .put(format!(
+            "{}/api/agents/installed-providers/claude/enabled",
+            server.base_url
+        ))
+        .json(&json!({ "enabled": true }))
+        .send()
+        .await
+        .expect("enable rejected descriptor request");
+    assert_eq!(rejected_enable.status(), 409);
+    let error: Value = rejected_enable
+        .json()
+        .await
+        .expect("enable rejection response");
+    assert_eq!(error["code"], RejectionCode::DuplicateProviderId.as_str());
+    let unchanged: Value = serde_json::from_str(
+        &std::fs::read_to_string(providers.join("claude.json")).expect("read rejected descriptor"),
+    )
+    .expect("parse rejected descriptor");
+    assert_eq!(unchanged["installation"]["enabled"], false);
 
     let unauthenticated = reqwest::Client::new()
         .get(format!(
@@ -522,4 +558,167 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
         }
     ));
     socket.close(None).await.expect("WebSocket should close");
+
+    // --- restart-gated descriptor lifecycle -------------------------------
+    let lifecycle_id = "lifecycle-acp-agent";
+    let lifecycle_url = format!("{}/api/agents/installed-providers", server.base_url);
+    let malformed = server
+        .client
+        .post(&lifecycle_url)
+        .header("content-type", "application/json")
+        .body("{")
+        .send()
+        .await
+        .expect("malformed descriptor request");
+    assert_eq!(malformed.status(), 400);
+    let error: Value = malformed
+        .json()
+        .await
+        .expect("coded malformed JSON response");
+    assert_eq!(error["code"], "DESCRIPTOR_INVALID_JSON");
+
+    let wrong_shape = server
+        .client
+        .post(&lifecycle_url)
+        .json(&json!({}))
+        .send()
+        .await
+        .expect("schema-invalid descriptor request");
+    assert_eq!(wrong_shape.status(), 400);
+    let error: Value = wrong_shape
+        .json()
+        .await
+        .expect("coded schema violation response");
+    assert_eq!(error["code"], "DESCRIPTOR_SCHEMA_VIOLATION");
+
+    let alias_collision = server
+        .client
+        .post(&lifecycle_url)
+        .json(&descriptor("openai", &agent))
+        .send()
+        .await
+        .expect("built-in alias collision request");
+    assert_eq!(alias_collision.status(), 409);
+    let error: Value = alias_collision
+        .json()
+        .await
+        .expect("built-in alias collision response");
+    assert_eq!(error["code"], "PROVIDER_ALREADY_INSTALLED");
+    assert_eq!(
+        cadencr_service::domain::agents::providers::canonical_provider_or_error("openai")
+            .expect("built-in alias should resolve")
+            .as_str(),
+        "codex_cli"
+    );
+
+    let response = server
+        .client
+        .post(&lifecycle_url)
+        .json(&descriptor(lifecycle_id, &agent))
+        .send()
+        .await
+        .expect("descriptor install request");
+    assert_eq!(response.status(), 200);
+    let mutation: InstalledProviderMutationResponse =
+        response.json().await.expect("install mutation response");
+    assert_eq!(mutation.provider_id, lifecycle_id);
+    assert!(!mutation.active_now);
+    assert!(mutation.active_after_restart);
+    assert!(mutation.restart_required);
+    assert!(providers.join(format!("{lifecycle_id}.json")).exists());
+    assert!(
+        !provider_registry().contains(lifecycle_id),
+        "the running registry must remain immutable"
+    );
+    let diagnostics: InstalledProvidersResponse = server
+        .client
+        .get(&lifecycle_url)
+        .send()
+        .await
+        .expect("diagnostics after install")
+        .json()
+        .await
+        .expect("installed-provider diagnostics");
+    let durable = diagnostics
+        .installed
+        .iter()
+        .find(|entry| entry.id == lifecycle_id)
+        .expect("new descriptor should be immediately visible");
+    assert!(durable.enabled);
+    assert!(!durable.registered);
+
+    let duplicate = server
+        .client
+        .post(&lifecycle_url)
+        .json(&descriptor(lifecycle_id, &agent))
+        .send()
+        .await
+        .expect("duplicate descriptor request");
+    assert_eq!(duplicate.status(), 409);
+    let error: Value = duplicate.json().await.expect("coded error response");
+    assert_eq!(error["code"], "PROVIDER_ALREADY_INSTALLED");
+
+    let disabled = server
+        .client
+        .put(format!("{lifecycle_url}/{lifecycle_id}/enabled"))
+        .json(&json!({ "enabled": false }))
+        .send()
+        .await
+        .expect("disable descriptor request");
+    assert_eq!(disabled.status(), 200);
+    let mutation: InstalledProviderMutationResponse =
+        disabled.json().await.expect("disable mutation response");
+    assert!(!mutation.active_now);
+    assert!(!mutation.active_after_restart);
+    assert!(!mutation.enabled_after_restart);
+    assert!(!mutation.restart_required);
+
+    let disabled_again = server
+        .client
+        .put(format!("{lifecycle_url}/{lifecycle_id}/enabled"))
+        .json(&json!({ "enabled": false }))
+        .send()
+        .await
+        .expect("repeat disable descriptor request");
+    let mutation: InstalledProviderMutationResponse = disabled_again
+        .json()
+        .await
+        .expect("repeat disable mutation response");
+    assert!(!mutation.restart_required);
+
+    let diagnostics: InstalledProvidersResponse = server
+        .client
+        .get(&lifecycle_url)
+        .send()
+        .await
+        .expect("diagnostics after disable")
+        .json()
+        .await
+        .expect("installed-provider diagnostics");
+    let durable = diagnostics
+        .installed
+        .iter()
+        .find(|entry| entry.id == lifecycle_id)
+        .expect("disabled descriptor should stay visible");
+    assert!(!durable.enabled);
+    assert!(!durable.registered);
+
+    // A no-op durable write does not erase an outstanding restart: this
+    // provider is active in the immutable registry until the next boot.
+    for _ in 0..2 {
+        let response = server
+            .client
+            .put(format!("{lifecycle_url}/{PROVIDER_ID}/enabled"))
+            .json(&json!({ "enabled": false }))
+            .send()
+            .await
+            .expect("disable active descriptor request");
+        let mutation: InstalledProviderMutationResponse = response
+            .json()
+            .await
+            .expect("active disable mutation response");
+        assert!(mutation.active_now);
+        assert!(!mutation.active_after_restart);
+        assert!(mutation.restart_required);
+    }
 }
