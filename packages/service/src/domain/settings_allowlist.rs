@@ -324,6 +324,13 @@ mod tests {
     }
 
     #[test]
+    fn workspace_accepts_mono_font_family() {
+        // Settings → Appearance mono font selector persists the chosen family
+        // via useDebouncedSetting → PUT /api/workspace/settings/{key}.
+        assert!(is_workspace_key_allowed("mono_font_family"));
+    }
+
+    #[test]
     fn workspace_accepts_editor_file_tree_icon_set() {
         // The Settings → Appearance picker writes "minimal" / "standard" /
         // "complete" via useDebouncedSetting → PUT /api/workspace/settings/{key}.

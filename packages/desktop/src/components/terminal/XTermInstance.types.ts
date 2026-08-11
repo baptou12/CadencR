@@ -6,6 +6,8 @@ export interface XTermInstanceProps {
   existingPtyId?: string;
   requestedCwd?: string;
   theme: XTermPalette;
+  /** Resolved monospace font stack from useMonoFont(). */
+  fontFamily?: string;
   onExit?: (ptyId: string) => void;
   onPtyReady?: (ptyId: string, cwd: string | null) => void;
   killOnUnmount?: boolean;

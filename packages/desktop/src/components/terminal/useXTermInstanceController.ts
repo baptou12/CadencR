@@ -18,6 +18,7 @@ import type { XTermInstanceHandle, XTermInstanceProps } from "./XTermInstance.ty
 import { useXTermImperativeHandle } from "./useXTermImperativeHandle";
 import { attachXtermNavigationKeys } from "./xtermNavigationKeys";
 import { attachTouchScroll } from "./xtermTouchScroll";
+import { useXtermFontSync } from "./useXtermFontSync";
 
 type RefValue<T> = MutableRefObject<T>;
 type LinkRouting = ReturnType<typeof useLinkRouting>;
@@ -191,7 +192,7 @@ function createTerminalRuntime(
   props: XTermInstanceProps,
   refs: XTermRefs,
 ): TerminalRuntime {
-  const terminal = createXtermInstance(props.theme);
+  const terminal = createXtermInstance(props.theme, props.fontFamily);
   const fitAddon = new FitAddon();
   const webLinksAddon = new WebLinksAddon(
     (event, uri) => {
@@ -340,6 +341,7 @@ function useXTermMount(props: XTermInstanceProps, refs: XTermRefs) {
     terminal.options.theme = { ...props.theme };
     if (terminal.element) terminal.refresh(0, terminal.rows - 1);
   }, [props.theme, refs.terminalRef]);
+  useXtermFontSync(refs.terminalRef, refs.fitAddonRef, props.fontFamily);
 }
 
 export function useXTermInstanceController(

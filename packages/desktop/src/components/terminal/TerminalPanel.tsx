@@ -94,6 +94,7 @@ function TerminalPortals({
         existingPtyId={leaf.ptyId}
         requestedCwd={props.expectedCwd ?? undefined}
         theme={controller.xtermPalette}
+        fontFamily={controller.monoFontFamily}
         initialCommand={leaf.initialCommand}
         onInitialCommandConsumed={() => controller.clearInitialCommand(props.featureId, leaf.id)}
         initialNotice={leaf.initialNotice}
