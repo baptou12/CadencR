@@ -35,7 +35,7 @@ const child = spawn(binary, [
   "--remote-port",
   String(remotePort),
   "--app-version",
-  "smoke-test",
+  "0.0.0-smoke-test",
 ], {
   env: {
     ...process.env,
