@@ -59,6 +59,10 @@ pub(super) struct StreamReaderState {
     /// First provider assistant-message id observed in this turn. Provider
     /// histories use this same id, closing replay overlap at the import cutoff.
     pub(super) provider_usage_event_id: Option<String>,
+    /// Materialized Cadencr-owned view of the stream-event slice migrated to
+    /// stable canonical ids. The legacy WS projection consumes its active model
+    /// while later slices move persistence and DTOs onto the same operations.
+    pub(super) canonical_projection: crate::domain::agents::canonical::CanonicalSessionProjection,
     pub(super) last_runtime_activity: Instant,
     pub(super) last_provider_reconcile: Instant,
     pub(super) turn_state: StreamTurnState,

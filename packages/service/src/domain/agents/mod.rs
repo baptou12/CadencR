@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod adapter;
+pub mod canonical;
 pub mod claude_code;
 pub mod codex;
 pub mod config_migration;
