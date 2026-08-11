@@ -178,11 +178,11 @@ importers:
         specifier: 0.10.0
         version: 0.10.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@tanstack/react-query':
-        specifier: ^4.43.0
-        version: 4.43.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: ^5.101.4
+        version: 5.101.4(react@19.2.7)
       '@tanstack/react-query-persist-client':
         specifier: ^4.43.0
-        version: 4.43.0(@tanstack/react-query@4.43.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))
+        version: 4.43.0(@tanstack/react-query@5.101.4(react@19.2.7))
       '@tanstack/react-router':
         specifier: 1.170.16
         version: 1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -3999,6 +3999,9 @@ packages:
   '@tanstack/query-core@4.43.0':
     resolution: {integrity: sha512-m1QeUUIpNXDYxmfuuWNFZLky0EwVmbE0hj8ulZ2nIGA1183raJgDCn0IKlxug80NotRqzodxAaoYTKHbE1/P/Q==}
 
+  '@tanstack/query-core@5.101.4':
+    resolution: {integrity: sha512-gNwcvOJcRbLWPOLG/2OBm+zM+Yv+MKsXKEOWC57USuZDEsI71hEErQsiEGx5wX9rzWWkfwM0fVSPoiIFSsxfiw==}
+
   '@tanstack/query-persist-client-core@4.43.0':
     resolution: {integrity: sha512-ZZoYOC303raC6KCj45TKA28U6DNteg1PV0WvsTAl47z7ZI3/EJCl0vHJp/7t4tiae2TIS6pJpiZfbAGFHccHog==}
 
@@ -4017,17 +4020,10 @@ packages:
     peerDependencies:
       '@tanstack/react-query': ^4.43.0
 
-  '@tanstack/react-query@4.43.0':
-    resolution: {integrity: sha512-Lj8luFKHQL27oZbw5T8xdTbsfAPp2+bCtSCa2bAVvIwnvNfRP0hpB1GxfKFgCktat8lPcYBHAu8eMTXzz2sQtQ==}
+  '@tanstack/react-query@5.101.4':
+    resolution: {integrity: sha512-yRg2pfOCxIs4ZJW3XYYHU/WgtD04FHSnfHlpRT7h7pR77hwkdRG4wxbKe4aq6P0RvXUTBSQpQeadS1SUYUe+KA==}
     peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-native: '*'
-    peerDependenciesMeta:
-      react-dom:
-        optional: true
-      react-native:
-        optional: true
+      react: ^18 || ^19
 
   '@tanstack/react-router@1.170.16':
     resolution: {integrity: sha512-w6eq1IJklujs1tESazaK/FxH0+H2l8vm/QPuu1cD3oRW/ubgKneQpd7b64ti/8gUyEimzimJQZDmJr6YHfP5+g==}
@@ -12146,6 +12142,8 @@ snapshots:
 
   '@tanstack/query-core@4.43.0': {}
 
+  '@tanstack/query-core@5.101.4': {}
+
   '@tanstack/query-persist-client-core@4.43.0':
     dependencies:
       '@tanstack/query-core': 4.43.0
@@ -12161,18 +12159,15 @@ snapshots:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
 
-  '@tanstack/react-query-persist-client@4.43.0(@tanstack/react-query@4.43.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))':
+  '@tanstack/react-query-persist-client@4.43.0(@tanstack/react-query@5.101.4(react@19.2.7))':
     dependencies:
       '@tanstack/query-persist-client-core': 4.43.0
-      '@tanstack/react-query': 4.43.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@tanstack/react-query': 5.101.4(react@19.2.7)
 
-  '@tanstack/react-query@4.43.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@tanstack/react-query@5.101.4(react@19.2.7)':
     dependencies:
-      '@tanstack/query-core': 4.43.0
+      '@tanstack/query-core': 5.101.4
       react: 19.2.7
-      use-sync-external-store: 1.6.0(react@19.2.7)
-    optionalDependencies:
-      react-dom: 19.2.7(react@19.2.7)
 
   '@tanstack/react-router@1.170.16(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
