@@ -103,6 +103,12 @@ impl CanonicalSessionProjection {
     }
 
     pub fn finish_turn(&mut self) {
+        // This projection is still a migration seam rather than the persisted
+        // session source of truth. Retaining complete streamed content across
+        // turns would duplicate the transcript for the lifetime of the runtime
+        // reader, so keep only the active turn until canonical persistence owns
+        // the snapshot.
+        self.snapshot.messages.clear();
         self.active_message_ids.clear();
     }
 
@@ -552,5 +558,29 @@ mod tests {
             CanonicalSessionOperation::MessageUpsert { ref message_id, .. }
                 if message_id == "provider-message"
         ));
+    }
+
+    #[test]
+    fn finishing_a_turn_releases_the_materialized_snapshot() {
+        let mut projection = CanonicalSessionProjection::default();
+        let start = event(RuntimeStreamEvent::MessageStart {
+            model: Some("model-a".into()),
+            input_tokens: None,
+        });
+        let message_id = match projection.apply_runtime_event(&start).unwrap() {
+            CanonicalSessionOperation::MessageUpsert { message_id, .. } => message_id,
+            other => panic!("unexpected operation: {other:?}"),
+        };
+        projection.apply_runtime_event(&event(RuntimeStreamEvent::ContentBlockStart {
+            index: 0,
+            block: RuntimeContentBlock::Text {
+                text: "large streamed response".repeat(1_024),
+            },
+        }));
+
+        projection.finish_turn();
+
+        assert!(projection.snapshot().message(&message_id).is_none());
+        assert_eq!(projection.model_for_event(&start), None);
     }
 }

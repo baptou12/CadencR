@@ -357,7 +357,7 @@ desktop, canonical persistence/DTOs, and the distribution installer remain futur
 | Built-in regression guardrails        | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze later UI work; complete stream/workflow golden suites remain open                                                           | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                            |
 | Installed-provider desktop            | Dynamic catalog entries can appear in existing selectors, but installed origin, source, diagnostics, enablement, and lifecycle are not presented or managed                                                                   | Next user-facing slice after the `v0.11.0` backend merge: add catalog origin plus local lifecycle and diagnostics without exposing launch secrets |
 | Negotiated capabilities/configuration | ACP v1 setup exposes a provider-neutral per-session select/boolean snapshot and opaque authenticated WS get/set operations; full returned lists are authoritative; no desktop consumer exists                                 | Later render the snapshot without provider-ID branches, then migrate legacy model/mode/effort controls                                          |
-| Canonical events and ACP v2           | Started: the stream-event slice now produces stable message/block operations and a materialized canonical projection before the unchanged legacy WS projection; persistence and most event families remain legacy             | Keep v2 deferred; migrate one typed event family at a time, then version the desktop DTO and persistence                                        |
+| Canonical events and ACP v2           | Started: the stream-event slice now produces stable message/block operations and a turn-bounded materialized projection before the unchanged legacy WS projection; persistence and most event families remain legacy          | Keep v2 deferred; migrate one typed event family at a time, then version the desktop DTO and persistence                                        |
 | Marketplace distribution/security     | Local absolute executables only; schema validation, launch hardening, quarantine, and API redaction exist                                                                                                                     | Downloads, integrity, signing, blocklist, process policy, install history, and conformance probing are still required before remote agents ship |
 | Boundary enforcement                  | `scripts/check-provider-boundaries.mjs` runs in `pnpm lint`, rejects new exact provider IDs and named-provider dependencies, checks SDK-to-service direction, and carries explicit temporary legacy/false-positive exceptions | Shrink the reviewed legacy dependency and desktop exceptions as Phase 5/6 migrations land                                                       |
 
@@ -494,7 +494,9 @@ complete. User-facing provider management stays outside the backend-only
 - [~] Introduce canonical session operations and a materialized session snapshot.
   `agents/canonical.rs` implements the first stream-content slice and the live
   reader consumes it before legacy WS projection; other event families and
-  durable snapshots remain open.
+  durable snapshots remain open. Until canonical persistence becomes the source
+  of truth, the live materialized snapshot is cleared at turn completion so it
+  cannot duplicate the full transcript for the lifetime of a runtime session.
 - [~] Translate v1 index/chunk events into stable canonical IDs. Message starts,
   content-block starts/deltas/stops, provider message IDs, and synthetic
   session/message/block IDs are covered. Synthetic message identities use UUIDs
