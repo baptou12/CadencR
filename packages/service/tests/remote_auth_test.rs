@@ -160,6 +160,19 @@ async fn remote_pairing_device_auth_and_revoke() {
     let body: Value = resp.json().await.unwrap();
     let device_token = body["device_token"].as_str().unwrap().to_string();
 
+    // Provider descriptor mutations select a host executable and launch
+    // environment, so they are loopback-only even for an authenticated paired
+    // device. An intentionally invalid body proves the route is absent without
+    // risking a durable write if this invariant ever regresses.
+    let resp = client
+        .post(format!("{base}/api/agents/installed-providers"))
+        .header("x-cadencr-token", &device_token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
     // Authenticated remote devices still must not reach host-control endpoints.
     // Unknown/unmounted API paths should remain API-shaped 404s, not fall
     // through to the SPA fallback as index.html.

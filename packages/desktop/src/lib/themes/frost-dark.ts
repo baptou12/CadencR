@@ -1,5 +1,6 @@
 import type { ThemeDefinition } from "./types";
 import { CADENCR_THEME_LOGOS } from "./logos";
+import { frostTexture } from "./frost-texture";
 
 /**
  * Frost Dark — a luminous glassmorphic dark theme: translucent frosted panels
@@ -17,6 +18,21 @@ export const FROST_DARK_THEME: ThemeDefinition = {
   label: "Frost Dark",
   appearance: "dark",
   logo: CADENCR_THEME_LOGOS.dark,
+  chrome: {
+    chassis: "flat",
+    tabs: "underline",
+    // A fine cool-white speckle that `screen` adds onto the dark field.
+    texture: frostTexture({
+      base: "oklch(0.165 0.018 262)",
+      halos: [
+        "oklch(0.6 0.12 230 / 0.55)",
+        "oklch(0.56 0.11 285 / 0.46)",
+        "oklch(0.62 0.1 200 / 0.46)",
+      ],
+      haloOpacity: 0.56,
+      grain: { color: "oklch(0.72 0.03 265)", opacity: 0.36, blend: "screen" },
+    }),
+  },
   swatch: {
     background: "#141826",
     foreground: "#e6edf6",

@@ -5,6 +5,8 @@ export const THEME_SETTING_KEY = "theme_current";
 export const THEME_FOLLOW_SYSTEM_SETTING_KEY = "theme_follow_system";
 export const THEME_SYSTEM_LIGHT_SETTING_KEY = "theme_system_light";
 export const THEME_SYSTEM_DARK_SETTING_KEY = "theme_system_dark";
+/** JSON array of user-theme ids the user hid from the picker. */
+export const THEME_USER_DISABLED_SETTING_KEY = "theme_user_disabled";
 
 export const DEFAULT_SYSTEM_LIGHT_THEME_ID: ThemeId = "cadencr-light";
 export const DEFAULT_SYSTEM_DARK_THEME_ID: ThemeId = DEFAULT_THEME_ID;

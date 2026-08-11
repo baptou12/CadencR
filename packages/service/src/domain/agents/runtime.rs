@@ -3,7 +3,8 @@ use utoipa::ToSchema;
 
 pub const AGENT_TYPES: &[&str] = &["session", "auto_name"];
 
-pub const DEFAULT_PROVIDER: &str = "claude_code";
+#[cfg(test)]
+pub const DEFAULT_PROVIDER: &str = crate::domain::agents::claude_code::PROVIDER_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -137,7 +138,7 @@ pub fn runtime_setting_key(agent_type: &str) -> String {
 }
 
 pub fn default_provider_settings() -> ProviderSettings {
-    let default = DEFAULT_PROVIDER.to_string();
+    let default = crate::domain::agents::providers::default_provider_id().to_string();
     ProviderSettings {
         session: default.clone(),
         auto_name: default,
@@ -148,7 +149,7 @@ pub fn default_provider_settings() -> ProviderSettings {
 mod tests {
     use super::{
         default_provider_settings, is_workspace_only_agent_type, reject_workspace_only,
-        validate_agent_type, DEFAULT_PROVIDER,
+        validate_agent_type,
     };
     use crate::error::AppError;
 
@@ -182,8 +183,9 @@ mod tests {
     #[test]
     fn default_provider_settings_use_default_for_all_agent_types() {
         let settings = default_provider_settings();
+        let default = crate::domain::agents::providers::default_provider_id();
 
-        assert_eq!(settings.session, DEFAULT_PROVIDER);
-        assert_eq!(settings.auto_name, DEFAULT_PROVIDER);
+        assert_eq!(settings.session, default);
+        assert_eq!(settings.auto_name, default);
     }
 }

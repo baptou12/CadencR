@@ -203,7 +203,7 @@ async fn run_auto_name(
     };
 
     let prompt = build_prompt(&user_input);
-    let config = build_spawn_config(&provider_id, &model_id, &cwd);
+    let config = build_spawn_config(adapter.as_adapter(), &model_id, &cwd);
     debug!(
         feature_id,
         prompt_len = prompt.len(),
@@ -295,14 +295,12 @@ fn build_prompt(user_input: &str) -> String {
     )
 }
 
-fn build_spawn_config(provider_id: &str, model_id: &str, cwd: &str) -> RuntimeSpawnConfig {
-    // Provider-specific env injection lives co-located with the provider
-    // module (claude_code::profiles) so generic code stays provider-neutral.
-    let env = if provider_id == "claude_code" {
-        crate::domain::agents::claude_code::profiles::resolve_active_profile_env().1
-    } else {
-        None
-    };
+fn build_spawn_config(
+    adapter: &dyn crate::domain::agents::adapter::AgentRuntimeAdapter,
+    model_id: &str,
+    cwd: &str,
+) -> RuntimeSpawnConfig {
+    let env = adapter.environment_for_new_session();
     // Auto-naming is a tiny "produce 3-7 words" task — extended thinking adds
     // latency and is a known silent-failure mode here: the 30s drain deadline
     // (drain::AUTO_NAME_DEADLINE) can fire mid-thinking before any text block

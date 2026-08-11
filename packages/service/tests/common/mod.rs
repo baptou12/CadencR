@@ -13,10 +13,11 @@
 pub mod worktree;
 
 use std::process::Command;
+use std::str::FromStr;
 
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
-use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
@@ -24,6 +25,7 @@ use tokio::net::TcpListener;
 use cadencr_service::api;
 use cadencr_service::api::middleware::AUTH_HEADER;
 use cadencr_service::app_state::AppState;
+use cadencr_service::shared::migrate::{run_migrations, MigrationContext};
 
 pub const TEST_AUTH_TOKEN: &str = "test-token";
 
@@ -245,6 +247,53 @@ pub async fn start_test_server() -> TestServer {
 
     let pool = setup_test_db(&db_path_str, &repo_path_str).await;
 
+    serve_test_server(tmp_dir, pool).await
+}
+
+/// Start the real router over a fully migrated throwaway database.
+///
+/// Most HTTP tests use the smaller hand-written schema above for speed. Real
+/// WebSocket session tests exercise persistence across many tables and should
+/// use this helper so they run against the same schema production boots.
+pub async fn start_migrated_test_server() -> TestServer {
+    let tmp_dir = TempDir::new().unwrap();
+    let repo_path = tmp_dir.path().join("repo");
+    std::fs::create_dir_all(&repo_path).unwrap();
+    create_test_repo(&repo_path);
+
+    let db_path = tmp_dir.path().join("test.db");
+    let options = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path.display()))
+        .unwrap()
+        .create_if_missing(true);
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await
+        .unwrap();
+    run_migrations(&MigrationContext {
+        pool: &pool,
+        db_path: None,
+        app_version: None,
+    })
+    .await
+    .expect("fresh test database should migrate");
+    sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'test-project', ?)")
+        .bind(repo_path.to_string_lossy().as_ref())
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO features (id, project_id, title, status, type) \
+         VALUES (1, 1, 'Test Feature', 'active', 'ws-session')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    serve_test_server(tmp_dir, pool).await
+}
+
+async fn serve_test_server(tmp_dir: TempDir, pool: SqlitePool) -> TestServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
 

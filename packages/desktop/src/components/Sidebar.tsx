@@ -23,6 +23,7 @@ import { InternetStatusIndicator } from "@/components/InternetStatusIndicator";
 import { SidebarUpdateButton } from "@/components/SidebarUpdateButton";
 import { SidebarPushButton } from "@/components/SidebarPushButton";
 import { RemoteAccessButton } from "@/components/remote/RemoteAccessButton";
+import { StorageMaintenanceProgress } from "@/components/StorageMaintenanceProgress";
 import { APP_ENVIRONMENT } from "@/lib/app-environment";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
@@ -369,6 +370,7 @@ function SidebarFooter(): ReactElement {
       <SidebarFullscreenButton />
       <SidebarPushButton />
       <SidebarUpdateButton />
+      <StorageMaintenanceProgress />
       <div className="flex w-[90%] items-center gap-1.5">
         <Link
           to="/settings"

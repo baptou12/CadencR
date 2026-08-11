@@ -71,4 +71,18 @@ pub enum Command {
         #[arg(long)]
         session_id: Option<i64>,
     },
+
+    /// Validate a theme folder and print what the app would refuse to apply.
+    ///
+    /// This is the app's own gate, run on demand. It exists for whoever is
+    /// editing a theme — in practice an agent, which cannot see the theme
+    /// library where the verdict is otherwise shown. Needs no database, no
+    /// settings and no running server; exits non-zero when the theme has
+    /// problems.
+    CheckTheme {
+        /// The theme's folder. Defaults to the working directory, which is
+        /// where the agent editing a theme already is.
+        #[arg(default_value = ".")]
+        path: std::path::PathBuf,
+    },
 }

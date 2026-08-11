@@ -102,7 +102,7 @@ function SummaryRow({
             {selected.version ? ` (v${selected.version})` : " (version unknown)"}
           </code>
         ) : (
-          <span className="text-destructive">none — Cadencr cannot spawn this provider</span>
+          <span className="text-destructive">None. Cadencr cannot spawn this provider.</span>
         )}
       </div>
       <div>

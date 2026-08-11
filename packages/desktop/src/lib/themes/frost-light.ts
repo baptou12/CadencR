@@ -1,5 +1,6 @@
 import type { ThemeDefinition } from "./types";
 import { CADENCR_THEME_LOGOS } from "./logos";
+import { frostTexture } from "./frost-texture";
 
 /**
  * Frost Light — the bright counterpart to Frost Dark: classic white-glass
@@ -17,6 +18,23 @@ export const FROST_LIGHT_THEME: ThemeDefinition = {
   label: "Frost Light",
   appearance: "light",
   logo: CADENCR_THEME_LOGOS.light,
+  chrome: {
+    chassis: "flat",
+    tabs: "underline",
+    // Deeper, more saturated halos than Frost Dark: near-white fields all but
+    // vanish once the veil washes over the bright base. The grain is a frosted
+    // paper multiplied onto the near-white field rather than added to it.
+    texture: frostTexture({
+      base: "oklch(0.974 0.014 250)",
+      halos: [
+        "oklch(0.79 0.16 245 / 0.7)",
+        "oklch(0.81 0.15 300 / 0.6)",
+        "oklch(0.83 0.14 200 / 0.6)",
+      ],
+      haloOpacity: 0.68,
+      grain: { color: "oklch(0.72 0.03 265)", opacity: 0.19, blend: "multiply" },
+    }),
+  },
   swatch: {
     background: "#eef3fa",
     foreground: "#2a3142",

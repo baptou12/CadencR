@@ -56,6 +56,16 @@ async fn main() -> anyhow::Result<()> {
             domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id, *session_id)
                 .await?;
         }
+        Some(Command::CheckTheme { path }) => {
+            // Deliberately no database and no settings dir: the check reads one
+            // folder and answers about it, so it has to work from an agent's
+            // shell with nothing configured.
+            let report = domain::themes::check::run(path).await;
+            print!("{}", report.text());
+            if !report.applicable {
+                std::process::exit(1);
+            }
+        }
         None => {
             if cfg!(debug_assertions) {
                 let dotenv_path = dev_env::require_dev_env_file(dotenv_path)?;
@@ -90,6 +100,47 @@ async fn main() -> anyhow::Result<()> {
                 app_version: config.app_version.as_deref(),
             })
             .await?;
+            // The one-time image backfill needs its destination before it can
+            // run. Production uses `~/.cadencr/blobs`; an ad-hoc/dev database
+            // gets an isolated directory named after that exact database.
+            let blob_dir = domain::blobs::dir::derive_from_db_path(&db_path);
+            if let Err(error) = domain::blobs::store::ensure_root(&blob_dir) {
+                // Blob writes repeat the durable-directory check and fail open:
+                // inline content stays in SQLite if storage is unavailable.
+                tracing::warn!(dir = %blob_dir.display(), "failed to prepare blob dir: {error}");
+            }
+            domain::blobs::dir::init(blob_dir);
+
+            // Reclaim pages requested by a completed background maintenance
+            // pass. An incomplete initial optimization keeps the request set
+            // for a later startup instead of delaying this one.
+            match domain::maintenance::database_compaction::run_if_requested(
+                &write_pool,
+                std::path::Path::new(&db_path),
+            )
+            .await
+            {
+                Ok(_) => {}
+                Err(
+                    domain::maintenance::database_compaction::DatabaseCompactionError::Integrity(
+                        error,
+                    ),
+                ) => {
+                    return Err(anyhow::Error::new(error).context(
+                        "Database integrity verification failed. Cadencr stopped before accepting new writes. Restore a recent safety backup or contact support.",
+                    ));
+                }
+                Err(
+                    domain::maintenance::database_compaction::DatabaseCompactionError::Operational(
+                        error,
+                    ),
+                ) => {
+                    // Compaction is an optimization, never a startup dependency. A
+                    // failed VACUUM leaves SQLite's original file intact and the
+                    // persisted request set so a later launch can retry safely.
+                    tracing::warn!("database compaction skipped: {error}");
+                }
+            }
             domain::usage_stats::history_import::run_once(&write_pool).await;
             let read_pool = db::create_read_pool(&db_path).await?;
 
@@ -110,6 +161,11 @@ async fn main() -> anyhow::Result<()> {
             // CWD-relative `./cadencr-settings/settings.json`.
             let settings_dir = std::fs::canonicalize(&settings_dir).unwrap_or(settings_dir);
             domain::settings_store::init(settings_dir.clone());
+            // Bind the provider registry to that settings dir immediately: it
+            // scans `<settings-dir>/providers` exactly once, and a lazy first
+            // lookup before this point would cache an empty scan of the
+            // uninitialized fallback path for the life of the process.
+            domain::agents::providers::provider_registry();
             domain::settings_store::migrate::migrate_from_sqlite(&read_pool, &settings_dir).await;
             // Claude Code profiles moved out of SQLite into the nested `profiles`
             // section of settings.json — copy any legacy rows over, then drop the
@@ -183,11 +239,26 @@ async fn main() -> anyhow::Result<()> {
             // live refresh to connected clients.
             domain::settings_store::watcher::start(&settings_dir, state.settings_events_tx.clone());
 
+            // Same idea for user themes: editing `theme.json` in your own editor
+            // re-injects the tokens live, with no reload.
+            domain::themes::watcher::start(
+                &domain::themes::paths::themes_dir(),
+                state.theme_events_tx.clone(),
+            );
+
+            // A theme is built in a project named after it, and renaming a theme
+            // is editing its file — so the same event that reloads the theme
+            // renames the project in the sidebar.
+            tokio::spawn(domain::themes::workspace::watch_renames(
+                state.write_pool.clone(),
+                state.theme_events_tx.subscribe(),
+                state.theme_events_tx.clone(),
+            ));
+
             // Background Web Push dispatcher: turns agent finished / needs-input
             // transitions into native push for backgrounded remote PWAs. Cheap
             // when no subscriptions exist; runs for the process lifetime.
             tokio::spawn(domain::push::dispatcher::run(state.clone()));
-
             // Push user-selected CLI binary paths into the SDK overrides
             // BEFORE the warmup runs — the opencode warmup spawns the server
             // process, which needs to honor the override on first launch.
@@ -225,6 +296,8 @@ async fn main() -> anyhow::Result<()> {
             let pty_manager = state.pty_manager.clone();
             let remote_for_shutdown = state.remote.clone();
             let write_pool_for_shutdown = state.write_pool.clone();
+            let maintenance_pool = state.write_pool.clone();
+            let maintenance_events = state.storage_maintenance_events_tx.clone();
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
@@ -239,6 +312,10 @@ async fn main() -> anyhow::Result<()> {
                     tracing::warn!("set_nodelay failed: {err}");
                 }
             });
+            // Start maintenance only after the listener is ready. The scheduler
+            // adds its own delay so it cannot compete with session restore or
+            // the user's first active turn.
+            domain::maintenance::spawn(maintenance_pool, maintenance_events);
             // Shutdown ordering lives in `shutdown`: the signal future only
             // closes the listener, then teardown and the HTTP drain run together.
             let (drain_tx, drain_rx) = tokio::sync::oneshot::channel();

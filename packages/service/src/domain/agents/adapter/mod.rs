@@ -6,16 +6,19 @@ mod event;
 mod event_types;
 mod permission;
 mod session;
+mod session_config;
+mod tool_input;
 mod user_shell;
 
 pub use adapter_trait::AgentRuntimeAdapter;
 pub use branching::{BranchContext, BranchError, BranchResult, SessionBranching};
 pub use config::{
-    access_mode_wire, parse_access_mode_wire, RuntimeAccessMode, RuntimeMcpServerConfig,
-    RuntimeMcpServerStatus, RuntimePermissionMode, RuntimeSpawnConfig, RuntimeTokenUsage,
-    RuntimeTokenUsageEntry, RuntimeUsage,
+    access_mode_wire, parse_access_mode_wire, static_config_paths, RuntimeAccessMode,
+    RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimePermissionMode, RuntimeSpawnConfig,
+    RuntimeTokenUsage, RuntimeTokenUsageEntry, RuntimeUsage,
 };
 pub use error::RuntimeError;
+pub use event::RuntimeStreamScope;
 pub use event_types::{
     BackgroundAgentSignal, RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeContentBlock,
     RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent,
@@ -35,4 +38,10 @@ pub use session::{
     AgentRuntimeSession, RuntimeMessageRx, RuntimeSessionHandle, RuntimeSessionWeakHandle,
     RuntimeToolPermissionHandler,
 };
+pub use session_config::{
+    RuntimeSessionConfigChoices, RuntimeSessionConfigKind, RuntimeSessionConfigOption,
+    RuntimeSessionConfigSelectGroup, RuntimeSessionConfigSelectOption,
+    RuntimeSessionConfigSnapshot, RuntimeSessionConfigValue,
+};
+pub(crate) use tool_input::{is_file_change_tool_name, RuntimeToolInputBuffer};
 pub use user_shell::RuntimeUserShellStrategy;

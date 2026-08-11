@@ -6,6 +6,9 @@ pub mod openapi;
 use crate::app_state::{AppState, BrowserBridgeConfig};
 use crate::domain::agents::claude_code::routes::claude_code_router;
 use crate::domain::agents::discovery::routes::discovery_router;
+use crate::domain::agents::providers::installed::routes::{
+    installed_provider_lifecycle_router, installed_providers_router,
+};
 use crate::domain::agents::runtime::AgentCatalogResponse;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
@@ -23,6 +26,7 @@ use crate::domain::projects::routes::projects_router;
 use crate::domain::schedules::routes::schedules_router;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
+use crate::domain::themes::themes_router;
 use crate::domain::usage_stats::routes::usage_stats_router;
 use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
@@ -114,13 +118,19 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(editor_router())
         .merge(format_router())
         .merge(image_router())
+        // Raw bytes for off-loaded message payloads (screenshots, pasted
+        // images). Outside the OpenAPI surface like the other byte routes.
+        .merge(crate::domain::blobs::routes::routes())
         .merge(editor_mutation_router())
         .merge(claude_code_router())
         .merge(custom_actions_router())
         .merge(discovery_router())
+        .merge(installed_providers_router())
         .merge(imports_router())
         .merge(lsp_router())
         .merge(usage_stats_router())
+        .merge(crate::domain::maintenance::routes::routes())
+        .merge(themes_router())
         .merge(prompt_commands_router())
         // VAPID public key — shared, so the frontend can fetch it on either
         // listener. Subscription management (device-keyed) is remote-only and
@@ -149,6 +159,7 @@ pub fn build_router(state: AppState) -> Router {
     let limiter = std::sync::Arc::new(middleware::RateLimiter::default());
     build_api_routes()
         .route("/api/browser-bridge", put(register_browser_bridge))
+        .merge(installed_provider_lifecycle_router())
         .merge(crate::domain::mcp::control::control_router())
         .merge(crate::domain::remote::loopback_router())
         .layer(axum::middleware::from_fn_with_state(

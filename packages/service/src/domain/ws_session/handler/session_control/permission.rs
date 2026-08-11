@@ -14,7 +14,7 @@ use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
     RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionHandle,
 };
-use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+use crate::domain::agents::runtime_adapter;
 
 struct ActivePermissionHandle {
     feature_id: i64,
@@ -310,9 +310,12 @@ async fn respond_runtime_permission(
         let q = runtime.active.query.read().await;
         q.respond_permission(runtime_response).await
     };
+    let uses_legacy_channel = runtime_adapter(&runtime.active.runtime_provider)
+        .is_some_and(|adapter| adapter.uses_legacy_permission_channel_on_response_error());
     match respond_result {
         Ok(()) => Some(RuntimePermissionOutcome::Accepted(permission_kind)),
-        Err(error) if runtime.active.runtime_provider != DEFAULT_PROVIDER => {
+        Err(_) if uses_legacy_channel => Some(RuntimePermissionOutcome::UsePermissionChannel),
+        Err(error) => {
             send_error(
                 sender,
                 envelope_id,
@@ -321,7 +324,6 @@ async fn respond_runtime_permission(
             );
             None
         }
-        Err(_) => Some(RuntimePermissionOutcome::UsePermissionChannel),
     }
 }
 

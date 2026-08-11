@@ -3,10 +3,12 @@
 //! `repository.rs` (>2000 lines) so that file-size and concern boundaries
 //! line up.
 
+mod text;
+
 /// Max number of lines retained in a Bash `tool_result` block on the wire.
 /// Larger outputs are tail-truncated and flagged with `truncated_content`,
 /// and the full content is reachable via `GET /api/sessions/messages/{id}/full`.
-pub(super) const BASH_OUTPUT_MAX_LINES: usize = 200;
+pub(crate) const BASH_OUTPUT_MAX_LINES: usize = 200;
 /// Max UTF-8 bytes retained from a Bash `tool_result` output field after line
 /// truncation. This keeps pathological single-line outputs from dominating the
 /// decoded agent-state payload.
@@ -25,7 +27,7 @@ pub(super) fn is_file_change_tool_name(tool_name: Option<&str>) -> bool {
 /// `canonical_cadencr_tool_name` in `agents/opencode/tool_names.rs`; Claude
 /// Code already emits `"Bash"`. So a plain equality check is intentional and
 /// keeps the provider-boundary rule: a single canonical name in shared code.
-pub(super) fn is_bash_tool_name(tool_name: Option<&str>) -> bool {
+pub(crate) fn is_bash_tool_name(tool_name: Option<&str>) -> bool {
     matches!(tool_name, Some("Bash"))
 }
 
@@ -39,7 +41,7 @@ pub(super) fn is_bash_tool_name(tool_name: Option<&str>) -> bool {
 /// the raw bytes. Parse the envelope, truncate the embedded `aggregatedOutput`
 /// (or `output` / `stdout` for older formats), and re-serialize. Fall back
 /// to raw line-splitting for content that isn't a JSON object.
-pub(super) fn truncate_bash_output(content: &str, max_lines: usize) -> (String, bool) {
+pub(crate) fn truncate_bash_output(content: &str, max_lines: usize) -> (String, bool) {
     if content.is_empty() {
         return (String::new(), false);
     }
@@ -51,7 +53,7 @@ pub(super) fn truncate_bash_output(content: &str, max_lines: usize) -> (String, 
                     continue;
                 };
                 let (truncated, was_truncated) =
-                    truncate_bash_output_text(&s, max_lines, BASH_OUTPUT_MAX_CHARS);
+                    text::truncate(&s, max_lines, BASH_OUTPUT_MAX_CHARS);
                 if !was_truncated {
                     continue;
                 }
@@ -64,56 +66,12 @@ pub(super) fn truncate_bash_output(content: &str, max_lines: usize) -> (String, 
                 (content.to_owned(), false)
             };
         }
+        // A JSON array/scalar is structured content, not a bare Bash-output
+        // string. Raw byte/line truncation could cut it into invalid JSON and
+        // maintenance must never persist such a fragment.
+        return (content.to_owned(), false);
     }
-    truncate_bash_output_text(content, max_lines, BASH_OUTPUT_MAX_CHARS)
-}
-
-fn truncate_bash_output_text(content: &str, max_lines: usize, max_chars: usize) -> (String, bool) {
-    // Cheap fast-path: under both caps and no possibility of line trimming.
-    // Avoids splitting + allocating a Vec<&str> for the common case of short
-    // command output (which runs over every Bash block on every full read).
-    // Count newlines with early-exit once we've seen more than `max_lines`.
-    if content.len() <= max_chars {
-        let mut newline_count = 0usize;
-        let mut over_cap = false;
-        for &b in content.as_bytes() {
-            if b == b'\n' {
-                newline_count += 1;
-                if newline_count >= max_lines {
-                    over_cap = true;
-                    break;
-                }
-            }
-        }
-        if !over_cap {
-            return (content.to_owned(), false);
-        }
-    }
-    let lines: Vec<&str> = content.split('\n').collect();
-    let line_truncated = lines.len() > max_lines;
-    let line_limited = if line_truncated {
-        lines[lines.len() - max_lines..].join("\n")
-    } else {
-        content.to_owned()
-    };
-    if line_limited.len() <= max_chars {
-        return (line_limited, line_truncated);
-    }
-    (
-        tail_by_utf8_bytes(&line_limited, max_chars).to_owned(),
-        true,
-    )
-}
-
-fn tail_by_utf8_bytes(content: &str, max_bytes: usize) -> &str {
-    if content.len() <= max_bytes {
-        return content;
-    }
-    let mut start = content.len() - max_bytes;
-    while !content.is_char_boundary(start) {
-        start += 1;
-    }
-    &content[start..]
+    text::truncate(content, max_lines, BASH_OUTPUT_MAX_CHARS)
 }
 
 #[cfg(test)]
@@ -224,6 +182,21 @@ mod tests {
         let (out, trunc) = truncate_bash_output(&envelope, 200);
         assert!(!trunc);
         assert_eq!(out, envelope);
+    }
+
+    #[test]
+    fn test_truncate_bash_output_leaves_json_content_blocks_valid() {
+        let content = serde_json::json!([{
+            "type": "text",
+            "text": "line\n".repeat(500),
+        }])
+        .to_string();
+
+        let (out, trunc) = truncate_bash_output(&content, 200);
+
+        assert!(!trunc);
+        assert_eq!(out, content);
+        assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
     }
 
     #[test]

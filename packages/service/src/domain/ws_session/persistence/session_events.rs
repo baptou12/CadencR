@@ -31,8 +31,8 @@ impl WsSessionPersistence {
                     .await;
             } else {
                 self.reconcile_tool_call_content(session_id, message).await;
-                let runtime_key = runtime_stream_key(runtime_event.session_id());
-                self.persist_unstreamed_assistant_text(session_id, &runtime_key, message)
+                let stream_scope = RuntimeStreamScope::new(runtime_event.session_id(), None);
+                self.persist_unstreamed_assistant_text(session_id, &stream_scope, message)
                     .await;
             }
             return None;
@@ -75,6 +75,16 @@ impl WsSessionPersistence {
         ptuid: Option<&str>,
         model: Option<&str>,
     ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+        // Only user-message image blocks have a desktop consumer that resolves
+        // `cadencr-blob://`. Tool arguments/results may contain image-looking
+        // strings as source code or protocol data and must remain byte-for-byte.
+        let offloaded = if message_type == "user_message" {
+            crate::domain::blobs::offload_content_async(content).await
+        } else {
+            None
+        };
+        let content = offloaded.as_deref().unwrap_or(content);
+
         sqlx::query(INSERT_MESSAGE_SQL)
             .bind(session_id)
             .bind(role)
@@ -95,23 +105,23 @@ impl WsSessionPersistence {
         event: &RuntimeStreamEvent,
         ptuid: Option<&str>,
     ) -> Option<PersistedMessageRef> {
-        let runtime_key = runtime_stream_key(runtime_session_id);
+        let stream_scope = RuntimeStreamScope::new(runtime_session_id, ptuid);
 
         match event {
             RuntimeStreamEvent::MessageStart { model, .. } => {
                 // A new message cycle begins: clear the streamed-text marker so
                 // each message is judged on its own deltas.
-                self.streamed_assistant_content.remove(&runtime_key);
+                self.streamed_assistant_content.remove(&stream_scope);
                 if let Some(model) = model.clone() {
-                    self.current_models.insert(runtime_key, model);
+                    self.current_models.insert(stream_scope, model);
                 }
                 None
             }
             RuntimeStreamEvent::ContentBlockStart { index, block } => {
-                let current_model = self.current_models.get(&runtime_key).cloned();
+                let current_model = self.current_models.get(&stream_scope).cloned();
                 self.persist_content_block_start(
                     session_id,
-                    &runtime_key,
+                    &stream_scope,
                     *index,
                     block,
                     ptuid,
@@ -122,7 +132,7 @@ impl WsSessionPersistence {
             RuntimeStreamEvent::ContentBlockDelta { index, delta } => {
                 self.persist_content_block_delta(
                     session_id,
-                    &runtime_key,
+                    &stream_scope,
                     *index,
                     delta,
                     ptuid,
@@ -130,7 +140,7 @@ impl WsSessionPersistence {
                 .await
             }
             RuntimeStreamEvent::ContentBlockStop { index } => {
-                self.persist_content_block_stop(&runtime_key, *index).await;
+                self.persist_content_block_stop(&stream_scope, *index).await;
                 None
             }
             RuntimeStreamEvent::Other => None,
@@ -156,7 +166,7 @@ impl WsSessionPersistence {
                 };
                 let message_type = if *is_error { "tool_error" } else { "tool_result" };
 
-                let _ = Self::insert_message(
+                let inserted = Self::insert_message(
                     &self.write_pool,
                     session_id,
                     "tool",
@@ -168,6 +178,27 @@ impl WsSessionPersistence {
                     None,
                 )
                 .await;
+
+                match inserted {
+                    Ok(_) => {
+                        // The authoritative row must exist before its duplicate
+                        // can be removed from the live tool_call.
+                        if let Some(tool_use_id) = tool_use_id.as_deref() {
+                            Self::drop_duplicated_tool_call_output(
+                                &self.write_pool,
+                                session_id,
+                                tool_use_id,
+                                &content,
+                            )
+                            .await;
+                        }
+                    }
+                    Err(error) => tracing::warn!(
+                        session_id,
+                        tool_use_id,
+                        "failed to persist tool result; keeping tool_call output: {error}"
+                    ),
+                }
             }
         }
     }
@@ -177,8 +208,8 @@ impl WsSessionPersistence {
     /// a client that missed `message_start` (e.g. a remote device that joined the
     /// turn late) still labels streamed text with the right model.
     pub fn current_model_for_event(&self, runtime_event: &RuntimeEvent) -> Option<&str> {
-        let key = runtime_stream_key(runtime_event.session_id());
-        self.current_models.get(&key).map(String::as_str)
+        let scope = RuntimeStreamScope::for_event(runtime_event);
+        self.current_models.get(&scope).map(String::as_str)
     }
 
     async fn mark_has_file_changes(&mut self, session_id: i64) {
@@ -187,24 +218,6 @@ impl WsSessionPersistence {
             .bind(session_id)
             .execute(&self.write_pool)
             .await;
-    }
-}
-
-fn runtime_stream_key(runtime_session_id: Option<&str>) -> String {
-    runtime_session_id.unwrap_or_default().to_string()
-}
-
-/// Serialize a compaction metadata payload into the `content` column of the
-/// persisted `compact_divider` row so history reload can surface `trigger` /
-/// `pre_tokens`. Returns an empty string when nothing is worth persisting.
-fn serialize_compact_metadata(
-    metadata: Option<&crate::domain::agents::adapter::RuntimeCompactMetadata>,
-) -> String {
-    match metadata {
-        Some(meta) if meta.trigger.is_some() || meta.pre_tokens.is_some() => {
-            serde_json::to_string(meta).unwrap_or_default()
-        }
-        _ => String::new(),
     }
 }
 
@@ -333,6 +346,110 @@ mod session_events_tests {
         assert_eq!(
             persistence.current_model_for_event(&content_block),
             Some("claude-opus-4-8")
+        );
+    }
+
+    #[tokio::test]
+    async fn root_and_subagent_streams_keep_independent_rows_and_models() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        for event in [
+            stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::MessageStart {
+                    model: Some("root-model".to_string()),
+                    input_tokens: None,
+                },
+            ),
+            stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::Text {
+                        text: "R".to_string(),
+                    },
+                },
+            ),
+            stream_event(
+                "thread",
+                Some("tool-parent"),
+                RuntimeStreamEvent::MessageStart {
+                    model: Some("child-model".to_string()),
+                    input_tokens: None,
+                },
+            ),
+            stream_event(
+                "thread",
+                Some("tool-parent"),
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::Text {
+                        text: "C".to_string(),
+                    },
+                },
+            ),
+            stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::Text {
+                        text: "oot".to_string(),
+                    },
+                },
+            ),
+            stream_event(
+                "thread",
+                Some("tool-parent"),
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::Text {
+                        text: "hild".to_string(),
+                    },
+                },
+            ),
+        ] {
+            persistence.persist_runtime_event(&event).await;
+        }
+
+        let root_event = stream_event("thread", None, RuntimeStreamEvent::Other);
+        let child_event = stream_event(
+            "thread",
+            Some("tool-parent"),
+            RuntimeStreamEvent::Other,
+        );
+        assert_eq!(
+            persistence.current_model_for_event(&root_event),
+            Some("root-model")
+        );
+        assert_eq!(
+            persistence.current_model_for_event(&child_event),
+            Some("child-model")
+        );
+
+        let rows = sqlx::query(
+            "SELECT content, parent_tool_use_id, model FROM agent_messages ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("fetch scoped stream rows");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get::<String, _>("content"), "Root");
+        assert_eq!(rows[0].get::<Option<String>, _>("parent_tool_use_id"), None);
+        assert_eq!(rows[0].get::<Option<String>, _>("model").as_deref(), Some("root-model"));
+        assert_eq!(rows[1].get::<String, _>("content"), "Child");
+        assert_eq!(
+            rows[1]
+                .get::<Option<String>, _>("parent_tool_use_id")
+                .as_deref(),
+            Some("tool-parent")
+        );
+        assert_eq!(
+            rows[1].get::<Option<String>, _>("model").as_deref(),
+            Some("child-model")
         );
     }
 

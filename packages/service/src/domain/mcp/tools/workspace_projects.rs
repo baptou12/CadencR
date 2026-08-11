@@ -13,7 +13,8 @@ struct ProjectRow {
 
 pub async fn list_projects(ctx: &McpContext) -> Result<serde_json::Value, String> {
     let projects: Vec<ProjectRow> = sqlx::query_as(
-        "SELECT id, name, path, created_at FROM projects ORDER BY name ASC, id ASC LIMIT 200",
+        "SELECT id, name, path, created_at FROM projects \
+         ORDER BY name ASC, id ASC LIMIT 200",
     )
     .fetch_all(&ctx.read_pool)
     .await

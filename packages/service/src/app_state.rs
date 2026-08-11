@@ -19,6 +19,7 @@ use crate::domain::git::watcher::GitWatcherRegistry;
 use crate::domain::imports::jobs::ImportJobRegistry;
 use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
+use crate::domain::maintenance::StorageMaintenanceBroadcaster;
 use crate::domain::mcp::loopback::is_loopback_host;
 use crate::domain::ports::cache::PortScanCache;
 use crate::domain::push::PushNotifier;
@@ -112,10 +113,17 @@ pub struct AppState {
     /// Broadcast when a settings JSON file changes on disk (our own writes or an
     /// external editor). Drives the frontend to re-fetch settings live.
     pub settings_events_tx: broadcast::Sender<crate::domain::settings_store::SettingsChangeEvent>,
+    /// Broadcast when a user theme's `theme.json` changes on disk. Drives the
+    /// live preview: the frontend re-fetches and re-injects the theme's tokens
+    /// while the user edits the file.
+    pub theme_events_tx: broadcast::Sender<crate::domain::themes::ThemesChangeEvent>,
     /// Broadcast when a remote device opens its first live socket. Subscribed
     /// host clients turn this into a "device connected" toast. Emitted once per
     /// device-connection (deduped at the live-session registry), not per socket.
     pub remote_events_tx: broadcast::Sender<crate::domain::remote::models::RemoteConnectedEvent>,
+    /// User-visible lifecycle for first-run optimization and later cleanup.
+    /// Every app client subscribes so long-running work has explicit progress.
+    pub storage_maintenance_events_tx: StorageMaintenanceBroadcaster,
     /// Shared file watcher (one project at a time).
     pub file_watcher: SharedFileWatcher,
     /// Per-launch bearer token required on every HTTP request (via the
@@ -240,7 +248,9 @@ impl AppState {
         let (schedule_events_tx, _) = broadcast::channel(64);
         let (file_change_tx, _) = broadcast::channel(16);
         let (settings_events_tx, _) = broadcast::channel(16);
+        let (theme_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
+        let storage_maintenance_events_tx = StorageMaintenanceBroadcaster::new(16);
         let (forge_events_tx, _) = broadcast::channel(64);
         // VAPID keys live next to the other remote secrets. Failure here is
         // non-fatal — fall back to an ephemeral key so the loopback server still
@@ -267,7 +277,9 @@ impl AppState {
             pty_manager: PtyManager::new(),
             file_change_tx,
             settings_events_tx,
+            theme_events_tx,
             remote_events_tx,
+            storage_maintenance_events_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token,
             mcp_control_token: uuid::Uuid::new_v4().to_string(),
@@ -310,7 +322,9 @@ impl AppState {
         let (schedule_events_tx, _) = broadcast::channel(64);
         let (file_change_tx, _) = broadcast::channel(16);
         let (settings_events_tx, _) = broadcast::channel(16);
+        let (theme_events_tx, _) = broadcast::channel(16);
         let (remote_events_tx, _) = broadcast::channel(16);
+        let storage_maintenance_events_tx = StorageMaintenanceBroadcaster::new(16);
         let (forge_events_tx, _) = broadcast::channel(64);
         Self {
             read_pool: pool.clone(),
@@ -331,7 +345,9 @@ impl AppState {
             pty_manager: PtyManager::new(),
             file_change_tx,
             settings_events_tx,
+            theme_events_tx,
             remote_events_tx,
+            storage_maintenance_events_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token: "test-token".to_string(),
             mcp_control_token: "test-mcp-token".to_string(),

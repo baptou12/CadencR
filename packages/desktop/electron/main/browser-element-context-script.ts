@@ -60,9 +60,11 @@ export function elementContextScript(anchorId: string | null): string {
       const rect = target.getBoundingClientRect();
       Object.assign(marker.style, { left: rect.x + 'px', top: rect.y + 'px', width: rect.width + 'px', height: rect.height + 'px' });
     };
-    const cleanup = () => { document.removeEventListener('mousemove', move, true); document.removeEventListener('click', click, true); document.documentElement.style.cursor = previousCursor; marker.remove(); };
+    const cleanup = () => { document.removeEventListener('mousemove', move, true); document.removeEventListener('click', click, true); window.removeEventListener('pagehide', cancel); document.documentElement.style.cursor = previousCursor; marker.remove(); };
+    const cancel = () => { cleanup(); resolve(null); };
     const click = (event) => { event.preventDefault(); event.stopPropagation(); cleanup(); if (anchorId) current.setAttribute(${JSON.stringify(COMMENT_ANCHOR_ATTR)}, anchorId); resolve(describe(current)); };
     document.addEventListener('mousemove', move, true);
     document.addEventListener('click', click, true);
+    window.addEventListener('pagehide', cancel, { once: true });
   }))()`;
 }

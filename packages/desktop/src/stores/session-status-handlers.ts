@@ -9,6 +9,7 @@
 import { invalidateByExactUrl, invalidateByUrlPrefix, queryClient } from "@/lib/queryClient";
 import { createLeadingSettleCoalescer } from "@/lib/coalesceInvalidation";
 import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
+import { scheduleThemeInvalidation } from "@/lib/themeInvalidation";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 import { invalidateScheduleLists } from "@/lib/schedules/invalidate";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
@@ -16,6 +17,7 @@ import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/
 import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
+import { applyStorageMaintenanceEvent } from "@/stores/storage-maintenance-store";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import type { SessionStatusEntry } from "@/stores/session-status-store";
 
@@ -284,6 +286,10 @@ export function handleAppEnvelope(
     showRemoteConnectedToast();
     return true;
   }
+  if (domain === "app" && action === "storage_maintenance") {
+    applyStorageMaintenanceEvent(payload);
+    return true;
+  }
   if (domain === "app" && action === "settings_event") {
     // A settings JSON file changed on disk (our own write or an external edit).
     // Refetch every settings-derived query — not just the raw settings
@@ -301,6 +307,17 @@ export function handleAppEnvelope(
     // are deliberately left alone — a run that spawned one emits `Created` and
     // a run into an existing one emits `Reordered`, both handled below.
     invalidateScheduleLists(queryClient);
+    return true;
+  }
+  if (domain === "app" && action === "theme_event") {
+    // A user theme's `theme.json` changed on disk. Leading-edge so the live
+    // preview updates on the first event — a delay here reads as "my edit
+    // didn't take" — plus a trailing refetch so a burst (an editor saving on
+    // every keystroke) settles on the final content without one full
+    // re-read-and-revalidate of every theme file per keystroke.
+    // The same file holds the label the theme's project is named after, so the
+    // sidebar's list is refetched with it.
+    scheduleThemeInvalidation(queryClient);
     return true;
   }
   if (domain === "app" && action === "feature_event") {

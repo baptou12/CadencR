@@ -6,6 +6,7 @@ use utoipa::OpenApi;
 use crate::app_state::AppState;
 use crate::domain::agents::claude_code::routes as claude_code_routes;
 use crate::domain::agents::discovery::routes as discovery_routes;
+use crate::domain::agents::providers::installed::routes as installed_provider_routes;
 use crate::domain::custom_actions::models as custom_actions_models;
 use crate::domain::custom_actions::routes as custom_actions_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
@@ -35,6 +36,9 @@ use crate::domain::schedules::routes as schedules_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
 use crate::domain::terminal::routes as terminal_routes;
+use crate::domain::themes::chrome as themes_chrome;
+use crate::domain::themes::models as themes_models;
+use crate::domain::themes::routes as themes_routes;
 use crate::domain::usage_stats::health as usage_stats_health;
 use crate::domain::usage_stats::models as usage_stats_models;
 use crate::domain::usage_stats::routes as usage_stats_routes;
@@ -158,6 +162,10 @@ use crate::domain::ws_session::routes as ws_routes;
         terminal_routes::kill_terminal_sessions_handler,
         super::get_agent_catalog,
         discovery_routes::binary_discovery_handler,
+        installed_provider_routes::installed_providers_handler,
+        installed_provider_routes::install_provider_handler,
+        installed_provider_routes::set_provider_enabled_handler,
+        installed_provider_routes::remove_provider_handler,
         claude_code_routes::list_profiles_handler,
         claude_code_routes::upsert_profile_handler,
         claude_code_routes::delete_profile_handler,
@@ -169,6 +177,7 @@ use crate::domain::ws_session::routes as ws_routes;
         lsp_routes::list_servers_handler,
         usage_stats_routes::get_usage_stats_handler,
         usage_stats_routes::dismiss_usage_recording_issue_handler,
+        crate::domain::maintenance::routes::run_archived_cleanup_handler,
         crate::domain::lsp::root::lsp_root_handler,
         imports_routes::list_claude_code_conversations_handler,
         imports_routes::list_provider_conversations_handler,
@@ -182,12 +191,36 @@ use crate::domain::ws_session::routes as ws_routes;
         remote_routes::revoke_handler,
         remote_routes::set_tunnel_host_handler,
         remote_routes::pair_handler,
+        themes_routes::list_themes_handler,
+        themes_routes::create_theme_handler,
+        themes_routes::write_theme_handler,
+        themes_routes::delete_theme_handler,
+        themes_routes::theme_workspace_handler,
         push_routes::vapid_key_handler,
         push_routes::subscribe_handler,
         push_routes::unsubscribe_handler,
     ),
     components(schemas(
         HealthResponse,
+        themes_models::UserTheme,
+        themes_models::ThemeDocument,
+        themes_models::ThemeAppearance,
+        themes_chrome::ThemeChrome,
+        themes_chrome::ThemeChassis,
+        themes_chrome::ThemeTabs,
+        themes_chrome::ThemeTexture,
+        themes_chrome::ThemeHalo,
+        themes_chrome::ThemeGrain,
+        themes_chrome::ThemeImage,
+        themes_chrome::ThemeBlend,
+        themes_chrome::ThemeImageFit,
+        themes_models::ThemeIssue,
+        themes_models::XtermPalette,
+        themes_models::CreateThemeRequest,
+        themes_models::WriteThemeRequest,
+        themes_models::WriteThemeResponse,
+        themes_models::DeleteThemeResponse,
+        crate::domain::themes::workspace::ThemeWorkspace,
         crate::domain::agents::runtime::AgentCatalogResponse,
         crate::domain::agents::runtime::ProviderCatalogEntry,
         crate::domain::agents::runtime::ModelCatalogEntry,
@@ -196,6 +229,18 @@ use crate::domain::ws_session::routes as ws_routes;
         discovery_routes::ProviderDiscovery,
         discovery_routes::DiscoveredCandidate,
         discovery_routes::DiscoveredSource,
+        installed_provider_routes::InstalledProvidersResponse,
+        installed_provider_routes::InstalledProviderEntry,
+        installed_provider_routes::InstalledProviderRejection,
+        installed_provider_routes::SetInstalledProviderEnabledRequest,
+        installed_provider_routes::InstalledProviderMutationResponse,
+        crate::domain::agents::providers::installed::descriptor::ProviderDescriptor,
+        crate::domain::agents::providers::installed::descriptor::AcpAgentEntry,
+        crate::domain::agents::providers::installed::descriptor::AcpDistribution,
+        crate::domain::agents::providers::installed::descriptor::AcpBinaryTarget,
+        crate::domain::agents::providers::installed::descriptor::AcpPackageDistribution,
+        crate::domain::agents::providers::installed::descriptor::HostInstallationSpec,
+        crate::domain::agents::providers::installed::descriptor::LocalExecutableSpec,
         editor_routes::ReadFileResponse,
         editor_routes::WriteFileRequest,
         editor_routes::WriteFileResponse,
@@ -339,6 +384,8 @@ use crate::domain::ws_session::routes as ws_routes;
         usage_stats_health::UsageRecordingIssue,
         usage_stats_models::UsageStatsEntry,
         usage_stats_models::UsageStatsResponse,
+        crate::domain::maintenance::routes::ArchivedCleanupRunStatus,
+        crate::domain::maintenance::routes::ArchivedCleanupRunResponse,
         crate::domain::lsp::root::LspRootResponse,
         crate::domain::lsp::probe::ServerProbe,
         crate::domain::lsp::probe::ServerProbeStatus,
@@ -376,6 +423,7 @@ use crate::domain::ws_session::routes as ws_routes;
         ws_protocol::ModelSetPayload,
         ws_protocol::ModeSetPayload,
         ws_protocol::EffortSetPayload,
+        ws_protocol::SessionConfigSetPayload,
         ws_protocol::FastModeSetPayload,
         ws_protocol::ProfileSetPayload,
         ws_protocol::GateClosedPayload,
@@ -388,6 +436,7 @@ use crate::domain::ws_session::routes as ws_routes;
         ws_protocol::ModeChangedPayload,
         ws_protocol::ModelSetOkPayload,
         ws_protocol::EffortSetOkPayload,
+        ws_protocol::SessionConfigSnapshotPayload,
         ws_protocol::FastModeSetOkPayload,
         ws_protocol::ProfileChangedPayload,
         ws_protocol::RuntimeSessionIdPayload,
@@ -443,4 +492,50 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/openapi.json", get(openapi_spec))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::api_doc;
+
+    #[test]
+    fn descriptor_optional_properties_are_not_advertised_as_nullable() {
+        let document = serde_json::to_value(api_doc()).expect("OpenAPI should serialize");
+        for (schema, fields) in [
+            (
+                "AcpAgentEntry",
+                &["repository", "website", "license", "icon", "distribution"][..],
+            ),
+            ("AcpDistribution", &["binary", "npx", "uvx"][..]),
+            ("AcpBinaryTarget", &["sha256"][..]),
+        ] {
+            for field in fields {
+                let property = &document["components"]["schemas"][schema]["properties"][field];
+                assert!(
+                    !contains_null_schema(property),
+                    "{schema}.{field} must allow omission but reject explicit null: {property}"
+                );
+            }
+        }
+    }
+
+    fn contains_null_schema(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(object) => {
+                object.get("nullable") == Some(&serde_json::Value::Bool(true))
+                    || object
+                        .get("type")
+                        .is_some_and(|schema_type| match schema_type {
+                            serde_json::Value::String(value) => value == "null",
+                            serde_json::Value::Array(values) => {
+                                values.iter().any(|value| value == "null")
+                            }
+                            _ => false,
+                        })
+                    || object.values().any(contains_null_schema)
+            }
+            serde_json::Value::Array(values) => values.iter().any(contains_null_schema),
+            _ => false,
+        }
+    }
 }

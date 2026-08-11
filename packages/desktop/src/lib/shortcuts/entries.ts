@@ -310,6 +310,26 @@ const APP_SHORTCUTS = [
     description: "Reuse referenced conversation worktree",
     scope: "agent",
   },
+  {
+    // ⌘⌥W. The other W chords are taken — ⌘W closes the window, ⌘⇧W is
+    // `agent-use-referenced-worktree` right above, which can be live at the
+    // same time in this same scope.
+    //
+    // Bare ⌥W is deliberately avoided: Option alone composes a character, so
+    // macOS reports `event.key` as "∑" (QWERTY) or "≈" (AZERTY, where the
+    // labelled W sits on `KeyZ`). With no un-mangled key and no usable code,
+    // the AZERTY case can't be matched at all. Holding Cmd suppresses the
+    // composition, so `event.key` stays "w" on every layout.
+    //
+    // Off macOS `mod` is Control, making this Ctrl+Alt+W — the AltGr chord.
+    // Accepted because no common layout assigns AltGr+W a character, but it
+    // rules out `mod+alt` for any letter that layouts do use there (E, 2, 7…).
+    id: "agent-worktree-mode",
+    keys: ["mod", "alt", "w"],
+    description: "Cycle branch / worktree behavior",
+    scope: "agent",
+    aliases: ["worktree", "branch"],
+  },
   { id: "agent-stop", keys: ["escape"], description: "Stop running agent", scope: "agent" },
 
   // ─── Plan approval ───────────────────────────────────────────────────

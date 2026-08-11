@@ -2,6 +2,7 @@
  * Agent type definitions for frontend components.
  */
 
+import { parseBlobRef } from "@/lib/blob-ref";
 import type { PromptAttachmentKind } from "@/lib/prompt-attachments";
 
 export type AgentType = "session" | "auto_name";
@@ -36,6 +37,13 @@ export interface ParsedUserMessageImage {
   base64?: string;
   /** Set instead of `base64` once the payload was moved to `prompt-image-cache`. */
   ref?: string;
+  /**
+   * Set instead of `base64` once the *backend* moved the payload to the on-disk
+   * blob store. Distinct from `ref`: that one names a renderer-memory blob for
+   * the current session, this one names durable bytes fetched from
+   * `/api/blobs/{hash}`. Resolve it with `useBlobUrls`.
+   */
+  blobHash?: string;
 }
 
 interface ParsedUserMessageContent {
@@ -123,6 +131,10 @@ export function parseUserMessageContent(content: string): ParsedUserMessageConte
         return [{ mediaType: source.media_type, ref: source.ref }];
       }
       if (typeof source.data !== "string") return [];
+      // The backend rewrites large payloads in place, so `data` may hold a blob
+      // reference rather than base64 — check before treating it as bytes.
+      const blobHash = parseBlobRef(source.data);
+      if (blobHash) return [{ mediaType: source.media_type, blobHash }];
       return [{ mediaType: source.media_type, base64: source.data }];
     });
     const attachments = parsed.flatMap((block) => {

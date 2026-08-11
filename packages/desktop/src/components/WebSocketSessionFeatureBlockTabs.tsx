@@ -11,6 +11,7 @@ import type { FeatureTabDef, FeatureTabs } from "@/components/feature-layout/typ
 import { useCheckoutBranch, useSetFeatureSetting } from "@/api/generated";
 import type { PromptAttachmentPayload } from "@/types/agent-types";
 import { claudeProfileForPrompt } from "@/components/WebSocketSessionFeatureBlockHooks";
+import { COMPACT_ACTION_PROVIDERS } from "@/lib/providers";
 import type {
   useSessionControls,
   useSessionFeatureData,
@@ -24,7 +25,6 @@ const BrowserWorkspaceTab = lazy(() =>
     default: module.BrowserWorkspaceTab,
   })),
 );
-const COMPACT_ACTION_PROVIDERS = new Set(["opencode", "codex_cli", "cursor"]);
 interface UseSessionTabsArgs {
   sessionId: string;
   featureId: number;

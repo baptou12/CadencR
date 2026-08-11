@@ -151,7 +151,8 @@ mod tests {
             r#"CREATE TABLE projects (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
-                path TEXT NOT NULL
+                path TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'user'
             )"#,
         )
         .execute(&pool)
@@ -304,6 +305,44 @@ mod tests {
 
         assert_eq!(result.agents.len(), 1);
         assert_eq!(result.agents[0].feature.id, 1);
+    }
+
+    #[tokio::test]
+    async fn conversations_in_theme_projects_show_up_like_any_other() {
+        // A theme is edited in a real conversation rooted at the theme's own
+        // folder, in a project the user can see. An agent restyling the app is
+        // work in progress like any other, so the grid lists it.
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO projects (id, name, path, kind) VALUES (1, 'p', '/p', 'user'), (2, 'My Theme', '/themes/my-theme', 'theme')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'work', 'active', datetime('now'), 'ws-session'), (2, 2, 'My Theme', 'active', datetime('now'), 'ws-session')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (10, 1, 'session', 'idle', datetime('now')), (20, 2, 'session', 'idle', datetime('now'))")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let result = list_unified_agents(
+            &pool,
+            UnifiedAgentsQuery {
+                mode: UnifiedAgentsMode::All,
+                fresh_minutes: 5,
+                project_id: None,
+                message_limit: 10,
+            },
+        )
+        .await
+        .unwrap();
+
+        let mut features: Vec<i64> = result.agents.iter().map(|agent| agent.feature.id).collect();
+        features.sort_unstable();
+        assert_eq!(features, vec![1, 2]);
     }
 
     #[tokio::test]

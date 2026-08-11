@@ -1,5 +1,10 @@
 # Provider status — Claude Code
 
+The Phase 0 catalog contract is pinned by
+[`claude_code_catalog.json`](../../packages/service/tests/fixtures/provider_parity/v1/claude_code_catalog.json)
+and asserted by an inline adapter test. It covers bootstrap identity, fallback
+models, ordering, and default without depending on a locally installed CLI.
+
 Status of the Claude Code adapter against [`FEATURES.md`](./FEATURES.md).
 
 The adapter lives in `packages/service/src/domain/agents/claude_code/`

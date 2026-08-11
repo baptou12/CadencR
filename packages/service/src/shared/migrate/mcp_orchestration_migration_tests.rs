@@ -63,6 +63,7 @@ async fn mcp_orchestration_migration_adds_provenance_links_and_fts() {
     .await
     .unwrap();
     seed_applied_migrations_before(&pool).await;
+    super::test_fixtures::create_schedules_migration_prerequisites(&pool).await;
 
     run_migrations(&MigrationContext::pool_only(&pool))
         .await

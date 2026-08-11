@@ -17,6 +17,7 @@ mod event_raw;
 #[cfg(test)]
 mod event_raw_tests;
 mod event_reasoning;
+mod event_reasoning_state;
 mod event_state;
 mod event_subagent_activity;
 mod event_subagent_routes;
@@ -40,6 +41,7 @@ mod permissions;
 mod prompt_receipts;
 mod raw_tool_names;
 mod responses;
+mod runtime_error;
 mod session;
 mod session_permissions;
 mod thread_params;
@@ -49,6 +51,7 @@ mod turn_start;
 mod turn_steer_recovery;
 mod worktree_config;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -67,15 +70,14 @@ use self::session::CodexSession;
 use self::thread_params::{thread_resume_params, thread_start_params};
 use self::timeouts::{with_probe_timeout, PROBE_TIMEOUT};
 use super::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAccessMode, RuntimeCompactionStrategy,
-    RuntimeError, RuntimePermissionRequest, RuntimePromptCommandPlacement,
-    RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger, RuntimeSlashCommand,
-    RuntimeSpawnConfig, RuntimeUserShellStrategy,
+    static_config_paths, AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAccessMode,
+    RuntimeCompactionStrategy, RuntimeError, RuntimePermissionRequest,
+    RuntimePromptCommandPlacement, RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger,
+    RuntimeSlashCommand, RuntimeSpawnConfig, RuntimeUserShellStrategy,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 pub struct CodexAdapter;
-pub static CODEX_ADAPTER: CodexAdapter = CodexAdapter;
 pub const PROVIDER_ID: &str = "codex_cli";
 const PROVIDER_LABEL: &str = "Codex CLI";
 const CATALOG_TTL: Duration = Duration::from_secs(30);
@@ -300,8 +302,8 @@ impl AgentRuntimeAdapter for CodexAdapter {
         true
     }
 
-    fn worktree_config_paths(&self) -> &'static [&'static str] {
-        worktree_config::CONFIG_PATHS
+    fn worktree_config_paths(&self) -> Vec<Cow<'static, str>> {
+        static_config_paths(worktree_config::CONFIG_PATHS)
     }
 
     async fn runtime_slash_commands(
@@ -336,18 +338,18 @@ impl AgentRuntimeAdapter for CodexAdapter {
         true
     }
 
-    fn access_mode_setting_key(&self) -> Option<&'static str> {
-        Some(self::model::ACCESS_MODE_SETTING_KEY)
+    fn access_mode_setting_key(&self) -> Option<Cow<'static, str>> {
+        Some(Cow::Borrowed(self::model::ACCESS_MODE_SETTING_KEY))
     }
 
     fn applies_access_mode_in_place(&self) -> bool {
         true
     }
 
-    fn default_permission_mode_wire(&self) -> &'static str {
+    fn default_permission_mode_wire(&self) -> Cow<'static, str> {
         // Codex's chip lands on "Default" (workspace-write + on-request),
         // matching `defaultEditModeFor` in lib/provider-modes.ts.
-        "default"
+        Cow::Borrowed("default")
     }
 
     async fn spawn(
@@ -391,9 +393,57 @@ impl AgentRuntimeAdapter for CodexAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_server_spawn_options, model_entry, CodexAdapter};
+    use super::{app_server_spawn_options, catalog_from_models, model_entry, CodexAdapter};
     use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeUserShellStrategy};
-    use codex_app_server_sdk_rs::CodexModel;
+    use codex_app_server_sdk_rs::{CodexModel, CodexServiceTier};
+    use serde_json::Value;
+
+    #[test]
+    fn catalog_projection_matches_phase_zero_parity_fixture() {
+        let catalog = catalog_from_models(vec![
+            CodexModel {
+                id: "gpt-parity-default".to_string(),
+                label: "GPT Parity Default".to_string(),
+                description: Some("Default parity model".to_string()),
+                supported_efforts: vec![
+                    "low".to_string(),
+                    "high".to_string(),
+                    "high".to_string(),
+                    String::new(),
+                ],
+                default_effort: Some("high".to_string()),
+                service_tiers: vec![CodexServiceTier {
+                    id: "standard".to_string(),
+                    name: "Standard".to_string(),
+                    description: None,
+                }],
+                context_window: Some(200_000),
+                is_default: true,
+            },
+            CodexModel {
+                id: "gpt-parity-fast".to_string(),
+                label: "GPT Parity Fast".to_string(),
+                description: Some("Fast parity model".to_string()),
+                supported_efforts: vec!["medium".to_string(), "xhigh".to_string()],
+                default_effort: Some("medium".to_string()),
+                service_tiers: vec![CodexServiceTier {
+                    id: "priority".to_string(),
+                    name: "Fast".to_string(),
+                    description: Some("Faster service tier".to_string()),
+                }],
+                context_window: Some(1_000_000),
+                is_default: false,
+            },
+        ]);
+        let actual = serde_json::to_value(catalog).expect("Codex catalog should serialize");
+        let expected: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/provider_parity/v1/codex_catalog.json"
+        )))
+        .expect("Codex parity fixture should be valid JSON");
+
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn preserves_reasoning_efforts_advertised_by_codex() {

@@ -3,55 +3,30 @@
 //! The broadcast drives the frontend to re-fetch so external edits show up live.
 
 use std::path::Path;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use notify_debouncer_mini::notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, Debouncer};
 use tokio::sync::broadcast;
-use tracing::{debug, warn};
+
+use crate::shared::file_watch::watch_dir;
 
 use super::{paths, SettingsChangeEvent};
 
-/// Keeps the debouncer (and its underlying OS watcher) alive for the process
-/// lifetime. Dropping it would silently stop notifications.
-static WATCHER: OnceLock<Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>> =
-    OnceLock::new();
+/// Settings edits are not a live-preview surface, so a longer window than the
+/// themes watcher uses is fine — it collapses the burst one save fans out into.
+const DEBOUNCE: Duration = Duration::from_millis(500);
 
 /// Start watching `dir` (non-recursive). Best-effort: a failure is logged but
 /// never fatal — settings still work, just without live external-edit refresh.
 pub fn start(dir: &Path, tx: broadcast::Sender<SettingsChangeEvent>) {
-    let mut debouncer = match new_debouncer(
-        Duration::from_millis(500),
-        move |result: Result<Vec<notify_debouncer_mini::DebouncedEvent>, _>| {
-            let events = match result {
-                Ok(events) => events,
-                Err(e) => {
-                    warn!("settings watcher error: {e:?}");
-                    return;
-                }
-            };
-            for event in events {
-                if let Some(file) = settings_file_name(&event.path) {
-                    debug!(file = %file, "settings file change detected");
-                    let _ = tx.send(SettingsChangeEvent { file });
-                }
+    watch_dir(dir, RecursiveMode::NonRecursive, DEBOUNCE, tx, |path| {
+        settings_file_name(path).map(|file| {
+            if file == paths::GLOBAL_FILE_NAME {
+                super::generation::bump_global();
             }
-        },
-    ) {
-        Ok(debouncer) => debouncer,
-        Err(e) => {
-            warn!("failed to create settings watcher: {e}");
-            return;
-        }
-    };
-
-    if let Err(e) = debouncer.watcher().watch(dir, RecursiveMode::NonRecursive) {
-        warn!(dir = %dir.display(), "failed to watch settings dir: {e}");
-        return;
-    }
-    let _ = WATCHER.set(debouncer);
-    debug!(dir = %dir.display(), "settings watcher started");
+            SettingsChangeEvent { file }
+        })
+    });
 }
 
 /// Returns the file name if `path` is a settings document we care about

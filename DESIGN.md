@@ -323,6 +323,33 @@ dracula       → Dracula
 one-dark      → One Dark
 ```
 
+**Chrome — the shape of a theme, not its palette.** Three structural traits travel with a theme as data (`chrome` in `theme.json`; `ThemeDefinition.chrome` for a built-in), because a theme duplicated from another one has to *look* like it and not just be colored like it:
+
+| Trait | Values | What it decides |
+|---|---|---|
+| `chassis` | `flat` · `rail` | Whether the page tucks into the sidebar rail as a raised card with a rounded top-left corner, sharing one continuous header band (CadencR pair), or sits full-bleed under its own header (everything else). Desktop only — below 768px every theme is flat. |
+| `tabs` | `underline` · `segmented` | Whether the active pane tab is a hairline indicator or a raised pill in a recessed track. |
+| `texture` | layers | What is painted behind the app: a flat `base`, drifting blurred `halos`, an `image` from the theme's own folder, generated `grain`, and a `veil` that washes the field back down with `--background` so surfaces stay legible. The Frost pair is one instance of this vocabulary, not a special case. |
+
+`applyThemeToDocument` publishes the first two as `<html data-chassis data-tabs>`; the texture is rendered by `<AmbientBackground/>` and laid out by `theme-chrome.css`, which must never contain a `data-theme` selector. A texture that declares a `base` also makes `:root` opaque and `body` transparent — required for `backdrop-filter` to paint at all.
+
+The CadencR pair's *material* (pane elevation, lamplight, machined wells, prompt chrome) stays theme-scoped in `theme-cadencr-material.css`: it depends on tokens only those themes declare, and it is a look rather than a structural choice.
+
+**Chrome has colors, and they belong to the theme.** The token vocabulary has two tiers. The required set is the palette every theme defines in full; a short optional set — `--tab-track-bg`, `--tab-track-border`, `--tab-active-bg`, `--pane-border` — colors the shapes a theme opted into, and `theme-chrome.css` derives a fallback from `--foreground`/`--background` for any a theme leaves out. They are optional because most themes draw neither shape; they exist because without them the only way to recolor a segmented tab strip was to edit the app's shared stylesheet — a change no installed Cadencr can receive, applied to every theme at once. An unknown key is still an error: this widens the vocabulary, it does not open it. `--tab-active-shadow` and `--page-shadow` stay out, being `box-shadow` values rather than colors. Duplication carries whichever of them the source theme declares, which is how a copy of CadencR Dark keeps its tab colors and not just its tab *shape*.
+
+**A theme folder explains itself, and answers back.** A user theme is edited in its own project, which in practice means an agent with `theme.json` open and nothing else to go on — and the document is self-describing for colors and opaque for chrome. Worse, the verdict on what it writes lands on a settings card it cannot see, so a theme could be declared finished while the app quietly refused to apply it. Four files beside `theme.json` close that loop:
+
+| File | For |
+|---|---|
+| `THEME.md` | The loop, the vocabulary, the bounds, and what a rejected file does. Leads with the check command. |
+| `theme.schema.json` | The machine-checkable half; the document's own `$schema` points at it, so an editor completes and flags as you type. |
+| `check-theme` | Runs `cadencr-service check-theme` on this folder: the app's gate, on demand. Prints the settings card's own wording, exits non-zero when the theme is not applicable. |
+| `AGENTS.md` / `CLAUDE.md` | The boundary, in the files an agent loads before its first instruction: this folder is the whole theme, never edit the app's source, run the check, and *say so and stop* when a request isn't expressible here. |
+
+All of them are written on every open and excluded from the theme's git via `.git/info/exclude` — the schema generated from the same constants `validate` enforces, the prose held to them by tests — they are the app's, not the theme's. The command is deliberately not a second implementation: it calls `store::read_at`, the same function the gallery calls, so the two can never disagree. It needs no server, database or token, and the launcher is rewritten each open so its path follows the binary across rebuilds and updates.
+
+Chrome additionally denies unknown fields, so a misspelled key is a reported issue rather than a silent default; the label is recovered from the raw JSON when the document won't deserialize, so that costs a message and not the theme's name. Bounds, variant lists and the reference's prose are guarded against drift by tests in `themes/schema.rs` and `themes/scaffold.rs`; a new chrome value belongs in `ThemeChassis::ALL`-style lists and in `THEME.md`, or those tests fail.
+
 **Adding a theme.**
 1. Add a complete typed `ThemeDefinition` under `src/lib/themes/`, including a full xterm palette and stable swatch.
 2. Add the theme's semantic CSS selector without changing another theme's tokens.

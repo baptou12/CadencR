@@ -2,7 +2,7 @@ use serde_json::json;
 use sqlx::{FromRow, QueryBuilder, Sqlite};
 
 use crate::domain::mcp::context::McpContext;
-use crate::domain::mcp::tools::messages::fts_literal_query;
+use crate::domain::mcp::tools::messages::{fts_literal_query, TOOL_RESULTS_NOT_INDEXED};
 
 const DEFAULT_LIMIT: i64 = 10;
 const MAX_LIMIT: i64 = 50;
@@ -37,7 +37,8 @@ pub async fn find_related_sessions(
     let rows = search_project(ctx, project_id, &query, limit(args), snippet_chars(args)).await?;
     Ok(json!({
         "project_id": project_id,
-        "results": rows.into_iter().map(search_json).collect::<Vec<_>>()
+        "results": rows.into_iter().map(search_json).collect::<Vec<_>>(),
+        "search_scope": TOOL_RESULTS_NOT_INDEXED,
     }))
 }
 

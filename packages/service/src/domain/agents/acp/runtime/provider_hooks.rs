@@ -12,7 +12,8 @@ use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimeMcpServerStatus,
     RuntimePermissionDecision, RuntimePermissionMode, RuntimePermissionRequest,
-    RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSlashCommand, RuntimeUsage,
+    RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionConfigSnapshot,
+    RuntimeSessionConfigValue, RuntimeSlashCommand, RuntimeUsage,
 };
 
 use super::events_stream_blocks::EventIndexer;
@@ -48,23 +49,6 @@ pub struct AcpExtensionRequest {
 pub struct AcpServerRequestResolution {
     pub response: Value,
     pub followup: Option<Value>,
-}
-
-#[cfg(test)]
-pub(crate) struct DefaultFlattenHooks;
-
-#[cfg(test)]
-#[async_trait]
-impl AcpProviderHooks for DefaultFlattenHooks {
-    fn normalize_tool_name(&self, raw: &str) -> String {
-        raw.to_string()
-    }
-    fn normalize_tool_input(&self, _tool_name: &str, input: Value) -> Value {
-        input
-    }
-    fn mode_for_permission_mode(&self, _mode: RuntimePermissionMode) -> Option<String> {
-        None
-    }
 }
 
 #[async_trait]
@@ -129,8 +113,19 @@ pub trait AcpProviderHooks: Send + Sync {
     }
 
     /// Extra set_config_option pairs after the model response (Cursor fast / thought-level).
-    fn model_config_companions(&self, _model: &str) -> Vec<(String, String)> {
+    fn model_config_companions(&self, _model: &str) -> Vec<(String, RuntimeSessionConfigValue)> {
         Vec::new()
+    }
+
+    /// Project a model config value into the legacy catalog-model domain.
+    /// Providers with parameterized model IDs return `None` until they can
+    /// reconstruct the complete catalog selection from the snapshot.
+    fn legacy_model_from_session_config(
+        &self,
+        model_value: &str,
+        _snapshot: &RuntimeSessionConfigSnapshot,
+    ) -> Option<String> {
+        Some(model_value.to_string())
     }
 
     /// Catalog model already encodes effort applied via companions; skip spawn effort RPC.
@@ -406,28 +401,5 @@ fn unwrap_text_block(block: &Value) -> Option<&str> {
     match kind {
         "text" => block.get("text").and_then(Value::as_str),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{AcpProviderHooks, DefaultFlattenHooks};
-    use serde_json::{json, Value};
-
-    #[test]
-    fn default_flatten_tool_result_content_joins_text_blocks() {
-        let hooks = DefaultFlattenHooks;
-        let payload = hooks.flatten_tool_result_content(&[
-            json!({ "type": "text", "text": "first" }),
-            json!({ "type": "text", "text": "second" }),
-        ]);
-        assert_eq!(payload, Value::String("first\nsecond".to_string()));
-    }
-
-    #[test]
-    fn default_flatten_tool_result_content_preserves_structured_blocks() {
-        let hooks = DefaultFlattenHooks;
-        let blocks = vec![json!({ "type": "diff", "path": "a.rs" })];
-        assert_eq!(hooks.flatten_tool_result_content(&blocks), json!(blocks));
     }
 }

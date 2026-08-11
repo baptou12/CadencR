@@ -7,9 +7,9 @@
 
 use crate::app_state::AppState;
 use crate::domain::agents::providers::{
-    canonical_provider_or_error, resolve_effective_provider, runtime_adapter,
+    canonical_provider_or_error, default_provider_id, resolve_effective_provider, runtime_adapter,
 };
-use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
+use crate::domain::agents::runtime::runtime_setting_key;
 use crate::domain::schedules::models::ScheduleTarget;
 use crate::domain::schedules::pins::{
     access_mode_for, model_for, permission_mode_for, profile_for_new_session, trimmed,
@@ -73,10 +73,10 @@ async fn resolve_provider(
         &runtime_setting_key("session"),
         None,
         Some(project_id),
-        Some(DEFAULT_PROVIDER),
+        Some(default_provider_id()),
     )
     .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    .unwrap_or_else(|| default_provider_id().to_string());
     let effective = resolve_effective_provider(
         &state.read_pool,
         Some(std::path::Path::new(project_path)),

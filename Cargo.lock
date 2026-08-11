@@ -753,6 +753,7 @@ dependencies = [
  "subtle",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "tower",
  "tower-http 0.7.0",
@@ -763,6 +764,7 @@ dependencies = [
  "utoipa-axum",
  "uuid",
  "web-push",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

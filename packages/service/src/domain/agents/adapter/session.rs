@@ -11,6 +11,7 @@ use super::permission::{
     RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeToolPermissionRequest,
     RuntimeToolPermissionResult,
 };
+use super::session_config::{RuntimeSessionConfigSnapshot, RuntimeSessionConfigValue};
 
 pub type RuntimeMessageRx = mpsc::Receiver<Result<RuntimeEvent, RuntimeError>>;
 pub type RuntimeSessionHandle = Arc<RwLock<Box<dyn AgentRuntimeSession>>>;
@@ -81,6 +82,24 @@ pub trait AgentRuntimeSession: Send + Sync {
     async fn set_fast_mode(&self, _enabled: bool) -> Result<(), RuntimeError> {
         Err(RuntimeError::new(
             "fast mode changes are not supported by this runtime",
+        ))
+    }
+    /// Authoritative live configuration advertised by this runtime. `None`
+    /// distinguishes an unsupported native adapter from an ACP session that
+    /// legitimately advertises zero options.
+    async fn session_config_snapshot(&self) -> Option<RuntimeSessionConfigSnapshot> {
+        None
+    }
+    /// Set one opaque live configuration option and return the complete list
+    /// the runtime reports afterward. Implementations must replace their local
+    /// snapshot rather than patching it from the request.
+    async fn set_session_config_option(
+        &self,
+        _config_id: &str,
+        _value: RuntimeSessionConfigValue,
+    ) -> Result<RuntimeSessionConfigSnapshot, RuntimeError> {
+        Err(RuntimeError::new(
+            "session configuration options are not supported by this runtime",
         ))
     }
     async fn respond_permission(

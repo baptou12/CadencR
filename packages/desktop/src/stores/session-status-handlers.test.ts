@@ -61,6 +61,17 @@ describe("handleAppEnvelope · editor/file_tree.changed", () => {
     expect(predicate({ queryKey: ["/api/git/stats", { feature_id: 7 }] })).toBe(false);
   });
 
+  it("refetches the project list when a theme file changes", () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+
+    // A theme's label is the name of its project in the sidebar, and the
+    // backend renames the project from this same write.
+    handleAppEnvelope("app", "theme_event", { id: "vamp" });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["/api/themes"] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["/api/projects"] });
+  });
+
   it("treats a change after the window as a fresh leading edge", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 

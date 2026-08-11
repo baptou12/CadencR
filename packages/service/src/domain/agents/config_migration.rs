@@ -7,7 +7,7 @@ pub async fn copy_provider_config_paths(
     provider_label: &str,
     source_root: &Path,
     dest_root: &Path,
-    relative_paths: &[&str],
+    relative_paths: &[impl AsRef<str>],
 ) -> Result<(), super::adapter::RuntimeError> {
     copy_missing_provider_paths(source_root, dest_root, relative_paths)
         .await
@@ -21,10 +21,10 @@ pub async fn copy_provider_config_paths(
 pub async fn copy_missing_provider_paths(
     source_root: &Path,
     dest_root: &Path,
-    relative_paths: &[&str],
+    relative_paths: &[impl AsRef<str>],
 ) -> io::Result<()> {
     for relative in relative_paths {
-        let relative_path = validate_relative_path(relative)?;
+        let relative_path = validate_relative_path(relative.as_ref())?;
         copy_missing_path(
             &source_root.join(&relative_path),
             &dest_root.join(&relative_path),

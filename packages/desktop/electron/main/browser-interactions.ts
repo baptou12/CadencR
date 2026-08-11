@@ -80,13 +80,25 @@ export async function waitFor(
 // browser_open_url returns a loaded page instead of about:blank.
 export function waitForLoad(wc: WebContents, timeoutMs = 10_000): Promise<void> {
   if (!wc.isLoading()) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = (): void => {
+  if (wc.isDestroyed()) {
+    return Promise.reject(new Error("Browser tab closed while waiting for the page to load."));
+  }
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
       clearTimeout(timer);
       wc.off("did-stop-loading", done);
+      wc.off("destroyed", closed);
+    };
+    const done = (): void => {
+      cleanup();
       resolve();
+    };
+    const closed = (): void => {
+      cleanup();
+      reject(new Error("Browser tab closed while waiting for the page to load."));
     };
     const timer = setTimeout(done, timeoutMs);
     wc.once("did-stop-loading", done);
+    wc.once("destroyed", closed);
   });
 }

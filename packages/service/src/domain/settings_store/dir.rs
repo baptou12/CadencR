@@ -36,6 +36,27 @@ pub fn global_dir() -> PathBuf {
     }
 }
 
+/// A sibling of the settings dir — `~/.cadencr/<name>` in production, since
+/// settings live at `~/.cadencr/settings`. Used by everything else that owns a
+/// user-visible directory under the Cadencr home (themes, diagnostics), so the
+/// derivation exists once and inherits the per-test isolation above.
+///
+/// In test builds the directory *nests* inside the per-thread settings dir
+/// instead: the test settings dir sits directly in the temp dir, so its parent
+/// is `/tmp` — shared between tests and outside the sandbox.
+pub fn sibling_dir(name: &str) -> PathBuf {
+    let settings = global_dir();
+    #[cfg(test)]
+    {
+        return settings.join(name);
+    }
+    #[cfg(not(test))]
+    settings
+        .parent()
+        .map(|parent| parent.join(name))
+        .unwrap_or_else(|| settings.join(name))
+}
+
 /// Unique, per-test-thread settings directory (test builds only).
 #[cfg(test)]
 fn test_dir() -> PathBuf {

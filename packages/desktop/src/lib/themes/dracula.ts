@@ -1,19 +1,141 @@
+import type { ThemeCssVars } from "./tokens";
 import type { ThemeDefinition } from "./types";
 import { CADENCR_THEME_LOGOS } from "./logos";
 
 /**
- * Dracula — Cadencr's vibrant dark theme. The current default look.
+ * Dracula — Cadencr's vibrant dark theme.
  *
- * CSS variables for this theme live in `index.css` under
- * `:root[data-theme="dracula"]`; this module only carries values that
- * canvas-based renderers (xterm.js) need explicitly, plus a small swatch for
- * the settings picker.
+ * This is the first theme carried entirely as **data**: its token values live
+ * in `cssVars` below rather than in a `:root[data-theme="dracula"]` block in
+ * `theme.css`, and `applyThemeToDocument` injects them at runtime. Everything
+ * downstream (Tailwind tokens, CodeMirror, block surfaces) is unchanged — it
+ * reads the same custom properties, it just no longer matters whether a
+ * stylesheet or the theme registry supplied them.
+ *
+ * That indirection is what makes user-authored themes possible: a theme file on
+ * disk is exactly this `cssVars` map plus a label, appearance and xterm palette.
  */
+const DRACULA_CSS_VARS: ThemeCssVars = {
+  // Tailwind semantic tokens — the shadcn/ui surface + text scale.
+  "--background": "oklch(0.22 0.022 277.497)",
+  "--foreground": "oklch(0.977 0.008 106.793)",
+  "--card": "oklch(0.22 0.022 277.497)",
+  "--card-foreground": "oklch(0.977 0.008 106.793)",
+  "--surface-sunken": "oklch(0.19 0.022 277.497)",
+  "--popover": "oklch(0.22 0.022 277.497)",
+  "--popover-foreground": "oklch(0.977 0.008 106.793)",
+  "--primary": "oklch(0.742 0.149 301.871)",
+  "--primary-foreground": "oklch(0.22 0.022 277.497)",
+  "--secondary": "oklch(0.403 0.032 277.821)",
+  "--secondary-foreground": "oklch(0.977 0.008 106.793)",
+  "--muted": "oklch(0.403 0.032 277.821)",
+  "--muted-foreground": "oklch(0.78 0.04 280)",
+  "--accent": "oklch(0.34 0.032 277.821)",
+  "--accent-foreground": "oklch(0.977 0.008 106.793)",
+  "--destructive": "oklch(0.682 0.206 24.421)",
+  "--destructive-foreground": "oklch(0.977 0.008 106.793)",
+  "--border": "oklch(0.32 0.032 277.821)",
+  "--input": "oklch(0.403 0.032 277.821)",
+  "--ring": "#6271a4",
+  "--chart-1": "oklch(0.742 0.149 301.871)",
+  "--chart-2": "oklch(0.755 0.183 346.794)",
+  "--chart-3": "oklch(0.871 0.219 148.046)",
+  "--chart-4": "oklch(0.883 0.093 212.886)",
+  "--chart-5": "oklch(0.834 0.124 66.552)",
+  "--sidebar": "oklch(0.23 0.022 277.497)",
+  "--sidebar-foreground": "oklch(0.977 0.008 106.793)",
+  "--sidebar-primary": "oklch(0.742 0.149 301.871)",
+  "--sidebar-primary-foreground": "oklch(0.22 0.022 277.497)",
+  "--sidebar-accent": "oklch(0.34 0.032 277.821)",
+  "--sidebar-accent-foreground": "oklch(0.977 0.008 106.793)",
+  "--sidebar-border": "oklch(0.403 0.032 277.821)",
+  "--sidebar-ring": "#6271a4",
+  // Vibrant accent palette — editor syntax, diff decorations, markdown code.
+  "--acc-cyan": "#8be9fd",
+  "--acc-green": "#50fa7b",
+  "--acc-orange": "#ffb86c",
+  "--acc-pink": "#ff79c6",
+  "--acc-purple": "#bd93f9",
+  "--acc-red": "#ff5555",
+  "--acc-yellow": "#f1fa8c",
+  "--acc-comment": "#6271a4",
+  // Code surface — editor-adjacent code-only surfaces.
+  "--code-bg": "#1a1b26",
+  "--code-fg": "#f8f8f2",
+  // Agent-stream block surfaces (`*-bg` paints the container, `*-accent` the title row/icon/border).
+  "--block-tool-bg": "#191f31",
+  "--block-tool-accent": "#8ec5ff",
+  "--block-thinking-bg": "#1f1d31",
+  "--block-thinking-accent": "#dbb1ff",
+  "--block-plan-bg": "#191f31",
+  "--block-plan-accent": "#8ec5ff",
+  "--block-bash-header-bg": "#202024",
+  "--block-bash-body-bg": "#09090b",
+  "--block-bash-fg": "#d4d4d8",
+  "--block-bash-muted-fg": "#9f9fa9",
+  "--block-task-bg": "#15161d",
+  // App-level semantic accents — chips and numstat, tuned independently of editor syntax.
+  "--numstat-add-fg": "#50fa7b",
+  "--numstat-del-fg": "#ff5555",
+  "--chip-worktree-bg": "rgba(139, 233, 253, 0.18)",
+  "--chip-worktree-bg-hover": "rgba(139, 233, 253, 0.28)",
+  "--chip-worktree-fg": "#8be9fd",
+  "--chip-shared-worktree-bg": "rgba(255, 184, 108, 0.18)",
+  "--chip-shared-worktree-fg": "#ffb86c",
+  "--chip-violet-bg": "#8b5cf6",
+  "--chip-violet-fg": "#a78bfa",
+  "--chip-violet-soft": "#c4b5fd",
+  "--chip-fuchsia-bg": "#d946ef",
+  "--chip-fuchsia-fg": "#e879f9",
+  "--chip-blue-bg": "#3b82f6",
+  "--chip-blue-fg": "#60a5fa",
+  // CodeMirror editor palette.
+  "--editor-bg": "#1e2030",
+  "--editor-fg": "var(--code-fg)",
+  "--editor-comment": "var(--acc-comment)",
+  "--editor-cyan": "var(--acc-cyan)",
+  "--editor-green": "var(--acc-green)",
+  "--editor-orange": "var(--acc-orange)",
+  "--editor-pink": "var(--acc-pink)",
+  "--editor-purple": "var(--acc-purple)",
+  "--editor-red": "var(--acc-red)",
+  "--editor-yellow": "var(--acc-yellow)",
+  "--editor-border": "#383a59",
+  "--editor-cursor": "var(--acc-purple)",
+  "--editor-line-highlight": "rgba(255, 255, 255, 0.05)",
+  "--editor-gutter-bg": "#1e2030",
+  "--editor-gutter-fg": "var(--acc-comment)",
+  "--editor-selection-bg": "#44475a",
+  "--editor-selection-bg-soft": "#383a59",
+  "--editor-search-match-bg": "rgba(189, 147, 249, 0.25)",
+  // Diff decorations (CodeMirror merge view + InlineDiffBlock).
+  "--diff-add-bg": "rgba(80, 250, 123, 0.08)",
+  "--diff-add-bg-strong": "rgba(80, 250, 123, 0.18)",
+  "--diff-del-bg": "rgba(255, 85, 85, 0.08)",
+  "--diff-del-bg-strong": "rgba(255, 85, 85, 0.18)",
+  // Terminal chrome — panel buttons, resize handles, cwd-warning banner.
+  "--terminal-bg": "#1a1b26",
+  "--terminal-panel-icon": "#565f89",
+  "--terminal-panel-icon-hover": "#c0caf5",
+  "--terminal-panel-icon-bg-hover": "#292e42",
+  "--terminal-panel-handle-bg": "#292e42",
+  "--terminal-panel-handle-bg-hover": "#3b4261",
+  "--terminal-warning-bg": "#24283b",
+  "--terminal-warning-border": "#3b4261",
+  "--terminal-warning-fg": "#c0caf5",
+  "--terminal-warning-fg-secondary": "#9aa5ce",
+  "--terminal-warning-accent": "#e0af68",
+  "--terminal-warning-link": "#7aa2f7",
+  "--terminal-warning-button-bg": "#3b4261",
+  "--terminal-warning-button-bg-hover": "#414868",
+};
+
 export const DRACULA_THEME: ThemeDefinition = {
   id: "dracula",
   label: "Dracula",
   appearance: "dark",
   logo: CADENCR_THEME_LOGOS.dark,
+  cssVars: DRACULA_CSS_VARS,
   swatch: {
     background: "#282a36",
     foreground: "#f8f8f2",

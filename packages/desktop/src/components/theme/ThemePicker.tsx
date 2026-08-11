@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { THEME_LIST, type ThemeDefinition, type ThemeId } from "@/lib/themes";
+import { ThemeCard } from "./ThemeCard";
+import { type ThemeDefinition, type ThemeId } from "@/lib/themes";
 
 /**
  * Full-width horizontal carousel of theme cards. Cards lay out in a single
@@ -12,6 +13,8 @@ import { THEME_LIST, type ThemeDefinition, type ThemeId } from "@/lib/themes";
  */
 interface ThemePickerProps {
   title: string;
+  /** Built-ins plus the user's enabled themes, in display order. */
+  themes: ThemeDefinition[];
   selectedThemeId: ThemeId;
   onSelect: (id: ThemeId) => void;
   disabled: boolean;
@@ -21,22 +24,25 @@ interface ThemePickerProps {
 
 function useSelectedThemeFocus(
   scrollerRef: RefObject<HTMLDivElement | null>,
+  selectedThemeId: ThemeId,
+  themes: ThemeDefinition[],
   selectedIndex: number,
   autoFocus: boolean,
 ): void {
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const target = scroller.querySelector<HTMLElement>(
-      `[data-theme-card="${THEME_LIST[selectedIndex]?.id}"]`,
-    );
+    const target = scroller.querySelector<HTMLElement>(`[data-theme-card="${selectedThemeId}"]`);
     target?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
-  }, [scrollerRef, selectedIndex]);
+    // Keyed on the selected *id*, not the array: the list gets a new identity
+    // whenever a theme file changes, and re-running would smooth-scroll the
+    // carousel for an edit that didn't move the selection.
+  }, [scrollerRef, selectedThemeId]);
 
   useEffect(() => {
     if (!autoFocus) return;
     const target = scrollerRef.current?.querySelector<HTMLElement>(
-      `[data-theme-card="${THEME_LIST[selectedIndex]?.id}"]`,
+      `[data-theme-card="${themes[selectedIndex]?.id}"]`,
     );
     target?.focus({ preventScroll: true });
     // The selected card should only autofocus when the picker mounts.
@@ -46,6 +52,7 @@ function useSelectedThemeFocus(
 
 export function ThemePicker({
   title,
+  themes,
   selectedThemeId,
   onSelect,
   disabled,
@@ -56,18 +63,18 @@ export function ThemePicker({
     () =>
       Math.max(
         0,
-        THEME_LIST.findIndex((t) => t.id === selectedThemeId),
+        themes.findIndex((t) => t.id === selectedThemeId),
       ),
-    [selectedThemeId],
+    [themes, selectedThemeId],
   );
 
-  useSelectedThemeFocus(scrollerRef, selectedIndex, autoFocus);
+  useSelectedThemeFocus(scrollerRef, selectedThemeId, themes, selectedIndex, autoFocus);
 
   const step = useCallback(
     (direction: 1 | -1): void => {
       if (disabled) return;
-      const nextIndex = (selectedIndex + direction + THEME_LIST.length) % THEME_LIST.length;
-      const next = THEME_LIST[nextIndex];
+      const nextIndex = (selectedIndex + direction + themes.length) % themes.length;
+      const next = themes[nextIndex];
       if (!next) return;
       onSelect(next.id);
       // Move focus to the new card so subsequent arrows continue to work.
@@ -78,7 +85,7 @@ export function ThemePicker({
         card?.focus({ preventScroll: true });
       });
     },
-    [disabled, onSelect, selectedIndex],
+    [disabled, onSelect, selectedIndex, themes],
   );
 
   const handleKeyDown = useCallback(
@@ -126,79 +133,19 @@ export function ThemePicker({
             "[scrollbar-width:thin]",
           )}
         >
-          {THEME_LIST.map((theme) => (
+          {themes.map((theme) => (
             <ThemeCard
               key={theme.id}
               theme={theme}
               selected={theme.id === selectedThemeId}
-              onSelect={onSelect}
               disabled={disabled}
+              tabIndex={theme.id === selectedThemeId ? 0 : -1}
+              onSelect={() => onSelect(theme.id)}
+              className="w-24 shrink-0 snap-start p-1.5"
             />
           ))}
         </div>
       </div>
     </section>
-  );
-}
-
-interface ThemeCardProps {
-  theme: ThemeDefinition;
-  selected: boolean;
-  onSelect: (id: ThemeId) => void;
-  disabled: boolean;
-}
-
-function ThemeCard({ theme, selected, onSelect, disabled }: ThemeCardProps): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      data-theme-card={theme.id}
-      tabIndex={selected ? 0 : -1}
-      disabled={disabled}
-      onClick={() => onSelect(theme.id)}
-      className={cn(
-        "flex w-24 shrink-0 snap-start flex-col items-start gap-1.5 rounded-md border p-1.5 text-left transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        selected
-          ? "border-primary/60 bg-primary/8"
-          : "border-border bg-background hover:bg-muted/40",
-      )}
-    >
-      <ThemeSwatch theme={theme} />
-      <div className="min-w-0">
-        <div className="truncate text-[11px] font-medium leading-tight">{theme.label}</div>
-        <div className="text-[10px] text-muted-foreground capitalize leading-tight">
-          {theme.appearance}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-/** Compact swatch: top half background (with sample text in foreground),
- *  bottom half a primary/accent split. */
-function ThemeSwatch({ theme }: { theme: ThemeDefinition }): React.JSX.Element {
-  const { background, foreground, primary, accent } = theme.swatch;
-  return (
-    <div
-      className="flex h-9 w-full flex-col overflow-hidden rounded border border-border"
-      aria-hidden="true"
-    >
-      <div
-        className="flex h-1/2 items-center justify-center"
-        style={{ backgroundColor: background }}
-      >
-        <span className="text-[8px] font-bold" style={{ color: foreground }}>
-          Aa
-        </span>
-      </div>
-      <div className="flex h-1/2">
-        <div className="flex-1" style={{ backgroundColor: primary }} />
-        <div className="flex-1" style={{ backgroundColor: accent }} />
-      </div>
-    </div>
   );
 }

@@ -279,7 +279,8 @@ mod tests {
                 branch_prefix TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 model_session TEXT,
-                agent_runtime_session TEXT
+                agent_runtime_session TEXT,
+                kind TEXT NOT NULL DEFAULT 'user'
             )"#,
         )
         .execute(&pool)

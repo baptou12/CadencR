@@ -49,7 +49,7 @@ fn current_binary_override() -> Option<PathBuf> {
 /// without re-declaring the well-known install locations.
 pub fn claude_discovery_spec() -> DiscoverySpec {
     DiscoverySpec {
-        bin_name: "claude",
+        bin_name: "claude".into(),
         well_known_relative_to_home: vec![
             ".claude/local",
             ".local/bin",
@@ -58,9 +58,12 @@ pub fn claude_discovery_spec() -> DiscoverySpec {
             ".volta/bin",
             ".fnm/aliases/default/bin",
             ".asdf/shims",
-        ],
-        well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin"],
-        version_args: &["--version"],
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect(),
+        well_known_absolute: vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+        version_args: vec!["--version".into()],
         version_must_contain: None,
     }
 }
@@ -160,9 +163,15 @@ mod tests {
         let spec = claude_discovery_spec();
         assert_eq!(spec.bin_name, "claude");
         // The official Claude local install dir must be searched.
-        assert!(spec.well_known_relative_to_home.contains(&".claude/local"));
+        assert!(spec
+            .well_known_relative_to_home
+            .iter()
+            .any(|path| path == ".claude/local"));
         // Apple Silicon Homebrew is a critical macOS-GUI fallback.
-        assert!(spec.well_known_absolute.contains(&"/opt/homebrew/bin"));
+        assert!(spec
+            .well_known_absolute
+            .iter()
+            .any(|path| path == "/opt/homebrew/bin"));
     }
 
     #[tokio::test]

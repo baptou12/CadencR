@@ -10,6 +10,7 @@ import {
   createDevSidecarHandle,
   productionDbPath,
   spawnProductionSidecar,
+  waitForDevSidecar,
   type SidecarHandle,
   type SidecarStatusUpdate,
 } from "./sidecar";
@@ -58,6 +59,7 @@ async function prepareRuntime(): Promise<void> {
     });
   } else {
     sidecar = createDevSidecarHandle();
+    await waitForDevSidecar(sidecar, (update) => splash?.setPhase(update.phase, update.detail));
   }
   if (!app.isPackaged && browserBridge)
     await registerBrowserBridgeWithService(sidecar, browserBridge);

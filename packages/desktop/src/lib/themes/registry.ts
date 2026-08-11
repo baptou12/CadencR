@@ -12,7 +12,14 @@ import { MONOKAI_LIGHT_THEME } from "./monokai-light";
 import { ONE_DARK_THEME } from "./one-dark";
 import { ONE_LIGHT_THEME } from "./one-light";
 import { PAPER_OWL_THEME } from "./paper-owl";
-import { THEME_IDS, type ThemeDefinition, type ThemeId } from "./types";
+import { getUserTheme, listUserThemes } from "./user-registry";
+import {
+  THEME_IDS,
+  isUserThemeId,
+  type BuiltInThemeId,
+  type ThemeDefinition,
+  type ThemeId,
+} from "./types";
 
 /** Display order in the settings picker. */
 export const THEME_LIST: ThemeDefinition[] = [
@@ -33,7 +40,7 @@ export const THEME_LIST: ThemeDefinition[] = [
 ];
 
 /** All themes shipped with Cadencr, keyed by id. */
-export const THEMES: Record<ThemeId, ThemeDefinition> = {
+export const THEMES: Record<BuiltInThemeId, ThemeDefinition> = {
   "cadencr-dark": CADENCR_DARK_THEME,
   "cadencr-light": CADENCR_LIGHT_THEME,
   dracula: DRACULA_THEME,
@@ -50,10 +57,22 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   "catppuccin-latte": CATPPUCCIN_LATTE_THEME,
 };
 
-export const DEFAULT_THEME_ID: ThemeId = "cadencr-dark";
+export const DEFAULT_THEME_ID: BuiltInThemeId = "cadencr-dark";
 
-export function isThemeId(value: unknown): value is ThemeId {
+export function isBuiltInThemeId(value: unknown): value is BuiltInThemeId {
   return typeof value === "string" && (THEME_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Whether `value` names a theme the app can actually apply right now — a
+ * built-in, or a user theme that is registered (i.e. it exists on disk and
+ * passed validation). A `user:` id whose file was deleted or broken is
+ * deliberately *not* a theme id, so the caller falls back to the default
+ * instead of applying nothing and leaving the UI unstyled.
+ */
+export function isThemeId(value: unknown): value is ThemeId {
+  if (typeof value !== "string") return false;
+  return isBuiltInThemeId(value) || (isUserThemeId(value) && getUserTheme(value) !== undefined);
 }
 
 export function parseThemeId(value: unknown): ThemeId {
@@ -61,5 +80,11 @@ export function parseThemeId(value: unknown): ThemeId {
 }
 
 export function getTheme(id: ThemeId): ThemeDefinition {
+  if (isUserThemeId(id)) return getUserTheme(id) ?? THEMES[DEFAULT_THEME_ID];
   return THEMES[id];
+}
+
+/** Built-ins followed by the registered user themes, in gallery order. */
+export function allThemes(): ThemeDefinition[] {
+  return [...THEME_LIST, ...listUserThemes()];
 }

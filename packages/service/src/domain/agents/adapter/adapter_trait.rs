@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -32,6 +33,11 @@ pub trait AgentRuntimeAdapter: Send + Sync {
 
     fn parse_permission_request(&self, _raw: &Value) -> Option<RuntimePermissionRequest> {
         None
+    }
+
+    /// Whether a rejected runtime permission response should use the legacy channel.
+    fn uses_legacy_permission_channel_on_response_error(&self) -> bool {
+        false
     }
 
     /// Resolve a resume session ID from the DB-stored runtime_session_id.
@@ -75,15 +81,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         self.catalog_entry_live().await
     }
 
-    /// Live catalog entry with access to persisted settings. Providers whose
-    /// discovery depends on app settings (for example Claude Code profiles
-    /// that inject Bedrock/Vertex env vars) can override this request-aware
-    /// hook while other providers keep the cwd-only default.
-    ///
-    /// `profile` names a Claude Code profile to probe instead of the globally
-    /// active one (so the prompt-area profile selector can preview a profile's
-    /// models without mutating global state). Providers without env profiles
-    /// ignore it.
+    /// Live catalog entry with persisted settings and an optional provider profile.
     async fn catalog_entry_live_for_settings(
         &self,
         _read_pool: &sqlx::SqlitePool,
@@ -113,13 +111,6 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     }
 
     /// Preferred default model id with access to persisted settings.
-    ///
-    /// Mirrors [`catalog_entry_live_for_settings`]: providers whose default
-    /// depends on app settings (Claude Code profiles injecting Bedrock/Vertex
-    /// env) must resolve the default against the *same* probe env the catalog
-    /// uses, otherwise the default-model probe runs with a different env key
-    /// and thrashes the shared catalog cache. Defaults to the settings-agnostic
-    /// [`default_model_id`].
     async fn default_model_id_for_settings(&self, _read_pool: &sqlx::SqlitePool) -> Option<String> {
         self.default_model_id().await
     }
@@ -132,6 +123,11 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// concept; profile-aware providers may return their reserved built-in
     /// profile name (for example `"default"`).
     fn profile_name_for_new_session(&self) -> Option<String> {
+        None
+    }
+
+    /// Provider-owned environment for a new host-initiated session.
+    fn environment_for_new_session(&self) -> Option<std::collections::HashMap<String, String>> {
         None
     }
 
@@ -173,8 +169,9 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Called once at startup for background warmup (e.g. starting sidecar processes).
     fn spawn_startup_warmup(&self) {}
 
-    fn worktree_config_paths(&self) -> &'static [&'static str] {
-        &[]
+    /// Provider config paths copied into a new worktree, relative to the project root.
+    fn worktree_config_paths(&self) -> Vec<Cow<'static, str>> {
+        Vec::new()
     }
 
     async fn on_worktree_created(
@@ -191,7 +188,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
             &label,
             source_project_path,
             worktree_path,
-            paths,
+            &paths,
         )
         .await
     }
@@ -277,7 +274,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Workspace setting used as the default for new conversations. Keeping
     /// this on the adapter avoids provider ids and setting keys in shared
     /// session orchestration.
-    fn access_mode_setting_key(&self) -> Option<&'static str> {
+    fn access_mode_setting_key(&self) -> Option<Cow<'static, str>> {
         None
     }
 
@@ -312,7 +309,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         let setting_key = self.access_mode_setting_key()?;
         let configured = crate::domain::settings::resolve_setting(
             read_pool,
-            setting_key,
+            setting_key.as_ref(),
             None,
             None,
             Some(access_mode_wire(&RuntimeAccessMode::Default)),
@@ -329,17 +326,12 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Wire string the chip lands on for this provider after a session
     /// switches to it (post-`provider.set`). Mirrors `defaultEditModeFor` in
     /// `lib/provider-modes.ts`. Default matches the FE catalog's fallback.
-    fn default_permission_mode_wire(&self) -> &'static str {
-        "acceptEdits"
+    fn default_permission_mode_wire(&self) -> Cow<'static, str> {
+        Cow::Borrowed("acceptEdits")
     }
 
-    /// Wire string the chip should land on after a plan is approved
-    /// (post-`ExitPlanMode`). Mirrors `postPlanApprovalModeFor` in
-    /// `lib/provider-modes.ts`. The `model` hint lets adapters pick a
-    /// classifier-backed mode only when the active model can actually run
-    /// it. Defaults to `default_permission_mode_wire` so adapters opt in
-    /// explicitly to a plan-approval-specific override.
-    fn post_plan_approval_mode_wire(&self, _model: Option<&str>) -> &'static str {
+    /// Wire string selected after plan approval; `model` may refine the choice.
+    fn post_plan_approval_mode_wire(&self, _model: Option<&str>) -> Cow<'static, str> {
         self.default_permission_mode_wire()
     }
 
@@ -356,7 +348,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     fn post_plan_approval_fallback_mode_wire(
         &self,
         _failed_mode_wire: &str,
-    ) -> Option<&'static str> {
+    ) -> Option<Cow<'static, str>> {
         None
     }
 
@@ -435,7 +427,9 @@ mod tests {
             .parse_permission_request(&json!({"type": "none"}))
             .is_none());
         assert!(!adapter.supports_prompt_receipts());
+        assert!(!adapter.uses_legacy_permission_channel_on_response_error());
         assert_eq!(adapter.profile_name_for_new_session(), None);
+        assert_eq!(adapter.environment_for_new_session(), None);
         assert_eq!(
             adapter.user_shell_strategy(),
             RuntimeUserShellStrategy::Unsupported

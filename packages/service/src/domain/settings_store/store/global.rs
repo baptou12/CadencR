@@ -1,6 +1,7 @@
 //! Global (workspace) settings wrappers over the dir-based core functions.
 //! These resolve the active settings dir from `dir::global_dir()`.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::domain::workspace::models::Setting;
@@ -22,6 +23,21 @@ pub fn global_get_nonempty(key: &str) -> Option<String> {
     global_get(key).filter(|v| !v.trim().is_empty())
 }
 
+/// Read the global scalar settings in one pass when the document is healthy.
+///
+/// `global_get` returns `None` both for "this key is unset" and for "the file
+/// couldn't be read", which is fine when the fallback is a harmless default. A
+/// caller whose default *discards data* has to tell those apart: a stray comma
+/// left by a hand-edit must not silently re-enable a destructive pass the user
+/// turned off. A missing file is healthy — that's a workspace with no overrides.
+pub fn global_snapshot() -> Option<BTreeMap<String, String>> {
+    match file::read_file(&global_path()) {
+        Ok(Some(text)) => file::parse_object(&text).ok().map(|(values, _)| values),
+        Ok(None) => Some(BTreeMap::new()),
+        Err(_) => None,
+    }
+}
+
 pub fn global_list() -> Vec<Setting> {
     load(&global_path(), Scope::Workspace)
         .0
@@ -34,11 +50,15 @@ pub fn global_list() -> Vec<Setting> {
 }
 
 pub async fn global_set(key: &str, value: &str) -> Result<(), AppError> {
-    set_value(&global_path(), key, value).await
+    set_value(&global_path(), key, value).await?;
+    super::super::generation::bump_global();
+    Ok(())
 }
 
 pub async fn global_write_content(content: &str) -> Result<Vec<SettingWarning>, AppError> {
-    write_content(&global_path(), Scope::Workspace, content).await
+    let warnings = write_content(&global_path(), Scope::Workspace, content).await?;
+    super::super::generation::bump_global();
+    Ok(warnings)
 }
 
 pub fn global_read_for_edit() -> (PathBuf, String, Vec<SettingWarning>) {
@@ -90,7 +110,9 @@ where
     } else {
         doc.insert(key.to_string(), serde_json::Value::Object(section));
     }
-    file::write_atomic(&path, &file::serialize_document(&doc))
+    file::write_atomic(&path, &file::serialize_document(&doc))?;
+    super::super::generation::bump_global();
+    Ok(())
 }
 
 #[cfg(test)]

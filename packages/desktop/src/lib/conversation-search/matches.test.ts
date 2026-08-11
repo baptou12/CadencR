@@ -30,6 +30,116 @@ describe("blockSearchableText", () => {
     expect(text).toContain("grep foo");
   });
 
+  it("searches a completed Bash call's output from its paired tool_result", () => {
+    // Once a command finishes the backend drops the duplicate output off the
+    // tool_call (`session_tool_output_dedup.rs`), leaving the result row as the
+    // only copy. Reading `toolArgs` alone would stop matching finished commands.
+    const toolCall: AgentBlockData = {
+      id: "t",
+      type: "tool_call",
+      content: "",
+      toolName: "Bash",
+      toolUseId: "tu-1",
+      toolArgs: '{"command":"pnpm test","status":"completed"}',
+    };
+    const result: AgentBlockData = {
+      id: "r",
+      type: "tool_result",
+      content: '{"output":"all 42 tests passed"}',
+      sourceToolName: "Bash",
+    };
+    const resultMap = new Map([["tu-1", result]]);
+
+    expect(blockSearchableText(toolCall, resultMap)).toContain("all 42 tests passed");
+    // Without the map there is nothing left to find — the regression this guards.
+    expect(blockSearchableText(toolCall)).not.toContain("all 42 tests passed");
+  });
+
+  it("keeps a non-Bash tool's arguments searchable when it has a result", () => {
+    // `extractBashResultOutput` returns a plain-string result whole, so
+    // resolving output from the result for *every* tool would take this branch
+    // and drop the args — even though the diff is what renders in the DOM.
+    const editCall: AgentBlockData = {
+      id: "t",
+      type: "tool_call",
+      content: "",
+      toolName: "Edit",
+      toolUseId: "tu-9",
+      toolArgs: '{"file_path":"src/app.ts","old_string":"oldToken","new_string":"newToken"}',
+    };
+    const result: AgentBlockData = {
+      id: "r",
+      type: "tool_result",
+      content: "The file src/app.ts has been updated.",
+      sourceToolName: "Edit",
+    };
+    const resultMap = new Map([["tu-9", result]]);
+
+    const text = blockSearchableText(editCall, resultMap);
+    expect(text).toContain("oldToken");
+    expect(text).toContain("newToken");
+    expect(text).toContain("src/app.ts");
+  });
+
+  it("does not mistake command-shaped custom-tool arguments for Bash", () => {
+    const customCall: AgentBlockData = {
+      id: "t",
+      type: "tool_call",
+      content: "",
+      toolName: "mcp__runner__execute",
+      toolUseId: "tu-custom",
+      toolArgs: JSON.stringify({ command: "deploy", output: "configuration preview" }),
+    };
+    const result: AgentBlockData = {
+      id: "r",
+      type: "tool_result",
+      content: "plain result that is rendered separately",
+      sourceToolName: "mcp__runner__execute",
+    };
+
+    const text = blockSearchableText(customCall, new Map([["tu-custom", result]]));
+    expect(text).toContain("deploy");
+    expect(text).toContain("configuration preview");
+    expect(text).not.toContain("plain result");
+  });
+
+  it("does not pull a Read result's file contents into the tool_call's text", () => {
+    // The Read row never renders that content, so counting it would inflate
+    // match counts against a row the user can't see the match in.
+    const readCall: AgentBlockData = {
+      id: "t",
+      type: "tool_call",
+      content: "",
+      toolName: "Read",
+      toolUseId: "tu-8",
+      toolArgs: '{"file_path":"src/secret.ts"}',
+    };
+    const result: AgentBlockData = {
+      id: "r",
+      type: "tool_result",
+      content: "const zebrafish = 1;",
+      sourceToolName: "Read",
+    };
+
+    const text = blockSearchableText(readCall, new Map([["tu-8", result]]));
+    expect(text).toContain("src/secret.ts");
+    expect(text).not.toContain("zebrafish");
+  });
+
+  it("falls back to the tool_call payload while a command is still running", () => {
+    // Providers that never emit tool_result rows (OpenCode) and in-flight
+    // commands keep their output on the tool_call; it must stay searchable.
+    const running: AgentBlockData = {
+      id: "t",
+      type: "tool_call",
+      content: "",
+      toolName: "Bash",
+      toolUseId: "tu-2",
+      toolArgs: '{"command":"pnpm dev","output":"listening on 1420","status":"running"}',
+    };
+    expect(blockSearchableText(running, new Map())).toContain("listening on 1420");
+  });
+
   it("ignores dividers and turn summaries", () => {
     expect(blockSearchableText(block("d", "ignored", "clear_divider"))).toBe("");
     expect(blockSearchableText(block("s", "ignored", "turn_summary"))).toBe("");

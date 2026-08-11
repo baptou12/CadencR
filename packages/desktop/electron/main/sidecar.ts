@@ -5,26 +5,24 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { createStartupWatchdog, recordStartupProgress, waitForHealthy } from "./sidecar-health";
 import { NEWER_DATABASE_RECOVERY_DETAIL, isNewerDatabaseStartupFailure } from "./startup-recovery";
 
 const SIDECAR_PORT = 5004;
-const HEALTH_RETRIES = 60;
-const HEALTH_INTERVAL_MS = 500;
 const DEFAULT_DEV_API_BASE_URL = "http://127.0.0.1:5005";
 const STDERR_TAIL_LINES = 12;
 const PHASE_PREFIX = "CADENCR_PHASE ";
-
-interface HealthBody {
-  service?: string;
-}
 
 type ServiceProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 export type SidecarPhase =
   | "starting_service"
+  | "waiting_for_service"
   | "backing_up"
   | "backup_failed"
   | "migrating"
+  | "optimizing_storage"
+  | "compacting_database"
   | "importing_usage"
   | "loading_app";
 
@@ -73,6 +71,26 @@ export function createDevSidecarHandle(): SidecarHandle {
   };
 }
 
+/**
+ * Turbo starts the dev service and Electron concurrently. A large copied
+ * database can still be migrating when Electron becomes ready, so wait for the
+ * authenticated health endpoint before any startup API call (including Browser
+ * bridge registration). Production does this inside `spawnProductionSidecar`.
+ */
+export async function waitForDevSidecar(
+  handle: SidecarHandle,
+  onStatus: (update: SidecarStatusUpdate) => void = () => {},
+): Promise<void> {
+  if (!handle.authToken) {
+    throw new Error("Cannot start Cadencr: development service auth token is missing.");
+  }
+  const watchdog = createStartupWatchdog();
+  recordStartupProgress(watchdog, "waiting_for_service");
+  onStatus({ phase: "waiting_for_service" });
+  await waitForHealthy(handle.baseUrl, handle.authToken, () => false, watchdog);
+  onStatus({ phase: "loading_app" });
+}
+
 export function productionDbPath(): string {
   const dbPath = path.join(os.homedir(), ".cadencr", "database", "cadencr.db");
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -115,9 +133,14 @@ export async function spawnProductionSidecar(
   const baseUrl = `http://127.0.0.1:${SIDECAR_PORT}`;
   const authToken = generateAuthToken();
   const onStatus = options.onStatus ?? (() => {});
+  const watchdog = createStartupWatchdog();
+  const reportStatus = (update: SidecarStatusUpdate): void => {
+    recordStartupProgress(watchdog, update.phase);
+    onStatus(update);
+  };
 
   await assertPortAvailable(SIDECAR_PORT);
-  onStatus({ phase: "starting_service" });
+  reportStatus({ phase: "starting_service" });
 
   const child = spawnService(
     productionBinaryPath(),
@@ -138,20 +161,49 @@ export async function spawnProductionSidecar(
     exitSignal = signal;
     console.info(`[cadencr-service] exited code=${code ?? "null"} signal=${signal ?? "null"}`);
   });
-  pumpLogs(child, onStatus, stderrTail);
+  child.on("error", (error) => {
+    exited = true;
+    stderrTail.push(`Failed to start cadencr-service: ${error.message}`);
+  });
+  pumpLogs(child, reportStatus, stderrTail);
 
   try {
-    await waitForHealthy(baseUrl, authToken, () => exited);
+    await waitForHealthy(baseUrl, authToken, () => exited, watchdog);
   } catch (error) {
     const baseMessage = error instanceof Error ? error.message : String(error);
-    throw new Error(describeStartupFailure(baseMessage, stderrTail, exitCode, exitSignal));
+    const failure = new Error(
+      describeStartupFailure(baseMessage, stderrTail, exitCode, exitSignal),
+    );
+    return rethrowAfterCleanup(failure, () => stopChild(child));
   }
-  onStatus({ phase: "loading_app" });
+  reportStatus({ phase: "loading_app" });
   return {
     baseUrl,
     authToken,
     stop: () => stopChild(child),
   };
+}
+
+/**
+ * A sidecar that failed startup has not yet been returned to Electron, so no
+ * global handle can stop it during app shutdown. Always finish cleanup before
+ * surfacing the original failure; otherwise a timed-out migration can keep
+ * running against the database as an orphaned process.
+ */
+export async function rethrowAfterCleanup(
+  failure: Error,
+  cleanup: () => Promise<void>,
+): Promise<never> {
+  try {
+    await cleanup();
+  } catch (cleanupError) {
+    const detail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+    throw new AggregateError(
+      [failure, cleanupError],
+      `${failure.message}\n\nFailed to stop the service after startup failure: ${detail}`,
+    );
+  }
+  throw failure;
 }
 
 function spawnService(
@@ -309,6 +361,10 @@ export function parsePhaseLine(line: string): SidecarStatusUpdate | null {
       return { phase: "backup_failed", detail: detail || undefined };
     case "migrating":
       return { phase: "migrating", detail: detail || undefined };
+    case "optimizing_storage":
+      return { phase: "optimizing_storage", detail: detail || undefined };
+    case "compacting_database":
+      return { phase: "compacting_database", detail: detail || undefined };
     case "importing_usage":
       return { phase: "importing_usage", detail: detail || undefined };
     default:
@@ -318,10 +374,20 @@ export function parsePhaseLine(line: string): SidecarStatusUpdate | null {
 
 async function stopChild(child: ServiceProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
+  const termSent = child.kill("SIGTERM");
+  if (!termSent && !(await waitForExit(child, 100))) {
+    throw new Error("cadencr-service rejected SIGTERM and is still running");
+  }
   if (await waitForExit(child, 2_000)) return;
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-  await waitForExit(child, 2_000);
+  if (child.exitCode === null && child.signalCode === null) {
+    const killSent = child.kill("SIGKILL");
+    if (!killSent && !(await waitForExit(child, 100))) {
+      throw new Error("cadencr-service rejected SIGKILL and is still running");
+    }
+  }
+  if (!(await waitForExit(child, 2_000))) {
+    throw new Error("cadencr-service did not exit after SIGKILL");
+  }
 }
 
 function waitForExit(child: ServiceProcess, timeoutMs: number): Promise<boolean> {
@@ -337,39 +403,4 @@ function waitForExit(child: ServiceProcess, timeoutMs: number): Promise<boolean>
     };
     child.once("exit", onExit);
   });
-}
-
-async function waitForHealthy(
-  baseUrl: string,
-  authToken: string,
-  hasExited: () => boolean,
-): Promise<void> {
-  const url = `${baseUrl}/api/health`;
-  for (let retry = 0; retry < HEALTH_RETRIES; retry++) {
-    if (hasExited()) {
-      throw new Error(`cadencr-service exited before passing health check at ${baseUrl}`);
-    }
-    if (await probeHealth(url, authToken, retry)) return;
-    await new Promise((resolve) => setTimeout(resolve, HEALTH_INTERVAL_MS));
-  }
-  throw new Error(`Health check failed after ${HEALTH_RETRIES} retries at ${baseUrl}`);
-}
-
-async function probeHealth(url: string, authToken: string, retry: number): Promise<boolean> {
-  try {
-    const response = await fetch(url, {
-      headers: { "x-cadencr-token": authToken },
-      signal: AbortSignal.timeout(2_000),
-    });
-    if (!response.ok) return false;
-    const body = (await response.json()) as HealthBody;
-    if (body.service !== "cadencr") {
-      throw new Error(`Health responder identified itself as '${body.service ?? ""}'`);
-    }
-    console.info(`Health check passed after ${retry} retries`);
-    return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Health responder")) throw error;
-    return false;
-  }
 }

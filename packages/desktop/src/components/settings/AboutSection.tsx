@@ -66,7 +66,7 @@ function updateStatusMessage(
     case "downloading":
       return `Downloading update${detail.version ? ` v${detail.version}` : ""}… ${Math.round(detail.progress)}%`;
     case "downloaded":
-      return `Update v${detail.version ?? ""} ready — restart to install.`;
+      return `Update v${detail.version ?? ""} ready. Restart to install.`;
     case "up-to-date":
       return "You're on the latest version.";
     case "available":

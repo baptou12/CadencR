@@ -16,6 +16,13 @@ pub enum AppError {
     BadRequest(String),
     Internal(String),
     Conflict(String),
+    /// An endpoint-specific, stable public error code while preserving the
+    /// repository-wide `{ error, code }` response envelope.
+    Coded {
+        status: StatusCode,
+        code: &'static str,
+        message: String,
+    },
     /// 503 — a downstream resource is temporarily unhealthy. Used by the
     /// LSP host's crash-backoff to signal "retry later", matching the
     /// semantics web clients already understand.
@@ -31,6 +38,7 @@ impl std::fmt::Display for AppError {
             AppError::BadRequest(msg) => write!(f, "Bad request: {msg}"),
             AppError::Internal(msg) => write!(f, "Internal error: {msg}"),
             AppError::Conflict(msg) => write!(f, "Conflict: {msg}"),
+            AppError::Coded { message, .. } => f.write_str(message),
             AppError::ServiceUnavailable(msg) => write!(f, "Service unavailable: {msg}"),
         }
     }
@@ -49,6 +57,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
+            AppError::Coded { status, code, .. } => (*status, *code),
             AppError::ServiceUnavailable(_) => {
                 (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE")
             }
@@ -75,6 +84,16 @@ impl IntoResponse for AppError {
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         AppError::DatabaseError(err.to_string())
+    }
+}
+
+impl AppError {
+    pub fn coded(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        Self::Coded {
+            status,
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -118,5 +137,20 @@ mod tests {
         assert_eq!(body["error"], "Internal server error");
         assert_eq!(body["code"], "DATABASE_ERROR");
         assert!(!body["error"].as_str().unwrap().contains("SELECT"));
+    }
+
+    #[tokio::test]
+    async fn coded_error_preserves_the_public_code_and_message() {
+        let response = AppError::coded(
+            StatusCode::CONFLICT,
+            "PROVIDER_ALREADY_INSTALLED",
+            "provider is already installed",
+        )
+        .into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], "PROVIDER_ALREADY_INSTALLED");
+        assert_eq!(body["error"], "provider is already installed");
     }
 }

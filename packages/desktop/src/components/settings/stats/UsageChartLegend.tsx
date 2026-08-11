@@ -15,7 +15,7 @@ export function UsageChartLegend({ series }: { series: UsageSeries[] }): React.J
         <li
           key={entry.key}
           className="flex items-center gap-1.5 text-[11px]"
-          title={`${entry.label} — ${formatExactNumber(entry.inputTokens)} input, ${formatExactNumber(
+          title={`${entry.label}: ${formatExactNumber(entry.inputTokens)} input, ${formatExactNumber(
             entry.outputTokens,
           )} output`}
         >

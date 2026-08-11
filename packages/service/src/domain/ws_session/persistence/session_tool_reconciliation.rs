@@ -38,10 +38,10 @@ impl WsSessionPersistence {
     async fn persist_unstreamed_assistant_text(
         &mut self,
         session_id: i64,
-        runtime_key: &str,
+        stream_scope: &RuntimeStreamScope,
         message: &RuntimeAssistantMessage,
     ) {
-        if self.streamed_assistant_content.remove(runtime_key) {
+        if self.streamed_assistant_content.remove(stream_scope) {
             return;
         }
         for block in &message.content {

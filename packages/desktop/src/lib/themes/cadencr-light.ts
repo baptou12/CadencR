@@ -1,5 +1,6 @@
 import type { ThemeDefinition } from "./types";
 import { CADENCR_THEME_LOGOS } from "./logos";
+import { NO_TEXTURE } from "./chrome";
 
 /**
  * CadencR Light — the Emerald Reserve system-follow default. A cool-gray rail
@@ -15,6 +16,8 @@ export const CADENCR_LIGHT_THEME: ThemeDefinition = {
   label: "CadencR Light",
   appearance: "light",
   logo: CADENCR_THEME_LOGOS.light,
+  // Same instrument-case shape as CadencR Dark — see the note there.
+  chrome: { chassis: "rail", tabs: "segmented", texture: NO_TEXTURE },
   swatch: {
     background: "#fafafb",
     foreground: "#222429",

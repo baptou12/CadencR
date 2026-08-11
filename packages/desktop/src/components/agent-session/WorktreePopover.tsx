@@ -91,6 +91,8 @@ interface WorktreeButtonGroupProps {
   /** Behaviors to offer. Defaults to all four; the schedule editor drops
    *  "From branch", which its runs can't perform. */
   modes?: readonly WorktreeMode[];
+  /** Bind the cycle shortcut. See `WorktreeChipProps.enableModeShortcut`. */
+  enableModeShortcut?: boolean;
 }
 
 interface BranchPickerProps {
@@ -187,6 +189,7 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
   selectedBranch,
   onSelectedBranchChange,
   modes,
+  enableModeShortcut,
 }: WorktreeButtonGroupProps): ReactElement {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -277,6 +280,7 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
         state={state}
         modes={modes}
         effectHint={effectHint}
+        enableModeShortcut={enableModeShortcut}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::SqlitePool;
+use std::borrow::Cow;
 use std::path::Path;
 
 use super::catalog::fallback_models;
@@ -13,9 +14,10 @@ use super::session::{
 use super::worktree_config;
 use super::{ClaudeCodeAdapter, CLAUDE_CODE_ADAPTER};
 use crate::domain::agents::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimePermissionMode,
-    RuntimePromptCommandPlacement, RuntimePromptCommandPolicy, RuntimeSkillReferenceTrigger,
-    RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeSpawnConfig, RuntimeUserShellStrategy,
+    static_config_paths, AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent,
+    RuntimePermissionMode, RuntimePromptCommandPlacement, RuntimePromptCommandPolicy,
+    RuntimeSkillReferenceTrigger, RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeSpawnConfig,
+    RuntimeUserShellStrategy,
 };
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
@@ -77,8 +79,8 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         });
     }
 
-    fn worktree_config_paths(&self) -> &'static [&'static str] {
-        worktree_config::CONFIG_PATHS
+    fn worktree_config_paths(&self) -> Vec<Cow<'static, str>> {
+        static_config_paths(worktree_config::CONFIG_PATHS)
     }
 
     fn supports_builtin_compact_command(&self) -> bool {
@@ -86,6 +88,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     }
 
     fn supports_prompt_receipts(&self) -> bool {
+        true
+    }
+
+    fn uses_legacy_permission_channel_on_response_error(&self) -> bool {
         true
     }
 
@@ -131,14 +137,14 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     /// to `acceptEdits` otherwise. We consult the live model catalog
     /// (`supports_auto_mode`) so the gate stays in sync with whatever the
     /// CLI advertises rather than baking model-id substrings here.
-    fn post_plan_approval_mode_wire(&self, model: Option<&str>) -> &'static str {
+    fn post_plan_approval_mode_wire(&self, model: Option<&str>) -> Cow<'static, str> {
         if model
             .map(|id| self.model_supports_auto(id))
             .unwrap_or(false)
         {
-            "auto"
+            Cow::Borrowed("auto")
         } else {
-            "acceptEdits"
+            Cow::Borrowed("acceptEdits")
         }
     }
 
@@ -153,9 +159,9 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     fn post_plan_approval_fallback_mode_wire(
         &self,
         failed_mode_wire: &str,
-    ) -> Option<&'static str> {
+    ) -> Option<Cow<'static, str>> {
         if failed_mode_wire == "auto" {
-            Some("acceptEdits")
+            Some(Cow::Borrowed("acceptEdits"))
         } else {
             None
         }
@@ -208,6 +214,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
     fn profile_name_for_new_session(&self) -> Option<String> {
         Some(super::profiles::get_active_profile_name())
+    }
+
+    fn environment_for_new_session(&self) -> Option<std::collections::HashMap<String, String>> {
+        super::profiles::resolve_active_profile_env().1
     }
 
     async fn extra_models(&self, read_pool: &sqlx::SqlitePool) -> Vec<ModelCatalogEntry> {
@@ -356,7 +366,7 @@ fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     use super::super::events::normalize_event;
     use super::super::test_support::new_test_adapter;
@@ -364,6 +374,19 @@ mod tests {
         AgentRuntimeAdapter, RuntimePromptCommandPlacement, RuntimeSkillReferenceTrigger,
         RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeUserShellStrategy,
     };
+
+    #[test]
+    fn fallback_catalog_matches_phase_zero_parity_fixture() {
+        let actual = serde_json::to_value(new_test_adapter().catalog_entry())
+            .expect("Claude fallback catalog should serialize");
+        let expected: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/provider_parity/v1/claude_code_catalog.json"
+        )))
+        .expect("Claude parity fixture should be valid JSON");
+
+        assert_eq!(actual, expected);
+    }
 
     fn init_event(model: &str) -> crate::domain::agents::adapter::RuntimeEvent {
         normalize_event(
@@ -492,6 +515,11 @@ mod tests {
     fn adapter_advertises_prompt_receipts() {
         let adapter = new_test_adapter();
         assert!(adapter.supports_prompt_receipts());
+    }
+
+    #[test]
+    fn adapter_owns_the_legacy_permission_channel_fallback() {
+        assert!(new_test_adapter().uses_legacy_permission_channel_on_response_error());
     }
 
     #[test]

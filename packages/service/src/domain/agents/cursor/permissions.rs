@@ -1,37 +1,14 @@
 use serde_json::Value;
 
-use crate::domain::agents::acp::runtime::permission_events::parse_permission_options;
+use crate::domain::agents::acp::runtime::permission_events::parse_acp_permission_request;
 use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
 
+/// The shared ACP envelope decoder plus Cursor's own wording for the choices,
+/// used when the agent sent a permission request without an options list.
 pub(super) fn parse_permission_request(raw: &Value) -> Option<RuntimePermissionRequest> {
-    if raw.get("type").and_then(Value::as_str) != Some("acp_permission_request") {
-        return None;
-    }
-    let tool_input = raw
-        .get("tool_input")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    Some(RuntimePermissionRequest {
-        request_id: raw.get("request_id").and_then(Value::as_str)?.to_string(),
-        tool_use_id: raw
-            .get("call_id")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        tool_name: raw.get("tool_name").and_then(Value::as_str)?.to_string(),
-        preview: raw
-            .get("preview")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        tool_input,
-        description: raw
-            .get("description")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        pattern: None,
-        options: parse_permission_options(raw.get("options")).unwrap_or_else(default_options),
-    })
+    parse_acp_permission_request(raw, Some(default_options()))
 }
 
 fn default_options() -> Vec<RuntimePermissionOption> {

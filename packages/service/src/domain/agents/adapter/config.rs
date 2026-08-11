@@ -1,8 +1,17 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::session::RuntimeToolPermissionHandler;
+
+/// Wrap a built-in's compiled config-path list in the owned shape
+/// [`super::AgentRuntimeAdapter::worktree_config_paths`] returns. Borrowing
+/// keeps it allocation-free for compiled providers while runtime-registered
+/// ones can hand back owned strings.
+pub fn static_config_paths(paths: &'static [&'static str]) -> Vec<Cow<'static, str>> {
+    paths.iter().copied().map(Cow::Borrowed).collect()
+}
 
 #[derive(Debug, Clone)]
 pub struct RuntimeUsage {

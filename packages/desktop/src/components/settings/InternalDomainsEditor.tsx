@@ -49,7 +49,7 @@ export function InternalDomainsEditor(): ReactElement {
       <div className="flex flex-wrap gap-2">
         {domains.length === 0 ? (
           <span className="text-sm text-muted-foreground">
-            No domains — every link opens in the system browser.
+            No domains. Every link opens in the system browser.
           </span>
         ) : (
           domains.map((domain) => (

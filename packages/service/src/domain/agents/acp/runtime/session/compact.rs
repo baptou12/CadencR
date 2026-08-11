@@ -131,6 +131,7 @@ mod tests {
             mcp_servers: Vec::new(),
             context_window: None,
             current_mode: None,
+            session_config: Default::default(),
         }
     }
 
@@ -243,17 +244,23 @@ mod tests {
         let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
         let (tx, rx) = mpsc::channel(16);
         let event_rx = client.subscribe();
+        let hooks = Arc::new(PlainHooks);
         let cfg = EventLoopConfig {
             session_id,
             current_model: model,
             current_effort: effort,
             current_mode: mode,
+            session_config:
+                crate::domain::agents::acp::runtime::session_config::AcpSessionConfigState::new(
+                    Default::default(),
+                    hooks.clone(),
+                ),
             cwd: PathBuf::from("/tmp"),
             closing: Arc::new(AtomicBool::new(false)),
             pending_permissions: Default::default(),
             session_permissions: Default::default(),
             terminals: Arc::new(TerminalRegistry::default()),
-            hooks: Arc::new(PlainHooks),
+            hooks,
             replay_suppression: Arc::new(AtomicBool::new(false)),
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             indexer: Arc::clone(&indexer),

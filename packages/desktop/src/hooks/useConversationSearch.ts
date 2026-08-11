@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { VirtuosoHandle } from "react-virtuoso";
+import type { AgentBlockData } from "@/components/AgentBlock";
 import type { DisplayItem } from "@/components/agentStreamDisplay";
 import {
   computeConversationMatches,
@@ -35,6 +36,12 @@ export interface ConversationSearchState {
 
 interface UseConversationSearchArgs {
   items: readonly DisplayItem[];
+  /**
+   * Paired tool results, so Bash rows are searched on the same output they
+   * render. Completed commands keep their output only on the result row — see
+   * `blockSearchableText` in `lib/conversation-search/matches`.
+   */
+  toolResultMap?: ReadonlyMap<string, AgentBlockData>;
   virtuosoRef: RefObject<VirtuosoHandle | null>;
   scrollerRef: RefObject<HTMLElement | null>;
 }
@@ -140,6 +147,7 @@ function usePaintConversationMatches({
  */
 export function useConversationSearch({
   items,
+  toolResultMap,
   virtuosoRef,
   scrollerRef,
 }: UseConversationSearchArgs): ConversationSearchState {
@@ -150,8 +158,8 @@ export function useConversationSearch({
 
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
   const matches = useMemo(
-    () => (isOpen ? computeConversationMatches(items, debouncedQuery) : NO_MATCHES),
-    [isOpen, items, debouncedQuery],
+    () => (isOpen ? computeConversationMatches(items, debouncedQuery, toolResultMap) : NO_MATCHES),
+    [isOpen, items, debouncedQuery, toolResultMap],
   );
   // Clamp at read time so a shrinking match set can't leave a stale index (or a
   // transient "4/3") — no extra effect needed.

@@ -25,6 +25,9 @@ const MODEL_GROUP =
   "inline-flex h-8 items-stretch rounded-md border border-[var(--chip-violet-fg)]/15 bg-[var(--chip-violet-bg)]/12 text-[11px] font-medium text-[var(--chip-violet-soft)] shadow-sm";
 const MODEL_SEGMENT = "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
 
+// Rem CQ so the label tracks text scale (same idea as GitTabToggle).
+const COMPACT_LABELS = "@max-[40rem]:hidden";
+
 interface ModelMetaChipProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -279,7 +282,9 @@ function FastModeSegment({
               aria-hidden="true"
             />
           )}
-          <span className={cn(enabled && "tracking-wide")}>Fast</span>
+          <span aria-hidden="true" className={cn(COMPACT_LABELS, enabled && "tracking-wide")}>
+            Fast
+          </span>
         </button>
       </ShortcutTooltip>
     </>

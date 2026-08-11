@@ -97,10 +97,20 @@ impl FormatterEntry {
     /// `DiscoverySpec` for finding the formatter binary via `cli-discovery`.
     pub fn discovery_spec(&self) -> DiscoverySpec {
         DiscoverySpec {
-            bin_name: self.bin_name,
-            well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME.to_vec(),
-            well_known_absolute: WELL_KNOWN_ABSOLUTE.to_vec(),
-            version_args: self.version_args,
+            bin_name: self.bin_name.to_string(),
+            well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            well_known_absolute: WELL_KNOWN_ABSOLUTE
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            version_args: self
+                .version_args
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
             version_must_contain: None,
         }
     }

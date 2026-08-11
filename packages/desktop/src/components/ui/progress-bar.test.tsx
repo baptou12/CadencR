@@ -12,6 +12,7 @@ describe("ProgressBar", () => {
     const { container } = render(<ProgressBar completed={5} total={10} />);
     const bar = container.querySelector("[style]");
     expect(bar).toHaveStyle({ width: "50%" });
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "5");
   });
 
   it("returns null when total is 0", () => {
@@ -22,5 +23,15 @@ describe("ProgressBar", () => {
   it("applies custom className", () => {
     const { container } = render(<ProgressBar completed={1} total={2} className="mt-4" />);
     expect(container.firstChild).toHaveClass("mt-4");
+  });
+
+  it("can hide the count and clamp invalid display values", () => {
+    render(<ProgressBar completed={12} total={10} showCount={false} aria-label="Optimizing" />);
+
+    expect(screen.queryByText("10/10")).not.toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Optimizing" })).toHaveAttribute(
+      "aria-valuenow",
+      "10",
+    );
   });
 });

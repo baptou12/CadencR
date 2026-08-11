@@ -4,17 +4,16 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use agent_client_protocol::schema::v1::SessionConfigOption;
-use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
 use crate::domain::agents::acp::AcpClient;
-use crate::domain::agents::adapter::RuntimeError;
+use crate::domain::agents::adapter::{RuntimeError, RuntimeSessionConfigValue};
 
 use super::config_options::{
     send_set_config_option, set_config_option_model_value, set_config_option_thinking_effort,
 };
+use super::session_config::AcpSessionConfigState;
 use super::thought_level::is_thought_level_config_name;
 
 pub async fn apply_model_config(
@@ -23,9 +22,11 @@ pub async fn apply_model_config(
     current_model: &Arc<RwLock<Option<String>>>,
     current_effort: &Arc<RwLock<Option<String>>>,
     supports_flag: &Arc<AtomicBool>,
+    session_config: &AcpSessionConfigState,
     hooks: &dyn AcpProviderHooks,
     model: &str,
 ) -> Result<(), RuntimeError> {
+    let update_guard = session_config.lock_updates().await;
     let config_value = hooks.model_config_value(model);
     let result = set_config_option_model_value(
         client,
@@ -37,56 +38,58 @@ pub async fn apply_model_config(
         &config_value,
     )
     .await?;
-    if let Some(result) = result {
-        let options = config_options_from_result(result).map_err(|error| {
-            RuntimeError::new(format!(
-                "invalid configOptions returned by ACP model change: {error}"
-            ))
-        })?;
-        if let Some(options) = options {
-            hooks.observe_session_config_options(&options);
-        }
-    }
+    session_config
+        .observe_raw_response(&update_guard, result.as_ref())
+        .await?;
     let companions = hooks.model_config_companions(model);
     let effort_config_id = hooks.thinking_effort_config_id();
     for (config_id, value) in companions {
         let is_effort = effort_config_id.as_deref() == Some(config_id.as_str())
             || is_thought_level_config_name(&config_id);
-        if is_effort {
-            set_config_option_thinking_effort(
-                client,
-                session_id,
-                current_effort,
-                supports_flag,
-                Some(config_id),
-                Some(&value),
-            )
-            .await?;
-        } else {
-            send_set_config_option(client, session_id, supports_flag, &config_id, Some(&value))
+        match value {
+            RuntimeSessionConfigValue::Select(value) if is_effort => {
+                let result = set_config_option_thinking_effort(
+                    client,
+                    session_id,
+                    current_effort,
+                    supports_flag,
+                    Some(config_id),
+                    Some(&value),
+                )
                 .await?;
+                session_config
+                    .observe_raw_response(&update_guard, result.as_ref())
+                    .await?;
+            }
+            value => {
+                let result = send_set_config_option(
+                    client,
+                    session_id,
+                    supports_flag,
+                    &config_id,
+                    Some(&value),
+                )
+                .await?;
+                session_config
+                    .observe_raw_response(&update_guard, result.as_ref())
+                    .await?;
+            }
         }
     }
     Ok(())
-}
-
-fn config_options_from_result(
-    mut result: Value,
-) -> Result<Option<Vec<SessionConfigOption>>, serde_json::Error> {
-    let Some(options) = result.get_mut("configOptions") else {
-        return Ok(None);
-    };
-    serde_json::from_value(options.take()).map(Some)
 }
 
 #[cfg(test)]
 mod tests {
     use super::apply_model_config;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
+    use crate::domain::agents::acp::runtime::session_config::AcpSessionConfigState;
     use crate::domain::agents::acp::runtime::test_support::{
         build_in_memory_client, read_request, send_response,
     };
-    use crate::domain::agents::adapter::{RuntimeError, RuntimePermissionMode};
+    use crate::domain::agents::adapter::{
+        RuntimeError, RuntimePermissionMode, RuntimeSessionConfigValue,
+    };
     use agent_client_protocol::schema::v1::{
         SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };
@@ -151,12 +154,46 @@ mod tests {
             model.to_string()
         }
 
-        fn model_config_companions(&self, _model: &str) -> Vec<(String, String)> {
-            vec![(self.thought_level_id(), "high".to_string())]
+        fn model_config_companions(
+            &self,
+            _model: &str,
+        ) -> Vec<(String, RuntimeSessionConfigValue)> {
+            vec![(
+                self.thought_level_id(),
+                RuntimeSessionConfigValue::Select("high".to_string()),
+            )]
         }
 
         fn thinking_effort_config_id(&self) -> Option<String> {
             Some(self.thought_level_id())
+        }
+    }
+
+    struct BooleanCompanionHooks;
+
+    #[async_trait::async_trait]
+    impl AcpProviderHooks for BooleanCompanionHooks {
+        fn normalize_tool_name(&self, raw: &str) -> String {
+            raw.to_string()
+        }
+
+        fn normalize_tool_input(&self, _tool_name: &str, input: Value) -> Value {
+            input
+        }
+
+        fn mode_for_permission_mode(&self, _mode: RuntimePermissionMode) -> Option<String> {
+            None
+        }
+
+        fn model_config_id(&self) -> Option<&'static str> {
+            Some("model")
+        }
+
+        fn model_config_companions(
+            &self,
+            _model: &str,
+        ) -> Vec<(String, RuntimeSessionConfigValue)> {
+            vec![("fast".to_string(), RuntimeSessionConfigValue::Boolean(true))]
         }
     }
 
@@ -167,6 +204,7 @@ mod tests {
         let current_effort = Arc::new(RwLock::new(None));
         let supports = Arc::new(AtomicBool::new(true));
         let hooks = Arc::new(ModelSpecificCompanionHooks::new("reasoning"));
+        let session_config = AcpSessionConfigState::new(Default::default(), hooks.clone());
 
         let task = tokio::spawn({
             let client = client.clone();
@@ -174,6 +212,7 @@ mod tests {
             let current_effort = Arc::clone(&current_effort);
             let supports = Arc::clone(&supports);
             let hooks = Arc::clone(&hooks);
+            let session_config = session_config.clone();
             async move {
                 apply_model_config(
                     &client,
@@ -181,6 +220,7 @@ mod tests {
                     &current_model,
                     &current_effort,
                     &supports,
+                    &session_config,
                     hooks.as_ref(),
                     "grok-4.5",
                 )
@@ -225,6 +265,7 @@ mod tests {
         let current_effort = Arc::new(RwLock::new(None));
         let supports = Arc::new(AtomicBool::new(true));
         let hooks = Arc::new(ModelSpecificCompanionHooks::new("reasoning"));
+        let session_config = AcpSessionConfigState::new(Default::default(), hooks.clone());
 
         let task = tokio::spawn({
             let client = client.clone();
@@ -232,6 +273,7 @@ mod tests {
             let current_effort = Arc::clone(&current_effort);
             let supports = Arc::clone(&supports);
             let hooks = Arc::clone(&hooks);
+            let session_config = session_config.clone();
             async move {
                 apply_model_config(
                     &client,
@@ -239,6 +281,7 @@ mod tests {
                     &current_model,
                     &current_effort,
                     &supports,
+                    &session_config,
                     hooks.as_ref(),
                     "grok-4.5",
                 )
@@ -257,6 +300,61 @@ mod tests {
         let error = task.await.unwrap().unwrap_err();
         assert!(error
             .to_string()
-            .contains("invalid configOptions returned by ACP model change"));
+            .contains("invalid ACP configOptions response"));
+    }
+
+    #[tokio::test]
+    async fn boolean_companions_keep_their_wire_type() {
+        let (client, mut stdout, mut stdin) = build_in_memory_client().await;
+        let current_model = Arc::new(RwLock::new(None));
+        let current_effort = Arc::new(RwLock::new(None));
+        let supports = Arc::new(AtomicBool::new(true));
+        let hooks = Arc::new(BooleanCompanionHooks);
+        let session_config = AcpSessionConfigState::new(Default::default(), hooks.clone());
+
+        let task = tokio::spawn({
+            let client = client.clone();
+            let hooks = hooks.clone();
+            let session_config = session_config.clone();
+            let current_model = current_model.clone();
+            let current_effort = current_effort.clone();
+            let supports = supports.clone();
+            async move {
+                apply_model_config(
+                    &client,
+                    "session-1",
+                    &current_model,
+                    &current_effort,
+                    &supports,
+                    &session_config,
+                    hooks.as_ref(),
+                    "composer-2.5-fast",
+                )
+                .await
+            }
+        });
+
+        let model_request = read_request(&mut stdin).await;
+        send_response(
+            &mut stdout,
+            model_request["id"].clone(),
+            json!({
+                "configOptions": [SessionConfigOption::boolean("fast", "Fast", false)]
+            }),
+        )
+        .await;
+        let fast_request = read_request(&mut stdin).await;
+        assert_eq!(fast_request["params"]["configId"], "fast");
+        assert_eq!(fast_request["params"]["value"], true);
+        send_response(
+            &mut stdout,
+            fast_request["id"].clone(),
+            json!({
+                "configOptions": [SessionConfigOption::boolean("fast", "Fast", true)]
+            }),
+        )
+        .await;
+
+        task.await.unwrap().unwrap();
     }
 }

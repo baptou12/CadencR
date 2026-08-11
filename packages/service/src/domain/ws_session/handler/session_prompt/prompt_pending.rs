@@ -17,6 +17,7 @@ use super::prompt_worktree::prepare_branch_provisioning;
 use super::user_shell_context::{claim_pending_user_shell_context, PendingUserShellContext};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeSpawnConfig};
+use crate::domain::agents::providers::ProviderAdapterHandle;
 use crate::domain::agents::runtime_adapter;
 use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::workflow::worktree;
@@ -130,7 +131,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
         report_mcp_attach_error(context, error).await;
         return reported_failure(internal_replay, "failed to attach MCP servers");
     }
-    validate_resume_id(adapter, &mut context);
+    validate_resume_id(&*adapter, &mut context);
     let shell_delivery_id = context
         .payload
         .message_uuid
@@ -168,7 +169,7 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
     };
     spawn_runtime(
         context,
-        adapter,
+        &*adapter,
         auto_name_handled,
         receipt_message_uuid,
         dispatch_claim,
@@ -241,7 +242,7 @@ async fn persist_initial_user_message(
 }
 async fn resolve_adapter_or_report(
     context: &PendingPromptContext,
-) -> Option<&'static dyn AgentRuntimeAdapter> {
+) -> Option<ProviderAdapterHandle> {
     match runtime_adapter(&context.provider_id) {
         Some(adapter) => Some(adapter),
         None => {
@@ -325,10 +326,7 @@ fn attach_permission_bridge(context: &mut PendingPromptContext) {
     context.options.permission_handler = Some(Arc::new(bridge));
     context.permission_tx = Some(permission_tx);
 }
-fn validate_resume_id(
-    adapter: &'static dyn AgentRuntimeAdapter,
-    context: &mut PendingPromptContext,
-) {
+fn validate_resume_id(adapter: &dyn AgentRuntimeAdapter, context: &mut PendingPromptContext) {
     let Some(ref session_id) = context.options.resume_session_id else {
         return;
     };
@@ -345,7 +343,7 @@ fn validate_resume_id(
 }
 async fn spawn_runtime(
     mut context: PendingPromptContext,
-    adapter: &'static dyn AgentRuntimeAdapter,
+    adapter: &dyn AgentRuntimeAdapter,
     auto_name_handled: bool,
     receipt_message_uuid: Option<String>,
     dispatch_claim: Option<(i64, String)>,

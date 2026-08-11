@@ -28,7 +28,9 @@ use scoring::score_path;
 
 use crate::domain::editor::service::validate_path;
 use crate::shared::git_cli;
-use crate::shared::image_file::{image_mime_for_path, image_response};
+// The shared image allowlist plus SVG — the single most common logo format.
+use crate::shared::image_file::image_or_svg_mime_for_path as icon_mime_for_path;
+use crate::shared::image_file::image_response;
 
 /// Project setting holding the chosen icon. Values are project-relative when
 /// the file lives inside the repo and absolute when picked from elsewhere.
@@ -42,27 +44,6 @@ const MAX_CANDIDATES: usize = 40;
 /// Icons are decoded by the renderer and held in memory as blob URLs, so they
 /// are capped far below the editor's 25 MB image ceiling.
 const MAX_ICON_BYTES: u64 = 4 * 1024 * 1024;
-
-/// MIME types accepted for a project icon: the shared image allowlist plus SVG.
-///
-/// SVG is the single most common logo format, but it cannot simply be added to
-/// `shared::image_file::image_mime_for_path` — that allowlist is kept in
-/// lockstep with the frontend's `isImageFile` helper, so widening it would also
-/// change the editor and Git diff image routes. Serving SVG is safe here
-/// because icons are only ever rendered through an `<img>` tag, which does not
-/// execute scripts or load external references.
-///
-/// `.icns` is in neither list: Chromium cannot decode it, so offering one as a
-/// choice would render an empty box.
-fn icon_mime_for_path(path: &Path) -> Option<&'static str> {
-    if path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
-    {
-        return Some("image/svg+xml");
-    }
-    image_mime_for_path(path)
-}
 
 /// One plausible logo found in the repository.
 #[derive(Debug, Serialize, utoipa::ToSchema)]

@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { FROST_DARK_THEME } from "./lib/themes/frost-dark";
+import { FROST_LIGHT_THEME } from "./lib/themes/frost-light";
 
 /**
  * Guards the two production-build pitfalls that silently killed the frost
@@ -20,14 +22,23 @@ describe("frost theme CSS", () => {
   });
 
   it("keeps an opaque backdrop root so backdrop-filter paints (crbug.com/380416865)", () => {
-    // :root carries an opaque base; body drops to fully transparent (not the
-    // partial-alpha --background, which disables every backdrop-filter).
-    expect(frostRules).toMatch(
-      /:root\[data-theme="frost-dark"\],\s*:root\[data-theme="frost-light"\]\s*{\s*background-color:\s*var\(--ambient-base\);/s,
+    // The rule is generic now — any theme whose texture declares a base gets an
+    // opaque :root and a fully transparent body (not the partial-alpha
+    // --background, which disables every backdrop-filter on the page).
+    const chromeRules = readFileSync(join(process.cwd(), "src/theme-chrome.css"), "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
     );
-    expect(frostRules).toMatch(
-      /:root\[data-theme="frost-dark"\] body,\s*:root\[data-theme="frost-light"\] body\s*{\s*background-color:\s*transparent;/s,
+    expect(chromeRules).toMatch(
+      /:root\[data-texture-base\]\s*{\s*background-color:\s*var\(--ambient-base\);/s,
     );
+    expect(chromeRules).toMatch(
+      /:root\[data-texture-base\] body\s*{\s*background-color:\s*transparent;/s,
+    );
+    // …which only reaches Frost because Frost's own texture declares that base.
+    // Without it the glass would be flat again, and nothing else would say so.
+    expect(FROST_DARK_THEME.chrome?.texture.base).toBeTruthy();
+    expect(FROST_LIGHT_THEME.chrome?.texture.base).toBeTruthy();
   });
 
   it("gives the sidebar worktree group a visible frost fill without a layout shift", () => {
@@ -43,5 +54,9 @@ describe("frost theme CSS", () => {
     expect(frostRules).toMatch(
       /:root\[data-theme="frost-dark"\]\s+\.worktree-group,\s*:root\[data-theme="frost-light"\]\s+\.worktree-group\s*{\s*background-color:\s*var\(--option-card-bg\);\s*}/s,
     );
+  });
+
+  it("applies the frost blur to tooltip overlays", () => {
+    expect(frostRules.match(/\[data-slot="tooltip-content"\]/g)).toHaveLength(2);
   });
 });

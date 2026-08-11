@@ -40,6 +40,18 @@ pub fn cap_message_content(
     (messages, returned, truncated)
 }
 
+/// Attached to every full-text search result so a caller can tell an empty
+/// result set from an unsearchable one.
+///
+/// `tool_result` rows are deliberately excluded from `agent_messages_fts`
+/// (migration `20260803122000`) — they were 76% of the index. Without this note
+/// a search for a string that only ever appeared in command output returns zero
+/// hits and looks like the string was never there, which is a different and much
+/// more misleading answer than "that content isn't indexed".
+pub const TOOL_RESULTS_NOT_INDEXED: &str =
+    "tool_result content is not full-text indexed; searches match user, assistant, thinking, \
+     tool_call and tool_error messages. Read a session's messages directly to see tool output.";
+
 pub fn fts_literal_query(query: &str) -> Option<String> {
     let query = query.trim();
     if query.is_empty() {

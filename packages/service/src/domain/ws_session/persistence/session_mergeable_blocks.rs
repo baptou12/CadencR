@@ -2,7 +2,7 @@ impl WsSessionPersistence {
     async fn persist_content_block_start(
         &mut self,
         session_id: i64,
-        runtime_key: &str,
+        stream_scope: &RuntimeStreamScope,
         index: u64,
         block: &RuntimeContentBlock,
         ptuid: Option<&str>,
@@ -12,7 +12,7 @@ impl WsSessionPersistence {
             RuntimeContentBlock::Text { text } => {
                 self.insert_mergeable_block(
                     session_id,
-                    runtime_key,
+                    stream_scope,
                     index,
                     MergeableMessageType::Text,
                     text,
@@ -24,7 +24,7 @@ impl WsSessionPersistence {
             RuntimeContentBlock::Thinking { thinking } => {
                 self.insert_mergeable_block(
                     session_id,
-                    runtime_key,
+                    stream_scope,
                     index,
                     MergeableMessageType::Thinking,
                     thinking,
@@ -36,7 +36,7 @@ impl WsSessionPersistence {
             RuntimeContentBlock::ToolUse { id, name, input } => {
                 self.insert_tool_call_block(
                     session_id,
-                    runtime_key,
+                    stream_scope,
                     index,
                     id,
                     name,
@@ -53,7 +53,7 @@ impl WsSessionPersistence {
     async fn persist_content_block_delta(
         &mut self,
         session_id: i64,
-        runtime_key: &str,
+        stream_scope: &RuntimeStreamScope,
         index: u64,
         delta: &RuntimeContentDelta,
         ptuid: Option<&str>,
@@ -62,7 +62,7 @@ impl WsSessionPersistence {
             RuntimeContentDelta::Text { text } => {
                 self.append_mergeable_delta(
                     session_id,
-                    runtime_key,
+                    stream_scope,
                     index,
                     MergeableMessageType::Text,
                     text,
@@ -73,7 +73,7 @@ impl WsSessionPersistence {
             RuntimeContentDelta::Thinking { thinking } => {
                 self.append_mergeable_delta(
                     session_id,
-                    runtime_key,
+                    stream_scope,
                     index,
                     MergeableMessageType::Thinking,
                     thinking,
@@ -82,7 +82,7 @@ impl WsSessionPersistence {
                 .await
             }
             RuntimeContentDelta::InputJson { partial_json } => {
-                self.persist_tool_input_delta(runtime_key, index, partial_json)
+                self.persist_tool_input_delta(stream_scope, index, partial_json)
                     .await
             }
         }
@@ -91,7 +91,7 @@ impl WsSessionPersistence {
     async fn insert_mergeable_block(
         &mut self,
         session_id: i64,
-        runtime_key: &str,
+        stream_scope: &RuntimeStreamScope,
         index: u64,
         message_type: MergeableMessageType,
         content: &str,
@@ -116,10 +116,9 @@ impl WsSessionPersistence {
                 // Record that this runtime session streamed text/thinking this
                 // cycle, so the full-assistant-message fallback knows the text
                 // is already persisted and must not write it again.
-                self.streamed_assistant_content
-                    .insert(runtime_key.to_string());
+                self.streamed_assistant_content.insert(stream_scope.clone());
                 self.pending_mergeable_blocks.insert(
-                    (runtime_key.to_string(), index),
+                    (stream_scope.clone(), index),
                     PendingMergeableBlock {
                         row_id,
                         message_type,
@@ -137,13 +136,13 @@ impl WsSessionPersistence {
     async fn append_mergeable_delta(
         &mut self,
         session_id: i64,
-        runtime_key: &str,
+        stream_scope: &RuntimeStreamScope,
         index: u64,
         message_type: MergeableMessageType,
         delta: &str,
         ptuid: Option<&str>,
     ) -> Option<PersistedMessageRef> {
-        let key = (runtime_key.to_string(), index);
+        let key = (stream_scope.clone(), index);
         if let Some(pending) = self.pending_mergeable_blocks.get(&key).copied() {
             if pending.message_type == message_type {
                 let result =
@@ -164,10 +163,10 @@ impl WsSessionPersistence {
             }
         }
 
-        let current_model = self.current_models.get(runtime_key).cloned();
+        let current_model = self.current_models.get(stream_scope).cloned();
         self.insert_mergeable_block(
             session_id,
-            runtime_key,
+            stream_scope,
             index,
             message_type,
             delta,
@@ -180,7 +179,7 @@ impl WsSessionPersistence {
     async fn insert_tool_call_block(
         &mut self,
         session_id: i64,
-        runtime_key: &str,
+        stream_scope: &RuntimeStreamScope,
         index: u64,
         id: &str,
         name: &str,
@@ -209,21 +208,10 @@ impl WsSessionPersistence {
             }
         };
 
-        let key = (runtime_key.to_string(), index);
+        let key = (stream_scope.clone(), index);
         self.pending_tool_row_ids.insert(key.clone(), row_id);
-        let merge_object_deltas = should_merge_tool_object_deltas(name);
-        self.pending_tool_inputs.insert(
-            key,
-            ToolInputBuffer {
-                accumulated: if merge_object_deltas {
-                    content.clone()
-                } else {
-                    String::new()
-                },
-                replacement_candidate: None,
-                merge_object_deltas,
-            },
-        );
+        self.pending_tool_inputs
+            .insert(key, RuntimeToolInputBuffer::new(name, input));
 
         if !self.file_change_marked && is_file_change_tool_name(name) {
             self.mark_has_file_changes(session_id).await;
@@ -234,11 +222,11 @@ impl WsSessionPersistence {
 
     async fn persist_tool_input_delta(
         &mut self,
-        runtime_key: &str,
+        stream_scope: &RuntimeStreamScope,
         index: u64,
         partial_json: &str,
     ) -> Option<PersistedMessageRef> {
-        let key = (runtime_key.to_string(), index);
+        let key = (stream_scope.clone(), index);
         let parsed = self
             .pending_tool_inputs
             .get_mut(&key)
@@ -260,8 +248,8 @@ impl WsSessionPersistence {
         Some(PersistedMessageRef { id: row_id })
     }
 
-    async fn persist_content_block_stop(&mut self, runtime_key: &str, index: u64) {
-        let key = (runtime_key.to_string(), index);
+    async fn persist_content_block_stop(&mut self, stream_scope: &RuntimeStreamScope, index: u64) {
+        let key = (stream_scope.clone(), index);
         self.pending_mergeable_blocks.remove(&key);
         if let Some(buffer) = self.pending_tool_inputs.remove(&key) {
             self.flush_tool_input_buffer(&key, buffer).await;
@@ -269,14 +257,18 @@ impl WsSessionPersistence {
         self.pending_tool_row_ids.remove(&key);
     }
 
-    async fn flush_tool_input_buffer(&self, key: &(String, u64), buffer: ToolInputBuffer) {
-        if buffer.accumulated.is_empty() {
+    async fn flush_tool_input_buffer(
+        &self,
+        key: &(RuntimeStreamScope, u64),
+        buffer: RuntimeToolInputBuffer,
+    ) {
+        if buffer.accumulated().is_empty() {
             return;
         }
         let Some(&row_id) = self.pending_tool_row_ids.get(key) else {
             return;
         };
-        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&buffer.accumulated) else {
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(buffer.accumulated()) else {
             return;
         };
         let is_trivial_object = parsed.as_object().map_or(false, |obj| obj.is_empty());

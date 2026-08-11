@@ -17,6 +17,53 @@ import type {
 
 import { customInstance } from "../client";
 import type { ErrorType } from "../client";
+/**
+ * ACP Registry agent entry. Field names and shapes follow
+<https://github.com/agentclientprotocol/registry> `agent.schema.json`.
+ */
+export interface AcpAgentEntry {
+  authors?: string[];
+  description: string;
+  /** Optional in the Rust shape because a hand-written local install has
+nothing to download. The registry-import validation profile requires it;
+the local-install profile does not. */
+  distribution?: AcpDistribution;
+  icon?: string;
+  id: string;
+  license?: string;
+  name: string;
+  repository?: string;
+  version: string;
+  website?: string;
+  [key: string]: unknown;
+}
+
+export type AcpBinaryTargetEnv = { [key: string]: string };
+
+export interface AcpBinaryTarget {
+  archive: string;
+  args?: string[];
+  cmd: string;
+  env?: AcpBinaryTargetEnv;
+  sha256?: string;
+}
+
+export type AcpDistributionBinary = { [key: string]: AcpBinaryTarget };
+
+export interface AcpDistribution {
+  binary?: AcpDistributionBinary;
+  npx?: AcpPackageDistribution;
+  uvx?: AcpPackageDistribution;
+}
+
+export type AcpPackageDistributionEnv = { [key: string]: string };
+
+export interface AcpPackageDistribution {
+  args?: string[];
+  env?: AcpPackageDistributionEnv;
+  package: string;
+}
+
 export type AgentBlockChildBlocksAnyOfItem = { [key: string]: unknown };
 
 /**
@@ -171,13 +218,32 @@ export interface AllocatedPort {
   source: PortSource;
 }
 
+export interface ArchivedCleanupRunResponse {
+  /**
+   * Archived conversations currently eligible under the saved policy.
+   * @minimum 0
+   */
+  eligible_features: number;
+  status: ArchivedCleanupRunStatus;
+}
+
+export type ArchivedCleanupRunStatus =
+  (typeof ArchivedCleanupRunStatus)[keyof typeof ArchivedCleanupRunStatus];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ArchivedCleanupRunStatus = {
+  started: "started",
+  already_running: "already_running",
+  nothing_due: "nothing_due",
+} as const;
+
 /**
- * Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`).
+ * Keyed by the discovery id declared by each provider registration.
  */
 export type BinaryDiscoveryResponseProviders = { [key: string]: ProviderDiscovery };
 
 export interface BinaryDiscoveryResponse {
-  /** Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`). */
+  /** Keyed by the discovery id declared by each provider registration. */
   providers: BinaryDiscoveryResponseProviders;
 }
 
@@ -597,6 +663,28 @@ export interface CreateProjectRequest {
   path: string;
 }
 
+/**
+ * Id of the user theme being duplicated, when there is one. Its asset
+files are copied into the new theme's folder — a texture the user can
+see is part of what they picked, so it has to come along.
+ */
+export type CreateThemeRequestCopyAssetsFrom = string | null;
+
+export type CreateThemeRequestCssVars = { [key: string]: string };
+
+export interface CreateThemeRequest {
+  appearance: ThemeAppearance;
+  chrome?: ThemeChrome;
+  /** Id of the user theme being duplicated, when there is one. Its asset
+files are copied into the new theme's folder — a texture the user can
+see is part of what they picked, so it has to come along. */
+  copyAssetsFrom?: CreateThemeRequestCopyAssetsFrom;
+  cssVars: CreateThemeRequestCssVars;
+  /** Human-readable name; the on-disk id is slugified from it. */
+  label: string;
+  xterm: XtermPalette;
+}
+
 export interface CreateWorktreeBody {
   feature_id: number;
   feature_title: string;
@@ -678,6 +766,10 @@ export interface CustomActionVariable {
 
 export interface CustomModelsResponse {
   models: ModelCatalogEntry[];
+}
+
+export interface DeleteThemeResponse {
+  success: boolean;
 }
 
 export interface DeletedResponse {
@@ -1447,6 +1539,18 @@ that grabbed our port before we could bind. */
   status: string;
 }
 
+export type HostInstallationSpecExecutable = null | LocalExecutableSpec;
+
+/**
+ * Host-local installation policy. Never part of the portable entry.
+ */
+export interface HostInstallationSpec {
+  /** A disabled install stays on disk and stays visible, but does not join
+the runtime registry. */
+  enabled?: boolean;
+  executable?: HostInstallationSpecExecutable;
+}
+
 export interface ImagePayload {
   base64: string;
   mimeType: string;
@@ -1498,6 +1602,75 @@ export interface ImportedRecord {
   source_session_id: string;
 }
 
+/**
+ * Stable SCREAMING_SNAKE code when the install cannot launch; `null` when
+it can. This is the only availability signal — the catalog's
+`unavailable` status is derived from the same fact.
+ */
+export type InstalledProviderEntryQuarantineCode = string | null;
+
+/**
+ * Why the install cannot launch, when it cannot.
+ */
+export type InstalledProviderEntryQuarantineMessage = string | null;
+
+export interface InstalledProviderEntry {
+  description: string;
+  enabled: boolean;
+  /** The resolved program. The argument vector is deliberately absent: an
+argument can carry a credential (`--token …`) and, unlike a fixed set of
+env names, there is no generic way to redact one safely. */
+  executable: string;
+  /** Catalog id, owned by the portable ACP registry entry. */
+  id: string;
+  name: string;
+  /** Stable SCREAMING_SNAKE code when the install cannot launch; `null` when
+it can. This is the only availability signal — the catalog's
+`unavailable` status is derived from the same fact. */
+  quarantine_code?: InstalledProviderEntryQuarantineCode;
+  /** Why the install cannot launch, when it cannot. */
+  quarantine_message?: InstalledProviderEntryQuarantineMessage;
+  /** Whether the provider actually joined the runtime registry this boot. */
+  registered: boolean;
+  source_path: string;
+  version: string;
+}
+
+/**
+ * A descriptor mutation is durable immediately, while runtime activation is
+intentionally deferred until restart so the registry stays immutable.
+ */
+export interface InstalledProviderMutationResponse {
+  active_after_restart: boolean;
+  active_now: boolean;
+  enabled_after_restart: boolean;
+  provider_id: string;
+  /** Whether the durable next-boot activation differs from this process. */
+  restart_required: boolean;
+}
+
+/**
+ * The id the descriptor claimed, when it parsed far enough to claim one.
+ */
+export type InstalledProviderRejectionProviderId = string | null;
+
+export interface InstalledProviderRejection {
+  /** Stable SCREAMING_SNAKE code. */
+  code: string;
+  message: string;
+  /** The id the descriptor claimed, when it parsed far enough to claim one. */
+  provider_id?: InstalledProviderRejectionProviderId;
+  source_path: string;
+}
+
+export interface InstalledProvidersResponse {
+  /** Directory the descriptors were read from. Present even when empty so the
+user knows where to put one. */
+  directory: string;
+  installed: InstalledProviderEntry[];
+  rejected: InstalledProviderRejection[];
+}
+
 export interface IsEmptyResponse {
   empty: boolean;
 }
@@ -1534,6 +1707,24 @@ export interface ListImportConversationsResponse {
 
 export interface ListServersResponse {
   servers: ServerProbe[];
+}
+
+/**
+ * Literal environment applied to the child. Mirrors the ACP distribution
+`env` shape. Values are redacted from logs and never leave the service.
+ */
+export type LocalExecutableSpecEnv = { [key: string]: string };
+
+/**
+ * A launch target: program plus argument vector. Never a shell string —
+marketplace data must not be interpolated into a command line.
+ */
+export interface LocalExecutableSpec {
+  args?: string[];
+  command: string;
+  /** Literal environment applied to the child. Mirrors the ACP distribution
+`env` shape. Values are redacted from logs and never leave the service. */
+  env?: LocalExecutableSpecEnv;
 }
 
 export interface LspRootResponse {
@@ -2109,6 +2300,19 @@ export interface ProviderCatalogEntry {
 }
 
 /**
+ * One descriptor file: a Cadencr host envelope wrapping a portable entry.
+
+The envelope is host-owned, so an unknown key here is a mistake rather than
+a field from a newer registry: refuse it instead of ignoring it.
+ */
+export interface ProviderDescriptor {
+  agent: AcpAgentEntry;
+  installation?: HostInstallationSpec;
+  /** @minimum 0 */
+  schema_version: number;
+}
+
+/**
  * User-set override path persisted in settings. `None` if unset.
  */
 export type ProviderDiscoveryOverridePath = string | null;
@@ -2456,6 +2660,109 @@ export interface RunResponse {
   run_id: number;
 }
 
+export type RuntimeSessionConfigChoicesOneOfLayout =
+  (typeof RuntimeSessionConfigChoicesOneOfLayout)[keyof typeof RuntimeSessionConfigChoicesOneOfLayout];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigChoicesOneOfLayout = {
+  ungrouped: "ungrouped",
+} as const;
+
+export type RuntimeSessionConfigChoicesOneOf = {
+  layout: RuntimeSessionConfigChoicesOneOfLayout;
+  options: RuntimeSessionConfigSelectOption[];
+};
+
+export type RuntimeSessionConfigChoicesOneOfThreeLayout =
+  (typeof RuntimeSessionConfigChoicesOneOfThreeLayout)[keyof typeof RuntimeSessionConfigChoicesOneOfThreeLayout];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigChoicesOneOfThreeLayout = {
+  grouped: "grouped",
+} as const;
+
+export type RuntimeSessionConfigChoicesOneOfThree = {
+  groups: RuntimeSessionConfigSelectGroup[];
+  layout: RuntimeSessionConfigChoicesOneOfThreeLayout;
+};
+
+export type RuntimeSessionConfigChoices =
+  | RuntimeSessionConfigChoicesOneOf
+  | RuntimeSessionConfigChoicesOneOfThree;
+
+export type RuntimeSessionConfigKindOneOfType =
+  (typeof RuntimeSessionConfigKindOneOfType)[keyof typeof RuntimeSessionConfigKindOneOfType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigKindOneOfType = {
+  select: "select",
+} as const;
+
+export type RuntimeSessionConfigKindOneOf = {
+  choices: RuntimeSessionConfigChoices;
+  current_value: string;
+  type: RuntimeSessionConfigKindOneOfType;
+};
+
+export type RuntimeSessionConfigKindOneOfThreeType =
+  (typeof RuntimeSessionConfigKindOneOfThreeType)[keyof typeof RuntimeSessionConfigKindOneOfThreeType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const RuntimeSessionConfigKindOneOfThreeType = {
+  boolean: "boolean",
+} as const;
+
+export type RuntimeSessionConfigKindOneOfThree = {
+  current_value: boolean;
+  type: RuntimeSessionConfigKindOneOfThreeType;
+};
+
+export type RuntimeSessionConfigKind =
+  | RuntimeSessionConfigKindOneOf
+  | RuntimeSessionConfigKindOneOfThree;
+
+/**
+ * ACP semantic category (`model`, `thought_level`, custom `_...`, etc.).
+Kept as an opaque string so newer protocol categories round-trip.
+ */
+export type RuntimeSessionConfigOptionAllOfCategory = string | null;
+
+export type RuntimeSessionConfigOptionAllOfDescription = string | null;
+
+export type RuntimeSessionConfigOptionAllOf = {
+  _meta?: unknown;
+  /** ACP semantic category (`model`, `thought_level`, custom `_...`, etc.).
+Kept as an opaque string so newer protocol categories round-trip. */
+  category?: RuntimeSessionConfigOptionAllOfCategory;
+  description?: RuntimeSessionConfigOptionAllOfDescription;
+  id: string;
+  name: string;
+};
+
+export type RuntimeSessionConfigOption = RuntimeSessionConfigKind & RuntimeSessionConfigOptionAllOf;
+
+export interface RuntimeSessionConfigSelectGroup {
+  _meta?: unknown;
+  id: string;
+  name: string;
+  options: RuntimeSessionConfigSelectOption[];
+}
+
+export type RuntimeSessionConfigSelectOptionDescription = string | null;
+
+export interface RuntimeSessionConfigSelectOption {
+  _meta?: unknown;
+  description?: RuntimeSessionConfigSelectOptionDescription;
+  name: string;
+  value: string;
+}
+
+export interface RuntimeSessionConfigSnapshot {
+  options: RuntimeSessionConfigOption[];
+}
+
+export type RuntimeSessionConfigValue = string | boolean;
+
 export interface RuntimeSessionIdPayload {
   runtime_session_id: string;
 }
@@ -2766,6 +3073,17 @@ export interface SessionActionPayload {
   session_id: string;
 }
 
+export interface SessionConfigSetPayload {
+  config_id: string;
+  session_id: string;
+  value: RuntimeSessionConfigValue;
+}
+
+export interface SessionConfigSnapshotPayload {
+  config: RuntimeSessionConfigSnapshot;
+  session_id: string;
+}
+
 export type SessionInitPayloadCwd = string | null;
 
 export type SessionInitPayloadFeatureId = number | null;
@@ -2895,6 +3213,10 @@ export interface SetFeatureProviderSettingRequest {
 export interface SetFeatureSettingRequest {
   key: string;
   value: string;
+}
+
+export interface SetInstalledProviderEnabledRequest {
+  enabled: boolean;
 }
 
 export interface SetModelSettingRequest {
@@ -3111,6 +3433,223 @@ client uses this to auto-switch an idle terminal to a fresh worktree
 while leaving a busy one alone. */
   foreground_active: boolean;
   pty_id: string;
+}
+
+/**
+ * Light/dark classification. Drives `color-scheme`, the logo variant and the
+editor's built-in fallback styling.
+ */
+export type ThemeAppearance = (typeof ThemeAppearance)[keyof typeof ThemeAppearance];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeAppearance = {
+  light: "light",
+  dark: "dark",
+} as const;
+
+/**
+ * How a texture layer composites over what is behind it. The CSS
+`mix-blend-mode` values that are useful for a background wash.
+ */
+export type ThemeBlend = (typeof ThemeBlend)[keyof typeof ThemeBlend];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeBlend = {
+  normal: "normal",
+  multiply: "multiply",
+  screen: "screen",
+  overlay: "overlay",
+  "soft-light": "soft-light",
+  "hard-light": "hard-light",
+  difference: "difference",
+  luminosity: "luminosity",
+} as const;
+
+/**
+ * How the page meets the sidebar.
+ */
+export type ThemeChassis = (typeof ThemeChassis)[keyof typeof ThemeChassis];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeChassis = {
+  flat: "flat",
+  rail: "rail",
+} as const;
+
+/**
+ * The shape of a theme, as opposed to its palette.
+ */
+export interface ThemeChrome {
+  chassis?: ThemeChassis;
+  tabs?: ThemeTabs;
+  texture?: ThemeTexture;
+}
+
+/**
+ * Points at the JSON Schema Cadencr keeps beside this file, so an editor
+completes and checks the document as it is typed (see `schema.rs`).
+Optional and round-tripped rather than required: a theme written before
+this existed, or one whose author deleted the line, is still a theme.
+ */
+export type ThemeDocumentSchema = string | null;
+
+/**
+ * `--token` → CSS color value. Ordered so a round-trip through the editor
+doesn't reshuffle the file.
+ */
+export type ThemeDocumentCssVars = { [key: string]: string };
+
+/**
+ * A user theme exactly as stored in `~/.cadencr/plugins/themes/<id>/theme.json`.
+
+This is the whole extensibility surface of step 1: pure data, no behavior.
+`css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
+values must parse as CSS colors — a theme can never introduce arbitrary CSS.
+ */
+export interface ThemeDocument {
+  /** Points at the JSON Schema Cadencr keeps beside this file, so an editor
+completes and checks the document as it is typed (see `schema.rs`).
+Optional and round-tripped rather than required: a theme written before
+this existed, or one whose author deleted the line, is still a theme. */
+  $schema?: ThemeDocumentSchema;
+  appearance: ThemeAppearance;
+  /** Chassis, tabs and background texture (see `chrome.rs`). Defaulted, so a
+theme file written before chrome existed still parses — it simply gets
+the plain chrome every non-CadencR, non-Frost theme already had. */
+  chrome?: ThemeChrome;
+  /** `--token` → CSS color value. Ordered so a round-trip through the editor
+doesn't reshuffle the file. */
+  cssVars: ThemeDocumentCssVars;
+  label: string;
+  xterm: XtermPalette;
+}
+
+/**
+ * Fine noise laid over the field. The speckle itself is generated; a theme
+picks its color, strength, tile size and how it composites.
+ */
+export interface ThemeGrain {
+  blend: ThemeBlend;
+  color: string;
+  opacity: number;
+  /** Tile size in px. Smaller reads as finer grain. */
+  scale: number;
+}
+
+/**
+ * One drifting, heavily-blurred field of color.
+
+Position is the halo's *center*, as a percentage of the viewport, so a
+texture reads the same on any window shape. `size` is a diameter in `vw`.
+ */
+export interface ThemeHalo {
+  /** Gaussian blur radius, in px. */
+  blur: number;
+  color: string;
+  /** Seconds for one drift cycle. `0` holds the halo still. */
+  drift: number;
+  opacity: number;
+  /** Diameter, in `vw`. */
+  size: number;
+  /** Center, as a percentage of viewport width. */
+  x: number;
+  /** Center, as a percentage of viewport height. */
+  y: number;
+}
+
+/**
+ * An image from the theme's own folder, laid over the field.
+ */
+export interface ThemeImage {
+  /** File name inside the theme directory — `paper.png`, never a path or URL. */
+  asset: string;
+  blend: ThemeBlend;
+  fit: ThemeImageFit;
+  opacity: number;
+  /** Tile size in px. Ignored unless `fit` is `tile`. */
+  scale: number;
+}
+
+/**
+ * How an image texture fills the window.
+ */
+export type ThemeImageFit = (typeof ThemeImageFit)[keyof typeof ThemeImageFit];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeImageFit = {
+  tile: "tile",
+  cover: "cover",
+  contain: "contain",
+} as const;
+
+/**
+ * The offending token (`--background`), or `None` for document-level
+problems such as invalid JSON.
+ */
+export type ThemeIssueToken = string | null;
+
+/**
+ * Why a theme can't be applied. Every issue is surfaced in the gallery; a
+theme with any issue is never registered as applicable.
+ */
+export interface ThemeIssue {
+  message: string;
+  /** The offending token (`--background`), or `None` for document-level
+problems such as invalid JSON. */
+  token?: ThemeIssueToken;
+}
+
+/**
+ * How the active pane tab is drawn.
+ */
+export type ThemeTabs = (typeof ThemeTabs)[keyof typeof ThemeTabs];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ThemeTabs = {
+  underline: "underline",
+  segmented: "segmented",
+} as const;
+
+/**
+ * Flat color behind every layer. `None` leaves the page background alone.
+ */
+export type ThemeTextureBase = string | null;
+
+export type ThemeTextureGrain = null | ThemeGrain;
+
+export type ThemeTextureImage = null | ThemeImage;
+
+/**
+ * Everything painted behind the app, bottom to top: a flat base, drifting
+halos, an image, grain, then an optional veil that dims the lot back down so
+the UI on top stays readable.
+
+The default is empty — no layers, nothing rendered, nothing to pay for.
+ */
+export interface ThemeTexture {
+  /** Flat color behind every layer. `None` leaves the page background alone. */
+  base?: ThemeTextureBase;
+  grain?: ThemeTextureGrain;
+  halos?: ThemeHalo[];
+  image?: ThemeTextureImage;
+  /** Wash the finished field with the page background, so surfaces above it
+keep their contrast. This is what keeps a lively texture legible. */
+  veil?: boolean;
+}
+
+/**
+ * Where a theme is edited. The renderer needs all three to route to the
+conversation; the ws session id is derived from `feature_id`.
+ */
+export interface ThemeWorkspace {
+  /** Whether this call created the conversation. The renderer arranges the
+panes — the theme file beside the agent — only on that first open, so a
+layout the user rearranged afterwards is theirs to keep. */
+  created: boolean;
+  /** The theme directory — the project root, and the agent's cwd. */
+  cwd: string;
+  feature_id: number;
+  project_id: number;
 }
 
 /**
@@ -3412,6 +3951,49 @@ export interface UserMessagePayload {
 }
 
 /**
+ * Asset file name → `data:` URL, for the files the theme's chrome
+references. Inlined rather than served from a URL: the renderer may be
+talking to a remote backend, its CSP allows `data:` images, and a
+stylesheet `url()` can't carry the API token anyway. Empty for the
+themes — nearly all of them — that reference no asset.
+ */
+export type UserThemeAssets = { [key: string]: string };
+
+/**
+ * The document's declared name, kept even when validation failed so the
+gallery can say *which* theme broke. `None` only when the file isn't
+parseable JSON at all.
+ */
+export type UserThemeLabel = string | null;
+
+export type UserThemeTheme = null | ThemeDocument;
+
+/**
+ * One entry in the theme gallery.
+ */
+export interface UserTheme {
+  /** Asset file name → `data:` URL, for the files the theme's chrome
+references. Inlined rather than served from a URL: the renderer may be
+talking to a remote backend, its CSP allows `data:` images, and a
+stylesheet `url()` can't carry the API token anyway. Empty for the
+themes — nearly all of them — that reference no asset. */
+  assets: UserThemeAssets;
+  /** Raw file text, for the JSON editor and for export-to-file. */
+  content: string;
+  /** Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as
+`user:<id>`. */
+  id: string;
+  issues: ThemeIssue[];
+  /** The document's declared name, kept even when validation failed so the
+gallery can say *which* theme broke. `None` only when the file isn't
+parseable JSON at all. */
+  label?: UserThemeLabel;
+  /** Absolute path to `theme.json`, so the gallery can show and copy it. */
+  path: string;
+  theme?: UserThemeTheme;
+}
+
+/**
  * `GET /api/push/vapid-key` response: the server's VAPID public key, base64url,
 for the browser's `pushManager.subscribe({ applicationServerKey })`.
  */
@@ -3453,6 +4035,14 @@ export interface WriteSettingsFileResponse {
   warnings: SettingWarning[];
 }
 
+export interface WriteThemeRequest {
+  content: string;
+}
+
+export interface WriteThemeResponse {
+  theme: UserTheme;
+}
+
 /**
  * Authoritative list of session-domain server → client action names.
 
@@ -3484,6 +4074,7 @@ export const WsSessionAction = {
   compactstarted: "compact.started",
   modelsetok: "model.set.ok",
   effortsetok: "effort.set.ok",
+  configsnapshot: "config.snapshot",
   fast_modesetok: "fast_mode.set.ok",
   modechanged: "mode.changed",
   profilechanged: "profile.changed",
@@ -3494,6 +4085,36 @@ export const WsSessionAction = {
   prompt_received: "prompt_received",
   stream_status: "stream_status",
 } as const;
+
+/**
+ * The xterm.js palette. Terminals are canvas-rendered and can't read CSS
+variables, so every theme carries the palette explicitly.
+ */
+export interface XtermPalette {
+  background: string;
+  black: string;
+  blue: string;
+  brightBlack: string;
+  brightBlue: string;
+  brightCyan: string;
+  brightGreen: string;
+  brightMagenta: string;
+  brightRed: string;
+  brightWhite: string;
+  brightYellow: string;
+  cursor: string;
+  cursorAccent: string;
+  cyan: string;
+  foreground: string;
+  green: string;
+  magenta: string;
+  red: string;
+  selectionBackground: string;
+  selectionForeground: string;
+  selectionInactiveBackground: string;
+  white: string;
+  yellow: string;
+}
 
 export type GetAgentCatalogParams = {
   /**
@@ -3987,6 +4608,262 @@ export function useBinaryDiscovery<
 
   return query;
 }
+
+export const installedProviders = (signal?: AbortSignal) => {
+  return customInstance<InstalledProvidersResponse>({
+    url: `/api/agents/installed-providers`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getInstalledProvidersQueryKey = () => {
+  return [`/api/agents/installed-providers`] as const;
+};
+
+export const getInstalledProvidersQueryOptions = <
+  TData = Awaited<ReturnType<typeof installedProviders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof installedProviders>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getInstalledProvidersQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof installedProviders>>> = ({ signal }) =>
+    installedProviders(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof installedProviders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type InstalledProvidersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof installedProviders>>
+>;
+export type InstalledProvidersQueryError = ErrorType<unknown>;
+
+export function useInstalledProviders<
+  TData = Awaited<ReturnType<typeof installedProviders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof installedProviders>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getInstalledProvidersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const installProvider = (providerDescriptor: ProviderDescriptor, signal?: AbortSignal) => {
+  return customInstance<InstalledProviderMutationResponse>({
+    url: `/api/agents/installed-providers`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: providerDescriptor,
+    signal,
+  });
+};
+
+export const getInstallProviderMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof installProvider>>,
+    TError,
+    { data: ProviderDescriptor },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof installProvider>>,
+  TError,
+  { data: ProviderDescriptor },
+  TContext
+> => {
+  const mutationKey = ["installProvider"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof installProvider>>,
+    { data: ProviderDescriptor }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return installProvider(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type InstallProviderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof installProvider>>
+>;
+export type InstallProviderMutationBody = ProviderDescriptor;
+export type InstallProviderMutationError = ErrorType<void>;
+
+export const useInstallProvider = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof installProvider>>,
+    TError,
+    { data: ProviderDescriptor },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof installProvider>>,
+  TError,
+  { data: ProviderDescriptor },
+  TContext
+> => {
+  const mutationOptions = getInstallProviderMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const removeProvider = (providerId: string) => {
+  return customInstance<InstalledProviderMutationResponse>({
+    url: `/api/agents/installed-providers/${providerId}`,
+    method: "DELETE",
+  });
+};
+
+export const getRemoveProviderMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeProvider>>,
+    TError,
+    { providerId: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeProvider>>,
+  TError,
+  { providerId: string },
+  TContext
+> => {
+  const mutationKey = ["removeProvider"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeProvider>>,
+    { providerId: string }
+  > = (props) => {
+    const { providerId } = props ?? {};
+
+    return removeProvider(providerId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveProviderMutationResult = NonNullable<Awaited<ReturnType<typeof removeProvider>>>;
+
+export type RemoveProviderMutationError = ErrorType<void>;
+
+export const useRemoveProvider = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeProvider>>,
+    TError,
+    { providerId: string },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeProvider>>,
+  TError,
+  { providerId: string },
+  TContext
+> => {
+  const mutationOptions = getRemoveProviderMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const setProviderEnabled = (
+  providerId: string,
+  setInstalledProviderEnabledRequest: SetInstalledProviderEnabledRequest,
+) => {
+  return customInstance<InstalledProviderMutationResponse>({
+    url: `/api/agents/installed-providers/${providerId}/enabled`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: setInstalledProviderEnabledRequest,
+  });
+};
+
+export const getSetProviderEnabledMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setProviderEnabled>>,
+    TError,
+    { providerId: string; data: SetInstalledProviderEnabledRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setProviderEnabled>>,
+  TError,
+  { providerId: string; data: SetInstalledProviderEnabledRequest },
+  TContext
+> => {
+  const mutationKey = ["setProviderEnabled"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setProviderEnabled>>,
+    { providerId: string; data: SetInstalledProviderEnabledRequest }
+  > = (props) => {
+    const { providerId, data } = props ?? {};
+
+    return setProviderEnabled(providerId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetProviderEnabledMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setProviderEnabled>>
+>;
+export type SetProviderEnabledMutationBody = SetInstalledProviderEnabledRequest;
+export type SetProviderEnabledMutationError = ErrorType<void>;
+
+export const useSetProviderEnabled = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setProviderEnabled>>,
+    TError,
+    { providerId: string; data: SetInstalledProviderEnabledRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setProviderEnabled>>,
+  TError,
+  { providerId: string; data: SetInstalledProviderEnabledRequest },
+  TContext
+> => {
+  const mutationOptions = getSetProviderEnabledMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getUnifiedAgents = (params?: GetUnifiedAgentsParams, signal?: AbortSignal) => {
   return customInstance<UnifiedAgentsResponse>({
@@ -14527,6 +15404,58 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
   return useMutation(mutationOptions);
 };
 
+export const runArchivedCleanup = (signal?: AbortSignal) => {
+  return customInstance<ArchivedCleanupRunResponse>({
+    url: `/api/storage-maintenance/archived-cleanup/run`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getRunArchivedCleanupMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runArchivedCleanup>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<Awaited<ReturnType<typeof runArchivedCleanup>>, TError, void, TContext> => {
+  const mutationKey = ["runArchivedCleanup"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof runArchivedCleanup>>, void> = () => {
+    return runArchivedCleanup();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunArchivedCleanupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runArchivedCleanup>>
+>;
+
+export type RunArchivedCleanupMutationError = ErrorType<void>;
+
+export const useRunArchivedCleanup = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runArchivedCleanup>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationResult<Awaited<ReturnType<typeof runArchivedCleanup>>, TError, void, TContext> => {
+  const mutationOptions = getRunArchivedCleanupMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 /**
  * @summary Kill every live shell belonging to a feature. Used when archiving or deleting
 a feature so its terminals don't keep running in a worktree that may be about
@@ -14676,6 +15605,319 @@ export function useListTerminalSessions<
 
   return query;
 }
+
+export const listThemes = (signal?: AbortSignal) => {
+  return customInstance<UserTheme[]>({ url: `/api/themes`, method: "GET", signal });
+};
+
+export const getListThemesQueryKey = () => {
+  return [`/api/themes`] as const;
+};
+
+export const getListThemesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listThemes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listThemes>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListThemesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listThemes>>> = ({ signal }) =>
+    listThemes(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listThemes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListThemesQueryResult = NonNullable<Awaited<ReturnType<typeof listThemes>>>;
+export type ListThemesQueryError = ErrorType<unknown>;
+
+export function useListThemes<
+  TData = Awaited<ReturnType<typeof listThemes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listThemes>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListThemesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const createTheme = (createThemeRequest: CreateThemeRequest, signal?: AbortSignal) => {
+  return customInstance<UserTheme>({
+    url: `/api/themes`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createThemeRequest,
+    signal,
+  });
+};
+
+export const getCreateThemeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTheme>>,
+    TError,
+    { data: CreateThemeRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTheme>>,
+  TError,
+  { data: CreateThemeRequest },
+  TContext
+> => {
+  const mutationKey = ["createTheme"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTheme>>,
+    { data: CreateThemeRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTheme(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateThemeMutationResult = NonNullable<Awaited<ReturnType<typeof createTheme>>>;
+export type CreateThemeMutationBody = CreateThemeRequest;
+export type CreateThemeMutationError = ErrorType<unknown>;
+
+export const useCreateTheme = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTheme>>,
+    TError,
+    { data: CreateThemeRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTheme>>,
+  TError,
+  { data: CreateThemeRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateThemeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const writeTheme = (id: string, writeThemeRequest: WriteThemeRequest) => {
+  return customInstance<WriteThemeResponse>({
+    url: `/api/themes/${id}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: writeThemeRequest,
+  });
+};
+
+export const getWriteThemeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof writeTheme>>,
+    TError,
+    { id: string; data: WriteThemeRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof writeTheme>>,
+  TError,
+  { id: string; data: WriteThemeRequest },
+  TContext
+> => {
+  const mutationKey = ["writeTheme"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof writeTheme>>,
+    { id: string; data: WriteThemeRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return writeTheme(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WriteThemeMutationResult = NonNullable<Awaited<ReturnType<typeof writeTheme>>>;
+export type WriteThemeMutationBody = WriteThemeRequest;
+export type WriteThemeMutationError = ErrorType<unknown>;
+
+export const useWriteTheme = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof writeTheme>>,
+    TError,
+    { id: string; data: WriteThemeRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof writeTheme>>,
+  TError,
+  { id: string; data: WriteThemeRequest },
+  TContext
+> => {
+  const mutationOptions = getWriteThemeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const deleteTheme = (id: string) => {
+  return customInstance<DeleteThemeResponse>({ url: `/api/themes/${id}`, method: "DELETE" });
+};
+
+export const getDeleteThemeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTheme>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteTheme>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteTheme"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTheme>>, { id: string }> = (
+    props,
+  ) => {
+    const { id } = props ?? {};
+
+    return deleteTheme(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteThemeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTheme>>>;
+
+export type DeleteThemeMutationError = ErrorType<unknown>;
+
+export const useDeleteTheme = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTheme>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteTheme>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getDeleteThemeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+/**
+ * @summary The project this theme is edited in, created on first use. A POST because it
+can create a project, a conversation and a git repository; repeating it
+always returns the same ids.
+ */
+export const themeWorkspace = (id: string, signal?: AbortSignal) => {
+  return customInstance<ThemeWorkspace>({
+    url: `/api/themes/${id}/workspace`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getThemeWorkspaceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof themeWorkspace>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof themeWorkspace>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["themeWorkspace"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof themeWorkspace>>, { id: string }> = (
+    props,
+  ) => {
+    const { id } = props ?? {};
+
+    return themeWorkspace(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ThemeWorkspaceMutationResult = NonNullable<Awaited<ReturnType<typeof themeWorkspace>>>;
+
+export type ThemeWorkspaceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary The project this theme is edited in, created on first use. A POST because it
+can create a project, a conversation and a git repository; repeating it
+always returns the same ids.
+ */
+export const useThemeWorkspace = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof themeWorkspace>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof themeWorkspace>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getThemeWorkspaceMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getUsageStats = (params?: GetUsageStatsParams, signal?: AbortSignal) => {
   return customInstance<UsageStatsResponse>({

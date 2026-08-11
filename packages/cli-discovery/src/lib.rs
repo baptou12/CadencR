@@ -46,8 +46,8 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
             // dressed as the requested binary still wouldn't speak the
             // expected protocol, so silently dropping it is safer than
             // honoring an override that will only fail downstream.
-            let probe = probe_version(path, spec.version_args).await;
-            let accept = match (&probe, spec.version_must_contain) {
+            let probe = probe_version(path, &spec.version_args).await;
+            let accept = match (&probe, spec.version_must_contain.as_deref()) {
                 // Filter set: require both the substring and a parsed semver.
                 // The substring alone is too lax — the rustup shim's
                 // "Unknown binary 'rust-analyzer'" error mentions the name
@@ -77,7 +77,7 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
     let env_path = std::env::var_os("PATH");
     walk_path_var(
         env_path.as_deref(),
-        spec.bin_name,
+        &spec.bin_name,
         CandidateSource::EnvPath,
         &mut seen_canonical,
         &mut candidates,
@@ -87,7 +87,7 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
     if let Some(login_path) = login_shell_path().await {
         walk_path_var(
             Some(std::ffi::OsStr::new(login_path.as_str())),
-            spec.bin_name,
+            &spec.bin_name,
             CandidateSource::LoginShellPath,
             &mut seen_canonical,
             &mut candidates,
@@ -109,7 +109,7 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
     let probes = futures::future::join_all(
         candidates
             .iter()
-            .map(|candidate| probe_version(&candidate.path, spec.version_args)),
+            .map(|candidate| probe_version(&candidate.path, &spec.version_args)),
     )
     .await;
 
@@ -117,7 +117,7 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
         .into_iter()
         .zip(probes)
         .filter_map(|(mut candidate, probe)| {
-            if let Some(needle) = spec.version_must_contain {
+            if let Some(needle) = spec.version_must_contain.as_deref() {
                 // Subprocess failed (timeout, missing exec bits we somehow
                 // accepted earlier, etc.) → reject. The filter exists
                 // specifically to weed out shims and we can't validate one
@@ -289,8 +289,8 @@ mod tests {
             "#!/bin/sh\necho \"error: Unknown binary 'rust-analyzer' in official toolchain 'stable-aarch64-apple-darwin'.\" 1>&2\nexit 0\n",
         );
         let mut spec = dummy_spec();
-        spec.bin_name = "rust-analyzer";
-        spec.version_must_contain = Some("rust-analyzer");
+        spec.bin_name = "rust-analyzer".to_string();
+        spec.version_must_contain = Some("rust-analyzer".to_string());
         let via_override = discover_all(&spec, Some(&shim)).await;
         assert!(
             via_override.is_empty(),
@@ -320,7 +320,7 @@ mod tests {
         // Place the shim in an override slot; it must be rejected and we
         // fall through to standard discovery (which here finds nothing).
         let mut spec = dummy_spec();
-        spec.version_must_contain = Some("thing");
+        spec.version_must_contain = Some("thing".to_string());
         let via_override = discover_all(&spec, Some(&shim)).await;
         assert!(
             via_override.iter().all(|c| c.path != shim),
@@ -370,7 +370,7 @@ mod tests {
         }
 
         let mut spec = dummy_spec();
-        spec.version_must_contain = Some("thing");
+        spec.version_must_contain = Some("thing".to_string());
         let found = discover_all(&spec, None).await;
 
         unsafe {

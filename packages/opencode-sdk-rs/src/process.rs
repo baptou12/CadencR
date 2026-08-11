@@ -20,10 +20,10 @@ use crate::error::SdkError;
 /// the well-known install dirs here.
 pub fn opencode_discovery_spec() -> DiscoverySpec {
     DiscoverySpec {
-        bin_name: "opencode",
-        well_known_relative_to_home: vec![".opencode/bin"],
-        well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin"],
-        version_args: &["--version"],
+        bin_name: "opencode".into(),
+        well_known_relative_to_home: vec![".opencode/bin".into()],
+        well_known_absolute: vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+        version_args: vec!["--version".into()],
         version_must_contain: None,
     }
 }
@@ -101,8 +101,14 @@ mod tests {
     fn opencode_discovery_spec_includes_user_install_and_homebrew() {
         let spec = opencode_discovery_spec();
         assert_eq!(spec.bin_name, "opencode");
-        assert!(spec.well_known_relative_to_home.contains(&".opencode/bin"));
-        assert!(spec.well_known_absolute.contains(&"/opt/homebrew/bin"));
+        assert!(spec
+            .well_known_relative_to_home
+            .iter()
+            .any(|path| path == ".opencode/bin"));
+        assert!(spec
+            .well_known_absolute
+            .iter()
+            .any(|path| path == "/opt/homebrew/bin"));
     }
 
     #[tokio::test]

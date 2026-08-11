@@ -47,10 +47,13 @@ pub fn bin_path_for_dir(dir: &Path, bin_name: &str) -> PathBuf {
 
 async fn resolve_npm() -> Result<PathBuf, AppError> {
     let spec = cli_discovery::DiscoverySpec {
-        bin_name: "npm",
-        well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME.to_vec(),
+        bin_name: "npm".into(),
+        well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
         well_known_absolute: npm_well_known_absolute(),
-        version_args: &["--version"],
+        version_args: vec!["--version".into()],
         version_must_contain: None,
     };
     let candidates = cli_discovery::discover_all(&spec, None).await;
@@ -64,9 +67,12 @@ async fn resolve_npm() -> Result<PathBuf, AppError> {
         })
 }
 
-fn npm_well_known_absolute() -> Vec<&'static str> {
-    let mut dirs = HOMEBREW_WELL_KNOWN_ABSOLUTE.to_vec();
-    dirs.push("/usr/bin");
+fn npm_well_known_absolute() -> Vec<String> {
+    let mut dirs: Vec<String> = HOMEBREW_WELL_KNOWN_ABSOLUTE
+        .iter()
+        .map(|value| (*value).to_string())
+        .collect();
+    dirs.push("/usr/bin".to_string());
     dirs
 }
 

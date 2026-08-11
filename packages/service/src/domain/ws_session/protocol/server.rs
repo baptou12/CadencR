@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
+use crate::domain::agents::adapter::{
+    RuntimePermissionDecision, RuntimePermissionOption, RuntimeSessionConfigSnapshot,
+};
 use crate::domain::sessions::models::AgentMessageOrigin;
 pub use crate::domain::sessions::models::UserMessageDeliveryState;
 
@@ -296,6 +298,12 @@ pub struct ModelSetOkPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EffortSetOkPayload {
     pub thinking_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionConfigSnapshotPayload {
+    pub session_id: String,
+    pub config: RuntimeSessionConfigSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

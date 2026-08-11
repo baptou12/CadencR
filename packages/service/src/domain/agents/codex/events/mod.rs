@@ -15,7 +15,9 @@ use super::event_items::{
 use super::event_json::compact_event;
 use super::event_plan::plan_updated_event;
 use super::event_raw::raw_response_item_events;
-use super::event_reasoning::reasoning_delta_event;
+use super::event_reasoning::{
+    reasoning_delta_event, reasoning_summary_part_added, ReasoningDeltaKind,
+};
 use super::event_state::IndexState;
 use super::event_subagent_routes::register_thread_started_route;
 use super::event_usage::usage_event;
@@ -75,8 +77,15 @@ fn dispatch_notification(
         "item/completed" => item_events(params, true, index_state),
         "rawResponseItem/completed" => raw_response_item_events(params, index_state),
         "item/agentMessage/delta" => text_delta_event(params, model, index_state),
-        "item/reasoning/textDelta" | "item/reasoning/summaryTextDelta" => {
-            reasoning_delta_event(params, model, index_state)
+        "item/reasoning/summaryPartAdded" => {
+            reasoning_summary_part_added(params, index_state);
+            Vec::new()
+        }
+        "item/reasoning/textDelta" => {
+            reasoning_delta_event(ReasoningDeltaKind::Content, params, index_state)
+        }
+        "item/reasoning/summaryTextDelta" => {
+            reasoning_delta_event(ReasoningDeltaKind::Summary, params, index_state)
         }
         _ => Vec::new(),
     }

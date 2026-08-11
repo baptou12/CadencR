@@ -1,36 +1,36 @@
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
 use sqlx::SqlitePool;
 
-use super::{provider_catalog_entry_live_for_settings, runtime_adapter};
+use super::registry::provider_identifier_key;
+use super::{provider_catalog_entry_live_for_settings, provider_registry, runtime_adapter};
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Human-facing aliases and model guidance for a provider id.
+///
+/// `Cow` keeps the compiled-in table allocation-free while leaving room for
+/// runtime-registered providers to supply owned metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderAliasMetadata {
-    pub provider_id: &'static str,
-    pub aliases: &'static [&'static str],
-    pub model_guidance: &'static str,
+    pub provider_id: Cow<'static, str>,
+    pub aliases: Vec<Cow<'static, str>>,
+    pub model_guidance: Cow<'static, str>,
 }
 
-const PROVIDER_ALIAS_METADATA: &[ProviderAliasMetadata] = &[
-    ProviderAliasMetadata {
-        provider_id: "claude_code",
-        aliases: &["claude", "claude-code", "Claude Code", "anthropic"],
-        model_guidance: "Use catalog aliases such as opus, opus[1m], sonnet, haiku, or default.",
-    },
-    ProviderAliasMetadata {
-        provider_id: "codex_cli",
-        aliases: &["codex", "codex-cli", "Codex CLI", "openai"],
-        model_guidance: "Use bare Codex/OpenAI-style model ids advertised by the Codex app-server, for example gpt-5.5.",
-    },
-    ProviderAliasMetadata {
-        provider_id: "opencode",
-        aliases: &["open-code", "OpenCode", "open"],
-        model_guidance: "Use OpenCode provider/model ids such as default/default or other ids shown by OpenCode's model catalog.",
-    },
-];
+impl ProviderAliasMetadata {
+    fn from_registration(provider: &super::registry::RegisteredProvider) -> Option<Self> {
+        let metadata = provider.metadata();
+        let model_guidance = metadata.model_guidance()?;
+        Some(Self {
+            provider_id: Cow::Owned(provider.id().to_string()),
+            aliases: metadata.aliases().to_vec(),
+            model_guidance: Cow::Owned(model_guidance.to_string()),
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderModelValidationError {
@@ -114,42 +114,48 @@ impl fmt::Display for ProviderModelValidationError {
 }
 
 pub fn canonical_provider_id(provider_id: &str) -> Option<String> {
-    let normalized = normalized_ref(provider_id);
-    if runtime_adapter(provider_id).is_some() {
-        return Some(provider_id.to_string());
-    }
+    let normalized = provider_identifier_key(provider_id);
 
-    PROVIDER_ALIAS_METADATA
+    provider_registry()
         .iter()
-        .find(|metadata| {
-            normalized_ref(metadata.provider_id) == normalized
-                || metadata
-                    .aliases
+        .find(|provider| {
+            provider_identifier_key(provider.id()) == normalized
+                || provider
+                    .metadata()
+                    .aliases()
                     .iter()
-                    .any(|alias| normalized_ref(alias) == normalized)
+                    .any(|alias| provider_identifier_key(alias) == normalized)
         })
-        .map(|metadata| metadata.provider_id.to_string())
+        .map(|provider| provider.id().to_string())
 }
 
 pub fn valid_provider_ids() -> Vec<String> {
-    super::ADAPTERS
-        .iter()
-        .map(|(provider_id, _)| (*provider_id).to_string())
-        .collect()
+    provider_registry().provider_ids()
 }
 
-pub fn provider_aliases() -> Vec<(&'static str, Vec<&'static str>)> {
-    PROVIDER_ALIAS_METADATA
+pub fn provider_aliases() -> Vec<(String, Vec<String>)> {
+    provider_registry()
         .iter()
-        .map(|metadata| (metadata.provider_id, metadata.aliases.to_vec()))
+        .filter(|provider| !provider.metadata().aliases().is_empty())
+        .map(|provider| {
+            (
+                provider.id().to_string(),
+                provider
+                    .metadata()
+                    .aliases()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            )
+        })
         .collect()
 }
 
 pub fn provider_alias_metadata(provider_id: &str) -> Option<ProviderAliasMetadata> {
-    PROVIDER_ALIAS_METADATA
+    provider_registry()
         .iter()
-        .copied()
-        .find(|metadata| metadata.provider_id == provider_id)
+        .find(|provider| provider.id() == provider_id)
+        .and_then(ProviderAliasMetadata::from_registration)
 }
 
 pub fn canonical_provider_or_error(
@@ -176,7 +182,9 @@ pub async fn resolve_model_or_error_for_profile(
     let provider_id = canonical_provider_or_error(provider_id)?;
     let adapter = runtime_adapter(&provider_id).expect("canonical provider has adapter");
     let static_catalog = adapter.catalog_entry();
-    let catalog = provider_catalog_entry_live_for_settings(read_pool, cwd, profile, adapter).await;
+    let catalog =
+        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, adapter.as_adapter())
+            .await;
     let known_models =
         super::merge_extra_models(static_catalog.models.clone(), catalog.models.clone());
 
@@ -246,7 +254,8 @@ pub async fn provider_model_catalog_entry(
 ) -> Option<ModelCatalogEntry> {
     let adapter = runtime_adapter(provider_id)?;
     let live_catalog =
-        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, adapter).await;
+        provider_catalog_entry_live_for_settings(read_pool, cwd, profile, adapter.as_adapter())
+            .await;
     let selected_model = model_id.or(live_catalog.default_model.as_deref());
     if let Some(model) = selected_model.and_then(|selected_model| {
         live_catalog
@@ -269,17 +278,39 @@ pub async fn provider_model_catalog_entry(
 }
 
 fn suggested_provider_id(provider_id: &str) -> Option<String> {
-    let requested = normalized_ref(provider_id);
-    PROVIDER_ALIAS_METADATA
+    let requested = provider_identifier_key(provider_id);
+    provider_registry()
         .iter()
-        .find(|metadata| {
-            normalized_ref(metadata.provider_id).contains(&requested)
-                || metadata
-                    .aliases
+        .find(|provider| {
+            provider_identifier_key(provider.id()).contains(&requested)
+                || provider
+                    .metadata()
+                    .aliases()
                     .iter()
-                    .any(|alias| normalized_ref(alias).contains(&requested))
+                    .any(|alias| provider_identifier_key(alias).contains(&requested))
         })
-        .map(|metadata| metadata.provider_id.to_string())
+        .map(|provider| provider.id().to_string())
+}
+
+#[cfg(test)]
+mod alias_resolution_tests {
+    use super::canonical_provider_id;
+
+    #[test]
+    fn builtin_aliases_resolve_to_their_canonical_provider() {
+        assert_eq!(
+            canonical_provider_id("claude").as_deref(),
+            Some("claude_code")
+        );
+        assert_eq!(
+            canonical_provider_id("Claude Code").as_deref(),
+            Some("claude_code")
+        );
+        assert_eq!(
+            canonical_provider_id("openai").as_deref(),
+            Some("codex_cli")
+        );
+    }
 }
 
 fn available_model_ids(
@@ -293,13 +324,5 @@ fn available_model_ids(
         .map(|model| model.id.clone())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect()
-}
-
-fn normalized_ref(value: &str) -> String {
-    value
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
         .collect()
 }

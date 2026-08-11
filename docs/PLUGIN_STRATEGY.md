@@ -1,0 +1,158 @@
+# Cadencr Plugin Strategy
+
+Status: proposal with the step-2 backend substrate implemented (rev. 2026-08-03). Grounded in a full audit of the service, desktop, and packaging layers, plus prior-art research (VS Code, Obsidian, Zed, JetBrains, Raycast, Figma) current to mid-2026.
+
+## 0. Thesis
+
+Extensibility ships as a ladder of four steps, each independently mergeable and valuable to users on its own, each building machinery the next step reuses:
+
+1. **Custom themes** — pure data, zero new security surface, immediate visible value. Establishes the import → validate → enable → persist pipeline everything later reuses.
+2. **Bring your own agent (ACP)** — the ACP layer (`packages/service/src/domain/agents/acp/`, ~13k lines) is a strong provider-neutral base; Cursor and OpenCode ride it today, but provider hooks and shared-code leaks still need the boundary work in `docs/PROVIDER_SPEC/BOUNDARIES.md`. Third-party integrations become **standard ACP processes plus distribution manifests, not Cadencr code**.
+3. **Custom tabs** — first user-created tabs ride the existing browser-tab infrastructure; plugin-declared tabs come later, on step 4's foundations.
+4. **Deeper behavior changes** — the plugin system proper: manifests, installer, a `plugin` WS domain, declarative UI contributions. **Declarative-first**: plugins describe UI, first-party React renders it. No third-party JS in the renderer, ever.
+
+Skills and MCP servers are deliberately **not** on this ladder. They are provider-portable configuration with their own ecosystems — the future feature there is a _helper_ that checks and installs them into the user's harness, not a plugin plane (§8). Parked for later.
+
+The strategic model is **Raycast/Figma/Zed (control by construction), not VS Code/Obsidian (control by review)**. Every ecosystem that granted ambient authority at v1 now pays a permanent security tax — the GlassWorm worm (2025–2026) compromised ≥35,800 installs across VS Code/Open VSX via the publish-benign-then-update-malicious pattern. Every ecosystem that constrained authority at v1 trades ecosystem size for near-zero incident load. A small team can only afford the second posture. Constraints can be widened later; they can never be added retroactively.
+
+**"Master of the app" translates to:** core UX rendered only by first-party code; a curated, signed registry with a launch-day kill-switch; a published scope boundary ("core owns X, plugins own Y"); openly asymmetric APIs (first-party privileged, like Raycast/Figma); and a VS Code-style _proposed-API tier_ usable in dev builds but unpublishable, so mistakes never freeze into compatibility contracts.
+
+## 1. Goals / non-goals
+
+**Goals**
+
+- Every step (and every phase inside a step) merges on its own and leaves the user better off — no big-bang branch.
+- Third parties can eventually ship: themes, new agents, workspace tabs, action/prompt packs, settings sections, custom tool-call renderers, sidebar sections.
+- Installing anything third-party never touches the signed app bundle, the renderer CSP, or the app's migration chain.
+- A malicious or broken entry can be remotely disabled within hours.
+- First-party feature velocity is never gated on plugin compatibility.
+
+**Non-goals**
+
+- Arbitrary third-party JS in the Electron renderer (explicitly rejected — Obsidian's unfixable mistake).
+- Migrating first-party providers onto ACP. The native Claude Code adapter carries fidelity ACP doesn't model (thinking blocks, sub-agent trees, compaction signals, background-task lifecycle). ACP is the door for _everyone else_.
+- Plugin-authored sqlx migrations (breaks `version_guard::ensure_database_not_newer` downgrade protection).
+- A backend marketplace service at launch.
+- A skills/MCP capability manager — separate subject, later (§8).
+
+## 2. Step 1 — Custom themes
+
+**Why first:** a theme is pure data (CSS custom-property values), so there is no behavior to sandbox and no review burden beyond schema + contrast checks — yet it is the highest-visibility personalization an IDE can offer. It also forces the small decisions every later step inherits: manifest schema conventions, an install directory, validation, enable/disable UI, and persistence.
+
+**What exists:** the TS theme registry is clean (`lib/themes/registry.ts`; apply = one DOM attribute), but values are build-time CSS. The packaged CSP already allows `style-src 'unsafe-inline'`, so injecting CSS variables at runtime needs no CSP change. `DESIGN.md` defines the token vocabulary.
+
+**Phases (each mergeable):**
+
+- **1a — Themes as data (internal, zero behavior change).** Add `cssVars?: Record<string,string>` to `ThemeDefinition`, inject on apply; port one first-party theme to the data path to prove parity. The allowed variable namespace is the closed set of `DESIGN.md` tokens — themes set known tokens only, never arbitrary CSS.
+- **1b — Theme library (local-first creation).** One "Themes" gallery in the appearance settings showing built-in and user themes side by side: create by **duplicating any built-in theme**, edit as JSON with live reload/preview, enable, export, delete. Schema validation + automated contrast check on every load — one malformed token value silently kills whole gradients (the `hsl(var(--background))` bug class), so errors must surface on the creator's machine before the format freezes into a public contract. Files live under `~/.cadencr/themes/<id>/` (never inside `Contents/Resources` — `signIgnore` + notarization mean bundle writes invalidate the signature); enablement persists in the DB. Keep the editor minimal (duplicate + JSON + live preview = ~80% of the value); a visual token editor is a later phase. Custom Actions is the in-house precedent for DB-backed user-created content with management UI.
+- **1c — Sharing + registry (same gallery, new source).** "Share this theme" exports the JSON and opens a prefilled PR against `cadencr/registry` (marketplace M0 seed, §7 — zero backend); the registry index then appears as just another source in the identical gallery (browse/install/update). The storefront UI thus ships and gets polished on zero-stakes content before any third-party trust decision exists, and publishing is gated on the creator having actually lived with the theme.
+
+## 3. Step 2 — Bring your own agent (ACP)
+
+ACP is the interoperability standard selected for Cadencr's third-party agent boundary. Cadencr already uses the `agent-client-protocol` crate (`packages/service/Cargo.toml`), and `acp/mod.rs` says the client is "intended to be reused by future ACP-based providers." Cursor and OpenCode prove the shared path, but marketplace conformance still needs the generic fixtures and boundary cleanup defined in `docs/PROVIDER_SPEC/BOUNDARIES.md`.
+
+**What exists:** generic subprocess client (`acp/client.rs`, `client_spawn.rs`), session/permission/tool-call/terminal/fs machinery (`acp/runtime/`), capability probing, and a 33-method `AcpProviderHooks` trait with 4 required methods and 29 defaults as reviewed on 2026-08-02. The process boundary is useful, but it is **not an OS sandbox**: `permission_bridge`, `gate_registry`, and `terminal_sandbox` mediate Cadencr protocol operations; they do not stop the child executable from using its ambient filesystem or environment access.
+
+**Phases (each mergeable):**
+
+- **2a — Registry dynamism (internal, zero behavior change). _Implemented in the service._** `static ADAPTERS: &[(&str, &dyn AgentRuntimeAdapter)]` is gone. `providers/registry.rs` owns an ordered `ProviderRegistry` built at runtime from a `BUILTIN_PROVIDERS` factory table and reached through one accessor (`provider_registry()`); every former iteration/lookup site (`provider_catalog_entries_live_for_cwd`, `spawn_runtime_startup_warmups`, `notify_worktree_created_for_all_providers`, `resolve_effective_provider`, `valid_provider_ids`, `canonical_provider_id`, `runtime_adapter`) now goes through it. `runtime_adapter` returns an owned `'static` `ProviderAdapterHandle` (`Borrowed` for Claude Code, whose probe caches live inside the adapter value; `Owned` for the stateless built-ins — the same path an installed provider will take), so the ~37 call sites keep dispatching unchanged via `Deref`. De-staticized: `default_permission_mode_wire`, `post_plan_approval_mode_wire`, `post_plan_approval_fallback_mode_wire`, `access_mode_setting_key`, `worktree_config_paths`, `ProviderAliasMetadata`, and `RuntimeError::CliNotFound { provider }` → `Cow<'static, str>` / owned collections. Parity is frozen by tests in `providers/registry.rs` and `providers/mod.rs`.
+- **2b — User-declared agents, backend substrate. _Implemented in the service._** One data-driven generic ACP adapter (`providers/installed/`) is parameterized by a registry-shaped agent payload plus a Cadencr-owned installation record (source, resolved executable, host policy, enablement, and compatibility state). Descriptors live in `<settings-dir>/providers/*.json`, are read once at startup, and must name a local executable; downloads, hot reload, and desktop management are later increments. Built-ins register first, so a descriptor cannot shadow one; every refusal carries a stable code at `GET /api/agents/installed-providers`. The minimal ACP v1 lifecycle is fixture-backed through direct registry/adapter integration. Do **not** add manifest capability booleans, model/mode lists, permission maps, or auth behavior: `initialize`, session configuration, and standard ACP events are authoritative. This slice does **not** yet provide the previously planned source badge, negotiated-capability summary, generic configuration controls, or installed-provider desktop diagnostics.
+- **2b.1 — Close the local-agent contract. _Backend conformance and session configuration bridge implemented; UI deliberately deferred._** Separate local and strict ACP Registry v1 validation profiles are implemented: local entries may omit `distribution`, while registry entries must satisfy the constraints represented by the pinned v1 schema, including URI formats, non-null typed properties, nested-field refusal, binary cardinality, and lossless root-field round-tripping. Pinned schema plus real-entry fixtures live under `tests/fixtures/acp_registry/v1/`. The fake provider crosses authenticated diagnostics and the real WebSocket session protocol with visible rejection/quarantine assertions. ACP `session/new` / `session/load` configuration is now projected into provider-neutral select/boolean DTOs, and backend-only authenticated `config.get` / `config.set` actions preserve opaque IDs and accept the full returned list as authoritative. No desktop code consumes that bridge in `v0.11.0`: provider origin, diagnostics, management, and generic controls remain deferred until they can ship coherently. Frontend fallbacks remain necessary: `lib/providers.ts` already degrades gracefully for unknown ids, while `lib/provider-modes.ts` and `providers/model_validation.rs` still need catalog-driven behavior.
+- **2c — Discovery + catalog.** `DiscoverySpec` (`packages/cli-discovery/src/types.rs`) gains owned-string variants; optional download recipes reuse the LSP downloader's versioned-install, SHA-256, and `0700` precedents, with distribution-specific integrity rules from `docs/PROVIDER_SPEC/BOUNDARIES.md`. Keep the Cadencr multi-content envelope outside the official ACP Registry agent payload and make compatible payload import/export lossless — interop is a moat (our value is the workspace UX, not transport lock-in). Agent entries join the registry (§7).
+
+## 4. Step 3 — Custom tabs
+
+**Phases (each mergeable):**
+
+- **3a — Groundwork (also fixes a live hazard).** `parseTabKindArray` (`stores/feature-layout-schema.ts:118-126`) rejects the _entire_ saved layout on one unknown tab id — it must drop unknown ids instead, or any later tab removal nukes user layouts. Then open the `TabKind` union (`string & {}`) and back the known kinds with a registry (`getRegisteredTabKinds()`, `FeatureTabs` → `Partial<Record<…>>`). `TabContentRegistry.tsx` + `tab-host-registry.ts` + `FeatureTabDef` are already generic over kind, so this is small — and it unlocks splits, DnD, and layout persistence work for core regardless.
+- **3b — User-created web tabs (first visible value, zero new infra).** Let users add a named tab pointing at a URL — localhost dashboards, Storybook, CI, docs — riding the existing browser-tab infrastructure (scoped, sandboxed, partitioned, bounds-synced `WebContentsView`). This is tab creation as a _user_ feature, before any plugin exists.
+- **3c — Plugin-declared tabs.** Tabs contributed by manifest and rendered from the first-party declarative vocabulary over the `plugin` WS domain. Depends on step 4's foundations; sequenced after 4a/4b.
+
+## 5. Step 4 — Deeper behavior changes (the plugin system proper)
+
+Only here do manifests, an installer, and a plugin runtime arrive. The renderer stays locked down (`sandbox: true`, `contextIsolation: true`, packaged CSP `script-src 'self'`, all navigation denied): first-party host behavior runs in the Rust service, while third-party behavior runs only in a constrained plugin-owned subprocess (often an MCP server bundled by the plugin); plugin _UI_ is declared, and first-party React renders it from a fixed component vocabulary. This is the Raycast model — brand and UX control hold by construction.
+
+**Phases (each mergeable):**
+
+- **4a — Foundations (no user-visible plugins).** Electron hardening (`@electron/fuses` disabling `RunAsNode` / `EnableNodeCliInspectArguments` / `EnableNodeOptionsEnvironmentVariable` + ASAR integrity — ~hours, worth doing regardless and earlier); `plugins (id PK, version, source, enabled, installed_at, manifest_json)` + `plugin_settings` tables mirroring the `feature_settings` EAV shape; `~/.cadencr/plugins/<id>/<version>/` installer copied from the LSP downloader (SHA-256, 0700); a `plugin` WS domain on both sides — backend dispatch is a 3-domain match (`handler/dispatch.rs`), frontend router is a 4-branch if-chain with a **silent** default (`ws-envelope-handler.ts:54-103`); one new branch each, dispatching `{domain:"plugin", action:"<pluginId>.<method>"}` to a per-plugin handler registry, plugin state in its own store namespace.
+- **4b — Contribution surfaces.** The frontend registry refactors (§5.1) — each pays off for core before any plugin uses it (command-palette drift bug, EditorPane cleanup, settings composition). Ship the settings-section registry first as proof-of-pattern; then commands, sidebar sections, tool-call renderers, editor renderers.
+- **4c — Behavior + events.** Plugins subscribe via the `plugin` domain to teed versions of existing broadcasters (session status, feature events, git status, settings, turn lifecycle). The two existing pre-spawn hooks (`prompt_pending.rs` — permission bridge + MCP attach) are the _only_ sanctioned "inject into the agent" points; no new ambient hook API. Plugin processes never receive `CADENCR_AUTH_TOKEN`/`CADENCR_MCP_CONTROL_TOKEN` unscoped — mint per-plugin scoped tokens on the `x-cadencr-mcp-token` pattern, audited. Plugin surfaces are WS-first by design (`openapi.rs`/orval are compile-time, so plugin REST is untyped anyway); if needed, a `/api/plugins/{id}/{*rest}` passthrough, with remote-device reachability a deliberate per-route choice (the `mcp::control` loopback-only precedent).
+- **4d — Escape hatches, in reserve only.** `WebContentsView` panes for plugins that genuinely need arbitrary rendering (infra exists; costs: OS-level overlay, no portal/DnD integration). WASM (`wasm32-wasip2` on wasmtime) hosted in the Rust service — Zed's model — only if demand proves it. **Rejected:** sandboxed iframes (widens CSP), module federation/remote ESM, unsandboxed renderer JS (irreversible).
+
+### 5.1 Frontend extension points (registry refactors)
+
+Small internal refactors that pay off for core regardless of plugins, in rough order of leverage:
+
+| Surface                 | Today                                                                                                                                                                        | Refactor                                                                                                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Workspace tabs**      | `TabKind` string union (`stores/feature-layout-schema.ts:22`); registries already generic                                                                                    | Step 3a above                                                                                                                                                                                                              |
+| **Command palette**     | No command registry; palette is 6 literal `<CommandItem>`s (`CommandPaletteCommands.tsx:66-107`) with hand-duplicated key arrays that ignore user overrides (live drift bug) | `Command { id, title, icon, group, when?, run, shortcutId? }` zustand registry; palette + cheatsheet + shortcuts render from it. Half exists (`lib/shortcuts/registry.ts` + `overrides.ts`).                               |
+| **Editor renderers**    | `EditorPane.tsx:264-317` Suspense ternary chain                                                                                                                              | Ordered `FileRendererDef { id, priority, match(path), Component }[]`. Composes with the existing `untitled://`/`artifact://` scheme pattern so a plugin owns a document type end-to-end (~30 lines, zero behavior change). |
+| **Settings sections**   | `NAV_GROUPS` + JSX list (`routes/settings.tsx:62-133, 221-230`); `SettingsNavSidebar` already prop-driven                                                                    | `SettingsSectionDef { id, label, icon, group, order, Component }[]`; with `useDebouncedSetting` every plugin gets persisted config on day one. Smallest refactor — proof-of-pattern.                                       |
+| **Sidebar**             | Hardcoded JSX (`Sidebar.tsx:36-89`); the `data-nav-*` keyboard contract is already generic                                                                                   | `SidebarSectionDef { id, placement, order, render, navType? }` array; generalize the nav-type switch into a handler map.                                                                                                   |
+| **Tool-call renderers** | Tool-name if-chain (`AgentBlock.tsx:208-259`); MCP namespace already intercepted once (`AgentToolCallBlock.tsx:24` → `McpToolBlock`)                                         | `ToolRendererDef { id, priority, match(block), render }[]` consulted before the built-in chain — lets a plugin ship a rich renderer for its own tools.                                                                     |
+| **Themes**              | Step 1 above                                                                                                                                                                 | —                                                                                                                                                                                                                          |
+
+Precedent that the team already accepts DB-backed, user-contributed UI: **Custom Actions** (`custom_actions/` backend + `CustomActionsBar` frontend). Custom-action packs are cheap early registry content.
+
+## 6. Security invariants
+
+1. Every plugin-reachable HTTP path stays behind `auth_middleware` + the Host/DNS-rebinding check; no router bypasses `build_router`'s stack.
+2. Renderer CSP never widens (`script-src 'self'` packaged is absolute). No plugin JS in the renderer.
+3. Third-party installs never touch the signed bundle or the sqlx migration chain.
+4. Third-party artifacts get their own supply-chain gates (the workspace's `minimumReleaseAge`/`blockExoticSubdeps`/`allowBuilds:false` don't cover them): pinned versions, distribution-specific integrity verification, and no lifecycle scripts. Binary ACP distributions require SHA-256 under Cadencr policy even though the ACP field is optional; package distributions require exact versions and captured package-manager integrity.
+5. **Hash host authority and re-prompt on change.** For plugins, this means declared host capabilities. For agents, this means the signed distribution and launch policy (command, arguments, environment references, sandbox/filesystem scope). Runtime ACP capabilities from `initialize` are compatibility metadata, not a security permission manifest.
+6. **Credential-path protection needs two layers.** Mediated Rust filesystem operations deny access to credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`, SSH keys, `gh` tokens, `.env`). That denylist cannot constrain an executable with ambient OS access, so marketplace-downloaded agent and plugin processes require a workspace-scoped OS sandbox or an explicit unresolved security gate before release.
+7. Scan submitted executable fields, identifiers, keys, and code-bearing content as **bytes**; reject invisible Unicode used for concealment. Do not blanket-reject legitimate variation selectors in human-facing prose or icons.
+8. The Electron fuses + ASAR integrity hardening (§5, 4a) is plugin-independent — do it early. _(Verify exact fuse names against current Electron docs before implementing.)_
+
+## 7. Marketplace
+
+The registry grows one content type per step — themes (step 1c) → agent manifests (step 2c) → action packs and plugin manifests (step 4) — rather than launching as its own project.
+
+**Phase M0 — git registry, no backend.** `cadencr/registry` repo with a JSON index; submissions by PR; CI validates schema, verifies the source repo, lints; index served from a CDN. The Astro landing site (`packages/landing`) renders the index as the storefront. (Raycast, Obsidian, and Zed all launched exactly this way.)
+
+**Phase M1 — integrity.** Content-addressed artifacts, `sha256` pinned in the index; the index itself signed (ed25519/minisign, pubkey compiled into the app). Skip sigstore/transparency logs at this scale; graduate to GitHub-OIDC trusted publishing later.
+
+**Phase M2 — compat + kill-switch.** `min_app_version`/`max_app_version` per entry, served version-appropriately. `blocklist.json` fetched at launch, cached; fail-open on network error, fail-closed on a cached block; auto-disable + user notification. **The single most important operational lever** — GlassWorm's damage came from the detection-to-removal window. It must exist before any marketplace-distributed executable ships, including agent distributions in step 2c and plugins in step 4; theme-only M0 does not require it.
+
+**Phase M3 — hosted index** only when PR review is the bottleneck (search, install counts, featured/editorial).
+
+**Phase M4 — monetization.** Free-only until there's a supply problem. Then BYO-license first (developer sells, platform takes 0% — no payment rails, no tax liability, looks generous). Platform-managed payments only if plugins become a real acquisition channel.
+
+**Review, sized for a small team — automated-first:** the common case needs no human. Themes = schema + auto contrast check. Manifests = validate + repo verify + install-command scan, every version. Humans review exactly three triggers: (1) first submission from a new publisher, (2) any elevated plugin-capability request, (3) any version whose host authority changes — for agents, distribution or launch policy; for plugins, declared capabilities. Changes in negotiated ACP runtime capabilities trigger compatibility diagnostics, not a security approval by themselves.
+
+**Policy, published before the registry opens:**
+
+- Scope boundary doc: what core owns forever vs. what plugins own. Cheapest inoculation against sherlocking backlash (Obsidian took real damage skipping this).
+- Proposed-API tier: unstable APIs usable in dev builds, not publishable.
+- Declared asymmetry: first-party APIs are privileged; say so rather than pretending parity.
+- Developer agreement + takedown process from day one.
+
+## 8. Parked — skills & MCP helper (separate subject, later)
+
+Skills and MCP servers are **not plugins and not registry content**: they are provider-portable configuration with their own ecosystems and registries, which users already manage through each harness's own mechanism (`claude mcp add`, Codex `config.toml`, `.cursor/mcp.json`, `AGENTS.md`). The future feature is a _helper_ — Cadencr assists the user in checking, installing, and keeping these entries healthy in their harness's own config — nothing more. To be designed when picked up; facts worth keeping for that day:
+
+- All four providers already consume `RuntimeSpawnConfig.mcp_servers` uniformly (Claude `--mcp-config`, Codex `config.mcp_servers`, ACP `session/new.mcpServers`); `attach_stdio_mcp` (`runtime_mcp/attach.rs`) is generic over `(name, command, args, env)` — spawn-time injection is available if the helper ever wants it, but writing the harness's own config keeps the harness usable outside Cadencr.
+- This repo's `build:agents-md` mirror (`.claude/rules/*.md` → `AGENTS.md`, enforced pre-commit) is the in-house precedent for cross-format translation.
+- The MCP hardening ideas (tool-name namespacing, capability hashing on declared tools, `mcp_tool_audit_log` routing) live on in §6 and apply to plugin-bundled servers in step 4 regardless.
+
+## 9. Roadmap
+
+| Step                         | Phases                                                                                                                                                                                                                                                                                                             | Size |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- |
+| **1 — Custom themes**        | 1a themes-as-data → 1b user theme import + validation → 1c sharing + themes-only registry (M0)                                                                                                                                                                                                                     | S–M  |
+| **2 — Bring your own agent** | 2a registry dynamism + de-staticization → 2b generic ACP adapter + local agent entries → 2b.1 exact registry profile, host-surface tests, capability-driven DTOs, and local diagnostics UX → 2c discovery recipes + ACP Agent Registry alignment (M1 signing and M2 blocklist land before marketplace executables) | L    |
+| **3 — Custom tabs**          | 3a `parseTabKindArray` fix + open `TabKind` → 3b user web tabs on browser infra → 3c plugin-declared tabs (after 4a/4b)                                                                                                                                                                                            | M    |
+| **4 — Deeper behavior**      | 4a foundations (fuses/ASAR, tables, installer, `plugin` WS domain, M2 kill-switch) → 4b contribution surfaces (§5.1) → 4c behavior + events + scoped tokens → 4d escape hatches only on proven demand; M3/M4 when warranted                                                                                        | XL   |
+
+Each phase merges on its own; gate each step on the previous one running in production. The skills/MCP helper (§8) is scheduled independently, later.
+
+## 10. Risks & open questions
+
+- **ACP fidelity gap:** a generic ACP provider may expose less detail than rich built-in adapters (for example nested subagents or provider-native compaction/background signals). Show negotiated capability coverage and identify the ACP source in the catalog instead of using a quality-coded "community" label or papering over missing detail.
+- **Saved-layout durability** is the sharpest UX edge of custom tabs — the unknown-id tolerance fix (3a) must land _before_ any non-built-in tab ships.
+- **Component vocabulary scope creep:** the declarative UI tier will face constant "can I do X → no." Hold the line; the pressure valve is a first-party component addition, not an escape hatch to raw JS.
+- **Registry ops load:** even automated-first review needs an on-call rotation for the kill-switch. Decide who owns it before M0 opens.
+- **Open (needs a decision, not research):** plugin API versioning scheme (single `apiVersion` int vs semver); whether plugin WS events are remote-device-reachable at launch (recommend: loopback-only first); registry naming ("Cadencr Registry" vs "Extensions").
+- **Verification debt:** monetization norms, Figma `networkAccess` details, and exact Electron fuse names came from model knowledge, not primary sources — confirm before any public developer docs.

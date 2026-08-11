@@ -13,6 +13,8 @@ interface SettingsJsonEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
+  /** Noun used in the save toasts / error copy. Defaults to "Settings". */
+  entityLabel?: string;
   path?: string;
   /** Current document text, seeded into the editor on open. */
   initialContent: string;
@@ -31,6 +33,7 @@ export default function SettingsJsonEditorDialog({
   open,
   onOpenChange,
   title,
+  entityLabel = "Settings",
   path,
   initialContent,
   isSaving,
@@ -52,14 +55,14 @@ export default function SettingsJsonEditorDialog({
       if (warnings.length > 0) {
         toast.warning(
           warnings.length === 1
-            ? "Settings saved with 1 warning"
-            : `Settings saved with ${warnings.length} warnings`,
+            ? `${entityLabel} saved with 1 warning`
+            : `${entityLabel} saved with ${warnings.length} warnings`,
         );
       } else {
-        toast.success("Settings saved");
+        toast.success(`${entityLabel} saved`);
       }
     } catch (e) {
-      const message = apiErrorMessage(e, "Failed to save settings");
+      const message = apiErrorMessage(e, `Failed to save ${entityLabel.toLowerCase()}`);
       setError(message);
       toast.error(message);
     }

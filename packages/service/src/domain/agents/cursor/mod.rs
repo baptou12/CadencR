@@ -9,20 +9,21 @@ mod acp;
 mod catalog;
 mod commands;
 mod permissions;
+mod runtime_error;
 mod worktree_config;
 
 use async_trait::async_trait;
 use serde_json::Value;
+use std::borrow::Cow;
 
 use super::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAccessMode, RuntimeCompactionStrategy,
-    RuntimeError, RuntimePermissionMode, RuntimePermissionRequest, RuntimeSlashCommand,
-    RuntimeSpawnConfig,
+    static_config_paths, AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAccessMode,
+    RuntimeCompactionStrategy, RuntimeError, RuntimePermissionMode, RuntimePermissionRequest,
+    RuntimeSlashCommand, RuntimeSpawnConfig,
 };
 
 pub struct CursorAdapter;
 
-pub static CURSOR_ADAPTER: CursorAdapter = CursorAdapter;
 pub const PROVIDER_ID: &str = "cursor";
 pub const ACCESS_MODE_SETTING_KEY: &str = "cursor_access_mode";
 
@@ -63,8 +64,8 @@ impl AgentRuntimeAdapter for CursorAdapter {
         });
     }
 
-    fn worktree_config_paths(&self) -> &'static [&'static str] {
-        worktree_config::CONFIG_PATHS
+    fn worktree_config_paths(&self) -> Vec<Cow<'static, str>> {
+        static_config_paths(worktree_config::CONFIG_PATHS)
     }
 
     async fn runtime_slash_commands(
@@ -87,8 +88,8 @@ impl AgentRuntimeAdapter for CursorAdapter {
         )
     }
 
-    fn default_permission_mode_wire(&self) -> &'static str {
-        "default"
+    fn default_permission_mode_wire(&self) -> Cow<'static, str> {
+        Cow::Borrowed("default")
     }
 
     fn supports_access_mode(&self, _mode: &RuntimeAccessMode) -> bool {
@@ -125,8 +126,8 @@ impl AgentRuntimeAdapter for CursorAdapter {
         launches_sandboxless(from) != launches_sandboxless(Some(to))
     }
 
-    fn access_mode_setting_key(&self) -> Option<&'static str> {
-        Some(ACCESS_MODE_SETTING_KEY)
+    fn access_mode_setting_key(&self) -> Option<Cow<'static, str>> {
+        Some(Cow::Borrowed(ACCESS_MODE_SETTING_KEY))
     }
 
     async fn session_finished(&self, runtime_session_id: &str) -> bool {
@@ -163,7 +164,7 @@ mod tests {
         assert!(adapter.supports_access_mode(&RuntimeAccessMode::AutoReview));
         assert_eq!(adapter.default_permission_mode_wire(), "default");
         assert_eq!(
-            adapter.access_mode_setting_key(),
+            adapter.access_mode_setting_key().as_deref(),
             Some("cursor_access_mode")
         );
         assert!(adapter.applies_access_mode_in_place());

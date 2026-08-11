@@ -1,5 +1,6 @@
 pub mod acp;
 pub mod adapter;
+pub mod canonical;
 pub mod claude_code;
 pub mod codex;
 pub mod config_migration;
@@ -16,6 +17,6 @@ pub mod runtime;
 
 pub use discovery::apply_binary_overrides_from_settings;
 pub use providers::{
-    resolve_effective_provider, runtime_adapter, runtime_session_finished,
+    default_provider_id, resolve_effective_provider, runtime_adapter, runtime_session_finished,
     shutdown_runtime_servers, spawn_runtime_startup_warmups,
 };

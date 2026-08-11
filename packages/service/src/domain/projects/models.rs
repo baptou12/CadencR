@@ -3,6 +3,14 @@ use utoipa::ToSchema;
 
 pub use crate::domain::agents::runtime::ProviderSettings as ProjectProviderSettings;
 
+/// `projects.kind` for the project Cadencr creates to hold a user theme.
+///
+/// It is listed and worked in like any project the user added (the column
+/// defaults to `user`, so nothing they added is affected). The marker exists so
+/// the theme that owns the project can find it again — to open it, to rename it
+/// when the theme is renamed, and to delete it with the theme.
+pub const THEME_PROJECT_KIND: &str = "theme";
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Project {
     pub id: i64,

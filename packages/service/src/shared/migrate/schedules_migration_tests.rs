@@ -95,6 +95,7 @@ async fn migrated_pool() -> SqlitePool {
         .await
         .unwrap();
     legacy_schema(&pool).await;
+    super::test_fixtures::create_schedules_migration_prerequisites(&pool).await;
     seed_migrations_before_target(&pool).await;
     run_migrations(&MigrationContext::pool_only(&pool))
         .await

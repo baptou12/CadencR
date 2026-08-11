@@ -73,10 +73,11 @@ export function buildStartupRecovery(input: StartupRecoveryInput): StartupRecove
 export function findLatestPreMigrationBackup(dbPath: string): BackupCandidate | null {
   const dir = path.dirname(dbPath);
   if (!existsSync(dir)) return null;
+  const identity = databaseIdentity(dbPath);
 
   let latest: BackupCandidate | null = null;
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith(".cadencr.backup.db")) continue;
+    if (!isPreMigrationBackupName(name, identity)) continue;
     const candidatePath = path.join(dir, name);
     const candidate = {
       path: candidatePath,
@@ -92,6 +93,39 @@ export function findLatestPreMigrationBackup(dbPath: string): BackupCandidate | 
   }
 
   return latest;
+}
+
+function databaseIdentity(dbPath: string): string {
+  return `db-${Buffer.from(path.basename(dbPath), "utf8").toString("hex")}`;
+}
+
+export function managedBackupFileName(dbPath: string, version: string, timestamp: string): string {
+  return `${databaseIdentity(dbPath)}.${version}.${timestamp}.cadencr.backup.db`;
+}
+
+function isPreMigrationBackupName(name: string, expectedIdentity: string): boolean {
+  const suffix = ".cadencr.backup.db";
+  if (!name.endsWith(suffix)) return false;
+  const stem = name.slice(0, -suffix.length);
+  const identitySeparator = stem.indexOf(".");
+  const timestampSeparator = stem.lastIndexOf(".");
+  if (identitySeparator <= 0 || timestampSeparator <= identitySeparator) return false;
+  const identity = stem.slice(0, identitySeparator);
+  const version = stem.slice(identitySeparator + 1, timestampSeparator);
+  const timestamp = stem.slice(timestampSeparator + 1);
+  if (identity !== expectedIdentity) return false;
+  if (!/^db-(?:[0-9a-f]{2})+$/.test(identity)) return false;
+  if (!/^v?\d+(?:\.\d+){1,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})-(\d{2})$/.exec(timestamp);
+  if (!match) return false;
+  const [, , month, day, hour] = match;
+  return (
+    Number(month) >= 1 &&
+    Number(month) <= 12 &&
+    Number(day) >= 1 &&
+    Number(day) <= 31 &&
+    Number(hour) <= 23
+  );
 }
 
 const ACTION_IDS = new Set<StartupRecoveryActionId>([

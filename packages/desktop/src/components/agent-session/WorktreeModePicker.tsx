@@ -9,10 +9,13 @@ import { CheckIcon, ChevronDownIcon, GitBranchIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useScopedShortcut } from "@/hooks/useShortcut";
+import { ResolvedShortcutHint } from "@/components/KbdShortcut";
 import {
   WORKTREE_MODES,
   describeWorktreeMode,
   isWorktreeModeDisabled,
+  nextWorktreeMode,
   type BranchWorktreeState,
   type WorktreeMode,
 } from "@/lib/worktree-mode";
@@ -35,6 +38,8 @@ interface WorktreeModePickerProps {
   /** Future-tense summary of what the first prompt will do — surfaced as a
    *  footer so the deferred-until-send behavior is explicit. `null` hides it. */
   effectHint?: string | null;
+  /** Bind the cycle shortcut. See `WorktreeChipProps.enableModeShortcut`. */
+  enableModeShortcut?: boolean;
 }
 
 export const WorktreeModePicker = memo(function WorktreeModePicker({
@@ -43,6 +48,7 @@ export const WorktreeModePicker = memo(function WorktreeModePicker({
   state,
   modes = WORKTREE_MODES,
   effectHint,
+  enableModeShortcut = true,
 }: WorktreeModePickerProps): ReactElement {
   const [open, setOpen] = useState(false);
   const active = modeUsesWorktree(mode);
@@ -54,6 +60,20 @@ export const WorktreeModePicker = memo(function WorktreeModePicker({
     },
     [onModeChange],
   );
+
+  // Cycles the behavior in place — no popover, matching the thinking-effort and
+  // permission-mode chips. The trigger's `SlidingText` animates the new label,
+  // so the change is still visible from the keyboard.
+  useScopedShortcut(
+    "agent-worktree-mode",
+    () => {
+      const next = nextWorktreeMode(mode, state, modes);
+      if (next) onModeChange(next);
+    },
+    "agent",
+    { enabled: enableModeShortcut, preventDefault: true },
+  );
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -77,10 +97,20 @@ export const WorktreeModePicker = memo(function WorktreeModePicker({
             onPick={handlePick}
           />
         ))}
-        {effectHint && (
-          <p className="mt-1 border-t px-2.5 py-2 text-xs text-muted-foreground" role="note">
-            {effectHint}
-          </p>
+        {(effectHint || enableModeShortcut) && (
+          <div className="mt-1 flex items-start gap-3 border-t px-2.5 py-2">
+            {effectHint && (
+              <p className="text-xs text-muted-foreground" role="note">
+                {effectHint}
+              </p>
+            )}
+            {enableModeShortcut && (
+              <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                Cycle
+                <ResolvedShortcutHint shortcutId="agent-worktree-mode" />
+              </span>
+            )}
+          </div>
         )}
       </PopoverContent>
     </Popover>

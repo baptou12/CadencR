@@ -1,6 +1,7 @@
 mod compact;
 mod compact_turn;
 mod implementation;
+mod prompt;
 
 pub use implementation::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};
 
@@ -12,13 +13,17 @@ mod tests {
     use super::super::prompt_receipts::PendingPromptReceipts;
     use super::super::provider_hooks::AcpProviderHooks;
     use super::super::server_requests::{spawn_event_loop, EventLoopConfig};
+    use super::super::session_config::{snapshot_from_options, AcpSessionConfigState};
     use super::super::session_permissions::SessionPermissions;
     use super::super::terminal_registry::TerminalRegistry;
     use super::super::turn_lifecycle::{drive_initial_prompt, PromptCancel};
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
     use crate::domain::agents::adapter::{
         AgentRuntimeSession, RuntimeContentBlock, RuntimeEvent, RuntimePermissionMode,
-        RuntimeStreamEvent,
+        RuntimeSessionConfigKind, RuntimeSessionConfigValue, RuntimeStreamEvent,
+    };
+    use agent_client_protocol::schema::v1::{
+        SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
     };
     use serde_json::{json, Value};
     use std::path::PathBuf;
@@ -47,6 +52,23 @@ mod tests {
                 _ => "build".to_string(),
             })
         }
+
+        fn model_config_id(&self) -> Option<&'static str> {
+            Some("model")
+        }
+    }
+
+    fn model_options(current: &str) -> Vec<SessionConfigOption> {
+        vec![SessionConfigOption::select(
+            "model",
+            "Model",
+            current.to_string(),
+            vec![
+                SessionConfigSelectOption::new("m1", "Model 1"),
+                SessionConfigSelectOption::new("m2", "Model 2"),
+            ],
+        )
+        .category(SessionConfigOptionCategory::Model)]
     }
 
     async fn build_in_memory_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
@@ -237,17 +259,19 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(64);
 
         let event_rx = client.subscribe();
+        let hooks = Arc::new(PlainHooks);
         let cfg = EventLoopConfig {
             session_id: Arc::clone(&session_id),
             current_model: Arc::clone(&model),
             current_effort: Arc::clone(&effort),
             current_mode: Arc::clone(&mode),
+            session_config: AcpSessionConfigState::new(Default::default(), hooks.clone()),
             cwd: PathBuf::from("/tmp"),
             closing: Arc::new(AtomicBool::new(false)),
             pending_permissions: pending,
             session_permissions: SessionPermissions::new(),
             terminals: Arc::new(TerminalRegistry::default()),
-            hooks: Arc::new(PlainHooks),
+            hooks,
             replay_suppression: Arc::new(AtomicBool::new(false)),
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             indexer: Arc::clone(&indexer),
@@ -303,6 +327,7 @@ mod tests {
             mcp_servers: Vec::new(),
             context_window: None,
             current_mode: None,
+            session_config: Default::default(),
         };
         let (tx, rx) = mpsc::channel(8);
         let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
@@ -343,6 +368,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn generic_model_write_keeps_legacy_model_path_in_sync() {
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let negotiated = super::super::lifecycle::NegotiatedSession {
+            session_id: "s-config".to_string(),
+            model: None,
+            mcp_servers: Vec::new(),
+            context_window: None,
+            current_mode: None,
+            session_config: snapshot_from_options(&model_options("m1")),
+        };
+        let (tx, rx) = mpsc::channel(8);
+        let session = Arc::new(super::AcpRuntimeSession::assemble(
+            &client,
+            &negotiated,
+            std::env::temp_dir(),
+            None,
+            rx,
+            tx,
+            Arc::new(PlainHooks),
+            Arc::new(StdMutex::new(EventIndexer::default())),
+        ));
+
+        let generic_write = tokio::spawn({
+            let session = Arc::clone(&session);
+            async move {
+                session
+                    .set_session_config_option(
+                        "model",
+                        RuntimeSessionConfigValue::Select("m2".to_string()),
+                    )
+                    .await
+            }
+        });
+        let request = read_one_request(&mut agent_stdin).await;
+        write_frame(
+            &mut agent_stdout,
+            json!({
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "result": { "configOptions": model_options("m2") }
+            }),
+        )
+        .await;
+        generic_write.await.unwrap().unwrap();
+        assert_eq!(session.current_model.read().await.as_deref(), Some("m2"));
+
+        let legacy_write = tokio::spawn({
+            let session = Arc::clone(&session);
+            async move { session.set_model("m1").await }
+        });
+        let request = read_one_request(&mut agent_stdin).await;
+        assert_eq!(request["params"]["value"], "m1");
+        write_frame(
+            &mut agent_stdout,
+            json!({
+                "jsonrpc": "2.0",
+                "id": request["id"],
+                "result": { "configOptions": model_options("m1") }
+            }),
+        )
+        .await;
+        legacy_write.await.unwrap().unwrap();
+
+        assert_eq!(session.current_model.read().await.as_deref(), Some("m1"));
+        assert!(matches!(
+            &session.session_config.snapshot().await.options[0].kind,
+            RuntimeSessionConfigKind::Select { current_value, .. } if current_value == "m1"
+        ));
+    }
+
+    #[tokio::test]
     async fn interrupt_unblocks_prompt_turn_when_agent_never_replies() {
         let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let negotiated = super::super::lifecycle::NegotiatedSession {
@@ -351,6 +447,7 @@ mod tests {
             mcp_servers: Vec::new(),
             context_window: None,
             current_mode: None,
+            session_config: Default::default(),
         };
         let (tx, rx) = mpsc::channel(8);
         let mut session = super::AcpRuntimeSession::assemble(

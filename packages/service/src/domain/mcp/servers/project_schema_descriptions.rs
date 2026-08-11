@@ -1,4 +1,4 @@
-use crate::domain::agents::providers::provider_alias_metadata;
+use crate::domain::agents::providers::{provider_alias_metadata, valid_provider_ids};
 
 pub(super) fn tool_description(name: &str) -> &'static str {
     match name {
@@ -21,7 +21,10 @@ pub(super) fn tool_description(name: &str) -> &'static str {
 
 pub(super) fn property_description(tool_name: &str, property: &str) -> String {
     match (tool_name, property) {
-        ("project_spawn_session", "provider") => "Canonical provider id: claude_code, codex_cli, cursor, or opencode. Common aliases are normalized, but canonical ids are preferred.".into(),
+        ("project_spawn_session", "provider") => format!(
+            "Canonical provider id: {}. Common aliases are normalized, but canonical ids are preferred.",
+            valid_provider_ids().join(", ")
+        ),
         ("project_spawn_session", "project_id") => "Target project id for the new session (required unless project_path is given). Pass the caller's own project id for the current project, or another registered id from workspace_list_projects.".into(),
         ("project_spawn_session", "project_path") => "Target project root path (alternative to project_id). It must exactly match a registered path from workspace_list_projects; if both selectors are given they must agree.".into(),
         ("project_spawn_session", "model") => model_description(),
@@ -47,7 +50,7 @@ pub(super) fn property_description(tool_name: &str, property: &str) -> String {
         (_, "title") => "Title for the newly created session/conversation.".into(),
         (_, "initial_message") => "Initial user message sent after creation. Pass it as structured tool argument data; serialize complete arguments safely instead of interpolating this message into source code.".into(),
         (_, "permission_mode") => "Legacy/generic permission mode to persist for the spawned session.".into(),
-        (_, "codex_permission_mode") => "Codex access mode for codex_cli sessions: default, autoReview, or fullAccess.".into(),
+        (_, "codex_permission_mode") => "Legacy provider access-mode compatibility field: default, autoReview, or fullAccess.".into(),
         (_, "branch") => "Worktree/branch creation options for the spawned session.".into(),
         (_, "link_to_current_session") => "Legacy gate-follow flag; prefer follow.gates. Defaults to true when follow is absent.".into(),
         _ => format!("Input parameter `{property}` for {tool_name}."),
@@ -55,8 +58,11 @@ pub(super) fn property_description(tool_name: &str, property: &str) -> String {
 }
 
 fn model_description() -> String {
-    let claude_guidance = provider_alias_metadata("claude_code")
-        .map(|metadata| metadata.model_guidance)
-        .unwrap_or("Claude Code uses catalog aliases such as opus or sonnet.");
-    format!("Provider-specific model id. {claude_guidance} Codex uses gpt-* ids; Cursor uses `agent models` ids; OpenCode often uses provider/model ids. Call project_list_agent_providers when unsure.")
+    let guidance = valid_provider_ids()
+        .into_iter()
+        .filter_map(|provider_id| provider_alias_metadata(&provider_id))
+        .map(|metadata| format!("{}: {}", metadata.provider_id, metadata.model_guidance))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("Provider-specific model id. {guidance} Call project_list_agent_providers when unsure.")
 }

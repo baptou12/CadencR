@@ -1,5 +1,7 @@
-import { DEFAULT_THEME_ID, getTheme } from "./registry";
-import type { ThemeId } from "./types";
+import { DEFAULT_THEME_ID, getTheme, parseThemeId } from "./registry";
+import { injectThemeCssVars } from "./inject";
+import { chromeOf, type ThemeChrome } from "./chrome";
+import type { ThemeDefinition, ThemeId } from "./types";
 import {
   isFollowSystemThemeEnabled,
   readBrowserSystemAppearance,
@@ -12,6 +14,10 @@ import {
  * The active theme is encoded as `<html data-theme="<id>">`. CSS variables and
  * Tailwind's semantic tokens key off this attribute, so changing it instantly
  * re-skins the entire UI (CodeMirror's theme rules, app chrome, etc.).
+ *
+ * Themes that carry their tokens as data (every user theme, plus the ported
+ * first-party ones) additionally have those values injected as a CSS rule for
+ * the same selector — see `inject.ts`.
  *
  * `data-appearance` mirrors the theme's light/dark classification so chrome
  * that can't rely on Tailwind's media-query `dark:` variant (e.g. mono logos)
@@ -26,11 +32,53 @@ const FOLLOW_SYSTEM_STORAGE_KEY = "cadencr.theme.followSystem";
 const SYSTEM_LIGHT_STORAGE_KEY = "cadencr.theme.systemLight";
 const SYSTEM_DARK_STORAGE_KEY = "cadencr.theme.systemDark";
 
-/** Sets the document's active theme attribute. Idempotent. */
+/**
+ * Sets the document's active theme attribute and injects the theme's token
+ * values when it carries them as data. Idempotent.
+ *
+ * The injection happens *before* the attribute flips so the rule is already in
+ * the stylesheet when the selector starts matching — otherwise a data-carried
+ * theme would paint one frame with no tokens at all.
+ */
 export function applyThemeToDocument(themeId: ThemeId): void {
   if (typeof document === "undefined") return;
-  document.documentElement.dataset.theme = themeId;
-  document.documentElement.dataset.appearance = getTheme(themeId).appearance;
+  // A user theme that was deleted, disabled or failed validation is not
+  // applicable; resolving through `parseThemeId` (rather than setting an
+  // attribute nothing styles) keeps a bad theme file from leaving the UI
+  // unpainted.
+  const theme = getTheme(parseThemeId(themeId));
+  injectThemeCssVars(theme);
+  document.documentElement.dataset.theme = theme.id;
+  document.documentElement.dataset.appearance = theme.appearance;
+  applyThemeChrome(theme);
+}
+
+/**
+ * Publish the theme's chassis and tab style as attributes the stylesheets key
+ * off, and the texture's base color as the one custom property that has to be
+ * on `<html>` itself (the backdrop root must be opaque for `backdrop-filter`
+ * to paint — see `theme-frost.css`). The texture's *layers* are rendered by
+ * `<AmbientBackground/>`, which reads the same theme.
+ */
+function applyThemeChrome(theme: ThemeDefinition): void {
+  const root = document.documentElement;
+  const chrome: ThemeChrome = chromeOf(theme);
+  root.dataset.chassis = chrome.chassis;
+  root.dataset.tabs = chrome.tabs;
+
+  // Published only when the texture declares an opaque base, not whenever it
+  // paints something: taking over the backdrop root is safe only when there is
+  // a color to put there. Keyed on "has a texture at all", a texture of halos
+  // alone would strip the page background from both `<html>` and `<body>` and
+  // leave the canvas showing through as the browser default white.
+  const { base } = chrome.texture;
+  if (base === null) {
+    root.style.removeProperty("--ambient-base");
+    delete root.dataset.textureBase;
+  } else {
+    root.style.setProperty("--ambient-base", base);
+    root.dataset.textureBase = "on";
+  }
 }
 
 /**

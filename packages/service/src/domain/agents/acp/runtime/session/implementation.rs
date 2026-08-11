@@ -19,21 +19,20 @@ use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus,
     RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionResponse,
-    RuntimePermissionResponseKind,
+    RuntimePermissionResponseKind, RuntimeSessionConfigSnapshot, RuntimeSessionConfigValue,
 };
 
 use super::super::apply_model_config::apply_model_config;
 use super::super::config_options::set_config_option_thinking_effort;
+use super::super::events_config_option::mirror_config_snapshot;
 use super::super::events_stream_blocks::EventIndexer;
 use super::super::mode_switch::set_session_mode;
 use super::super::permissions::{reject_all_pending, take_pending, PendingPermissions};
 use super::super::prompt_receipts::PendingPromptReceipts;
-use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
 use super::super::provider_hooks::{AcpProviderHooks, PermissionFallbackOutcome};
+use super::super::session_config::AcpSessionConfigState;
 use super::super::session_permissions::{PermissionKey, SessionPermissions};
-use super::super::turn_lifecycle::{
-    finalize_turn, request_prompt_with_cancel, PromptCancel, PromptTurnLock,
-};
+use super::super::turn_lifecycle::{PromptCancel, PromptTurnLock};
 
 /// Channel buffer for the per-session runtime stream. Matches the size used
 /// by other adapters; deltas are coalesced upstream so even noisy turns fit.
@@ -46,6 +45,7 @@ pub struct AcpRuntimeSession {
     pub(in crate::domain::agents::acp::runtime) current_model: Arc<RwLock<Option<String>>>,
     pub(in crate::domain::agents::acp::runtime) current_effort: Arc<RwLock<Option<String>>>,
     pub(in crate::domain::agents::acp::runtime) current_mode: Arc<RwLock<String>>,
+    pub(in crate::domain::agents::acp::runtime) session_config: AcpSessionConfigState,
     /// Tracks whether the agent supports `session/set_config_option`.
     /// Defaults to `true`; flipped to `false` on the first `MethodNotFound`
     /// response so we stop wasting round trips and let the legacy
@@ -106,93 +106,6 @@ impl AcpRuntimeSession {
         self.current_session_id()
             .await
             .ok_or_else(|| RuntimeError::new("ACP session id not yet known"))
-    }
-
-    async fn prompt_input(
-        &self,
-        content: Value,
-        client_message_id: Option<String>,
-        finalize_response: bool,
-    ) -> Result<(), RuntimeError> {
-        self.prompt_input_once(content, client_message_id, finalize_response)
-            .await?;
-        if finalize_response {
-            loop {
-                let followup = self.pending_followups.write().await.pop_front();
-                let Some((_, followup)) = followup else {
-                    break;
-                };
-                self.prompt_input_once(followup, None, true).await?;
-            }
-        }
-        Ok(())
-    }
-
-    async fn prompt_input_once(
-        &self,
-        content: Value,
-        client_message_id: Option<String>,
-        finalize_response: bool,
-    ) -> Result<(), RuntimeError> {
-        let session_id = self.require_session_id().await?;
-        let prompt = acp_prompt_blocks_from_content(content);
-        let supports = self.supports_set_config_option.load(Ordering::SeqCst);
-        let model = self.current_model.read().await.clone();
-        let effort = self.current_effort.read().await.clone();
-        let receipt_client_message_id = client_message_id.clone();
-        if let Some(client_message_id) = client_message_id {
-            self.pending_prompt_receipts
-                .enqueue(client_message_id, &prompt);
-        }
-        let mut params = build_prompt_params(
-            &session_id,
-            prompt,
-            model.as_deref(),
-            effort.as_deref(),
-            supports,
-        );
-        if let Some(client_message_id) = receipt_client_message_id.as_deref() {
-            params["messageId"] = Value::String(client_message_id.to_string());
-        }
-        self.replay_suppression.store(false, Ordering::SeqCst);
-
-        // `session/prompt` represents a whole agent turn — sit-idle ceilings
-        // need to be huge (minutes of permission drawers + long tools).
-        let response =
-            match request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await {
-                Ok(response) => response,
-                Err(error) => {
-                    if let Some(client_message_id) = receipt_client_message_id.as_deref() {
-                        self.pending_prompt_receipts
-                            .discard_client_message_id(client_message_id);
-                    }
-                    return Err(error);
-                }
-            };
-        if let Some(client_message_id) = receipt_client_message_id.as_deref() {
-            if let Some(event) = self
-                .pending_prompt_receipts
-                .acknowledge_client_message_id(client_message_id)
-            {
-                let _ = self.local_tx.send(Ok(event)).await;
-            }
-        }
-        if finalize_response {
-            if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
-                tracing::debug!(stop_reason = reason, "session/prompt completed");
-                finalize_turn(
-                    &self.local_tx,
-                    &self.indexer,
-                    self.current_session_id().await,
-                    self.context_window,
-                    self.hooks.prompt_response_usage(&response),
-                    reason,
-                    &response,
-                )
-                .await;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -299,6 +212,7 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             &self.current_model,
             &self.current_effort,
             &self.supports_set_config_option,
+            &self.session_config,
             self.hooks.as_ref(),
             model,
         )
@@ -311,7 +225,8 @@ impl AgentRuntimeSession for AcpRuntimeSession {
 
     async fn set_thinking_effort(&self, effort: Option<String>) -> Result<(), RuntimeError> {
         let session_id = self.require_session_id().await?;
-        set_config_option_thinking_effort(
+        let update_guard = self.session_config.lock_updates().await;
+        let response = set_config_option_thinking_effort(
             &self.client,
             &session_id,
             &self.current_effort,
@@ -319,7 +234,42 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             self.hooks.thinking_effort_config_id(),
             effort.as_deref(),
         )
-        .await
+        .await?;
+        self.session_config
+            .observe_raw_response(&update_guard, response.as_ref())
+            .await
+    }
+
+    async fn session_config_snapshot(&self) -> Option<RuntimeSessionConfigSnapshot> {
+        Some(self.session_config.snapshot().await)
+    }
+
+    async fn set_session_config_option(
+        &self,
+        config_id: &str,
+        value: RuntimeSessionConfigValue,
+    ) -> Result<RuntimeSessionConfigSnapshot, RuntimeError> {
+        let session_id = self.require_session_id().await?;
+        let update_guard = self.session_config.lock_updates().await;
+        let snapshot = self
+            .session_config
+            .set_option(
+                &update_guard,
+                &self.client,
+                &session_id,
+                &self.supports_set_config_option,
+                config_id,
+                value,
+            )
+            .await?;
+        mirror_config_snapshot(
+            &snapshot,
+            self.hooks.as_ref(),
+            &self.current_model,
+            &self.current_effort,
+        )
+        .await;
+        Ok(snapshot)
     }
 
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError> {
