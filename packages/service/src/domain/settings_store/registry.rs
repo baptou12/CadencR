@@ -19,6 +19,8 @@ pub enum ValueKind {
     Enum(&'static [&'static str]),
     /// Parses as a number.
     Number,
+    /// Parses as an integer within an inclusive range.
+    IntegerRange { min: i64, max: i64 },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -37,7 +39,14 @@ impl SettingSpec {
         match self.kind {
             ValueKind::Bool => value == "true" || value == "false",
             ValueKind::Enum(allowed) => allowed.contains(&value),
-            ValueKind::Number => value.trim().parse::<f64>().is_ok(),
+            ValueKind::Number => value
+                .trim()
+                .parse::<f64>()
+                .is_ok_and(|number| number.is_finite()),
+            ValueKind::IntegerRange { min, max } => value
+                .trim()
+                .parse::<i64>()
+                .is_ok_and(|number| (min..=max).contains(&number)),
         }
     }
 }
@@ -92,6 +101,12 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         | "project_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
         "workspace_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
         "workspace_mcp_max_result_chars" => SettingSpec::new(NUMBER, Some("100000")),
+        // Storage retention is the only lossy maintenance pass, so users must
+        // explicitly opt in even though its scope matches read-time truncation.
+        "retention_compact_archived_enabled" => SettingSpec::new(BOOL, Some("false")),
+        "retention_compact_archived_days" => {
+            SettingSpec::new(ValueKind::IntegerRange { min: 1, max: 365 }, Some("30"))
+        }
         // Enums (mirrors the frontend option sets).
         "notification_mode" => SettingSpec::new(
             ValueKind::Enum(&["native", "in_app", "off"]),
@@ -190,6 +205,19 @@ mod tests {
         let spec = workspace_spec("zoom_global").unwrap();
         assert!(spec.is_valid("1.25"));
         assert!(!spec.is_valid("big"));
+        assert!(!spec.is_valid("NaN"));
+        assert!(!spec.is_valid("inf"));
+    }
+
+    #[test]
+    fn retention_days_are_bounded_integers() {
+        let spec = workspace_spec("retention_compact_archived_days").unwrap();
+        for valid in ["1", "30", "365"] {
+            assert!(spec.is_valid(valid), "{valid}");
+        }
+        for invalid in ["NaN", "1.5", "0", "366", "-1"] {
+            assert!(!spec.is_valid(invalid), "{invalid}");
+        }
     }
 
     #[test]

@@ -5,6 +5,7 @@ use std::path::Path;
 use tracing::{info, warn};
 #[cfg(test)]
 mod agent_session_profiles_migration_tests;
+mod backup_rotation;
 mod checksum_repair;
 mod checksum_repair_data;
 #[cfg(test)]
@@ -15,6 +16,8 @@ mod custom_model_effort_migration_tests;
 mod mcp_orchestration_migration_tests;
 #[cfg(test)]
 mod message_uuid_migration_tests;
+#[cfg(test)]
+mod narrow_fts_migration_tests;
 #[cfg(test)]
 mod reply_wait_claim_migration_tests;
 #[cfg(test)]
@@ -28,8 +31,11 @@ mod test_fixtures;
 #[cfg(test)]
 mod usage_token_schema_migration_tests;
 mod version_guard;
+use crate::shared::startup_progress::emit_phase;
+pub(crate) use backup_rotation::naming::source_database_file_name as backup_source_database_file_name;
 pub(crate) use support::table_exists;
-use support::{backup_database, emit_phase, has_pending_migrations};
+use support::{backup_database, has_pending_migrations};
+const NARROW_AGENT_MESSAGES_FTS_VERSION: i64 = 20260803122000;
 /// Inputs for a single startup migration pass.
 pub struct MigrationContext<'a> {
     pub pool: &'a SqlitePool,
@@ -64,26 +70,55 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
     }
     version_guard::ensure_database_not_newer(ctx.pool, &migrator).await?;
 
-    if has_pending_migrations(ctx.pool, &migrator).await? {
+    let has_pending = has_pending_migrations(ctx.pool, &migrator).await?;
+    let rebuilds_conversation_search = has_pending
+        && support::is_upgrade_migration_pending(ctx.pool, NARROW_AGENT_MESSAGES_FTS_VERSION)
+            .await?;
+    if has_pending {
         if let Some(db_path) = ctx.db_path {
             match backup_database(ctx.pool, db_path, ctx.app_version).await {
                 Ok(Some(backup)) => {
-                    emit_phase("backing_up", &backup.display().to_string());
                     info!(backup = %backup.display(), "pre-migration backup written");
+                    // Each snapshot is a full copy of the database, so an
+                    // unbounded set outgrows the database itself. Prune after
+                    // the new one lands, so a failed backup never costs us the
+                    // older snapshots we still have.
+                    let pruned = backup_rotation::prune(db_path, &backup);
+                    if pruned > 0 {
+                        info!(pruned, "removed superseded pre-migration backups");
+                    }
                 }
                 Ok(None) => {}
                 Err(error) => {
+                    // Refuse to migrate without a backup. Pending migrations
+                    // include schema rebuilds that cannot be undone, so
+                    // continuing here would trade the user's only safety net for
+                    // a faster launch. Failing leaves the database untouched and
+                    // the app bootable again as soon as the cause is fixed —
+                    // usually free disk space, which the preflight names.
                     warn!("pre-migration backup failed: {error}");
                     emit_phase("backup_failed", &error.to_string());
+                    return Err(error.context(
+                        "refusing to run database migrations without a pre-migration backup",
+                    ));
                 }
             }
         }
-        emit_phase("migrating", "");
     }
 
     checksum_repair::repair_known_sqlx_checksum_mismatches(ctx.pool, &migrator).await?;
     seed::repair_agent_messages_content_column(ctx.pool).await?;
-    migrator.run(ctx.pool).await?;
+    if has_pending {
+        let detail = if rebuilds_conversation_search {
+            "Rebuilding conversation search without bulky tool results. Conversation data is not being deleted."
+        } else {
+            "Applying database schema updates. Your conversations are preserved."
+        };
+        crate::shared::startup_progress::run_phase("migrating", detail, migrator.run(ctx.pool))
+            .await?;
+    } else {
+        migrator.run(ctx.pool).await?;
+    }
     seed::repair_agent_messages_perf_indexes(ctx.pool).await?;
 
     info!("Database migrations completed successfully");
@@ -137,6 +172,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn new_message_resets_compaction_for_an_archived_feature() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let pool = test_pool(tmp.path().to_str().unwrap()).await;
+        run_migrations(&MigrationContext::pool_only(&pool))
+            .await
+            .unwrap();
+
+        sqlx::raw_sql(
+            r#"CREATE TABLE feature_update_audit (updates INTEGER NOT NULL);
+            INSERT INTO feature_update_audit (updates) VALUES (0);
+            CREATE TRIGGER count_feature_updates AFTER UPDATE ON features BEGIN
+                UPDATE feature_update_audit SET updates = updates + 1;
+            END;
+            INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp/p');
+            INSERT INTO features
+                (id, project_id, title, status, archived_at, compacted_at)
+                VALUES (1, 1, 'Archived', 'archived',
+                        datetime('now', '-60 days'), datetime('now'));
+            INSERT INTO agent_sessions (id, feature_id, agent_type)
+                VALUES (1, 1, 'session');
+            INSERT INTO agent_messages
+                (id, session_id, role, content, message_type)
+                VALUES (1, 1, 'user', 'scheduled follow-up', 'user_message');"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let compacted_at: Option<String> =
+            sqlx::query_scalar("SELECT compacted_at FROM features WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(compacted_at.is_none());
+
+        sqlx::query(
+            "INSERT INTO agent_messages
+             (id, session_id, role, content, message_type)
+             VALUES (2, 1, 'user', 'another follow-up', 'user_message')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let feature_updates: i64 = sqlx::query_scalar("SELECT updates FROM feature_update_audit")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            feature_updates, 1,
+            "only the first message invalidates compaction"
+        );
+    }
+
+    #[tokio::test]
     async fn test_idempotent() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let path = tmp.path().to_str().unwrap();
@@ -162,10 +251,14 @@ mod tests {
         };
 
         run_migrations(&ctx).await.unwrap();
+        let prefix = format!(
+            "{}.9.9.9.",
+            backup_rotation::naming::database_identity(&db).unwrap()
+        );
         let backups = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().starts_with("9.9.9."))
+            .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
             .count();
         assert_eq!(backups, 1, "first run must back up");
 
@@ -173,7 +266,7 @@ mod tests {
         let backups_again = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().starts_with("9.9.9."))
+            .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
             .count();
         assert_eq!(
             backups_again, 1,
@@ -189,7 +282,7 @@ mod tests {
         let path = tmp.path().to_str().unwrap();
         let pool = test_pool(path).await;
         create_pre_ws_feature_removal_schema(&pool).await;
-        seed_applied_migrations_before(&pool, REMOVE_WS_FEATURE_VERSION).await;
+        test_fixtures::seed_applied_migrations_before(&pool, REMOVE_WS_FEATURE_VERSION).await;
 
         sqlx::raw_sql(
             r#"INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp/p');
@@ -242,8 +335,13 @@ mod tests {
         assert_eq!(setting_count, 1);
 
         assert!(table_has_column(&pool, "features", "status").await);
+        // A trailing ORDER BY would sort the single aggregate row, not the rows
+        // feeding group_concat — leaving the concatenation in whatever order the
+        // planner happened to scan. Order inside a subquery so the expectation
+        // holds regardless of which index a later migration makes available.
         let statuses: String = sqlx::query_scalar(
-            "SELECT group_concat(id || ':' || status, ',') FROM features ORDER BY id",
+            "SELECT group_concat(entry, ',') FROM \
+             (SELECT id || ':' || status AS entry FROM features ORDER BY id)",
         )
         .fetch_one(&pool)
         .await
@@ -301,7 +399,7 @@ mod tests {
         // The schedules migration (20260724120000) folds `scheduled_messages`
         // into `schedules`, which FKs into projects/features.
         test_fixtures::create_schedules_migration_prerequisites(&pool).await;
-        seed_applied_migrations_before(&pool, AGENT_MESSAGE_INDEX_VERSION).await;
+        test_fixtures::seed_applied_migrations_before(&pool, AGENT_MESSAGE_INDEX_VERSION).await;
         run_migrations(&MigrationContext::pool_only(&pool))
             .await
             .unwrap();
@@ -381,7 +479,7 @@ mod tests {
         // The schedules migration (20260724120000) folds `scheduled_messages`
         // into `schedules`, which FKs into projects/features.
         test_fixtures::create_schedules_migration_prerequisites(&pool).await;
-        seed_applied_migrations_before(&pool, DROP_PIN_VERSION).await;
+        test_fixtures::seed_applied_migrations_before(&pool, DROP_PIN_VERSION).await;
 
         run_migrations(&MigrationContext::pool_only(&pool))
             .await
@@ -414,40 +512,6 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(fk_violations, 0);
-    }
-
-    async fn seed_applied_migrations_before(pool: &SqlitePool, version: i64) {
-        sqlx::query(
-            "CREATE TABLE _sqlx_migrations (
-                version BIGINT PRIMARY KEY,
-                description TEXT NOT NULL,
-                installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                success BOOLEAN NOT NULL,
-                checksum BLOB NOT NULL,
-                execution_time BIGINT NOT NULL
-            )",
-        )
-        .execute(pool)
-        .await
-        .unwrap();
-
-        let migrator = sqlx::migrate!("./migrations");
-        for migration in migrator
-            .iter()
-            .filter(|migration| migration.version < version)
-        {
-            sqlx::query(
-                "INSERT INTO _sqlx_migrations
-                 (version, description, installed_on, success, checksum, execution_time)
-                 VALUES (?, ?, CURRENT_TIMESTAMP, TRUE, ?, 0)",
-            )
-            .bind(migration.version)
-            .bind(&*migration.description)
-            .bind(&*migration.checksum)
-            .execute(pool)
-            .await
-            .unwrap();
-        }
     }
 
     async fn table_has_column(pool: &SqlitePool, table_name: &str, column_name: &str) -> bool {
@@ -487,7 +551,9 @@ mod tests {
             CREATE TABLE plans (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
             CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id), pending_plan_approval TEXT, pending_prd_approval TEXT, plan_approval_result TEXT, prd_approval_result TEXT, run_id INTEGER, phase_id INTEGER, question_answer_result TEXT, is_pinned INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE session_runtime_ids (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES agent_sessions(id));
-            CREATE TABLE agent_messages (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES agent_sessions(id), role TEXT NOT NULL DEFAULT 'assistant', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+            -- content/message_type were in the real baseline at this era; the
+            -- FTS narrowing migration (20260803122000) selects both by name.
+            CREATE TABLE agent_messages (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES agent_sessions(id), role TEXT NOT NULL DEFAULT 'assistant', content TEXT NOT NULL DEFAULT '', message_type TEXT NOT NULL DEFAULT 'text', created_at TEXT NOT NULL DEFAULT (datetime('now')));
             CREATE TABLE feature_settings (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id), key TEXT NOT NULL, value TEXT NOT NULL);
             CREATE TABLE project_settings (project_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL);
             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);

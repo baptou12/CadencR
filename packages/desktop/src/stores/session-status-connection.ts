@@ -15,6 +15,7 @@ import {
 import { isBrowserRemote } from "@/lib/remote/device-token";
 import { hydratePrStatuses } from "@/stores/pr-status-hydration";
 import { subscribeForgeStatus } from "@/stores/forge-visibility";
+import { clearStorageMaintenanceStatus } from "@/stores/storage-maintenance-store";
 import type { EnvelopeDispatcher, SessionStatusState } from "@/stores/session-status-store";
 
 const APP_WS_SOURCE = "app-ws";
@@ -62,6 +63,7 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.schedule_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.settings_events", {})));
   ws.send(JSON.stringify(createEnvelope("app", "subscribe.theme_events", {})));
+  ws.send(JSON.stringify(createEnvelope("app", "subscribe.storage_maintenance_events", {})));
   connection.unsubscribeForgeVisibility = subscribeForgeStatus(ws);
   void hydratePrStatuses();
   if (!isBrowserRemote()) {
@@ -71,6 +73,7 @@ function handleAppWsOpen(connection: AppWsConnection): void {
 
 function handleAppWsClose(connection: AppWsConnection, event: CloseEvent): void {
   const { ws, set, get, intentionalClose } = connection;
+  clearStorageMaintenanceStatus();
   connection.unsubscribeForgeVisibility();
   if (get().ws === ws) set({ isConnected: false, ws: null });
   if (intentionalClose) {

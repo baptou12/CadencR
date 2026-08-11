@@ -17,6 +17,8 @@ target/
 *.db
 *.db-shm
 *.db-wal
+# Content-addressed image store paired with local/custom SQLite databases.
+*.db.blobs/
 # Per-clone local environment and repo-local dev state. Never commit.
 **/.env
 **/.env.local

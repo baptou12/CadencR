@@ -182,6 +182,13 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "project_mcp_enabled",
     "workspace_mcp_enabled",
     "workspace_mcp_max_result_chars",
+    // Storage retention. `retention_compact_archived_enabled` toggles the sweep
+    // that strips heavy tool payloads (terminal output, screenshots) out of
+    // features archived longer than `retention_compact_archived_days`. The
+    // conversation itself is never deleted — only the oversized bodies the UI
+    // already truncates on read.
+    "retention_compact_archived_enabled",
+    "retention_compact_archived_days",
     // Remote access (host UI). `remote_access_enabled` persists whether the
     // remote listener auto-starts at launch; `remote_tunnel_host` holds an
     // optional tunnel hostname (e.g. Tailscale) added to the Host/Origin

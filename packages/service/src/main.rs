@@ -100,6 +100,47 @@ async fn main() -> anyhow::Result<()> {
                 app_version: config.app_version.as_deref(),
             })
             .await?;
+            // The one-time image backfill needs its destination before it can
+            // run. Production uses `~/.cadencr/blobs`; an ad-hoc/dev database
+            // gets an isolated directory named after that exact database.
+            let blob_dir = domain::blobs::dir::derive_from_db_path(&db_path);
+            if let Err(error) = domain::blobs::store::ensure_root(&blob_dir) {
+                // Blob writes repeat the durable-directory check and fail open:
+                // inline content stays in SQLite if storage is unavailable.
+                tracing::warn!(dir = %blob_dir.display(), "failed to prepare blob dir: {error}");
+            }
+            domain::blobs::dir::init(blob_dir);
+
+            // Reclaim pages requested by a completed background maintenance
+            // pass. An incomplete initial optimization keeps the request set
+            // for a later startup instead of delaying this one.
+            match domain::maintenance::database_compaction::run_if_requested(
+                &write_pool,
+                std::path::Path::new(&db_path),
+            )
+            .await
+            {
+                Ok(_) => {}
+                Err(
+                    domain::maintenance::database_compaction::DatabaseCompactionError::Integrity(
+                        error,
+                    ),
+                ) => {
+                    return Err(anyhow::Error::new(error).context(
+                        "Database integrity verification failed. Cadencr stopped before accepting new writes. Restore a recent safety backup or contact support.",
+                    ));
+                }
+                Err(
+                    domain::maintenance::database_compaction::DatabaseCompactionError::Operational(
+                        error,
+                    ),
+                ) => {
+                    // Compaction is an optimization, never a startup dependency. A
+                    // failed VACUUM leaves SQLite's original file intact and the
+                    // persisted request set so a later launch can retry safely.
+                    tracing::warn!("database compaction skipped: {error}");
+                }
+            }
             domain::usage_stats::history_import::run_once(&write_pool).await;
             let read_pool = db::create_read_pool(&db_path).await?;
 
@@ -218,7 +259,6 @@ async fn main() -> anyhow::Result<()> {
             // transitions into native push for backgrounded remote PWAs. Cheap
             // when no subscriptions exist; runs for the process lifetime.
             tokio::spawn(domain::push::dispatcher::run(state.clone()));
-
             // Push user-selected CLI binary paths into the SDK overrides
             // BEFORE the warmup runs — the opencode warmup spawns the server
             // process, which needs to honor the override on first launch.
@@ -256,6 +296,8 @@ async fn main() -> anyhow::Result<()> {
             let pty_manager = state.pty_manager.clone();
             let remote_for_shutdown = state.remote.clone();
             let write_pool_for_shutdown = state.write_pool.clone();
+            let maintenance_pool = state.write_pool.clone();
+            let maintenance_events = state.storage_maintenance_events_tx.clone();
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
@@ -270,6 +312,10 @@ async fn main() -> anyhow::Result<()> {
                     tracing::warn!("set_nodelay failed: {err}");
                 }
             });
+            // Start maintenance only after the listener is ready. The scheduler
+            // adds its own delay so it cannot compete with session restore or
+            // the user's first active turn.
+            domain::maintenance::spawn(maintenance_pool, maintenance_events);
             // Shutdown ordering lives in `shutdown`: the signal future only
             // closes the listener, then teardown and the HTTP drain run together.
             let (drain_tx, drain_rx) = tokio::sync::oneshot::channel();

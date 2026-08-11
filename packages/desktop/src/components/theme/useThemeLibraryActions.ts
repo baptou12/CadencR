@@ -113,7 +113,7 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
             // The theme's project went with it, so the sidebar is now showing a
             // project that no longer exists.
             void invalidateByUrlPrefix(queryClient, ["/api/projects", "/api/features"]);
-            toast.success(`Deleted “${userThemeLabel(theme)}” — it's in the Trash`);
+            toast.success(`Deleted “${userThemeLabel(theme)}”. It is in the Trash.`);
           },
           onError: (error) => toast.error(apiErrorMessage(error, "Failed to delete theme")),
           onSettled: () => setDeletingId(null),

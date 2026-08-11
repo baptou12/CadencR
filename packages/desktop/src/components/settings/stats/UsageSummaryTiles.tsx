@@ -31,8 +31,8 @@ export function UsageSummaryTiles({ summary }: { summary: UsageSummary }): React
         title={`${formatExactNumber(summary.totalOutputTokens)} output tokens`}
         icon={<ArrowDownLeft className="size-3.5" />}
       />
-      <Tile label="Top provider" value={summary.topProvider ?? "—"} name />
-      <Tile label="Top model" value={summary.topModel ?? "—"} name />
+      <Tile label="Top provider" value={summary.topProvider ?? "None"} name />
+      <Tile label="Top model" value={summary.topModel ?? "None"} name />
     </div>
   );
 }

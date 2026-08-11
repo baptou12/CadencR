@@ -12,7 +12,7 @@ export function AnimationsToggle({ divided }: { divided?: boolean }): React.JSX.
   const { enabled, systemReducedMotion, setEnabled, isLoading } = useAnimationsEnabled();
 
   const description = systemReducedMotion
-    ? "Smooth fades and slides across menus, dialogs, and panels. Your system requests reduced motion — animations are off by default."
+    ? "Smooth fades and slides across menus, dialogs, and panels. Your system requests reduced motion, so animations are off by default."
     : "Smooth fades and slides across menus, dialogs, and panels. Disable for an instant, motion-free UI.";
 
   return (

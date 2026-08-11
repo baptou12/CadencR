@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
 import { BrowserSection } from "@/components/settings/BrowserSection";
+import { StorageSection } from "@/components/settings/StorageSection";
 import { McpSection } from "@/components/settings/McpSection";
 import { InterfaceSection } from "@/components/settings/InterfaceSection";
 import { GitSection } from "@/components/settings/GitSection";
@@ -106,6 +107,7 @@ function SettingsPage() {
           <InterfaceSection />
           <NotificationsSection />
           <BrowserSection />
+          <StorageSection />
           <McpSection />
           <RuntimeSettingsSection />
           <GitSection />
@@ -180,7 +182,7 @@ function AppearanceSection(): React.JSX.Element {
         </SettingsSubsection>
         <SettingsSubsection
           title="Agent output verbosity"
-          description="Control how much of each agent turn stays expanded in the stream. Switching modes does not affect what the agent does — only how its output is rendered."
+          description="Control how much of each agent turn stays expanded in the stream. Switching modes does not affect what the agent does. It only changes how the output is rendered."
         >
           <AgentVerbositySettings />
           <AgentSummaryModeToggle />

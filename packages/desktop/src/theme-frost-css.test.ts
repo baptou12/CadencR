@@ -55,4 +55,8 @@ describe("frost theme CSS", () => {
       /:root\[data-theme="frost-dark"\]\s+\.worktree-group,\s*:root\[data-theme="frost-light"\]\s+\.worktree-group\s*{\s*background-color:\s*var\(--option-card-bg\);\s*}/s,
     );
   });
+
+  it("applies the frost blur to tooltip overlays", () => {
+    expect(frostRules.match(/\[data-slot="tooltip-content"\]/g)).toHaveLength(2);
+  });
 });

@@ -15,6 +15,7 @@ import {
   type StartupRecoveryAction,
   type StartupRecoveryActionId,
 } from "./startup-recovery";
+import type { SidecarPhase } from "./sidecar";
 
 // The splash loads from a data: URL before the renderer exists, so the brand
 // font (Figtree — the "CADENCR" wordmark face) must be embedded inline rather
@@ -39,19 +40,17 @@ const SPLASH_HEIGHT = 400;
 const ERROR_SPLASH_WIDTH = 640;
 const ERROR_SPLASH_HEIGHT = 500;
 
-export type SplashPhase =
-  | "starting"
-  | "starting_service"
-  | "backing_up"
-  | "backup_failed"
-  | "migrating"
-  | "importing_usage"
-  | "loading_app";
+export type SplashPhase = "starting" | SidecarPhase;
 
 interface PhaseCopy {
   title: string;
   detail: string;
 }
+
+const STARTING_COPY: PhaseCopy = {
+  title: "Starting Cadencr",
+  detail: "Preparing the workspace…",
+};
 
 type SplashUpdateKind = "phase" | "error";
 
@@ -69,19 +68,32 @@ export interface SplashErrorState {
 }
 
 const PHASE_COPY: Record<SplashPhase, PhaseCopy> = {
-  starting: { title: "Starting Cadencr", detail: "Preparing the workspace…" },
+  starting: STARTING_COPY,
   starting_service: { title: "Starting Cadencr", detail: "Bringing up the backend service…" },
+  // Dev Electron cannot see the independently-started service's stdout, so it
+  // must keep the original neutral splash copy until a concrete phase is known.
+  waiting_for_service: STARTING_COPY,
   backing_up: {
     title: "Backing up your database",
     detail: "Saving a snapshot before applying updates.",
   },
   backup_failed: {
-    title: "Continuing without a backup",
-    detail: "Pre-migration backup failed; updates will still be applied.",
+    title: "Couldn't back up your database",
+    detail:
+      "Updates were not applied, so your data is unchanged. This is usually low disk space — free some up and reopen Cadencr.",
   },
   migrating: {
     title: "Updating your database",
     detail: "Applying schema changes. This may take a moment.",
+  },
+  optimizing_storage: {
+    title: "Optimizing conversation storage",
+    detail:
+      "Removing verified duplicate terminal output and moving pasted images out of the database. Conversations are preserved.",
+  },
+  compacting_database: {
+    title: "Reclaiming database space",
+    detail: "Safely compacting unused pages. Your conversations are preserved.",
   },
   importing_usage: {
     title: "Importing usage history",
@@ -89,6 +101,10 @@ const PHASE_COPY: Record<SplashPhase, PhaseCopy> = {
   },
   loading_app: { title: "Almost there", detail: "Loading your workspace…" },
 };
+
+export function splashCopyForPhase(phase: SplashPhase): PhaseCopy {
+  return PHASE_COPY[phase];
+}
 
 export interface SplashHandle {
   window: BrowserWindow;
@@ -179,7 +195,7 @@ export function createSplashWindow(version: string): SplashHandle {
   return {
     window: win,
     setPhase(phase, detail) {
-      const copy = PHASE_COPY[phase];
+      const copy = splashCopyForPhase(phase);
       update("phase", copy.title, detail ?? copy.detail, []);
     },
     setError(title, detail, actions) {
@@ -350,7 +366,7 @@ ${renderSplashStyles()}
   <div class="name">Cadencr</div>
   <div class="version">v${escapeHtml(version)}</div>
   <div class="title" id="title">${escapeHtml(initialError?.title ?? "Starting Cadencr")}</div>
-  <div class="detail" id="detail">${escapeHtml(initialError?.detail ?? "Preparing the workspace…")}</div>
+  <div class="detail" id="detail" role="status" aria-live="polite">${escapeHtml(initialError?.detail ?? "Preparing the workspace…")}</div>
   <div class="actions" id="actions">${renderActionHtml(initialError?.actions ?? [])}</div>
 </body>
 </html>`;

@@ -64,7 +64,7 @@ async fn run_provider(
         return Ok(());
     };
     if !*announced {
-        println!("CADENCR_PHASE importing_usage");
+        crate::shared::startup_progress::emit_phase("importing_usage", "");
         *announced = true;
     }
     let sources = load_sources(pool, provider.id()).await?;

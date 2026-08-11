@@ -20,7 +20,12 @@ const DEBOUNCE: Duration = Duration::from_millis(500);
 /// never fatal — settings still work, just without live external-edit refresh.
 pub fn start(dir: &Path, tx: broadcast::Sender<SettingsChangeEvent>) {
     watch_dir(dir, RecursiveMode::NonRecursive, DEBOUNCE, tx, |path| {
-        settings_file_name(path).map(|file| SettingsChangeEvent { file })
+        settings_file_name(path).map(|file| {
+            if file == paths::GLOBAL_FILE_NAME {
+                super::generation::bump_global();
+            }
+            SettingsChangeEvent { file }
+        })
     });
 }
 

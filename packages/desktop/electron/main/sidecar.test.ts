@@ -1,5 +1,61 @@
-import { describe, expect, it } from "vitest";
-import { describeStartupFailure, parsePhaseLine, serviceArgs, serviceEnv } from "./sidecar";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  describeStartupFailure,
+  parsePhaseLine,
+  rethrowAfterCleanup,
+  serviceArgs,
+  serviceEnv,
+  waitForDevSidecar,
+} from "./sidecar";
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("development sidecar startup", () => {
+  it("waits for authenticated health before allowing startup API calls", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ service: "cadencr" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const updates: string[] = [];
+    const handle = {
+      baseUrl: "http://127.0.0.1:5005",
+      authToken: "dev-token",
+      stop: () => Promise.resolve(),
+    };
+
+    const startup = waitForDevSidecar(handle, (update) => updates.push(update.phase));
+    await vi.advanceTimersByTimeAsync(5_000);
+    await startup;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:5005/api/health",
+      expect.objectContaining({ headers: { "x-cadencr-token": "dev-token" } }),
+    );
+    expect(updates).toEqual(["waiting_for_service", "loading_app"]);
+  });
+
+  it("rejects a missing development auth token before polling", async () => {
+    await expect(
+      waitForDevSidecar({
+        baseUrl: "http://127.0.0.1:5005",
+        authToken: null,
+        stop: () => Promise.resolve(),
+      }),
+    ).rejects.toThrow("development service auth token is missing");
+  });
+});
 
 describe("sidecar process arguments", () => {
   it("does not expose the auth token on argv", () => {
@@ -73,6 +129,20 @@ describe("parsePhaseLine", () => {
     });
   });
 
+  it("recognizes startup database compaction", () => {
+    expect(parsePhaseLine("CADENCR_PHASE compacting_database")).toEqual({
+      phase: "compacting_database",
+      detail: undefined,
+    });
+  });
+
+  it("recognizes the initial lossless storage optimization", () => {
+    expect(parsePhaseLine("CADENCR_PHASE optimizing_storage Moving verified duplicates")).toEqual({
+      phase: "optimizing_storage",
+      detail: "Moving verified duplicates",
+    });
+  });
+
   it("recognizes the one-time usage history import", () => {
     expect(parsePhaseLine("CADENCR_PHASE importing_usage")).toEqual({
       phase: "importing_usage",
@@ -108,5 +178,29 @@ describe("describeStartupFailure", () => {
     expect(message).toContain("restore a pre-migration backup");
     expect(message).not.toContain("health check");
     expect(message).not.toContain("Open data folder");
+  });
+});
+
+describe("failed startup cleanup", () => {
+  it("awaits process cleanup before rethrowing the startup failure", async () => {
+    const order: string[] = [];
+    const failure = new Error("health timeout");
+
+    await expect(
+      rethrowAfterCleanup(failure, async () => {
+        await Promise.resolve();
+        order.push("stopped");
+      }),
+    ).rejects.toBe(failure);
+
+    expect(order).toEqual(["stopped"]);
+  });
+
+  it("surfaces cleanup failure without hiding the startup failure", async () => {
+    await expect(
+      rethrowAfterCleanup(new Error("health timeout"), async () => {
+        throw new Error("kill failed");
+      }),
+    ).rejects.toThrow(/health timeout[\s\S]*kill failed/);
   });
 });

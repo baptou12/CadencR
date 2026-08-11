@@ -75,6 +75,16 @@ impl WsSessionPersistence {
         ptuid: Option<&str>,
         model: Option<&str>,
     ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+        // Only user-message image blocks have a desktop consumer that resolves
+        // `cadencr-blob://`. Tool arguments/results may contain image-looking
+        // strings as source code or protocol data and must remain byte-for-byte.
+        let offloaded = if message_type == "user_message" {
+            crate::domain::blobs::offload_content_async(content).await
+        } else {
+            None
+        };
+        let content = offloaded.as_deref().unwrap_or(content);
+
         sqlx::query(INSERT_MESSAGE_SQL)
             .bind(session_id)
             .bind(role)
@@ -156,7 +166,7 @@ impl WsSessionPersistence {
                 };
                 let message_type = if *is_error { "tool_error" } else { "tool_result" };
 
-                let _ = Self::insert_message(
+                let inserted = Self::insert_message(
                     &self.write_pool,
                     session_id,
                     "tool",
@@ -168,6 +178,27 @@ impl WsSessionPersistence {
                     None,
                 )
                 .await;
+
+                match inserted {
+                    Ok(_) => {
+                        // The authoritative row must exist before its duplicate
+                        // can be removed from the live tool_call.
+                        if let Some(tool_use_id) = tool_use_id.as_deref() {
+                            Self::drop_duplicated_tool_call_output(
+                                &self.write_pool,
+                                session_id,
+                                tool_use_id,
+                                &content,
+                            )
+                            .await;
+                        }
+                    }
+                    Err(error) => tracing::warn!(
+                        session_id,
+                        tool_use_id,
+                        "failed to persist tool result; keeping tool_call output: {error}"
+                    ),
+                }
             }
         }
     }
@@ -187,20 +218,6 @@ impl WsSessionPersistence {
             .bind(session_id)
             .execute(&self.write_pool)
             .await;
-    }
-}
-
-/// Serialize a compaction metadata payload into the `content` column of the
-/// persisted `compact_divider` row so history reload can surface `trigger` /
-/// `pre_tokens`. Returns an empty string when nothing is worth persisting.
-fn serialize_compact_metadata(
-    metadata: Option<&crate::domain::agents::adapter::RuntimeCompactMetadata>,
-) -> String {
-    match metadata {
-        Some(meta) if meta.trigger.is_some() || meta.pre_tokens.is_some() => {
-            serde_json::to_string(meta).unwrap_or_default()
-        }
-        _ => String::new(),
     }
 }
 

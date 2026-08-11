@@ -118,6 +118,9 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(editor_router())
         .merge(format_router())
         .merge(image_router())
+        // Raw bytes for off-loaded message payloads (screenshots, pasted
+        // images). Outside the OpenAPI surface like the other byte routes.
+        .merge(crate::domain::blobs::routes::routes())
         .merge(editor_mutation_router())
         .merge(claude_code_router())
         .merge(custom_actions_router())
@@ -126,6 +129,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(imports_router())
         .merge(lsp_router())
         .merge(usage_stats_router())
+        .merge(crate::domain::maintenance::routes::routes())
         .merge(themes_router())
         .merge(prompt_commands_router())
         // VAPID public key — shared, so the frontend can fetch it on either

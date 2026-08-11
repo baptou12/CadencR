@@ -17,7 +17,9 @@ mod pagination;
 mod queries;
 mod task_todos;
 mod tool_blocks;
-mod truncation;
+// `pub(crate)` so storage maintenance can trim exactly the payloads this module
+// truncates on read, against the same canonical tool name.
+pub(crate) mod truncation;
 
 #[cfg(test)]
 mod test_support;

@@ -44,7 +44,7 @@ export function CustomModelsSection() {
     <section className="space-y-4">
       <SettingsHeading
         title="Custom models"
-        description="Additional model IDs merged into the catalog — e.g. older aliases, Bedrock ARNs, or gateway names."
+        description="Additional model IDs merged into the catalog. Examples include older aliases, Bedrock ARNs, or gateway names."
         action={
           <Button variant="outline" size="sm" onClick={() => setEditing({ mode: "create" })}>
             <Plus className="size-3.5" /> New model

@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { renderSplashHtml } from "./splash";
+import { renderSplashHtml, splashCopyForPhase } from "./splash";
+
+describe("splashCopyForPhase", () => {
+  it("preserves the original neutral copy while waiting for the development service", () => {
+    expect(splashCopyForPhase("waiting_for_service")).toEqual({
+      title: "Starting Cadencr",
+      detail: "Preparing the workspace…",
+    });
+    expect(splashCopyForPhase("waiting_for_service")).toBe(splashCopyForPhase("starting"));
+  });
+
+  it("explains the exact lossless storage operation when the service reports it", () => {
+    expect(splashCopyForPhase("optimizing_storage")).toEqual({
+      title: "Optimizing conversation storage",
+      detail: expect.stringContaining("Conversations are preserved"),
+    });
+  });
+});
 
 describe("renderSplashHtml", () => {
+  it("announces startup status while keeping a single activity animation", () => {
+    const html = renderSplashHtml("0.11.0");
+
+    expect(html).toContain('role="status" aria-live="polite"');
+    expect(html.match(/@keyframes/g)).toHaveLength(1);
+  });
+
   it("renders recovery action links without an open-folder action", () => {
     const html = renderSplashHtml("0.6.1", {
       title: "Cadencr can't open this database safely",

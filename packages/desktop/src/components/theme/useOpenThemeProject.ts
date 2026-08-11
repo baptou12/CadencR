@@ -143,7 +143,7 @@ function useWearTheme(): (theme: UserTheme) => void {
       else setSystemDarkTheme(id);
       if (system.appearance !== appearance) {
         toast.info(
-          `“${userThemeLabel(theme)}” is now your ${appearance} theme — your system is in ${system.appearance} mode, so you'll see it there.`,
+          `“${userThemeLabel(theme)}” is now your ${appearance} theme. Your system is in ${system.appearance} mode, so you'll see it there.`,
         );
       }
     },

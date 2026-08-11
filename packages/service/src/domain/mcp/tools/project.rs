@@ -10,7 +10,7 @@ use crate::domain::mcp::tools::audit::record_read_tool_audit;
 use crate::domain::mcp::tools::helpers::{error_result, require_i64, text_result};
 use crate::domain::mcp::tools::messages::{
     cap_message_content, fts_literal_query, messages_json, MessageRow,
-    DEFAULT_MAX_RETURNED_MESSAGE_CHARS,
+    DEFAULT_MAX_RETURNED_MESSAGE_CHARS, TOOL_RESULTS_NOT_INDEXED,
 };
 use crate::domain::mcp::tools::project_compare;
 use crate::domain::mcp::tools::project_control;
@@ -290,6 +290,10 @@ async fn read_session(
         "message_chars_returned": message_chars_returned,
         "content_truncated": content_truncated,
         "messages": messages_json(&messages, include_metadata, include_tool_details),
+        // Only when a query narrowed the read. Worth stating even with
+        // `include_tool_details`: that expands rows once found, and a
+        // tool_result can no longer be found by matching its text.
+        "search_scope": query.as_deref().map(|_| TOOL_RESULTS_NOT_INDEXED),
         "next_cursor": next_after.map(|id| json!({ "after_message_id": id }))
     }))
 }
