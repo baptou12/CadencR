@@ -1,7 +1,7 @@
 # Cadencr Provider Boundary and Marketplace Migration Plan
 
 > - **Status:** Accepted direction; runtime registry and local ACP backend implemented, roadmap active
-> - **Last reviewed:** 2026-08-10 against `v0.11.0`
+> - **Last reviewed:** 2026-08-11 against `v0.11.0`
 > - **Scope:** Service, desktop, provider SDKs, CLI discovery, persistence, WebSocket APIs, and the provider marketplace
 > - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the implemented local-backend format and its refusal codes
 > - **Parent plan:** `docs/PLUGIN_STRATEGY.md` — this document is step 2 ("bring your own agent") of the four-step extensibility ladder; the ladder's marketplace phasing, signing, and renderer invariants govern here too
@@ -60,8 +60,8 @@ Cursor adapter.)
 | [ACP v1 agent plans](https://agentclientprotocol.com/protocol/v1/agent-plan)                            | Stable                      | Plan and todo projection                                              |
 | [ACP v2 draft announcement](https://agentclientprotocol.com/announcements/acp-v2-draft)                 | Draft                       | Rollout constraints and design direction                              |
 | [ACP v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration)                         | Draft                       | v1/v2 translation and forward-compatible data modeling                |
-| [ACP Registry entry format](https://github.com/agentclientprotocol/registry/blob/main/FORMAT.md)        | Current registry format     | Marketplace identity and distribution                                 |
-| [ACP Registry JSON Schema](https://github.com/agentclientprotocol/registry/blob/main/agent.schema.json) | Current registry schema     | Manifest validation                                                   |
+| [ACP Registry entry format](https://github.com/agentclientprotocol/registry/blob/main/FORMAT.md)        | Stable v1 registry format   | Marketplace identity and distribution                                 |
+| [ACP Registry JSON Schema](https://github.com/agentclientprotocol/registry/blob/main/agent.schema.json) | Stable v1 registry schema   | Manifest validation                                                   |
 
 ACP documents are the authority if this plan and the protocol disagree. Because
 v2 is a draft, its implementation must be isolated so schema changes do not
@@ -123,6 +123,13 @@ A third-party provider is loadable when it can:
 Optional capabilities increase feature coverage but are not installation gates.
 The marketplace UI must distinguish **installable**, **currently available**, and
 **feature-complete for a given workflow**.
+
+Local user-authored descriptors do not need to be published in the official ACP
+Registry and therefore do not inherit its curated-registry authentication
+admission rule. A future Cadencr import of the official registry must preserve
+that registry's authentication requirement, while the actual authentication
+methods remain runtime data negotiated through ACP rather than descriptor
+fields.
 
 ### ACP v2 opt-in contract
 
@@ -296,8 +303,8 @@ This backlog is a multi-quarter program and must not merge as one unit. Per
 `docs/PLUGIN_STRATEGY.md`, every step ships alone and leaves users better off.
 The first shippable increment (ladder step 2, "bring your own agent") is:
 
-- the Phase 0 parity fixtures and provider-ID inventory covering every built-in
-  registration, discovery, and spawn path touched by the slice;
+- the Phase 0 parity fixtures plus the Phase 9 boundary scanner covering every
+  built-in registration, discovery, and spawn path touched by the slice;
 - the Phase 1 backend slice — the runtime registry, startup descriptor loader,
   and generic ACP provider factory (**implemented**);
 - the minimum of Phase 8 — checksum verification, executable-plus-argument
@@ -336,7 +343,7 @@ ACP v2 leaves draft: nothing in "install a third-party ACP agent" requires v2,
 and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 `knip` gates until something consumes it.
 
-### Implementation audit — 2026-08-10
+### Implementation audit — 2026-08-11
 
 The checkboxes below describe the complete provider-boundary program, not the
 merge gate for the local-descriptor backend. At the current `v0.11.0` baseline,
@@ -348,7 +355,7 @@ desktop, canonical persistence/DTOs, and the distribution installer remain futur
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local ACP backend                     | Shipped: startup descriptors, generic adapter, direct execution, quarantine, diagnostics, restart-gated loopback-only add/enable/disable/remove API, and authenticated HTTP/WS integration tests                              | Preserve this v1 path while later slices add coherent UI and distribution                                                                       |
 | Built-in regression guardrails        | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze later UI work; complete stream/workflow golden suites remain open                                                           | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                            |
-| Installed-provider desktop            | Dynamic catalog entries can appear in existing selectors, but installed origin, source, diagnostics, enablement, and lifecycle are not presented or managed                                                                   | Deferred for the `v0.11.0` merge; later add catalog origin and diagnostics without exposing launch secrets                                      |
+| Installed-provider desktop            | Dynamic catalog entries can appear in existing selectors, but installed origin, source, diagnostics, enablement, and lifecycle are not presented or managed                                                                   | Next user-facing slice after the `v0.11.0` backend merge: add catalog origin plus local lifecycle and diagnostics without exposing launch secrets |
 | Negotiated capabilities/configuration | ACP v1 setup exposes a provider-neutral per-session select/boolean snapshot and opaque authenticated WS get/set operations; full returned lists are authoritative; no desktop consumer exists                                 | Later render the snapshot without provider-ID branches, then migrate legacy model/mode/effort controls                                          |
 | Canonical events and ACP v2           | Started: the stream-event slice now produces stable message/block operations and a materialized canonical projection before the unchanged legacy WS projection; persistence and most event families remain legacy             | Keep v2 deferred; migrate one typed event family at a time, then version the desktop DTO and persistence                                        |
 | Marketplace distribution/security     | Local absolute executables only; schema validation, launch hardening, quarantine, and API redaction exist                                                                                                                     | Downloads, integrity, signing, blocklist, process policy, install history, and conformance probing are still required before remote agents ship |
@@ -357,19 +364,23 @@ desktop, canonical persistence/DTOs, and the distribution installer remain futur
 Recommended increments from this baseline:
 
 The focused Phase 0 guardrail and backend ACP v1 configuration bridge are
-complete. For the `v0.11.0` merge, user-facing marketplace work is intentionally
-skipped rather than shipping a partial diagnostics or control surface. The
-remaining increments are:
+complete. User-facing provider management stays outside the backend-only
+`v0.11.0` merge, but it is now the next vertical slice once that work resumes:
 
-1. keep catalog-origin, installed-provider diagnostics, and generic session
-   controls deferred until the marketplace UI can be delivered coherently;
-2. extend the implemented restart-gated descriptor lifecycle operations with a
-   coherent desktop management surface only when user-facing marketplace work resumes;
+1. add provider origin/source to the catalog and deliver one coherent desktop
+   **Local ACP providers** surface: list diagnostics, add an explicit local
+   executable/descriptor, enable or disable it, remove it, and explain or offer
+   the required restart. After submission the UI must never read back or
+   redisplay stored descriptor arguments or environment values, and it must not
+   download anything;
+2. render the negotiated provider-neutral session configuration snapshot, first
+   for installed providers and then as the replacement path for legacy
+   model/mode/effort controls;
 3. continue the started Phase 3/4/6 canonical-event workstream beyond the
    stream-content slice into persistence and versioned desktop DTOs;
-4. add downloads, integrity, signing, blocklist, and sandbox/process policy only
-   as a later security-gated distribution slice. ACP v2 remains deferred while
-   its specification is draft.
+4. add remote registry ingestion, downloads, integrity, signing, blocklist, and
+   sandbox/process policy only as a later security-gated distribution slice.
+   ACP v2 remains deferred while its specification is draft.
 
 ### Phase 0 — Freeze parity and define ownership
 
@@ -776,12 +787,16 @@ on provider identity.
 
 The provider boundary is complete when all of the following are true:
 
-- [~] A local descriptor can register a third-party ACP provider without
-  rebuilding Cadencr; registry installation and desktop management remain
-  open.
-- [~] The provider appears in the backend catalog, initializes, starts a session,
-  streams a prompt, and cancels without provider-specific source changes;
-  generic capability/configuration projection remains open.
+- [x] A local descriptor can register a third-party ACP provider without
+      rebuilding Cadencr. Startup loading and restart-gated add, enable, disable,
+      and remove APIs are implemented.
+- [x] The provider appears in the backend catalog, initializes, starts a session,
+      streams a prompt, and cancels without provider-specific source changes.
+      The generic integration test exercises the authenticated HTTP and real
+      WebSocket surfaces.
+- [ ] A user can add, inspect, enable, disable, and remove a local ACP provider
+      from the desktop, with explicit restart state and without exposing launch
+      secrets.
 - [ ] ACP v1 remains the stable default and v2 can run side-by-side behind its
       explicit feature flag.
 - [ ] Claude Code and Codex retain the detailed behavior documented in their
