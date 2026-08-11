@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.11.0 - 2026-08-11
+
+Previous release: v0.10.0 - 2026-08-02
+
+### ✨ Added
+
+- [**Desktop**] Added user-authored color themes: duplicate any built-in or custom theme, name it before creation, edit its portable theme file with an agent in a dedicated project while changes repaint the app live, export it for sharing, and move it safely to the Trash when deleted.
+- [**Desktop**] Added background storage optimization that removes verified duplicate command output and moves pasted images into separate durable blob storage, with resumable sidebar progress. Settings now also offer an opt-in 1–365 day policy and a manual run for shortening long command output in inactive archived conversations; conversations, messages, user text, and agent replies are never deleted.
+- [**Desktop**] Added a searchable **Monospace font** setting under Appearance that discovers installed fonts on demand and live-applies the selected family across terminals, editors, and code snippets.
+- [**Desktop**] Added a customizable `Cmd+Alt+W` / `Ctrl+Alt+W` shortcut to cycle the current conversation's branch and worktree behavior, automatically skipping choices that cannot apply to the selected branch.
+
+### 🐛 Fixed
+
+- [**provider:codex**] Preserved Codex reasoning-section boundaries while streaming, so distinct thinking phases remain separated instead of running together in the transcript.
+- [**Desktop**] Restored **Add a comment** element selection after a full in-app browser refresh, while cleaning up abandoned picker state when the page navigates or the tab closes.
+- [**Desktop**] Expanded the effective hit area for horizontal resize handles so drags work across the full visible interaction zone.
+- [**Desktop**] Collapsed the Codex Fast mode label to its icon in narrow agent panes so the prompt metadata bar no longer overflows while retaining its tooltip and accessible label.
+
+### 🔒 Security
+
+- [**dependencies**] Updated Mermaid to 11.16.1 for upstream prototype-pollution hardening and PostCSS to 8.5.23 to prevent unsafe source-map loading, alongside refreshed Electron, RMCP, OpenSSL, UUID, Tokio Stream, Base64, and CodeQL dependencies.
+
 ## v0.10.0 - 2026-08-02
 
 Previous release: v0.9.1 - 2026-07-30
