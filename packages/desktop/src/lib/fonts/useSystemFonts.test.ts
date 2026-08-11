@@ -89,15 +89,15 @@ describe("useSystemFonts", () => {
   });
 
   it("uses the window receiver when invoking queryLocalFonts", async () => {
-    let receiver: unknown;
-    window.queryLocalFonts = function queryLocalFonts(this: Window) {
-      receiver = this;
+    const queryLocalFonts = vi.fn(function queryLocalFonts(this: Window) {
+      expect(this).toBe(window);
       return Promise.resolve([]);
-    };
+    });
+    window.queryLocalFonts = queryLocalFonts;
     const { result } = renderHook(() => useSystemFonts());
     act(() => result.current.load(false));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(receiver).toBe(window);
+    expect(queryLocalFonts).toHaveBeenCalledOnce();
   });
 
   it("sets error and empty list when entries are malformed", async () => {

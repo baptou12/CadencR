@@ -1,5 +1,6 @@
+import { useMemo } from "react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { MONO_FONT_SETTING_KEY, resolveMonoStack } from "./constants";
+import { MONO_FONT_SETTING_KEY, resolveMonoStack } from "@/lib/fonts/constants";
 
 interface UseMonoFontResult {
   /** The user's chosen family, or null when unset ("Default"). */
@@ -17,10 +18,14 @@ interface UseMonoFontResult {
  */
 export function useMonoFont(): UseMonoFontResult {
   const setting = useDebouncedSetting(MONO_FONT_SETTING_KEY, 250);
-  return {
-    family: setting.value || null,
-    resolved: resolveMonoStack(setting.value),
-    setFamily: setting.setValue,
-    isLoading: setting.isLoading,
-  };
+  const family = setting.value || null;
+  return useMemo(
+    () => ({
+      family,
+      resolved: resolveMonoStack(family),
+      setFamily: setting.setValue,
+      isLoading: setting.isLoading,
+    }),
+    [family, setting.isLoading, setting.setValue],
+  );
 }

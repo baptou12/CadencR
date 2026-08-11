@@ -11,7 +11,7 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 
-import { createXtermInstance } from "./createXtermInstance";
+import { createXtermInstance } from "@/components/terminal/createXtermInstance";
 import { DEFAULT_MONO_STACK } from "@/lib/fonts/constants";
 
 const theme = {} as never;

@@ -1,5 +1,12 @@
 const SAMPLE_CHARS = ["i", "W", "M", "l"] as const;
 const WIDTH_TOLERANCE_PX = 0.5;
+let canvasContext: CanvasRenderingContext2D | undefined;
+
+function monospaceCanvasContext(): CanvasRenderingContext2D | null {
+  const context = canvasContext ?? document.createElement("canvas").getContext("2d");
+  if (context) canvasContext = context;
+  return context;
+}
 
 /**
  * Heuristic: a font is monospace when its glyphs share one advance width.
@@ -8,7 +15,7 @@ const WIDTH_TOLERANCE_PX = 0.5;
  * Returns false when no 2d context is available (e.g. jsdom).
  */
 export function isMonospace(family: string): boolean {
-  const ctx = document.createElement("canvas").getContext("2d");
+  const ctx = monospaceCanvasContext();
   if (!ctx) return false;
   ctx.font = `16px "${family}"`;
   const widths = SAMPLE_CHARS.map((c) => ctx.measureText(c).width);

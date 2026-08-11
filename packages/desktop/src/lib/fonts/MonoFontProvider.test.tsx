@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { MonoFontProvider } from "./MonoFontProvider";
+import { MonoFontProvider } from "@/lib/fonts/MonoFontProvider";
 
-vi.mock("./mono-font-setting", () => ({
+vi.mock("@/lib/fonts/mono-font-setting", () => ({
   useMonoFont: () => ({
     family: "Fira Code",
     resolved: `"Fira Code", monospace`,

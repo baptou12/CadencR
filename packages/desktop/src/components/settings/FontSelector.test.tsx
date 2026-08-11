@@ -49,6 +49,26 @@ describe("FontSelector", () => {
     expect(setFamily).toHaveBeenCalledWith("Fira Code");
   });
 
+  it("keeps Default searchable and selects the empty default value", () => {
+    render(<FontSelector />);
+    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.change(screen.getByPlaceholderText("Search fonts…"), {
+      target: { value: "default" },
+    });
+
+    fireEvent.click(screen.getByRole("option", { name: /Default/ }));
+
+    expect(setFamily).toHaveBeenCalledWith("");
+  });
+
+  it("shows and disables the selector while the setting loads", () => {
+    monoState.isLoading = true;
+    render(<FontSelector />);
+
+    expect(screen.getByRole("combobox", { name: "Monospace font" })).toBeDisabled();
+    expect(screen.getByText("Loading…")).toBeVisible();
+  });
+
   it("shows a warning and toasts once when detection fails", () => {
     systemState = { fonts: [], isLoading: false, error: true, load };
     render(<FontSelector />);

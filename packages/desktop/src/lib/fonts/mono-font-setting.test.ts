@@ -18,9 +18,26 @@ describe("useMonoFont", () => {
     expect(result.current.resolved).toBe(DEFAULT_MONO_STACK);
   });
 
+  it("normalizes a persisted empty string to the default state", () => {
+    mockValue = "";
+    const { result } = renderHook(() => useMonoFont());
+    expect(result.current.family).toBeNull();
+    expect(result.current.resolved).toBe(DEFAULT_MONO_STACK);
+  });
+
   it("prepends the chosen family when set", () => {
     mockValue = "Fira Code";
     const { result } = renderHook(() => useMonoFont());
     expect(result.current.resolved).toBe(`"Fira Code", ${DEFAULT_MONO_STACK}`);
+  });
+
+  it("keeps its result stable when the setting values do not change", () => {
+    mockValue = "Fira Code";
+    const { result, rerender } = renderHook(() => useMonoFont());
+    const first = result.current;
+
+    rerender();
+
+    expect(result.current).toBe(first);
   });
 });

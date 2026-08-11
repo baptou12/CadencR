@@ -29,7 +29,7 @@ export function FontComboboxList({
       <CommandList className="max-h-56">
         <CommandEmpty className="py-3 text-center text-xs">No matching fonts.</CommandEmpty>
         <CommandGroup>
-          <CommandItem value="" className="text-xs" onSelect={() => onSelect("")}>
+          <CommandItem value={DEFAULT_LABEL} className="text-xs" onSelect={() => onSelect("")}>
             <span className="flex-1 truncate">{DEFAULT_LABEL}</span>
             {family === null && <CheckIcon className="size-3" />}
           </CommandItem>

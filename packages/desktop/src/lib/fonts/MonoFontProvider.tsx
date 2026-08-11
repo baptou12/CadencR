@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { useMonoFont } from "./mono-font-setting";
+import { useMonoFont } from "@/lib/fonts/mono-font-setting";
 
 /**
  * Reads the resolved monospace font stack and mirrors it onto the
