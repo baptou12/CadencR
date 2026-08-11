@@ -179,4 +179,80 @@ describe("resize-coordinator handle registry + document pointerdown", () => {
 
     unsub();
   });
+
+  it("treats clicks within HIT_TOLERANCE_PX of a horizontal handle as a drag start", () => {
+    // Horizontal handle at y=400..401 (1 px line), full-width.
+    const handle = makeHandle("horizontal", { left: 0, top: 400, right: 1200, bottom: 401 });
+    registerHandle(handle);
+    const listener = vi.fn();
+    const unsub = subscribeResize(listener);
+
+    // 6 px BELOW the line — inside the 8 px tolerance window.
+    fireDocPointerDown(600, 406);
+    expect(listener).toHaveBeenCalledWith(true);
+
+    // Releasing via pointerup clears the global state.
+    window.dispatchEvent(new PointerEvent("pointerup"));
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    unsub();
+    unregisterHandle(handle);
+  });
+
+  it("ignores clicks outside the tolerance window on a horizontal handle", () => {
+    const handle = makeHandle("horizontal", { left: 0, top: 400, right: 1200, bottom: 401 });
+    registerHandle(handle);
+    const listener = vi.fn();
+    const unsub = subscribeResize(listener);
+
+    // 50 px away — well outside the 8 px tolerance.
+    fireDocPointerDown(600, 450);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsub();
+    unregisterHandle(handle);
+  });
+
+  it("treats clicks within HIT_TOLERANCE_PX of a horizontal handle's X bounds as a drag start", () => {
+    // Bounded-width handle so X-axis tolerance can be exercised independently of Y.
+    const handle = makeHandle("horizontal", { left: 400, top: 400, right: 800, bottom: 401 });
+    registerHandle(handle);
+    const listener = vi.fn();
+    const unsub = subscribeResize(listener);
+
+    // On the line (Y inside), 6 px right of `right` — inside the 8 px X tolerance.
+    fireDocPointerDown(806, 400);
+    expect(listener).toHaveBeenCalledWith(true);
+
+    window.dispatchEvent(new PointerEvent("pointerup"));
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    // Same, 6 px left of `left` — the tolerance is symmetric.
+    fireDocPointerDown(394, 400);
+    expect(listener).toHaveBeenLastCalledWith(true);
+
+    window.dispatchEvent(new PointerEvent("pointerup"));
+    expect(listener).toHaveBeenLastCalledWith(false);
+
+    unsub();
+    unregisterHandle(handle);
+  });
+
+  it("ignores clicks outside the X tolerance window on a horizontal handle", () => {
+    const handle = makeHandle("horizontal", { left: 400, top: 400, right: 800, bottom: 401 });
+    registerHandle(handle);
+    const listener = vi.fn();
+    const unsub = subscribeResize(listener);
+
+    // On the line (Y inside), 50 px right of `right` — well outside the 8 px X tolerance.
+    fireDocPointerDown(850, 400);
+    expect(listener).not.toHaveBeenCalled();
+
+    // Same on the other side, 50 px left of `left`.
+    fireDocPointerDown(350, 400);
+    expect(listener).not.toHaveBeenCalled();
+
+    unsub();
+    unregisterHandle(handle);
+  });
 });
