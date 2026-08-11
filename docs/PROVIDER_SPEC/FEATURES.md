@@ -1,40 +1,68 @@
-# Cadencr Provider Specification — Features
+# Cadencr Provider Capability Coverage Ledger
 
-This document specifies the **provider-neutral feature surface** that any
-Cadencr agent provider (Claude Code, Codex, OpenCode, Cursor, …) must implement to be
-considered a first-class adapter.
+> - **Status:** Current built-in coverage and regression reference
+> - **Last reviewed:** 2026-08-09 against `v0.11.0`
+> - **Public provider contract:** ACP v1, as defined by [`BOUNDARIES.md`](./BOUNDARIES.md)
 
-The reference implementations are **Claude Code** and **Codex** — both fully
-working today. Each per-provider companion document
-(`CLAUDE_CODE.md`, `CODEX.md`, `OPENCODE.md`, `CURSOR.md`) tracks status against this list.
+This document records which user-visible capabilities each built-in provider
+currently delivers. It is **not** a marketplace admission checklist and it does
+not require an ACP provider to implement every feature below. A third-party
+provider is admitted through the minimum ACP v1 contract in `BOUNDARIES.md`.
+The current `GenericAcpAdapter` covers local descriptor identity and the baseline
+ACP v1 session path. Provider-neutral desktop controls for negotiated models,
+modes, authentication, and other configuration remain deferred work, so a ✅ in
+this built-in ledger does not claim that an installed provider exposes the same
+control today.
 
-The contract is expressed as a `RuntimeAdapter` trait (see
-`packages/service/src/domain/agents/adapter.rs`). Provider SDKs handle wire
-protocol details; provider adapters translate to provider-neutral
-`RuntimeEvent`, `RuntimePermissionRequest`, and `RuntimeSlashCommand` types.
-Shared backend and frontend code MUST consume only those neutral types — no
-provider branching outside the adapter.
+Claude Code and Codex remain the rich parity references. Their native protocols
+may expose more detail than ACP v1, but that detail must be translated inside the
+owning adapter rather than becoming a Cadencr-specific provider requirement.
+Cursor and OpenCode coverage is intentionally honest: partial or missing rows do
+not make the provider invalid.
 
-## Feature matrix
+## How to read this ledger
 
-| # | Feature | Required for v1 |
-|---|---|---|
-| 1 | Modes: plan / build / accept-edits | Yes |
-| 2 | Thinking | Yes |
-| 3 | Partial / streaming messages | Yes |
-| 4 | Bash tool calls + outputs | Yes |
-| 5 | Edits / Writes / Patch | Yes |
-| 6 | Sub-agents | Yes |
-| 7 | Todo | Yes |
-| 8 | Thinking level changes | Yes |
-| 9 | Model selection changes | Yes |
-| 10 | Permissions: yes / no / always / session | Yes |
-| 11 | MCP | Yes |
-| 12 | Plan approval | Yes |
-| 13 | Context usage | Yes |
-| 14 | Compaction | Yes |
-| 15 | Command + skill list | Yes |
-| 16 | Replay user message / send-target detection | Yes |
+- ✅ **Implemented:** the companion provider document describes a working path.
+- 🟡 **Partial:** useful behavior exists, with a documented limitation.
+- ❌ **Missing:** unsupported or affected by a known regression.
+- **ACP baseline:** part of the minimum live session path Cadencr requires from an
+  installed ACP v1 agent.
+- **ACP optional:** advertised through ACP configuration, capabilities, or
+  standard events and rendered only when present.
+- **Built-in extension:** useful first-party behavior with no stable ACP v1
+  equivalent; it remains optional and adapter-owned.
+
+The normative language in the detailed sections applies **only after a provider
+advertises or emits that capability**. It defines Cadencr's lossless projection
+and safety behavior; it does not turn an optional capability into a marketplace
+installation gate. Shared backend and frontend code must consume provider-neutral
+types and must not branch on provider identity.
+
+## Coverage matrix
+
+| #   | Feature                                  | Contract class               | Claude Code | Codex | Cursor | OpenCode |
+| --- | ---------------------------------------- | ---------------------------- | ----------- | ----- | ------ | -------- |
+| 1   | Session modes                            | ACP optional capability      | ✅          | ✅    | ✅     | ✅       |
+| 2   | Thinking                                 | ACP optional capability      | ✅          | ✅    | ✅     | ✅       |
+| 3   | Partial / streaming messages             | ACP baseline                 | ✅          | ✅    | ✅     | ✅       |
+| 4   | Bash tool calls + outputs                | ACP optional capability      | ✅          | ✅    | ✅     | ✅       |
+| 5   | Edits / Writes / Patch                   | ACP optional capability      | ✅          | ✅    | ✅     | ✅       |
+| 6   | Sub-agents                               | Contained built-in extension | ✅          | ✅    | 🟡     | ✅       |
+| 7   | Todo                                     | ACP optional capability      | ✅          | ✅    | ✅     | ✅       |
+| 8   | Thinking level changes                   | ACP optional capability      | ✅          | ✅    | 🟡     | ✅       |
+| 9   | Model selection changes                  | ACP optional capability      | ✅          | ✅    | ✅     | ✅       |
+| 10  | Permissions: yes / no / always / session | ACP optional capability      | ✅          | ✅    | ✅     | ✅       |
+| 11  | MCP                                      | ACP optional capability      | ✅          | ✅    | 🟡     | ❌       |
+| 12  | Plan approval                            | Contained built-in extension | ✅          | ✅    | ✅     | ❌       |
+| 13  | Context usage                            | ACP optional capability      | ✅          | ✅    | ❌     | ✅       |
+| 14  | Compaction                               | Contained built-in extension | ✅          | ✅    | ✅     | ✅       |
+| 15  | Command + skill list                     | ACP optional capability      | ✅          | ✅    | 🟡     | ✅       |
+| 16  | Live follow-up prompt targeting          | ACP baseline                 | ✅          | ✅    | ✅     | ✅       |
+| 17  | Durable session resume/load              | ACP optional capability      | ✅          | ✅    | ✅     | ❌       |
+
+Detailed evidence and limitations remain in
+[`CLAUDE_CODE.md`](./CLAUDE_CODE.md), [`CODEX.md`](./CODEX.md),
+[`CURSOR.md`](./CURSOR.md), and [`OPENCODE.md`](./OPENCODE.md).
 
 ---
 
@@ -186,7 +214,8 @@ but MUST NOT be relied upon by shared code.
 The user can change reasoning effort (`low` / `medium` / `high` / `xhigh` /
 `max`) at any time. The adapter MUST:
 
-- Accept a new effort value via the `RuntimeAdapter::set_thinking_effort`
+- Accept a new effort value via the internal
+  `AgentRuntimeSession::set_thinking_effort`
   surface.
 - Apply the new value to the **next user turn**. Mid-turn changes are not
   required.
@@ -203,7 +232,7 @@ catalog; shared code MUST NOT hardcode effort levels.
 
 The user can switch models mid-session. The adapter MUST:
 
-- Accept a new model id via the `RuntimeAdapter::set_model` surface.
+- Accept a new model id via the internal `AgentRuntimeSession::set_model` surface.
 - Apply the change on the next user turn. The current turn keeps the model
   it started with.
 - Reflect the new model in subsequent `MessageStart.model` and any
@@ -343,10 +372,10 @@ Slash commands and skills are surfaced through the same enumeration:
 Built-in commands (e.g. `/compact`) are merged with project-local commands
 in the surfaced list.
 
-## 16. Replay user message / send-target detection
+## 16. Live follow-up prompt targeting
 
 When a user re-sends a message into an existing session, shared code calls
-`RuntimeAdapter::stream_input` with the message body. The adapter MUST
+`AgentRuntimeSession::stream_input` with the message body. The adapter MUST
 route it to the **current live session** for that runtime — not start a
 new one. Routing identifiers used:
 
@@ -354,25 +383,47 @@ new one. Routing identifiers used:
   the fact that stdin is per-process.
 - Codex: the `threadId` carried on `turn/start`.
 
-A provider that supports resuming a stored session does so via
+This live-session routing is distinct from durable recovery after the provider
+process or Cadencr restarts.
+
+## 17. Durable session resume/load
+
+A provider that advertises durable resume accepts a stored session through
 `RuntimeSpawnConfig.resume_session_id` (Claude Code `--resume`, Codex
-`thread/resume`). Resume MUST be transparent: shared code asks for the
-session id, the adapter handles whether to spawn fresh, resume, or attach
-to an already-running process.
+`thread/resume`, or ACP `session/load`). Resume MUST be transparent: shared code
+asks for the session id, and the adapter handles whether to spawn fresh, resume,
+or attach to an already-running process. Providers that do not advertise this
+optional capability must start a new provider session without deleting Cadencr's
+local transcript.
 
 History replay (re-running prior turns) is NOT a v1 requirement.
 
 ---
 
-## Adding a new provider
+## Adding a provider
 
-A new provider lands as a new directory under
-`packages/service/src/domain/agents/<provider>/` plus its own SDK at
-`packages/<provider>-sdk-rs/`. To pass review it MUST:
+### Marketplace or local ACP provider
 
-1. Implement `RuntimeAdapter` end-to-end against this spec.
-2. Ship a companion doc `docs/PROVIDER_SPEC/<PROVIDER>.md` with the same
-   feature table, marking each row implemented / partial / missing and
-   linking to the code paths that prove it.
-3. Add no provider-specific branches in shared backend or frontend code
-   (per `.claude/rules/provider-boundaries.md`).
+An ACP-speaking provider does **not** add Rust, TypeScript, or a provider SDK to
+Cadencr. It supplies a validated ACP Registry entry plus host installation data,
+and the existing `GenericAcpAdapter` launches it as an external process. Admission
+depends on the minimum ACP v1 contract and host policy in `BOUNDARIES.md`, not on
+implementing every row in this ledger.
+
+Capability data belongs to ACP `initialize`, `session/new`, and later standard
+updates; it must not be copied into the marketplace descriptor as a second source
+of truth. The current generic adapter does not yet project every optional
+negotiated model, mode, authentication, or configuration control into the desktop.
+That provider-neutral bridge is tracked separately in `BOUNDARIES.md`.
+
+### First-party built-in integration
+
+A built-in may still need a dedicated service adapter and transport SDK when its
+native protocol preserves behavior ACP v1 cannot represent. In that case it must:
+
+1. keep provider-specific decisions and native-to-neutral translation inside
+   `packages/service/src/domain/agents/<provider>/`;
+2. keep its SDK transport-only;
+3. register its factory once in `providers/registry.rs::BUILTIN_PROVIDERS`;
+4. add or update a companion coverage document and executable parity fixtures;
+5. add no provider-ID branch to shared service or desktop code.

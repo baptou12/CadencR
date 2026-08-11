@@ -120,6 +120,7 @@ mod tests {
             mcp_servers: Vec::new(),
             context_window: None,
             current_mode: mode.map(ToOwned::to_owned),
+            session_config: Default::default(),
         }
     }
 

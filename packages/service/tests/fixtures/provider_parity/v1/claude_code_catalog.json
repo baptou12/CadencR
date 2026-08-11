@@ -1,0 +1,20 @@
+{
+  "id": "claude_code",
+  "label": "Claude",
+  "status": "available",
+  "models": [
+    {
+      "id": "opus",
+      "label": "Opus"
+    },
+    {
+      "id": "sonnet",
+      "label": "Sonnet"
+    },
+    {
+      "id": "haiku",
+      "label": "Haiku"
+    }
+  ],
+  "default_model": "opus"
+}

@@ -49,6 +49,16 @@ impl StreamReaderTask {
         if runtime_event.is_result() {
             return self.result_envelope(state, interrupted_generation).await;
         }
+        // Phase 3 migration seam: v1 index-based events are assigned stable
+        // canonical ids and materialized before the legacy desktop projection.
+        // Keeping this immediately consumed prevents an unwired shadow model.
+        state
+            .canonical_projection
+            .apply_runtime_event(runtime_event);
+        let projected_model = state
+            .canonical_projection
+            .model_for_event(runtime_event)
+            .or(current_model);
         let mut block =
             raw_event_with_agent_message_id(runtime_event.raw_json(), persisted_message);
         // Stamp the active model onto the live block (`current_model` is set only
@@ -56,7 +66,7 @@ impl StreamReaderTask {
         // otherwise rely on the client having applied `message_start` first —
         // unreliable for a remote device that joined the turn late, which then
         // renders the model as "unknown".
-        if let (Some(model), serde_json::Value::Object(object)) = (current_model, &mut block) {
+        if let (Some(model), serde_json::Value::Object(object)) = (projected_model, &mut block) {
             object.insert(
                 "model".to_string(),
                 serde_json::Value::String(model.to_string()),
@@ -79,6 +89,7 @@ impl StreamReaderTask {
         state: &mut StreamReaderState,
         interrupted_generation: Option<u64>,
     ) -> Option<WsEnvelope> {
+        state.canonical_projection.finish_turn();
         state.turn_state.mark_result();
 
         // Issue #58: a `run_in_background` Agent/Task can still be alive after

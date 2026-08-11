@@ -9,8 +9,9 @@
 use serde_json::Value;
 
 use super::events::{mirror_session_info_update, parse_available_commands};
-use super::events_config_option::mirror_config_option_update;
+use super::events_config_option::{mirror_config_snapshot, mirror_legacy_config_update};
 use super::server_requests::EventLoopConfig;
+use super::session_config::ConfigNotificationUpdate;
 
 /// Mirror agent-initiated `current_mode_update` / `config_option_update` /
 /// `session_info_update` notifications into the session's local state, and
@@ -48,7 +49,37 @@ pub async fn sync_session_state_from_update(params: &Value, config: &EventLoopCo
                 .await;
         }
         Some("config_option_update") => {
-            mirror_config_option_update(body, &config.current_model, &config.current_effort).await;
+            let update_guard = config.session_config.lock_updates().await;
+            match config
+                .session_config
+                .observe_notification(&update_guard, body)
+                .await
+            {
+                Ok(ConfigNotificationUpdate::Snapshot(snapshot)) => {
+                    mirror_config_snapshot(
+                        &snapshot,
+                        config.hooks.as_ref(),
+                        &config.current_model,
+                        &config.current_effort,
+                    )
+                    .await;
+                }
+                Ok(ConfigNotificationUpdate::Legacy { config_id, value }) => {
+                    mirror_legacy_config_update(
+                        &config_id,
+                        value.as_ref(),
+                        &config.current_model,
+                        &config.current_effort,
+                    )
+                    .await;
+                }
+                Ok(ConfigNotificationUpdate::Ignored) => {
+                    tracing::debug!("ignoring ACP config update without options");
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "ignoring invalid ACP config option update");
+                }
+            }
         }
         Some("session_info_update") => {
             mirror_session_info_update(body, &config.current_model).await;
@@ -65,9 +96,17 @@ mod tests {
     use crate::domain::agents::acp::runtime::prompt_receipts::PendingPromptReceipts;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::server_requests::EventLoopConfig;
+    use crate::domain::agents::acp::runtime::session_config::{
+        snapshot_from_options, AcpSessionConfigState,
+    };
     use crate::domain::agents::acp::runtime::session_permissions::SessionPermissions;
     use crate::domain::agents::acp::runtime::terminal_registry::TerminalRegistry;
-    use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSlashCommand};
+    use crate::domain::agents::adapter::{
+        RuntimePermissionMode, RuntimeSessionConfigKind, RuntimeSlashCommand,
+    };
+    use agent_client_protocol::schema::v1::{
+        SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    };
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::AtomicBool;
@@ -121,17 +160,19 @@ mod tests {
     }
 
     fn dummy_config() -> EventLoopConfig {
+        let hooks = Arc::new(PlainHooks);
         EventLoopConfig {
             session_id: Arc::new(RwLock::new(None)),
             current_model: Arc::new(RwLock::new(None)),
             current_effort: Arc::new(RwLock::new(None)),
             current_mode: Arc::new(RwLock::new("build".to_string())),
+            session_config: AcpSessionConfigState::new(Default::default(), hooks.clone()),
             cwd: PathBuf::from("/tmp"),
             closing: Arc::new(AtomicBool::new(false)),
             pending_permissions: PendingPermissions::default(),
             session_permissions: SessionPermissions::new(),
             terminals: Arc::new(TerminalRegistry::default()),
-            hooks: Arc::new(PlainHooks),
+            hooks,
             replay_suppression: Arc::new(AtomicBool::new(false)),
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             indexer: Arc::new(Mutex::new(EventIndexer::default())),
@@ -154,19 +195,76 @@ mod tests {
 
     #[tokio::test]
     async fn config_option_update_mirrors_model_into_session_state() {
-        let cfg = dummy_config();
+        let mut cfg = dummy_config();
+        let options = vec![SessionConfigOption::select(
+            "model",
+            "Model",
+            "m1",
+            vec![
+                SessionConfigSelectOption::new("m1", "Model 1"),
+                SessionConfigSelectOption::new("m2", "Model 2"),
+            ],
+        )
+        .category(SessionConfigOptionCategory::Model)];
+        cfg.session_config =
+            AcpSessionConfigState::new(snapshot_from_options(&options), cfg.hooks.clone());
         let params = json!({
             "sessionId": "s1",
             "update": {
                 "sessionUpdate": "config_option_update",
-                "configOption": { "name": "model", "value": "anthropic/claude-4.7" }
+                "configOption": { "name": "model", "value": "m2" }
             }
         });
         sync_session_state_from_update(&params, &cfg).await;
-        assert_eq!(
-            cfg.current_model.read().await.as_deref(),
-            Some("anthropic/claude-4.7")
-        );
+        assert_eq!(cfg.current_model.read().await.as_deref(), Some("m2"));
+        assert!(matches!(
+            &cfg.session_config.snapshot().await.options[0].kind,
+            RuntimeSessionConfigKind::Select { current_value, .. } if current_value == "m2"
+        ));
+    }
+
+    #[tokio::test]
+    async fn complete_config_update_replaces_snapshot_and_legacy_model_mirror() {
+        let cfg = dummy_config();
+        let options = vec![
+            SessionConfigOption::select(
+                "model",
+                "Model",
+                "m2",
+                vec![
+                    SessionConfigSelectOption::new("m1", "Model 1"),
+                    SessionConfigSelectOption::new("m2", "Model 2"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Model),
+            SessionConfigOption::select(
+                "effort",
+                "Effort",
+                "high",
+                vec![
+                    SessionConfigSelectOption::new("low", "Low"),
+                    SessionConfigSelectOption::new("high", "High"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::ThoughtLevel),
+        ];
+        let params = json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "config_option_update",
+                "configOptions": options
+            }
+        });
+
+        sync_session_state_from_update(&params, &cfg).await;
+
+        assert_eq!(cfg.current_model.read().await.as_deref(), Some("m2"));
+        assert_eq!(cfg.current_effort.read().await.as_deref(), Some("high"));
+        let snapshot = cfg.session_config.snapshot().await;
+        assert!(matches!(
+            &snapshot.options[0].kind,
+            RuntimeSessionConfigKind::Select { current_value, .. } if current_value == "m2"
+        ));
     }
 
     #[tokio::test]

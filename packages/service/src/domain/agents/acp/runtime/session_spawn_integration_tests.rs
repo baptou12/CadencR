@@ -122,6 +122,7 @@ async fn stream_input_steers_immediately_and_cancel_is_non_error() {
         mcp_servers: Vec::new(),
         context_window: None,
         current_mode: Some("build".to_string()),
+        session_config: Default::default(),
     };
     let (tx, rx) = mpsc::channel(8);
     let mut session = AcpRuntimeSession::assemble(
@@ -176,6 +177,7 @@ async fn provider_followup_waits_for_current_prompt_completion() {
         mcp_servers: Vec::new(),
         context_window: None,
         current_mode: Some("build".to_string()),
+        session_config: Default::default(),
     };
     let (tx, rx) = mpsc::channel(8);
     let session = Arc::new(AcpRuntimeSession::assemble(
@@ -231,6 +233,7 @@ async fn prompt_receipt_waits_for_user_message_echo() {
         mcp_servers: Vec::new(),
         context_window: None,
         current_mode: Some("build".to_string()),
+        session_config: Default::default(),
     };
     let (tx, rx) = mpsc::channel(8);
     let mut session = AcpRuntimeSession::assemble(
@@ -253,6 +256,7 @@ async fn prompt_receipt_waits_for_user_message_echo() {
             current_model: Arc::clone(&session.current_model),
             current_effort: Arc::clone(&session.current_effort),
             current_mode: Arc::clone(&session.current_mode),
+            session_config: session.session_config.clone(),
             cwd: PathBuf::from("/tmp"),
             closing: Arc::new(AtomicBool::new(false)),
             pending_permissions: PendingPermissions::default(),
@@ -332,6 +336,7 @@ async fn prompt_receipt_falls_back_to_prompt_response_without_user_echo() {
         mcp_servers: Vec::new(),
         context_window: None,
         current_mode: Some("build".to_string()),
+        session_config: Default::default(),
     };
     let (tx, rx) = mpsc::channel(8);
     let mut session = AcpRuntimeSession::assemble(

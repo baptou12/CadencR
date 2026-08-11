@@ -178,6 +178,7 @@ mod tests {
         assert!(actions.contains(&WsSessionAction::CompactStarted));
         assert!(actions.contains(&WsSessionAction::ModelSetOk));
         assert!(actions.contains(&WsSessionAction::EffortSetOk));
+        assert!(actions.contains(&WsSessionAction::ConfigSnapshot));
         assert!(actions.contains(&WsSessionAction::ModeChanged));
         assert!(actions.contains(&WsSessionAction::ProfileChanged));
         assert!(actions.contains(&WsSessionAction::BranchRewound));

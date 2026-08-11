@@ -84,17 +84,22 @@ async fn client_with_agent_io() -> (AcpClient, DuplexStream, BufReader<DuplexStr
 }
 
 fn event_loop_config(cwd: PathBuf) -> EventLoopConfig {
+    let hooks = Arc::new(PlainHooks);
     EventLoopConfig {
         session_id: Arc::new(RwLock::new(Some("s-1".to_string()))),
         current_model: Arc::new(RwLock::new(None)),
         current_effort: Arc::new(RwLock::new(None)),
         current_mode: Arc::new(RwLock::new("build".to_string())),
+        session_config: super::session_config::AcpSessionConfigState::new(
+            Default::default(),
+            hooks.clone(),
+        ),
         cwd,
         closing: Arc::new(AtomicBool::new(false)),
         pending_permissions: Default::default(),
         session_permissions: Default::default(),
         terminals: Arc::new(TerminalRegistry::default()),
-        hooks: Arc::new(PlainHooks),
+        hooks,
         replay_suppression: Arc::new(AtomicBool::new(false)),
         pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
         indexer: Arc::new(StdMutex::new(EventIndexer::default())),

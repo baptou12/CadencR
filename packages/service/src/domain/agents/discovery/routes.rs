@@ -14,6 +14,7 @@ use cli_discovery::{Candidate, CandidateSource, DiscoverySpec};
 use serde::Serialize;
 
 use crate::app_state::AppState;
+use crate::domain::agents::providers::provider_registry;
 use crate::error::AppError;
 
 use super::read_overrides;
@@ -65,7 +66,7 @@ pub struct ProviderDiscovery {
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct BinaryDiscoveryResponse {
-    /// Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`, `"cursor"`).
+    /// Keyed by the discovery id declared by each provider registration.
     pub providers: HashMap<String, ProviderDiscovery>,
 }
 
@@ -77,39 +78,30 @@ pub struct BinaryDiscoveryResponse {
 pub async fn binary_discovery_handler(
     State(state): State<AppState>,
 ) -> Result<Json<BinaryDiscoveryResponse>, AppError> {
-    let claude_spec = claude_agent_sdk_rs::claude_discovery_spec();
-    let opencode_spec = opencode_sdk_rs::opencode_discovery_spec();
-    let codex_spec = codex_app_server_sdk_rs::codex_discovery_spec();
-    let cursor_spec = cursor_agent_sdk_rs::cursor_discovery_spec();
-
     // Read overrides once, then run discoveries in parallel — they're
     // independent and each spawns subprocesses we don't want to serialize.
     let overrides = read_overrides(&state.read_pool).await;
-    let (claude_candidates, opencode_candidates, codex_candidates, cursor_candidates) = tokio::join!(
-        cli_discovery::discover_all(&claude_spec, overrides.claude.as_deref()),
-        cli_discovery::discover_all(&opencode_spec, overrides.opencode.as_deref()),
-        cli_discovery::discover_all(&codex_spec, overrides.codex.as_deref()),
-        cli_discovery::discover_all(&cursor_spec, overrides.cursor.as_deref()),
-    );
-
-    let providers = HashMap::from([
-        (
-            "claude".to_string(),
-            build_provider_discovery(&claude_spec, claude_candidates, overrides.claude),
-        ),
-        (
-            "opencode".to_string(),
-            build_provider_discovery(&opencode_spec, opencode_candidates, overrides.opencode),
-        ),
-        (
-            "codex".to_string(),
-            build_provider_discovery(&codex_spec, codex_candidates, overrides.codex),
-        ),
-        (
-            "cursor".to_string(),
-            build_provider_discovery(&cursor_spec, cursor_candidates, overrides.cursor),
-        ),
-    ]);
+    let discoveries: Vec<_> = provider_registry()
+        .discoveries()
+        .map(|(_, discovery)| {
+            let id = discovery.discovery_id().to_string();
+            let spec = discovery.spec().clone();
+            let override_path = overrides.get(&id).cloned();
+            (id, spec, override_path)
+        })
+        .collect();
+    let providers = futures::future::join_all(discoveries.into_iter().map(
+        |(id, spec, override_path)| async move {
+            let candidates = cli_discovery::discover_all(&spec, override_path.as_deref()).await;
+            (
+                id,
+                build_provider_discovery(&spec, candidates, override_path),
+            )
+        },
+    ))
+    .await
+    .into_iter()
+    .collect::<HashMap<_, _>>();
 
     Ok(Json(BinaryDiscoveryResponse { providers }))
 }

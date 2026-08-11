@@ -249,11 +249,15 @@ async fn discover_forge_cli(binary: &'static str) -> Result<PathBuf, ForgeError>
     let discovered = cache
         .get_or_try_init(|| async move {
             let spec = DiscoverySpec {
-                bin_name: binary,
-                well_known_relative_to_home: vec![".local/bin"],
-                well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"],
-                version_args: &["--version"],
-                version_must_contain: Some(binary),
+                bin_name: binary.to_string(),
+                well_known_relative_to_home: vec![".local/bin".into()],
+                well_known_absolute: vec![
+                    "/opt/homebrew/bin".into(),
+                    "/usr/local/bin".into(),
+                    "/usr/bin".into(),
+                ],
+                version_args: vec!["--version".into()],
+                version_must_contain: Some(binary.to_string()),
             };
             let candidates = discover_all(&spec, None).await;
             select_best(&candidates).map(|candidate| candidate.path.clone())

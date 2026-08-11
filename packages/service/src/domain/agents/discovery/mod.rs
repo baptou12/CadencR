@@ -8,28 +8,16 @@
 
 pub mod routes;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use sqlx::SqlitePool;
 use tracing::info;
 
 use super::adapter::RuntimeError;
+use super::providers::provider_registry;
 
-/// Global settings key for the user-selected `claude` CLI path.
-pub const CLAUDE_CLI_PATH_KEY: &str = "claude_cli_path";
-/// Global settings key for the user-selected `opencode` CLI path.
-pub const OPENCODE_CLI_PATH_KEY: &str = "opencode_cli_path";
-/// Global settings key for the user-selected `codex` CLI path.
-pub const CODEX_CLI_PATH_KEY: &str = "codex_cli_path";
-/// Global settings key for the user-selected Cursor Agent CLI path.
-pub const CURSOR_CLI_PATH_KEY: &str = "cursor_cli_path";
-
-pub(crate) struct BinaryOverrides {
-    pub claude: Option<PathBuf>,
-    pub opencode: Option<PathBuf>,
-    pub codex: Option<PathBuf>,
-    pub cursor: Option<PathBuf>,
-}
+pub(crate) type BinaryOverrides = HashMap<String, PathBuf>;
 
 /// Read both per-provider override paths from the global settings table and
 /// install them into the SDK-level overrides. Called once at app boot, before
@@ -40,39 +28,31 @@ pub(crate) struct BinaryOverrides {
 /// well-known dirs, exactly like the no-override case.
 pub async fn apply_binary_overrides_from_settings(read_pool: &SqlitePool) {
     let overrides = read_overrides(read_pool).await;
-    if let Some(path) = overrides.claude {
-        info!(path = %path.display(), "applying claude CLI override from settings");
-        claude_agent_sdk_rs::set_binary_override(Some(path));
-    }
-    if let Some(path) = overrides.opencode {
-        info!(path = %path.display(), "applying opencode CLI override from settings");
-        opencode_sdk_rs::set_binary_override(Some(path));
-    }
-    if let Some(path) = overrides.codex {
-        info!(path = %path.display(), "applying codex CLI override from settings");
-        codex_app_server_sdk_rs::set_binary_override(Some(path));
-    }
-    if let Some(path) = overrides.cursor {
-        info!(path = %path.display(), "applying Cursor Agent CLI override from settings");
-        cursor_agent_sdk_rs::set_binary_override(Some(path));
+    for (provider_id, discovery) in provider_registry().discoveries() {
+        if let Some(path) = overrides.get(discovery.discovery_id()).cloned() {
+            info!(provider_id, path = %path.display(), "applying provider CLI override from settings");
+            discovery.apply_override(Some(path));
+        }
     }
 }
 
 /// Single-pass read of both override settings. Used by both startup wiring and
 /// the discovery HTTP handler so we don't hit SQLite four times for two values.
 pub(crate) async fn read_overrides(read_pool: &SqlitePool) -> BinaryOverrides {
-    let (claude, opencode, codex, cursor) = tokio::join!(
-        read_override_setting(read_pool, CLAUDE_CLI_PATH_KEY),
-        read_override_setting(read_pool, OPENCODE_CLI_PATH_KEY),
-        read_override_setting(read_pool, CODEX_CLI_PATH_KEY),
-        read_override_setting(read_pool, CURSOR_CLI_PATH_KEY),
-    );
-    BinaryOverrides {
-        claude,
-        opencode,
-        codex,
-        cursor,
-    }
+    futures::future::join_all(
+        provider_registry()
+            .discoveries()
+            .map(|(_, discovery)| async move {
+                (
+                    discovery.discovery_id().to_string(),
+                    read_override_setting(read_pool, discovery.setting_key()).await,
+                )
+            }),
+    )
+    .await
+    .into_iter()
+    .filter_map(|(id, path)| path.map(|path| (id, path)))
+    .collect()
 }
 
 async fn read_override_setting(read_pool: &SqlitePool, key: &str) -> Option<PathBuf> {
@@ -128,13 +108,13 @@ mod tests {
         crate::domain::workspace::repository::set_setting(&pool, "claude_cli_path", "")
             .await
             .unwrap();
-        assert!(read_override_setting(&pool, CLAUDE_CLI_PATH_KEY)
+        assert!(read_override_setting(&pool, "claude_cli_path")
             .await
             .is_none());
     }
 
     #[tokio::test]
-    async fn read_overrides_returns_both_values_in_one_pass() {
+    async fn read_overrides_returns_every_registered_discovery_value() {
         let pool = test_pool_with_settings().await;
         // CLI path overrides are workspace settings, which now live in the JSON
         // store — seed them there (not the legacy SQLite `settings` table).
@@ -146,10 +126,13 @@ mod tests {
         set(&pool, "codex_cli_path", "/x/codex").await.unwrap();
         set(&pool, "cursor_cli_path", "/u/agent").await.unwrap();
         let overrides = read_overrides(&pool).await;
-        assert_eq!(overrides.claude, Some(PathBuf::from("/c/claude")));
-        assert_eq!(overrides.opencode, Some(PathBuf::from("/o/opencode")));
-        assert_eq!(overrides.codex, Some(PathBuf::from("/x/codex")));
-        assert_eq!(overrides.cursor, Some(PathBuf::from("/u/agent")));
+        assert_eq!(overrides.get("claude"), Some(&PathBuf::from("/c/claude")));
+        assert_eq!(
+            overrides.get("opencode"),
+            Some(&PathBuf::from("/o/opencode"))
+        );
+        assert_eq!(overrides.get("codex"), Some(&PathBuf::from("/x/codex")));
+        assert_eq!(overrides.get("cursor"), Some(&PathBuf::from("/u/agent")));
     }
 
     #[test]

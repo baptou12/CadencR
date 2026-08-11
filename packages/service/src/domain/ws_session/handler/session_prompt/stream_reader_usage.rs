@@ -17,6 +17,8 @@ impl StreamReaderState {
             usage_attribution: None,
             usage_attribution_captured: false,
             provider_usage_event_id: None,
+            canonical_projection:
+                crate::domain::agents::canonical::CanonicalSessionProjection::default(),
             last_runtime_activity: Instant::now(),
             last_provider_reconcile: Instant::now(),
             turn_state: StreamTurnState::new(),

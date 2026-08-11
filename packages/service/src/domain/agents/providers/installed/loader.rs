@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::super::registry::provider_identifier_key;
 use super::descriptor::ProviderDescriptor;
 use super::installation::HostInstallation;
 use super::rejection::{DescriptorError, DescriptorRejection, RejectionCode};
@@ -66,17 +67,25 @@ impl InstalledLoadOutcome {
     }
 }
 
-/// Scan `directory` for descriptors, refusing any id already owned by
-/// `reserved_ids` (the built-ins) or by an earlier descriptor in the scan.
+/// Scan `directory` for descriptors, refusing any public identifier already
+/// owned by the built-ins or by an earlier descriptor in the scan. Comparison
+/// uses the same normalization as runtime resolution, so an installed `claude`
+/// cannot shadow the built-in alias and `acme-agent` conflicts with `acmeagent`.
 ///
 /// A missing directory is the normal case — no installs — not an error.
-pub fn load_from_dir(directory: &Path, reserved_ids: &[&str]) -> InstalledLoadOutcome {
+pub(super) fn load_from_dir<T: AsRef<str>>(
+    directory: &Path,
+    reserved_ids: &[T],
+) -> InstalledLoadOutcome {
     let mut outcome = InstalledLoadOutcome {
         directory: directory.to_path_buf(),
         ..InstalledLoadOutcome::default()
     };
     let paths = descriptor_paths(directory, &mut outcome);
-    let mut taken: HashSet<String> = reserved_ids.iter().map(|id| id.to_string()).collect();
+    let mut taken: HashSet<String> = reserved_ids
+        .iter()
+        .map(|id| provider_identifier_key(id.as_ref()))
+        .collect();
     for path in paths {
         match load_one(&path) {
             // Enablement does not enter into it: a disabled descriptor still
@@ -84,14 +93,16 @@ pub fn load_from_dir(directory: &Path, reserved_ids: &[&str]) -> InstalledLoadOu
             // surprise the day the user enables it. It also keeps "is this id
             // registered?" answerable — otherwise a disabled descriptor sharing
             // a built-in's id would look registered because of the built-in.
-            Ok(installation) if !taken.insert(installation.provider_id().to_string()) => {
+            Ok(installation)
+                if !taken.insert(provider_identifier_key(installation.provider_id())) =>
+            {
                 outcome.rejections.push(
                     DescriptorRejection::new(
                         &path,
                         RejectionCode::DuplicateProviderId,
                         format!(
-                            "provider id {:?} is already registered; the first registration \
-                             keeps the id",
+                            "provider id {:?} conflicts with a reserved provider identifier; \
+                             the first registration keeps the name",
                             installation.provider_id()
                         ),
                     )
@@ -154,13 +165,28 @@ fn descriptor_paths(directory: &Path, outcome: &mut InstalledLoadOutcome) -> Vec
 /// Parse and validate one descriptor, attributing any failure to this file (and
 /// to the id it claimed, once it parsed far enough to claim one).
 fn load_one(path: &Path) -> Result<HostInstallation, DescriptorRejection> {
-    let unattributed = |code, message| DescriptorRejection::new(path, code, message);
     let raw = std::fs::read_to_string(path).map_err(|error| {
-        unattributed(
+        DescriptorRejection::new(
+            path,
             RejectionCode::DescriptorUnreadable,
             format!("could not read descriptor: {error}"),
         )
     })?;
+    parse_descriptor(path, &raw).map(|loaded| loaded.installation)
+}
+
+pub(super) struct LoadedDescriptor {
+    pub descriptor: ProviderDescriptor,
+    pub installation: HostInstallation,
+}
+
+/// Parse and validate descriptor contents for both startup loading and
+/// lifecycle mutations so those paths cannot disagree on schema or identity.
+pub(super) fn parse_descriptor(
+    path: &Path,
+    raw: &str,
+) -> Result<LoadedDescriptor, DescriptorRejection> {
+    let unattributed = |code, message| DescriptorRejection::new(path, code, message);
     let descriptor: ProviderDescriptor = serde_json::from_str(&raw).map_err(|error| {
         // serde already knows which of the two this is: a data error means the
         // JSON parsed but did not fit the descriptor shape.
@@ -179,7 +205,12 @@ fn load_one(path: &Path) -> Result<HostInstallation, DescriptorRejection> {
 
     descriptor.validate().map_err(attribute)?;
     check_identity(path, &descriptor.agent.id).map_err(attribute)?;
-    HostInstallation::from_descriptor(descriptor, path).map_err(attribute)
+    let installation =
+        HostInstallation::from_descriptor(descriptor.clone(), path).map_err(attribute)?;
+    Ok(LoadedDescriptor {
+        descriptor,
+        installation,
+    })
 }
 
 /// The file name is how the user manages installs, so it must agree with the
@@ -207,6 +238,7 @@ fn check_identity(path: &Path, agent_id: &str) -> Result<(), DescriptorError> {
 mod tests {
     use super::super::test_fixtures::{descriptor_json as descriptor, runnable_binary};
     use super::{load_from_dir, RejectionCode};
+    use crate::domain::agents::providers::registry::builtin_provider_identifiers;
     use serde_json::json;
     use std::path::Path;
 
@@ -259,6 +291,31 @@ mod tests {
             RejectionCode::DuplicateProviderId
         );
         assert_eq!(outcome.rejections[0].provider_id.as_deref(), Some("cursor"));
+    }
+
+    #[test]
+    fn builtin_aliases_are_reserved_after_normalization_even_when_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = runnable_binary(dir.path());
+        write(
+            dir.path(),
+            "claudecode.json",
+            descriptor("claudecode", &bin),
+        );
+        let mut disabled = descriptor("openai", &bin);
+        disabled["installation"]["enabled"] = json!(false);
+        write(dir.path(), "openai.json", disabled);
+
+        let outcome = load_from_dir(dir.path(), builtin_provider_identifiers());
+        assert!(outcome.installations.is_empty());
+        assert_eq!(outcome.rejections.len(), 2);
+        assert!(outcome.rejections.iter().all(|rejection| {
+            rejection.code == RejectionCode::DuplicateProviderId
+                && matches!(
+                    rejection.provider_id.as_deref(),
+                    Some("claudecode" | "openai")
+                )
+        }));
     }
 
     #[test]

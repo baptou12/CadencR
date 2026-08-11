@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """A deterministic ACP v1 agent, used as an installed-provider fixture.
 
-This is the *minimum admission contract* from `docs/PROVIDER_SPEC/BOUNDARIES.md`
-and nothing more: `initialize` at protocol version 1, `session/new`,
+By default this is the *minimum admission contract* from
+`docs/PROVIDER_SPEC/BOUNDARIES.md` and nothing more: `initialize` at protocol
+version 1, `session/new`,
 `session/prompt` with streaming `session/update` notifications,
 `session/cancel`, and a standard JSON-RPC "method not found" for every optional
 method it does not implement. It advertises no optional capability, so a test
 against it proves the generic path works without any provider-specific help.
+
+`--session-config` adds one ACP v1 boolean option and implements
+`session/set_config_option`. This keeps the default admission fixture minimal
+while letting the same deterministic process test the optional configuration
+bridge.
 
 Behavior is keyed off the prompt text so a test can drive it exactly:
 
@@ -28,6 +34,21 @@ CHUNKS = ["Hello ", "from ", "the ", "fake ", "ACP ", "agent."]
 
 _write_lock = threading.Lock()
 _cancelled = threading.Event()
+_session_config_enabled = "--session-config" in sys.argv
+_safe_mode = False
+
+
+def config_options():
+    return [
+        {
+            "id": "safe_mode",
+            "name": "Safe mode",
+            "description": "Use conservative behavior",
+            "category": "_fake",
+            "type": "boolean",
+            "currentValue": _safe_mode,
+        }
+    ]
 
 
 def send(message):
@@ -90,6 +111,7 @@ def run_turn(request_id, params):
 
 
 def main():
+    global _safe_mode
     turn = None
     for line in sys.stdin:
         line = line.strip()
@@ -113,7 +135,18 @@ def main():
                 },
             )
         elif method == "session/new":
-            reply(request_id, {"sessionId": SESSION_ID})
+            result = {"sessionId": SESSION_ID}
+            if _session_config_enabled:
+                result["configOptions"] = config_options()
+            reply(request_id, result)
+        elif method == "session/set_config_option" and _session_config_enabled:
+            if params.get("configId") != "safe_mode" or not isinstance(
+                params.get("value"), bool
+            ):
+                reply_error(request_id, -32602, "invalid config option")
+                continue
+            _safe_mode = params["value"]
+            reply(request_id, {"configOptions": config_options()})
         elif method == "session/prompt":
             _cancelled.clear()
             turn = threading.Thread(target=run_turn, args=(request_id, params))

@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
-use crate::domain::agents::resolve_effective_provider;
-use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+use crate::domain::agents::{default_provider_id, resolve_effective_provider};
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::persistence::SessionRow;
@@ -81,10 +80,10 @@ async fn effective_provider(
         &crate::domain::agents::runtime::runtime_setting_key("session"),
         Some(row.feature_id),
         Some(project_id),
-        Some(DEFAULT_PROVIDER),
+        Some(default_provider_id()),
     )
     .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    .unwrap_or_else(|| default_provider_id().to_string());
     resolve_effective_provider(
         &app_state.read_pool,
         Some(cwd),

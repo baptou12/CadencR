@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::domain::agents::adapter::RuntimeSessionConfigValue;
+
 use super::PermissionDecision;
 
 // --- Client → Server payloads ---
@@ -101,6 +103,13 @@ pub struct SessionActionPayload {
     pub session_id: String,
     #[serde(default)]
     pub message_uuid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionConfigSetPayload {
+    pub session_id: String,
+    pub config_id: String,
+    pub value: RuntimeSessionConfigValue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

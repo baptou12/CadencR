@@ -6,15 +6,15 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, bon::Builder)]
 pub struct DiscoverySpec {
     /// Bare binary name, e.g. `"claude"` or `"opencode"`.
-    pub bin_name: &'static str,
+    pub bin_name: String,
     /// Directories relative to `$HOME` that often contain the binary
     /// (e.g. `".claude/local"`, `".bun/bin"`).
-    pub well_known_relative_to_home: Vec<&'static str>,
+    pub well_known_relative_to_home: Vec<String>,
     /// Absolute directories that often contain the binary
     /// (e.g. `"/opt/homebrew/bin"`, `"/usr/local/bin"`).
-    pub well_known_absolute: Vec<&'static str>,
+    pub well_known_absolute: Vec<String>,
     /// Args to pass when querying the binary's version (typically `["--version"]`).
-    pub version_args: &'static [&'static str],
+    pub version_args: Vec<String>,
     /// When `Some(needle)`, a candidate must satisfy both:
     /// 1. its `--version` output contains `needle` (case-insensitive), and
     /// 2. the output parses as a valid semver triple.
@@ -31,7 +31,7 @@ pub struct DiscoverySpec {
     /// process never speaks JSON-RPC, so we need both checks: the real
     /// rust-analyzer prints `rust-analyzer 0.3.x-standalone (commit)` which
     /// satisfies both.
-    pub version_must_contain: Option<&'static str>,
+    pub version_must_contain: Option<String>,
 }
 
 /// A semver triple captured from `--version` output.
@@ -87,10 +87,10 @@ mod tests {
     #[test]
     fn discovery_spec_builder_defaults_version_filter_to_none() {
         let spec = DiscoverySpec::builder()
-            .bin_name("thing")
-            .well_known_relative_to_home(vec![".thing/bin"])
+            .bin_name("thing".to_string())
+            .well_known_relative_to_home(vec![".thing/bin".to_string()])
             .well_known_absolute(Vec::new())
-            .version_args(&["--version"])
+            .version_args(vec!["--version".to_string()])
             .build();
 
         assert_eq!(spec.bin_name, "thing");

@@ -17,7 +17,7 @@ pub(crate) static TEST_DISCOVERY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::
 /// Codex that it already renders for Claude Code and OpenCode.
 pub fn codex_discovery_spec() -> DiscoverySpec {
     DiscoverySpec {
-        bin_name: "codex",
+        bin_name: "codex".into(),
         well_known_relative_to_home: vec![
             ".codex/bin",
             ".local/bin",
@@ -26,9 +26,12 @@ pub fn codex_discovery_spec() -> DiscoverySpec {
             ".volta/bin",
             ".fnm/aliases/default/bin",
             ".asdf/shims",
-        ],
-        well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin"],
-        version_args: &["--version"],
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect(),
+        well_known_absolute: vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()],
+        version_args: vec!["--version".into()],
         version_must_contain: None,
     }
 }
@@ -119,7 +122,10 @@ mod tests {
         let spec = codex_discovery_spec();
         assert_eq!(spec.bin_name, "codex");
         assert_eq!(spec.version_args, &["--version"]);
-        assert!(spec.well_known_absolute.contains(&"/opt/homebrew/bin"));
+        assert!(spec
+            .well_known_absolute
+            .iter()
+            .any(|path| path == "/opt/homebrew/bin"));
     }
 
     #[test]

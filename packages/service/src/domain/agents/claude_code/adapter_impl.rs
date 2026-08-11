@@ -91,6 +91,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         true
     }
 
+    fn uses_legacy_permission_channel_on_response_error(&self) -> bool {
+        true
+    }
+
     async fn runtime_slash_commands(
         &self,
         cwd: &str,
@@ -210,6 +214,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
     fn profile_name_for_new_session(&self) -> Option<String> {
         Some(super::profiles::get_active_profile_name())
+    }
+
+    fn environment_for_new_session(&self) -> Option<std::collections::HashMap<String, String>> {
+        super::profiles::resolve_active_profile_env().1
     }
 
     async fn extra_models(&self, read_pool: &sqlx::SqlitePool) -> Vec<ModelCatalogEntry> {
@@ -358,7 +366,7 @@ fn unavailable_catalog(message: impl Into<String>) -> ProviderCatalogEntry {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     use super::super::events::normalize_event;
     use super::super::test_support::new_test_adapter;
@@ -366,6 +374,19 @@ mod tests {
         AgentRuntimeAdapter, RuntimePromptCommandPlacement, RuntimeSkillReferenceTrigger,
         RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeUserShellStrategy,
     };
+
+    #[test]
+    fn fallback_catalog_matches_phase_zero_parity_fixture() {
+        let actual = serde_json::to_value(new_test_adapter().catalog_entry())
+            .expect("Claude fallback catalog should serialize");
+        let expected: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/provider_parity/v1/claude_code_catalog.json"
+        )))
+        .expect("Claude parity fixture should be valid JSON");
+
+        assert_eq!(actual, expected);
+    }
 
     fn init_event(model: &str) -> crate::domain::agents::adapter::RuntimeEvent {
         normalize_event(
@@ -494,6 +515,11 @@ mod tests {
     fn adapter_advertises_prompt_receipts() {
         let adapter = new_test_adapter();
         assert!(adapter.supports_prompt_receipts());
+    }
+
+    #[test]
+    fn adapter_owns_the_legacy_permission_channel_fallback() {
+        assert!(new_test_adapter().uses_legacy_permission_channel_on_response_error());
     }
 
     #[test]

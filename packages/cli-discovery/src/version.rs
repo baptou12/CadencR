@@ -26,7 +26,8 @@ pub fn parse_version_string(raw: &str) -> Option<VersionKey> {
 }
 
 pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> {
-    probe_version(command, args).await.and_then(|(v, _)| v)
+    let args: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+    probe_version(command, &args).await.and_then(|(v, _)| v)
 }
 
 /// Probe `command --args[..]` and return `(parsed_version, raw_output)`.
@@ -37,7 +38,7 @@ pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> 
 /// (e.g. the `version_must_contain` shim guard).
 pub(crate) async fn probe_version(
     command: &Path,
-    args: &[&str],
+    args: &[String],
 ) -> Option<(Option<VersionKey>, String)> {
     let output = tokio::time::timeout(
         Duration::from_secs(5),

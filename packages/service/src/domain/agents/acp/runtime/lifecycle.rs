@@ -14,17 +14,20 @@ use std::path::Path;
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    ClientCapabilities, FileSystemCapabilities, Implementation, InitializeRequest,
-    LoadSessionRequest, McpServer, NewSessionRequest,
+    BooleanConfigOptionCapabilities, ClientCapabilities, ClientSessionCapabilities,
+    FileSystemCapabilities, Implementation, InitializeRequest, LoadSessionRequest, McpServer,
+    NewSessionRequest, SessionConfigOptionsCapabilities,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use serde_json::Value;
 
 use super::provider_hooks::AcpProviderHooks;
+use super::session_config::snapshot_from_options;
 use crate::domain::agents::acp::runtime::mcp::build_stdio_mcp_payload;
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimeSpawnConfig,
+    RuntimeError, RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimeSessionConfigSnapshot,
+    RuntimeSpawnConfig,
 };
 
 const INIT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -39,6 +42,7 @@ pub struct NegotiatedSession {
     /// `currentModeId` reported by the agent in `session/new`, when it
     /// advertises one. `None` if the agent omits modes from the response.
     pub current_mode: Option<String>,
+    pub session_config: RuntimeSessionConfigSnapshot,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -95,7 +99,7 @@ pub async fn negotiate_session(
         .available_mcp_servers(&config.cwd, mcp_status_list(config.mcp_servers.as_ref()))
         .await;
     if let Some(resume_id) = resume_id {
-        let current_mode =
+        let (current_mode, session_config) =
             load_session(client, resume_id, &config.cwd, &mcp_servers, hooks).await?;
         return Ok(NegotiatedSession {
             session_id: resume_id.to_string(),
@@ -103,9 +107,10 @@ pub async fn negotiate_session(
             mcp_servers: mcp_statuses,
             context_window,
             current_mode,
+            session_config,
         });
     }
-    let (session_id, current_mode) =
+    let (session_id, current_mode, session_config) =
         start_new_session(client, &config.cwd, &mcp_servers, hooks).await?;
 
     Ok(NegotiatedSession {
@@ -114,6 +119,7 @@ pub async fn negotiate_session(
         mcp_servers: mcp_statuses,
         context_window,
         current_mode,
+        session_config,
     })
 }
 
@@ -123,7 +129,7 @@ async fn load_session(
     cwd: &Path,
     mcp_servers: &Value,
     hooks: &dyn AcpProviderHooks,
-) -> Result<Option<String>, RuntimeError> {
+) -> Result<(Option<String>, RuntimeSessionConfigSnapshot), RuntimeError> {
     let request = LoadSessionRequest::new(session_id.to_string(), cwd.to_path_buf()).mcp_servers(
         serde_json::from_value::<Vec<McpServer>>(mcp_servers.clone())
             .map_err(|e| RuntimeError::new(format!("ACP MCP server config invalid: {e}")))?,
@@ -132,11 +138,13 @@ async fn load_session(
         .send_request_typed(request, SESSION_SETUP_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/load failed: {e}")))?;
-    hooks.observe_session_config_options(result.config_options.as_deref().unwrap_or_default());
-    Ok(result
+    let options = result.config_options.unwrap_or_default();
+    hooks.observe_session_config_options(&options);
+    let current_mode = result
         .modes
         .as_ref()
-        .map(|modes| modes.current_mode_id.to_string()))
+        .map(|modes| modes.current_mode_id.to_string());
+    Ok((current_mode, snapshot_from_options(&options)))
 }
 
 fn initialize_request(client: &AcpClient, hooks: &dyn AcpProviderHooks) -> InitializeRequest {
@@ -146,7 +154,10 @@ fn initialize_request(client: &AcpClient, hooks: &dyn AcpProviderHooks) -> Initi
         .fs(FileSystemCapabilities::new()
             .read_text_file(true)
             .write_text_file(true))
-        .terminal(true);
+        .terminal(true)
+        .session(ClientSessionCapabilities::new().config_options(
+            SessionConfigOptionsCapabilities::new().boolean(BooleanConfigOptionCapabilities::new()),
+        ));
     let capabilities = if meta.is_empty() {
         capabilities
     } else {
@@ -174,7 +185,7 @@ async fn start_new_session(
     cwd: &Path,
     mcp_servers: &Value,
     hooks: &dyn AcpProviderHooks,
-) -> Result<(String, Option<String>), RuntimeError> {
+) -> Result<(String, Option<String>, RuntimeSessionConfigSnapshot), RuntimeError> {
     let request = NewSessionRequest::new(cwd.to_path_buf()).mcp_servers(
         serde_json::from_value::<Vec<McpServer>>(mcp_servers.clone())
             .map_err(|e| RuntimeError::new(format!("ACP MCP server config invalid: {e}")))?,
@@ -183,12 +194,17 @@ async fn start_new_session(
         .send_request_typed(request, SESSION_SETUP_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/new failed: {e}")))?;
-    hooks.observe_session_config_options(result.config_options.as_deref().unwrap_or_default());
+    let options = result.config_options.unwrap_or_default();
+    hooks.observe_session_config_options(&options);
     let current_mode = result
         .modes
         .as_ref()
         .map(|modes| modes.current_mode_id.to_string());
-    Ok((result.session_id.to_string(), current_mode))
+    Ok((
+        result.session_id.to_string(),
+        current_mode,
+        snapshot_from_options(&options),
+    ))
 }
 
 /// Extract `modes.currentModeId` from a `session/new` response, or `None`
@@ -301,6 +317,10 @@ mod tests {
         assert!(
             init["params"]["clientCapabilities"]["_meta"]["parameterizedModelPicker"].is_null()
         );
+        assert_eq!(
+            init["params"]["clientCapabilities"]["session"]["configOptions"]["boolean"],
+            json!({})
+        );
         send_response(
             &mut stdout,
             init["id"].clone(),
@@ -336,13 +356,22 @@ mod tests {
         send_response(
             &mut stdout,
             load["id"].clone(),
-            json!({ "modes": { "currentModeId": "build", "availableModes": [] } }),
+            json!({
+                "modes": { "currentModeId": "build", "availableModes": [] },
+                "configOptions": [{
+                    "id": "safe_mode",
+                    "name": "Safe mode",
+                    "type": "boolean",
+                    "currentValue": true
+                }]
+            }),
         )
         .await;
 
         let negotiated = await_negotiation(&mut task).await.unwrap();
         assert_eq!(negotiated.session_id, RESUME_ID);
         assert_eq!(negotiated.current_mode.as_deref(), Some("build"));
+        assert_eq!(negotiated.session_config.options[0].id, "safe_mode");
     }
 
     #[test]

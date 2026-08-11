@@ -25,6 +25,7 @@ pub(super) async fn apply_initial_model(
         &session.current_model,
         &session.current_effort,
         &session.supports_set_config_option,
+        &session.session_config,
         session.hooks.as_ref(),
         model,
     )
@@ -49,7 +50,8 @@ pub(super) async fn apply_initial_thinking_effort(
     {
         return Ok(());
     }
-    set_config_option_thinking_effort(
+    let update_guard = session.session_config.lock_updates().await;
+    let response = set_config_option_thinking_effort(
         &session.client,
         &negotiated.session_id,
         &session.current_effort,
@@ -57,7 +59,11 @@ pub(super) async fn apply_initial_thinking_effort(
         session.hooks.thinking_effort_config_id(),
         Some(effort),
     )
-    .await
+    .await?;
+    session
+        .session_config
+        .observe_raw_response(&update_guard, response.as_ref())
+        .await
 }
 
 #[cfg(test)]
@@ -67,8 +73,14 @@ mod tests {
     use crate::domain::agents::acp::runtime::lifecycle::NegotiatedSession;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::session::AcpRuntimeSession;
+    use crate::domain::agents::acp::runtime::session_config::snapshot_from_options;
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
-    use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
+    use crate::domain::agents::adapter::{
+        RuntimePermissionMode, RuntimeSessionConfigKind, RuntimeSpawnConfig,
+    };
+    use agent_client_protocol::schema::v1::{
+        SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    };
     use serde_json::{json, Value};
     use std::sync::{Arc, Mutex as StdMutex};
     use std::time::Duration;
@@ -130,7 +142,33 @@ mod tests {
             mcp_servers: Vec::new(),
             context_window: None,
             current_mode: Some("build".to_string()),
+            session_config: snapshot_from_options(&config_options("openai/gpt-5.3", "low")),
         }
+    }
+
+    fn config_options(model: &str, effort: &str) -> Vec<SessionConfigOption> {
+        vec![
+            SessionConfigOption::select(
+                "model",
+                "Model",
+                model.to_string(),
+                vec![
+                    SessionConfigSelectOption::new("openai/gpt-5.3", "GPT-5.3"),
+                    SessionConfigSelectOption::new("openai/gpt-5.4", "GPT-5.4"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::Model),
+            SessionConfigOption::select(
+                "effort",
+                "Effort",
+                effort.to_string(),
+                vec![
+                    SessionConfigSelectOption::new("low", "Low"),
+                    SessionConfigSelectOption::new("high", "High"),
+                ],
+            )
+            .category(SessionConfigOptionCategory::ThoughtLevel),
+        ]
     }
 
     async fn assert_no_frame(stdin: &mut BufReader<DuplexStream>) {
@@ -266,13 +304,8 @@ mod tests {
         );
     }
 
-    /// Mirrors what `spawn_acp_runtime_session` does: race both apply_initial_*
-    /// calls under `try_join!`. They share the atomic supports flag but write
-    /// to disjoint locks; both wire frames must land and both local states
-    /// must reflect the user's intent. Catches a regression where naive
-    /// shared-lock contention or task ordering breaks the parallel path.
     #[tokio::test]
-    async fn try_join_pushes_both_model_and_effort_concurrently() {
+    async fn model_then_effort_preserves_the_final_authoritative_snapshot() {
         let (client, mut stdout, mut stdin) = build_client().await;
         let n = neg("s-join");
         let cfg = RuntimeSpawnConfig {
@@ -283,43 +316,46 @@ mod tests {
         let s = assemble_session(&client, &n);
         let current_model = Arc::clone(&s.current_model);
         let current_effort = Arc::clone(&s.current_effort);
+        let session_config = s.session_config.clone();
 
         let task = tokio::spawn(async move {
-            tokio::try_join!(
-                apply_initial_model(&s, &n, &cfg),
-                apply_initial_thinking_effort(&s, &n, &cfg),
-            )
+            apply_initial_model(&s, &n, &cfg).await?;
+            apply_initial_thinking_effort(&s, &n, &cfg).await
         });
 
-        // Drain BOTH frames in whatever order they arrive, ack each one.
-        // We don't assert order — only that both configIds show up exactly
-        // once. This is the contract `try_join!` provides.
-        let mut seen = std::collections::HashSet::new();
-        for _ in 0..2 {
+        for (expected_id, options) in [
+            ("model", config_options("openai/gpt-5.4", "low")),
+            ("effort", config_options("openai/gpt-5.4", "high")),
+        ] {
             let mut line = String::new();
             stdin.read_line(&mut line).await.unwrap();
             let req: Value = serde_json::from_str(line.trim()).unwrap();
             assert_eq!(req["method"], "session/set_config_option");
             assert!(req["params"].get("type").is_none());
-            let cid = req["params"]["configId"].as_str().unwrap().to_owned();
-            assert!(seen.insert(cid.clone()), "duplicate configId on the wire");
+            assert_eq!(req["params"]["configId"], expected_id);
             let id = req["id"].clone();
-            let mut frame =
-                serde_json::to_vec(&json!({ "jsonrpc": "2.0", "id": id, "result": {} })).unwrap();
+            let mut frame = serde_json::to_vec(&json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": { "configOptions": options }
+            }))
+            .unwrap();
             frame.push(b'\n');
             stdout.write_all(&frame).await.unwrap();
         }
-        assert_eq!(
-            seen,
-            std::collections::HashSet::from(["model".to_owned(), "effort".to_owned()]),
-            "both configIds must reach the agent under try_join!"
-        );
 
-        task.await.unwrap().expect("try_join must succeed");
+        task.await
+            .unwrap()
+            .expect("initial configuration must succeed");
         assert_eq!(
             current_model.read().await.as_deref(),
             Some("openai/gpt-5.4")
         );
         assert_eq!(current_effort.read().await.as_deref(), Some("high"));
+        let snapshot = session_config.snapshot().await;
+        assert!(matches!(
+            &snapshot.options[1].kind,
+            RuntimeSessionConfigKind::Select { current_value, .. } if current_value == "high"
+        ));
     }
 }

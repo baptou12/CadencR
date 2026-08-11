@@ -12,6 +12,7 @@ pub mod profiles;
 mod prompt_receipts;
 pub(crate) mod question_answers;
 pub mod routes;
+mod runtime_error;
 mod session;
 mod slash_catalog;
 mod worktree_config;

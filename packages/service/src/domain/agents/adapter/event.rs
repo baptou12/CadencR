@@ -9,6 +9,29 @@ use super::event_types::{
 };
 use super::permission::RuntimeSlashCommand;
 
+/// Identity of one root or nested runtime stream within a provider session.
+///
+/// A runtime session can interleave root and subagent events that reuse the
+/// same content-block indexes, so state keyed by the session alone is unsafe.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RuntimeStreamScope {
+    runtime_session_id: Option<String>,
+    parent_tool_use_id: Option<String>,
+}
+
+impl RuntimeStreamScope {
+    pub fn new(runtime_session_id: Option<&str>, parent_tool_use_id: Option<&str>) -> Self {
+        Self {
+            runtime_session_id: runtime_session_id.map(ToOwned::to_owned),
+            parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
+        }
+    }
+
+    pub fn for_event(event: &RuntimeEvent) -> Self {
+        Self::new(event.session_id(), event.parent_tool_use_id())
+    }
+}
+
 impl RuntimeEvent {
     pub fn new(metadata: RuntimeEventMetadata, kind: RuntimeEventKind) -> Self {
         Self {

@@ -163,6 +163,9 @@ use crate::domain::ws_session::routes as ws_routes;
         super::get_agent_catalog,
         discovery_routes::binary_discovery_handler,
         installed_provider_routes::installed_providers_handler,
+        installed_provider_routes::install_provider_handler,
+        installed_provider_routes::set_provider_enabled_handler,
+        installed_provider_routes::remove_provider_handler,
         claude_code_routes::list_profiles_handler,
         claude_code_routes::upsert_profile_handler,
         claude_code_routes::delete_profile_handler,
@@ -228,6 +231,15 @@ use crate::domain::ws_session::routes as ws_routes;
         installed_provider_routes::InstalledProvidersResponse,
         installed_provider_routes::InstalledProviderEntry,
         installed_provider_routes::InstalledProviderRejection,
+        installed_provider_routes::SetInstalledProviderEnabledRequest,
+        installed_provider_routes::InstalledProviderMutationResponse,
+        crate::domain::agents::providers::installed::descriptor::ProviderDescriptor,
+        crate::domain::agents::providers::installed::descriptor::AcpAgentEntry,
+        crate::domain::agents::providers::installed::descriptor::AcpDistribution,
+        crate::domain::agents::providers::installed::descriptor::AcpBinaryTarget,
+        crate::domain::agents::providers::installed::descriptor::AcpPackageDistribution,
+        crate::domain::agents::providers::installed::descriptor::HostInstallationSpec,
+        crate::domain::agents::providers::installed::descriptor::LocalExecutableSpec,
         editor_routes::ReadFileResponse,
         editor_routes::WriteFileRequest,
         editor_routes::WriteFileResponse,
@@ -408,6 +420,7 @@ use crate::domain::ws_session::routes as ws_routes;
         ws_protocol::ModelSetPayload,
         ws_protocol::ModeSetPayload,
         ws_protocol::EffortSetPayload,
+        ws_protocol::SessionConfigSetPayload,
         ws_protocol::FastModeSetPayload,
         ws_protocol::ProfileSetPayload,
         ws_protocol::GateClosedPayload,
@@ -420,6 +433,7 @@ use crate::domain::ws_session::routes as ws_routes;
         ws_protocol::ModeChangedPayload,
         ws_protocol::ModelSetOkPayload,
         ws_protocol::EffortSetOkPayload,
+        ws_protocol::SessionConfigSnapshotPayload,
         ws_protocol::FastModeSetOkPayload,
         ws_protocol::ProfileChangedPayload,
         ws_protocol::RuntimeSessionIdPayload,
@@ -475,4 +489,50 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/openapi.json", get(openapi_spec))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::api_doc;
+
+    #[test]
+    fn descriptor_optional_properties_are_not_advertised_as_nullable() {
+        let document = serde_json::to_value(api_doc()).expect("OpenAPI should serialize");
+        for (schema, fields) in [
+            (
+                "AcpAgentEntry",
+                &["repository", "website", "license", "icon", "distribution"][..],
+            ),
+            ("AcpDistribution", &["binary", "npx", "uvx"][..]),
+            ("AcpBinaryTarget", &["sha256"][..]),
+        ] {
+            for field in fields {
+                let property = &document["components"]["schemas"][schema]["properties"][field];
+                assert!(
+                    !contains_null_schema(property),
+                    "{schema}.{field} must allow omission but reject explicit null: {property}"
+                );
+            }
+        }
+    }
+
+    fn contains_null_schema(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(object) => {
+                object.get("nullable") == Some(&serde_json::Value::Bool(true))
+                    || object
+                        .get("type")
+                        .is_some_and(|schema_type| match schema_type {
+                            serde_json::Value::String(value) => value == "null",
+                            serde_json::Value::Array(values) => {
+                                values.iter().any(|value| value == "null")
+                            }
+                            _ => false,
+                        })
+                    || object.values().any(contains_null_schema)
+            }
+            serde_json::Value::Array(values) => values.iter().any(contains_null_schema),
+            _ => false,
+        }
+    }
 }

@@ -9,8 +9,9 @@ use std::collections::{HashMap, HashSet};
 use tracing::{debug, error};
 
 use crate::domain::agents::adapter::{
-    RuntimeAssistantMessage, RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent,
-    RuntimeStreamEvent, RuntimeUserContentBlock, RuntimeUserMessage,
+    is_file_change_tool_name, RuntimeAssistantMessage, RuntimeContentBlock, RuntimeContentDelta,
+    RuntimeEvent, RuntimeStreamEvent, RuntimeStreamScope, RuntimeToolInputBuffer,
+    RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
 const INSERT_MESSAGE_SQL: &str =
@@ -42,12 +43,6 @@ impl SessionRow {
     pub fn has_pending_user_input(&self) -> bool {
         self.pending_permission.is_some() || self.pending_questions.is_some()
     }
-}
-
-struct ToolInputBuffer {
-    accumulated: String,
-    replacement_candidate: Option<String>,
-    merge_object_deltas: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -97,20 +92,20 @@ pub struct WsSessionPersistence {
     write_pool: SqlitePool,
     session_db_id: Option<i64>,
     feature_id: i64,
-    current_models: HashMap<String, String>,
-    /// (runtime_session_id, block_index) -> partial JSON being accumulated
-    pending_tool_inputs: HashMap<(String, u64), ToolInputBuffer>,
-    /// (runtime_session_id, block_index) -> agent_messages.id for the tool_call row
-    pending_tool_row_ids: HashMap<(String, u64), i64>,
-    /// (runtime_session_id, block_index) -> merged text/thinking row metadata
-    pending_mergeable_blocks: HashMap<(String, u64), PendingMergeableBlock>,
-    /// Runtime session ids whose current message cycle streamed text/thinking
+    current_models: HashMap<RuntimeStreamScope, String>,
+    /// (runtime stream scope, block_index) -> partial JSON being accumulated
+    pending_tool_inputs: HashMap<(RuntimeStreamScope, u64), RuntimeToolInputBuffer>,
+    /// (runtime stream scope, block_index) -> agent_messages.id for the tool_call row
+    pending_tool_row_ids: HashMap<(RuntimeStreamScope, u64), i64>,
+    /// (runtime stream scope, block_index) -> merged text/thinking row metadata
+    pending_mergeable_blocks: HashMap<(RuntimeStreamScope, u64), PendingMergeableBlock>,
+    /// Runtime stream scopes whose current message cycle streamed text/thinking
     /// (via `message_start` … content deltas). Used to decide whether a full
     /// assistant message's text was already persisted live, so the
     /// reconciliation fallback only writes text that was NOT streamed and never
     /// double-writes a normal turn. Reset per cycle on `message_start` and
     /// consumed when the full assistant message is reconciled.
-    streamed_assistant_content: HashSet<String>,
+    streamed_assistant_content: HashSet<RuntimeStreamScope>,
     file_change_marked: bool,
 }
 

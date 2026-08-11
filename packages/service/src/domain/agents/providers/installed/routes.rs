@@ -1,4 +1,4 @@
-//! `GET /api/agents/installed-providers` — what the startup scan found.
+//! Diagnostics and durable lifecycle operations for local ACP descriptors.
 //!
 //! Rejections and quarantines have to be visible somewhere the user can reach.
 //! A rejected descriptor never gets a catalog entry (registering an id we could
@@ -10,16 +10,21 @@
 //! Environment values are deliberately absent from the response: they are host
 //! launch policy and may carry secrets.
 
-use axum::routing::get;
+use axum::extract::rejection::JsonRejection;
+use axum::extract::Path;
+use axum::routing::{delete, get, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
 use crate::domain::agents::providers::provider_registry;
+use crate::error::AppError;
 
+use super::descriptor::ProviderDescriptor;
 use super::installation::HostInstallation;
-use super::rejection::DescriptorRejection;
-use super::startup_load;
+use super::lifecycle::{install_descriptor, remove_descriptor, set_descriptor_enabled};
+use super::rejection::{DescriptorRejection, RejectionCode};
+use super::{descriptors_dir, load_descriptors};
 
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct InstalledProvidersResponse {
@@ -63,17 +68,38 @@ pub struct InstalledProviderRejection {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
+pub struct SetInstalledProviderEnabledRequest {
+    pub enabled: bool,
+}
+
+/// A descriptor mutation is durable immediately, while runtime activation is
+/// intentionally deferred until restart so the registry stays immutable.
+#[derive(Debug, Clone, Deserialize, Serialize, utoipa::ToSchema)]
+pub struct InstalledProviderMutationResponse {
+    pub provider_id: String,
+    pub enabled_after_restart: bool,
+    pub active_now: bool,
+    pub active_after_restart: bool,
+    /// Whether the durable next-boot activation differs from this process.
+    pub restart_required: bool,
+}
+
 #[utoipa::path(
     get,
     path = "/api/agents/installed-providers",
     responses((status = 200, body = InstalledProvidersResponse))
 )]
-pub async fn installed_providers_handler() -> Json<InstalledProvidersResponse> {
-    // The registry is what actually registered these installs, so ask it rather
-    // than re-deriving which ones made it in.
+pub async fn installed_providers_handler() -> Result<Json<InstalledProvidersResponse>, AppError> {
+    // Rescan durable files for diagnostics so a successful lifecycle mutation
+    // is immediately visible. The process registry remains the authority for
+    // `registered`, and is deliberately never mutated by this read.
+    let directory = descriptors_dir();
+    let outcome = tokio::task::spawn_blocking(move || load_descriptors(&directory))
+        .await
+        .map_err(|error| AppError::Internal(format!("provider descriptor scan failed: {error}")))?;
     let registry = provider_registry();
-    let outcome = startup_load();
-    Json(InstalledProvidersResponse {
+    Ok(Json(InstalledProvidersResponse {
         directory: outcome.directory.display().to_string(),
         installed: outcome
             .installations
@@ -81,7 +107,103 @@ pub async fn installed_providers_handler() -> Json<InstalledProvidersResponse> {
             .map(|installation| entry(installation, registry.contains(installation.provider_id())))
             .collect(),
         rejected: outcome.rejections.iter().map(rejection).collect(),
-    })
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/agents/installed-providers",
+    request_body = ProviderDescriptor,
+    responses(
+        (status = 200, body = InstalledProviderMutationResponse),
+        (status = 400, description = "Descriptor is invalid"),
+        (status = 409, description = "Provider id is already installed or reserved")
+    )
+)]
+pub async fn install_provider_handler(
+    payload: Result<Json<ProviderDescriptor>, JsonRejection>,
+) -> Result<Json<InstalledProviderMutationResponse>, AppError> {
+    let Json(descriptor) = payload.map_err(descriptor_json_rejection)?;
+    let provider_id = descriptor.agent.id.clone();
+    let enabled = descriptor.installation.enabled;
+    let registry = provider_registry();
+    let active_now = registry.contains(&provider_id);
+    install_descriptor(&descriptors_dir(), descriptor, &registry.provider_ids()).await?;
+    Ok(Json(mutation_response(provider_id, active_now, enabled)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/agents/installed-providers/{provider_id}/enabled",
+    params(("provider_id" = String, Path, description = "ACP Registry provider id")),
+    request_body = SetInstalledProviderEnabledRequest,
+    responses(
+        (status = 200, body = InstalledProviderMutationResponse),
+        (status = 400, description = "Descriptor is invalid"),
+        (status = 404, description = "Provider is not installed"),
+        (status = 409, description = "Provider id conflicts with a reserved identifier")
+    )
+)]
+pub async fn set_provider_enabled_handler(
+    Path(provider_id): Path<String>,
+    Json(request): Json<SetInstalledProviderEnabledRequest>,
+) -> Result<Json<InstalledProviderMutationResponse>, AppError> {
+    let active_now = provider_registry().contains(&provider_id);
+    set_descriptor_enabled(&descriptors_dir(), &provider_id, request.enabled).await?;
+    Ok(Json(mutation_response(
+        provider_id,
+        active_now,
+        request.enabled,
+    )))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/agents/installed-providers/{provider_id}",
+    params(("provider_id" = String, Path, description = "ACP Registry provider id")),
+    responses(
+        (status = 200, body = InstalledProviderMutationResponse),
+        (status = 400, description = "Descriptor is invalid"),
+        (status = 404, description = "Provider is not installed")
+    )
+)]
+pub async fn remove_provider_handler(
+    Path(provider_id): Path<String>,
+) -> Result<Json<InstalledProviderMutationResponse>, AppError> {
+    let active_now = provider_registry().contains(&provider_id);
+    remove_descriptor(&descriptors_dir(), &provider_id).await?;
+    Ok(Json(mutation_response(provider_id, active_now, false)))
+}
+
+fn mutation_response(
+    provider_id: String,
+    active_now: bool,
+    active_after_restart: bool,
+) -> InstalledProviderMutationResponse {
+    InstalledProviderMutationResponse {
+        provider_id,
+        enabled_after_restart: active_after_restart,
+        active_now,
+        active_after_restart,
+        restart_required: active_now != active_after_restart,
+    }
+}
+
+fn descriptor_json_rejection(rejection: JsonRejection) -> AppError {
+    let code = match rejection {
+        JsonRejection::JsonDataError(_) | JsonRejection::MissingJsonContentType(_) => {
+            RejectionCode::DescriptorSchemaViolation
+        }
+        JsonRejection::JsonSyntaxError(_) | JsonRejection::BytesRejection(_) => {
+            RejectionCode::DescriptorInvalidJson
+        }
+        _ => RejectionCode::DescriptorInvalidJson,
+    };
+    AppError::coded(
+        axum::http::StatusCode::BAD_REQUEST,
+        code.as_str(),
+        format!("invalid provider descriptor request: {rejection}"),
+    )
 }
 
 fn entry(installation: &HostInstallation, registered: bool) -> InstalledProviderEntry {
@@ -117,9 +239,28 @@ pub fn installed_providers_router() -> Router<AppState> {
     )
 }
 
+/// Host-policy mutations are loopback-only. A paired remote client may inspect
+/// provider diagnostics, but it must never be able to install an executable or
+/// change the environment and arguments used to launch one.
+pub fn installed_provider_lifecycle_router() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/agents/installed-providers",
+            axum::routing::post(install_provider_handler),
+        )
+        .route(
+            "/api/agents/installed-providers/{provider_id}/enabled",
+            put(set_provider_enabled_handler),
+        )
+        .route(
+            "/api/agents/installed-providers/{provider_id}",
+            delete(remove_provider_handler),
+        )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{entry, rejection};
+    use super::{entry, mutation_response, rejection};
     use crate::domain::agents::providers::installed::descriptor::ProviderDescriptor;
     use crate::domain::agents::providers::installed::installation::HostInstallation;
     use crate::domain::agents::providers::installed::rejection::{
@@ -191,5 +332,15 @@ mod tests {
         assert_eq!(response.code, "DUPLICATE_PROVIDER_ID");
         assert_eq!(response.provider_id.as_deref(), Some("acme-agent"));
         assert_eq!(response.message, "already registered");
+    }
+
+    #[test]
+    fn mutations_make_restart_semantics_explicit() {
+        let response = mutation_response("acme-agent".into(), true, false);
+        assert_eq!(response.provider_id, "acme-agent");
+        assert!(response.active_now);
+        assert!(!response.active_after_restart);
+        assert!(!response.enabled_after_restart);
+        assert!(response.restart_required);
     }
 }

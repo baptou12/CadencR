@@ -39,6 +39,7 @@ use super::server_request_extensions::{handle_extension_notification, handle_ext
 use super::server_request_response::{
     describe_exit, fs_outcome_from, respond_or_reject, terminal_id_param,
 };
+use super::session_config::AcpSessionConfigState;
 use super::session_permissions::SessionPermissions;
 use super::terminal_enrich::enrich_session_update;
 use super::terminal_registry::TerminalRegistry;
@@ -49,6 +50,7 @@ pub struct EventLoopConfig {
     pub current_model: Arc<RwLock<Option<String>>>,
     pub current_effort: Arc<RwLock<Option<String>>>,
     pub current_mode: Arc<RwLock<String>>,
+    pub session_config: AcpSessionConfigState,
     pub cwd: PathBuf,
     pub closing: Arc<AtomicBool>,
     pub pending_permissions: PendingPermissions,

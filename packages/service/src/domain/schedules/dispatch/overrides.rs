@@ -12,8 +12,8 @@
 //! spawned with the old config; the pin applies from the next spawn.
 
 use crate::app_state::AppState;
-use crate::domain::agents::providers::resolve_effective_provider;
-use crate::domain::agents::runtime::{runtime_setting_key, DEFAULT_PROVIDER};
+use crate::domain::agents::providers::{default_provider_id, resolve_effective_provider};
+use crate::domain::agents::runtime::runtime_setting_key;
 use crate::domain::schedules::models::Schedule;
 use crate::domain::schedules::pins::{access_mode_for, model_for, permission_mode_for, trimmed};
 use crate::domain::settings;
@@ -153,10 +153,10 @@ async fn conversation_provider(
         &runtime_setting_key("session"),
         Some(feature_id),
         Some(project.id),
-        Some(DEFAULT_PROVIDER),
+        Some(default_provider_id()),
     )
     .await
-    .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+    .unwrap_or_else(|| default_provider_id().to_string());
     Some(
         resolve_effective_provider(
             &state.read_pool,
