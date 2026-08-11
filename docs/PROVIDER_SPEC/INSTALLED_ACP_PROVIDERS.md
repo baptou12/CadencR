@@ -1,7 +1,7 @@
 # Installed ACP providers (local descriptors)
 
 > - **Status:** Backend contract and live session configuration bridge implemented; desktop closure deferred (`docs/PLUGIN_STRATEGY.md` §3)
-> - **Last reviewed:** 2026-08-09
+> - **Last reviewed:** 2026-08-10
 > - **Code:** `packages/service/src/domain/agents/providers/installed/`
 
 An ACP agent joins Cadencr's provider list by dropping a descriptor file next to
@@ -16,6 +16,10 @@ The directory is scanned **once at startup**, in file-name order.
 The file name must equal the agent's `id`. The directory is how a user manages
 installs, so a file whose name disagrees with the identity inside it is refused
 rather than silently trusted.
+
+Lifecycle writes replace descriptor files atomically with owner-only `0600`
+permissions on Unix. This matters because executable arguments and environment
+values may contain credentials.
 
 ## Descriptor format
 
@@ -101,8 +105,8 @@ honored and is not.
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | ACP v1, negotiated by the shared client                                                        | ACP v2                                                       |
 | An explicitly selected local executable                                                        | Downloads, archive extraction, checksums                     |
-| Startup loading                                                                                | Hot install / reload                                         |
-| Enable / disable via `installation.enabled`                                                    | Marketplace publishing and desktop UI                        |
+| Startup loading plus durable add/enable/disable/remove HTTP operations                         | Hot activation / reload                                      |
+| Explicit `restart_required` activation semantics                                               | Marketplace publishing and desktop UI                        |
 | Strict v1 validation and lossless typed round-trip                                             | Registry ingestion/export workflow                           |
 | Provider-neutral live select/boolean configuration snapshot plus authenticated WS get/set      | Desktop controls and installed-provider diagnostics          |
 | Opaque option IDs and authoritative replacement from each `session/set_config_option` response | Migration of legacy model/mode/effort controls to the bridge |
@@ -127,11 +131,44 @@ example. `tests/installed_acp_provider_test.rs` exercises it through the
 runtime registry and the authenticated HTTP + real WebSocket host surfaces,
 including interruption of an active turn.
 
+## Descriptor lifecycle API
+
+Authenticated loopback API clients can manage descriptor files without
+mutating the running registry. Paired remote clients can read diagnostics but
+cannot install an executable or alter host launch policy:
+
+| Operation      | Endpoint                                                    | Durable effect                                    |
+| -------------- | ----------------------------------------------------------- | ------------------------------------------------- |
+| Add            | `POST /api/agents/installed-providers`                      | Validates and atomically writes `<agent.id>.json` |
+| Enable/disable | `PUT /api/agents/installed-providers/{provider_id}/enabled` | Atomically changes `installation.enabled`         |
+| Remove         | `DELETE /api/agents/installed-providers/{provider_id}`      | Moves the descriptor to the OS trash              |
+
+The registry is immutable for the process lifetime. Responses therefore report
+`active_now`, `active_after_restart`, `enabled_after_restart`, and
+`restart_required`. The latter is true exactly when current activation differs
+from next-boot activation, including a repeated disable of a still-active
+provider. Existing sessions and transcripts are untouched; a provider that is
+disabled or removed remains active for this process until restart. Its ID also
+remains reserved by the running registry, so it cannot be reinstalled with a
+different launch configuration before that restart.
+The diagnostics route rescans descriptor files, so durable changes are visible
+immediately while its `registered` field continues to report the current
+process registry.
+
+Lifecycle-specific refusal codes use the standard `{ error, code }` envelope:
+
+| Code                         | Meaning                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------- |
+| `PROVIDER_ALREADY_INSTALLED` | The normalized id has a descriptor, belongs to a built-in id/alias, or is still active in this process |
+| `PROVIDER_NOT_INSTALLED`     | No valid descriptor exists at that id's path                                       |
+
+Descriptor validation failures reuse the stable rejection codes below.
+
 ## When a descriptor is refused or quarantined
 
-`GET /api/agents/installed-providers` lists what the scan loaded and what it
-refused, and every failure is also logged at startup. Two outcomes, deliberately
-distinct:
+`GET /api/agents/installed-providers` lists what a current descriptor scan loads
+and refuses, and every startup failure is also logged. Two outcomes,
+deliberately distinct:
 
 **Rejected** — never becomes a provider, because its identity or shape could not
 be trusted:
@@ -143,7 +180,7 @@ be trusted:
 | `DESCRIPTOR_SCHEMA_VIOLATION`  | JSON, but not a valid host envelope / ACP registry entry   |
 | `UNSUPPORTED_SCHEMA_VERSION`   | `schema_version` is from a newer build                     |
 | `DESCRIPTOR_IDENTITY_MISMATCH` | File name and `agent.id` disagree                          |
-| `DUPLICATE_PROVIDER_ID`        | A built-in or an earlier descriptor already owns the id    |
+| `DUPLICATE_PROVIDER_ID`        | A built-in id/alias or earlier descriptor owns the normalized public identifier |
 | `UNSUPPORTED_DISTRIBUTION`     | No `installation.executable`; this build downloads nothing |
 | `INVALID_EXECUTABLE_PATH`      | The command is empty or not absolute                       |
 
@@ -159,10 +196,15 @@ the catalog's `unavailable` status is derived from it:
 | `EXECUTABLE_UNREADABLE`     | The path could not be inspected (permissions, bad path)    |
 | `EXECUTABLE_NOT_EXECUTABLE` | The path exists but is not an executable file              |
 
-Built-in providers register first, so a descriptor can never take an id they
-own — the descriptor loses and says so. Enablement does not enter into it: a
-disabled descriptor still owns its id, so a collision is refused at load time
-rather than becoming a surprise the day the user enables it.
+Built-in providers register first, so a descriptor can never take an id or
+public alias they own — `claude`, `anthropic`, `codex`, and `openai` are as
+reserved as the canonical built-in ids. Reservation uses the same
+case/punctuation-insensitive normalization as provider resolution, preventing
+variants such as `claudecode` from shadowing `claude-code`. Enablement does not
+enter into it: a disabled descriptor still owns its identifier, so a collision
+is refused at load time rather than becoming a surprise the day the user
+enables it. The resolver also walks built-ins first, providing defense in depth
+if a future registration source bypasses descriptor loading.
 
 `executable` is reported without its argument vector. An argument can carry a
 credential (`--token …`) and, unlike a fixed set of environment names, there is
@@ -176,7 +218,8 @@ data is marketplace data and must never become shell syntax, and the service
 already hydrates its own environment from the login shell at startup, so the
 child still inherits a terminal-like `PATH`. A relative command is refused
 rather than resolved through `PATH`. Environment values are host launch
-policy: they are never returned by the API and never logged. The process
+policy: they are never returned by the API and never logged. On Unix the
+descriptor itself is atomically stored with mode `0600`. The process
 boundary is **not** an OS sandbox — a local descriptor points at a binary the
 user chose, and the marketplace safety work (signing, checksums, blocklist,
 sandboxing) in `BOUNDARIES.md` Phase 8 lands before any downloaded agent ships.
