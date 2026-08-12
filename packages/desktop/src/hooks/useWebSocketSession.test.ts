@@ -275,7 +275,7 @@ describe("useWebSocketSession", () => {
       42,
       { limit: AGENT_STATE_INITIAL_MESSAGE_LIMIT },
       expect.objectContaining({
-        query: expect.objectContaining({ enabled: true, cacheTime: 0 }),
+        query: expect.objectContaining({ enabled: true, gcTime: 0 }),
       }),
     ]);
   });

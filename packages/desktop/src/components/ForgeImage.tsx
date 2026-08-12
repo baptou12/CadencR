@@ -107,7 +107,7 @@ function useForgeImage(
     // cache as soon as the last visible instance unmounts. A malicious PR must
     // not pin an unbounded gallery of blobs for minutes after scrolling past it.
     staleTime: 5 * 60_000,
-    cacheTime: 0,
+    gcTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     // A forge that refused this image once will refuse it again; a retry storm

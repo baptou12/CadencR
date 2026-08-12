@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   getCommitUrl,
@@ -76,7 +77,7 @@ export function useGitGraphViewModel({
     }),
     [branch, featureId, limit],
   );
-  const query = useGetCommitGraph(params, { query: { keepPreviousData: true } });
+  const query = useGetCommitGraph(params, { query: { placeholderData: keepPreviousData } });
   const commits = useMemo(() => toGraphRows(query.data?.commits ?? []), [query.data]);
   const openCommit = useCallback(
     (commit: GitGraphRowData): void => setOpenedCommit(commit.sha),

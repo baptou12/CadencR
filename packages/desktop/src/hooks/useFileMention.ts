@@ -6,6 +6,7 @@ import {
   type KeyboardEvent,
   type SetStateAction,
 } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useFileSearch } from "@/api/generated";
 
@@ -112,7 +113,12 @@ export function useFileMention({ projectId, featureId }: UseFileMentionParams) {
       query: debouncedQuery || undefined,
       include_dirs: true,
     },
-    { query: { enabled: state.isOpen && projectId != null, keepPreviousData: true } },
+    {
+      query: {
+        enabled: state.isOpen && projectId != null,
+        placeholderData: keepPreviousData,
+      },
+    },
   );
 
   const filteredItems = useMemo<MentionItem[]>(() => {

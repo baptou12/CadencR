@@ -11,7 +11,7 @@ import { readAgentStateCache, writeAgentStateCache } from "@/lib/agentStateCache
  * The hydrate is read-only — we never write speculative state, only
  * re-seed a previously-successful server response (per
  * `.claude/rules/no-optimistic-updates.md`). The existing
- * `keepPreviousData` and `isLoading` indicators continue to drive the UI
+ * `placeholderData` and `isLoading` indicators continue to drive the UI
  * (per `.claude/rules/explicit-state.md`).
  *
  * @param featureId The current feature id.

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
@@ -36,7 +37,7 @@ export default function FileSearchDialog({
 
   const { data, isLoading } = useFileSearch(
     { project_id: projectId, feature_id: featureId, query: debouncedQuery || undefined },
-    { query: { enabled: open, keepPreviousData: true } },
+    { query: { enabled: open, placeholderData: keepPreviousData } },
   );
 
   // Reset search when dialog opens

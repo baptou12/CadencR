@@ -27,7 +27,7 @@ export default defineConfig({
         query: {
           useQuery: true,
           useMutation: true,
-          version: 4,
+          version: 5,
         },
       },
     },

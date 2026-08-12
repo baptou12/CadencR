@@ -68,7 +68,7 @@ function readQueryExtras(arg: boolean | QueryExtras | undefined): QueryExtras {
 // profile mutations invalidate `["agent-catalog"]` explicitly; switching back to
 // an already-probed cwd then serves from cache instead of re-probing.
 const AGENT_CATALOG_STALE_MS = 10 * 60_000;
-const AGENT_CATALOG_CACHE_MS = 30 * 60_000;
+const AGENT_CATALOG_GC_MS = 30 * 60_000;
 
 export function useAgentCatalog(extras?: QueryExtras) {
   const { cwd, profile, ...queryExtras } = extras ?? {};
@@ -86,7 +86,7 @@ export function useAgentCatalog(extras?: QueryExtras) {
           cwd || profile ? { ...(cwd ? { cwd } : {}), ...(profile ? { profile } : {}) } : undefined,
       }),
     staleTime: AGENT_CATALOG_STALE_MS,
-    cacheTime: AGENT_CATALOG_CACHE_MS,
+    gcTime: AGENT_CATALOG_GC_MS,
     ...queryExtras,
   });
 }

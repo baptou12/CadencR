@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { Virtuoso } from "react-virtuoso";
 import {
   CaseSensitive,
@@ -154,7 +155,10 @@ function useContentSearchResults({
     [featureId, filters, projectId],
   );
   const { data, isLoading, isFetching } = useContentSearch(searchParams, {
-    query: { enabled: open && filters.debouncedQuery.length > 0, keepPreviousData: true },
+    query: {
+      enabled: open && filters.debouncedQuery.length > 0,
+      placeholderData: keepPreviousData,
+    },
   });
   const hasQuery = filters.debouncedQuery.length > 0;
   const searching = isFetching && hasQuery;
