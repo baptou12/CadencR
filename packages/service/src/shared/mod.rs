@@ -11,6 +11,7 @@ pub mod image_file;
 pub mod login_env;
 pub mod migrate;
 pub mod security;
+pub mod setup_log;
 pub mod slug;
 pub mod ssh_env;
 pub mod startup_progress;

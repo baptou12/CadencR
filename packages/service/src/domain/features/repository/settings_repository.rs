@@ -3,6 +3,7 @@ use sqlx::{AssertSqlSafe, Executor, Sqlite, SqlitePool};
 use super::super::models::{FeatureModelSettings, FeatureProviderSettings, FeatureSetting};
 use crate::domain::agents::runtime::{runtime_setting_key, validate_agent_type};
 use crate::error::AppError;
+use crate::shared::setup_log::setup_log_for_transport;
 
 pub async fn get_feature_settings(
     pool: &SqlitePool,
@@ -50,7 +51,10 @@ pub async fn get_feature_settings(
             .bind(feature_id)
             .fetch_all(pool)
             .await?;
-    for (key, value) in settings {
+    for (key, mut value) in settings {
+        if key == "worktree_setup_log" {
+            value = setup_log_for_transport(value);
+        }
         result.push(FeatureSetting { key, value });
     }
 

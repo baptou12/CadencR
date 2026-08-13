@@ -52,9 +52,10 @@ export function handleWorktreeEvent(
       const session = ctx.getSession(sessionId);
       const line = payloadString("line");
       if (!line) break;
+      const output = value.replace === true ? [line] : [...session.worktreeSetupOutput, line];
       ctx.set(
         updateSession(ctx.get(), sessionId, {
-          worktreeSetupOutput: [...session.worktreeSetupOutput, line],
+          worktreeSetupOutput: output,
         }),
       );
       break;
@@ -72,7 +73,7 @@ export function handleWorktreeEvent(
         updateSession(ctx.get(), sessionId, {
           worktreeStatus: "setup_error",
           worktreeError: payloadString("error") ?? payloadString("message"),
-          ...(shouldHydrateOutput ? { worktreeSetupOutput: output.split("\n") } : {}),
+          ...(shouldHydrateOutput ? { worktreeSetupOutput: [output] } : {}),
         }),
       );
       break;

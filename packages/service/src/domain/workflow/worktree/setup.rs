@@ -7,6 +7,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 
 use crate::domain::workflow::ws_sender::WsSender;
+use crate::shared::setup_log::setup_log_for_transport;
 
 use super::db::set_setting;
 use super::envelope::send_envelope;
@@ -23,6 +24,7 @@ async fn report_setup_error(
     let _ = set_setting(write_pool, feature_id, "worktree_setup_error", error).await;
     let log = log_lines.lock().await.join("\n");
     let _ = set_setting(write_pool, feature_id, "worktree_setup_log", &log).await;
+    let display_log = setup_log_for_transport(log);
     send_envelope(
         ws_sender,
         "workflow",
@@ -30,7 +32,7 @@ async fn report_setup_error(
         serde_json::json!({
             "feature_id": feature_id,
             "error": error,
-            "output": log,
+            "output": display_log,
         }),
     );
 }
