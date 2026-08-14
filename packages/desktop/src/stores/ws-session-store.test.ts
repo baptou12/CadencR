@@ -2986,6 +2986,26 @@ describe("ws-session-store", () => {
       expect(session.worktreeSetupOutput).toEqual(["Installing deps...", "Done."]);
     });
 
+    it("replaces setup output with one persisted replay snapshot", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_output",
+        payload: { line: "stale line" },
+      });
+
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_output",
+        payload: { line: "restored one\nrestored two", replace: true },
+      });
+
+      const output = useWsSessionStore.getState().sessions["s1"].worktreeSetupOutput;
+      expect(output).toEqual(["restored one\nrestored two"]);
+    });
+
     it("handles worktree.ready event", async () => {
       useWsSessionStore.getState().connect("s1");
       await tick();

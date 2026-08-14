@@ -21,6 +21,7 @@ use super::{
     get_project_directory, get_project_id_for_feature, get_setting, resolve_live_worktree,
 };
 use crate::domain::workflow::ws_sender::WsSender;
+use crate::shared::setup_log::setup_log_for_transport;
 
 /// Re-emit the feature's persisted worktree state to `sender`, reusing the exact
 /// envelopes the frontend's worktree state machine already handles. Returns the
@@ -74,11 +75,16 @@ async fn replay_setup_error(read_pool: &SqlitePool, feature_id: i64, sender: &Ws
     let output = get_setting(read_pool, feature_id, "worktree_setup_log")
         .await
         .unwrap_or_default();
+    let display_output = setup_log_for_transport(output);
     send_envelope(
         sender,
         "workflow",
         "worktree.setup_error",
-        serde_json::json!({ "feature_id": feature_id, "error": error, "output": output }),
+        serde_json::json!({
+            "feature_id": feature_id,
+            "error": error,
+            "output": display_output,
+        }),
     );
 }
 
@@ -97,14 +103,22 @@ async fn replay_setup_running(read_pool: &SqlitePool, feature_id: i64, sender: &
 
 async fn replay_setup_output(read_pool: &SqlitePool, feature_id: i64, sender: &WsSender) {
     if let Some(log) = get_setting(read_pool, feature_id, "worktree_setup_log").await {
-        for line in log.lines() {
-            send_envelope(
-                sender,
-                "workflow",
-                "worktree.setup_output",
-                serde_json::json!({ "feature_id": feature_id, "line": line }),
-            );
+        if log.is_empty() {
+            return;
         }
+        let display_log = setup_log_for_transport(log);
+        // A message per persisted line can overflow the WS queue and reconnect.
+        // Restore one replaceable snapshot; live setup remains line-streamed.
+        send_envelope(
+            sender,
+            "workflow",
+            "worktree.setup_output",
+            serde_json::json!({
+                "feature_id": feature_id,
+                "line": display_log,
+                "replace": true,
+            }),
+        );
     }
 }
 
@@ -153,13 +167,19 @@ mod tests {
         dir
     }
 
-    fn actions(rx: &mut mpsc::UnboundedReceiver<Message>) -> Vec<String> {
+    fn envelopes(rx: &mut mpsc::UnboundedReceiver<Message>) -> Vec<serde_json::Value> {
         let mut out = Vec::new();
         while let Ok(Message::Text(text)) = rx.try_recv() {
-            let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-            out.push(v["action"].as_str().unwrap().to_string());
+            out.push(serde_json::from_str(&text).unwrap());
         }
         out
+    }
+
+    fn actions(envelopes: &[serde_json::Value]) -> Vec<String> {
+        envelopes
+            .iter()
+            .map(|value| value["action"].as_str().unwrap().to_string())
+            .collect()
     }
 
     #[tokio::test]
@@ -195,15 +215,18 @@ mod tests {
             .unwrap()
             .is_some());
 
+        let envelopes = envelopes(&mut rx);
         assert_eq!(
-            actions(&mut rx),
+            actions(&envelopes),
             vec![
                 "worktree.created",
-                "worktree.setup_output",
                 "worktree.setup_output",
                 "worktree.ready"
             ]
         );
+        let snapshot = &envelopes[1]["payload"];
+        assert_eq!(snapshot["line"], "$ pnpm install\nDone");
+        assert_eq!(snapshot["replace"], true);
     }
 
     #[tokio::test]
@@ -262,7 +285,7 @@ mod tests {
             .is_some());
 
         assert_eq!(
-            actions(&mut rx),
+            actions(&envelopes(&mut rx)),
             vec!["worktree.created", "worktree.setup_running"],
             "with no persisted log, only created + setup_running are replayed"
         );
@@ -288,7 +311,7 @@ mod tests {
             .is_some());
 
         assert_eq!(
-            actions(&mut rx),
+            actions(&envelopes(&mut rx)),
             vec!["worktree.created", "worktree.setup_error"]
         );
     }
