@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.2 - 2026-08-14
+
+Previous release: v0.11.1 - 2026-08-11
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed large persisted worktree setup logs repeatedly consuming renderer memory and triggering WebSocket reconnect loops; setup history now replays as one idempotent snapshot capped to the latest 128 KiB for display while the complete log remains stored for diagnostics.
+
 ## v0.11.1 - 2026-08-11
 
 Previous release: v0.10.0 - 2026-08-02
