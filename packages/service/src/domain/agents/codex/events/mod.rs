@@ -20,7 +20,9 @@ use super::event_reasoning::{
 };
 use super::event_state::IndexState;
 use super::event_subagent_routes::register_thread_started_route;
-use super::event_usage::usage_event;
+use super::event_usage::{
+    capture_raw_response_usage, flush_raw_response_usage_events, usage_events,
+};
 use crate::domain::agents::adapter::RuntimeEvent;
 
 pub fn notification_events(
@@ -45,7 +47,7 @@ pub fn notification_events(
     };
 
     if method == "turn/completed" && subagent_parent_tool_use_id.is_some() {
-        return Vec::new();
+        return flush_raw_response_usage_events(&params, index_state);
     }
 
     let mut events = dispatch_notification(method, params, model, index_state);
@@ -63,8 +65,12 @@ fn dispatch_notification(
 ) -> Vec<RuntimeEvent> {
     match method {
         "turn/started" => turn_started_event(params, model).into_iter().collect(),
-        "turn/completed" => vec![result_event(params)],
-        "thread/tokenUsage/updated" => vec![usage_event(params)],
+        "turn/completed" => {
+            let mut events = flush_raw_response_usage_events(&params, index_state);
+            events.push(result_event(params));
+            events
+        }
+        "thread/tokenUsage/updated" => usage_events(params, index_state),
         "thread/compacted" => vec![compact_event(params)],
         "turn/plan/updated" => vec![plan_updated_event(params, index_state)],
         "item/commandExecution/outputDelta" | "command/exec/outputDelta" => {
@@ -76,6 +82,10 @@ fn dispatch_notification(
         "item/started" => item_events(params, false, index_state),
         "item/completed" => item_events(params, true, index_state),
         "rawResponseItem/completed" => raw_response_item_events(params, index_state),
+        "rawResponse/completed" => {
+            capture_raw_response_usage(&params, index_state);
+            Vec::new()
+        }
         "item/agentMessage/delta" => text_delta_event(params, model, index_state),
         "item/reasoning/summaryPartAdded" => {
             reasoning_summary_part_added(params, index_state);

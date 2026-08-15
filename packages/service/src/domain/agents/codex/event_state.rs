@@ -57,6 +57,10 @@ pub(super) struct IndexState {
     /// `collabAgentToolCall` paths; this set keeps the prompt from being
     /// rendered twice no matter which path emits first.
     injected_subagent_prompts: HashSet<String>,
+    /// Raw Responses API usage waiting for the matching token-usage snapshot.
+    /// Pairing both notifications gives fresh and resumed threads one durable
+    /// replay identity without counting the same response twice.
+    pub(super) pending_raw_usage: super::event_usage::PendingUsageBuffer,
 }
 
 impl IndexState {

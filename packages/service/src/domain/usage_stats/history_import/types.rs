@@ -24,6 +24,7 @@ pub struct HistoryEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionCheckpoint {
     pub session_id: i64,
+    pub scope_id: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

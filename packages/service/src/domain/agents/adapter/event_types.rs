@@ -126,6 +126,9 @@ pub enum RuntimeEventKind {
     PromptReceived {
         client_message_id: String,
     },
+    /// Provider-native usage that is persisted by the accounting path only.
+    /// It must not become a transcript block or a context-window update.
+    UsageAccounting,
     /// The provider emitted a message the adapter could not map to any known
     /// shape (Claude Code: `SdkMessage::Unknown` — a `type` the SDK has never
     /// seen). Rather than let it degrade to [`RuntimeEventKind::Other`] and

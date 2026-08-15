@@ -13,15 +13,9 @@ mod attribution;
 use attribution::resolve_session_attribution;
 pub use attribution::snapshot_attribution;
 
-/// Persist one provider-native token report.
-///
-/// The caller passes the attribution captured at the start of the turn so a
-/// model switch cannot file completed usage under the next model. Writes are
-/// awaited because usage events are sparse (not token-stream deltas), and the
-/// transaction must preserve cumulative counter ordering while atomically
-/// updating the durable checkpoint and daily bucket. The database future also
-/// runs on a tracked task so shutdown can finish it if the stream reader that
-/// was awaiting it gets cancelled.
+/// Persist provider-native usage with turn-start attribution so model changes
+/// cannot misfile it. The tracked transaction keeps identities, checkpoints,
+/// and daily buckets atomic and lets shutdown finish an in-flight write.
 pub async fn record_runtime_usage(
     write_pool: &SqlitePool,
     session_id: i64,
@@ -82,6 +76,7 @@ async fn persist_usage(
             event_id,
             correlation_id,
             entries,
+            ..
         } => {
             for event_id in [event_id.as_ref(), correlation_id.as_ref()]
                 .into_iter()
@@ -100,14 +95,18 @@ async fn persist_usage(
             }
             add_entries(&mut tx, attribution, entries).await?;
         }
-        RuntimeTokenUsage::Cumulative { entry: current } => {
+        RuntimeTokenUsage::Cumulative {
+            scope_id,
+            entry: current,
+        } => {
             let checkpoint = sqlx::query(
                 "SELECT input_tokens, output_tokens
                  FROM provider_usage_checkpoints
-                 WHERE session_id = ? AND provider_id = ?",
+                 WHERE session_id = ? AND provider_id = ? AND scope_id = ?",
             )
             .bind(session_id)
             .bind(&attribution.provider_id)
+            .bind(scope_id)
             .fetch_optional(&mut *tx)
             .await?;
             let previous_input = checkpoint
@@ -133,14 +132,15 @@ async fn persist_usage(
             add_entries(&mut tx, attribution, &[delta]).await?;
             sqlx::query(
                 "INSERT INTO provider_usage_checkpoints
-                     (session_id, provider_id, input_tokens, output_tokens)
-                 VALUES (?, ?, ?, ?)
-                 ON CONFLICT(session_id, provider_id) DO UPDATE SET
+                     (session_id, provider_id, scope_id, input_tokens, output_tokens)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(session_id, provider_id, scope_id) DO UPDATE SET
                      input_tokens = excluded.input_tokens,
                      output_tokens = excluded.output_tokens",
             )
             .bind(session_id)
             .bind(&attribution.provider_id)
+            .bind(scope_id)
             .bind(repository::as_i64(current.input_tokens))
             .bind(repository::as_i64(current.output_tokens))
             .execute(&mut *tx)
@@ -227,16 +227,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_nonconsecutive_replayed_turn_event_is_counted_once() {
+    async fn independent_cumulative_counters_do_not_reset_each_other() {
+        let (pool, session_id) =
+            pool_with_session(Some("codex_cli"), Some("gpt-5.6-sol"), Some("xhigh")).await;
+        let attribution = super::snapshot_attribution(&pool, session_id).await;
+
+        for (scope_id, input_tokens, output_tokens) in [
+            ("root", 100, 20),
+            ("child", 40, 5),
+            ("root", 175, 35),
+            ("child", 55, 9),
+        ] {
+            let mut usage = RuntimeTokenUsage::scoped_cumulative(
+                scope_id.into(),
+                entry(None, input_tokens, output_tokens),
+            );
+            usage.normalize_root_scope(Some("root"));
+            record_runtime_usage(&pool, session_id, attribution.clone(), usage).await;
+        }
+
+        let rows = list_recent(&pool, 30).await.unwrap();
+        assert_eq!((rows[0].input_tokens, rows[0].output_tokens), (230, 44));
+        let scopes: Vec<String> =
+            sqlx::query_scalar("SELECT scope_id FROM provider_usage_checkpoints ORDER BY scope_id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(scopes, vec![String::new(), "child".into()]);
+    }
+
+    #[tokio::test]
+    async fn either_correlated_response_identity_deduplicates_replay() {
         let (pool, session_id) =
             pool_with_session(Some("opencode"), Some("openai/gpt-5.4"), None).await;
         let attribution = super::snapshot_attribution(&pool, session_id).await;
-        let first = RuntimeTokenUsage::delta(Some("prompt-1".into()), vec![entry(None, 90, 10)]);
+        let first = RuntimeTokenUsage::correlated_response_delta(
+            "response-1".into(),
+            "turn-1".into(),
+            vec![entry(None, 90, 10)],
+        );
+        let replay = RuntimeTokenUsage::response_delta("turn-1".into(), vec![entry(None, 90, 10)]);
         let second = RuntimeTokenUsage::delta(Some("prompt-2".into()), vec![entry(None, 45, 5)]);
 
-        record_runtime_usage(&pool, session_id, attribution.clone(), first.clone()).await;
+        record_runtime_usage(&pool, session_id, attribution.clone(), first).await;
         record_runtime_usage(&pool, session_id, attribution.clone(), second).await;
-        record_runtime_usage(&pool, session_id, attribution, first).await;
+        record_runtime_usage(&pool, session_id, attribution, replay).await;
 
         let rows = list_recent(&pool, 30).await.unwrap();
         assert_eq!((rows[0].input_tokens, rows[0].output_tokens), (135, 15));

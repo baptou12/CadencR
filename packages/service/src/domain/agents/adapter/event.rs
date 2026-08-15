@@ -79,6 +79,10 @@ impl RuntimeEvent {
         self.token_usage.as_ref()
     }
 
+    pub fn is_usage_accounting(&self) -> bool {
+        matches!(self.kind, RuntimeEventKind::UsageAccounting)
+    }
+
     pub fn with_provider_message_id(mut self, message_id: Option<String>) -> Self {
         self.provider_message_id = message_id;
         self

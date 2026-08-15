@@ -39,6 +39,9 @@ impl StreamReaderTask {
         self.capture_usage_attribution(state, &runtime_event).await;
         self.capture_provider_usage_event_id(state, &runtime_event);
         self.record_token_usage(state, &runtime_event).await;
+        if runtime_event.is_usage_accounting() {
+            return;
+        }
         if runtime_event.is_result() {
             state.usage_attribution = None;
             state.usage_attribution_captured = false;

@@ -1,195 +1,312 @@
 use serde_json::Value;
 
-use codex_app_server_sdk_rs::CONTEXT_USAGE_BASELINE_TOKENS;
-
 use crate::domain::agents::adapter::{
     RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeTokenUsage,
-    RuntimeTokenUsageEntry, RuntimeUsage,
 };
+use crate::domain::agents::codex::event_state::IndexState;
 
-pub(super) fn usage_event(params: Value) -> RuntimeEvent {
-    let token_usage = params.get("tokenUsage").unwrap_or(&Value::Null);
-    let last = token_usage
-        .get("last")
-        .or_else(|| token_usage.get("total"))
-        .unwrap_or(&Value::Null);
-    let raw_context_window = token_usage
-        .get("modelContextWindow")
-        .and_then(Value::as_u64);
-    let (usage, context_window) = context_usage(last, raw_context_window);
-    let token_usage = cumulative_token_usage(token_usage);
-    let session_id = params
+mod context;
+mod types;
+
+pub(super) use self::types::PendingUsageBuffer;
+use self::types::{PendingRawUsage, TokenBreakdown};
+
+pub(super) fn usage_events(params: Value, index_state: &mut IndexState) -> Vec<RuntimeEvent> {
+    let context_event = context::event(&params);
+    let accounting_event = token_usage_accounting_event(&params, index_state);
+    std::iter::once(context_event)
+        .chain(accounting_event)
+        .collect()
+}
+
+/// Buffer Codex's exact upstream response usage until the matching cumulative
+/// snapshot supplies a replay-stable identity. Resumed threads do not emit
+/// `rawResponse/completed`, so the snapshot path also has an exact-`last`
+/// fallback.
+pub(super) fn capture_raw_response_usage(params: &Value, index_state: &mut IndexState) {
+    let Some(response_id) = params.get("responseId").and_then(Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(Value::as_str) else {
+        return;
+    };
+    let Some(usage) = params.get("usage").and_then(TokenBreakdown::parse) else {
+        return;
+    };
+    let thread_id = params
         .get("threadId")
         .and_then(Value::as_str)
-        .unwrap_or("codex")
-        .to_string();
+        .unwrap_or("codex");
+    index_state.pending_raw_usage.push(
+        thread_id,
+        turn_id,
+        PendingRawUsage {
+            response_id: response_id.to_string(),
+            usage,
+        },
+    );
+}
 
+fn token_usage_accounting_event(
+    params: &Value,
+    index_state: &mut IndexState,
+) -> Option<RuntimeEvent> {
+    let thread_id = params
+        .get("threadId")
+        .and_then(Value::as_str)
+        .unwrap_or("codex");
+    let turn_id = params.get("turnId").and_then(Value::as_str)?;
+    let token_usage = params.get("tokenUsage")?;
+    let last = TokenBreakdown::parse(token_usage.get("last")?)?;
+    let total = TokenBreakdown::parse(token_usage.get("total")?)?;
+    let replay_id = total.replay_id(turn_id);
+    let pending = index_state
+        .pending_raw_usage
+        .pop_response(thread_id, turn_id);
+    let usage = match pending {
+        Some(pending) => RuntimeTokenUsage::correlated_response_delta(
+            format!("codex-response:{}", pending.response_id),
+            replay_id,
+            vec![pending.usage.entry()],
+        ),
+        None => RuntimeTokenUsage::response_delta(replay_id, vec![last.entry()]),
+    };
+    Some(accounting_event(thread_id, turn_id, usage))
+}
+
+pub(super) fn flush_raw_response_usage_events(
+    params: &Value,
+    index_state: &mut IndexState,
+) -> Vec<RuntimeEvent> {
+    let thread_id = params
+        .get("threadId")
+        .and_then(Value::as_str)
+        .unwrap_or("codex");
+    let turn_id = params
+        .get("turn")
+        .and_then(|turn| turn.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    index_state
+        .pending_raw_usage
+        .take_turn(thread_id, turn_id)
+        .into_iter()
+        .map(|pending| {
+            let usage = RuntimeTokenUsage::response_delta(
+                format!("codex-response:{}", pending.response_id),
+                vec![pending.usage.entry()],
+            );
+            accounting_event(thread_id, turn_id, usage)
+        })
+        .collect()
+}
+
+fn accounting_event(thread_id: &str, turn_id: &str, usage: RuntimeTokenUsage) -> RuntimeEvent {
     RuntimeEvent::new(
         RuntimeEventMetadata {
-            session_id: Some(session_id.clone()),
-            usage: Some(usage),
-            context_window,
-            raw: serde_json::json!({ "type": "usage_update", "session_id": session_id }),
+            session_id: Some(thread_id.to_string()),
+            usage: None,
+            context_window: None,
+            raw: serde_json::json!({
+                "type": "usage_accounting",
+                "session_id": thread_id,
+                "turn_id": turn_id,
+            }),
         },
-        RuntimeEventKind::Other,
+        RuntimeEventKind::UsageAccounting,
     )
-    .with_token_usage(token_usage)
-}
-
-fn cumulative_token_usage(token_usage: &Value) -> Option<RuntimeTokenUsage> {
-    let total = token_usage.get("total")?;
-    Some(RuntimeTokenUsage::cumulative(RuntimeTokenUsageEntry {
-        model_id: None,
-        input_tokens: total
-            .get("inputTokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-        output_tokens: total
-            .get("outputTokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
-    }))
-}
-
-fn context_usage(last: &Value, context_window: Option<u64>) -> (RuntimeUsage, Option<u64>) {
-    let raw_input = last.get("inputTokens").and_then(Value::as_u64).unwrap_or(0);
-    let raw_output = last
-        .get("outputTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-
-    let Some(context_window) = context_window else {
-        return (
-            RuntimeUsage {
-                input_tokens: raw_input,
-                output_tokens: raw_output,
-            },
-            None,
-        );
-    };
-
-    if context_window <= CONTEXT_USAGE_BASELINE_TOKENS {
-        return (
-            RuntimeUsage {
-                input_tokens: raw_input,
-                output_tokens: raw_output,
-            },
-            Some(context_window),
-        );
-    }
-
-    let raw_used = last
-        .get("totalTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or_else(|| raw_input.saturating_add(raw_output));
-    (
-        RuntimeUsage {
-            input_tokens: raw_used.saturating_sub(CONTEXT_USAGE_BASELINE_TOKENS),
-            output_tokens: 0,
-        },
-        Some(context_window - CONTEXT_USAGE_BASELINE_TOKENS),
-    )
+    .with_token_usage(Some(usage))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::usage_event;
+    use super::{capture_raw_response_usage, flush_raw_response_usage_events, usage_events};
     use crate::domain::agents::adapter::RuntimeTokenUsage;
+    use crate::domain::agents::codex::event_state::IndexState;
     use serde_json::json;
 
     #[test]
-    fn token_usage_matches_codex_context_window_percentage() {
-        let event = usage_event(json!({
-            "threadId": "thread",
-            "tokenUsage": {
-                "last": {
-                    "inputTokens": 39853,
-                    "outputTokens": 280,
-                    "cachedInputTokens": 0,
-                    "reasoningOutputTokens": 0,
-                    "totalTokens": 40133
-                },
-                "total": {
-                    "inputTokens": 3_686_349,
-                    "outputTokens": 9_345,
-                    "cachedInputTokens": 0,
-                    "reasoningOutputTokens": 0,
-                    "totalTokens": 3_695_694
-                },
-                "modelContextWindow": 258400
-            }
-        }));
-
-        let usage = event.usage().expect("expected usage");
-        assert_eq!(usage.input_tokens, 28_133);
-        assert_eq!(usage.output_tokens, 0);
-        assert_eq!(event.context_window(), Some(246400));
-        let accounting = event.token_usage().expect("cumulative accounting");
-        let RuntimeTokenUsage::Cumulative { entry } = accounting else {
-            panic!("expected cumulative accounting");
-        };
-        assert_eq!(entry.input_tokens, 3_686_349);
-        assert_eq!(entry.output_tokens, 9_345);
-    }
-
-    #[test]
-    fn token_usage_falls_back_to_raw_tokens_without_context_window() {
-        let event = usage_event(json!({
-            "threadId": "thread",
-            "tokenUsage": {
-                "last": {
-                    "inputTokens": 1200,
-                    "outputTokens": 30,
-                    "cachedInputTokens": 0,
-                    "reasoningOutputTokens": 0,
-                    "totalTokens": 1230
-                },
-                "total": {
-                    "inputTokens": 1200,
-                    "outputTokens": 30,
-                    "cachedInputTokens": 0,
-                    "reasoningOutputTokens": 0,
-                    "totalTokens": 1230
-                },
-                "modelContextWindow": null
-            }
-        }));
-
-        let usage = event.usage().expect("expected usage");
-        assert_eq!(usage.input_tokens, 1200);
-        assert_eq!(usage.output_tokens, 30);
-        assert_eq!(event.context_window(), None);
-        let accounting = event.token_usage().expect("cumulative accounting");
-        let RuntimeTokenUsage::Cumulative { entry } = accounting else {
-            panic!("expected cumulative accounting");
-        };
-        assert_eq!(entry.input_tokens, 1200);
-        assert_eq!(entry.output_tokens, 30);
-    }
-
-    #[test]
-    fn zero_cumulative_snapshot_is_preserved_as_a_counter_reset() {
-        let event = usage_event(json!({
-            "threadId": "thread",
-            "tokenUsage": {
-                "last": {
-                    "inputTokens": 0,
-                    "outputTokens": 0,
-                    "totalTokens": 0
-                },
-                "total": {
-                    "inputTokens": 0,
-                    "outputTokens": 0,
-                    "totalTokens": 0
+    fn raw_response_and_normalized_snapshot_become_one_correlated_event() {
+        let mut state = IndexState::default();
+        capture_raw_response_usage(
+            &json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "responseId": "resp_123",
+                "usage": {
+                    "inputTokens": 12_345,
+                    "cachedInputTokens": 10_000,
+                    "outputTokens": 678,
+                    "reasoningOutputTokens": 456,
+                    "totalTokens": 13_023
                 }
-            }
-        }));
-
-        let accounting = event.token_usage().expect("counter reset accounting");
-        let RuntimeTokenUsage::Cumulative { entry } = accounting else {
-            panic!("expected cumulative accounting");
+            }),
+            &mut state,
+        );
+        let events = usage_events(
+            json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "tokenUsage": {
+                    "last": {
+                        "inputTokens": 12_346, "cachedInputTokens": 0,
+                        "outputTokens": 678, "reasoningOutputTokens": 456,
+                        "totalTokens": 13_023
+                    },
+                    "total": {
+                        "inputTokens": 12_345, "cachedInputTokens": 10_000,
+                        "outputTokens": 678, "reasoningOutputTokens": 456,
+                        "totalTokens": 13_023
+                    },
+                    "modelContextWindow": 258_400
+                }
+            }),
+            &mut state,
+        );
+        let accounting = events[1].token_usage().expect("response accounting");
+        let RuntimeTokenUsage::Delta {
+            event_id,
+            correlation_id,
+            entries,
+            ..
+        } = accounting
+        else {
+            panic!("expected exact response delta");
         };
-        assert_eq!((entry.input_tokens, entry.output_tokens), (0, 0));
-        assert!(!accounting.is_noop());
+        assert_eq!(event_id.as_deref(), Some("codex-response:resp_123"));
+        assert!(correlation_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("codex-turn-usage:turn:")));
+        assert_eq!(
+            (entries[0].input_tokens, entries[0].output_tokens),
+            (12_345, 678)
+        );
+        assert!(state.pending_raw_usage.is_empty());
+    }
+
+    #[test]
+    fn resumed_thread_accounts_from_token_snapshot_without_raw_events() {
+        let events = usage_events(
+            json!({
+                "threadId": "thread", "turnId": "turn-resumed",
+                "tokenUsage": {
+                    "last": { "inputTokens": 25_057, "outputTokens": 818, "totalTokens": 25_875 },
+                    "total": { "inputTokens": 97_242, "outputTokens": 3_648, "totalTokens": 100_890 }
+                }
+            }),
+            &mut IndexState::default(),
+        );
+        let RuntimeTokenUsage::Delta {
+            event_id, entries, ..
+        } = events[1].token_usage().expect("fallback accounting")
+        else {
+            panic!("expected response delta");
+        };
+        assert!(event_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("codex-turn-usage:turn-resumed:")));
+        assert_eq!(
+            (entries[0].input_tokens, entries[0].output_tokens),
+            (25_057, 818)
+        );
+    }
+
+    #[test]
+    fn turn_completion_flushes_raw_usage_when_token_snapshot_is_missing() {
+        let mut state = IndexState::default();
+        capture_raw_response_usage(
+            &json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "responseId": "resp_123",
+                "usage": { "inputTokens": 10, "outputTokens": 2 }
+            }),
+            &mut state,
+        );
+        let events = flush_raw_response_usage_events(
+            &json!({ "threadId": "thread", "turn": { "id": "turn" } }),
+            &mut state,
+        );
+        assert_eq!(events.len(), 1);
+        assert!(state.pending_raw_usage.is_empty());
+    }
+
+    #[test]
+    fn omitted_upstream_usage_is_not_buffered() {
+        let mut state = IndexState::default();
+        capture_raw_response_usage(
+            &json!({
+                "threadId": "thread", "turnId": "turn", "responseId": "resp_123", "usage": null
+            }),
+            &mut state,
+        );
+        assert!(state.pending_raw_usage.is_empty());
+    }
+
+    #[test]
+    fn multiple_responses_in_one_turn_are_correlated_in_order() {
+        let mut state = IndexState::default();
+        for (response_id, input_tokens) in [("first", 10), ("second", 20)] {
+            capture_raw_response_usage(
+                &json!({
+                    "threadId": "thread", "turnId": "turn", "responseId": response_id,
+                    "usage": { "inputTokens": input_tokens, "outputTokens": 1 }
+                }),
+                &mut state,
+            );
+        }
+
+        for (expected_id, last, total) in [("first", 10, 11), ("second", 20, 32)] {
+            let events = usage_events(
+                json!({
+                    "threadId": "thread", "turnId": "turn",
+                    "tokenUsage": {
+                        "last": { "inputTokens": last, "outputTokens": 1 },
+                        "total": { "inputTokens": total, "outputTokens": 2 }
+                    }
+                }),
+                &mut state,
+            );
+            let RuntimeTokenUsage::Delta { event_id, .. } =
+                events[1].token_usage().expect("accounting event")
+            else {
+                panic!("expected exact response delta");
+            };
+            let expected_event_id = format!("codex-response:{expected_id}");
+            assert_eq!(event_id.as_deref(), Some(expected_event_id.as_str()));
+        }
+        assert!(state.pending_raw_usage.is_empty());
+    }
+
+    #[test]
+    fn later_turn_discards_unmatched_usage_from_the_same_thread() {
+        let mut state = IndexState::default();
+        capture_raw_response_usage(
+            &json!({
+                "threadId": "thread", "turnId": "stale", "responseId": "stale-response",
+                "usage": { "inputTokens": 10, "outputTokens": 1 }
+            }),
+            &mut state,
+        );
+        let events = usage_events(
+            json!({
+                "threadId": "thread", "turnId": "current",
+                "tokenUsage": {
+                    "last": { "inputTokens": 20, "outputTokens": 2 },
+                    "total": { "inputTokens": 30, "outputTokens": 3 }
+                }
+            }),
+            &mut state,
+        );
+
+        let RuntimeTokenUsage::Delta { event_id, .. } =
+            events[1].token_usage().expect("fallback accounting")
+        else {
+            panic!("expected response delta");
+        };
+        assert!(event_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with("codex-turn-usage:current:")));
+        assert!(state.pending_raw_usage.is_empty());
     }
 }
