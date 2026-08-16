@@ -105,6 +105,7 @@ fn scan_session(
     if totals != (0, 0) {
         batch.checkpoints.push(SessionCheckpoint {
             session_id: source.session_id,
+            scope_id: String::new(),
             input_tokens: totals.0,
             output_tokens: totals.1,
         });
@@ -218,6 +219,7 @@ mod tests {
             batch.checkpoints,
             vec![SessionCheckpoint {
                 session_id: 7,
+                scope_id: String::new(),
                 input_tokens: 60,
                 output_tokens: 4,
             }]

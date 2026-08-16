@@ -45,14 +45,15 @@ pub async fn persist(
     for checkpoint in batch.checkpoints {
         sqlx::query(
             "INSERT INTO provider_usage_checkpoints
-                 (session_id, provider_id, input_tokens, output_tokens)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(session_id, provider_id) DO UPDATE SET
+                 (session_id, provider_id, scope_id, input_tokens, output_tokens)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(session_id, provider_id, scope_id) DO UPDATE SET
                  input_tokens = MAX(provider_usage_checkpoints.input_tokens, excluded.input_tokens),
                  output_tokens = MAX(provider_usage_checkpoints.output_tokens, excluded.output_tokens)",
         )
         .bind(checkpoint.session_id)
         .bind(provider_id)
+        .bind(checkpoint.scope_id)
         .bind(repository::as_i64(checkpoint.input_tokens))
         .bind(repository::as_i64(checkpoint.output_tokens))
         .execute(&mut *tx)

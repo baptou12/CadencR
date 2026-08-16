@@ -45,11 +45,20 @@ pub enum RuntimeTokenUsage {
         /// Correlation identity shared with history import. Claimed alongside
         /// `event_id` without replacing the provider-native replay key.
         correlation_id: Option<String>,
+        /// Whether the shared stream reader may correlate this report with a
+        /// provider assistant message. Exact per-response reports set this to
+        /// false because one assistant turn can contain several responses.
+        correlate_provider_message: bool,
         entries: Vec<RuntimeTokenUsageEntry>,
     },
-    /// Monotonic session/thread totals. The recorder persists a checkpoint and
-    /// adds only the increase since the previous event.
-    Cumulative { entry: RuntimeTokenUsageEntry },
+    /// Monotonic session/thread totals. The recorder persists a checkpoint for
+    /// each provider-native counter and adds only the increase since the
+    /// previous event. `scope_id` is empty when a provider exposes only one
+    /// cumulative counter per Cadencr session.
+    Cumulative {
+        scope_id: String,
+        entry: RuntimeTokenUsageEntry,
+    },
 }
 
 impl RuntimeTokenUsage {
@@ -57,12 +66,62 @@ impl RuntimeTokenUsage {
         Self::Delta {
             event_id,
             correlation_id: None,
+            correlate_provider_message: true,
+            entries,
+        }
+    }
+
+    /// Exact usage for one independently identified provider response.
+    ///
+    /// These reports remain idempotent through `event_id`, but must not inherit
+    /// the turn-level provider-message correlation used by result events: a
+    /// single turn can complete several upstream responses.
+    pub fn response_delta(event_id: String, entries: Vec<RuntimeTokenUsageEntry>) -> Self {
+        Self::Delta {
+            event_id: Some(event_id),
+            correlation_id: None,
+            correlate_provider_message: false,
+            entries,
+        }
+    }
+
+    /// Exact provider-response usage with a second replay identity supplied by
+    /// another native notification for the same response.
+    pub fn correlated_response_delta(
+        event_id: String,
+        correlation_id: String,
+        entries: Vec<RuntimeTokenUsageEntry>,
+    ) -> Self {
+        Self::Delta {
+            event_id: Some(event_id),
+            correlation_id: Some(correlation_id),
+            correlate_provider_message: false,
             entries,
         }
     }
 
     pub fn cumulative(entry: RuntimeTokenUsageEntry) -> Self {
-        Self::Cumulative { entry }
+        Self::Cumulative {
+            scope_id: String::new(),
+            entry,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn scoped_cumulative(scope_id: String, entry: RuntimeTokenUsageEntry) -> Self {
+        Self::Cumulative { scope_id, entry }
+    }
+
+    /// Preserve compatibility with the original per-session checkpoint by
+    /// storing the root provider counter under the empty default scope. Native
+    /// ids remain on independently increasing child counters.
+    pub fn normalize_root_scope(&mut self, root_scope_id: Option<&str>) {
+        let Self::Cumulative { scope_id, .. } = self else {
+            return;
+        };
+        if root_scope_id.is_some_and(|root| root == scope_id) {
+            scope_id.clear();
+        }
     }
 
     /// Add a history/live correlation key while preserving the provider's own
@@ -72,9 +131,13 @@ impl RuntimeTokenUsage {
         if let Self::Delta {
             event_id,
             correlation_id,
+            correlate_provider_message,
             ..
         } = self
         {
+            if !*correlate_provider_message {
+                return;
+            }
             *correlation_id = correlation.filter(|id| Some(id) != event_id.as_ref());
             if event_id.is_none() {
                 *event_id = fallback;

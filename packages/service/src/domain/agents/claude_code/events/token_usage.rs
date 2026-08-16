@@ -99,10 +99,11 @@ mod tests {
     #[test]
     fn falls_back_to_cumulative_result_usage() {
         let usage = claude_token_usage(&result(json!({}))).unwrap();
-        let RuntimeTokenUsage::Cumulative { entry } = usage else {
+        let RuntimeTokenUsage::Cumulative { scope_id, entry } = usage else {
             panic!("expected cumulative usage");
         };
 
+        assert!(scope_id.is_empty());
         assert_eq!((entry.input_tokens, entry.output_tokens), (135, 20));
     }
 }

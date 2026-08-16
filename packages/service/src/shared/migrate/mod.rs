@@ -29,6 +29,8 @@ mod support;
 #[cfg(test)]
 mod test_fixtures;
 #[cfg(test)]
+mod usage_checkpoint_scope_migration_tests;
+#[cfg(test)]
 mod usage_token_schema_migration_tests;
 mod version_guard;
 use crate::shared::startup_progress::emit_phase;

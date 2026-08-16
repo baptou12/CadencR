@@ -43,6 +43,7 @@ pub fn scan(
         if let Some((input_tokens, output_tokens)) = state.total {
             batch.checkpoints.push(SessionCheckpoint {
                 session_id: source.session_id,
+                scope_id: String::new(),
                 input_tokens,
                 output_tokens,
             });
@@ -211,6 +212,7 @@ mod tests {
             batch.checkpoints,
             vec![SessionCheckpoint {
                 session_id: 9,
+                scope_id: String::new(),
                 input_tokens: 150,
                 output_tokens: 20
             }]
@@ -264,6 +266,7 @@ mod tests {
             batch.checkpoints,
             vec![SessionCheckpoint {
                 session_id: 9,
+                scope_id: String::new(),
                 input_tokens: 30,
                 output_tokens: 3
             }]

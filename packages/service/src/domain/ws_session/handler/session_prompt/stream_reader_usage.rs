@@ -58,6 +58,7 @@ impl StreamReaderTask {
         let Some(mut usage) = event.token_usage().cloned() else {
             return;
         };
+        usage.normalize_root_scope(state.runtime_session_id.as_deref());
         let correlation_id = state
             .provider_usage_event_id
             .as_deref()
