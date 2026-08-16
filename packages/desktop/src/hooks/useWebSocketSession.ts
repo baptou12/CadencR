@@ -179,7 +179,7 @@ function usePersistedSessionLoader(
   const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, persistedStateParams, {
     query: {
       enabled: loadPersisted && !!featureId && !persistedLoaded,
-      cacheTime: 0,
+      gcTime: 0,
     },
   });
 

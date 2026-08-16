@@ -294,12 +294,12 @@ function FetchedBashBodyContent({
     queryKey: getGetMessageFullContentQueryKey(messageId),
     queryFn: ({ signal }) => getMessageFullContent(messageId, signal),
     // The full payload is immutable for a given message id, so once fetched
-    // we don't need to refetch it. `cacheTime` (react-query v4) caps how long
+    // we don't need to refetch it. `gcTime` caps how long
     // an unmounted entry stays in cache — bash outputs can run into megabytes
     // per message, and a long session could otherwise accumulate the whole
     // transcript in memory after the user collapses each one.
     staleTime: Number.POSITIVE_INFINITY,
-    cacheTime: 5 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
   });
   const fetchedContent = fullContentQuery.data
     ? extractBashResultOutput(fullContentQuery.data.content)

@@ -60,7 +60,7 @@ const DiffImagePanel = memo(function DiffImagePanel(props: ImagePanelProps) {
   const query = useQuery({
     queryKey: ["/api/git/diff-image", request],
     queryFn: ({ signal }) => readDiffImage(request, signal),
-    cacheTime: 0,
+    gcTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });

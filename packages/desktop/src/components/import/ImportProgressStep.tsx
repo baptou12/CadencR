@@ -1,12 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  getListFeaturesQueryKey,
-  useGetImportJob,
-  type ImportJobState,
-  type SkipReason,
-} from "@/api/generated";
+import { getListFeaturesQueryKey, useGetImportJob, type SkipReason } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/progress-bar";
 
@@ -27,8 +22,8 @@ function ImportProgressStepInner({ jobId, projectId, onClose }: ImportProgressSt
 
   const { data: job } = useGetImportJob(jobId, {
     query: {
-      refetchInterval: (data: ImportJobState | undefined) =>
-        data && data.status !== "running" ? false : 750,
+      refetchInterval: (query) =>
+        query.state.data && query.state.data.status !== "running" ? false : 750,
     },
   });
 

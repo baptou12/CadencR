@@ -192,7 +192,7 @@ export function ProjectTree(props: ProjectTreeProps) {
         <SidebarProjectsHeader
           onAddProject={controller.addProject}
           isAddingProject={
-            controller.isSelectingFolder || controller.mutations.createProject.isLoading
+            controller.isSelectingFolder || controller.mutations.createProject.isPending
           }
           canAddProject={isDesktopShell()}
           onRefresh={() => void controller.ordered.refresh()}

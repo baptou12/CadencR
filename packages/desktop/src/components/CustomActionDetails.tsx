@@ -141,7 +141,10 @@ function useCustomActionDetailsController({
     { feature_id: featureId, limit: 5 },
     {
       query: {
-        refetchInterval: (data) => (data?.[0] != null && data[0].ended_at == null ? 2000 : false),
+        refetchInterval: (query) => {
+          const latestRun = query.state.data?.[0];
+          return latestRun != null && latestRun.ended_at == null ? 2000 : false;
+        },
       },
     },
   );

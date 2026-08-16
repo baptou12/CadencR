@@ -20,6 +20,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import {
   useGetFeatureAgentState,
   getFeatureAgentState,
@@ -272,7 +273,7 @@ export function useFeatureAgentState(featureId: number) {
   const query = useGetFeatureAgentState(
     featureId,
     { after: afterParam, limit: initialLimit },
-    { query: { keepPreviousData: true } },
+    { query: { placeholderData: keepPreviousData } },
   );
 
   // Track which query.data we last processed to guard against React strict mode

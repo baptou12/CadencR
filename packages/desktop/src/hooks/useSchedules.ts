@@ -66,7 +66,7 @@ export function useScheduleList(params: ListSchedulesParams = {}): {
     [params.feature_id, params.project_id],
   );
   const query = useListSchedules(key, {
-    query: { refetchInterval: (data: Schedule[] | undefined) => pollInterval(data) },
+    query: { refetchInterval: (query) => pollInterval(query.state.data) },
   });
   return useMemo(
     () => ({

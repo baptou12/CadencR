@@ -38,8 +38,10 @@ export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps
     { project_id: projectId, feature_id: featureId },
     {
       query: {
-        refetchInterval: (data) =>
-          (data ?? []).some((a) => a.last_run != null && a.last_run.ended_at == null)
+        refetchInterval: (query) =>
+          (query.state.data ?? []).some(
+            (action) => action.last_run != null && action.last_run.ended_at == null,
+          )
             ? 2000
             : false,
       },

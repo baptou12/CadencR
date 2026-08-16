@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import {
   useListConversationReferences,
   type ConversationReferenceCandidate,
@@ -30,7 +31,7 @@ export function useConversationReference(currentFeatureId: number | undefined, e
     {
       query: {
         enabled: state.isOpen && currentFeatureId != null && enabled,
-        keepPreviousData: true,
+        placeholderData: keepPreviousData,
       },
     },
   );

@@ -43,7 +43,7 @@ export function useFeaturePendingGate({
     // Pending gates are driven by WS status; window focus refetch is wasteful.
     refetchOnWindowFocus: false,
     // Drop unused payloads quickly — request ids rotate often.
-    cacheTime: 30_000,
+    gcTime: 30_000,
   });
 
   const mutation = useMutation({

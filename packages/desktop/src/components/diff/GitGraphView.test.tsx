@@ -95,7 +95,7 @@ describe("GitGraphView", () => {
         skip: 0,
         limit: 50,
       },
-      { query: { keepPreviousData: true } },
+      { query: { placeholderData: expect.any(Function) } },
     );
     expect(screen.getByText("origin/release")).toBeInTheDocument();
     expect(screen.queryByText("main")).not.toBeInTheDocument();

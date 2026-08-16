@@ -85,7 +85,7 @@ function useOperationToasts(): void {
       }
     }
 
-    const mutations = queryClient.getMutationCache().findAll({ fetching: true });
+    const mutations = queryClient.getMutationCache().findAll({ status: "pending" });
     for (const mutation of mutations) {
       const key = extractOperationKey(mutation.options.mutationKey ?? []);
       if (key) {
