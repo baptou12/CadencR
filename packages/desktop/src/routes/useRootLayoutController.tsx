@@ -83,7 +83,12 @@ function useSidebarController(isMobile: boolean) {
   const setCollapsed = useCallback(
     (nextCollapsed: boolean): void => {
       if (isMobile) setMobileDrawerOpen(!nextCollapsed);
-      else collapsedSetting.setValue(nextCollapsed ? "true" : "false");
+      else {
+        // Expand while the Panel is still collapsible; the next render makes
+        // it non-collapsible so pointer and keyboard resizing clamp at minSize.
+        if (!nextCollapsed) sidebarPanelRef.current?.expand();
+        collapsedSetting.setValue(nextCollapsed ? "true" : "false");
+      }
     },
     [collapsedSetting, isMobile],
   );
@@ -104,7 +109,8 @@ function useSidebarController(isMobile: boolean) {
   const handleLayoutChanged = useCallback((): void => {
     const size = sidebarPanelRef.current?.getSize();
     if (!size || size.inPixels < 50) return;
-    leftWidth.setValue(String(Math.round(size.inPixels)));
+    const width = String(Math.round(size.inPixels));
+    if (width !== leftWidth.value) leftWidth.setValue(width);
   }, [leftWidth]);
   const savedWidth = leftWidth.value ? Number(leftWidth.value) : null;
   const clampedWidth =

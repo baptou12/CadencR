@@ -4,16 +4,16 @@ import { render, act, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * These tests guard the regression where dragging the editor's *own* sidebar
- * would re-expand a collapsed *global* sidebar (and double the app logo).
+ * These tests guard the controlled collapsibility contract for the global
+ * sidebar.
  *
  * Mechanism: every resize handle in the app shares one global "is a drag in
  * progress?" flag (`resize-coordinator`). The editor sidebar pushes that flag
  * to freeze its heavy children while dragging. The global sidebar reads the
- * same flag to compute `collapsible` on its react-resizable-panels panel — and
- * a panel sitting at `collapsedSize={0}` gets force-expanded the moment it
- * becomes non-collapsible. So a *foreign* drag must never flip `collapsible`
- * off while the global sidebar is collapsed.
+ * same flag to suspend fluid layout transitions. It must not change the real
+ * Panel's `collapsible` constraint during pointerdown: doing so churns the
+ * library's document handlers before the only mounted Group can start a drag.
+ * The controlled `collapsed` state alone owns that constraint.
  *
  * We mock `ui/resizable` to record the props handed to the sidebar panel, then
  * drive the *real* `resize-coordinator` (via `pushResize`) to simulate the
@@ -99,13 +99,12 @@ describe("AppShell global sidebar collapsible", () => {
     expect(latestCollapsible()).toBe(true);
   });
 
-  it("still disables collapsible mid-drag when the sidebar is expanded", () => {
+  it("keeps an expanded sidebar non-collapsible throughout a resize", () => {
     renderShell(false);
-    expect(latestCollapsible()).toBe(true);
+    expect(latestCollapsible()).toBe(false);
 
-    // While expanded, dragging must hard-clamp to [minSize, maxSize] instead of
-    // snapping shut — so `collapsible` flips off during a drag. This preserves
-    // the original behavior and proves the fix is scoped to the collapsed case.
+    // While expanded, remaining non-collapsible hard-clamps pointer and keyboard
+    // resizing to [minSize, maxSize] without re-registering the Panel mid-event.
     act(() => {
       pushResize();
     });
