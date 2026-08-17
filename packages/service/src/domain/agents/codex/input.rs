@@ -257,15 +257,19 @@ mod tests {
         assert!(!std::path::Path::new(path).exists());
     }
 
-    #[test]
-    fn attachment_base64_is_written_to_lifetime_bound_file_reference_text() {
+    fn assert_attachment_file_reference(
+        file_name: &str,
+        media_type: &str,
+        base64_data: &str,
+        expected_bytes: &[u8],
+    ) {
         let mut temp_files = Vec::new();
         let input = user_input_from_content(
             json!([{
                 "type": "attachment",
-                "file_name": "brief.pdf",
-                "media_type": "application/pdf",
-                "data": "JVBERg=="
+                "file_name": file_name,
+                "media_type": media_type,
+                "data": base64_data
             }]),
             &mut temp_files,
         )
@@ -274,16 +278,32 @@ mod tests {
         assert_eq!(input.len(), 1);
         assert_eq!(input[0]["type"], "text");
         let text = input[0]["text"].as_str().unwrap();
-        assert!(text.contains("brief.pdf"));
-        assert!(text.contains("application/pdf"));
+        assert!(text.contains(file_name));
+        assert!(text.contains(media_type));
         let path = text
             .split('`')
             .find(|part| part.contains("cadencr-codex-attachments"))
             .expect("attachment path in text");
-        assert!(path.ends_with(".pdf"));
+        let extension = file_name.rsplit_once('.').unwrap().1;
+        assert!(path.ends_with(&format!(".{extension}")));
         assert!(std::path::Path::new(path).exists());
-        assert_eq!(std::fs::read(path).unwrap(), b"%PDF");
+        assert_eq!(std::fs::read(path).unwrap(), expected_bytes);
         temp_files.clear();
         assert!(!std::path::Path::new(path).exists());
+    }
+
+    #[test]
+    fn pdf_base64_is_written_to_lifetime_bound_file_reference_text() {
+        assert_attachment_file_reference("brief.pdf", "application/pdf", "JVBERg==", b"%PDF");
+    }
+
+    #[test]
+    fn spreadsheet_base64_is_written_to_lifetime_bound_file_reference_text() {
+        assert_attachment_file_reference(
+            "budget.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "UEsDBA==",
+            b"PK\x03\x04",
+        );
     }
 }

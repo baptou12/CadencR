@@ -151,6 +151,33 @@ describe("useImageAttachments", () => {
     );
   });
 
+  it("accepts Excel workbook drops for Codex as app-server document file references", async () => {
+    const { result } = renderHook(() => useImageAttachments("ws:first", "codex_cli"));
+    const callback = dropSubscribers[0];
+
+    act(() => {
+      callback({
+        type: "drop",
+        files: [{ handle: "workbook-handle", name: "budget.xlsx" }],
+        targetPromptId: "ws:first",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.attachments).toHaveLength(1);
+    });
+    expect(readFileBase64).toHaveBeenCalledWith("workbook-handle");
+    expect(result.current.attachments[0]).toEqual(
+      expect.objectContaining({
+        fileName: "budget.xlsx",
+        base64: "abc123",
+        kind: "document",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        previewUrl: "",
+      }),
+    );
+  });
+
   it("accepts OpenCode audio drops as ACP audio attachments", async () => {
     const { result } = renderHook(() => useImageAttachments("ws:first", "opencode"));
     const callback = dropSubscribers[0];

@@ -5,6 +5,10 @@ export type PromptAttachmentKind = "image" | "document" | "text" | "audio" | "re
 export const IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 const AUDIO_MIME_TYPES = ["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg"] as const;
 const PDF_MIME_TYPES = ["application/pdf"] as const;
+const SPREADSHEET_MIME_TYPES = [
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+] as const;
 const TEXT_MIME_TYPES = [
   "text/plain",
   "text/csv",
@@ -20,8 +24,7 @@ const OFFICE_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/rtf",
   "application/vnd.oasis.opendocument.text",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ...SPREADSHEET_MIME_TYPES,
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ] as const;
@@ -78,7 +81,9 @@ export function getAttachmentKindForProvider(
   const provider = providerId ?? PROVIDER_IDS.CODEX_CLI;
   const normalized = normalizeAttachmentMime(fileName, mimeType);
   if (isImageMime(normalized)) return "image";
-  if (provider === PROVIDER_IDS.CODEX_CLI) return isPdfMime(normalized) ? "document" : null;
+  if (provider === PROVIDER_IDS.CODEX_CLI) {
+    return isPdfMime(normalized) || isSpreadsheetMime(normalized) ? "document" : null;
+  }
   if (provider === PROVIDER_IDS.CURSOR) return null;
   if (provider === PROVIDER_IDS.OPENCODE) return opencodeKind(normalized);
   return claudeKind(normalized);
@@ -87,7 +92,9 @@ export function getAttachmentKindForProvider(
 export function attachmentAcceptForProvider(providerId: string | undefined): string {
   const provider = providerId ?? PROVIDER_IDS.CODEX_CLI;
   const base = [...IMAGE_MIME_TYPES];
-  if (provider === PROVIDER_IDS.CODEX_CLI) return [...base, ...PDF_MIME_TYPES].join(",");
+  if (provider === PROVIDER_IDS.CODEX_CLI) {
+    return [...base, ...PDF_MIME_TYPES, ...SPREADSHEET_MIME_TYPES].join(",");
+  }
   if (provider === PROVIDER_IDS.CURSOR) return base.join(",");
   if (provider === PROVIDER_IDS.OPENCODE) {
     return [
@@ -111,7 +118,7 @@ export function unsupportedAttachmentDescription(providerId: string | undefined)
   if (providerId === PROVIDER_IDS.CURSOR) {
     return "Cursor ACP accepts image attachments.";
   }
-  return "Codex accepts images and PDFs.";
+  return "Codex accepts images, PDFs, and Excel spreadsheets.";
 }
 
 function opencodeKind(mimeType: string): PromptAttachmentKind | null {
@@ -136,6 +143,10 @@ function isAudioMime(mimeType: string): boolean {
 
 function isPdfMime(mimeType: string): boolean {
   return (PDF_MIME_TYPES as readonly string[]).includes(mimeType);
+}
+
+function isSpreadsheetMime(mimeType: string): boolean {
+  return (SPREADSHEET_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
 function isTextMime(mimeType: string): boolean {
