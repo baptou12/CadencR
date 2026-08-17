@@ -22,11 +22,21 @@ describe("prompt attachment provider support", () => {
     );
   });
 
-  it("allows Codex images and PDFs through app-server file references", () => {
+  it("allows Codex images, PDFs, and Excel workbooks through app-server file references", () => {
     expect(getAttachmentKindForProvider("codex_cli", "diagram.jpg", "image/jpeg")).toBe("image");
     expect(getAttachmentKindForProvider("codex_cli", "brief.pdf", "application/pdf")).toBe(
       "document",
     );
+    expect(
+      getAttachmentKindForProvider(
+        "codex_cli",
+        "budget.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).toBe("document");
+    expect(
+      getAttachmentKindForProvider("codex_cli", "legacy.xls", "application/vnd.ms-excel"),
+    ).toBe("document");
     expect(getAttachmentKindForProvider("codex_cli", "data.csv", "text/csv")).toBeNull();
   });
 
@@ -39,12 +49,12 @@ describe("prompt attachment provider support", () => {
 
   it("builds provider-specific file picker accept lists and descriptions", () => {
     expect(attachmentAcceptForProvider("codex_cli")).toBe(
-      "image/png,image/jpeg,image/gif,image/webp,application/pdf",
+      "image/png,image/jpeg,image/gif,image/webp,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
     expect(attachmentAcceptForProvider("claude_code")).toContain("application/pdf");
     expect(attachmentAcceptForProvider("opencode")).toContain("audio/wav");
     expect(unsupportedAttachmentDescription("codex_cli")).toContain(
-      "Codex accepts images and PDFs",
+      "Codex accepts images, PDFs, and Excel spreadsheets",
     );
   });
 });
