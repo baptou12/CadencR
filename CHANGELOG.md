@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.3 - 2026-08-18
+
+Previous release: v0.11.2 - 2026-08-14
+
+### 🔧 Changed
+
+- [**Desktop**] Made long model pickers easier to scan by grouping models by provider under sticky headers, collapsing inactive provider sections, and keeping the popover on its initially chosen side while searching.
+
+### 🐛 Fixed
+
+- [**provider:codex**] Fixed new Codex Usage Stats records being inflated when sessions resume or events replay, and prevented independent provider sessions from interfering with one another's cumulative counters; each completed Codex response is now recorded once, while previously stored totals remain unchanged.
+- [**Desktop**] Fixed the global sidebar divider failing to resize in flat, single-pane agent layouts while preserving resize limits, collapsed-sidebar behavior during other pane drags, and keyboard resizing.
+- [**provider:codex**] Fixed `.xls` and `.xlsx` prompt attachments being rejected before Codex could receive them through the existing temporary-file reference path.
+
 ## v0.11.2 - 2026-08-14
 
 Previous release: v0.11.1 - 2026-08-11
