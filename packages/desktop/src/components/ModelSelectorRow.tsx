@@ -52,7 +52,7 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
       ? {
           id: "inherit-selection",
           label: "Inherit selection",
-          description: `${selectedProviderLabel} / ${selectedModelLabel}`,
+          description: selectedModelLabel,
           selected: isInherited,
           keywords: [selectedProviderLabel, selectedModelLabel],
           onSelect: onInherit,
@@ -84,18 +84,16 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
                 variant="outline"
                 role="combobox"
                 className="h-10 w-full min-w-0 justify-between gap-3 rounded-lg border-border/70 bg-background/80 px-3 text-left text-xs font-normal shadow-sm"
-                title={selectedModelDescription}
+                title={selectedModelDescription ?? selectedModelLabel}
               >
                 <span className="flex min-w-0 items-center gap-2.5 overflow-hidden">
                   <ProviderIcon
                     providerId={selectedProviderId}
-                    alt={agentLabel}
+                    alt={selectedProviderLabel}
                     className="size-4 shrink-0 rounded-sm"
                   />
                   <span className="min-w-0 truncate">
-                    <span className="truncate text-sm text-foreground">
-                      {selectedProviderLabel} / {selectedModelLabel}
-                    </span>
+                    <span className="truncate text-sm text-foreground">{selectedModelLabel}</span>
                     {level !== "global" && isInherited && (
                       <span className="ml-1 hidden truncate text-[11px] text-muted-foreground sm:inline">
                         Inherited

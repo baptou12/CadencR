@@ -1,10 +1,26 @@
 import { CheckIcon, LockIcon, StarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandGroup, CommandItem } from "@/components/ui/command";
-import { favoriteModelKey } from "@/lib/favorite-models";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { cn } from "@/lib/utils";
-import type { RuntimeModelPickerProvider } from "./RuntimeModelPicker.types";
+import {
+  MODEL_INSET_CLASS,
+  PICKER_GROUP_CLASS,
+  PICKER_ITEM_CLASS,
+  ProviderBrowseItem,
+  ProviderHeader,
+  VendorBrowseItem,
+} from "./RuntimeModelPickerChrome";
+import {
+  displayModelDescription,
+  displayModelId,
+  displayModelLabel,
+  isVendorCollapsed,
+  type ModelEntry,
+  type ModelGroupSpec,
+  type ProviderStateEntry,
+  type VendorSection,
+} from "./runtimeModelPickerGroups";
 
 export interface RuntimeModelPickerAction {
   id: string;
@@ -15,130 +31,51 @@ export interface RuntimeModelPickerAction {
   onSelect: () => void;
 }
 
-export interface ModelEntry {
-  providerId: string;
-  providerLabel: string;
-  modelId: string;
-  modelLabel: string;
-  description?: string;
-  value: string;
-  keywords: string[];
-}
-
-export interface ProviderStateEntry {
-  providerId: string;
-  providerLabel: string;
-  statusLabel: string;
-  value: string;
-  keywords: string[];
-}
-
-interface SelectionGroupProps {
-  action: RuntimeModelPickerAction;
-  onSelect: () => void;
-}
-
 interface ModelGroupProps {
-  heading: string;
-  entries: ModelEntry[];
+  group: ModelGroupSpec;
   selectedModelValue: string;
   favorites: ReadonlySet<string>;
+  collapsed: boolean;
+  canCollapse: boolean;
+  expandedGroupIds: ReadonlySet<string>;
+  needsCollapse: boolean;
+  isSearching: boolean;
   onSelect: (entry: ModelEntry) => void;
   onToggleFavorite: (value: string) => void;
+  onExpand: (groupId: string) => void;
+  onCollapse: (groupId: string) => void;
 }
 
-interface ModelItemProps {
-  entry: ModelEntry;
-  isSelected: boolean;
-  isFavorite: boolean;
-  onSelect: (entry: ModelEntry) => void;
-  onToggleFavorite: (value: string) => void;
-}
-
-interface FavoriteToggleProps {
-  isFavorite: boolean;
-  modelLabel: string;
-  onToggle: () => void;
-}
-
-interface ProviderStateGroupProps {
-  entries: ProviderStateEntry[];
-}
-
-export function getModelEntries(providers: RuntimeModelPickerProvider[]): ModelEntry[] {
-  return providers.flatMap((provider) => {
-    if (provider.disabled || provider.models.length === 0) return [];
-    return provider.models.map((model) => ({
-      providerId: provider.id,
-      providerLabel: provider.label,
-      modelId: model.id,
-      modelLabel: model.label,
-      description: model.description,
-      value: favoriteModelKey(provider.id, model.id),
-      keywords: [provider.label, provider.id, model.label, model.id, model.description ?? ""],
-    }));
-  });
-}
-
-/**
- * Splits the catalog into starred and unstarred entries, preserving catalog
- * order within each half. Starred models render in their own group above the
- * rest — and because cmdk only ever filters *within* a group, they stay on top
- * whether or not a search filter is active. An entry appears in exactly one
- * group: duplicating a cmdk `value` would break selection and highlighting.
- */
-export function partitionModelEntries(
-  entries: ModelEntry[],
-  favorites: ReadonlySet<string>,
-): { favorite: ModelEntry[]; rest: ModelEntry[] } {
-  const favorite: ModelEntry[] = [];
-  const rest: ModelEntry[] = [];
-  for (const entry of entries) {
-    (favorites.has(entry.value) ? favorite : rest).push(entry);
-  }
-  return { favorite, rest };
-}
-
-export function getProviderStateEntries(
-  providers: RuntimeModelPickerProvider[],
-): ProviderStateEntry[] {
-  return providers.flatMap((provider) => {
-    if (!provider.disabled && provider.models.length > 0) return [];
-    const statusLabel = getProviderStatusLabel(provider);
-    return [
-      {
-        providerId: provider.id,
-        providerLabel: provider.label,
-        statusLabel,
-        value: `${provider.id}:state`,
-        keywords: [provider.label, provider.id, statusLabel],
-      },
-    ];
-  });
-}
-
-function getProviderStatusLabel(provider: RuntimeModelPickerProvider): string {
-  if (!provider.disabled) return "No models available";
-  if (provider.status === "unavailable") return provider.statusMessage ?? "Unavailable";
-  return "Coming soon";
-}
-
-export function SelectionGroup({ action, onSelect }: SelectionGroupProps): React.ReactElement {
+export function SelectionGroup({
+  action,
+  onSelect,
+}: {
+  action: RuntimeModelPickerAction;
+  onSelect: () => void;
+}): React.ReactElement {
   return (
-    <CommandGroup heading="Selection">
+    <CommandGroup heading="Selection" className={PICKER_GROUP_CLASS}>
       <CommandItem
         value={action.id}
         keywords={action.keywords}
         onSelect={onSelect}
-        className="flex items-start gap-2 text-xs"
+        className={cn(
+          PICKER_ITEM_CLASS,
+          "flex items-start gap-2 whitespace-normal px-2.5 py-1.5 text-xs",
+        )}
       >
         <CheckIcon
-          className={cn("mt-0.5 size-3 shrink-0", action.selected ? "opacity-100" : "opacity-0")}
+          className={cn(
+            "mt-0.5 size-3 shrink-0 text-[var(--chip-violet-soft)]",
+            action.selected ? "opacity-100" : "opacity-0",
+          )}
         />
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-foreground">{action.label}</span>
+          <span className="break-words text-foreground">{action.label}</span>
           {action.description ? (
-            <span className="truncate text-[11px] text-muted-foreground">{action.description}</span>
+            <span className="break-words text-[11px] text-muted-foreground">
+              {action.description}
+            </span>
           ) : null}
         </span>
       </CommandItem>
@@ -147,68 +84,180 @@ export function SelectionGroup({ action, onSelect }: SelectionGroupProps): React
 }
 
 export function ModelGroup({
-  heading,
-  entries,
+  group,
   selectedModelValue,
   favorites,
+  collapsed,
+  canCollapse,
+  expandedGroupIds,
+  needsCollapse,
+  isSearching,
   onSelect,
   onToggleFavorite,
+  onExpand,
+  onCollapse,
 }: ModelGroupProps): React.ReactElement {
+  if (collapsed) {
+    return (
+      <CommandGroup className="overflow-visible p-0">
+        <ProviderBrowseItem group={group} onExpand={() => onExpand(group.id)} />
+      </CommandGroup>
+    );
+  }
+
   return (
-    <CommandGroup heading={heading}>
-      {entries.map((entry) => (
-        <ModelItem
-          key={entry.value}
-          entry={entry}
-          isSelected={entry.value === selectedModelValue}
-          isFavorite={favorites.has(entry.value)}
+    <CommandGroup
+      className={PICKER_GROUP_CLASS}
+      heading={
+        <ProviderHeader
+          group={group}
+          canCollapse={canCollapse}
+          onCollapse={() => onCollapse(group.id)}
+        />
+      }
+    >
+      {group.vendors.map((vendor) => (
+        <VendorBlock
+          key={vendor.id}
+          group={group}
+          vendor={vendor}
+          collapsed={isVendorCollapsed(group, vendor, expandedGroupIds, needsCollapse, isSearching)}
+          selectedModelValue={selectedModelValue}
+          favorites={favorites}
+          showProviderIcon={group.kind === "starred"}
+          showVendorHeading={!isSearching}
           onSelect={onSelect}
           onToggleFavorite={onToggleFavorite}
+          onExpand={() => onExpand(vendor.id)}
         />
       ))}
     </CommandGroup>
   );
 }
 
-function ModelItem({
-  entry,
-  isSelected,
-  isFavorite,
+function VendorBlock({
+  group,
+  vendor,
+  collapsed,
+  selectedModelValue,
+  favorites,
+  showProviderIcon,
+  showVendorHeading,
   onSelect,
   onToggleFavorite,
-}: ModelItemProps): React.ReactElement {
+  onExpand,
+}: {
+  group: ModelGroupSpec;
+  vendor: VendorSection;
+  collapsed: boolean;
+  selectedModelValue: string;
+  favorites: ReadonlySet<string>;
+  showProviderIcon: boolean;
+  showVendorHeading: boolean;
+  onSelect: (entry: ModelEntry) => void;
+  onToggleFavorite: (value: string) => void;
+  onExpand: () => void;
+}): React.ReactElement {
+  if (collapsed) {
+    return <VendorBrowseItem group={group} vendor={vendor} onExpand={onExpand} />;
+  }
+
+  return (
+    <>
+      {showVendorHeading && vendor.heading ? (
+        <div
+          className={cn(
+            MODEL_INSET_CLASS,
+            "pb-1 pt-2.5 pr-2.5 text-[11px] font-medium text-muted-foreground",
+          )}
+        >
+          {vendor.heading}
+        </div>
+      ) : null}
+      {vendor.entries.map((entry) => (
+        <ModelItem
+          key={entry.value}
+          entry={entry}
+          vendorKey={vendor.vendorKey}
+          isSelected={entry.value === selectedModelValue}
+          isFavorite={favorites.has(entry.value)}
+          showProviderIcon={showProviderIcon}
+          onSelect={onSelect}
+          onToggleFavorite={onToggleFavorite}
+        />
+      ))}
+    </>
+  );
+}
+
+function ModelItem({
+  entry,
+  vendorKey,
+  isSelected,
+  isFavorite,
+  showProviderIcon,
+  onSelect,
+  onToggleFavorite,
+}: {
+  entry: ModelEntry;
+  vendorKey?: string;
+  isSelected: boolean;
+  isFavorite: boolean;
+  showProviderIcon: boolean;
+  onSelect: (entry: ModelEntry) => void;
+  onToggleFavorite: (value: string) => void;
+}): React.ReactElement {
+  const visibleLabel = displayModelLabel(entry, vendorKey);
+  const visibleId = displayModelId(entry, visibleLabel);
+  const visibleDescription = displayModelDescription(entry, visibleLabel, visibleId);
+  const accessibleName = showProviderIcon
+    ? `${visibleLabel}, ${entry.providerLabel}`
+    : visibleLabel;
+
   return (
     <CommandItem
       value={entry.value}
       keywords={entry.keywords}
       onSelect={() => onSelect(entry)}
-      className="group/model flex items-start justify-between gap-2 text-xs"
-      title={entry.description}
+      className={cn(
+        showProviderIcon ? "px-2.5" : MODEL_INSET_CLASS,
+        PICKER_ITEM_CLASS,
+        "group/model flex items-start justify-between gap-2 rounded-none whitespace-normal py-1.5 pr-2.5 text-xs",
+      )}
+      title={entry.description ?? entry.modelId}
+      aria-label={accessibleName}
     >
       <span className="flex min-w-0 items-start gap-2">
-        <ProviderIcon
-          providerId={entry.providerId}
-          alt={entry.modelLabel}
-          className="mt-0.5 size-3.5 shrink-0 rounded-sm"
-        />
+        {showProviderIcon ? (
+          <ProviderIcon
+            providerId={entry.providerId}
+            alt=""
+            className="mt-0.5 size-4 shrink-0 rounded-sm"
+          />
+        ) : null}
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-foreground">
-            {entry.providerLabel} / {entry.modelLabel}
-          </span>
-          {entry.description ? (
-            <span className="truncate text-[11px] text-muted-foreground">{entry.description}</span>
+          <span className="break-words text-foreground">{visibleLabel}</span>
+          {visibleDescription ? (
+            <span className="break-words text-[11px] leading-snug text-muted-foreground">
+              {visibleDescription}
+            </span>
+          ) : null}
+          {visibleId ? (
+            <span className="break-all font-mono text-[11px] leading-snug text-muted-foreground">
+              {visibleId}
+            </span>
           ) : null}
         </span>
       </span>
       <span className="mt-0.5 flex shrink-0 items-center gap-1.5">
         <FavoriteToggle
           isFavorite={isFavorite}
-          modelLabel={`${entry.providerLabel} / ${entry.modelLabel}`}
+          modelLabel={accessibleName}
           onToggle={() => onToggleFavorite(entry.value)}
         />
         <CheckIcon
           className={cn(
-            "size-3 shrink-0 text-violet-400",
+            "size-3 shrink-0 text-[var(--chip-violet-soft)]",
             isSelected ? "opacity-100" : "opacity-0",
           )}
         />
@@ -221,14 +270,16 @@ function FavoriteToggle({
   isFavorite,
   modelLabel,
   onToggle,
-}: FavoriteToggleProps): React.ReactElement {
+}: {
+  isFavorite: boolean;
+  modelLabel: string;
+  onToggle: () => void;
+}): React.ReactElement {
   return (
     <Button
       size="sm"
       variant="ghost"
       aria-pressed={isFavorite}
-      // Keep focus in the search input and stop cmdk from treating the click
-      // as a selection of the row.
       onMouseDown={(event) => event.preventDefault()}
       onClick={(event) => {
         event.stopPropagation();
@@ -247,21 +298,30 @@ function FavoriteToggle({
   );
 }
 
-export function ProviderStateGroup({ entries }: ProviderStateGroupProps): React.ReactElement {
+export function ProviderStateGroup({
+  entries,
+}: {
+  entries: ProviderStateEntry[];
+}): React.ReactElement {
   return (
-    <CommandGroup heading="Providers">
+    <CommandGroup heading="Providers" className={PICKER_GROUP_CLASS}>
       {entries.map((entry) => (
         <CommandItem
           key={entry.value}
           value={entry.value}
           keywords={entry.keywords}
           disabled
-          className="flex items-start gap-2 text-xs"
+          className={cn(
+            PICKER_ITEM_CLASS,
+            "flex items-start gap-2 whitespace-normal px-2.5 py-1.5 text-xs",
+          )}
         >
           <LockIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
           <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="truncate text-muted-foreground">{entry.providerLabel}</span>
-            <span className="truncate text-[11px] text-muted-foreground">{entry.statusLabel}</span>
+            <span className="break-words text-muted-foreground">{entry.providerLabel}</span>
+            <span className="break-words text-[11px] text-muted-foreground">
+              {entry.statusLabel}
+            </span>
           </span>
         </CommandItem>
       ))}

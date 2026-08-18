@@ -249,9 +249,8 @@ describe("AgentSession", () => {
 
     await user.click(screen.getByRole("button", { name: /Opus/i }));
 
-    const optionTexts = screen.getAllByRole("option").map((element) => element.textContent ?? "");
-    expect(optionTexts.some((text) => text.includes("Claude / Opus"))).toBe(true);
-    expect(optionTexts.some((text) => text.includes("OpenCode / GPT-5.3 Codex"))).toBe(true);
+    expect(screen.getByRole("option", { name: "Opus" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "GPT-5.3 Codex" })).toBeInTheDocument();
     expect(screen.queryByText(/Use Claude Code/)).toBeNull();
     expect(screen.queryByText(/Use OpenCode/)).toBeNull();
   });
