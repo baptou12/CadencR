@@ -286,7 +286,7 @@ describe("ModelSelector", () => {
 
     render(<ModelSelector level="global" />);
 
-    expect(screen.getAllByRole("combobox")[0]).toHaveTextContent("OpenCode / Default");
+    expect(screen.getAllByRole("combobox")[0]).toHaveTextContent("Default");
   });
 
   it("surfaces live model descriptions from the provider catalog", () => {
@@ -340,7 +340,7 @@ describe("ModelSelector", () => {
     render(<ModelSelector level="global" />);
     await user.click(screen.getAllByRole("combobox")[0]);
 
-    expect(screen.getByText("OpenCode / Default")).toBeInTheDocument();
+    expect(screen.getAllByRole("option", { name: "Default" }).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Use Claude Code/)).toBeNull();
     expect(screen.queryByText(/Use OpenCode/)).toBeNull();
   });
@@ -380,9 +380,7 @@ describe("ModelSelector", () => {
     await user.type(searchInput, "gpt");
 
     const optionTexts = screen.getAllByRole("option").map((element) => element.textContent ?? "");
-    const opencodeOptionText = optionTexts.find((text) => text.includes("OpenCode / GPT-5"));
-    expect(opencodeOptionText).toBeDefined();
-    expect(opencodeOptionText).toContain("Codex default");
+    expect(screen.getByRole("option", { name: "GPT-5" })).toBeInTheDocument();
     expect(optionTexts.some((text) => text.includes("Claude / Opus"))).toBe(false);
   });
 });

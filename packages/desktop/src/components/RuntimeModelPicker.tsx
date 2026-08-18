@@ -1,28 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { StarIcon } from "lucide-react";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandList,
-  useCommandState,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ResolvedShortcutHint } from "@/components/KbdShortcut";
+import { Popover, PopoverTrigger } from "@/components/ui/popover";
 import { useFavoriteModels } from "@/hooks/useFavoriteModels";
-import { useShortcut } from "@/hooks/useShortcut";
-import { cn } from "@/lib/utils";
+import { revealPickerItem } from "./RuntimeModelPickerChrome";
+import { RuntimeModelPickerContent } from "./RuntimeModelPickerContent";
+import type { RuntimeModelPickerAction } from "./RuntimeModelPickerSections";
 import {
-  ModelGroup,
-  ProviderStateGroup,
-  SelectionGroup,
+  catalogNeedsCollapse,
   getModelEntries,
   getProviderStateEntries,
-  partitionModelEntries,
+  groupCatalogEntries,
+  initialExpandedGroupIds,
   type ModelEntry,
+  type ModelGroupSpec,
   type ProviderStateEntry,
-  type RuntimeModelPickerAction,
-} from "./RuntimeModelPickerSections";
+} from "./runtimeModelPickerGroups";
 import type {
   RuntimeModelPickerProvider,
   RuntimeModelSelectionResolver,
@@ -82,38 +73,6 @@ interface SelectedModelScrollParams {
   selectedModelValue: string;
 }
 
-interface FavoriteShortcutProps {
-  onToggleHighlighted: () => void;
-}
-
-interface ModelGroupSpec {
-  heading: string;
-  entries: ModelEntry[];
-}
-
-interface RuntimeModelPickerContentProps {
-  action?: RuntimeModelPickerAction;
-  align: "start" | "center" | "end";
-  contentClassName?: string;
-  emptyText: string;
-  favorites: ReadonlySet<string>;
-  inputRef: RefObject<HTMLInputElement | null>;
-  listRef: RefObject<HTMLDivElement | null>;
-  modelGroups: ModelGroupSpec[];
-  onActionSelect: () => void;
-  onAfterSelectClose?: () => void;
-  onModelSelect: (entry: ModelEntry) => void;
-  onToggleFavorite: (value: string) => void;
-  onToggleHighlightedFavorite: () => void;
-  providerStateEntries: ProviderStateEntry[];
-  restoreFocusAfterCloseRef: RefObject<boolean>;
-  search: string;
-  searchPlaceholder: string;
-  selectedCommandValue: string;
-  selectedModelValue: string;
-  setSearch: (value: string) => void;
-}
-
 function useScrollSelectedModel({
   listRef,
   resolvedOpen,
@@ -128,15 +87,11 @@ function useScrollSelectedModel({
       if (!list) return;
 
       if (search.length === 0 && selectedModelValue) {
-        // Query by the specific value rather than [data-selected="true"]:
-        // cmdk's data-selected tracks the currently highlighted item, which
-        // can drift after the user types and clears the search. data-value
-        // is stable, so we always scroll to the actual selected model.
         const selectedItem = list.querySelector<HTMLElement>(
           `[data-value="${CSS.escape(selectedModelValue)}"]`,
         );
         if (selectedItem) {
-          selectedItem.scrollIntoView({ block: "nearest" });
+          revealPickerItem(list, selectedItem);
           return;
         }
       }
@@ -148,159 +103,127 @@ function useScrollSelectedModel({
   }, [listRef, resolvedOpen, search, selectedModelValue]);
 }
 
-/**
- * Model rows split into their rendered groups, plus the star-the-highlighted-row
- * action. Starred models get their own group above the rest; since cmdk only
- * filters *within* a group, they stay on top whether or not a search is active.
- */
 function useModelGroups(
   providers: RuntimeModelPickerProvider[],
   listRef: RefObject<HTMLDivElement | null>,
 ): {
   favorites: ReadonlySet<string>;
   modelGroups: ModelGroupSpec[];
+  needsCollapse: boolean;
   toggleFavorite: (value: string) => void;
   toggleHighlightedFavorite: () => void;
 } {
   const { favorites, toggleFavorite } = useFavoriteModels();
   const allEntries = useMemo<ModelEntry[]>(() => getModelEntries(providers), [providers]);
-
-  const modelGroups = useMemo<ModelGroupSpec[]>(() => {
-    const { favorite, rest } = partitionModelEntries(allEntries, favorites);
-    const groups =
-      favorite.length > 0
-        ? [
-            { heading: "Starred", entries: favorite },
-            { heading: "All models", entries: rest },
-          ]
-        : [{ heading: "Models", entries: rest }];
-    return groups.filter((group) => group.entries.length > 0);
-  }, [allEntries, favorites]);
-
+  const modelGroups = useMemo<ModelGroupSpec[]>(
+    () => groupCatalogEntries(allEntries, favorites),
+    [allEntries, favorites],
+  );
+  const needsCollapse = catalogNeedsCollapse(modelGroups);
   const modelValues = useMemo(() => new Set(allEntries.map((entry) => entry.value)), [allEntries]);
 
   const toggleHighlightedFavorite = useCallback(() => {
-    // cmdk owns the highlight, so the DOM is the only place it's readable.
     const highlighted = listRef.current?.querySelector<HTMLElement>('[data-selected="true"]');
     const value = highlighted?.dataset.value;
-    // Skips the action and provider-state rows, which aren't starrable.
     if (!value || !modelValues.has(value)) return;
     toggleFavorite(value);
   }, [listRef, modelValues, toggleFavorite]);
 
   return useMemo(
-    () => ({ favorites, modelGroups, toggleFavorite, toggleHighlightedFavorite }),
-    [favorites, modelGroups, toggleFavorite, toggleHighlightedFavorite],
+    () => ({ favorites, modelGroups, needsCollapse, toggleFavorite, toggleHighlightedFavorite }),
+    [favorites, modelGroups, needsCollapse, toggleFavorite, toggleHighlightedFavorite],
   );
 }
 
-/**
- * Binds the star shortcut and shows its footer hint (the star affordance
- * itself is hover-only, so the chord needs a permanent home).
- *
- * Rendered inside the popover content, so the binding exists only while a
- * picker is actually open — that, not an `enabled` flag, is what keeps it
- * from competing with the editor's and browser's own ⌘S.
- */
-function FavoriteShortcut({ onToggleHighlighted }: FavoriteShortcutProps): React.ReactNode {
-  // Hides the hint when the search filters everything out — there is no
-  // highlighted row for the chord to act on.
-  const hasMatches = useCommandState((state) => state.filtered.count > 0);
+function useExpandedGroups(
+  resolvedOpen: boolean,
+  modelGroups: ModelGroupSpec[],
+  selectedModelValue: string,
+): {
+  expandedGroupIds: ReadonlySet<string>;
+  expandGroup: (groupId: string) => void;
+  collapseGroup: (groupId: string) => void;
+} {
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const userTouchedRef = useRef(false);
 
-  useShortcut(
-    "model-picker-favorite",
-    (event) => {
-      event.preventDefault();
-      onToggleHighlighted();
+  useEffect(() => {
+    if (!resolvedOpen) {
+      userTouchedRef.current = false;
+      setExpandedGroupIds((current) => (current.size === 0 ? current : new Set()));
+      return;
+    }
+    if (userTouchedRef.current) return;
+    const ids = initialExpandedGroupIds(modelGroups, selectedModelValue);
+    setExpandedGroupIds((current) => {
+      if (current.size === ids.length && ids.every((id) => current.has(id))) return current;
+      return new Set(ids);
+    });
+  }, [modelGroups, resolvedOpen, selectedModelValue]);
+
+  const expandGroup = useCallback((groupId: string) => {
+    userTouchedRef.current = true;
+    setExpandedGroupIds((current) => new Set(current).add(groupId));
+  }, []);
+
+  const collapseGroup = useCallback((groupId: string) => {
+    userTouchedRef.current = true;
+    setExpandedGroupIds((current) => {
+      const next = new Set(current);
+      next.delete(groupId);
+      return next;
+    });
+  }, []);
+
+  return { expandedGroupIds, expandGroup, collapseGroup };
+}
+
+function usePickerSelection(params: {
+  action?: RuntimeModelPickerAction;
+  controlledOpen: boolean | undefined;
+  onOpenChange?: (open: boolean) => void;
+  onSelect: (providerId: string, modelId: string) => void;
+  setInternalOpen: (open: boolean) => void;
+  restoreFocusAfterCloseRef: RefObject<boolean>;
+}): {
+  handleActionSelect: () => void;
+  handleModelSelect: (entry: ModelEntry) => void;
+  handleOpenChange: (nextOpen: boolean) => void;
+} {
+  const {
+    action,
+    controlledOpen,
+    onOpenChange,
+    onSelect,
+    restoreFocusAfterCloseRef,
+    setInternalOpen,
+  } = params;
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (controlledOpen === undefined) setInternalOpen(nextOpen);
+      onOpenChange?.(nextOpen);
     },
-    undefined,
-    [onToggleHighlighted],
+    [controlledOpen, onOpenChange, setInternalOpen],
   );
 
-  if (!hasMatches) return null;
+  const handleActionSelect = useCallback(() => {
+    if (!action) return;
+    restoreFocusAfterCloseRef.current = true;
+    action.onSelect();
+    handleOpenChange(false);
+  }, [action, handleOpenChange, restoreFocusAfterCloseRef]);
 
-  return (
-    <div className="flex items-center gap-1.5 border-t px-2.5 py-1.5 text-[11px] text-muted-foreground">
-      <StarIcon className="size-3 shrink-0" />
-      <span>Star / unstar</span>
-      <ResolvedShortcutHint shortcutId="model-picker-favorite" />
-    </div>
+  const handleModelSelect = useCallback(
+    (entry: ModelEntry) => {
+      restoreFocusAfterCloseRef.current = true;
+      onSelect(entry.providerId, entry.modelId);
+      handleOpenChange(false);
+    },
+    [handleOpenChange, onSelect, restoreFocusAfterCloseRef],
   );
-}
 
-function RuntimeModelPickerContent({
-  action,
-  align,
-  contentClassName,
-  emptyText,
-  favorites,
-  inputRef,
-  listRef,
-  modelGroups,
-  onActionSelect,
-  onAfterSelectClose,
-  onModelSelect,
-  onToggleFavorite,
-  onToggleHighlightedFavorite,
-  providerStateEntries,
-  restoreFocusAfterCloseRef,
-  search,
-  searchPlaceholder,
-  selectedCommandValue,
-  selectedModelValue,
-  setSearch,
-}: RuntimeModelPickerContentProps): React.ReactElement {
-  function focusSearchInput(): void {
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }
-
-  return (
-    <PopoverContent
-      align={align}
-      className={cn("w-[340px] p-0", contentClassName)}
-      onOpenAutoFocus={(event) => {
-        event.preventDefault();
-        focusSearchInput();
-      }}
-      onCloseAutoFocus={(event) => {
-        if (!restoreFocusAfterCloseRef.current) return;
-        restoreFocusAfterCloseRef.current = false;
-        event.preventDefault();
-        onAfterSelectClose?.();
-      }}
-    >
-      <Command defaultValue={selectedCommandValue}>
-        <CommandInput
-          ref={inputRef}
-          placeholder={searchPlaceholder}
-          value={search}
-          onValueChange={setSearch}
-          className="h-9 text-xs"
-        />
-        <CommandList ref={listRef} className="max-h-[320px]">
-          <CommandEmpty className="py-3 text-center text-xs">{emptyText}</CommandEmpty>
-          {action ? <SelectionGroup action={action} onSelect={onActionSelect} /> : null}
-          {modelGroups.map((group) => (
-            <ModelGroup
-              key={group.heading}
-              heading={group.heading}
-              entries={group.entries}
-              selectedModelValue={selectedModelValue}
-              favorites={favorites}
-              onSelect={onModelSelect}
-              onToggleFavorite={onToggleFavorite}
-            />
-          ))}
-          {providerStateEntries.length > 0 ? (
-            <ProviderStateGroup entries={providerStateEntries} />
-          ) : null}
-        </CommandList>
-        {modelGroups.length > 0 ? (
-          <FavoriteShortcut onToggleHighlighted={onToggleHighlightedFavorite} />
-        ) : null}
-      </Command>
-    </PopoverContent>
-  );
+  return { handleActionSelect, handleModelSelect, handleOpenChange };
 }
 
 export function RuntimeModelPicker({
@@ -339,33 +262,26 @@ export function RuntimeModelPicker({
 
   useScrollSelectedModel({ listRef, resolvedOpen, search, selectedModelValue });
 
-  const { favorites, modelGroups, toggleFavorite, toggleHighlightedFavorite } = useModelGroups(
-    providers,
-    listRef,
+  const { favorites, modelGroups, needsCollapse, toggleFavorite, toggleHighlightedFavorite } =
+    useModelGroups(providers, listRef);
+  const { expandedGroupIds, expandGroup, collapseGroup } = useExpandedGroups(
+    resolvedOpen,
+    modelGroups,
+    selectedModelValue,
   );
+  const { handleActionSelect, handleModelSelect, handleOpenChange } = usePickerSelection({
+    action,
+    controlledOpen: open,
+    onOpenChange,
+    onSelect,
+    restoreFocusAfterCloseRef,
+    setInternalOpen,
+  });
 
   const providerStateEntries = useMemo<ProviderStateEntry[]>(
     () => getProviderStateEntries(providers),
     [providers],
   );
-
-  function handleOpenChange(nextOpen: boolean): void {
-    if (open === undefined) setInternalOpen(nextOpen);
-    onOpenChange?.(nextOpen);
-  }
-
-  function handleActionSelect(): void {
-    if (!action) return;
-    restoreFocusAfterCloseRef.current = true;
-    action.onSelect();
-    handleOpenChange(false);
-  }
-
-  function handleModelSelect(entry: ModelEntry): void {
-    restoreFocusAfterCloseRef.current = true;
-    onSelect(entry.providerId, entry.modelId);
-    handleOpenChange(false);
-  }
 
   return (
     <Popover open={resolvedOpen} onOpenChange={handleOpenChange}>
@@ -375,12 +291,17 @@ export function RuntimeModelPicker({
         align={align}
         contentClassName={contentClassName}
         emptyText={emptyText}
+        expandedGroupIds={expandedGroupIds}
         favorites={favorites}
         inputRef={inputRef}
+        isSearching={search.trim().length > 0}
         listRef={listRef}
         modelGroups={modelGroups}
+        needsCollapse={needsCollapse}
         onActionSelect={handleActionSelect}
         onAfterSelectClose={onAfterSelectClose}
+        onCollapseGroup={collapseGroup}
+        onExpandGroup={expandGroup}
         onModelSelect={handleModelSelect}
         onToggleFavorite={toggleFavorite}
         onToggleHighlightedFavorite={toggleHighlightedFavorite}
