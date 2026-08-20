@@ -96,13 +96,21 @@ function useSidebarController(isMobile: boolean) {
   useEffect(() => {
     document.documentElement.dataset.sidebarCollapsed = collapsed ? "true" : "false";
   }, [collapsed]);
+  // A changed `collapsible` reaches the Panel one render later, so the
+  // `collapse()` riding the same commit no-ops and the sidebar keeps its width.
+  // Retry once it lands; re-setting the same flag bails out instead of looping.
+  const [retryCollapse, setRetryCollapse] = useState(false);
   useEffect(() => {
     if (isMobile || collapsedSetting.isLoading) return;
     const panel = sidebarPanelRef.current;
-    if (!panel || panel.isCollapsed() === collapsed) return;
+    if (!panel || panel.isCollapsed() === collapsed) {
+      setRetryCollapse(false);
+      return;
+    }
     if (collapsed) panel.collapse();
     else panel.expand();
-  }, [collapsed, collapsedSetting.isLoading, isMobile]);
+    setRetryCollapse(collapsed && !panel.isCollapsed());
+  }, [collapsed, collapsedSetting.isLoading, isMobile, retryCollapse]);
   useEffect(() => {
     leftSidebarRef.current?.focus();
   }, []);
