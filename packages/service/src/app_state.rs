@@ -26,6 +26,7 @@ use crate::domain::push::PushNotifier;
 use crate::domain::schedules::models::ScheduleRanEvent;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
+use crate::domain::workflow::worktree::WorktreeSetupRegistry;
 use crate::domain::ws_session::handler::{new_sdk_sessions, ActiveTurnRegistry};
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 use crate::domain::ws_session::user_shell_runs::UserShellRunRegistry;
@@ -179,6 +180,9 @@ pub struct AppState {
     pub active_turns: Arc<ActiveTurnRegistry>,
     /// In-flight Cadencr-managed `!` commands, keyed by agent session.
     pub user_shell_runs: Arc<UserShellRunRegistry>,
+    /// In-flight worktree setup commands and recovery claims, keyed by feature.
+    /// Active permits order reconnect replay against terminal setup events.
+    pub worktree_setup_runs: WorktreeSetupRegistry,
     /// Process-global pending gate registry. Both human WebSocket responses and
     /// MCP parent responses atomically claim the same entry, so first answer wins.
     pub pending_gates: Arc<GateRegistry>,
@@ -299,6 +303,7 @@ impl AppState {
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),
             user_shell_runs: Arc::new(UserShellRunRegistry::new()),
+            worktree_setup_runs: WorktreeSetupRegistry::new(),
             pending_gates: Arc::new(GateRegistry::new()),
             mcp_control_sessions: new_sdk_sessions(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
@@ -367,6 +372,7 @@ impl AppState {
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             active_turns: Arc::new(ActiveTurnRegistry::new()),
             user_shell_runs: Arc::new(UserShellRunRegistry::new()),
+            worktree_setup_runs: WorktreeSetupRegistry::new(),
             pending_gates: Arc::new(GateRegistry::new()),
             mcp_control_sessions: new_sdk_sessions(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),

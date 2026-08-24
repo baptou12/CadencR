@@ -3030,6 +3030,31 @@ describe("ws-session-store", () => {
       expect(session.worktreeError).toBe("pnpm install failed");
     });
 
+    it("replaces streamed setup output with the terminal error snapshot", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_running",
+        payload: {},
+      });
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_output",
+        payload: { line: "partial" },
+      });
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_error",
+        payload: { error: "failed", output: "authoritative\ntranscript" },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.worktreeStatus).toBe("setup_error");
+      expect(session.worktreeSetupOutput).toEqual(["authoritative\ntranscript"]);
+    });
+
     it("retryWorktreeSetup sends feature-scoped envelope without optimistic update", async () => {
       useWsSessionStore.getState().connect("s1");
       await tick();

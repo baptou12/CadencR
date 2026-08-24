@@ -19,7 +19,13 @@ pub(super) async fn restore_worktree_state(
     sender: &WsSender,
     feature_id: i64,
 ) -> Result<(), String> {
-    worktree::replay_persisted_state(&app_state.read_pool, feature_id, sender)
-        .await
-        .map(|_| ())
+    worktree::replay_persisted_state(
+        &app_state.read_pool,
+        &app_state.write_pool,
+        &app_state.worktree_setup_runs,
+        feature_id,
+        sender,
+    )
+    .await
+    .map(|_| ())
 }

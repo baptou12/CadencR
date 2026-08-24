@@ -2,47 +2,19 @@
 //! worktree, streaming each line to the WS so the user sees progress live.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use sqlx::SqlitePool;
 
 use crate::domain::workflow::ws_sender::WsSender;
-use crate::shared::setup_log::setup_log_for_transport;
 
-use super::db::set_setting;
-use super::envelope::send_envelope;
+use super::setup_events::{send_ready, send_running};
+use super::setup_finish::{finish_error, finish_ready};
+use super::setup_output::collect_setup_output;
+use super::setup_state::{persist_setup_state, SetupState};
+use super::WorktreeSetupRegistry;
 
-/// Persist setup error state and notify the frontend via WebSocket.
-async fn report_setup_error(
-    write_pool: &SqlitePool,
-    feature_id: i64,
-    log_lines: &tokio::sync::Mutex<Vec<String>>,
-    ws_sender: &WsSender,
-    error: &str,
-) {
-    let _ = set_setting(write_pool, feature_id, "worktree_setup_step", "setup_error").await;
-    let _ = set_setting(write_pool, feature_id, "worktree_setup_error", error).await;
-    let log = log_lines.lock().await.join("\n");
-    let _ = set_setting(write_pool, feature_id, "worktree_setup_log", &log).await;
-    let display_log = setup_log_for_transport(log);
-    send_envelope(
-        ws_sender,
-        "workflow",
-        "worktree.setup_error",
-        serde_json::json!({
-            "feature_id": feature_id,
-            "error": error,
-            "output": display_log,
-        }),
-    );
-}
-
-/// Resolve the project's `setup_worktree` commands for a feature.
-///
-/// `setup_worktree` is a project setting and now lives in the JSON settings store
-/// (the legacy `project_settings` row is kept only as a backup). Returns `None`
-/// when no non-empty setup script is configured.
-async fn resolve_setup_commands(
+/// Resolve the project's JSON `setup_worktree` setting, treating blank as absent.
+pub(super) async fn resolve_setup_commands(
     read_pool: &SqlitePool,
     feature_id: i64,
 ) -> Result<Option<String>, String> {
@@ -65,72 +37,71 @@ async fn resolve_setup_commands(
 pub async fn run_setup_commands(
     read_pool: SqlitePool,
     write_pool: SqlitePool,
+    setup_runs: WorktreeSetupRegistry,
     feature_id: i64,
     worktree_path: PathBuf,
     ws_sender: WsSender,
 ) {
-    // 1. Resolve setup commands from the project's JSON settings.
+    let Some(permit) = setup_runs.try_acquire(feature_id) else {
+        return;
+    };
     let commands_str = match resolve_setup_commands(&read_pool, feature_id).await {
         Ok(Some(commands)) => commands,
         Ok(None) => {
-            // No setup commands
-            let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
-            let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", "").await;
-            let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", "").await;
-            send_envelope(
-                &ws_sender,
-                "workflow",
-                "worktree.ready",
-                serde_json::json!({
-                    "feature_id": feature_id,
-                }),
-            );
+            if let Err(error) =
+                persist_setup_state(&write_pool, feature_id, SetupState::Ready { log: "" }).await
+            {
+                finish_error(
+                    &write_pool,
+                    feature_id,
+                    &ws_sender,
+                    Some(permit),
+                    &error,
+                    "",
+                    None,
+                )
+                .await;
+                return;
+            }
+            permit.finish(|| send_ready(feature_id, &ws_sender, ""));
             return;
         }
         Err(error) => {
-            let _ = set_setting(
+            finish_error(
                 &write_pool,
                 feature_id,
-                "worktree_setup_step",
-                "setup_error",
+                &ws_sender,
+                Some(permit),
+                &error,
+                "",
+                None,
             )
             .await;
-            let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", &error).await;
-            send_envelope(
-                &ws_sender,
-                "workflow",
-                "worktree.setup_error",
-                serde_json::json!({
-                    "feature_id": feature_id,
-                    "error": error,
-                }),
-            );
             return;
         }
     };
 
-    let _ = set_setting(
-        &write_pool,
-        feature_id,
-        "worktree_setup_step",
-        "setup_running",
-    )
-    .await;
-    let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", "").await;
-    let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", "").await;
+    if let Err(error) =
+        persist_setup_state(&write_pool, feature_id, SetupState::Running { log: "" }).await
+    {
+        finish_error(
+            &write_pool,
+            feature_id,
+            &ws_sender,
+            Some(permit),
+            &error,
+            "",
+            None,
+        )
+        .await;
+        return;
+    }
 
-    // 2. Send setup_running
-    send_envelope(
-        &ws_sender,
-        "workflow",
-        "worktree.setup_running",
-        serde_json::json!({
-            "feature_id": feature_id,
-        }),
-    );
+    send_running(feature_id, &ws_sender);
 
     run_resolved_setup_commands(
         &write_pool,
+        permit,
         feature_id,
         worktree_path,
         &ws_sender,
@@ -141,6 +112,7 @@ pub async fn run_setup_commands(
 
 async fn run_resolved_setup_commands(
     write_pool: &SqlitePool,
+    permit: crate::domain::features::run_registry::FeatureRunPermit,
     feature_id: i64,
     worktree_path: PathBuf,
     ws_sender: &WsSender,
@@ -150,25 +122,16 @@ async fn run_resolved_setup_commands(
         .lines()
         .filter(|l| !l.trim().is_empty())
         .collect::<Vec<_>>();
-    let log_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
 
     let script = build_setup_script(&commands);
-    let (output_tx, mut output_rx) = crate::shared::terminal_shell::terminal_output_channel();
-    let output_log = Arc::clone(&log_lines);
-    let output_ws = ws_sender.clone();
-    let output_task = tokio::spawn(async move {
-        while let Some(line) = output_rx.recv().await {
-            emit_setup_line(feature_id, &output_ws, &output_log, line).await;
-        }
-    });
-
-    let result = crate::shared::terminal_shell::run_terminal_shell_script(
+    let (output_tx, output_rx) = crate::shared::terminal_shell::terminal_output_channel();
+    let run = crate::shared::terminal_shell::run_terminal_shell_script(
         &script,
         &worktree_path,
         output_tx,
-    )
-    .await;
-    let _ = output_task.await;
+    );
+    let collect = collect_setup_output(write_pool, feature_id, ws_sender, output_rx);
+    let (result, output) = tokio::join!(run, collect);
     match result {
         Ok(exit) if exit.success() => {}
         Ok(exit) => {
@@ -178,28 +141,42 @@ async fn run_resolved_setup_commands(
                 worktree_path.display(),
                 std::env::var("PATH").unwrap_or_else(|_| "<unset>".to_string())
             );
-            report_setup_error(write_pool, feature_id, &log_lines, ws_sender, &error).await;
+            finish_error(
+                write_pool,
+                feature_id,
+                ws_sender,
+                Some(permit),
+                &error,
+                &output.log,
+                output.persistence_error.as_deref(),
+            )
+            .await;
             return;
         }
         Err(error) => {
-            report_setup_error(write_pool, feature_id, &log_lines, ws_sender, &error).await;
+            finish_error(
+                write_pool,
+                feature_id,
+                ws_sender,
+                Some(permit),
+                &error,
+                &output.log,
+                output.persistence_error.as_deref(),
+            )
+            .await;
             return;
         }
     }
 
-    // 6. Success — persist log and mark ready
-    let log = log_lines.lock().await.join("\n");
-    let _ = set_setting(write_pool, feature_id, "worktree_setup_log", &log).await;
-    let _ = set_setting(write_pool, feature_id, "worktree_setup_step", "ready").await;
-    let _ = set_setting(write_pool, feature_id, "worktree_setup_error", "").await;
-    send_envelope(
+    finish_ready(
+        write_pool,
+        feature_id,
         ws_sender,
-        "workflow",
-        "worktree.ready",
-        serde_json::json!({
-            "feature_id": feature_id,
-        }),
-    );
+        permit,
+        &output.log,
+        output.persistence_error.as_deref(),
+    )
+    .await;
 }
 
 fn build_setup_script(commands: &[&str]) -> String {
@@ -216,35 +193,17 @@ fn build_setup_script(commands: &[&str]) -> String {
     script
 }
 
-async fn emit_setup_line(
-    feature_id: i64,
-    ws_sender: &WsSender,
-    log_lines: &Arc<tokio::sync::Mutex<Vec<String>>>,
-    line: String,
-) {
-    log_lines.lock().await.push(line.clone());
-    send_envelope(
-        ws_sender,
-        "workflow",
-        "worktree.setup_output",
-        serde_json::json!({
-            "feature_id": feature_id,
-            "line": line,
-        }),
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::shared::test_env::EnvVarGuard;
+    use axum::extract::ws::Message;
     use sqlx::sqlite::SqlitePoolOptions;
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn build_setup_script_prints_commands_with_shell_quoting() {
         let script = build_setup_script(&["echo it's ok"]);
-
         assert!(script.contains("printf '%s\\n' '$ echo it'\\''s ok'"));
         assert!(script.contains("\necho it's ok\n"));
     }
@@ -258,9 +217,7 @@ mod tests {
             .execute(&pool)
             .await
             .expect("features table");
-        // `projects` is needed so the settings store can resolve the project's
-        // JSON file path. A unique name keeps this test's file from colliding
-        // with other tests sharing the process-wide settings dir fallback.
+        // The settings store resolves the JSON file from this unique project name.
         sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL DEFAULT '')")
             .execute(&pool)
             .await
@@ -279,8 +236,7 @@ mod tests {
             .execute(&pool)
             .await
             .expect("feature row");
-        // Seed the setup script through the JSON settings store (the same path
-        // production reads from), not the legacy `project_settings` table.
+        // Seed the same JSON settings store production reads.
         crate::domain::settings_store::project_set(&pool, 7, "setup_worktree", command)
             .await
             .expect("setup setting");
@@ -317,7 +273,6 @@ exec /bin/sh -c "$script"
         let mut perms = std::fs::metadata(&shell).expect("metadata").permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&shell, perms).expect("chmod");
-
         let _shell_guard = EnvVarGuard::set("SHELL", shell.to_string_lossy().as_ref());
         let worktree = temp.path().join("worktree");
         std::fs::create_dir(&worktree).expect("worktree dir");
@@ -331,17 +286,51 @@ exec /bin/sh -c "$script"
             .permissions();
         pnpm_perms.set_mode(0o755);
         std::fs::set_permissions(&pnpm, pnpm_perms).expect("chmod pnpm");
-
         let pool = setup_pool("nvm use\npnpm install").await;
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-
-        run_setup_commands(pool.clone(), pool.clone(), 1, worktree.clone(), tx).await;
-
+        run_setup_commands(
+            pool.clone(),
+            pool.clone(),
+            WorktreeSetupRegistry::new(),
+            1,
+            worktree.clone(),
+            tx,
+        )
+        .await;
         let step = super::super::db::get_setting(&pool, 1, "worktree_setup_step").await;
         assert_eq!(step.as_deref(), Some("ready"));
         assert_eq!(
             std::fs::read_to_string(worktree.join("setup.out")).expect("setup output"),
             "pnpm ok"
+        );
+    }
+
+    #[tokio::test]
+    async fn no_setup_commands_finish_ready_without_entering_running_state() {
+        let pool = setup_pool("").await;
+        let temp = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        run_setup_commands(
+            pool.clone(),
+            pool.clone(),
+            WorktreeSetupRegistry::new(),
+            1,
+            temp.path().to_path_buf(),
+            tx,
+        )
+        .await;
+        let message = rx.try_recv().unwrap();
+        let Message::Text(text) = message else {
+            panic!("expected ready text envelope");
+        };
+        let envelope: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(envelope["action"], "worktree.ready");
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            super::super::db::get_setting(&pool, 1, "worktree_setup_step")
+                .await
+                .as_deref(),
+            Some("ready")
         );
     }
 }

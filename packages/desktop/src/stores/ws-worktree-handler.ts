@@ -66,14 +66,12 @@ export function handleWorktreeEvent(
       );
       break;
     case "worktree.setup_error": {
-      const session = ctx.getSession(sessionId);
       const output = payloadString("output");
-      const shouldHydrateOutput = output != null && session.worktreeSetupOutput.length === 0;
       ctx.set(
         updateSession(ctx.get(), sessionId, {
           worktreeStatus: "setup_error",
           worktreeError: payloadString("error") ?? payloadString("message"),
-          ...(shouldHydrateOutput ? { worktreeSetupOutput: [output] } : {}),
+          ...(output != null ? { worktreeSetupOutput: output ? [output] : [] } : {}),
         }),
       );
       break;

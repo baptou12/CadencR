@@ -1,4 +1,3 @@
-use axum::extract::ws::Message;
 use tracing::{info, warn};
 
 use crate::app_state::AppState;
@@ -7,30 +6,8 @@ use crate::domain::feature_events::{FeatureEventAction, FeatureEventBroadcaster}
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::protocol::PromptSendPayload;
-use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::{SessionConfig, WsSender};
-
-/// Wrap `owner` in a sender that fans every worktree envelope out to *every*
-/// device viewing the feature, not just the initiator. Without this, worktree
-/// creation/setup progress is invisible to a second client (e.g. the desktop
-/// opening a phone-started conversation). The spawned forwarder lives as long
-/// as the worktree flow holds a clone of the returned sender, then exits.
-fn fan_out_sender(
-    owner: WsSender,
-    feature_senders: WsFeatureSenderRegistry,
-    feature_id: i64,
-) -> WsSender {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-    tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            feature_senders
-                .send_and_mirror(feature_id, &owner, msg)
-                .await;
-        }
-    });
-    tx
-}
 
 /// First-prompt branch provisioning. Two mutually-exclusive paths, both of
 /// which auto-name the feature *first* so the branch name reflects the prompt:
@@ -76,11 +53,9 @@ pub(super) async fn prepare_branch_provisioning(
         // Worktree creation + setup progress must reach every device viewing
         // the feature, so create/apply against a fan-out sender rather than the
         // lone initiator socket.
-        let broadcast = fan_out_sender(
-            sender.clone(),
-            app_state.ws_feature_senders.clone(),
-            feature_id,
-        );
+        let broadcast = app_state
+            .ws_feature_senders
+            .fan_out_sender(feature_id, sender.clone());
         create_and_apply_worktree(
             app_state, write_pool, &broadcast, feature_id, config, options,
         )
@@ -226,6 +201,7 @@ async fn apply_worktree_for_project(
     let worktree_path = worktree::ensure_worktree(
         &app_state.read_pool,
         write_pool,
+        &app_state.worktree_setup_runs,
         feature_id,
         project_id,
         sender,
@@ -246,6 +222,9 @@ async fn maybe_spawn_setup_commands(
     feature_id: i64,
     worktree_path: &std::path::Path,
 ) {
+    if app_state.worktree_setup_runs.is_owned(feature_id) {
+        return;
+    }
     let setup_step =
         worktree::get_setting(&app_state.read_pool, feature_id, "worktree_setup_step").await;
     if setup_step.as_deref() == Some("ready") {
@@ -253,10 +232,18 @@ async fn maybe_spawn_setup_commands(
     }
     let read_pool = app_state.read_pool.clone();
     let write_pool = write_pool.clone();
+    let setup_runs = app_state.worktree_setup_runs.clone();
     let sender = sender.clone();
     let worktree_path = worktree_path.to_path_buf();
     tokio::spawn(async move {
-        worktree::run_setup_commands(read_pool, write_pool, feature_id, worktree_path, sender)
-            .await;
+        worktree::run_setup_commands(
+            read_pool,
+            write_pool,
+            setup_runs,
+            feature_id,
+            worktree_path,
+            sender,
+        )
+        .await;
     });
 }

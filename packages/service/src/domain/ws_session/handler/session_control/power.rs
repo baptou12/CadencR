@@ -215,12 +215,18 @@ pub(crate) async fn handle_retry_worktree_setup(
         }),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+    if app_state.worktree_setup_runs.is_owned(feature_id) {
+        return;
+    }
 
     let rp = app_state.read_pool.clone();
     let wp = app_state.write_pool.clone();
-    let ws = sender.clone();
+    let setup_runs = app_state.worktree_setup_runs.clone();
+    let ws = app_state
+        .ws_feature_senders
+        .fan_out_sender(feature_id, sender.clone());
     let path = PathBuf::from(wt_path_str);
     tokio::spawn(async move {
-        worktree::run_setup_commands(rp, wp, feature_id, path, ws).await;
+        worktree::run_setup_commands(rp, wp, setup_runs, feature_id, path, ws).await;
     });
 }

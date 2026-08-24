@@ -20,6 +20,24 @@ impl WsFeatureSenderRegistry {
         Self::default()
     }
 
+    /// Return a sender that forwards each message to the owner and every other
+    /// client currently viewing `feature_id`. The forwarder exits when all
+    /// clones of the returned sender are dropped.
+    pub fn fan_out_sender(
+        &self,
+        feature_id: i64,
+        owner: mpsc::UnboundedSender<Message>,
+    ) -> mpsc::UnboundedSender<Message> {
+        let registry = self.clone();
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(message) = receiver.recv().await {
+                registry.send_and_mirror(feature_id, &owner, message).await;
+            }
+        });
+        sender
+    }
+
     /// Register `sender` for the given `feature_id`.
     pub async fn register(&self, feature_id: i64, sender: mpsc::UnboundedSender<Message>) {
         let mut map = self.inner.lock().await;
@@ -182,5 +200,29 @@ mod tests {
             .broadcast_others(1, &driver_tx, &Message::Text("hi".into()))
             .await;
         assert!(driver_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn fan_out_sender_follows_viewers_that_connect_mid_run() {
+        let registry = WsFeatureSenderRegistry::new();
+        let (owner_tx, mut owner_rx) = mpsc::unbounded_channel::<Message>();
+        let fan_out = registry.fan_out_sender(1, owner_tx);
+        let (viewer_tx, mut viewer_rx) = mpsc::unbounded_channel::<Message>();
+        registry.register(1, viewer_tx).await;
+
+        fan_out.send(Message::Text("ready".into())).unwrap();
+
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), owner_rx.recv())
+                .await
+                .unwrap(),
+            Some(Message::Text(_))
+        ));
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), viewer_rx.recv())
+                .await
+                .unwrap(),
+            Some(Message::Text(_))
+        ));
     }
 }

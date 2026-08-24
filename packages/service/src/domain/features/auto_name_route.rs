@@ -20,15 +20,13 @@ pub async fn auto_name_feature_handler(
     State(state): State<AppState>,
     Path(feature_id): Path<i64>,
 ) -> Result<Json<SuccessResponse>, AppError> {
-    if !state.auto_name_runs.register(feature_id).await {
+    let Some(_permit) = state.auto_name_runs.try_acquire(feature_id) else {
         return Err(AppError::Conflict(format!(
             "auto-rename is already running for feature {feature_id}"
         )));
-    }
+    };
 
-    let result = run_auto_rename(&state, feature_id).await;
-    state.auto_name_runs.unregister(feature_id).await;
-    result
+    run_auto_rename(&state, feature_id).await
 }
 
 async fn run_auto_rename(

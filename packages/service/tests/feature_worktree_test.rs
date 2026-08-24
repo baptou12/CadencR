@@ -8,7 +8,9 @@
 
 mod common;
 
-use cadencr_service::domain::workflow::worktree::{ensure_worktree, get_setting, WorktreeMode};
+use cadencr_service::domain::workflow::worktree::{
+    ensure_worktree, get_setting, WorktreeMode, WorktreeSetupRegistry,
+};
 
 use common::git_in;
 use common::worktree::{
@@ -25,7 +27,9 @@ async fn ensure_worktree_skip_returns_project_dir() {
     set_feature_setting(&pool, 1, "worktree_mode", "skip").await;
 
     let (sender, _rx) = fresh_ws_sender();
-    let path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    let path = ensure_worktree(&pool, &pool, &WorktreeSetupRegistry::new(), 1, 1, &sender)
+        .await
+        .unwrap();
     assert_eq!(path, project.path());
 }
 
@@ -53,7 +57,9 @@ async fn ensure_worktree_reuse_already_attached_returns_donor_path() {
     set_feature_setting(&pool, 1, "worktree_reuse_branch", "feat/shared").await;
 
     let (sender, _rx) = fresh_ws_sender();
-    let path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    let path = ensure_worktree(&pool, &pool, &WorktreeSetupRegistry::new(), 1, 1, &sender)
+        .await
+        .unwrap();
 
     let donor_canon = std::fs::canonicalize(&donor_wt).unwrap();
     let result_canon = std::fs::canonicalize(&path).unwrap_or(path.clone());
@@ -88,7 +94,9 @@ async fn ensure_worktree_new_with_base_branch_forks_from_base() {
     set_feature_setting(&pool, 1, "worktree_base_branch", "develop").await;
 
     let (sender, _rx) = fresh_ws_sender();
-    let wt_path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    let wt_path = ensure_worktree(&pool, &pool, &WorktreeSetupRegistry::new(), 1, 1, &sender)
+        .await
+        .unwrap();
     let head_sha = rev_parse_head(&wt_path);
     assert_eq!(head_sha, develop_sha, "new worktree must fork from develop");
     assert_eq!(
@@ -114,7 +122,9 @@ async fn ensure_worktree_new_without_base_targets_current_branch() {
     set_feature_setting(&pool, 1, "worktree_mode", "new").await;
 
     let (sender, _rx) = fresh_ws_sender();
-    let wt_path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    let wt_path = ensure_worktree(&pool, &pool, &WorktreeSetupRegistry::new(), 1, 1, &sender)
+        .await
+        .unwrap();
     assert_eq!(
         get_setting(&pool, 1, "target_branch").await.as_deref(),
         Some("develop"),
@@ -141,7 +151,9 @@ async fn ensure_worktree_reuse_unattached_branch_creates_new_worktree() {
     set_feature_setting(&pool, 1, "worktree_reuse_branch", "feat/free").await;
 
     let (sender, _rx) = fresh_ws_sender();
-    let wt_path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    let wt_path = ensure_worktree(&pool, &pool, &WorktreeSetupRegistry::new(), 1, 1, &sender)
+        .await
+        .unwrap();
 
     // Both sides canonicalized — on macOS `/var/folders/...` resolves to
     // `/private/var/folders/...` and a raw `starts_with` would fail.
@@ -187,7 +199,9 @@ async fn ensure_worktree_skip_does_not_set_worktree_path_setting() {
     assert_eq!(mode, WorktreeMode::Skip);
 
     let (sender, _rx) = fresh_ws_sender();
-    let _ = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    let _ = ensure_worktree(&pool, &pool, &WorktreeSetupRegistry::new(), 1, 1, &sender)
+        .await
+        .unwrap();
 
     let row = sqlx::query_as::<_, (Option<String>,)>(
         "SELECT value FROM feature_settings WHERE feature_id = 1 AND key = 'worktree_path'",
@@ -232,7 +246,9 @@ async fn ensure_worktree_new_copies_provider_config_before_returning() {
     set_feature_setting(&pool, 1, "worktree_mode", "new").await;
 
     let (sender, _rx) = fresh_ws_sender();
-    let wt_path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+    let wt_path = ensure_worktree(&pool, &pool, &WorktreeSetupRegistry::new(), 1, 1, &sender)
+        .await
+        .unwrap();
 
     assert_eq!(
         std::fs::read_to_string(wt_path.join(".claude/settings.local.json")).unwrap(),

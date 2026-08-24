@@ -23,7 +23,12 @@ mod new_branch;
 mod replay;
 mod reuse;
 mod setup;
+mod setup_events;
+mod setup_finish;
+mod setup_output;
+mod setup_state;
 
+pub use crate::domain::features::run_registry::FeatureRunRegistry as WorktreeSetupRegistry;
 pub use db::{
     get_project_directory, get_project_id_for_feature, get_setting, resolve_feature_cwd,
     resolve_live_worktree, set_setting,
@@ -61,6 +66,7 @@ pub enum WorktreeMode {
 pub async fn ensure_worktree(
     read_pool: &SqlitePool,
     write_pool: &SqlitePool,
+    setup_runs: &WorktreeSetupRegistry,
     feature_id: i64,
     project_id: i64,
     ws_sender: &WsSender,
@@ -71,7 +77,9 @@ pub async fn ensure_worktree(
         return ensure_skip(read_pool, feature_id, project_id, ws_sender).await;
     }
 
-    if let Some(existing) = replay_persisted_state(read_pool, feature_id, ws_sender).await? {
+    if let Some(existing) =
+        replay_persisted_state(read_pool, write_pool, setup_runs, feature_id, ws_sender).await?
+    {
         return Ok(existing);
     }
 
