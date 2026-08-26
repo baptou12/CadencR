@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { render, screen } from "@/test-utils";
 import type { AllocatedPort, Feature, PrStatusSnapshot } from "@/api/generated";
-import { FeatureRowMetaLine } from "./ProjectFeatureRowParts";
+import { FeatureRowMetaLine, FeatureRowProviderMark } from "./ProjectFeatureRowParts";
+
+vi.mock("@/components/ShortcutTooltip", () => ({
+  ShortcutTooltip: ({ children }: { children: unknown }) => children,
+}));
+
+vi.mock("@/components/SidebarPendingGatePopover", () => ({
+  SidebarPendingGatePopover: ({ children }: { children?: ReactNode }) => (
+    <div data-testid="pending-gate">{children ?? "default-gate"}</div>
+  ),
+}));
 
 function feature(overrides: Partial<Feature> = {}): Feature {
   return {
@@ -93,5 +104,40 @@ describe("FeatureRowMetaLine", () => {
 
     expect(screen.getByLabelText("Ports 3000, 5173 in use")).toBeInTheDocument();
     expect(screen.getByText("+1")).toBeInTheDocument();
+  });
+});
+
+describe("FeatureRowProviderMark", () => {
+  const mark = (status: "idle" | "agent" | "question", unread = false) =>
+    render(
+      <FeatureRowProviderMark
+        feature={feature({ runtime_provider: "claude_code" })}
+        liveStatus={status}
+        isActive={false}
+        isUnread={unread}
+        onOpenConversation={vi.fn()}
+      />,
+    );
+
+  it("shows the idle provider mark without a reserved status column", () => {
+    mark("idle");
+    expect(screen.getByRole("img")).toHaveAttribute("data-provider-mark", "idle");
+    expect(screen.queryByTestId("pending-gate")).not.toBeInTheDocument();
+  });
+
+  it("uses the working tinted mark instead of a separate bot icon", () => {
+    mark("agent");
+    const working = screen.getByRole("img", { name: /Working/ });
+    expect(working).toHaveAttribute("data-provider-mark", "working");
+    expect(working).toHaveClass("text-blue-500", "animate-pulse");
+    expect(screen.queryByTestId("pending-gate")).not.toBeInTheDocument();
+  });
+
+  it("wraps the tinted mark in the pending-gate trigger while waiting", () => {
+    mark("question");
+    expect(screen.getByTestId("pending-gate")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("pending-gate").querySelector("[data-provider-mark]"),
+    ).toHaveAttribute("data-provider-mark", "waiting");
   });
 });

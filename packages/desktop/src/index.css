@@ -332,6 +332,21 @@ html[data-animations="off"] .pr-chip-checks-running::after {
   filter: invert(1);
 }
 
+/* Fill a mono provider silhouette with currentColor (working blue, waiting
+ * amber/primary). Mask uses the asset's alpha so we never swap in the color
+ * logo just to show status. */
+@utility provider-mark-tint {
+  background-color: currentColor;
+  -webkit-mask-image: var(--provider-mark);
+  mask-image: var(--provider-mark);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
 .titlebar-drag button,
 .titlebar-drag input,
 .titlebar-drag a,
