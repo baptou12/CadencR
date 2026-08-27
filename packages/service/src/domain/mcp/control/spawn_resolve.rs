@@ -72,12 +72,16 @@ pub(super) fn branch_worktree_settings(
     ))
 }
 
-/// Resolve the project a spawned session should land in. A target is required:
-/// the caller must pass `target_project_id` or `target_project_path` (pass the
-/// caller's own project id to spawn locally). Errors are phrased to point the
-/// agent at `workspace_list_projects` for valid targets.
+/// Resolve the project a spawned session should land in. Explicit selectors
+/// win: `target_project_id` / `target_project_path` (both must agree when
+/// supplied). When neither is given, the spawn lands in the caller's own
+/// project: agents running in managed worktrees cannot reliably derive their
+/// project from the filesystem (issue #210), so the source session is the
+/// authoritative fallback. Errors are phrased to point the agent at
+/// `workspace_list_projects` for valid targets.
 pub(super) async fn resolve_target_project(
     pool: &sqlx::SqlitePool,
+    source_project_id: i64,
     target_project_id: Option<i64>,
     target_project_path: Option<&str>,
 ) -> Result<TargetProject, AppError> {
@@ -96,12 +100,13 @@ pub(super) async fn resolve_target_project(
                 "No CadencR project is registered at path '{path}'. The path must exactly match a project root; call workspace_list_projects to see registered project paths."
             ))
         })?,
-        (None, None) => {
-            return Err(AppError::BadRequest(
-                "A target project is required: pass project_id or project_path (call workspace_list_projects to see available projects, then pass the caller's own project id to spawn in the current project)."
-                    .to_string(),
-            ))
-        }
+        (None, None) => fetch_project_by_id(pool, source_project_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Internal(format!(
+                    "source session's project {source_project_id} no longer exists"
+                ))
+            })?,
     };
 
     // When both selectors are supplied the path acts as a confirmation guard so
@@ -288,18 +293,23 @@ mod tests {
         pool
     }
 
+    // Regression for issue #210: agents in managed worktrees guessed their
+    // project by lexical path ancestry and hit non-git projects. Omitting the
+    // target must fall back to the caller's own project instead.
     #[tokio::test]
-    async fn resolve_target_project_requires_a_target() {
+    async fn resolve_target_project_defaults_to_caller_project() {
         let pool = seed_projects_pool().await;
-        let error = resolve_target_project(&pool, None, None).await.unwrap_err();
-        assert!(matches!(error, AppError::BadRequest(_)));
-        assert!(error.to_string().contains("project_id or project_path"));
+        let target = resolve_target_project(&pool, 7, None, None).await.unwrap();
+        assert_eq!(target.id, 7);
+        assert_eq!(target.name, "Caller");
     }
 
     #[tokio::test]
     async fn resolve_target_project_by_id_selects_project() {
         let pool = seed_projects_pool().await;
-        let target = resolve_target_project(&pool, Some(9), None).await.unwrap();
+        let target = resolve_target_project(&pool, 7, Some(9), None)
+            .await
+            .unwrap();
         assert_eq!(target.id, 9);
         assert_eq!(target.name, "Target");
     }
@@ -307,7 +317,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_target_project_by_path_selects_project() {
         let pool = seed_projects_pool().await;
-        let target = resolve_target_project(&pool, None, Some("  /repos/target  "))
+        let target = resolve_target_project(&pool, 7, None, Some("  /repos/target  "))
             .await
             .unwrap();
         assert_eq!(target.id, 9);
@@ -316,7 +326,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_target_project_unknown_id_points_at_workspace_list() {
         let pool = seed_projects_pool().await;
-        let error = resolve_target_project(&pool, Some(404), None)
+        let error = resolve_target_project(&pool, 7, Some(404), None)
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::BadRequest(_)));
@@ -326,7 +336,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_target_project_unknown_path_points_at_workspace_list() {
         let pool = seed_projects_pool().await;
-        let error = resolve_target_project(&pool, None, Some("/nope"))
+        let error = resolve_target_project(&pool, 7, None, Some("/nope"))
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::BadRequest(_)));
@@ -336,7 +346,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_target_project_rejects_inconsistent_id_and_path() {
         let pool = seed_projects_pool().await;
-        let error = resolve_target_project(&pool, Some(9), Some("/repos/caller"))
+        let error = resolve_target_project(&pool, 7, Some(9), Some("/repos/caller"))
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::BadRequest(_)));

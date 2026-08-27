@@ -108,6 +108,40 @@ async fn project_spawn_session_creates_feature_session_provenance_and_link() {
     );
 }
 
+// Regression for issue #210: agents in managed worktrees cannot reliably
+// derive their own project from the filesystem, so omitting the target must
+// spawn into the caller's project instead of erroring.
+#[tokio::test]
+async fn project_spawn_session_defaults_to_caller_project_without_target() {
+    let pool = seeded_control_pool().await;
+
+    let app = control_router().with_state(AppState::with_pool(pool.clone()));
+    let body = serde_json::json!({
+        "source_feature_id": 42,
+        "source_session_id": 777,
+        "title": "Follow-up in caller project",
+        "branch": { "mode": "skip" }
+    });
+    let response = app.oneshot(spawn_request_from_body(body)).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let response_body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(response_body["project"]["id"].as_i64(), Some(7));
+    assert_eq!(
+        response_body["crossProject"],
+        serde_json::Value::Bool(false)
+    );
+    let feature_project: i64 = sqlx::query_scalar("SELECT project_id FROM features WHERE id = ?")
+        .bind(response_body["featureId"].as_i64().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(feature_project, 7);
+}
+
 #[tokio::test]
 async fn project_spawn_session_can_skip_session_link() {
     let pool = seeded_control_pool().await;

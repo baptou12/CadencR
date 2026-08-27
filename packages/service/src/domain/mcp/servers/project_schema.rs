@@ -231,8 +231,8 @@ mod tests {
         assert_eq!(schema["properties"]["project_id"]["type"], "number");
         assert_eq!(schema["properties"]["project_path"]["type"], "string");
         // Keep the advertised schema flat so MCP clients generate concrete
-        // arguments instead of an opaque union. The control endpoint still
-        // enforces that one target selector is present.
+        // arguments instead of an opaque union. The control endpoint falls
+        // back to the caller's own project when no selector is present.
         assert!(schema.get("anyOf").is_none());
         assert_eq!(schema["required"][0], "title");
         assert!(schema["description"]
