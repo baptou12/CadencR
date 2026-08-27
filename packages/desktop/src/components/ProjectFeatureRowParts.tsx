@@ -1,7 +1,6 @@
 import type { ReactElement } from "react";
 import {
   ArchiveIcon,
-  BotIcon,
   GitBranchIcon,
   GlobeIcon,
   PinIcon,
@@ -20,6 +19,7 @@ import { FeaturePrIndicator } from "@/components/PrStatusIndicators";
 import { NumStat } from "@/components/NumStat";
 import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
 import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
+import { getProviderIconSrc } from "@/lib/provider-icons";
 import type { LiveAgentStatus } from "@/stores/session-status-store";
 
 interface FeatureRowMetaLineProps {
@@ -110,8 +110,9 @@ export function FeatureRowMetaLine({
 }
 
 /**
- * First line of a row: provider badge, worktree marker, and the title (a
- * skeleton while the agent is still naming the conversation).
+ * First line of a row: provider mark (idle mono, status-tinted while live),
+ * worktree marker, and the title (a skeleton while the agent is still naming
+ * the conversation).
  */
 export function FeatureRowTitleLine({
   feature,
@@ -119,19 +120,29 @@ export function FeatureRowTitleLine({
   isAutoNaming,
   isArchived,
   hasWorktree,
+  liveStatus,
+  isActive,
+  isUnread,
+  onOpenConversation,
 }: {
   feature: Feature;
   liveTitle: string | undefined;
   isAutoNaming: boolean;
   isArchived: boolean;
   hasWorktree: boolean;
+  liveStatus: LiveAgentStatus;
+  isActive: boolean;
+  isUnread: boolean;
+  onOpenConversation: () => void;
 }): ReactElement {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <SidebarProviderBadge
-        providerId={feature.runtime_provider}
-        modelId={feature.model_session}
-        thinkingEffort={feature.thinking_effort}
+      <FeatureRowProviderMark
+        feature={feature}
+        liveStatus={liveStatus}
+        isActive={isActive}
+        isUnread={isUnread}
+        onOpenConversation={onOpenConversation}
       />
       {hasWorktree && (
         <GitBranchIcon
@@ -147,6 +158,45 @@ export function FeatureRowTitleLine({
         </span>
       )}
     </div>
+  );
+}
+
+/** One 14px slot: provider silhouette, status-tinted, gate wrap when waiting. */
+export function FeatureRowProviderMark({
+  feature,
+  liveStatus,
+  isActive,
+  isUnread,
+  onOpenConversation,
+}: {
+  feature: Feature;
+  liveStatus: LiveAgentStatus;
+  isActive: boolean;
+  isUnread: boolean;
+  onOpenConversation: () => void;
+}): ReactElement | null {
+  const asking = liveStatus === "question";
+  const badge = (
+    <SidebarProviderBadge
+      providerId={feature.runtime_provider}
+      modelId={feature.model_session}
+      thinkingEffort={feature.thinking_effort}
+      liveStatus={liveStatus}
+      unread={isUnread}
+    />
+  );
+
+  if (!asking) return badge;
+
+  const hasIcon = Boolean(getProviderIconSrc(feature.runtime_provider, "mono"));
+  return (
+    <SidebarPendingGatePopover
+      featureId={feature.id}
+      allowAutoOpen={!isActive}
+      onOpenConversation={onOpenConversation}
+    >
+      {hasIcon ? badge : undefined}
+    </SidebarPendingGatePopover>
   );
 }
 
@@ -213,41 +263,6 @@ export function FeatureRowActions({
         {isArchived ? <TrashIcon className="size-3.5" /> : <ArchiveIcon className="size-3.5" />}
         <span className="sr-only">{archiveActionLabel(isArchived)}</span>
       </Button>
-    </div>
-  );
-}
-
-/**
- * Live status icon driven by the per-session backend store. The column keeps
- * its width even when empty so the title never shifts as the agent's status
- * changes.
- */
-export function FeatureRowStatusIcon({
-  featureId,
-  liveStatus,
-  isActive,
-  isUnread,
-  onOpenConversation,
-}: {
-  featureId: number;
-  liveStatus: LiveAgentStatus;
-  isActive: boolean;
-  isUnread: boolean;
-  onOpenConversation: () => void;
-}): ReactElement {
-  return (
-    <div className="relative flex w-3.5 shrink-0 items-center justify-center">
-      {liveStatus === "agent" && <BotIcon className="size-3.5 animate-pulse text-blue-500" />}
-      {liveStatus === "question" && (
-        <SidebarPendingGatePopover
-          featureId={featureId}
-          allowAutoOpen={!isActive}
-          onOpenConversation={onOpenConversation}
-        />
-      )}
-      {liveStatus === "idle" && isUnread && (
-        <span className="size-2 rounded-full bg-blue-500" aria-label="Unread agent messages" />
-      )}
     </div>
   );
 }

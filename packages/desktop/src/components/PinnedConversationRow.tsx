@@ -8,8 +8,7 @@ import { useFeatureStatus } from "@/stores/session-status-selectors";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useIsFeatureUnread } from "@/stores/unread-store";
 import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
-import { FeatureRowStatusIcon } from "@/components/ProjectFeatureRowParts";
-import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
+import { FeatureRowProviderMark } from "@/components/ProjectFeatureRowParts";
 import type { Feature } from "@/api/generated";
 
 interface PinnedConversationRowProps {
@@ -72,18 +71,12 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
     >
       <ProjectBadge projectId={feature.project_id} />
 
-      <FeatureRowStatusIcon
-        featureId={feature.id}
+      <FeatureRowProviderMark
+        feature={feature}
         liveStatus={liveStatus}
         isActive={isActive}
         isUnread={isUnread}
         onOpenConversation={handleOpenConversation}
-      />
-
-      <SidebarProviderBadge
-        providerId={feature.runtime_provider}
-        modelId={feature.model_session}
-        thinkingEffort={feature.thinking_effort}
       />
 
       {isAutoNaming ? (

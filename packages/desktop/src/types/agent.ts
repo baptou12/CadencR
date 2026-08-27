@@ -6,7 +6,7 @@
  * - [`LiveAgentStatus`] — the canonical 3-value enum pushed by the
  *   backend on `app/session_status.*` envelopes (mirrors the Rust
  *   `AgentStatus` in `domain::session_status`). This is the SINGLE
- *   source of truth for the UI badge / sidebar icon / input-bar
+ *   source of truth for the UI badge / sidebar provider mark / input-bar
  *   "disabled while working" check.
  *
  * - [`AgentStatus`] — the legacy 6-value lifecycle column read from the

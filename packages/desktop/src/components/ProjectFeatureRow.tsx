@@ -6,7 +6,6 @@ import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMen
 import {
   FeatureRowActions,
   FeatureRowMetaLine,
-  FeatureRowStatusIcon,
   FeatureRowTitleLine,
 } from "@/components/ProjectFeatureRowParts";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
@@ -96,13 +95,6 @@ function FeatureRowDetails({
   } = props;
   return (
     <>
-      <FeatureRowStatusIcon
-        featureId={feature.id}
-        liveStatus={state.liveStatus}
-        isActive={state.isActive}
-        isUnread={state.isUnread}
-        onOpenConversation={onOpenConversation}
-      />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <FeatureRowTitleLine
           feature={feature}
@@ -110,6 +102,10 @@ function FeatureRowDetails({
           isAutoNaming={isAutoNaming}
           isArchived={state.isArchived}
           hasWorktree={hasWorktree}
+          liveStatus={state.liveStatus}
+          isActive={state.isActive}
+          isUnread={state.isUnread}
+          onOpenConversation={onOpenConversation}
         />
         <FeatureRowMetaLine
           feature={feature}
