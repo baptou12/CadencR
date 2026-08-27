@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.11.4 - 2026-08-27
+
+Previous release: v0.11.3 - 2026-08-18
+
+### 🔧 Changed
+
+- [**Desktop**] Made sidebar conversations denser and easier to scan by carrying working, pending-permission or question, and unread status on each provider mark instead of reserving a separate robot/status column, while keeping pending actions directly accessible from the tinted mark.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed `Cmd+B` hiding the sidebar without releasing its panel width; the main workspace now expands into the freed space and returns to its previous layout when the sidebar is restored.
+- [**provider:claude**] Restored Cadencr browser, project, and workspace MCP tools in current Claude Code releases by negotiating a compatible protocol version instead of sending the newer malformed tool-list response.
+- [**Backend**] Fixed worktree setup progress and output being lost or left permanently running after a conversation reopens, reconnects, or the service restarts; setup state and transcripts now persist together, active runs replay in order, and interrupted runs become retryable errors with their captured output intact.
+
 ## v0.11.3 - 2026-08-18
 
 Previous release: v0.11.2 - 2026-08-14
