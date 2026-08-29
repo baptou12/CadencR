@@ -284,6 +284,8 @@ fn spawn_mcp_process(db_path: &Path, agent_type: &str) -> Option<McpTestProcess>
     })
 }
 
+/// Drive the MCP `initialize` handshake and assert the advertised server
+/// name and, when given, the negotiated protocol version.
 async fn initialize_mcp(
     process: &mut McpTestProcess,
     expected_name: &str,
@@ -304,6 +306,7 @@ async fn initialize_mcp(
     write_json_line(&mut process.stdin, initialized).await;
 }
 
+/// Request `tools/list` and return the advertised tool definitions.
 async fn list_mcp_tools(process: &mut McpTestProcess) -> Vec<serde_json::Value> {
     let tools_req = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#;
     write_json_line(&mut process.stdin, tools_req).await;

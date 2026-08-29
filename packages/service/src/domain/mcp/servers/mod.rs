@@ -112,6 +112,9 @@ pub fn mcp_server_name(agent_type: AgentType) -> String {
 /// rmcp emits conformant cacheable results.
 const PINNED_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::V_2025_11_25;
 
+/// Protocol versions the Cadencr MCP servers accept during `initialize`
+/// negotiation — every rmcp-known version except `2026-07-28` (see
+/// [`PINNED_PROTOCOL_VERSION`]).
 fn supported_protocol_versions() -> Cow<'static, [ProtocolVersion]> {
     const SUPPORTED: &[ProtocolVersion] = &[
         ProtocolVersion::V_2024_11_05,
@@ -122,6 +125,9 @@ fn supported_protocol_versions() -> Cow<'static, [ProtocolVersion]> {
     Cow::Borrowed(SUPPORTED)
 }
 
+/// Build the `initialize` result for the named Cadencr server: tools-only
+/// capabilities, the pinned protocol version, and orchestration instructions
+/// for `cadencr-project`.
 fn server_info(name: &str) -> ServerInfo {
     let caps = ServerCapabilities::builder().enable_tools().build();
     let mut info = ServerInfo::new(caps).with_server_info(Implementation::new(name, "1.0.0"));
@@ -166,6 +172,8 @@ mod tests {
         assert!(cadencr_mcp_required_tools("legacy-session").is_empty());
     }
 
+    /// Guard for issue #208: `2026-07-28` must stay out of negotiation until
+    /// rmcp emits SEP-2549-conformant results.
     #[test]
     fn negotiation_never_offers_2026_07_28() {
         let versions = super::supported_protocol_versions();
