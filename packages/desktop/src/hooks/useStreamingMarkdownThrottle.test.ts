@@ -19,7 +19,7 @@ describe("useStreamingMarkdownThrottle", () => {
     const { result, rerender } = renderHook(({ c, a }) => useStreamingMarkdownThrottle(c, a), {
       initialProps: { c: "a", a: true },
     });
-    // Leading edge emits immediately.
+    // The initial content shows immediately.
     expect(result.current).toBe("a");
 
     // Bursts within the 100ms window do not advance the parsed content.
@@ -45,5 +45,35 @@ describe("useStreamingMarkdownThrottle", () => {
     // Turn stops: the final content must appear without waiting for the timer.
     rerender({ c: "abcdef", a: false });
     expect(result.current).toBe("abcdef");
+  });
+
+  it("never publishes synchronously from the effect, even when the window is overdue", () => {
+    const { result, rerender } = renderHook(({ c, a }) => useStreamingMarkdownThrottle(c, a), {
+      initialProps: { c: "a", a: true },
+    });
+    // Drain the initial emit and let the 100ms window fully elapse.
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+
+    // An overdue update is deferred to a 0ms timer task, not published from
+    // the passive effect (a pending default-lane update at the tail of a sync
+    // commit is what trips React's nested-update counter — error #185).
+    rerender({ c: "ab", a: true });
+    expect(result.current).toBe("a");
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(result.current).toBe("ab");
+  });
+
+  it("leaves no pending publish once streaming stops", () => {
+    const { result, rerender } = renderHook(({ c, a }) => useStreamingMarkdownThrottle(c, a), {
+      initialProps: { c: "a", a: true },
+    });
+    rerender({ c: "ab", a: true }); // trailing timer armed
+    rerender({ c: "abc", a: false });
+    expect(result.current).toBe("abc");
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
