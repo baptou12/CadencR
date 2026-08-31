@@ -31,6 +31,8 @@ impl ServerHandler for ProjectServer {
         server_info("cadencr-project")
     }
 
+    /// Restrict negotiation to the shared Cadencr version list, which
+    /// excludes `2026-07-28` (issue #208).
     fn supported_protocol_versions(
         &self,
     ) -> std::borrow::Cow<'static, [rmcp::model::ProtocolVersion]> {
