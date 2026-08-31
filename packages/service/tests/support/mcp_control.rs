@@ -232,8 +232,8 @@ pub fn spawn_request_with_optional_provider_optional_model(
     let body = json!({
         "source_feature_id": 42,
         "source_session_id": 777,
-        // Target the caller's own seeded project (id 7) — a spawn now requires an
-        // explicit target, and "spawn locally" means passing the caller's project id.
+        // Explicitly target the caller's own seeded project (id 7); omitting the
+        // target would also spawn locally, but these tests pin the explicit path.
         "target_project_id": 7,
         "title": "Investigate flaky login test",
         "initial_message": "Please investigate and report findings.",

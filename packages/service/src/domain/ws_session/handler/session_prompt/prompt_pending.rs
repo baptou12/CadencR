@@ -101,8 +101,11 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) -> 
             )
             .await;
             let internal_replay = context.internal_replay;
+            // Keep the underlying git error in the internal-caller reply so
+            // MCP spawns don't surface an opaque "branch setup failed" (#210).
+            let failure = format!("branch setup failed: {error}");
             report_branch_setup_error(context, error).await;
-            return reported_failure(internal_replay, "branch setup failed");
+            return reported_failure(internal_replay, &failure);
         }
     };
     if let Err(error) = reresolve_worktree_and_resume(&mut context).await {

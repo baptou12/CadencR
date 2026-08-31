@@ -74,6 +74,7 @@ pub(super) async fn spawn_session_handler(
 
     let target_project = match resolve_target_project(
         &state.write_pool,
+        source.project_id,
         body.target_project_id,
         body.target_project_path.as_deref(),
     )

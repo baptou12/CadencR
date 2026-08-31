@@ -11,7 +11,7 @@ pub(super) fn tool_description(name: &str) -> &'static str {
         "project_compare_sessions" => "Compare two current-project sessions and their worktree status.",
         "project_link_sessions" => "Record an explicit relationship between current-project sessions.",
         "project_list_agent_providers" => "List canonical CadencR provider ids, models, and each model's available thinking levels for project_spawn_session.",
-        "project_spawn_session" => "Create another CadencR session in a target project. Use follow to receive gates and completion reactively: these events steer the current parent turn, so do not poll status, tails, or pending gates. You MUST specify project_id or project_path (call workspace_list_projects first). Use canonical provider ids and advertised thinking levels; call project_list_agent_providers when unsure.",
+        "project_spawn_session" => "Create another CadencR session in a target project. Use follow to receive gates and completion reactively: these events steer the current parent turn, so do not poll status, tails, or pending gates. Spawns into the caller's own project unless project_id or project_path selects another one (call workspace_list_projects first). Use canonical provider ids and advertised thinking levels; call project_list_agent_providers when unsure.",
         "project_send_session_message" => "Send a provenance-tracked message to another current-project session. Delivery steers the active target turn by default; request next_turn explicitly only when delayed handling is intentional.",
         "project_list_pending_gates" => "Recovery only: reconcile a linked child's pending gate after a missed/stale notification. A live <cadencr-gate> already contains the complete request id, kind, options, and payload; never poll this tool.",
         "project_respond_gate" => "Answer a linked child's pending gate using the exact session id, request id, kind, and payload from the automatically delivered <cadencr-gate>.",
@@ -25,7 +25,7 @@ pub(super) fn property_description(tool_name: &str, property: &str) -> String {
             "Canonical provider id: {}. Common aliases are normalized, but canonical ids are preferred.",
             valid_provider_ids().join(", ")
         ),
-        ("project_spawn_session", "project_id") => "Target project id for the new session (required unless project_path is given). Pass the caller's own project id for the current project, or another registered id from workspace_list_projects.".into(),
+        ("project_spawn_session", "project_id") => "Target project id for the new session. Omit to spawn in the caller's own project; pass a registered id from workspace_list_projects to target another project.".into(),
         ("project_spawn_session", "project_path") => "Target project root path (alternative to project_id). It must exactly match a registered path from workspace_list_projects; if both selectors are given they must agree.".into(),
         ("project_spawn_session", "model") => model_description(),
         ("project_spawn_session", "thinking_level") => "Provider/model-specific thinking or reasoning level. Use one of the target provider/model pair's thinking_levels from project_list_agent_providers. When omitted, CadencR uses the last selection for that target provider/model, then the CLI-advertised default_thinking_level.".into(),
