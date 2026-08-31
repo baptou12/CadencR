@@ -13,6 +13,7 @@ Previous release: v0.11.3 - 2026-08-18
 - [**Desktop**] Fixed `Cmd+B` hiding the sidebar without releasing its panel width; the main workspace now expands into the freed space and returns to its previous layout when the sidebar is restored.
 - [**provider:claude**] Restored Cadencr browser, project, and workspace MCP tools in current Claude Code releases by negotiating a compatible protocol version instead of sending the newer malformed tool-list response.
 - [**Backend**] Fixed worktree setup progress and output being lost or left permanently running after a conversation reopens, reconnects, or the service restarts; setup state and transcripts now persist together, active runs replay in order, and interrupted runs become retryable errors with their captured output intact.
+- [**Backend**] Fixed spawned sessions from managed worktrees selecting a non-Git parent project when no target was supplied; spawns now default to the caller's project and include the underlying Git error when branch setup fails.
 
 ## v0.11.3 - 2026-08-18
 

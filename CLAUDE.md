@@ -63,7 +63,7 @@ pnpm --filter @cadencr/desktop ts-check
 pnpm --filter @cadencr/desktop knip   # unused exports
 ```
 
-Node `>=22.18.0 <23.0.0`. Pre-commit runs `format:check lint ts-check test knip` across the workspace, so `knip` is not optional.
+Node `>=22.19.0 <23.0.0`. Pre-commit runs `format:check lint ts-check test knip` across the workspace, so `knip` is not optional.
 
 ## Definition of done
 

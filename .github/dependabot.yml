@@ -8,13 +8,6 @@ updates:
     # updates are not subject to cooldowns and can still open immediately.
     cooldown:
       default-days: 14
-    ignore:
-      # Astro 7.2+ requires Node >=22.19, while Cadencr still supports Node
-      # 22.18 and Dependabot's npm updater currently only provides 22.18.
-      # Remove this guard when the workspace's Node baseline moves forward.
-      - dependency-name: astro
-        versions:
-          - ">=7.2.0"
     groups:
       # Group only minor/patch bumps together. Major (breaking) updates get
       # their own PRs so risky migrations (e.g. react-query v5, TypeScript

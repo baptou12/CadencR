@@ -7,7 +7,7 @@ This guide documents the setup path for running Cadencr from source on Windows t
 - Windows with WSL2 enabled.
 - Ubuntu in WSL.
 - WSLg enabled so Electron can open a Linux GUI window.
-- Node.js `22.18.0`; the repo enforces `>=22.18.0 <23.0.0`.
+- Node.js `22.19.0`; the repo enforces `>=22.19.0 <23.0.0`.
 
 The commands below should be run inside the WSL shell from the repository root.
 

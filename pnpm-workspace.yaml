@@ -3,7 +3,7 @@ packages:
 
 nodeLinker: hoisted
 engineStrict: true
-nodeVersion: 22.18.0
+nodeVersion: 22.19.0
 
 minimumReleaseAge: 20160
 minimumReleaseAgeStrict: true

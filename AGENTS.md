@@ -55,7 +55,7 @@ Frontend path alias: `@` → `packages/desktop/src/`. Frontend ↔ backend is HT
 
 ## Commands
 
-Requires `pnpm` and Node `>=22.18.0 <23.0.0`; `pnpm dev` needs `cargo-watch`.
+Requires `pnpm` and Node `>=22.19.0 <23.0.0`; `pnpm dev` needs `cargo-watch`.
 
 ```bash
 pnpm dev            # frontend + service (+ landing)

@@ -97,7 +97,7 @@ On Windows, use WSL2/WSLg and follow the [Windows / WSL development setup](./doc
 
 #### Requirements
 
-- **Node.js 22.x**: the repo enforces `>=22.18.0 <23.0.0`.
+- **Node.js 22.x**: the repo enforces `>=22.19.0 <23.0.0`.
 - **pnpm**: managed through Corepack.
 - **Rust**: install with [rustup](https://rustup.rs/).
 - **cargo-watch**: required by `pnpm dev` for the Rust service watcher. Install with `cargo install cargo-watch`.
