@@ -107,8 +107,9 @@ export interface CadencrDesktopBridge {
   /**
    * User-initiated "open in default browser" for a clicked link. Looser than
    * {@link openExternal}: permits `http:` and loopback hosts so a dev-server
-   * URL can be opened in the system browser on demand. Still rejects
-   * credentials and non-http(s) schemes.
+   * URL can be opened in the system browser on demand, and (desktop shell
+   * only) `file:` links to local documents, opened in their default app.
+   * Still rejects credentials and other schemes (`javascript:`, `data:`).
    */
   openExternalLink: (url: string) => Promise<void>;
   /**
