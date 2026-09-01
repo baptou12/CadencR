@@ -24,10 +24,20 @@ const STREAMING_REPARSE_MS = 100;
  */
 export function useStreamingMarkdownThrottle(content: string, active: boolean): string {
   const [throttled, setThrottled] = useState(content);
+  const [prevActive, setPrevActive] = useState(active);
   const latestRef = useRef(content);
   const lastEmitRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   latestRef.current = content;
+
+  // Seed the throttled value when a stream (re)starts, so reactivation after
+  // the content changed while inactive never flashes stale text. A
+  // render-phase update re-renders before commit and leaves nothing pending,
+  // unlike publishing from the effect.
+  if (active !== prevActive) {
+    setPrevActive(active);
+    if (active) setThrottled(content);
+  }
 
   useEffect(() => {
     if (!active) {

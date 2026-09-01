@@ -67,6 +67,16 @@ describe("useStreamingMarkdownThrottle", () => {
     expect(result.current).toBe("ab");
   });
 
+  it("shows fresh content when a stream restarts after inactive changes", () => {
+    const { result, rerender } = renderHook(({ c, a }) => useStreamingMarkdownThrottle(c, a), {
+      initialProps: { c: "a", a: true },
+    });
+    rerender({ c: "ab", a: false }); // stream stops
+    rerender({ c: "edited", a: false }); // content changes while inactive
+    rerender({ c: "edited", a: true }); // stream restarts
+    expect(result.current).toBe("edited"); // no stale "a" flash
+  });
+
   it("leaves no pending publish once streaming stops", () => {
     const { result, rerender } = renderHook(({ c, a }) => useStreamingMarkdownThrottle(c, a), {
       initialProps: { c: "a", a: true },
