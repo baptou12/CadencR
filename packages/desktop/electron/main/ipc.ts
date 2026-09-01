@@ -252,6 +252,11 @@ export async function openExternalLink(rawUrl: unknown): Promise<void> {
   if (typeof rawUrl !== "string") throw new Error("Expected a URL.");
   const parsed = new URL(rawUrl);
   if (parsed.protocol === "file:") {
+    // A file URL host becomes a UNC host on Windows (`\\server\share`), and
+    // merely stat-ing that path dials out over SMB — local files only.
+    if (parsed.hostname) {
+      throw new Error("file:// links with a remote host cannot be opened.");
+    }
     const canonical = await canonicalFilePath(fileURLToPath(parsed));
     const failure = await shell.openPath(canonical);
     if (failure) throw new Error(failure);

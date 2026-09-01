@@ -166,6 +166,11 @@ describe("ipc validators", () => {
       openExternalLink(pathToFileURL(path.join(dir, "missing.html")).href),
     ).rejects.toThrow();
     await expect(openExternalLink("javascript:alert(1)")).rejects.toThrow(/Only http/);
+    // Guard must fire before any path conversion or filesystem access: a file
+    // URL host maps to a UNC host on Windows and stat-ing it dials out.
+    await expect(openExternalLink("file://intranet-host/share/spec.html")).rejects.toThrow(
+      /remote host/,
+    );
     expect(electronState.openPath).toHaveBeenCalledTimes(1);
     expect(electronState.openExternal).not.toHaveBeenCalled();
   });
