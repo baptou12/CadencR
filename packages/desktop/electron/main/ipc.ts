@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   app,
   dialog,
@@ -243,13 +244,26 @@ export async function openExternal(rawUrl: unknown): Promise<void> {
  * User-initiated "open in default browser" for a clicked link. Looser than
  * `openExternal` (which also backs auto navigation-interception): permits
  * `http:` and loopback so a dev-server URL can be opened in the system
- * browser on demand. Still rejects credentials and any non-http(s) scheme.
+ * browser on demand, and `file:` so agent-emitted links to local documents
+ * open in their default app. Still rejects credentials and any other scheme
+ * (`javascript:`, `data:`, ...).
  */
 export async function openExternalLink(rawUrl: unknown): Promise<void> {
   if (typeof rawUrl !== "string") throw new Error("Expected a URL.");
   const parsed = new URL(rawUrl);
+  if (parsed.protocol === "file:") {
+    // A file URL host becomes a UNC host on Windows (`\\server\share`), and
+    // merely stat-ing that path dials out over SMB — local files only.
+    if (parsed.hostname) {
+      throw new Error("file:// links with a remote host cannot be opened.");
+    }
+    const canonical = await canonicalFilePath(fileURLToPath(parsed));
+    const failure = await shell.openPath(canonical);
+    if (failure) throw new Error(failure);
+    return;
+  }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Only http:// and https:// links can be opened externally.");
+    throw new Error("Only http://, https:// and file:// links can be opened externally.");
   }
   if (parsed.username || parsed.password) {
     throw new Error("URLs with embedded credentials cannot be opened externally.");

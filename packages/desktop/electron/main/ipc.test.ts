@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clipboard,
@@ -15,6 +16,7 @@ const electronState = vi.hoisted(() => ({
   logsPath: "",
   readClipboardText: vi.fn(() => "terminal paste"),
   openExternal: vi.fn<(_url: string) => Promise<void>>(() => Promise.resolve()),
+  openPath: vi.fn<(_path: string) => Promise<string>>(() => Promise.resolve("")),
 }));
 
 vi.mock("electron", () => ({
@@ -29,7 +31,11 @@ vi.mock("electron", () => ({
   clipboard: { readText: electronState.readClipboardText },
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   nativeTheme: { shouldUseDarkColors: false, on: vi.fn() },
-  shell: { openExternal: electronState.openExternal, showItemInFolder: vi.fn() },
+  shell: {
+    openExternal: electronState.openExternal,
+    openPath: electronState.openPath,
+    showItemInFolder: vi.fn(),
+  },
 }));
 
 import {
@@ -37,6 +43,7 @@ import {
   canonicalFilePath,
   clearRegisteredFilePaths,
   openExternal,
+  openExternalLink,
   parseNotifyOptions,
   parseZoomFactor,
   readFileBase64,
@@ -70,6 +77,7 @@ describe("ipc validators", () => {
     electronState.logsPath = "";
     electronState.readClipboardText.mockClear();
     electronState.openExternal.mockClear();
+    electronState.openPath.mockClear();
     vi.mocked(ipcMain.handle).mockClear();
     vi.mocked(ipcMain.on).mockClear();
     clearRegisteredFilePaths();
@@ -143,6 +151,37 @@ describe("ipc validators", () => {
     await expect(openExternal("https://user@example.com")).rejects.toThrow(/credentials/);
     await expect(openExternal("https://127.0.0.1:5004")).rejects.toThrow(/Loopback/);
     expect(electronState.openExternal).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens clicked file:// links with the default app, rejecting non-files", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cadencr-link-"));
+    const file = path.join(dir, "spec.html");
+    await fs.writeFile(file, "<html></html>", "utf8");
+
+    await openExternalLink(pathToFileURL(file).href);
+    expect(electronState.openPath).toHaveBeenCalledWith(await fs.realpath(file));
+
+    await expect(openExternalLink(pathToFileURL(dir).href)).rejects.toThrow(/not a file/);
+    await expect(
+      openExternalLink(pathToFileURL(path.join(dir, "missing.html")).href),
+    ).rejects.toThrow();
+    await expect(openExternalLink("javascript:alert(1)")).rejects.toThrow(/Only http/);
+    // Guard must fire before any path conversion or filesystem access: a file
+    // URL host maps to a UNC host on Windows and stat-ing it dials out.
+    await expect(openExternalLink("file://intranet-host/share/spec.html")).rejects.toThrow(
+      /remote host/,
+    );
+    expect(electronState.openPath).toHaveBeenCalledTimes(1);
+    expect(electronState.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("surfaces shell.openPath failures for file:// links", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "cadencr-link-"));
+    const file = path.join(dir, "spec.html");
+    await fs.writeFile(file, "<html></html>", "utf8");
+    electronState.openPath.mockResolvedValueOnce("No app is associated with this file.");
+
+    await expect(openExternalLink(pathToFileURL(file).href)).rejects.toThrow(/No app/);
   });
 
   it("accepts null senderFrame only after the sender webContents matched", () => {

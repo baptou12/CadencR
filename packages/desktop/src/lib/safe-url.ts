@@ -24,7 +24,9 @@ export function isSafeExternalUrl(rawUrl: string): boolean {
  * also permits `http:` and loopback hosts, because explicitly choosing "open
  * in default browser" on a `localhost` dev URL is a legitimate action. Still
  * rejects credentials and any non-http(s) scheme (`file:`, `javascript:`,
- * `data:`), which the `new URL` protocol check below enforces.
+ * `data:`), which the `new URL` protocol check below enforces. Unlike the
+ * desktop shell, `file:` stays rejected here: a remote browser tab cannot
+ * reach files on the host machine.
  */
 export function isUserOpenableUrl(rawUrl: string): boolean {
   let parsed: URL;
