@@ -7,7 +7,9 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+pub mod approval_registry;
 mod audit;
+mod cleanup_worktree;
 mod gate_envelope;
 pub(crate) mod gate_notify;
 pub(crate) mod gate_policy;
@@ -19,6 +21,7 @@ mod reply_envelope;
 pub(crate) mod reply_wait;
 mod reply_wait_delivery;
 mod requester_delivery;
+mod schedules;
 mod scope;
 mod send_message;
 mod send_message_modes;
@@ -27,6 +30,10 @@ mod spawn_persist;
 mod spawn_resolve;
 mod spawn_session;
 mod spawn_thinking;
+mod steward;
+mod stop_session;
+mod update_feature;
+mod workspace_writes;
 
 /// Trim a borrowed optional string, treating whitespace-only values as absent.
 /// Shared by the spawn submodules (`spawn_session`, `spawn_resolve`, `spawn_persist`).
@@ -100,6 +107,14 @@ pub fn control_router() -> Router<AppState> {
             post(spawn_session::spawn_session_handler),
         )
         .merge(gate_respond::routes())
+        .merge(update_feature::routes())
+        .route(
+            "/internal/mcp/project/stop-session",
+            post(stop_session::project_stop_session_handler),
+        )
+        .merge(schedules::routes())
+        .merge(workspace_writes::routes())
+        .merge(cleanup_worktree::routes())
 }
 
 async fn project_context_handler(

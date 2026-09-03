@@ -3,11 +3,14 @@ use serde_json::{json, Value};
 
 use crate::domain::agents::providers::valid_provider_ids;
 
+#[path = "project_schema_annotations.rs"]
+mod annotations;
 #[path = "project_schema_descriptions.rs"]
 mod descriptions;
 
+use annotations::tool_annotations;
 use descriptions::{property_description, tool_description};
-const PROJECT_TOOL_NAMES: [&str; 13] = [
+const PROJECT_TOOL_NAMES: [&str; 20] = [
     "project_list_sessions",
     "project_read_session",
     "project_read_session_tail",
@@ -21,6 +24,13 @@ const PROJECT_TOOL_NAMES: [&str; 13] = [
     "project_send_session_message",
     "project_list_pending_gates",
     "project_respond_gate",
+    "project_update_feature",
+    "project_stop_session",
+    "project_list_schedules",
+    "project_save_schedule",
+    "project_set_schedule_enabled",
+    "project_run_schedule",
+    "project_cleanup_worktree",
 ];
 pub(super) fn tools() -> Vec<Tool> {
     PROJECT_TOOL_NAMES
@@ -32,7 +42,7 @@ pub(super) fn tools() -> Vec<Tool> {
 fn make_tool(name: &'static str, description: &'static str, schema: Value) -> Tool {
     let obj: serde_json::Map<String, Value> =
         serde_json::from_value(schema).expect("schema must be an object");
-    Tool::new(name, description, obj)
+    Tool::new(name, description, obj).with_annotations(tool_annotations(name))
 }
 
 fn tool_schema(name: &str) -> Value {
@@ -108,6 +118,21 @@ fn tool_schema(name: &str) -> Value {
         "project_list_pending_gates" | "project_respond_gate" => {
             super::project_gate_schema::schema(name)
         }
+        "project_update_feature" => super::project_update_feature_schema::schema(),
+        "project_stop_session" => json!({
+            "type": "object",
+            "properties": { "target_session_id": { "type": "number" } },
+            "required": ["target_session_id"]
+        }),
+        "project_list_schedules"
+        | "project_save_schedule"
+        | "project_set_schedule_enabled"
+        | "project_run_schedule" => super::project_schedule_schema::schema(name),
+        "project_cleanup_worktree" => json!({
+            "type": "object",
+            "properties": { "feature_id": { "type": "number" } },
+            "required": ["feature_id"]
+        }),
         _ => json!({ "type": "object", "properties": {} }),
     };
     document_schema(name, schema)
@@ -344,5 +369,21 @@ mod tests {
         assert_eq!(compare["properties"]["right_session_id"]["type"], "number");
         assert_eq!(compare["required"][0], "left_session_id");
         assert_eq!(compare["required"][1], "right_session_id");
+    }
+    #[test]
+    fn project_stop_session_advertises_an_interrupt_only_contract() {
+        let tools = tools();
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == "project_stop_session")
+            .expect("project_stop_session tool");
+        let schema = serde_json::to_value(&tool.input_schema).expect("schema json");
+
+        assert_eq!(schema["properties"]["target_session_id"]["type"], "number");
+        assert_eq!(schema["required"][0], "target_session_id");
+        let description = tool.description.as_deref().unwrap();
+        assert!(description.contains("stays resumable"));
+        assert!(description.contains("SESSION_NOT_RUNNING"));
+        assert!(description.contains("cannot stop your own session"));
     }
 }

@@ -26,6 +26,7 @@ pub(super) async fn record_reply_delivery_audit(
             result_size_bytes: result_size_bytes(&envelope),
             latency_ms: elapsed_ms(started_at),
             error,
+            previous_value: None,
         },
     )
     .await

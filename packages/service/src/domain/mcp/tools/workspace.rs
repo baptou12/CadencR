@@ -75,6 +75,8 @@ pub async fn run_workspace_tool(
         "workspace_send_session_message" => {
             project_control::send_workspace_session_message(&args, &ctx).await
         }
+        "workspace_update_feature" => project_control::update_workspace_feature(&args, &ctx).await,
+        "workspace_stop_session" => project_control::stop_workspace_session(&args, &ctx).await,
         _ => Err(format!("Unknown tool: {name}")),
     };
     let result = if is_workspace_read_tool(name) {

@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 use crate::domain::agents::adapter::{parse_access_mode_wire, RuntimeAccessMode};
 use crate::domain::agents::runtime_adapter;
 
-pub(super) async fn configured_access_mode(
+pub(crate) async fn configured_access_mode(
     provider_id: &str,
     read_pool: &SqlitePool,
 ) -> Option<RuntimeAccessMode> {
@@ -12,7 +12,7 @@ pub(super) async fn configured_access_mode(
         .await
 }
 
-pub(super) fn runtime_access_mode(
+pub(crate) fn runtime_access_mode(
     provider_id: &str,
     stored_mode: Option<&str>,
     configured_mode: Option<RuntimeAccessMode>,

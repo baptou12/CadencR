@@ -1,12 +1,10 @@
-use std::sync::atomic::Ordering;
-
 use axum::extract::ws::Message;
-use tracing::error;
 
 use super::super::super::persistence::WsSessionPersistence;
 use super::super::super::protocol::*;
 use super::super::helpers::{parse_session_id, persist_and_close_query, send_error};
 use super::super::types::{QueryState, SdkSessions, WsSender};
+use super::interrupt::{interrupt_session, InterruptOutcome};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
 
@@ -38,81 +36,18 @@ pub(crate) async fn handle_interrupt(
         }
     };
 
-    if app_state.user_shell_runs.cancel(db_session_id).await {
-        return;
-    }
-
-    // The live turn may be owned by another connection (e.g. the host stopping a
-    // conversation started on a remote device). Resolve the owning map so the
-    // interrupt reaches the running CLI rather than failing with NOT_FOUND. The
-    // resulting Idle status already broadcasts to every device via
-    // `session_status_tx`, so no extra mirror is needed here.
-    let effective_sessions =
-        super::resolve_owner_sessions(sdk_sessions, app_state, db_session_id).await;
-    let sdk_sessions = &effective_sessions;
-
-    let active_query = {
-        let sessions = sdk_sessions.lock().await;
-        let handle = match sessions.get(&db_session_id) {
-            Some(h) => h,
-            None => {
-                send_error(
-                    sender,
-                    &envelope.id,
-                    "SESSION_NOT_FOUND",
-                    "Session not found",
-                );
-                return;
-            }
-        };
-
-        match &handle.state {
-            QueryState::Active { query, .. } => Some(std::sync::Arc::clone(query)),
-            QueryState::Pending(_) => {
-                handle.manual_compact_cancel.store(true, Ordering::SeqCst);
-                None
-            }
+    match interrupt_session(app_state, sdk_sessions, db_session_id).await {
+        Ok(InterruptOutcome::ShellRunCancelled | InterruptOutcome::Interrupted) => {}
+        Ok(InterruptOutcome::SessionNotFound) => send_error(
+            sender,
+            &envelope.id,
+            "SESSION_NOT_FOUND",
+            "Session not found",
+        ),
+        Ok(InterruptOutcome::NotActive) => {
+            send_error(sender, &envelope.id, "INVALID_STATE", "Session not active")
         }
-    };
-
-    if let Some(query) = active_query {
-        // Stop is an intentional user control, not a responder failure. Mark
-        // it before interrupting so the concurrently running stream reader can
-        // classify Claude's error-result / EOF (and equivalent provider
-        // terminal events) as benign. The reply wait deliberately remains
-        // armed: a later instruction may resume this same child and should be
-        // the result eventually reported to its parent.
-        let interrupted_generation = app_state
-            .active_turns
-            .request_interruption(db_session_id, &query)
-            .await;
-        let q = query.read().await;
-        if let Err(e) = q.interrupt().await {
-            let terminal_event_consumed = if let Some(generation) = interrupted_generation {
-                !app_state
-                    .active_turns
-                    .clear_interruption(db_session_id, generation, &query)
-                    .await
-            } else {
-                false
-            };
-            if terminal_event_consumed {
-                // Some providers close their control channel while completing
-                // the requested stop. The stream reader already consumed the
-                // interruption marker and ended the turn cleanly, so the
-                // user's goal succeeded despite the late control error.
-                tracing::info!(
-                    db_session_id,
-                    error = %e,
-                    "interrupt control ended after the runtime had already stopped"
-                );
-            } else {
-                error!(db_session_id, error = %e, "interrupt failed");
-                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
-            }
-        }
-    } else {
-        send_error(sender, &envelope.id, "INVALID_STATE", "Session not active");
+        Err(message) => send_error(sender, &envelope.id, "SDK_ERROR", &message),
     }
 }
 

@@ -1,4 +1,5 @@
 use axum::extract::{ws::Message, State};
+use axum::http::StatusCode;
 use axum::{routing::post, Json, Router};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -73,6 +74,7 @@ async fn respond_authorized(
     request: &RespondGateRequest,
 ) -> Result<(), AppError> {
     require_linked_parent(state, request.source_session_id, request.session_id).await?;
+    require_human_gate_is_untouched(state, request.session_id, &request.request_id).await?;
     let payload = authorize_decision(
         state,
         request.session_id,
@@ -128,6 +130,38 @@ async fn require_linked_parent(
     if linked_parent(&state.read_pool, child_session_id).await? != Some(parent_session_id) {
         return Err(AppError::BadRequest(
             "only the linked spawned/handoff parent may access this gate".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Service-owned approval gates exist precisely to put a human in the loop, so
+/// the parent-agent shortcut must not apply to them. Everything else a linked
+/// parent may still answer.
+async fn require_human_gate_is_untouched(
+    state: &AppState,
+    session_id: i64,
+    request_id: &str,
+) -> Result<(), AppError> {
+    state
+        .pending_gates
+        .ensure_loaded(&state.read_pool, session_id)
+        .await?;
+    let service_owned = state.tool_approvals.contains(session_id, request_id).await
+        || state
+            .pending_gates
+            .find_pending(session_id, request_id)
+            .await
+            .is_some_and(|gate| {
+                crate::domain::mcp::control::approval_registry::is_service_gate_payload(
+                    &gate.payload,
+                )
+            });
+    if service_owned {
+        return Err(AppError::coded(
+            StatusCode::FORBIDDEN,
+            "HUMAN_APPROVAL_REQUIRED",
+            "this gate needs a human decision: only the user can approve it, in the app",
         ));
     }
     Ok(())
@@ -207,6 +241,7 @@ async fn audit_response(
             result_size_bytes: 0,
             latency_ms: elapsed_ms(started_at),
             error: audit_error,
+            previous_value: None,
         },
     )
     .await

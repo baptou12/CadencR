@@ -6,8 +6,20 @@ use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::helpers::require_i64;
 
 mod send_message;
+mod stop_session;
+mod update_feature;
 
 pub(crate) use send_message::{send_session_message, send_workspace_session_message};
+pub(crate) use stop_session::{stop_session, stop_workspace_session};
+pub(crate) use update_feature::{update_feature, update_workspace_feature};
+
+mod schedules;
+
+pub(crate) use schedules::{list_schedules, run_schedule, save_schedule, set_schedule_enabled};
+
+mod cleanup_worktree;
+
+pub(crate) use cleanup_worktree::cleanup_worktree;
 
 const SERVICE_URL_ENV: &str = "CADENCR_SERVICE_URL";
 const CONTROL_TOKEN_ENV: &str = "CADENCR_MCP_CONTROL_TOKEN";

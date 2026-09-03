@@ -74,6 +74,13 @@ pub async fn run_project_tool(
         "project_spawn_session" => project_control::spawn_session(&args, &ctx).await,
         "project_list_pending_gates" => project_control::list_pending_gates(&args, &ctx).await,
         "project_respond_gate" => project_control::respond_gate(&args, &ctx).await,
+        "project_update_feature" => project_control::update_feature(&args, &ctx).await,
+        "project_stop_session" => project_control::stop_session(&args, &ctx).await,
+        "project_list_schedules" => project_control::list_schedules(&args, &ctx).await,
+        "project_save_schedule" => project_control::save_schedule(&args, &ctx).await,
+        "project_set_schedule_enabled" => project_control::set_schedule_enabled(&args, &ctx).await,
+        "project_run_schedule" => project_control::run_schedule(&args, &ctx).await,
+        "project_cleanup_worktree" => project_control::cleanup_worktree(&args, &ctx).await,
         _ => Err(format!("Unknown tool: {name}")),
     };
     let result = if is_project_read_tool(name) {

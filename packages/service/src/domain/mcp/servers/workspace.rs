@@ -16,6 +16,11 @@ use crate::domain::mcp::tools::workspace::run_workspace_tool;
 
 use super::server_info;
 
+#[path = "workspace_annotations.rs"]
+mod annotations;
+
+use annotations::tool_annotations;
+
 pub struct WorkspaceServer {
     ctx: Arc<McpContext>,
 }
@@ -26,19 +31,21 @@ impl WorkspaceServer {
     }
 }
 
-const WORKSPACE_TOOL_NAMES: [&str; 6] = [
+const WORKSPACE_TOOL_NAMES: [&str; 8] = [
     "workspace_list_projects",
     "workspace_read_session",
     "workspace_read_sessions",
     "workspace_session_graph",
     "workspace_recent_activity",
     "workspace_send_session_message",
+    "workspace_update_feature",
+    "workspace_stop_session",
 ];
 
 fn make_tool(name: &'static str, description: &'static str, schema: serde_json::Value) -> Tool {
     let obj: serde_json::Map<String, serde_json::Value> =
         serde_json::from_value(schema).expect("schema must be an object");
-    Tool::new(name, description, obj)
+    Tool::new(name, description, obj).with_annotations(tool_annotations(name))
 }
 
 fn tools() -> Vec<Tool> {
@@ -50,18 +57,26 @@ fn tools() -> Vec<Tool> {
 
 fn tool_description(name: &str) -> &'static str {
     match name {
-        "workspace_list_projects" => "List CadencR projects visible to workspace MCP search.",
-        "workspace_read_session" => "Read a CadencR session by id with project metadata.",
+        "workspace_list_projects" => {
+            "List CadencR projects visible to workspace MCP search. Call it first when a request spans projects: it returns the project ids project_spawn_session and the search filters accept."
+        }
+        "workspace_read_session" => {
+            "Read a CadencR session by id with project metadata. Call it once a search result looks relevant and you need the conversation itself."
+        }
         "workspace_read_sessions" => {
-            "Search CadencR sessions and messages across projects with filters."
+            "Search CadencR sessions and messages across projects with filters. Start here when the prior work you need may live in another project."
         }
         "workspace_session_graph" => {
-            "Read the spawn/reference/message graph between CadencR sessions."
+            "Read the spawn/reference/message graph between CadencR sessions. Call it to find a session's parents, children, and handoffs before acting on it."
         }
-        "workspace_recent_activity" => "Read recent CadencR activity across projects.",
+        "workspace_recent_activity" => {
+            "Read recent CadencR activity across projects. Call it to see what is running or has gone quiet, and to get the feature ids workspace_update_feature takes."
+        }
         "workspace_send_session_message" => {
             "Send a provenance-tracked message to a session in any CadencR project. Delivery steers the active target turn by default; request next_turn explicitly only when delayed handling is intentional."
         }
+        "workspace_update_feature" => super::workspace_write_schema::UPDATE_FEATURE_DESCRIPTION,
+        "workspace_stop_session" => super::workspace_write_schema::STOP_SESSION_DESCRIPTION,
         _ => "Search CadencR workspace history.",
     }
 }
@@ -122,6 +137,8 @@ fn tool_schema(name: &str) -> serde_json::Value {
         "workspace_send_session_message" => super::send_message_schema::schema(
             "Target session id in any CadencR project, including a cross-project worker.",
         ),
+        "workspace_update_feature" => super::workspace_write_schema::update_feature_schema(),
+        "workspace_stop_session" => super::workspace_write_schema::stop_session_schema(),
         _ => json!({ "type": "object", "properties": {} }),
     };
     document_schema(name, schema)
@@ -314,6 +331,29 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("any CadencR project"));
+    }
+
+    #[test]
+    fn the_steward_gated_write_tools_are_listed_with_their_refusal_code() {
+        let tools = tools();
+        for (name, required) in [
+            ("workspace_update_feature", "feature_id"),
+            ("workspace_stop_session", "target_session_id"),
+        ] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap_or_else(|| panic!("{name} tool"));
+            let schema = serde_json::to_value(&tool.input_schema).expect("schema json");
+            assert!(schema["required"]
+                .as_array()
+                .expect("required fields")
+                .iter()
+                .any(|value| value == required));
+            let description = tool.description.as_deref().unwrap();
+            assert!(description.contains("STEWARD_REQUIRED"));
+            assert!(description.contains("Workspace writes (Steward)"));
+        }
     }
 
     #[test]

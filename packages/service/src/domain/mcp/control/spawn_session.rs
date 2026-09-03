@@ -204,6 +204,7 @@ async fn spawn_into_target(
             result_size_bytes: result_size_bytes(&response),
             latency_ms: elapsed_ms(started_at),
             error: dispatch_error.as_deref(),
+            previous_value: None,
         },
     )
     .await?;
@@ -305,6 +306,7 @@ async fn audit_spawn_error(
             result_size_bytes: 0,
             latency_ms: elapsed_ms(started_at),
             error: Some(error),
+            previous_value: None,
         },
     )
     .await
@@ -332,6 +334,7 @@ mod tests {
                 result_size_bytes INTEGER NOT NULL DEFAULT 0,
                 latency_ms INTEGER NOT NULL DEFAULT 0,
                 error TEXT,
+                previous_value TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
             "#,

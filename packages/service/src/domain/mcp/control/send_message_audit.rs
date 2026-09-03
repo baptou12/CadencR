@@ -28,6 +28,7 @@ pub(super) async fn audit_send_message(
             result_size_bytes: result_size_bytes(response),
             latency_ms: elapsed_ms(started_at),
             error: None,
+            previous_value: None,
         },
     )
     .await
@@ -56,6 +57,7 @@ pub(super) async fn audit_send_message_error(
             result_size_bytes: 0,
             latency_ms: elapsed_ms(started_at),
             error: Some(error),
+            previous_value: None,
         },
     )
     .await
