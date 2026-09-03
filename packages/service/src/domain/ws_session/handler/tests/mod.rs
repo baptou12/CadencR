@@ -20,6 +20,7 @@ mod permission_mode;
 mod profile;
 mod prompt;
 mod provider;
+mod service_approval;
 mod stream_reader;
 mod stream_reader_background_agents;
 mod stream_reader_interruption;

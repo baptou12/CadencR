@@ -20,7 +20,20 @@ pub(super) async fn normalize_feature_setting_value(
             Ok(branch)
         }
         "worktree_mode" => normalize_worktree_mode_setting(read_pool, feature_id, value).await,
+        "steward_workspace_writes" => normalize_boolean_setting(key, value),
         _ => Ok(value.to_string()),
+    }
+}
+
+/// A grant is a hard yes/no: anything but the two literals the frontend writes
+/// is rejected rather than stored, so no unreadable value can ever sit in the
+/// row a permission check reads.
+fn normalize_boolean_setting(key: &str, value: &str) -> Result<String, AppError> {
+    match value {
+        "true" | "false" => Ok(value.to_string()),
+        other => Err(AppError::BadRequest(format!(
+            "{key} must be \"true\" or \"false\", got {other:?}"
+        ))),
     }
 }
 
@@ -86,4 +99,31 @@ async fn ensure_local_branch_exists(project_path: &Path, branch: &str) -> Result
     .await
     .map(|_| ())
     .map_err(|_| AppError::BadRequest(format!("reuse_branch does not exist: {branch:?}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_boolean_setting;
+    use crate::error::AppError;
+
+    #[test]
+    fn only_the_two_boolean_literals_are_stored() {
+        assert_eq!(
+            normalize_boolean_setting("steward_workspace_writes", "true").unwrap(),
+            "true"
+        );
+        assert_eq!(
+            normalize_boolean_setting("steward_workspace_writes", "false").unwrap(),
+            "false"
+        );
+        for rejected in ["True", "TRUE", "1", "yes", " true", ""] {
+            assert!(
+                matches!(
+                    normalize_boolean_setting("steward_workspace_writes", rejected),
+                    Err(AppError::BadRequest(_))
+                ),
+                "{rejected:?} must be rejected"
+            );
+        }
+    }
 }

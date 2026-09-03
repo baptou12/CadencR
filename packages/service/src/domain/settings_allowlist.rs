@@ -353,6 +353,15 @@ mod tests {
     }
 
     #[test]
+    fn the_steward_grant_is_writable_on_features_only() {
+        // The grant is read feature-scoped from `feature_settings`, so a
+        // project- or workspace-level copy would be authority nobody granted.
+        assert!(is_feature_key_allowed("steward_workspace_writes"));
+        assert!(!is_project_key_allowed("steward_workspace_writes"));
+        assert!(!is_workspace_key_allowed("steward_workspace_writes"));
+    }
+
+    #[test]
     fn workspace_accepts_agent_defaults() {
         // These flow through the global Settings page + useDebouncedSetting.
         for k in [

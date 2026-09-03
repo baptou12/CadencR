@@ -22,6 +22,11 @@ use crate::domain::mcp::tools::{
 
 use super::server_info;
 
+#[path = "browser_annotations.rs"]
+mod annotations;
+
+use annotations::tool_annotations;
+
 pub struct BrowserServer {
     ctx: Arc<McpContext>,
 }
@@ -35,7 +40,7 @@ impl BrowserServer {
 fn make_tool(name: &'static str, description: &'static str, schema: serde_json::Value) -> Tool {
     let obj: serde_json::Map<String, serde_json::Value> =
         serde_json::from_value(schema).expect("schema must be an object");
-    Tool::new(name, description, obj)
+    Tool::new(name, description, obj).with_annotations(tool_annotations(name))
 }
 
 fn tools() -> Vec<Tool> {

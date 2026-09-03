@@ -44,6 +44,9 @@ async fn legacy_pool() -> sqlx::SqlitePool {
     .await
     .unwrap();
     super::test_fixtures::seed_applied_migrations_before(&pool, TARGET_VERSION).await;
+    // This baseline postdates the MCP orchestration schema, so the audit table
+    // the previous_value migration alters is never created for us.
+    super::test_fixtures::create_mcp_audit_log_prerequisite(&pool).await;
     pool
 }
 

@@ -105,6 +105,60 @@ pub(crate) async fn create_schedules_migration_prerequisites(pool: &SqlitePool) 
         "TEXT NOT NULL DEFAULT 'text'",
     )
     .await;
+    create_mcp_audit_log_prerequisite(pool).await;
+}
+
+/// Declare `mcp_tool_audit_log` for fixtures baselined *after* the MCP
+/// orchestration schema (20260618120000) created it.
+///
+/// The previous_value migration (20260902120000) alters that table, and a
+/// fixture whose seeded history already records 20260618120000 as applied will
+/// never run the migration that creates it. Fixtures baselined *before* it must
+/// not get the table from here, or that migration's own `CREATE` stops being
+/// exercised — hence the check against the seeded history, which requires this
+/// to run after `seed_applied_migrations_before`.
+pub(crate) async fn create_mcp_audit_log_prerequisite(pool: &SqlitePool) {
+    if !has_applied_migration(pool, 20260618120000).await {
+        return;
+    }
+    // The shape the orchestration migration leaves behind, minus its indexes:
+    // no fixture reads this table, they only need later ALTERs to land.
+    sqlx::raw_sql(
+        r#"CREATE TABLE IF NOT EXISTS mcp_tool_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            server_name TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            source_session_id INTEGER REFERENCES agent_sessions(id) ON DELETE SET NULL,
+            source_feature_id INTEGER REFERENCES features(id) ON DELETE SET NULL,
+            source_project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+            target_session_id INTEGER REFERENCES agent_sessions(id) ON DELETE SET NULL,
+            target_feature_id INTEGER REFERENCES features(id) ON DELETE SET NULL,
+            target_project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+            status TEXT NOT NULL CHECK (status IN ('ok', 'error')),
+            result_size_bytes INTEGER NOT NULL DEFAULT 0,
+            latency_ms INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );"#,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn has_applied_migration(pool: &SqlitePool, version: i64) -> bool {
+    if !support::table_exists(pool, "_sqlx_migrations")
+        .await
+        .unwrap()
+    {
+        return false;
+    }
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE version = ?")
+        .bind(version)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    count > 0
 }
 
 /// Add `column` to `table` when the fixture's baseline predates it.

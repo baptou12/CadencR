@@ -20,6 +20,7 @@ use crate::domain::imports::jobs::ImportJobRegistry;
 use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
 use crate::domain::maintenance::StorageMaintenanceBroadcaster;
+use crate::domain::mcp::control::approval_registry::ToolApprovalRegistry;
 use crate::domain::mcp::loopback::is_loopback_host;
 use crate::domain::ports::cache::PortScanCache;
 use crate::domain::push::PushNotifier;
@@ -215,6 +216,11 @@ pub struct AppState {
     /// Shared by the subscription endpoints and the push dispatcher. See
     /// `domain::push`.
     pub push: Arc<PushNotifier>,
+    /// Waiters for approval gates the service owns rather than a provider
+    /// runtime (see `domain::mcp::control::approval_registry`). Every gate
+    /// resolution path checks this first so a service-owned answer is never
+    /// pushed into a provider's permission channel.
+    pub tool_approvals: Arc<ToolApprovalRegistry>,
 }
 
 impl AppState {
@@ -312,6 +318,7 @@ impl AppState {
             import_jobs: ImportJobRegistry::new(),
             remote,
             push,
+            tool_approvals: Arc::new(ToolApprovalRegistry::new()),
         }
     }
 
@@ -385,6 +392,7 @@ impl AppState {
                 data_dir: std::env::temp_dir().join("cadencr-remote-test"),
             })),
             push: Arc::new(PushNotifier::ephemeral()),
+            tool_approvals: Arc::new(ToolApprovalRegistry::new()),
         }
     }
 

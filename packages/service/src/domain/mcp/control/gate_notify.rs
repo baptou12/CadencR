@@ -76,6 +76,7 @@ async fn notify_linked_parent(
             result_size_bytes: result_size_bytes(&envelope),
             latency_ms: elapsed_ms(started_at),
             error: delivery_error.as_deref(),
+            previous_value: None,
         },
     )
     .await?;

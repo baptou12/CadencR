@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { FeatureStewardToggle } from "./FeatureStewardToggle";
 import { ModelSelector } from "./ModelSelector";
 
 interface FeatureSettingsPopoverProps {
@@ -25,7 +26,10 @@ export function FeatureSettingsPopover({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[820px] max-w-[calc(100vw-2rem)]" align="end">
-        <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
+        <div className="flex flex-col gap-3">
+          <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
+          <FeatureStewardToggle featureId={featureId} />
+        </div>
       </PopoverContent>
     </Popover>
   );

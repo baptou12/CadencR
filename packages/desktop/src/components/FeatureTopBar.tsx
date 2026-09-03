@@ -118,7 +118,6 @@ function EmbeddedFeatureTopBar({
 function StandardFeatureTopBar({
   featureId,
   projectId,
-  mode = "feature",
   className,
   wsWorktreeStatus,
   wsWorktreeBranch,
@@ -131,13 +130,12 @@ function StandardFeatureTopBar({
   titleOverride,
   labelOverride,
 }: FeatureTopBarProps): ReactElement | null {
-  const isSession = mode === "session";
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const { data: feature } = useGetFeature(featureId);
   // Live WS-pushed title from auto-naming (falls back to null).
   const { title: wsTitle, isAutoNaming } = useFeatureTitle(featureId);
-  useFeatureSettingsShortcuts(isSession, setSettingsOpen);
+  useFeatureSettingsShortcuts(setSettingsOpen);
 
   const title = wsTitle ?? feature?.title ?? titleOverride;
   const autoNameMutation = useAutoNameFeature({
@@ -165,7 +163,6 @@ function StandardFeatureTopBar({
       className={className}
       featureTitle={title ?? feature.title}
       featureLabel={labelOverride !== undefined ? labelOverride : feature.label}
-      isSession={isSession}
       isAutoNaming={isAutoNaming || autoNameMutation.isPending}
       canAutoRename={canAutoRename}
       isAutoRenamePending={autoNameMutation.isPending}
@@ -192,7 +189,6 @@ interface FeatureHeaderChromeProps {
   className?: string;
   featureTitle: string;
   featureLabel?: string | null;
-  isSession: boolean;
   isAutoNaming: boolean;
   canAutoRename: boolean;
   isAutoRenamePending: boolean;
@@ -217,7 +213,6 @@ function FeatureHeaderChrome({
   className,
   featureTitle,
   featureLabel,
-  isSession,
   isAutoNaming,
   canAutoRename,
   isAutoRenamePending,
@@ -283,14 +278,12 @@ function FeatureHeaderChrome({
             `GitActionButton`) so the title isn't squeezed. */}
         {!isMobile && <BranchChip featureId={featureId} projectId={projectId} />}
 
-        {!isSession && (
-          <FeatureSettingsPopover
-            featureId={featureId}
-            projectId={projectId}
-            open={settingsOpen}
-            onOpenChange={onSettingsOpenChange}
-          />
-        )}
+        <FeatureSettingsPopover
+          featureId={featureId}
+          projectId={projectId}
+          open={settingsOpen}
+          onOpenChange={onSettingsOpenChange}
+        />
       </div>
       <WorktreeSetupSection
         featureId={featureId}

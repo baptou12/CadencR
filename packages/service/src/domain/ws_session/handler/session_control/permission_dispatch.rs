@@ -60,6 +60,19 @@ pub(crate) async fn handle_permission_respond(
         );
         return;
     }
+    // A gate the service owns is answered here and goes no further: pushing it
+    // into the runtime would silently auto-answer the next real permission.
+    if super::service_approval::resolve_service_approval(
+        app_state,
+        session_id,
+        &payload,
+        sender,
+        &envelope.id,
+    )
+    .await
+    {
+        return;
+    }
     respond_permission_claimed(
         payload,
         &envelope.id,

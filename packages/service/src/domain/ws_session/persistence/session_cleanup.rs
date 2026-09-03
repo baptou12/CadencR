@@ -60,6 +60,27 @@ impl WsSessionPersistence {
         {
             error!(%error, "failed to clean up stale sessions");
         }
+        Self::clear_stale_service_gates(pool).await;
+    }
+
+    /// Service-owned approval gates only live as long as the waiting tool call.
+    /// The in-memory waiter dies with the process, so a persisted row would
+    /// resurrect a prompt whose answer has nowhere to go.
+    async fn clear_stale_service_gates(pool: &SqlitePool) {
+        let marker = format!(
+            "%{}%",
+            crate::domain::mcp::control::approval_registry::SERVICE_GATE_MARKER
+        );
+        if let Err(error) = sqlx::query(
+            "UPDATE agent_sessions SET pending_permission = NULL
+             WHERE pending_permission LIKE ?",
+        )
+        .bind(marker)
+        .execute(pool)
+        .await
+        {
+            error!(%error, "failed to clear stale service approval gates");
+        }
     }
 }
 

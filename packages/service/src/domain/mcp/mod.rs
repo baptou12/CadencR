@@ -7,5 +7,6 @@ pub mod servers;
 pub mod stdio;
 pub mod tools;
 pub mod trusted;
+pub(crate) mod write_scope;
 
 pub use context::McpContext;

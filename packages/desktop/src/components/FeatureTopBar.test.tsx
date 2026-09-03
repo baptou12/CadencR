@@ -233,9 +233,9 @@ describe("FeatureTopBar", () => {
     expect(screen.getByTestId("model-selector")).toBeInTheDocument();
   });
 
-  it("hides feature settings in session mode", () => {
+  it("shows feature settings in session mode", () => {
     render(<FeatureTopBar featureId={1} projectId={1} mode="session" />);
-    expect(screen.queryByTitle("Feature settings")).not.toBeInTheDocument();
+    expect(screen.getByTitle("Feature settings")).toBeInTheDocument();
     expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
   });
 

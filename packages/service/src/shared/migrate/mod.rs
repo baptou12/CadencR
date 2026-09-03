@@ -479,9 +479,11 @@ mod tests {
         .await
         .unwrap();
         // The schedules migration (20260724120000) folds `scheduled_messages`
-        // into `schedules`, which FKs into projects/features.
-        test_fixtures::create_schedules_migration_prerequisites(&pool).await;
+        // into `schedules`, which FKs into projects/features. Seed the history
+        // first: the prerequisites read it to decide which tables this
+        // baseline still has to declare itself.
         test_fixtures::seed_applied_migrations_before(&pool, DROP_PIN_VERSION).await;
+        test_fixtures::create_schedules_migration_prerequisites(&pool).await;
 
         run_migrations(&MigrationContext::pool_only(&pool))
             .await

@@ -13,6 +13,9 @@ pub(super) struct ToolAudit<'a> {
     pub result_size_bytes: i64,
     pub latency_ms: i64,
     pub error: Option<&'a str>,
+    /// State that existed before this write, as an undo payload. `None` for
+    /// reads and for writes that have nothing to restore.
+    pub previous_value: Option<serde_json::Value>,
 }
 
 pub(super) async fn record_tool_audit(
@@ -23,8 +26,8 @@ pub(super) async fn record_tool_audit(
         "INSERT INTO mcp_tool_audit_log
          (server_name, tool_name, source_session_id, source_feature_id, source_project_id,
           target_session_id, target_feature_id, target_project_id, status, result_size_bytes,
-          latency_ms, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          latency_ms, error, previous_value)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(event.server_name)
     .bind(event.tool_name)
@@ -38,6 +41,7 @@ pub(super) async fn record_tool_audit(
     .bind(event.result_size_bytes)
     .bind(event.latency_ms)
     .bind(event.error)
+    .bind(event.previous_value)
     .execute(pool)
     .await?;
     Ok(())

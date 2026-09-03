@@ -2,19 +2,26 @@ use crate::domain::agents::providers::{provider_alias_metadata, valid_provider_i
 
 pub(super) fn tool_description(name: &str) -> &'static str {
     match name {
-        "project_list_sessions" => "List recent CadencR sessions in the current project. Use before spawning to avoid duplicate work.",
+        "project_list_sessions" => "List recent CadencR sessions in the current project. Use before spawning to avoid duplicate work, and to get the feature ids project_update_feature and project_cleanup_worktree take.",
         "project_read_session" => "Read a current-project session with pagination and filters. Use include_tool_details only when tool payloads are needed.",
         "project_read_session_tail" => "Recovery/debug read after a cursor. Followed gates and awaited replies arrive automatically; never poll a child tail in the normal orchestration flow.",
         "project_get_session_status" => "Read one recovery status snapshot. Followed agent events arrive automatically; never poll status to wait for a child.",
-        "project_get_worktree_status" => "Inspect worktree path, branch, and dirty-file ownership for current-project sessions.",
+        "project_get_worktree_status" => "Inspect worktree path, branch, and dirty-file ownership for current-project sessions. Call it before reusing a branch, and before project_cleanup_worktree, to see whether the worktree is clean.",
         "project_find_related_sessions" => "Search same-project session history for related work before spawning or editing.",
-        "project_compare_sessions" => "Compare two current-project sessions and their worktree status.",
-        "project_link_sessions" => "Record an explicit relationship between current-project sessions.",
+        "project_compare_sessions" => "Compare two current-project sessions and their worktree status. Call it when two sessions attacked the same task and you must decide which result to keep.",
+        "project_link_sessions" => "Record an explicit relationship between current-project sessions. Call it after a handoff or a manual spawn so the session graph retraces how the work connects.",
         "project_list_agent_providers" => "List canonical CadencR provider ids, models, and each model's available thinking levels for project_spawn_session.",
         "project_spawn_session" => "Create another CadencR session in a target project. Use follow to receive gates and completion reactively: these events steer the current parent turn, so do not poll status, tails, or pending gates. Spawns into the caller's own project unless project_id or project_path selects another one (call workspace_list_projects first). Use canonical provider ids and advertised thinking levels; call project_list_agent_providers when unsure.",
         "project_send_session_message" => "Send a provenance-tracked message to another current-project session. Delivery steers the active target turn by default; request next_turn explicitly only when delayed handling is intentional.",
         "project_list_pending_gates" => "Recovery only: reconcile a linked child's pending gate after a missed/stale notification. A live <cadencr-gate> already contains the complete request id, kind, options, and payload; never poll this tool.",
         "project_respond_gate" => "Answer a linked child's pending gate using the exact session id, request id, kind, and payload from the automatically delivered <cadencr-gate>.",
+        "project_update_feature" => "Updates a feature's organization metadata: title, label, pinned, status (active|archived). Call when tidying the workspace or when finishing a task (e.g. archive your own feature). There is no delete — archive instead; archiving is fully reversible. Setting a label replaces the previous one; null clears it. Archiving fails with FEATURE_HAS_RUNNING_SESSION while a session runs — stop it first or skip. The response echoes the previous values so you can undo.",
+        "project_stop_session" => "Gracefully interrupts another session's current turn (the session stays resumable via project_send_session_message). Call for runaway, stuck, or no-longer-needed work. You cannot stop your own session. Returns {stopped: false, reason: SESSION_NOT_RUNNING} when the target is idle — treat that as success.",
+        "project_list_schedules" => "Lists this project's schedules (compact). Call before creating to avoid duplicates.",
+        "project_save_schedule" => "Creates or updates a schedule that spawns a session when due, in this project only. You MUST explicitly pass enabled true or false. A recurring schedule runs unattended until disabled — prefer a one-shot for follow-ups (e.g. re-check CI tomorrow). There is no delete: disable instead.",
+        "project_set_schedule_enabled" => "Pause or resume one of this project's schedules. Disabling is how a schedule is retired.",
+        "project_run_schedule" => "Fire one of this project's schedules immediately, without changing when it next runs.",
+        "project_cleanup_worktree" => "Removes a feature's git worktree via the safe path only: refuses dirty or unmerged worktrees, and there is no force option. In Default access mode the user must approve each removal in the app (the call blocks until they answer or it times out); in fullAccess/autoReview it executes directly. Does not archive the feature — use project_update_feature for that.",
         _ => "Coordinate CadencR sessions in the current project.",
     }
 }
@@ -31,6 +38,7 @@ pub(super) fn property_description(tool_name: &str, property: &str) -> String {
         ("project_spawn_session", "thinking_level") => "Provider/model-specific thinking or reasoning level. Use one of the target provider/model pair's thinking_levels from project_list_agent_providers. When omitted, CadencR uses the last selection for that target provider/model, then the CLI-advertised default_thinking_level.".into(),
         ("project_spawn_session", "follow") => "Reactive parent subscription. When present, omitted gates/completion fields default to true. Gates, questions, permissions, and requested completion replies automatically steer the parent; do not poll. An intentional child stop is not a failure and leaves completion follow armed for a later resumed result. Use false fields only to opt out explicitly.".into(),
         ("project_spawn_session", "await_result") => "Legacy completion-follow flag. Prefer follow.completion. A requested <cadencr-reply> steers the parent automatically when the child turn ends.".into(),
+        ("project_cleanup_worktree", "feature_id") => "Current-project feature whose worktree should be removed. Its branch must be merged and its worktree clean.".into(),
         (_, "session_id") => "Target session id in the current project.".into(),
         (_, "target_session_id") => "Current-project session id receiving the operation.".into(),
         (_, "limit") => "Maximum number of rows/messages to return; tools clamp oversized values.".into(),

@@ -8,6 +8,7 @@
 mod access_mode;
 mod effort;
 mod fast_mode;
+mod interrupt;
 mod lifecycle;
 mod mode;
 mod model;
@@ -17,11 +18,13 @@ mod permission_user_message;
 mod power;
 mod profile;
 mod provider;
+mod service_approval;
 mod session_config;
 
 pub(super) use access_mode::handle_access_mode_set;
 pub(super) use effort::handle_effort_set;
 pub(super) use fast_mode::handle_fast_mode_set;
+pub(crate) use interrupt::{interrupt_session, InterruptOutcome};
 pub(super) use lifecycle::{handle_clear, handle_delete, handle_destroy, handle_interrupt};
 pub(super) use mode::handle_mode_set;
 pub(super) use model::handle_model_set;
@@ -29,6 +32,7 @@ pub(crate) use permission_dispatch::handle_permission_respond;
 pub(super) use power::{handle_resume, handle_retry_worktree_setup, handle_suspend};
 pub(super) use profile::handle_profile_set;
 pub(super) use provider::handle_provider_set;
+pub(super) use service_approval::deny_service_approval;
 pub(super) use session_config::{handle_session_config_get, handle_session_config_set};
 
 use axum::extract::ws::Message;

@@ -15,7 +15,7 @@
 //! They are grouped by responsibility into thematic files under `tests/`
 //! and exercise the public surface this module re-exports.
 
-mod access;
+pub(crate) mod access;
 mod active_turns;
 mod app;
 mod app_forge;
@@ -47,6 +47,9 @@ pub use session_prompt::user_shell_recovery::recover_user_shell_context;
 
 // Public type for crate-wide use (referenced via `handler::SdkHandle`).
 pub(crate) use session_control::handle_permission_respond;
+// Interrupting a live turn without a WebSocket: used by the MCP control plane
+// (`project_stop_session`) as well as the `session.interrupt` handler.
+pub(crate) use session_control::{interrupt_session, InterruptOutcome};
 pub use types::SdkHandle;
 pub(crate) use types::{new_sdk_sessions, SdkSessions};
 

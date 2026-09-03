@@ -12,11 +12,11 @@ You normally **ask for an outcome in plain language**. The agent chooses and cal
 
 ## The three CadencR MCP servers
 
-| Server              | Scope                                                                               | What it enables                                                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `cadencr-workspace` | Every project registered in this CadencR workspace                                  | Read-only discovery across projects, session search, conversation reads, activity, and session relationships                 |
-| `cadencr-project`   | The current project, except that new sessions may target another registered project | Read and compare sessions, inspect worktrees, spawn or message agents, and answer linked child gates                         |
-| `cadencr-browser`   | Browser tabs belonging to the current feature                                       | Open, inspect, screenshot, and interact with pages; see the [Browser tool reference](../browser/#browser-mcp-tool-reference) |
+| Server              | Scope                                                                               | What it enables                                                                                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cadencr-workspace` | Every project registered in this CadencR workspace                                  | Discovery across projects, session search, conversation reads, activity, relationships, cross-project messaging, and — with the Steward grant — organizing work in any project |
+| `cadencr-project`   | The current project, except that new sessions may target another registered project | Read and compare sessions, inspect worktrees, spawn or message agents, answer linked child gates, and manage the project's own features, schedules, and worktrees              |
+| `cadencr-browser`   | Browser tabs belonging to the current feature                                       | Open, inspect, screenshot, and interact with pages; see the [Browser tool reference](../browser/#browser-mcp-tool-reference)                                                   |
 
 Enable or disable each server in **Settings → MCP**. Changes apply on the next agent turn. The session info popover shows which MCP servers the provider reported as connected.
 
@@ -112,7 +112,7 @@ show the pending gate but do not answer it.
 
 ## Workspace MCP tool reference
 
-Workspace tools are read-only and include project, feature, session, provider, and model provenance where applicable.
+Workspace reads include project, feature, session, provider, and model provenance where applicable. The three tools that write are listed separately below.
 
 | Tool                        | What it does                                                                                                                         | Important inputs                                                                                                                                           |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -121,6 +121,18 @@ Workspace tools are read-only and include project, feature, session, provider, a
 | `workspace_read_sessions`   | Full-text searches messages across projects and returns matching session snippets with provenance.                                   | Optional `query`, `project_ids`, `roles`, `message_types`, `providers`, `models`, `statuses`, `tool_names`, date range, `cursor`, `snippet_chars`, `limit` |
 | `workspace_session_graph`   | Reads recorded `spawned`, `messaged`, `referenced`, and `handoff` links plus metadata for the connected session nodes.               | Optional anchor `session_id` and `limit`                                                                                                                   |
 | `workspace_recent_activity` | Returns the newest messages across projects with short snippets and their project, feature, session, provider, model, and status.    | Optional `limit` and `snippet_chars`                                                                                                                       |
+
+### Workspace writes
+
+`workspace_send_session_message` is open to every session. The two organizing tools are not: they require the **Steward grant** on the calling session's own feature.
+
+| Tool                             | What it does                                                                                                                                          | Important inputs                                                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `workspace_send_session_message` | Sends a provenance-tracked message to a session in any project. It steers the target's active turn by default and can push the target's result back.  | Required `target_session_id` and `message`; optional `delivery`, `reply`, `message_uuid`, `source_note`, `link_to_current_session` |
+| `workspace_update_feature`       | Renames, labels, pins, or archives a feature in any project — the workspace-wide twin of `project_update_feature`. Requires the Steward grant.        | Required `feature_id`; at least one of `title`, `label` (`null` clears it), `pinned`, `status` (`active` or `archived`)            |
+| `workspace_stop_session`         | Interrupts the current turn of a session in any project — the twin of `project_stop_session`. The target stays resumable. Requires the Steward grant. | Required `target_session_id`                                                                                                       |
+
+Without the grant, both refuse with `STEWARD_REQUIRED` and change nothing. Only you can lift that, by enabling **Workspace writes (Steward)** in the calling feature's settings; an agent that hits the refusal should ask rather than retry.
 
 ### Workspace search tips
 
@@ -155,6 +167,34 @@ Most project tools are scoped to sessions in the caller's current project. This 
 | `project_send_session_message` | Sends a provenance-tracked message that steers the target's active turn by default. It can explicitly queue for the next turn or push the target result back.                      | Required `target_session_id` and `message`; optional `delivery` (`steer_current_turn`, `next_turn`, `reject_if_active`), `reply`, `message_uuid`, `source_note`, `link_to_current_session`               |
 | `project_list_pending_gates`   | Recovers the current permission, plan, or question gate for a linked child. Live `<cadencr-gate>` notifications already contain the full payload, so use this mainly for recovery. | Required `session_id`                                                                                                                                                                                    |
 | `project_respond_gate`         | Answers a linked child's pending permission, plan, or question using the exact request data from the live gate.                                                                    | Required `session_id`, `request_id`, and typed `decision` payload                                                                                                                                        |
+
+### Manage the project itself
+
+These tools let an agent tidy up after its own work — name and archive features, retire schedules, stop a runaway session, remove a merged worktree. They are open to every session in the project, on the same footing as `project_spawn_session`.
+
+| Tool                           | What it does                                                                                                                                                              | Important inputs                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `project_update_feature`       | Renames, labels, pins, or archives a feature. There is no delete: archiving is reversible, and the response echoes the previous values so the change can be undone.       | Required `feature_id`; at least one of `title`, `label` (`null` clears it), `pinned`, `status` (`active` or `archived`)               |
+| `project_stop_session`         | Gracefully interrupts another session's current turn. The session keeps its runtime and stays resumable through `project_send_session_message`.                           | Required `target_session_id`                                                                                                          |
+| `project_list_schedules`       | Lists this project's schedules with their next run. Use it before creating one to avoid duplicates.                                                                       | Optional `limit`                                                                                                                      |
+| `project_save_schedule`        | Creates or updates a schedule that spawns or messages a session when it is due. There is no delete: disable it instead.                                                   | Required `prompt`, `target`, `recurrence`, and an explicit `enabled`; pass `schedule_id` to replace an existing rule; optional `name` |
+| `project_set_schedule_enabled` | Pauses or resumes one schedule. Disabling is how a schedule is retired.                                                                                                   | Required `schedule_id` and `enabled`                                                                                                  |
+| `project_run_schedule`         | Fires a schedule immediately without changing when it next runs.                                                                                                          | Required `schedule_id`                                                                                                                |
+| `project_cleanup_worktree`     | Removes a feature's git worktree through the safe path only: it refuses a dirty worktree or an unmerged branch, and has no force option. It does not archive the feature. | Required `feature_id`                                                                                                                 |
+
+<DocCallout title="Worktree cleanup asks you first" variant="warning">
+  Removing a worktree also removes the git-ignored files inside it — local `.env` files, caches, dev
+  databases. In **Default** access mode CadencR raises an approval prompt in the app and the call
+  waits for your answer; in **Full access** and **Auto review** it runs directly. The session's own
+  autonomy setting decides, and either way the removal is journaled.
+</DocCallout>
+
+### What these tools deliberately cannot do
+
+- **Nothing is deleted.** A feature is archived, never removed; a schedule is disabled, never dropped. Both are reversible through the same tool.
+- **No force.** `project_cleanup_worktree` refuses a dirty worktree (`WORKTREE_DIRTY`) or an unmerged branch (`BRANCH_NOT_MERGED`) instead of overriding them, and archiving a feature fails with `FEATURE_HAS_RUNNING_SESSION` while a session is mid-turn.
+- **Stopping is not killing.** `project_stop_session` interrupts a turn; the session stays resumable, and an already-idle target answers `SESSION_NOT_RUNNING`, which is success.
+- **Every write is journaled** with the state it replaced, so a wrong call can be reversed by replaying its inverse.
 
 ### Worktree modes for `project_spawn_session`
 

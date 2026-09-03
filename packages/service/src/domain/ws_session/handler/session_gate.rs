@@ -50,6 +50,11 @@ pub(super) async fn handle_gate_close(
             }
         };
 
+    // A service-owned gate has no runtime turn waiting on it — resolving the
+    // waiter as a denial is the whole close.
+    let service_owned =
+        super::session_control::deny_service_approval(app_state, db_session_id, &request_id).await;
+
     let clear_result = clear_persisted_gate_and_notify(
         sender,
         app_state,
@@ -65,7 +70,9 @@ pub(super) async fn handle_gate_close(
                 .pending_gates
                 .complete(db_session_id, &request_id)
                 .await;
-            deny_runtime_gate(sdk_sessions, db_session_id, Some(&request_id)).await;
+            if !service_owned {
+                deny_runtime_gate(sdk_sessions, db_session_id, Some(&request_id)).await;
+            }
         }
         Ok(false) => {
             app_state

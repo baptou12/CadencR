@@ -23,6 +23,12 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "worktree_base_branch",
     "target_branch",
     "git_view_mode",
+    // Steward grant. When "true", this feature's sessions may call the
+    // cadencr-workspace write tools (`workspace_update_feature`,
+    // `workspace_stop_session`) against any project. Feature-scoped on purpose:
+    // the grant is read straight from `feature_settings`, so a project- or
+    // workspace-level copy of the key must never confer it.
+    "steward_workspace_writes",
 ];
 
 /// Keys writable via `PUT /api/projects/{id}/settings`.
