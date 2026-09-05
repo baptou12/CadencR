@@ -1,6 +1,7 @@
 # Cadencr code-backed provider package contract
 
 > - **Status:** Local v1 code-and-icon plus managed package/install/conformance backend implemented; release trust pins and marketplace UI deferred
+> - **Plan reviewed:** 2026-09-05; see [remaining work and release gates](./BOUNDARIES.md#implementation-audit--2026-09-05)
 > - **Contract version:** `acp-config-options-v1` + `acp-v1`
 > - **Reference SDK:** `packages/provider-plugin-sdk-rs/`
 > - **External reference provider:** `cadencr-plugin-provider-pi` — native `pi --mode rpc`, no `pi-acp`

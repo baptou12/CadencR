@@ -1,7 +1,7 @@
 # Cadencr Provider Boundary and Marketplace Migration Plan
 
-> - **Status:** Accepted direction; runtime registry and local ACP backend implemented, roadmap active
-> - **Last reviewed:** 2026-09-05 against the current provider worktree
+> - **Status:** Local authoring and managed package backend implemented behind release gates; broader boundary migration active
+> - **Last reviewed:** 2026-09-05 against implementation `7d572e5dd`, rebased onto local `v0.12.0` at `302cf0183`
 > - **Scope:** Service, desktop, provider SDKs, CLI discovery, persistence, WebSocket APIs, and the provider marketplace
 > - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the implemented local-backend format and its refusal codes
 > - **Parent plan:** `docs/PLUGIN_STRATEGY.md` — this document is step 2 ("bring your own agent") of the four-step extensibility ladder; the ladder's marketplace phasing, signing, and renderer invariants govern here too
@@ -27,7 +27,7 @@ Real signing-key and blocklist provisioning, the OS-sandbox policy decision,
 packaged-app signed-package verification, and publishing infrastructure remain
 release gates. Provider-account authentication stays outside Cadencr's scope.
 
-Validation for this review pass: service library tests **2,934 passed, 1 ignored**;
+Historical pre-rebase validation: service library tests **2,934 passed, 1 ignored**;
 installed-provider HTTP/WebSocket integration **1 passed**; format, lint,
 desktop TypeScript/knip, generated API, and agent-instruction mirror checks passed.
 Live `pnpm dev` API checks used isolated provider settings and verified corrupt
@@ -39,11 +39,42 @@ Finish-job reuse/quality/efficiency reviews additionally consolidated prepared
 launch policy, moved expensive launch/admission/inventory filesystem work off
 async workers, reused startup projection validation in inventory, replaced full
 inventory rebuilds after mutations with targeted reads, and made identical
-concurrent revision commits converge. The final workspace `pnpm test` passed
+concurrent revision commits converge. The pre-rebase workspace `pnpm test` passed
 (including 4,278 desktop tests and the service integration suites), with no Rust
 `FAILED` markers. Regression tests cover tampered inventory, concurrent commits,
 blocking-worker responsiveness/error propagation, and caller-thread storage
 context in managed launch verification.
+
+## Release-base integration verification — 2026-09-05
+
+The implementation is on `feature/define-provider-boundary-spec-de8e` at
+`7d572e5dd`, twelve commits ahead of local `v0.12.0` (`302cf0183`). The original
+branch was fast-forwarded to the completed work without changing its files.
+This records feature-branch readiness, not a release-branch merge or approval
+to distribute marketplace packages.
+
+- The rebase preserves release sidebar working/waiting/unread styling together
+  with catalog-owned connector icons and iconless-provider fallbacks.
+- A release-side call to the removed static icon helper was migrated to the
+  catalog-aware hook; regression tests cover built-in and external provider
+  pending-gate marks.
+- Full `pnpm test` passed: 4,295 desktop tests; service library 2,945 passed,
+  1 ignored; service binary 2,952 passed, 1 ignored; integration and script
+  suites passed. The final additional external-provider regression passed in
+  the focused suite (15 tests), followed by normal full pre-commit checks.
+- Format, lint, TypeScript, knip, instruction-mirror and diff checks passed.
+  Regenerated API bindings were unchanged.
+- Live `pnpm dev` with isolated provider settings verified a non-default model
+  selection before the first prompt, a complete fixture response, cancellation,
+  and the sidebar's working-to-idle transition. Managed API checks covered
+  corrupt inventory isolation, damaged-install disable/re-enable refusal,
+  reserved IDs, unauthorized requests and missing blocklist configuration.
+- Waiting/unread and connector-owned icon combinations have automated coverage;
+  this smoke pass is not a new live parity audit of every built-in provider or
+  the external Pi connector. Browser checks reported runtime-config/reconnect
+  and unknown-`session.init` warnings, not a warning-free run.
+- The QA-owned dev stack was stopped; production app/data were untouched.
+  Packaged-app signed-install lifecycle verification remains open.
 
 ## Executive decision
 
@@ -430,10 +461,10 @@ ACP v2 leaves draft: nothing in "install a third-party ACP agent" requires v2,
 and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 `knip` gates until something consumes it.
 
-### Implementation audit — 2026-08-26
+### Implementation audit — 2026-09-05
 
 The checkboxes below describe the complete provider-boundary program, not the
-merge gate for the local-descriptor backend. At the current `v0.12.0` baseline,
+merge gate for the local-descriptor backend. On the feature branch rebased onto `v0.12.0`,
 the runtime registry, local ACP execution/lifecycle path, pre-session model
 contract, developer authoring workspace, connector-owned icon path, stable
 resume/load/close lifecycle, first canonical stream slice, CI boundary
@@ -446,8 +477,8 @@ sandbox decision, and the marketplace UI remain future increments.
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Local provider backend            | Shipped: startup descriptors, generic adapter, mandatory code-backed model discovery, direct ACP execution, quarantine, diagnostics, restart-gated loopback lifecycle API, and authenticated HTTP/WS integration tests        | Preserve this authoring path separately from signed managed installation                                                                                                                                                                           |
 | Built-in regression guardrails    | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze later UI work; complete stream/workflow golden suites remain open                                                           | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                                                                                                                               |
-| Installed-provider desktop        | Catalog origin and generic live configuration exist; **Add provider** creates a local code-authoring project, while the free-form executable installer remains withdrawn                                                      | Add general installation only after the package installer can install validated code plus assets                                                                                                                                                   |
-| Models and live configuration     | Provider binaries return pre-session ACP model options; live ACP select/boolean snapshots remain authoritative and model choice is reconciled before prompting                                                                | Add conformance probing and migrate legacy built-in model/mode/effort controls                                                                                                                                                                     |
+| Installed-provider desktop        | Catalog origin and generic live configuration exist; **Add provider** creates a local code-authoring project, while the free-form executable installer remains withdrawn                                                      | Keep marketplace UI deferred until production trust, sandbox policy, and signed packaged-app lifecycle gates are satisfied                                                                                                                                                   |
+| Models and live configuration     | Provider binaries return pre-session ACP model options; live ACP select/boolean snapshots remain authoritative and model choice is reconciled before prompting                                                                | Preserve implemented bounded conformance probes; migrate legacy built-in model/mode/effort controls separately                                                                                                                                                                     |
 | Canonical events and ACP v2       | Started: the stream-event slice now produces stable message/block operations and a turn-bounded materialized projection before the unchanged legacy WS projection; persistence and most event families remain legacy          | Keep v2 deferred; migrate one typed event family at a time, then version the desktop DTO and persistence                                                                                                                                           |
 | Marketplace distribution/security | Managed package schema, signed-index ingestion, defensive download/extraction, integrity checks, immutable installation, history, rollback, quarantine, cached blocklist, conformance, and process policy are implemented behind release gates | Provision production trust pins and blocklist URL, resolve the documented OS-sandbox limitations, and validate an independently released connector through the generic install path before enabling downloaded connectors; marketplace UI remains deferred |
 | Boundary enforcement              | `scripts/check-provider-boundaries.mjs` runs in `pnpm lint`, rejects new exact provider IDs and named-provider dependencies, checks SDK-to-service direction, and carries explicit temporary legacy/false-positive exceptions | Shrink the reviewed legacy dependency and desktop exceptions as Phase 5/6 migrations land                                                                                                                                                          |
@@ -489,10 +520,22 @@ increments are:
 9. [x] add bounded conformance probes, signed-index ingestion, a cached
        blocklist, stable quarantine receipts, and independent process resource,
        lifecycle, working-directory, and environment policy;
-10. [ ] continue the started Phase 3/4/6 canonical-event workstream separately
-        and keep ACP v2 deferred while its specification is draft. The normal-user
-        marketplace browser/install UI is a later slice over the completed
-        package backend.
+
+The completed increments above are not the complete marketplace release
+checklist. Use the following ordering for remaining work:
+
+| Priority / lane | Next step | Acceptance boundary |
+| --- | --- | --- |
+| Immediate backend follow-up | Make resume-persistence eligibility session-scoped rather than adapter-global | Opposite-capability concurrent handshakes cannot change another session's persisted resume eligibility; retain explicit-resume refusal |
+| Before marketplace distribution | Provision production signing trust pins, signed blocklist URL, publishing and revocation operations | Real independently published package and policy validate through the generic backend; missing/untrusted policy fails closed |
+| Before marketplace distribution | Decide and document required OS isolation | Explicitly accept or address filesystem/network access and platform resource-control gaps; process cleanup is not an OS sandbox |
+| Before marketplace distribution | Run signed-package lifecycle QA in packaged apps on supported platforms | Install, pre-prompt model selection, first turn, restart/resume where supported, update, rollback, disable and uninstall preserve transcripts and enforce current trust policy |
+| Separate incremental cleanup | Continue Phase 3/4/6 canonical events, session capabilities and built-in control migration | Add parity tests for each touched path before removing legacy behavior; shrink boundary exceptions |
+| Explicitly deferred | Normal-user marketplace browser/install UI and ACP v2 | No marketplace UI in this backend scope; v2 remains a separate negotiated, feature-flagged future implementation |
+
+Provider-native account authentication remains outside every lane. These gates
+do not require completing the entire canonical-event rewrite before merging the
+current backend slice.
 
 ### Existing-baseline follow-up identified during finish-job review
 

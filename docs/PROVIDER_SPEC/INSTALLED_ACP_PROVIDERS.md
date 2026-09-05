@@ -1,7 +1,7 @@
 # Installed code-backed providers (local substrate)
 
 > - **Status:** Backend and developer-project substrate implemented; general-purpose desktop installation deliberately withdrawn
-> - **Last reviewed:** 2026-08-26
+> - **Last reviewed:** 2026-09-05 (local substrate and release-gate alignment)
 > - **Code:** `packages/service/src/domain/agents/providers/installed/`
 > - **Executable contract:** [`PROVIDER_PACKAGE.md`](./PROVIDER_PACKAGE.md)
 
@@ -130,7 +130,7 @@ CLI outside Cadencr.
 | An explicitly selected local provider-package executable                                  | Normal-user marketplace browsing/install UI                     |
 | Startup loading plus durable add/enable/disable/remove HTTP operations                    | Hot activation / reload                                         |
 | Explicit `restart_required` activation semantics                                          | General-purpose desktop provider installation                   |
-| Strict descriptor validation and lossless typed round-trip                                | Registry ingestion/export workflow                              |
+| Strict descriptor validation and lossless typed round-trip                                | Portable registry import/export workflow (managed signed-index ingestion is implemented)                              |
 | Provider-neutral live select/boolean configuration snapshot plus authenticated WS get/set | Richer ACP configuration types beyond the v1 baseline           |
 | Connector-owned `icon.svg`, bounded and inlined from its host-declared package root       | Release signing-key/blocklist provisioning                      |
 | Pre-prompt validation that live ACP still contains and confirms the selected model        | Packaged-app validation of a real signed distribution           |

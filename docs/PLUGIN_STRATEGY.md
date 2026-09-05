@@ -1,6 +1,22 @@
 # Cadencr Plugin Strategy
 
-Status: proposal with the step-2 code-backed provider substrate and managed marketplace backend implemented (rev. 2026-08-26). Grounded in a full audit of the service, desktop, and packaging layers, plus prior-art research (VS Code, Obsidian, Zed, JetBrains, Raycast, Figma) current to mid-2026.
+Status: proposal with the step-2 code-backed provider substrate and managed marketplace backend implemented (rev. 2026-09-05). Grounded in a full audit of the service, desktop, and packaging layers, plus prior-art research (VS Code, Obsidian, Zed, JetBrains, Raycast, Figma) current to mid-2026.
+
+## Current provider delivery boundary
+
+The provider implementation at `7d572e5dd` has been rebased and verified against
+local `v0.12.0` (`302cf0183`); this is not a recorded release-branch merge.
+Local authoring and the managed package/install/conformance backend are
+implemented. Marketplace UI remains deferred, and provider-account
+configuration and authentication remain the user's native CLI responsibility.
+
+The immediate backend follow-up is session-scoped resume-persistence eligibility.
+Production trust/blocklist provisioning, publishing and revocation operations,
+an explicit OS-isolation decision, and real signed-package lifecycle QA in
+packaged apps remain distribution gates. Canonical-event and built-in control
+migration are separate incremental work, not a reason to pre-check the wider
+boundary plan. See [the current provider audit](./PROVIDER_SPEC/BOUNDARIES.md#implementation-audit--2026-09-05)
+for ordering and acceptance criteria.
 
 ## 0. Thesis
 
