@@ -15,9 +15,9 @@ use crate::domain::agents::providers::installed::routes::{
     installed_provider_lifecycle_router, installed_providers_router,
 };
 use crate::domain::agents::runtime::AgentCatalogResponse;
+use crate::domain::agents::ResolvedSelection;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
-use crate::domain::editor::file_size::EDITOR_REQUEST_BODY_BYTES;
 use crate::domain::editor::format::format_router;
 use crate::domain::editor::image_routes::image_router;
 use crate::domain::editor::mutation_routes::editor_mutation_router;
@@ -38,7 +38,7 @@ use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
 use crate::domain::ws_session::routes::prompt_commands_router;
 use crate::error::AppError;
-use axum::extract::{DefaultBodyLimit, Query, State};
+use axum::extract::{Query, State};
 use axum::routing::{any, get, put};
 use axum::Json;
 use axum::Router;
@@ -74,6 +74,66 @@ pub struct AgentCatalogQuery {
     /// (Bedrock / Vertex expose different model ids than Anthropic) instead of
     /// the globally active profile. Providers without env profiles ignore it.
     profile: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AgentSelectionQuery {
+    /// Scope is implied by which ids are present: neither = global,
+    /// `project_id` only = project, both = feature. An explicit `level`
+    /// parameter would make `level=feature` without `feature_id` representable.
+    project_id: Option<i64>,
+    feature_id: Option<i64>,
+    cwd: Option<PathBuf>,
+    profile: Option<String>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct AgentSelectionResponse {
+    /// Keyed by agent type (`session`, `auto_name`).
+    pub selections: std::collections::HashMap<String, ResolvedSelection>,
+}
+
+/// `auto_name` only exists at workspace level, so narrower scopes never report it.
+fn agent_types_for_scope(project_id: Option<i64>, feature_id: Option<i64>) -> Vec<String> {
+    if project_id.is_none() && feature_id.is_none() {
+        return vec!["session".to_string(), "auto_name".to_string()];
+    }
+    vec!["session".to_string()]
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/agent-runtime/selection",
+    params(
+        ("project_id" = Option<i64>, Query, description = "Resolve at project scope"),
+        ("feature_id" = Option<i64>, Query, description = "Resolve at feature scope; requires project_id"),
+        ("cwd" = Option<String>, Query, description = "Workspace path used to scope the model catalog lookup"),
+        ("profile" = Option<String>, Query, description = "Claude Code profile to scope the model lookup to")
+    ),
+    responses(
+        (status = 200, body = AgentSelectionResponse),
+        (status = 400, description = "No model is available for the resolved provider")
+    )
+)]
+pub async fn get_agent_selection(
+    State(state): State<AppState>,
+    Query(query): Query<AgentSelectionQuery>,
+) -> Result<Json<AgentSelectionResponse>, AppError> {
+    let mut selections = std::collections::HashMap::new();
+    for agent_type in agent_types_for_scope(query.project_id, query.feature_id) {
+        let selection = crate::domain::agents::resolve_selection(
+            &state.read_pool,
+            query.cwd.as_deref(),
+            &agent_type,
+            query.feature_id,
+            query.project_id,
+            query.profile.as_deref(),
+        )
+        .await
+        .map_err(|error| AppError::BadRequest(error.to_string()))?;
+        selections.insert(agent_type, selection);
+    }
+    Ok(Json(AgentSelectionResponse { selections }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,8 +181,8 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(sessions_router())
         .merge(schedules_router())
         .merge(terminal_router())
-        .merge(editor_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
-        .merge(format_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
+        .merge(editor_router())
+        .merge(format_router())
         .merge(image_router())
         // Raw bytes for off-loaded message payloads (screenshots, pasted
         // images). Outside the OpenAPI surface like the other byte routes.
@@ -144,6 +204,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(crate::domain::push::routes::vapid_key_router())
         .route("/ws", get(ws_handler))
         .route("/api/agent-catalog", get(get_agent_catalog))
+        .route("/api/agent-runtime/selection", get(get_agent_selection))
 }
 
 fn compression_layer() -> tower_http::compression::CompressionLayer {
@@ -237,7 +298,7 @@ async fn api_not_found() -> Result<(), AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_browser_bridge, BrowserBridgeRegistrationRequest};
+    use super::{validate_browser_bridge, AgentSelectionQuery, BrowserBridgeRegistrationRequest};
 
     #[test]
     fn browser_bridge_registration_accepts_loopback_http_url() {
@@ -262,64 +323,29 @@ mod tests {
         assert!(error.to_string().contains("loopback"));
     }
 
-    #[tokio::test]
-    async fn large_editor_buffers_can_be_saved_and_formatted_without_relaxing_other_apis() {
-        use axum::body::Body;
-        use axum::http::{Request, StatusCode};
-        use tower::ServiceExt;
-
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, path TEXT NOT NULL)")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        sqlx::query("INSERT INTO projects (id, path) VALUES (1, ?)")
-            .bind(dir.path().to_string_lossy().as_ref())
-            .execute(&pool)
-            .await
-            .unwrap();
-        let router =
-            super::build_api_routes().with_state(crate::app_state::AppState::with_pool(pool));
-        let content = "large buffer with spacing  \n".repeat(120_000);
-        assert!(content.len() > 2 * 1024 * 1024);
-        let payload = serde_json::json!({
-            "project_id": 1, "file_path": "large.txt", "content": content,
-            "formatter": "unknown-formatter",
-        })
-        .to_string();
-        let request = |uri: &str| {
-            Request::post(uri)
-                .header("content-type", "application/json")
-                .body(Body::from(payload.clone()))
-                .unwrap()
+    #[test]
+    fn global_scope_includes_workspace_only_agent_types() {
+        let query = AgentSelectionQuery {
+            project_id: None,
+            feature_id: None,
+            cwd: None,
+            profile: None,
         };
-
-        let saved = router
-            .clone()
-            .oneshot(request("/api/editor/write"))
-            .await
-            .unwrap();
-        assert_eq!(saved.status(), StatusCode::OK);
         assert_eq!(
-            std::fs::read_to_string(dir.path().join("large.txt")).unwrap(),
-            content
+            super::agent_types_for_scope(query.project_id, query.feature_id),
+            vec!["session".to_string(), "auto_name".to_string()]
         );
+    }
 
-        // Reaching the formatter validation proves its JSON extractor accepted
-        // the whole buffer, without requiring a formatter binary in unit tests.
-        let formatted = router
-            .clone()
-            .oneshot(request("/api/editor/format"))
-            .await
-            .unwrap();
-        assert_eq!(formatted.status(), StatusCode::BAD_REQUEST);
-        let body = axum::body::to_bytes(formatted.into_body(), 4096)
-            .await
-            .unwrap();
-        assert!(String::from_utf8_lossy(&body).contains("unknown formatter"));
-
-        let unrelated = router.oneshot(request("/api/projects")).await.unwrap();
-        assert_eq!(unrelated.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    #[test]
+    fn project_and_feature_scopes_exclude_workspace_only_agent_types() {
+        assert_eq!(
+            super::agent_types_for_scope(Some(1), None),
+            vec!["session".to_string()]
+        );
+        assert_eq!(
+            super::agent_types_for_scope(Some(1), Some(7)),
+            vec!["session".to_string()]
+        );
     }
 }
