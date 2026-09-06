@@ -360,10 +360,12 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
   );
   return {
     actions,
+    renderedActiveFeatureCount: data.activeFeatures.filter((feature) => !feature.is_pinned).length,
     archivedFeatures: data.archivedFeatures,
     confirmFeatureId,
     confirmation,
     flatActiveFeatures: data.flatActiveFeatures,
+    rootNodeByFeatureId: data.rootNodeByFeatureId,
     renderFeature,
     renderSubtree,
     setConfirmFeatureId,

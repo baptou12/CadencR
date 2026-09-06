@@ -26,6 +26,12 @@ async fn legacy_pool() -> sqlx::SqlitePool {
              PRIMARY KEY (session_id, provider_id),
              FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
          );
+         CREATE TABLE agent_messages (
+             id INTEGER PRIMARY KEY,
+             session_id INTEGER NOT NULL,
+             content TEXT NOT NULL,
+             message_type TEXT NOT NULL
+         );
          INSERT INTO agent_sessions (id, runtime_session_id)
          VALUES (1, 'codex-root'), (2, 'claude-root'), (3, NULL);
          INSERT INTO provider_usage_checkpoints

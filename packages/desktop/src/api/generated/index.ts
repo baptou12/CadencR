@@ -99,10 +99,9 @@ export type AgentBlockToolName = string | null;
 export type AgentBlockToolUseId = string | null;
 
 /**
- * When true, `content` was tail-truncated server-side. Currently applied
-to Bash blocks (both `tool_call` and `tool_result`) whose aggregated
-output exceeds the configured line or byte cap. The full payload is
-reachable via `GET /api/sessions/messages/{id}/full`.
+ * When true, `content` is a bounded server-side preview of oversized
+persisted content. The complete payload is reachable via
+`GET /api/sessions/messages/{id}/full`.
  */
 export type AgentBlockTruncatedContent = boolean | null;
 
@@ -122,10 +121,9 @@ export interface AgentBlock {
   toolArgs?: AgentBlockToolArgs;
   toolName?: AgentBlockToolName;
   toolUseId?: AgentBlockToolUseId;
-  /** When true, `content` was tail-truncated server-side. Currently applied
-to Bash blocks (both `tool_call` and `tool_result`) whose aggregated
-output exceeds the configured line or byte cap. The full payload is
-reachable via `GET /api/sessions/messages/{id}/full`. */
+  /** When true, `content` is a bounded server-side preview of oversized
+persisted content. The complete payload is reachable via
+`GET /api/sessions/messages/{id}/full`. */
   truncatedContent?: AgentBlockTruncatedContent;
   type: string;
 }
@@ -207,6 +205,7 @@ export interface AgentSessionRow {
   has_file_changes: number;
   id: number;
   input_tokens?: AgentSessionRowInputTokens;
+  message_revision: number;
   model?: AgentSessionRowModel;
   output_tokens?: AgentSessionRowOutputTokens;
   pending_permission?: AgentSessionRowPendingPermission;
@@ -3683,6 +3682,12 @@ export type SessionStateContextWindow = number | null;
 
 export type SessionStateDraftPrompt = string | null;
 
+export type SessionStateHasMoreContentRevisions = boolean | null;
+
+export type SessionStateHasMoreIncrementalMessages = boolean | null;
+
+export type SessionStateMaxContentRevision = number | null;
+
 export type SessionStateModel = string | null;
 
 export type SessionStateOldestMessageId = number | null;
@@ -3701,6 +3706,8 @@ export type SessionStateToolCallUpdatesAnyOf = { [key: string]: string };
 
 export type SessionStateToolCallUpdates = SessionStateToolCallUpdatesAnyOf | null;
 
+export type SessionStateTruncatedToolCallUpdateIds = string[] | null;
+
 export interface SessionState {
   accessMode: string;
   agentType: string;
@@ -3709,8 +3716,11 @@ export interface SessionState {
   draftPrompt?: SessionStateDraftPrompt;
   hasFileChanges: boolean;
   hasMore: boolean;
+  hasMoreContentRevisions?: SessionStateHasMoreContentRevisions;
+  hasMoreIncrementalMessages?: SessionStateHasMoreIncrementalMessages;
   inputTokens: number;
   isIncremental: boolean;
+  maxContentRevision?: SessionStateMaxContentRevision;
   maxMessageId: number;
   model?: SessionStateModel;
   oldestMessageId?: SessionStateOldestMessageId;
@@ -3727,6 +3737,7 @@ export interface SessionState {
   subprocessId?: SessionStateSubprocessId;
   todos?: SessionStateTodos;
   toolCallUpdates?: SessionStateToolCallUpdates;
+  truncatedToolCallUpdateIds?: SessionStateTruncatedToolCallUpdateIds;
   wasCompacted: boolean;
 }
 
@@ -4868,6 +4879,10 @@ export type GetFeatureAgentStateParams = {
    * JSON-encoded map of session_id -> last_message_id for incremental fetching
    */
   after?: string | null;
+  /**
+   * JSON-encoded map of session_id -> last observed mutable-content revision.
+   */
+  after_revisions?: string | null;
   /**
    * Max number of messages per session for full loads (default: 100, max: 200)
    */

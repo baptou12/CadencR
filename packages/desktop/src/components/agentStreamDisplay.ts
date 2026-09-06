@@ -1,4 +1,5 @@
 import type { AgentBlockData } from "./AgentBlock";
+import { shouldGateFullContent } from "./agent-block-types";
 import { collapseTurnsToSummary } from "./agentStreamSummary";
 import { shouldHideToolCall } from "@/lib/tool-display-policy";
 
@@ -23,6 +24,10 @@ const FLOW_BREAKING_TYPES = new Set<AgentBlockData["type"]>([
 
 function isFlowEligible(block: AgentBlockData): boolean {
   if (FLOW_BREAKING_TYPES.has(block.type)) return false;
+  // A wire preview is deliberately inert until the user loads the original.
+  // Compact tiles parse tool arguments (including patch numstats), so routing a
+  // truncated payload through them could present invented or incomplete data.
+  if (shouldGateFullContent(block)) return false;
   // Surface Task/Agent results inline as their own row (they own their card
   // chrome); skip the rest, which the renderer hides anyway.
   if (block.type === "tool_result") {
@@ -69,6 +74,7 @@ export function buildDisplayItems(
 }
 
 function isHiddenByRenderer(block: AgentBlockData): boolean {
+  if (shouldGateFullContent(block)) return false;
   if (block.type === "thinking") return !block.content.trim();
   if (block.type === "tool_call") return shouldHideToolCall(block.toolName);
   if (block.type !== "tool_result") return false;

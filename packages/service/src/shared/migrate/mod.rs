@@ -121,6 +121,7 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
     } else {
         migrator.run(ctx.pool).await?;
     }
+    seed::repair_agent_message_content_revisions(ctx.pool).await?;
     seed::repair_agent_messages_perf_indexes(ctx.pool).await?;
 
     info!("Database migrations completed successfully");

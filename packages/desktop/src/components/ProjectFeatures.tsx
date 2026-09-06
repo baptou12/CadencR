@@ -8,28 +8,54 @@ import {
   type ProjectFeaturesProps,
 } from "@/components/ProjectFeaturesController";
 import { WorktreeGroup } from "@/components/WorktreeGroup";
+import { VirtualizedProjectFeatureList } from "@/components/VirtualizedProjectFeatureList";
+import { VirtualizedArchivedFeatureList } from "@/components/VirtualizedArchivedFeatureList";
 import { deleteFeatureDialogTitle } from "@/lib/feature-archive-decision";
 
 export function ProjectFeatures(props: ProjectFeaturesProps) {
   const controller = useProjectFeaturesController(props);
+  const virtualizeActive = controller.renderedActiveFeatureCount > 20;
+  const virtualizeArchived = controller.archivedFeatures.length > 20;
   return (
     <div className="flex flex-col gap-0.5">
-      {controller.worktreeGroups.map((group) => (
-        <WorktreeGroup
-          key={group.key}
-          label={group.label}
-          features={group.features}
-          renderFeature={controller.renderSubtree}
+      {virtualizeActive ? (
+        <VirtualizedProjectFeatureList
+          activeFeatureId={props.activeFeatureId}
+          flatActiveFeatures={controller.flatActiveFeatures}
+          renderFeature={controller.renderFeature}
+          rootNodeByFeatureId={controller.rootNodeByFeatureId}
+          worktreeGroups={controller.worktreeGroups}
         />
-      ))}
-      {controller.flatActiveFeatures.map(controller.renderSubtree)}
+      ) : (
+        <>
+          {controller.worktreeGroups.map((group) => (
+            <WorktreeGroup
+              key={group.key}
+              label={group.label}
+              features={group.features}
+              renderFeature={controller.renderSubtree}
+            />
+          ))}
+          {controller.flatActiveFeatures.map(controller.renderSubtree)}
+        </>
+      )}
       <ProjectFeatureDialogs projectId={props.projectId} controller={controller} />
-      <ArchivedFeatureList
-        features={controller.archivedFeatures}
-        expanded={controller.showArchived}
-        onToggle={() => controller.setShowArchived((value) => !value)}
-        renderFeature={controller.renderFeature}
-      />
+      {virtualizeArchived ? (
+        <VirtualizedArchivedFeatureList
+          features={controller.archivedFeatures}
+          expanded={controller.showArchived}
+          onToggle={() => controller.setShowArchived((value) => !value)}
+          renderFeature={controller.renderFeature}
+          activeFeatureId={props.activeFeatureId}
+        />
+      ) : (
+        <ArchivedFeatureList
+          features={controller.archivedFeatures}
+          expanded={controller.showArchived}
+          onToggle={() => controller.setShowArchived((value) => !value)}
+          renderFeature={controller.renderFeature}
+        />
+      )}
     </div>
   );
 }
