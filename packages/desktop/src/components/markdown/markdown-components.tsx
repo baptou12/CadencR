@@ -4,6 +4,7 @@ import { CodeBlockShell } from "@/components/CodeBlockShell";
 import { MarkdownImg } from "@/components/markdown-image";
 import { highlightCode } from "@/components/markdown/highlight-cache";
 import { MarkdownLink } from "@/components/markdown/markdown-link";
+import { LargeCodeBlock, isLargeCodeBlock } from "@/components/markdown/LargeCodeBlock";
 
 const MermaidDiagram = lazy(() => import("@/components/MermaidDiagram"));
 const SHELL_LANGUAGES = new Set(["bash", "sh", "zsh", "shell", "console", "terminal"]);
@@ -37,12 +38,78 @@ function MermaidFallback({ code }: { code: string }): ReactElement {
   );
 }
 
-export function buildMarkdownComponents(
-  contentRef: RefObject<string>,
-  sendToTerminal: ((command: string) => void) | undefined,
-  isSettled: boolean,
+interface MarkdownComponentOptions {
+  contentRef: RefObject<string>;
+  sendToTerminal?: (command: string) => void;
+  isSettled: boolean;
+  isStreaming: boolean;
+  cacheHighlights?: boolean;
+}
+
+function buildCodeComponent({
+  contentRef,
+  sendToTerminal,
+  isSettled,
+  isStreaming,
   cacheHighlights = isSettled,
-): Components {
+}: MarkdownComponentOptions): NonNullable<Components["code"]> {
+  return ({ className, children, node, ...props }) => {
+    const match = /language-(\w+)/.exec(className || "");
+    const isBlock = node?.position && node.position.start.line !== node.position.end.line;
+    if (match || isBlock) {
+      const lang = match?.[1] ?? "text";
+      const code = extractText(children).replace(/\n$/, "");
+      if (lang === "mermaid" && isSettled && isFenceClosed(contentRef.current, node)) {
+        return (
+          <Suspense fallback={<MermaidFallback code={code} />}>
+            <MermaidDiagram code={code} />
+          </Suspense>
+        );
+      }
+      const showTerminalButton = SHELL_LANGUAGES.has(lang) && !!sendToTerminal;
+      if (isLargeCodeBlock(code)) {
+        return (
+          <LargeCodeBlock
+            language={lang}
+            code={code}
+            isStreaming={isStreaming}
+            showTerminalButton={showTerminalButton}
+            onSendToTerminal={sendToTerminal}
+          />
+        );
+      }
+      const highlighted = highlightCode(lang, code, { cache: cacheHighlights }) ?? children;
+      return (
+        <CodeBlockShell
+          language={lang}
+          code={code}
+          showTerminalButton={showTerminalButton}
+          onSendToTerminal={sendToTerminal}
+        >
+          <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
+            <code className="hljs">{highlighted}</code>
+          </pre>
+        </CodeBlockShell>
+      );
+    }
+    return (
+      <code
+        className="rounded bg-[color-mix(in_oklab,var(--acc-pink)_7%,transparent)] px-1 py-0.5 text-xs font-mono text-[color-mix(in_oklab,var(--acc-pink)_45%,var(--acc-purple))]"
+        {...props}
+      >
+        {children}
+      </code>
+    );
+  };
+}
+
+export function buildMarkdownComponents({
+  contentRef,
+  sendToTerminal,
+  isSettled,
+  isStreaming,
+  cacheHighlights = isSettled,
+}: MarkdownComponentOptions): Components {
   return {
     h1: ({ children }) => (
       <h1 className="text-2xl font-bold mt-5 mb-2 text-[var(--acc-purple)]">{children}</h1>
@@ -62,42 +129,13 @@ export function buildMarkdownComponents(
     h6: ({ children }) => (
       <h6 className="text-xs font-semibold mt-1 mb-0.5 text-[var(--acc-yellow)]">{children}</h6>
     ),
-    code: ({ className, children, node, ...props }) => {
-      const match = /language-(\w+)/.exec(className || "");
-      const isBlock = node?.position && node.position.start.line !== node.position.end.line;
-      if (match || isBlock) {
-        const lang = match?.[1] ?? "text";
-        const code = extractText(children).replace(/\n$/, "");
-        if (lang === "mermaid" && isSettled && isFenceClosed(contentRef.current, node)) {
-          return (
-            <Suspense fallback={<MermaidFallback code={code} />}>
-              <MermaidDiagram code={code} />
-            </Suspense>
-          );
-        }
-        const highlighted = highlightCode(lang, code, { cache: cacheHighlights }) ?? children;
-        return (
-          <CodeBlockShell
-            language={lang}
-            code={code}
-            showTerminalButton={SHELL_LANGUAGES.has(lang) && !!sendToTerminal}
-            onSendToTerminal={sendToTerminal}
-          >
-            <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
-              <code className="hljs">{highlighted}</code>
-            </pre>
-          </CodeBlockShell>
-        );
-      }
-      return (
-        <code
-          className="rounded bg-[color-mix(in_oklab,var(--acc-pink)_7%,transparent)] px-1 py-0.5 text-xs font-mono text-[color-mix(in_oklab,var(--acc-pink)_45%,var(--acc-purple))]"
-          {...props}
-        >
-          {children}
-        </code>
-      );
-    },
+    code: buildCodeComponent({
+      contentRef,
+      sendToTerminal,
+      isSettled,
+      isStreaming,
+      cacheHighlights,
+    }),
     pre: ({ children }) => <>{children}</>,
     a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
     img: ({ src, alt, title, width, height }) => (

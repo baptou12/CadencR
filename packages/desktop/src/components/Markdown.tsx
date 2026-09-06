@@ -144,9 +144,20 @@ export const Markdown = memo(function Markdown({
   const components = useMemo(
     () =>
       isSettled
-        ? buildMarkdownComponents({ current: settledContent }, sendToTerminal, true, !disableCache)
-        : buildMarkdownComponents(streamingContentRef, sendToTerminal, false),
-    [disableCache, isSettled, settledContent, sendToTerminal],
+        ? buildMarkdownComponents({
+            contentRef: { current: settledContent },
+            sendToTerminal,
+            isSettled: true,
+            isStreaming: false,
+            cacheHighlights: !disableCache,
+          })
+        : buildMarkdownComponents({
+            contentRef: streamingContentRef,
+            sendToTerminal,
+            isSettled: false,
+            isStreaming,
+          }),
+    [disableCache, isSettled, isStreaming, settledContent, sendToTerminal],
   );
 
   const tree = useMemo<ReactElement>(() => {
