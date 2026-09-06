@@ -68,6 +68,8 @@ export interface PersistedStatePayload {
   oldestMessageId?: number | null;
   /** Highest DB message id in this snapshot — seeds the resync cursor. */
   maxMessageId?: number | null;
+  /** Mutable-content revision captured with the persisted snapshot. */
+  maxContentRevision?: number | null;
   featureId?: number;
   sessionDbId?: number;
   currentProviderId?: string;
@@ -219,6 +221,8 @@ export interface SessionEntry extends SessionConfigState {
    * recovered. `null` until the first persisted load supplies one.
    */
   lastAppliedMessageId: number | null;
+  /** Highest mutable-content revision applied by a completed REST snapshot. */
+  lastAppliedContentRevision: number | null;
   featureId: number | null;
   sessionDbId: number | null;
   cwd: string | null;
@@ -285,6 +289,7 @@ export function createSessionEntry(): SessionEntry {
     hasMore: false,
     oldestMessageId: null,
     lastAppliedMessageId: null,
+    lastAppliedContentRevision: null,
     featureId: null,
     sessionDbId: null,
     cwd: null,
