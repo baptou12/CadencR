@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type ReactElement, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useShortcut } from "@/hooks/useShortcut";
 import { Settings, PanelLeftClose, Search, Maximize, Minimize, Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +31,7 @@ import { cn } from "@/lib/utils";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useFullscreen } from "@/hooks/useFullscreen";
-import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
+import { useSidebarKeyboardNavigation } from "@/hooks/useSidebarKeyboardNavigation";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
@@ -110,81 +109,6 @@ function useSidebarActiveIds(selectedFeatureId: number | null): {
       : null;
 
   return { activeProjectId, effectiveFeatureId: activeFeatureId ?? selectedFeatureId };
-}
-
-function useSidebarKeyboardNavigation(
-  sidebarRef: RefObject<HTMLElement | null>,
-  navigate: ReturnType<typeof useNavigate>,
-  activeFeatureId: number | null,
-): void {
-  const getNavItems = (): HTMLElement[] => {
-    if (!sidebarRef.current) return [];
-    return Array.from(sidebarRef.current.querySelectorAll("[data-nav-item]")) as HTMLElement[];
-  };
-
-  const moveFocus = (direction: "up" | "down"): void => {
-    const items = getNavItems();
-    if (items.length === 0) return;
-
-    const currentIndex = items.findIndex((el) => el === document.activeElement);
-    let nextIndex: number;
-    if (currentIndex === -1) {
-      nextIndex = direction === "down" ? 0 : items.length - 1;
-    } else if (direction === "down") {
-      nextIndex = currentIndex >= items.length - 1 ? 0 : currentIndex + 1;
-    } else {
-      nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
-    }
-    items[nextIndex].focus({ focusVisible: true } as FocusOptions);
-  };
-
-  // CMD+OPT+DOWN: move focus down in the sidebar
-  useShortcut("sidebar-focus-down", (e) => {
-    if (getActiveFocusZone() !== "left-sidebar") return;
-    e.preventDefault();
-    moveFocus("down");
-  });
-
-  // CMD+OPT+UP: move focus up in the sidebar
-  useShortcut("sidebar-focus-up", (e) => {
-    if (getActiveFocusZone() !== "left-sidebar") return;
-    e.preventDefault();
-    moveFocus("up");
-  });
-
-  // Enter: navigate to the focused item. `enableOnFormTags: false` so
-  // hitting Enter inside the project rename input commits the rename
-  // instead of stealing the keystroke for navigation.
-  useShortcut(
-    "sidebar-activate",
-    (e) => {
-      if (getActiveFocusZone() !== "left-sidebar") return;
-      const focused = document.activeElement as HTMLElement | null;
-      if (!focused?.hasAttribute("data-nav-item")) return;
-      e.preventDefault();
-
-      const type = focused.getAttribute("data-nav-type");
-      const id = focused.getAttribute("data-nav-id");
-      const projectId = focused.getAttribute("data-nav-project-id");
-
-      if (type === "feature" && id && projectId) {
-        const focusTab = getFocusedTabForFeature(activeFeatureId);
-        void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: { projectId, featureId: id },
-          search: focusTab ? { focusTab } : undefined,
-        });
-      } else if (type === "project" && id) {
-        // Toggle expand by clicking the project button
-        focused.click();
-      } else if (type === "agents") {
-        void navigate({ to: "/agents" });
-      } else if (type === "schedules") {
-        void navigate({ to: "/schedules" });
-      }
-    },
-    { enableOnFormTags: false, enableOnContentEditable: false },
-  );
 }
 
 function SidebarSearchButton({ onSearch }: { onSearch: () => void }): ReactElement {
