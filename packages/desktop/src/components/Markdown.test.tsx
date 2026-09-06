@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@/test-utils";
 import { LinkRoutingContext, type LinkRouting } from "./links/LinkRoutingContext";
 import { Markdown } from "./Markdown";
 import { useOpenDiffInEditor } from "./diff/OpenDiffInEditorContext";
+import { LARGE_CODE_LINE_THRESHOLD } from "./markdown/LargeCodeBlock";
 
 vi.mock("./diff/OpenDiffInEditorContext", () => ({
   useOpenDiffInEditor: vi.fn(),
@@ -113,6 +114,20 @@ describe("Markdown", () => {
     render(<Markdown content={"```\nsome output\n```"} />);
     expect(screen.getByText("text")).toBeInTheDocument();
     expect(screen.getByText("some output")).toBeInTheDocument();
+  });
+
+  it("keeps ordinary fences highlighted and routes threshold-sized fences to the bounded viewer", () => {
+    const ordinary = render(<Markdown content={"```typescript\nconst x = 1;\n```"} />);
+    expect(ordinary.container.querySelector("code.hljs")).toBeInTheDocument();
+    ordinary.unmount();
+
+    const code = Array.from(
+      { length: LARGE_CODE_LINE_THRESHOLD },
+      (_, index) => `line ${index}`,
+    ).join("\n");
+    const large = render(<Markdown content={`\`\`\`typescript\n${code}\n\`\`\``} />);
+    expect(screen.getByText(/large code — virtualized for performance/i)).toBeInTheDocument();
+    expect(large.container.querySelector("code.hljs")).not.toBeInTheDocument();
   });
 
   it("renders inline raw HTML", () => {
