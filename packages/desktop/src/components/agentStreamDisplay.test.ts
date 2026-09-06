@@ -161,4 +161,38 @@ describe("agentStreamDisplay", () => {
       expect(items.map((item) => item.key)).toEqual(["dup", "dup#1"]);
     });
   });
+
+  it("keeps truncated generic results as standalone rows in compact mode", () => {
+    const result = block("large-result", "preview", {
+      type: "tool_result",
+      sourceToolName: "Read",
+      truncatedContent: true,
+    });
+
+    expect(filterRenderableBlocks([result])).toEqual([result]);
+    expect(buildDisplayItems([result], { compact: true })).toEqual([
+      { kind: "block", key: "large-result", block: result },
+    ]);
+    expect(countRenderableDisplayRows([result], { compactMode: true })).toBe(1);
+  });
+
+  it("keeps truncated patch and Bash arguments out of compact summary tiles", () => {
+    const patch = block("partial-patch", "preview", {
+      type: "tool_call",
+      toolName: "apply_patch",
+      toolArgs: JSON.stringify({ patchText: "*** Begin Patch\n*** Update File: a.ts\n@@\n-old" }),
+      truncatedContent: true,
+    });
+    const bash = block("partial-command", "preview", {
+      type: "tool_call",
+      toolName: "Bash",
+      toolArgs: JSON.stringify({ command: "printf partial" }),
+      truncatedContent: true,
+    });
+
+    expect(buildDisplayItems([patch, bash], { compact: true })).toEqual([
+      { kind: "block", key: "partial-patch", block: patch },
+      { kind: "block", key: "partial-command", block: bash },
+    ]);
+  });
 });

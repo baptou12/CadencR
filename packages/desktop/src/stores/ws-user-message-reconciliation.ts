@@ -1,6 +1,8 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { applyBlockContentBudget } from "@/lib/block-content-budget";
 import { normalizeMessageUuid } from "@/lib/message-uuid";
+import { isFileChangeTool } from "@/lib/tool-adapter";
+import { parseToolArgsObject } from "@/lib/tool-args";
 import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 
 export { normalizeMessageUuid } from "@/lib/message-uuid";
@@ -85,7 +87,20 @@ export function mergeCanonicalBlocks(
       registerIdentity(indexes, block, index);
       continue;
     }
-    if (block.type !== "user_message") continue;
+    if (block.type !== "user_message") {
+      const original = working[matchIndex];
+      const held = enrichFileChangeCall(original, block);
+      if (!block.childBlocks?.length && held === original) continue;
+      const mergedChildren = block.childBlocks?.length
+        ? mergeCanonicalBlocks(held.childBlocks ?? [], block.childBlocks)
+        : held.childBlocks;
+      if (mergedChildren === held.childBlocks && held === original) continue;
+      if (!changed) working = [...existing];
+      changed = true;
+      working[matchIndex] =
+        mergedChildren === held.childBlocks ? held : { ...held, childBlocks: mergedChildren };
+      continue;
+    }
     const nextBlock = mergeCanonicalUserBlock(working[matchIndex], block);
     if (canonicalBlocksEqual(working[matchIndex], nextBlock)) continue;
     if (!changed) working = [...existing];
@@ -100,6 +115,19 @@ export function mergeCanonicalBlocks(
       ? working
       : mergeAdditionsByDatabaseOrder(working.slice(0, existing.length), additions);
   return movePendingPromptBlocksToTail(merged);
+}
+
+function enrichFileChangeCall(held: AgentBlockData, incoming: AgentBlockData): AgentBlockData {
+  if (held.type !== "tool_call" || !isFileChangeTool(held.toolName)) return held;
+  const current = parseToolArgsObject(held.toolArgs ?? held.content);
+  if (!current || "patch_text" in current) return held;
+  if (incoming.truncatedContent) {
+    return held.truncatedContent ? held : { ...held, truncatedContent: true };
+  }
+  const enriched = parseToolArgsObject(incoming.toolArgs ?? incoming.content);
+  if (!enriched || !("patch_text" in enriched)) return held;
+  const content = JSON.stringify({ ...current, patch_text: enriched.patch_text });
+  return applyBlockContentBudget({ ...held, content, toolArgs: content });
 }
 
 export function sameMessageIdentity(left: AgentBlockData, right: AgentBlockData): boolean {

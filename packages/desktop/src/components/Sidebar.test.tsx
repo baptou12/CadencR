@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
 import { Sidebar } from "./Sidebar";
+import { collectSidebarNavItems } from "@/hooks/useSidebarKeyboardNavigation";
 
 const mockNavigate = vi.fn();
 
@@ -262,5 +263,21 @@ describe("Sidebar", () => {
     };
     render(<Sidebar onSearch={() => {}} />);
     expect(screen.getByText("Cadencr")).toBeInTheDocument();
+  });
+});
+
+describe("collectSidebarNavItems", () => {
+  it("keeps virtual sections as logical boundaries instead of recycled children", () => {
+    const sidebar = document.createElement("aside");
+    sidebar.innerHTML = `
+      <button data-nav-item id="before"></button>
+      <div data-virtual-nav-list id="virtual"><button data-nav-item id="recycled"></button></div>
+      <button data-nav-item id="after"></button>
+    `;
+    expect(collectSidebarNavItems(sidebar).map((element) => element.id)).toEqual([
+      "before",
+      "virtual",
+      "after",
+    ]);
   });
 });

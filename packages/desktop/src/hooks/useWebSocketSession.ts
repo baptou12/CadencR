@@ -231,6 +231,7 @@ function usePersistedSessionLoader(
       hasMore: lastSession.hasMore,
       oldestMessageId: lastSession.oldestMessageId,
       maxMessageId: lastSession.maxMessageId,
+      maxContentRevision: lastSession.maxContentRevision,
       featureId,
       sessionDbId: lastSession.sessionDbId,
       currentSelection:

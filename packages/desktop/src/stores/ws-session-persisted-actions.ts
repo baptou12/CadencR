@@ -82,6 +82,7 @@ function buildSessionMetaPatch(options: SessionMetaPatchOptions): Partial<Sessio
     hasMore: payload.hasMore ?? false,
     oldestMessageId: payload.oldestMessageId ?? null,
     lastAppliedMessageId: payload.maxMessageId ?? null,
+    lastAppliedContentRevision: payload.maxContentRevision ?? null,
     featureId: payload.featureId ?? null,
     sessionDbId: payload.sessionDbId ?? null,
     lifecycle:
