@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { buildDisplayItems } from "@/components/agentStreamDisplay";
 import { createSessionEntry, type SessionEntry, type WsSessionStore } from "./ws-session-types";
 import { applyPersistedState, loadOlderSessionMessages } from "./ws-session-actions";
 import type { StoreAccessors } from "./ws-envelope-handler";
@@ -126,6 +127,88 @@ describe("ws session history pagination", () => {
       "msg-200",
       "msg-201",
     ]);
+  });
+
+  it("preserves bounded compact chunks across consecutive history prepend seams", async () => {
+    const currentBlocks = Array.from({ length: 50 }, (_, index) =>
+      makeBlock(`msg-${300 + index}`, "read", "tool_call", { toolName: "Read" }),
+    );
+    const firstPage = Array.from({ length: 30 }, (_, index) =>
+      makeBlock(`msg-${170 + index}`, "read", "tool_call", { toolName: "Read" }),
+    );
+    const secondPage = Array.from({ length: 10 }, (_, index) =>
+      makeBlock(`msg-${160 + index}`, "read", "tool_call", { toolName: "Read" }),
+    );
+    const ctx = createCtx(createPaginationSession(currentBlocks));
+    apiMocks.getFeatureAgentState
+      .mockResolvedValueOnce({
+        sessions: [{ sessionDbId: 2586, blocks: firstPage, hasMore: true, oldestMessageId: 170 }],
+      })
+      .mockResolvedValueOnce({
+        sessions: [{ sessionDbId: 2586, blocks: secondPage, hasMore: false, oldestMessageId: 160 }],
+      });
+
+    await loadOlderSessionMessages(ctx, "s1", { compactMode: true });
+    await loadOlderSessionMessages(ctx, "s1", { compactMode: true });
+
+    const session = ctx.get().sessions.s1;
+    expect(session.historyPrependDisplayOffset).toBe(8);
+    expect(session.blocks.find((block) => block.id === "msg-170")?.compactFlowBreakBefore).toBe(
+      true,
+    );
+    expect(session.blocks.find((block) => block.id === "msg-300")?.compactFlowBreakBefore).toBe(
+      true,
+    );
+    expect(session.rootBlocks.find((block) => block.id === "msg-300")?.compactFlowBreakBefore).toBe(
+      true,
+    );
+  });
+
+  it("marks a cloned Task boundary without dropping newly merged children", async () => {
+    const task = makeBlock("msg-300", "{}", "tool_call", {
+      toolName: "Task",
+      toolUseId: "task-300",
+      taskComplete: true,
+      childBlocks: [makeBlock("child-current", "current child")],
+    });
+    const trailing = Array.from({ length: 50 }, (_, index) =>
+      makeBlock(`msg-${301 + index}`, "read", "tool_call", { toolName: "Read" }),
+    );
+    const currentBlocks = [task, ...trailing];
+    const before = buildDisplayItems(currentBlocks, { compact: true });
+    const duplicateTask = makeBlock("msg-300", "{}", "tool_call", {
+      toolName: "Task",
+      toolUseId: "task-300",
+      childBlocks: [makeBlock("child-older", "older child")],
+    });
+    const olderRoot = makeBlock("msg-200", "read", "tool_call", { toolName: "Read" });
+    const ctx = createCtx(createPaginationSession(currentBlocks));
+    apiMocks.getFeatureAgentState.mockResolvedValue({
+      sessions: [
+        {
+          sessionDbId: 2586,
+          blocks: [olderRoot, duplicateTask],
+          hasMore: false,
+          oldestMessageId: 200,
+        },
+      ],
+    });
+
+    await loadOlderSessionMessages(ctx, "s1", { compactMode: true });
+
+    const session = ctx.get().sessions.s1;
+    const mergedTask = session.blocks.find((block) => block.id === task.id);
+    expect(mergedTask?.compactFlowBreakBefore).toBe(true);
+    expect(mergedTask?.childBlocks?.map((child) => child.id)).toEqual([
+      "child-current",
+      "child-older",
+    ]);
+    const after = buildDisplayItems(session.blocks, { compact: true });
+    const firstCurrentRow = after.findIndex((item) => item.key === before[0].key);
+    expect(firstCurrentRow).toBe(1);
+    expect(after.slice(firstCurrentRow).map((item) => item.key)).toEqual(
+      before.map((item) => item.key),
+    );
   });
 
   it("resets historyPrependDisplayOffset when persisted state replaces a session", () => {

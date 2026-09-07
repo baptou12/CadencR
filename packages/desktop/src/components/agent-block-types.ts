@@ -63,6 +63,8 @@ export interface AgentBlockData {
   errorCode?: string;
   /** Provenance for machine-generated user messages. */
   origin?: AgentMessageOrigin | null;
+  /** Keep compact-flow chunks stable across a paginated history seam. */
+  compactFlowBreakBefore?: true;
 }
 
 /** Whether a bounded wire preview must stay inert until explicitly expanded. */

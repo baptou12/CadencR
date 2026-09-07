@@ -6,12 +6,15 @@ import { shouldHideToolCall } from "@/lib/tool-display-policy";
 /**
  * A renderable row in the agent stream. In every mode except "compact" each
  * block is its own row. In "compact" mode, consecutive non-text blocks are
- * folded into a single `flow` row so the renderer can lay them out as a
- * flex-wrap of tiles between text/user-message rows.
+ * folded into bounded `flow` rows so the outer Virtuoso can still window long
+ * tool runs while the renderer lays each chunk out as a flex-wrap of tiles.
  */
 export type DisplayItem =
   | { kind: "block"; key: string; block: AgentBlockData }
   | { kind: "flow"; key: string; blocks: AgentBlockData[] };
+
+/** Maximum tiles mounted by one compact-flow Virtuoso row. */
+export const MAX_COMPACT_FLOW_BLOCKS = 24;
 
 const FLOW_BREAKING_TYPES = new Set<AgentBlockData["type"]>([
   "text",
@@ -62,8 +65,10 @@ export function buildDisplayItems(
     buffer = [];
   };
   for (const block of blocks) {
+    if (block.compactFlowBreakBefore) flushBuffer();
     if (isFlowEligible(block)) {
       buffer.push(block);
+      if (buffer.length === MAX_COMPACT_FLOW_BLOCKS) flushBuffer();
       continue;
     }
     flushBuffer();
@@ -94,6 +99,15 @@ export function filterRenderableBlocks(blocks: AgentBlockData[]): AgentBlockData
 
 export function deriveAgentStreamDisplayBlocks(blocks: AgentBlockData[]): AgentBlockData[] {
   return filterRenderableBlocks(blocks.filter((block) => !block.parentToolUseId));
+}
+
+/** First visible block only when it could continue a compact run across a prepend seam. */
+export function leadingCompactFlowBlock(blocks: AgentBlockData[]): AgentBlockData | undefined {
+  for (const block of blocks) {
+    if (block.parentToolUseId || isHiddenByRenderer(block)) continue;
+    return isFlowEligible(block) ? block : undefined;
+  }
+  return undefined;
 }
 
 /**
