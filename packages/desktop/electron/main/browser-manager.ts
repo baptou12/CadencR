@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { BrowserWindow, WebContentsView } from "electron";
+import { BrowserWindow } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
 import type { BrowserDomOutline, BrowserDomSnapshot, BrowserEvalResult } from "./browser-dom";
 import {
@@ -8,6 +7,8 @@ import {
   selectElementContext,
 } from "./browser-comment-context";
 import { BrowserFocusGuard } from "./browser-focus-guard";
+import { BrowserAutomationAuthority } from "./browser-automation-authority";
+import { toggleTabDevTools } from "./browser-devtools";
 import {
   clickPage,
   clickTargetPage,
@@ -30,19 +31,22 @@ import {
 import { BrowserNetworkCollector } from "./browser-network-collector";
 import { BrowserOriginStore } from "./browser-origin-store";
 import { installTabEvents, type ManagedTab } from "./browser-tab-events";
+import { BrowserTabCloseController } from "./browser-tab-close-controller";
+import { BrowserTabLifecycle } from "./browser-tab-lifecycle";
+import { isPrivateProfile } from "./browser-session-lifecycle";
 import { BrowserScopeState } from "./browser-scope-state";
+import { BrowserSiteApi } from "./browser-site-api";
+import { BrowserSiteController } from "./browser-site-controller";
 import { contentOffset, scaleBounds, windowRelativeBounds } from "./browser-manager-layout";
 import { BrowserViewLayout } from "./browser-view-layout";
 import {
-  metadataFor,
   originOf,
   profileFromSelection,
   pushBounded,
   reclaimFocusForShortcut,
-  secureWebPreferences,
   zoomWebContents,
 } from "./browser-manager-utils";
-import { createBrowserProfile } from "./browser-profiles";
+import type { BrowserProfile } from "./browser-profiles";
 import { sendToWindow } from "./safe-send";
 import {
   MAX_NETWORK_PER_TAB,
@@ -51,6 +55,7 @@ import {
 } from "./browser-manager-tabs";
 import type {
   BrowserBounds,
+  BrowserAgentAccess,
   BrowserElementContext,
   BrowserOpenUrlOptions,
   BrowserShortcut,
@@ -65,13 +70,37 @@ export class BrowserManager {
   private lastError: string | null = null;
   readonly focusGuard = new BrowserFocusGuard(() => this.getMainWindow());
   private readonly layout = new BrowserViewLayout(() => this.getMainWindow());
+  private readonly tabLifecycle = new BrowserTabLifecycle(this.tabs, this.layout);
+  private readonly tabCloser = new BrowserTabCloseController(
+    this.tabs,
+    this.scopes,
+    this.tabLifecycle,
+    {
+      emitCounts: () => this.emitTabCountsIfChanged(),
+      activate: (tabId) => this.activateTab(tabId),
+      applyLayout: () => this.applyLayout(),
+      emitState: (scope) => this.emitState(scope),
+      reportError: (error, scope) => {
+        this.lastError = error instanceof Error ? error.message : String(error);
+        this.emitState(scope);
+      },
+    },
+  );
   private readonly origins = new BrowserOriginStore();
   private readonly network = new BrowserNetworkCollector((webContentsId, entry) => {
-    const tab = [...this.tabs.values()].find((t) => t.view.webContents.id === webContentsId);
+    const tab = [...this.tabs.values()].find((t) => t.webContents.id === webContentsId);
     if (!tab) return;
     pushBounded(tab.networkEntries, { ...entry, tabId: tab.metadata.id }, MAX_NETWORK_PER_TAB);
     this.emitState(tab.metadata.scopeId);
   });
+  private readonly siteController = new BrowserSiteController({
+    send: (channel, payload) => sendToWindow(this.getMainWindow(), channel, payload),
+    reportError: (message) => {
+      this.lastError = message;
+    },
+  });
+  readonly site = new BrowserSiteApi(this.siteController, (tabId) => this.requireTab(tabId));
+  readonly automation = new BrowserAutomationAuthority(this.tabs, (scopeId) => this.state(scopeId));
 
   constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
 
@@ -80,46 +109,52 @@ export class BrowserManager {
     profileId = "fresh",
     scopeId: number | null = null,
   ): BrowserTabMetadata {
-    const id = randomUUID();
     const profile = profileFromSelection(profileId);
-    const view = new WebContentsView({
-      webPreferences: secureWebPreferences(profile),
-    });
-    const tab: ManagedTab = {
-      metadata: metadataFor(id, profileId, scopeId),
-      view,
-      devtoolsView: null,
-      consoleEntries: [],
-      networkEntries: [],
-      externalAutomationOrigin: null,
-    };
-    this.tabs.set(id, tab);
-    this.emitTabCountsIfChanged();
-    installTabEvents(tab, {
-      emitState: () => this.emitState(scopeId),
-      setLastError: (message) => {
-        this.lastError = message;
-      },
-      openChildTab: (url, childProfileId) => this.openChildTab(url, childProfileId, scopeId),
-      recordOrigin: (url) => this.origins.record(url),
-      emitShortcut: (shortcut) => this.emitShortcut(shortcut),
-      emitCommentBadgeClick: (id, anchorId, box) =>
-        sendToWindow(this.getMainWindow(), "browser:comment-badge-click", {
-          tabId: id,
-          anchorId,
-          box,
-        }),
-    });
-    this.network.ensure(view.webContents.session);
-    this.focusGuard.watch(view.webContents);
-    this.activateTab(id);
-    if (rawUrl) this.navigate(id, rawUrl);
-    this.emitState(scopeId);
-    return tab.metadata;
+    return this.createTabInProfile(rawUrl, profileId, profile, scopeId);
   }
 
-  listTabs(scopeId?: number | null): BrowserTabMetadata[] {
-    return this.state(scopeId).tabs;
+  private createTabInProfile(
+    rawUrl: string | undefined,
+    selectionId: string,
+    profile: BrowserProfile,
+    scopeId: number | null,
+    automationAccess: BrowserAgentAccess = "user",
+  ): BrowserTabMetadata {
+    const tab = this.tabLifecycle.create(selectionId, profile, scopeId, automationAccess);
+    const id = tab.metadata.id;
+    try {
+      installTabEvents(tab, {
+        emitState: () => this.emitState(scopeId),
+        setLastError: (message) => {
+          this.lastError = message;
+        },
+        openChildTab: (url) => this.openChildTab(url, tab),
+        isTabAlive: () => this.tabs.has(id),
+        tabDestroyed: () => this.tabCloser.handleNativeDestroyed(tab),
+        recordOrigin: isPrivateProfile(profile)
+          ? () => undefined
+          : (url) => this.origins.record(url),
+        emitShortcut: (shortcut) => this.emitShortcut(shortcut),
+        emitCommentBadgeClick: (id, anchorId, box) =>
+          sendToWindow(this.getMainWindow(), "browser:comment-badge-click", {
+            tabId: id,
+            anchorId,
+            box,
+          }),
+      });
+      this.network.ensure(tab.webContents.session);
+      this.focusGuard.watch(tab.webContents);
+      this.tabLifecycle.register(tab);
+      this.siteController.registerTab(tab);
+      this.emitTabCountsIfChanged();
+      this.activateTab(id);
+      if (rawUrl) this.navigate(id, rawUrl);
+      this.emitState(scopeId);
+      return tab.metadata;
+    } catch (error) {
+      this.tabCloser.discardFailed(tab, error);
+      throw error;
+    }
   }
 
   tabCountsByScope(): Record<number, number> {
@@ -131,7 +166,7 @@ export class BrowserManager {
     const url = normalizeBrowserOpenUrl(rawUrl);
     this.lastError = null;
     this.emitState(tab.metadata.scopeId);
-    void tab.view.webContents.loadURL(url).catch((error: unknown) => {
+    void tab.webContents.loadURL(url).catch((error: unknown) => {
       this.lastError = error instanceof Error ? error.message : String(error);
       this.emitState(tab.metadata.scopeId);
     });
@@ -147,11 +182,6 @@ export class BrowserManager {
     return tab.metadata;
   }
 
-  /**
-   * Hide (or restore) every native view. Called when a renderer overlay opens
-   * so React dialogs/popovers aren't painted under the always-on-top guest
-   * page. Idempotent.
-   */
   setSuppressed(value: boolean): void {
     if (this.layout.setSuppressed(value)) this.applyLayout();
   }
@@ -160,51 +190,15 @@ export class BrowserManager {
     this.layout.apply(this.tabs, this.scopes.active, this.scopes.bounds);
   }
 
-  /** Detach and destroy a tab's native views, then drop it from the map. The
-   *  caller handles scope promotion and emitting counts/layout/state. */
-  private destroyTab(tab: ManagedTab): void {
-    this.layout.detach(tab.view);
-    if (tab.devtoolsView) this.layout.detach(tab.devtoolsView);
-    tab.view.webContents.close();
-    this.tabs.delete(tab.metadata.id);
-  }
-
-  closeTab(tabId: string): BrowserStateSnapshot {
+  async closeTab(tabId: string): Promise<BrowserStateSnapshot> {
     const tab = this.requireTab(tabId);
     const scope = tab.metadata.scopeId;
-    this.destroyTab(tab);
-    this.emitTabCountsIfChanged();
-    // Closing a scope's active tab promotes the next tab *in the same scope*,
-    // so closing a tab never reveals another feature's tab.
-    const next = this.scopes.forget(scope, tabId, this.tabs);
-    if (next) {
-      this.activateTab(next);
-      return this.state(scope);
-    }
-    this.scopes.refreshActiveFlags(this.tabs);
-    this.applyLayout();
-    this.emitState(scope);
+    await this.tabCloser.close(tab);
     return this.state(scope);
   }
 
-  /**
-   * Close every tab belonging to a feature scope in one pass. Used by the
-   * sidebar "Close terminals & browsers" action so the user can tear down a
-   * feature's browsers without entering it. Destroys all of the scope's tabs
-   * first, then emits counts/layout/state once — going through `closeTab`
-   * per tab would promote (and re-render) intermediate tabs we're about to
-   * destroy anyway. Returns the (now empty) snapshot for that scope.
-   */
-  closeTabsForScope(scopeId: number): BrowserStateSnapshot {
-    const tabs = [...this.tabs.values()].filter((tab) => tab.metadata.scopeId === scopeId);
-    for (const tab of tabs) {
-      this.destroyTab(tab);
-      this.scopes.forget(scopeId, tab.metadata.id, this.tabs);
-    }
-    this.emitTabCountsIfChanged();
-    this.scopes.refreshActiveFlags(this.tabs);
-    this.applyLayout();
-    this.emitState(scopeId);
+  async closeTabsForScope(scopeId: number): Promise<BrowserStateSnapshot> {
+    await this.tabCloser.closeScope(scopeId);
     return this.state(scopeId);
   }
 
@@ -214,10 +208,6 @@ export class BrowserManager {
     zoomFactor?: number,
   ): BrowserStateSnapshot {
     const win = this.getMainWindow();
-    // Prefer the renderer-supplied zoom factor: it was read in the same process
-    // and instant as the getBoundingClientRect measurement, so bounds and factor
-    // always agree. Reading our own getZoomFactor() races with zoom propagation
-    // and mis-places the view toward the origin until the next zoom change.
     const factor = zoomFactor ?? win?.webContents.getZoomFactor() ?? 1;
     this.scopes.setBounds(
       scopeId,
@@ -228,69 +218,61 @@ export class BrowserManager {
   }
 
   goBack(tabId: string): void {
-    const contents = this.requireTab(tabId).view.webContents;
+    const contents = this.requireTab(tabId).webContents;
     if (contents.canGoBack()) contents.goBack();
   }
 
   goForward(tabId: string): void {
-    const contents = this.requireTab(tabId).view.webContents;
+    const contents = this.requireTab(tabId).webContents;
     if (contents.canGoForward()) contents.goForward();
   }
 
   reload(tabId: string): void {
-    this.requireTab(tabId).view.webContents.reload();
+    this.requireTab(tabId).webContents.reload();
   }
 
   stop(tabId: string): void {
-    this.requireTab(tabId).view.webContents.stop();
+    this.requireTab(tabId).webContents.stop();
   }
 
   zoomIn(tabId: string): void {
-    zoomWebContents(this.requireTab(tabId).view.webContents, "in");
+    zoomWebContents(this.requireTab(tabId).webContents, "in");
   }
 
   zoomOut(tabId: string): void {
-    zoomWebContents(this.requireTab(tabId).view.webContents, "out");
+    zoomWebContents(this.requireTab(tabId).webContents, "out");
   }
 
   toggleDevTools(tabId: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
-    if (!tab.devtoolsView) {
-      tab.devtoolsView = new WebContentsView({
-        webPreferences: secureWebPreferences(createBrowserProfile("fresh")),
-      });
-      tab.view.webContents.setDevToolsWebContents(tab.devtoolsView.webContents);
-    }
-    const open = !tab.metadata.devToolsOpen;
-    tab.metadata = { ...tab.metadata, devToolsOpen: open };
-    this.applyLayout();
-    if (open) tab.view.webContents.openDevTools({ mode: "detach" });
-    else tab.view.webContents.closeDevTools();
-    this.emitState(tab.metadata.scopeId);
-    return tab.metadata;
+    return toggleTabDevTools(
+      tab,
+      () => this.applyLayout(),
+      () => this.emitState(tab.metadata.scopeId),
+    );
   }
 
   async openUrl(url: string, options: BrowserOpenUrlOptions = {}): Promise<BrowserTabMetadata> {
     const scopeId = options.scopeId ?? null;
-    const targetTabId =
-      options.tabId ?? (options.newTab === true ? null : this.scopes.activeTabId(scopeId));
+    const activeTabId = options.newTab === true ? null : this.scopes.activeTabId(scopeId);
+    const targetTabId = options.tabId ?? activeTabId;
+    if (targetTabId) this.automation.assert(targetTabId, scopeId);
     const meta = targetTabId
       ? this.navigate(targetTabId, url)
-      : this.createTab(url, "fresh", scopeId);
-    await waitForLoad(this.requireTab(meta.id).view.webContents);
+      : this.createTabInProfile(url, "fresh", profileFromSelection("fresh"), scopeId, "agent");
+    await waitForLoad(this.requireTab(meta.id).webContents);
+    this.automation.assert(meta.id, scopeId);
     return this.requireTab(meta.id).metadata;
   }
 
-  // Permission-gated external opener (browser_open_external_url). Opens any web
-  // URL and unlocks automation for the resulting origin only; if the tab later
-  // navigates to a different origin it re-locks (see assertMutatingAllowed).
   async openExternalUrl(
     url: string,
     options: BrowserOpenUrlOptions = {},
   ): Promise<BrowserTabMetadata> {
     const meta = await this.openUrl(url, options);
     const tab = this.requireTab(meta.id);
-    tab.externalAutomationOrigin = originOf(tab.view.webContents.getURL());
+    this.automation.assert(meta.id, options.scopeId ?? null);
+    tab.externalAutomationOrigin = originOf(tab.webContents.getURL());
     return tab.metadata;
   }
 
@@ -307,8 +289,12 @@ export class BrowserManager {
     return screenshotPage(this.requireTab(tabId), clip);
   }
 
-  async screenshotTarget(tabId: string, target: BrowserTarget): Promise<string> {
-    return screenshotTargetPage(this.requireTab(tabId), target);
+  async screenshotTarget(
+    tabId: string,
+    target: BrowserTarget,
+    authorize?: () => void,
+  ): Promise<string> {
+    return screenshotTargetPage(this.requireTab(tabId), target, authorize);
   }
 
   async evaluate(tabId: string, script: string): Promise<BrowserEvalResult> {
@@ -327,12 +313,20 @@ export class BrowserManager {
     keypressPage(this.requireTab(tabId), keyCode);
   }
 
-  async clickTarget(tabId: string, target: BrowserTarget): Promise<ResolvedTarget> {
-    return clickTargetPage(this.requireTab(tabId), target);
+  async clickTarget(
+    tabId: string,
+    target: BrowserTarget,
+    authorize?: () => void,
+  ): Promise<ResolvedTarget> {
+    return clickTargetPage(this.requireTab(tabId), target, authorize);
   }
 
-  async hover(tabId: string, target: BrowserTarget): Promise<ResolvedTarget> {
-    return hoverPage(this.requireTab(tabId), target);
+  async hover(
+    tabId: string,
+    target: BrowserTarget,
+    authorize?: () => void,
+  ): Promise<ResolvedTarget> {
+    return hoverPage(this.requireTab(tabId), target, authorize);
   }
 
   async fill(tabId: string, target: BrowserTarget, value: string): Promise<void> {
@@ -363,12 +357,18 @@ export class BrowserManager {
     return this.scopes.snapshot(scopeId, this.tabs, this.origins.list(), this.lastError);
   }
 
-  private openChildTab(url: string, profileId: string, scopeId: number | null): void {
+  private openChildTab(url: string, parent: ManagedTab): void {
     try {
-      this.createTab(url, profileId, scopeId);
+      this.createTabInProfile(
+        url,
+        parent.metadata.sessionProfileId,
+        parent.profile,
+        parent.metadata.scopeId,
+        parent.automationAccess,
+      );
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
-      this.emitState(scopeId);
+      this.emitState(parent.metadata.scopeId);
     }
   }
 
@@ -378,7 +378,6 @@ export class BrowserManager {
     return tab;
   }
 
-  /** Push the snapshot only to the feature scope changed by an operation. */
   private emitState(scope: number | null): void {
     const win = this.getMainWindow();
     if (scope === null) return;

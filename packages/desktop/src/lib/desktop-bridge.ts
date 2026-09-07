@@ -7,6 +7,10 @@ import type {
   BrowserElementContext,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
+  BrowserSiteInfo,
+  BrowserSitePermission,
+  BrowserSitePermissionDecision,
+  BrowserSitePermissionRequest,
   BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
@@ -14,11 +18,16 @@ import type {
 
 export type {
   BrowserBounds,
+  BrowserAgentAccess,
   BrowserCommentBadgeClick,
   BrowserConsoleEntry,
   BrowserElementContext,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
+  BrowserSiteInfo,
+  BrowserSitePermission,
+  BrowserSitePermissionDecision,
+  BrowserSitePermissionRequest,
   BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
@@ -201,6 +210,20 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   createBrowserProfile: (profileId: string) => Promise<BrowserProfileMetadata>;
   duplicateBrowserProfile: (sourceId: string, newId: string) => Promise<BrowserProfileMetadata>;
   deleteBrowserProfile: (profileId: string) => Promise<void>;
+  getBrowserSiteInfo: (tabId: string) => Promise<BrowserSiteInfo>;
+  setBrowserSitePermission: (
+    tabId: string,
+    origin: string,
+    permission: BrowserSitePermission,
+    decision: BrowserSitePermissionDecision,
+  ) => Promise<BrowserSiteInfo>;
+  clearBrowserSiteData: (tabId: string, origin: string) => Promise<BrowserSiteInfo>;
+  setBrowserAgentSharing: (
+    tabId: string,
+    origin: string,
+    shared: boolean,
+  ) => Promise<BrowserSiteInfo>;
+  resolveBrowserPermissionRequest: (requestId: string, allowed: boolean) => Promise<void>;
   browserBack: (tabId: string) => Promise<void>;
   browserForward: (tabId: string) => Promise<void>;
   browserReload: (tabId: string) => Promise<void>;
@@ -225,6 +248,8 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void) => () => void;
   /** A user click on an on-page comment badge, to reopen that comment's composer. */
   onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void) => () => void;
+  onBrowserPermissionRequest: (cb: (request: BrowserSitePermissionRequest) => void) => () => void;
+  onBrowserPermissionRequestCancelled: (cb: (event: { requestId: string }) => void) => () => void;
 }
 
 declare global {
@@ -316,6 +341,11 @@ const browserBridge: CadencrBrowserBridge = {
   createBrowserProfile: () => unavailable("createBrowserProfile"),
   duplicateBrowserProfile: () => unavailable("duplicateBrowserProfile"),
   deleteBrowserProfile: () => unavailable("deleteBrowserProfile"),
+  getBrowserSiteInfo: () => unavailable("getBrowserSiteInfo"),
+  setBrowserSitePermission: () => unavailable("setBrowserSitePermission"),
+  clearBrowserSiteData: () => unavailable("clearBrowserSiteData"),
+  setBrowserAgentSharing: () => unavailable("setBrowserAgentSharing"),
+  resolveBrowserPermissionRequest: () => unavailable("resolveBrowserPermissionRequest"),
   browserBack: () => unavailable("browserBack"),
   browserForward: () => unavailable("browserForward"),
   browserReload: () => unavailable("browserReload"),
@@ -338,6 +368,8 @@ const browserBridge: CadencrBrowserBridge = {
   onBrowserTabCounts: () => () => undefined,
   onBrowserShortcut: () => () => undefined,
   onBrowserCommentBadgeClick: () => () => undefined,
+  onBrowserPermissionRequest: () => () => undefined,
+  onBrowserPermissionRequestCancelled: () => () => undefined,
   checkForUpdates: () => unavailable("checkForUpdates"),
   installUpdate: () => unavailable("installUpdate"),
   fetchChangelog: () => Promise.resolve(null),

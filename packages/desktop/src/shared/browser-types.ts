@@ -4,6 +4,41 @@ export interface BrowserProfileMetadata {
   mode: "fresh" | "feature" | "persistent";
 }
 
+export const BROWSER_SITE_PERMISSIONS = ["camera", "microphone", "location", "clipboard"] as const;
+
+export type BrowserSitePermission = (typeof BROWSER_SITE_PERMISSIONS)[number];
+
+export const BROWSER_SITE_PERMISSION_DECISIONS = ["ask", "allow", "deny"] as const;
+
+export type BrowserSitePermissionDecision = (typeof BROWSER_SITE_PERMISSION_DECISIONS)[number];
+
+/** Maximum inline favicon URL accepted across the main/renderer boundary. */
+export const MAX_BROWSER_FAVICON_DATA_URL_LENGTH = 256 * 1024;
+
+/** Whether an agent may inspect or automate this specific tab. */
+export type BrowserAgentAccess = "user" | "shared" | "agent";
+
+export interface BrowserSiteInfo {
+  tabId: string;
+  /** The live main-frame origin. `null` for pages such as `about:blank`. */
+  origin: string | null;
+  secure: boolean;
+  profile: BrowserProfileMetadata;
+  privacy: "normal" | "private" | "feature";
+  permissions: Record<BrowserSitePermission, BrowserSitePermissionDecision>;
+  agentAccess: BrowserAgentAccess;
+}
+
+/** A website permission prompt emitted by the main process for one live tab. */
+export interface BrowserSitePermissionRequest {
+  requestId: string;
+  tabId: string;
+  scopeId: number | null;
+  origin: string;
+  topOrigin: string;
+  permissions: BrowserSitePermission[];
+}
+
 export interface BrowserTabMetadata {
   id: string;
   title: string;

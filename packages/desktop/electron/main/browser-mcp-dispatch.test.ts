@@ -18,15 +18,17 @@ function tabMeta(): BrowserTabMetadata {
 }
 
 function target(): BrowserMcpTarget {
+  const state = vi.fn(() => ({
+    tabs: [],
+    activeTabId: "tab-1",
+    knownOrigins: [],
+    consoleEntries: [],
+    networkEntries: [],
+    error: null,
+  }));
   return {
-    state: vi.fn(() => ({
-      tabs: [],
-      activeTabId: "tab-1",
-      knownOrigins: [],
-      consoleEntries: [],
-      networkEntries: [],
-      error: null,
-    })),
+    state,
+    automation: { state, assert: vi.fn(), guard: vi.fn(() => vi.fn()) },
     openUrl: vi.fn(async () => tabMeta()),
     openExternalUrl: vi.fn(async () => tabMeta()),
     snapshot: vi.fn(async () => ({ found: true, outline: "[e1] button" })),
@@ -62,6 +64,58 @@ describe("dispatchBrowserMcpTool", () => {
       newTab: false,
       scopeId: undefined,
     });
+  });
+
+  it("discards an in-flight read result after sharing is revoked", async () => {
+    const fake = target();
+    let shared = true;
+    let finish: (value: unknown) => void = () => {
+      throw new Error("Snapshot did not start.");
+    };
+    fake.automation.assert = vi.fn(() => {
+      if (!shared) throw new Error("Browser tab is not shared with the agent.");
+    });
+    fake.snapshot = vi.fn(() => new Promise((resolve) => (finish = resolve)));
+    const pending = dispatchBrowserMcpTool(fake, "browser_get_snapshot", {});
+    shared = false;
+    finish({ secret: "must not escape" });
+
+    await expect(pending).rejects.toThrow("not shared");
+  });
+
+  it("rechecks sharing after delayed target resolution before clicking", async () => {
+    const fake = target();
+    let shared = true;
+    let finish: () => void = () => {
+      throw new Error("Click did not start.");
+    };
+    let mutated = false;
+    const assertShared = (): void => {
+      if (!shared) throw new Error("Browser tab is not shared with the agent.");
+    };
+    fake.automation.assert = vi.fn(assertShared);
+    fake.automation.guard = vi.fn(() => assertShared);
+    fake.clickTarget = vi.fn(
+      (_tabId, _target, authorize) =>
+        new Promise((resolve, reject) => {
+          finish = () => {
+            try {
+              authorize?.();
+            } catch (error) {
+              reject(error);
+              throw error;
+            }
+            mutated = true;
+            resolve({ ok: true });
+          };
+        }),
+    );
+    const pending = dispatchBrowserMcpTool(fake, "browser_click", { ref: "e1" });
+    shared = false;
+    expect(() => finish()).toThrow("not shared");
+
+    await expect(pending).rejects.toThrow("not shared");
+    expect(mutated).toBe(false);
   });
 
   it("forwards new_tab for browser_open_url", async () => {
@@ -147,10 +201,11 @@ describe("dispatchBrowserMcpTool", () => {
     const result = await dispatchBrowserMcpTool(fake, "browser_screenshot", {
       selector: ".hero",
     });
-    expect(fake.screenshotTarget).toHaveBeenCalledWith("tab-1", {
-      selector: ".hero",
-      ref: undefined,
-    });
+    expect(fake.screenshotTarget).toHaveBeenCalledWith(
+      "tab-1",
+      { selector: ".hero", ref: undefined },
+      expect.any(Function),
+    );
     expect(fake.screenshot).not.toHaveBeenCalled();
     expect(result.image).toEqual({ mimeType: "image/png", data: "elpng" });
   });
@@ -158,10 +213,11 @@ describe("dispatchBrowserMcpTool", () => {
   it("captures a region screenshot from a ref", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_screenshot", { ref: "e7" });
-    expect(fake.screenshotTarget).toHaveBeenCalledWith("tab-1", {
-      selector: undefined,
-      ref: "e7",
-    });
+    expect(fake.screenshotTarget).toHaveBeenCalledWith(
+      "tab-1",
+      { selector: undefined, ref: "e7" },
+      expect.any(Function),
+    );
   });
 
   it("captures a region screenshot from an explicit clip", async () => {
@@ -193,10 +249,11 @@ describe("dispatchBrowserMcpTool", () => {
   it("clicks by ref when one is supplied", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_click", { ref: "e3" });
-    expect(fake.clickTarget).toHaveBeenCalledWith("tab-1", {
-      selector: undefined,
-      ref: "e3",
-    });
+    expect(fake.clickTarget).toHaveBeenCalledWith(
+      "tab-1",
+      { selector: undefined, ref: "e3" },
+      expect.any(Function),
+    );
     expect(fake.click).not.toHaveBeenCalled();
   });
 
@@ -227,10 +284,11 @@ describe("dispatchBrowserMcpTool", () => {
   it("hovers an element by ref", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_hover", { ref: "e2" });
-    expect(fake.hover).toHaveBeenCalledWith("tab-1", {
-      selector: undefined,
-      ref: "e2",
-    });
+    expect(fake.hover).toHaveBeenCalledWith(
+      "tab-1",
+      { selector: undefined, ref: "e2" },
+      expect.any(Function),
+    );
   });
 
   it("waits for a selector and serializes the result", async () => {

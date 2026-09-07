@@ -1,0 +1,25 @@
+import { WebContentsView } from "electron";
+import { secureWebPreferences } from "./browser-manager-utils";
+import type { ManagedTab } from "./browser-tab-events";
+import type { BrowserTabMetadata } from "./browser-types";
+
+export function toggleTabDevTools(
+  tab: ManagedTab,
+  applyLayout: () => void,
+  emitState: () => void,
+): BrowserTabMetadata {
+  if (!tab.devtoolsView) {
+    tab.devtoolsView = new WebContentsView({
+      webPreferences: secureWebPreferences(tab.profile),
+    });
+    tab.devtoolsWebContents = tab.devtoolsView.webContents;
+    tab.webContents.setDevToolsWebContents(tab.devtoolsWebContents);
+  }
+  const open = !tab.metadata.devToolsOpen;
+  tab.metadata = { ...tab.metadata, devToolsOpen: open };
+  applyLayout();
+  if (open) tab.webContents.openDevTools({ mode: "detach" });
+  else tab.webContents.closeDevTools();
+  emitState();
+  return tab.metadata;
+}

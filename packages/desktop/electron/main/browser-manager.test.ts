@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockWebContents extends EventEmitter {
   id: number;
-  session: { webRequest: Record<string, unknown> };
+  session: {
+    webRequest: Record<string, unknown>;
+    fetch: ReturnType<typeof vi.fn>;
+    setPermissionRequestHandler: ReturnType<typeof vi.fn>;
+    setPermissionCheckHandler: ReturnType<typeof vi.fn>;
+  };
   debugger: {
     isAttached: () => boolean;
     attach: ReturnType<typeof vi.fn>;
@@ -17,6 +22,7 @@ interface MockWebContents extends EventEmitter {
   sendInputEvent: ReturnType<typeof vi.fn>;
   insertText: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
+  isDestroyed: ReturnType<typeof vi.fn<() => boolean>>;
   reload: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
   setWindowOpenHandler: ReturnType<typeof vi.fn>;
@@ -31,25 +37,55 @@ const webContentsById = new Map<number, MockWebContents>();
 const createdViews: Array<{
   setVisible: ReturnType<typeof vi.fn>;
   setBounds: ReturnType<typeof vi.fn>;
+  partition?: string;
 }> = [];
+const sessionsByPartition = new Map<
+  string,
+  {
+    closeAllConnections: ReturnType<typeof vi.fn>;
+    clearData: ReturnType<typeof vi.fn>;
+    clearAuthCache: ReturnType<typeof vi.fn>;
+  }
+>();
 let nextWebContentsId = 1;
+let failNetworkRegistration = false;
 
 vi.mock("electron", () => {
   class WebContentsViewMock {
-    webContents: MockWebContents;
+    private readonly contents: MockWebContents;
     setVisible = vi.fn();
     setBounds = vi.fn();
+    partition?: string;
 
-    constructor() {
+    get webContents(): MockWebContents {
+      if (this.contents.isDestroyed()) {
+        throw new Error("Electron released WebContentsView.webContents");
+      }
+      return this.contents;
+    }
+
+    constructor(options?: { webPreferences?: { partition?: string } }) {
+      this.partition = options?.webPreferences?.partition;
       createdViews.push(this);
+      let destroyed = false;
       const contents = Object.assign(new EventEmitter(), {
         id: nextWebContentsId,
         session: {
           webRequest: {
-            onBeforeSendHeaders: vi.fn(),
+            onBeforeSendHeaders: vi.fn(() => {
+              if (failNetworkRegistration) throw new Error("network registration failed");
+            }),
             onCompleted: vi.fn(),
             onErrorOccurred: vi.fn(),
           },
+          fetch: vi.fn(
+            async () =>
+              new Response(new Uint8Array([137, 80, 78, 71]), {
+                headers: { "content-type": "image/png" },
+              }),
+          ),
+          setPermissionRequestHandler: vi.fn(),
+          setPermissionCheckHandler: vi.fn(),
         },
         debugger: { isAttached: () => false, attach: vi.fn(), sendCommand: vi.fn() },
         loadURL: vi.fn(async (url: string) => {
@@ -61,7 +97,12 @@ vi.mock("electron", () => {
         canGoForward: vi.fn(() => false),
         sendInputEvent: vi.fn(),
         insertText: vi.fn(),
-        close: vi.fn(),
+        close: vi.fn(() => {
+          if (destroyed) return;
+          destroyed = true;
+          contents.emit("destroyed");
+        }),
+        isDestroyed: vi.fn(() => destroyed),
         reload: vi.fn(),
         stop: vi.fn(),
         setWindowOpenHandler: vi.fn(),
@@ -73,19 +114,33 @@ vi.mock("electron", () => {
       }) as MockWebContents;
       nextWebContentsId += 1;
       webContentsById.set(contents.id, contents);
-      this.webContents = contents;
+      this.contents = contents;
     }
   }
 
   return {
     BrowserWindow: class BrowserWindowMock {},
     WebContentsView: WebContentsViewMock,
-    session: { fromPartition: vi.fn(() => ({ clearStorageData: vi.fn(), clearCache: vi.fn() })) },
+    session: {
+      fromPartition: vi.fn((partition: string) => {
+        let target = sessionsByPartition.get(partition);
+        if (!target) {
+          target = {
+            closeAllConnections: vi.fn(async () => undefined),
+            clearData: vi.fn(async () => undefined),
+            clearAuthCache: vi.fn(async () => undefined),
+          };
+          sessionsByPartition.set(partition, target);
+        }
+        return target;
+      }),
+    },
     app: { getPath: vi.fn(() => "/tmp/cadencr-browser-manager-test") },
   };
 });
 
 const { BrowserManager } = await import("./browser-manager");
+const { BrowserOriginStore } = await import("./browser-origin-store");
 
 interface MockMainWindow {
   contentView: {
@@ -116,7 +171,10 @@ describe("BrowserManager", () => {
   beforeEach(() => {
     webContentsById.clear();
     createdViews.length = 0;
+    sessionsByPartition.clear();
     nextWebContentsId = 1;
+    failNetworkRegistration = false;
+    vi.restoreAllMocks();
   });
 
   it("scales native bounds by the renderer-supplied zoom factor, not the main window's", () => {
@@ -207,7 +265,7 @@ describe("BrowserManager", () => {
     expect(manager.tabCountsByScope()).toEqual({ 1: 2, 2: 1 });
   });
 
-  it("emits tab counts only when tab membership changes", () => {
+  it("emits tab counts only when tab membership changes", async () => {
     const win = mainWindow();
     const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
     const tab = manager.createTab(undefined, "fresh", 1);
@@ -218,17 +276,17 @@ describe("BrowserManager", () => {
     manager.navigate(tab.id, "http://localhost:1420");
     expect(win.webContents.send).not.toHaveBeenCalledWith("browser:tab-counts", expect.anything());
 
-    manager.closeTab(tab.id);
+    await manager.closeTab(tab.id);
     expect(win.webContents.send).toHaveBeenCalledWith("browser:tab-counts", {});
   });
 
-  it("promotes the next tab in the same scope when a feature's active tab closes", () => {
+  it("promotes the next tab in the same scope when a feature's active tab closes", async () => {
     const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
     const a1 = manager.createTab(undefined, "fresh", 1);
     const a2 = manager.createTab(undefined, "fresh", 1);
     manager.createTab(undefined, "fresh", 2);
 
-    manager.closeTab(a2.id);
+    await manager.closeTab(a2.id);
 
     // Closing feature 1's active tab falls back to feature 1's other tab, never
     // to feature 2's.
@@ -236,7 +294,7 @@ describe("BrowserManager", () => {
     expect(manager.state(1).activeTabId).toBe(a1.id);
   });
 
-  it("closes every tab in a scope in one pass, emitting state once", () => {
+  it("closes every tab in a scope in one pass, emitting state once", async () => {
     const win = mainWindow();
     const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
     manager.createTab(undefined, "fresh", 1);
@@ -244,7 +302,7 @@ describe("BrowserManager", () => {
     const other = manager.createTab(undefined, "fresh", 2);
     win.webContents.send.mockClear();
 
-    const snapshot = manager.closeTabsForScope(1);
+    const snapshot = await manager.closeTabsForScope(1);
 
     // The whole scope is torn down; the other feature is untouched.
     expect(snapshot.tabs).toEqual([]);
@@ -257,7 +315,7 @@ describe("BrowserManager", () => {
     expect(stateEmits).toHaveLength(1);
   });
 
-  it("keeps the unscoped (agent/MCP) view active after a scope's last tab closes", () => {
+  it("keeps the unscoped (agent/MCP) view active after a scope's last tab closes", async () => {
     const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
     const a = manager.createTab(undefined, "fresh", 1);
     const b = manager.createTab(undefined, "fresh", 2);
@@ -265,21 +323,27 @@ describe("BrowserManager", () => {
     // Closing feature 2's only tab (the most-recently active) must not strand
     // the unscoped view at null — it falls back to the surviving tab.
     expect(manager.state().activeTabId).toBe(b.id);
-    manager.closeTab(b.id);
+    await manager.closeTab(b.id);
     expect(manager.state().activeTabId).toBe(a.id);
   });
 
-  it("reuses the active scoped tab when opening a URL without new_tab", async () => {
+  it("reuses an explicitly shared scoped tab without changing its profile", async () => {
     const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
     const tab = manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    contents.getURL.mockReturnValue("http://localhost:3000/start");
+
+    await expect(manager.openUrl("http://localhost:3000/blocked", { scopeId: 1 })).rejects.toThrow(
+      "not shared",
+    );
+    manager.site.setSharing(tab.id, "http://localhost:3000", true);
 
     const result = await manager.openUrl("http://localhost:3000/next", { scopeId: 1 });
 
     expect(result.id).toBe(tab.id);
+    expect(result.sessionProfileId).toBe("fresh");
     expect(manager.state(1).tabs.map((t) => t.id)).toEqual([tab.id]);
-    expect([...webContentsById.values()][0].loadURL).toHaveBeenCalledWith(
-      "http://localhost:3000/next",
-    );
+    expect(contents.loadURL).toHaveBeenCalledWith("http://localhost:3000/next");
   });
 
   it("creates a scoped tab when opening a URL without an active tab", async () => {
@@ -303,5 +367,285 @@ describe("BrowserManager", () => {
     expect(second.id).not.toBe(first.id);
     expect(manager.state(1).tabs.map((t) => t.id)).toEqual([first.id, second.id]);
     expect(manager.state(1).activeTabId).toBe(second.id);
+  });
+
+  it("keeps normal browsing on the existing persistent default partition", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+
+    const tab = manager.createTab(undefined, "default", 1);
+
+    expect(tab.sessionProfileId).toBe("default");
+    expect(createdViews[0].partition).toBe("persist:browser:default");
+  });
+
+  it("gives separate top-level private tabs separate in-memory partitions", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+
+    const first = manager.createTab(undefined, "fresh", 1);
+    const second = manager.createTab(undefined, "fresh", 1);
+
+    expect(first.sessionProfileId).toBe("fresh");
+    expect(second.sessionProfileId).toBe("fresh");
+    expect(createdViews[0].partition).toMatch(/^browser:fresh:/);
+    expect(createdViews[1].partition).toMatch(/^browser:fresh:/);
+    expect(createdViews[0].partition).not.toBe(createdViews[1].partition);
+  });
+
+  it("makes child private tabs inherit their parent's actual in-memory partition", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const parent = [...webContentsById.values()][0];
+    const openChild = parent.setWindowOpenHandler.mock.calls[0][0] as (details: {
+      url: string;
+    }) => unknown;
+
+    openChild({ url: "https://example.com/child" });
+
+    expect(createdViews).toHaveLength(2);
+    expect(createdViews[1].partition).toBe(createdViews[0].partition);
+    expect(manager.state(1).tabs.map((tab) => tab.sessionProfileId)).toEqual(["fresh", "fresh"]);
+  });
+
+  it("clears a shared private partition only when its last tab closes", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const parentMeta = manager.createTab(undefined, "fresh", 1);
+    const parent = [...webContentsById.values()][0];
+    const openChild = parent.setWindowOpenHandler.mock.calls[0][0] as (details: {
+      url: string;
+    }) => unknown;
+    openChild({ url: "https://example.com/child" });
+    const childMeta = manager.state(1).tabs.find((tab) => tab.id !== parentMeta.id);
+    if (!childMeta) throw new Error("Expected child tab");
+    const partition = createdViews[0].partition;
+    if (!partition) throw new Error("Expected private partition");
+
+    await manager.closeTab(parentMeta.id);
+    expect(sessionsByPartition.has(partition)).toBe(false);
+
+    await manager.closeTab(childMeta.id);
+    const privateSession = sessionsByPartition.get(partition);
+    expect(privateSession?.closeAllConnections).toHaveBeenCalledOnce();
+    expect(privateSession?.clearData).toHaveBeenCalledOnce();
+    expect(privateSession?.clearAuthCache).toHaveBeenCalledOnce();
+  });
+
+  it("clears every private partition when its feature scope closes", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    manager.createTab(undefined, "fresh", 1);
+    const partitions = createdViews.map((view) => view.partition);
+
+    await manager.closeTabsForScope(1);
+
+    for (const partition of partitions) {
+      if (!partition) throw new Error("Expected private partition");
+      expect(sessionsByPartition.get(partition)?.clearData).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("does not clear the persistent normal partition when its last tab closes", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "default", 1);
+
+    await manager.closeTab(tab.id);
+
+    expect(sessionsByPartition.has("persist:browser:default")).toBe(false);
+  });
+
+  it("does not record private navigations in persisted origin suggestions", () => {
+    const record = vi.spyOn(BrowserOriginStore.prototype, "record").mockImplementation(() => {});
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const privateContents = [...webContentsById.values()][0];
+    privateContents.getURL.mockReturnValue("https://private.example/path");
+
+    privateContents.emit("did-navigate");
+    expect(record).not.toHaveBeenCalled();
+
+    manager.createTab(undefined, "default", 1);
+    const normalContents = [...webContentsById.values()][1];
+    normalContents.getURL.mockReturnValue("https://normal.example/path");
+    normalContents.emit("did-navigate");
+    expect(record).toHaveBeenCalledWith("https://normal.example/path");
+  });
+
+  it("materializes favicons through the guest session instead of exposing a remote URL", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    contents.getURL.mockReturnValue("https://private.example/page");
+
+    contents.emit("page-favicon-updated", {}, ["https://private.example/favicon.png"]);
+
+    await vi.waitFor(() =>
+      expect(manager.state(1).tabs[0].faviconUrl).toBe("data:image/png;base64,iVBORw=="),
+    );
+    expect(contents.session.fetch).toHaveBeenCalledWith(
+      "https://private.example/favicon.png",
+      expect.objectContaining({ credentials: "include", cache: "no-store" }),
+    );
+  });
+
+  it("discards a favicon response from a stale navigation", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    contents.getURL.mockReturnValue("https://private.example/first");
+    let finishFavicon: ((response: Response) => void) | undefined;
+    contents.session.fetch.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishFavicon = resolve;
+        }),
+    );
+    contents.emit("page-favicon-updated", {}, ["https://private.example/favicon.png"]);
+
+    contents.getURL.mockReturnValue("https://private.example/second");
+    contents.emit("did-start-loading");
+    finishFavicon?.(
+      new Response(new Uint8Array([137, 80, 78, 71]), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    await vi.waitFor(() => expect(contents.session.fetch).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(manager.state(1).tabs[0].faviconUrl).toBeUndefined();
+  });
+
+  it("waits for native destruction before clearing a private partition", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    const partition = createdViews[0].partition;
+    if (!partition) throw new Error("Expected private partition");
+    contents.close.mockImplementation(() => undefined);
+
+    const close = manager.closeTab(tab.id);
+    await Promise.resolve();
+    expect(sessionsByPartition.has(partition)).toBe(false);
+
+    contents.isDestroyed.mockReturnValue(true);
+    contents.emit("destroyed");
+    await close;
+    expect(sessionsByPartition.get(partition)?.clearData).toHaveBeenCalledOnce();
+  });
+
+  it("removes and clears a tab destroyed outside the manager", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    const partition = createdViews[0].partition;
+    if (!partition) throw new Error("Expected private partition");
+
+    contents.isDestroyed.mockReturnValue(true);
+    contents.emit("destroyed");
+
+    await vi.waitFor(() => expect(manager.state(1).tabs).toEqual([]));
+    await vi.waitFor(() =>
+      expect(sessionsByPartition.get(partition)?.clearData).toHaveBeenCalledOnce(),
+    );
+  });
+
+  it("destroys a tab's DevTools contents before clearing its partition", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "fresh", 1);
+    manager.toggleDevTools(tab.id);
+    const [guest, devtools] = [...webContentsById.values()];
+
+    await manager.closeTab(tab.id);
+
+    expect(devtools.close).toHaveBeenCalledWith({ waitForBeforeUnload: false });
+    expect(guest.close).toHaveBeenCalledWith({ waitForBeforeUnload: false });
+    expect(createdViews[1].partition).toBe(createdViews[0].partition);
+  });
+
+  it("cleans a claimed private session when tab setup fails", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    failNetworkRegistration = true;
+
+    expect(() => manager.createTab(undefined, "fresh", 1)).toThrow("network registration failed");
+
+    const contents = [...webContentsById.values()][0];
+    const partition = createdViews[0].partition;
+    if (!partition) throw new Error("Expected private partition");
+    expect(contents.close).toHaveBeenCalledWith({ waitForBeforeUnload: false });
+    await vi.waitFor(() =>
+      expect(sessionsByPartition.get(partition)?.clearData).toHaveBeenCalledOnce(),
+    );
+    expect(manager.state(1).error).toContain("network registration failed");
+  });
+
+  it("waits for all scope cleanups before surfacing a cleanup failure", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    manager.createTab(undefined, "fresh", 1);
+    const [failedPartition, pendingPartition] = createdViews.map((view) => view.partition);
+    if (!failedPartition || !pendingPartition) throw new Error("Expected private partitions");
+    let finishPending: (() => void) | undefined;
+    sessionsByPartition.set(failedPartition, {
+      closeAllConnections: vi.fn(async () => undefined),
+      clearData: vi.fn(async () => {
+        throw new Error("clear failed");
+      }),
+      clearAuthCache: vi.fn(async () => undefined),
+    });
+    sessionsByPartition.set(pendingPartition, {
+      closeAllConnections: vi.fn(async () => undefined),
+      clearData: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishPending = resolve;
+          }),
+      ),
+      clearAuthCache: vi.fn(async () => undefined),
+    });
+
+    const closing = manager.closeTabsForScope(1);
+    let settled = false;
+    void closing.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.waitFor(() => expect(finishPending).toBeTypeOf("function"));
+    expect(settled).toBe(false);
+    finishPending?.();
+
+    await expect(closing).rejects.toThrow("Browser session cleanup failed");
+    expect(manager.state(1).error).toContain("Browser session cleanup failed");
+  });
+
+  it("drains an aborted favicon fetch before clearing private session data", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    const partition = createdViews[0].partition;
+    if (!partition) throw new Error("Expected private partition");
+    contents.getURL.mockReturnValue("https://private.example/page");
+    let finishFavicon: ((response: Response) => void) | undefined;
+    contents.session.fetch.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishFavicon = resolve;
+        }),
+    );
+    contents.emit("page-favicon-updated", {}, ["https://private.example/favicon.png"]);
+
+    const closing = manager.closeTab(tab.id);
+    await Promise.resolve();
+    expect(sessionsByPartition.has(partition)).toBe(false);
+    finishFavicon?.(
+      new Response(new Uint8Array([137, 80, 78, 71]), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    await closing;
+    expect(sessionsByPartition.get(partition)?.clearData).toHaveBeenCalledOnce();
+    expect(manager.state(1).tabs).toEqual([]);
   });
 });

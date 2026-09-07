@@ -54,6 +54,7 @@ describe("selectElementContext", () => {
     const tab = {
       metadata: metadata(),
       view: { webContents: contents },
+      webContents: contents,
       devtoolsView: null,
       consoleEntries: [],
       networkEntries: [],

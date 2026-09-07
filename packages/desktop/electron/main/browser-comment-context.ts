@@ -17,7 +17,7 @@ function captureUntilNavigation(
   tab: ManagedTab,
   anchorId: string | null,
 ): Promise<SelectionAttempt> {
-  const contents = tab.view.webContents;
+  const contents = tab.webContents;
   return new Promise((resolve, reject) => {
     let settled = false;
     const cleanup = (): void => {
@@ -73,22 +73,22 @@ export async function selectElementContext(
       // A navigation destroys the page world that owns the picker promise.
       // Wait for the replacement document, then arm the picker there while the
       // renderer keeps showing the existing visible "picking" state.
-      await waitForLoad(tab.view.webContents);
+      await waitForLoad(tab.webContents);
       continue;
     }
     // Pin a numbered badge to the element the user just picked. The agent/MCP
     // path passes no anchor and gets context without a badge.
     if (anchorId) {
-      await tab.view.webContents.executeJavaScript(addCommentBadgeScript(anchorId), true);
+      await tab.webContents.executeJavaScript(addCommentBadgeScript(anchorId), true);
     }
     return attempt.context;
   }
 }
 
 export async function removeCommentBadge(tab: ManagedTab, anchorId: string): Promise<void> {
-  await tab.view.webContents.executeJavaScript(removeCommentBadgeScript(anchorId), true);
+  await tab.webContents.executeJavaScript(removeCommentBadgeScript(anchorId), true);
 }
 
 export async function clearCommentBadges(tab: ManagedTab): Promise<void> {
-  await tab.view.webContents.executeJavaScript(clearCommentBadgesScript(), true);
+  await tab.webContents.executeJavaScript(clearCommentBadgesScript(), true);
 }

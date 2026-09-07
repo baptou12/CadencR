@@ -6,6 +6,7 @@ import {
   externalAutomationMatches,
   isElementPayload,
   metadataFor,
+  profileFromSelection,
   pushBounded,
   reclaimFocusForShortcut,
 } from "./browser-manager-utils";
@@ -72,6 +73,19 @@ describe("browser-manager-utils", () => {
       devToolsOpen: false,
       scopeId: 7,
     });
+  });
+
+  it("resolves profile selections without changing the persistent default partition", () => {
+    const normal = profileFromSelection("default");
+    const prefixedNormal = profileFromSelection("persistent:default");
+    const firstPrivate = profileFromSelection("fresh");
+    const secondPrivate = profileFromSelection("fresh");
+
+    expect(normal).toEqual({ id: "default", label: "default", mode: "persistent" });
+    expect(prefixedNormal).toEqual(normal);
+    expect(firstPrivate.mode).toBe("fresh");
+    expect(secondPrivate.mode).toBe("fresh");
+    expect(firstPrivate.id).not.toBe(secondPrivate.id);
   });
 
   describe("reclaimFocusForShortcut", () => {

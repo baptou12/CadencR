@@ -35,18 +35,30 @@ export async function resolveTarget(
   );
 }
 
-export async function clickTarget(wc: WebContents, target: BrowserTarget): Promise<ResolvedTarget> {
+export async function clickTarget(
+  wc: WebContents,
+  target: BrowserTarget,
+  authorize: () => void = () => undefined,
+): Promise<ResolvedTarget> {
   const resolved = await resolveTarget(wc, target);
+  authorize();
   await flashHighlight(wc, resolved.boundingBox);
+  authorize();
   const { x, y } = resolved.center;
   wc.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
   wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
   return resolved;
 }
 
-export async function hoverTarget(wc: WebContents, target: BrowserTarget): Promise<ResolvedTarget> {
+export async function hoverTarget(
+  wc: WebContents,
+  target: BrowserTarget,
+  authorize: () => void = () => undefined,
+): Promise<ResolvedTarget> {
   const resolved = await resolveTarget(wc, target);
+  authorize();
   await flashHighlight(wc, resolved.boundingBox);
+  authorize();
   wc.sendInputEvent({ type: "mouseMove", x: resolved.center.x, y: resolved.center.y });
   return resolved;
 }

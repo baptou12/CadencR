@@ -1,8 +1,11 @@
-import type { Input, WebContentsView } from "electron";
+import type { Input, WebContents, WebContentsView } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
+import { faviconDataUrl } from "./browser-favicon";
 import { consoleEntry, pushBounded } from "./browser-manager-utils";
 import { COMMENT_BADGE_CLICK_SENTINEL } from "./browser-comment-overlay-script";
+import type { BrowserProfile } from "./browser-profiles";
 import type {
+  BrowserAgentAccess,
   BrowserBounds,
   BrowserConsoleEntry,
   BrowserNetworkEntry,
@@ -15,10 +18,18 @@ const DEFAULT_URL = "about:blank";
 
 export interface ManagedTab {
   metadata: BrowserTabMetadata;
+  automationAccess: BrowserAgentAccess;
+  /** Resolved profile identity; unlike metadata, this includes a fresh session's actual UUID. */
+  profile: BrowserProfile;
   view: WebContentsView;
+  /** Retained because Electron clears `view.webContents` during `destroyed`. */
+  webContents: WebContents;
   devtoolsView: WebContentsView | null;
+  devtoolsWebContents: WebContents | null;
   consoleEntries: BrowserConsoleEntry[];
   networkEntries: BrowserNetworkEntry[];
+  /** Guest-session work that must settle before a private partition is cleared. */
+  pendingSessionTasks: Set<Promise<void>>;
   // Origin approved via the permission-gated browser_open_external_url tool. While
   // the tab stays on this origin it is exempt from the localhost-only automation
   // (mutation) gate; navigating elsewhere re-locks it. null = not unlocked.
@@ -30,14 +41,22 @@ export interface ManagedTab {
 export interface TabEventHost {
   emitState(): void;
   setLastError(message: string | null): void;
-  openChildTab(url: string, profileId: string): void;
+  openChildTab(url: string): void;
+  isTabAlive(): boolean;
+  tabDestroyed(): void;
   recordOrigin(url: string): void;
   emitShortcut(shortcut: BrowserShortcut): void;
   emitCommentBadgeClick(tabId: string, anchorId: string, box: BrowserBounds | null): void;
 }
 
 export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
-  const wc = tab.view.webContents;
+  const wc = tab.webContents;
+  let faviconRevision = 0;
+  let faviconAbort: AbortController | null = null;
+  wc.once("destroyed", () => {
+    faviconAbort?.abort();
+    host.tabDestroyed();
+  });
   // A focused guest page swallows keydown before the renderer's window
   // listener can see it, so the browser-chrome chords (⌘T new tab, ⌘W close
   // tab) are intercepted here and relayed to the renderer.
@@ -65,7 +84,7 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
     host.emitState();
   });
   wc.setWindowOpenHandler(({ url }) => {
-    host.openChildTab(url, tab.metadata.sessionProfileId);
+    host.openChildTab(url);
     return { action: "deny" };
   });
   wc.on("will-navigate", (event, url) => {
@@ -78,6 +97,9 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
     }
   });
   wc.on("did-start-loading", () => {
+    faviconAbort?.abort();
+    faviconAbort = null;
+    faviconRevision += 1;
     host.setLastError(null);
     // Drop the previous page's favicon up front; page-favicon-updated supplies
     // the new one once the next page declares it (many pages never do).
@@ -85,7 +107,29 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
   });
   wc.on("did-stop-loading", () => updateTabMetadata(tab, { loading: false }, host));
   wc.on("page-favicon-updated", (_event, favicons) => {
-    updateTabMetadata(tab, { faviconUrl: favicons[0] }, host);
+    faviconAbort?.abort();
+    faviconAbort = new AbortController();
+    const abort = faviconAbort;
+    const revision = ++faviconRevision;
+    const pageUrl = wc.getURL();
+    let task: Promise<void>;
+    task = faviconDataUrl(wc.session, favicons[0], abort.signal)
+      .then((dataUrl) => {
+        if (!dataUrl || faviconIsStale(revision, faviconRevision, pageUrl, tab, host)) return;
+        updateTabMetadata(tab, { faviconUrl: dataUrl }, host);
+      })
+      .catch((error: unknown) => {
+        if (faviconIsStale(revision, faviconRevision, pageUrl, tab, host)) return;
+        host.setLastError(
+          `Could not load page icon: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        host.emitState();
+      })
+      .finally(() => {
+        tab.pendingSessionTasks.delete(task);
+        if (faviconAbort === abort) faviconAbort = null;
+      });
+    tab.pendingSessionTasks.add(task);
   });
   wc.on("did-navigate", () => {
     host.setLastError(null);
@@ -97,6 +141,22 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
     host.setLastError(`${url}: ${description}`);
     host.emitState();
   });
+}
+
+function faviconIsStale(
+  revision: number,
+  currentRevision: number,
+  pageUrl: string,
+  tab: ManagedTab,
+  host: TabEventHost,
+): boolean {
+  const wc = tab.webContents;
+  return (
+    revision !== currentRevision ||
+    !host.isTabAlive() ||
+    wc.isDestroyed() ||
+    wc.getURL() !== pageUrl
+  );
 }
 
 // Parse a sentinel badge-click console line (`{ anchorId, box }` JSON) and hand
@@ -182,7 +242,7 @@ function guestShiftChrome(input: Input): BrowserShortcut | null {
 }
 
 function refreshTabMetadata(tab: ManagedTab, host: TabEventHost): void {
-  const wc = tab.view.webContents;
+  const wc = tab.webContents;
   updateTabMetadata(
     tab,
     { title: wc.getTitle() || wc.getURL(), url: wc.getURL() || DEFAULT_URL },
@@ -195,7 +255,7 @@ function updateTabMetadata(
   patch: Partial<BrowserTabMetadata>,
   host: TabEventHost,
 ): void {
-  const wc = tab.view.webContents;
+  const wc = tab.webContents;
   tab.metadata = {
     ...tab.metadata,
     ...patch,

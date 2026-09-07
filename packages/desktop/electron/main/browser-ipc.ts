@@ -1,4 +1,5 @@
 import { ipcMain, type BrowserWindow } from "electron";
+import { z } from "zod";
 import {
   optionalNumber,
   optionalString,
@@ -8,11 +9,19 @@ import {
 } from "./browser-arg-validation";
 import { BrowserManager } from "./browser-manager";
 import { BrowserProfileController } from "./browser-profile-controller";
+import { BROWSER_SITE_PERMISSIONS, BROWSER_SITE_PERMISSION_DECISIONS } from "./browser-types";
 import { assertTrustedSender } from "./ipc";
 
 interface BrowserIpcOptions {
   getMainWindow: () => BrowserWindow | null;
 }
+
+const sitePermissionSchema = z.enum(BROWSER_SITE_PERMISSIONS);
+const siteDecisionSchema = z.enum(BROWSER_SITE_PERMISSION_DECISIONS);
+const siteOriginSchema = z.url().refine((value) => {
+  const parsed = new URL(value);
+  return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.origin === value;
+}, "Expected an HTTP(S) origin without a path.");
 
 function registerTabIpc(
   manager: BrowserManager,
@@ -133,6 +142,53 @@ function registerNavigationIpc(
   });
 }
 
+function registerSiteIpc(
+  manager: BrowserManager,
+  getMainWindow: BrowserIpcOptions["getMainWindow"],
+): void {
+  ipcMain.handle("browser:get-site-info", (event, tabId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.site.info(requiredString(tabId, "tab id"));
+  });
+  ipcMain.handle(
+    "browser:set-site-permission",
+    (event, tabId: unknown, origin: unknown, permission: unknown, decision: unknown) => {
+      assertTrustedSender(event, getMainWindow);
+      return manager.site.setPermission(
+        requiredString(tabId, "tab id"),
+        siteOriginSchema.parse(origin),
+        sitePermissionSchema.parse(permission),
+        siteDecisionSchema.parse(decision),
+      );
+    },
+  );
+  ipcMain.handle("browser:clear-site-data", (event, tabId: unknown, origin: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.site.clearData(requiredString(tabId, "tab id"), siteOriginSchema.parse(origin));
+  });
+  ipcMain.handle(
+    "browser:set-agent-sharing",
+    (event, tabId: unknown, origin: unknown, shared: unknown) => {
+      assertTrustedSender(event, getMainWindow);
+      return manager.site.setSharing(
+        requiredString(tabId, "tab id"),
+        siteOriginSchema.parse(origin),
+        z.boolean().parse(shared),
+      );
+    },
+  );
+  ipcMain.handle(
+    "browser:resolve-permission-request",
+    (event, requestId: unknown, allowed: unknown) => {
+      assertTrustedSender(event, getMainWindow);
+      manager.site.resolvePermissionRequest(
+        z.string().uuid().parse(requestId),
+        z.boolean().parse(allowed),
+      );
+    },
+  );
+}
+
 function registerInspectionIpc(
   manager: BrowserManager,
   getMainWindow: BrowserIpcOptions["getMainWindow"],
@@ -195,6 +251,7 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   registerTabIpc(manager, options.getMainWindow);
   registerProfileIpc(profiles, options.getMainWindow);
   registerNavigationIpc(manager, options.getMainWindow);
+  registerSiteIpc(manager, options.getMainWindow);
   registerInspectionIpc(manager, options.getMainWindow);
   return manager;
 }

@@ -119,10 +119,15 @@ export function metadataFor(
   };
 }
 
-export function profileFromSelection(profileId: string): BrowserProfile {
-  if (profileId === "fresh") return createBrowserProfile("fresh");
-  if (profileId === "feature") return createBrowserProfile("feature", "feature");
-  return createBrowserProfile("persistent", profileId.replace(/^persistent:/, ""));
+/**
+ * Resolve a stable external selection into its actual Electron profile. `fresh`
+ * deliberately generates a new identity once; callers opening child tabs must
+ * retain the returned profile rather than resolving the selection again.
+ */
+export function profileFromSelection(selectionId: string): BrowserProfile {
+  if (selectionId === "fresh") return createBrowserProfile("fresh");
+  if (selectionId === "feature") return createBrowserProfile("feature", "feature");
+  return createBrowserProfile("persistent", selectionId.replace(/^persistent:/, ""));
 }
 
 export function consoleEntry(
