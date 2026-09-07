@@ -1,10 +1,12 @@
 import { http, HttpResponse } from "msw";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@/test-utils";
+import { act, createTestQueryClient, render, screen, waitFor } from "@/test-utils";
 import { API_BASE_URL, server } from "@/test/msw-server";
 import { BrowserWorkspaceTab } from "./BrowserWorkspaceTab";
 import { BROWSER_DEFAULT_MODE_SETTING_KEY } from "@/lib/browser-settings";
+import { getGetWorkspaceSettingQueryKey } from "@/api/generated";
+import { MAX_BROWSER_FAVICON_DATA_URL_LENGTH } from "@/shared/browser-types";
 import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
@@ -21,7 +23,7 @@ function bridge(): CadencrBrowserBridge {
         loading: false,
         canGoBack: false,
         canGoForward: true,
-        sessionProfileId: "ephemeral",
+        sessionProfileId: "default",
         isActive: true,
         devToolsOpen: false,
         scopeId: 1,
@@ -89,6 +91,26 @@ function bridge(): CadencrBrowserBridge {
       Promise.resolve({ id: "copy", label: "copy", mode: "persistent" as const }),
     ),
     deleteBrowserProfile: vi.fn(() => Promise.resolve()),
+    getBrowserSiteInfo: vi.fn(() =>
+      Promise.resolve({
+        tabId: "tab-1",
+        origin: "http://localhost:1420",
+        secure: false,
+        profile: { id: "default", label: "default", mode: "persistent" as const },
+        privacy: "normal" as const,
+        permissions: {
+          camera: "ask" as const,
+          microphone: "ask" as const,
+          location: "ask" as const,
+          clipboard: "ask" as const,
+        },
+        agentAccess: "user" as const,
+      }),
+    ),
+    setBrowserSitePermission: vi.fn(),
+    clearBrowserSiteData: vi.fn(),
+    setBrowserAgentSharing: vi.fn(),
+    resolveBrowserPermissionRequest: vi.fn(() => Promise.resolve()),
     browserBack: vi.fn(),
     browserForward: vi.fn(),
     browserReload: vi.fn(),
@@ -110,6 +132,8 @@ function bridge(): CadencrBrowserBridge {
     onBrowserTabCounts: vi.fn(() => () => undefined),
     onBrowserShortcut: vi.fn(() => () => undefined),
     onBrowserCommentBadgeClick: vi.fn(() => () => undefined),
+    onBrowserPermissionRequest: vi.fn(() => () => undefined),
+    onBrowserPermissionRequestCancelled: vi.fn(() => () => undefined),
     checkForUpdates: vi.fn(),
     installUpdate: vi.fn(),
     fetchChangelog: vi.fn(),
@@ -127,20 +151,126 @@ describe("BrowserWorkspaceTab", () => {
     setDesktopBridgeOverrideForTests(mockBridge);
     render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "New browser tab" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "New browser tab (default: Normal)" }),
+    );
 
     expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "default", 1);
   });
 
-  it("opens a private tab with no cookies when Private mode is selected", async () => {
+  it("offers explicit normal and private tab actions without a global mode toggle", async () => {
     const mockBridge = bridge();
     setDesktopBridgeOverrideForTests(mockBridge);
     render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Private" }));
-    await userEvent.click(screen.getByRole("button", { name: "New browser tab" }));
+    expect(screen.queryByRole("button", { name: "Private" })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Choose browser tab type" }));
+    expect(screen.getByRole("menuitem", { name: "New tab (normal)" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "New private tab" }));
 
     expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "fresh", 1);
+  });
+
+  it("supports opening a private tab from the split-button menu with the keyboard", async () => {
+    const mockBridge = bridge();
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+
+    const chooser = await screen.findByRole("button", { name: "Choose browser tab type" });
+    chooser.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "New tab (normal)" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(chooser).toHaveFocus();
+    expect(mockBridge.createBrowserTab).not.toHaveBeenCalled();
+
+    await user.keyboard("{Enter}");
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "fresh", 1);
+    await waitFor(() => expect(screen.getByLabelText("Browser URL")).toHaveFocus());
+  });
+
+  it("suppresses the native view while the new-tab menu is open", async () => {
+    const mockBridge = bridge();
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Choose browser tab type" }));
+    await waitFor(() => expect(mockBridge.getBrowserScreenshot).toHaveBeenCalledWith("tab-1"));
+    await waitFor(() => expect(mockBridge.setBrowserSuppressed).toHaveBeenLastCalledWith(true));
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(mockBridge.setBrowserSuppressed).toHaveBeenLastCalledWith(false));
+  });
+
+  it("uses the latest configured default for the split button", async () => {
+    const queryClient = createTestQueryClient();
+    const mockBridge = bridge();
+    setDesktopBridgeOverrideForTests(mockBridge);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />, { queryClient });
+    await screen.findByRole("button", { name: "New browser tab (default: Normal)" });
+
+    act(() => {
+      queryClient.setQueryData(getGetWorkspaceSettingQueryKey(BROWSER_DEFAULT_MODE_SETTING_KEY), {
+        value: "private",
+      });
+    });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "New browser tab (default: Private)" }),
+    );
+
+    expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "fresh", 1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Choose browser tab type" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "New tab (normal)" }));
+    expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "default", 1);
+  });
+
+  it("shows a busy creation state and prevents duplicate tab requests", async () => {
+    let finishCreation: (() => void) | undefined;
+    const mockBridge = bridge();
+    const createdTab = (await mockBridge.listBrowserTabs(1)).tabs[0];
+    mockBridge.createBrowserTab = vi.fn(
+      () =>
+        new Promise<typeof createdTab>((resolve) => {
+          finishCreation = () => resolve(createdTab);
+        }),
+    );
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+    const button = await screen.findByRole("button", {
+      name: "New browser tab (default: Normal)",
+    });
+
+    await user.click(button);
+    expect(screen.getByRole("button", { name: "Opening browser tab" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Opening browser tab" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "Opening browser tab" }));
+    expect(mockBridge.createBrowserTab).toHaveBeenCalledTimes(1);
+
+    finishCreation?.();
+    await screen.findByRole("button", { name: "New browser tab (default: Normal)" });
+  });
+
+  it("restores tab creation controls after a failed request", async () => {
+    const mockBridge = bridge();
+    mockBridge.createBrowserTab = vi.fn(() => Promise.reject(new Error("profile unavailable")));
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "New browser tab (default: Normal)" }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "New browser tab (default: Normal)" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Choose browser tab type" })).toBeEnabled();
+    expect(screen.getByLabelText("Browser URL")).toHaveValue("http://localhost:1420/");
   });
 
   it("opens the first tab in the saved default mode", async () => {
@@ -168,6 +298,59 @@ describe("BrowserWorkspaceTab", () => {
     await waitFor(() => {
       expect(mockBridge.createBrowserTab).toHaveBeenCalledWith(undefined, "fresh", 1);
     });
+  });
+
+  it("keeps per-tab privacy visible alongside favicons and loading state", async () => {
+    const mockBridge = bridge();
+    const snapshot = await mockBridge.listBrowserTabs(1);
+    const baseTab = snapshot.tabs[0];
+    snapshot.tabs = [
+      {
+        ...baseTab,
+        id: "private-ready",
+        title: "Private ready",
+        faviconUrl: "data:image/png;base64,iVBORw0KGgo=",
+        sessionProfileId: "fresh",
+        isActive: true,
+      },
+      {
+        ...baseTab,
+        id: "private-remote-favicon",
+        title: "Private unsafe favicon",
+        faviconUrl: "https://example.com/favicon.ico",
+        sessionProfileId: "fresh",
+        isActive: false,
+      },
+      {
+        ...baseTab,
+        id: "private-loading",
+        title: "Private loading",
+        loading: true,
+        sessionProfileId: "fresh",
+        isActive: false,
+      },
+      {
+        ...baseTab,
+        id: "private-oversized-favicon",
+        title: "Private oversized favicon",
+        faviconUrl: `data:image/png;base64,${"A".repeat(MAX_BROWSER_FAVICON_DATA_URL_LENGTH)}`,
+        sessionProfileId: "fresh",
+        isActive: false,
+      },
+    ];
+    snapshot.activeTabId = "private-ready";
+    mockBridge.listBrowserTabs = vi.fn(() => Promise.resolve(snapshot));
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { container } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+
+    await screen.findByText("Private ready");
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,iVBORw0KGgo=",
+    );
+    expect(container.querySelector('img[src="https://example.com/favicon.ico"]')).toBeNull();
+    expect(screen.getAllByRole("img", { name: "Private tab" })).toHaveLength(4);
+    expect(screen.getByRole("status", { name: "Tab loading" })).toBeInTheDocument();
   });
 
   it("does not render console or network diagnostics in the Browser footer", async () => {

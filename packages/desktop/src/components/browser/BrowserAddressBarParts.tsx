@@ -3,6 +3,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactElement,
+  type ReactNode,
   type RefObject,
 } from "react";
 import {
@@ -87,6 +88,7 @@ interface BrowserUrlFieldProps {
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
   onSelectSuggestion: (origin: string) => void;
   onHighlightSuggestion: (index: number) => void;
+  siteControl?: ReactNode;
 }
 
 export function BrowserUrlField(props: BrowserUrlFieldProps): ReactElement {
@@ -108,6 +110,7 @@ export function BrowserUrlField(props: BrowserUrlFieldProps): ReactElement {
     onKeyDown,
     onSelectSuggestion,
     onHighlightSuggestion,
+    siteControl,
   } = props;
 
   function handleInputChange(event: ChangeEvent<HTMLInputElement>): void {
@@ -127,11 +130,15 @@ export function BrowserUrlField(props: BrowserUrlFieldProps): ReactElement {
   return (
     <div className="relative min-w-0 flex-1">
       <div className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 transition-colors focus-within:border-primary focus-within:bg-card focus-within:ring-2 focus-within:ring-primary/20">
-        {secure ? (
-          <LockIcon className="size-3.5 shrink-0 text-[var(--acc-green)]" aria-label="Secure" />
-        ) : (
-          <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Not secure" />
-        )}
+        {siteControl ??
+          (secure ? (
+            <LockIcon className="size-3.5 shrink-0 text-[var(--acc-green)]" aria-label="Secure" />
+          ) : (
+            <GlobeIcon
+              className="size-3.5 shrink-0 text-muted-foreground"
+              aria-label="Not secure"
+            />
+          ))}
         <Input
           ref={inputRef}
           aria-label="Browser URL"

@@ -7,6 +7,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type ReactElement,
+  type ReactNode,
   type RefObject,
 } from "react";
 
@@ -41,6 +42,8 @@ export interface BrowserAddressBarProps {
   onAddComment: () => void;
   /** Announces whether suggestions are open over the native browser view. */
   onSuggestionOverlayOpenChange?: (open: boolean) => void;
+  /** Site information trigger rendered inside the URL field. */
+  siteControl?: ReactNode;
 }
 
 /**
@@ -85,7 +88,7 @@ function BrowserAddressBarImpl(props: BrowserAddressBarProps): ReactElement {
   const { urlInput, pending, activeTab, knownOrigins, inputRef } = props;
   const { onUrlChange, onUrlEditingChange, onNavigate, onBack, onForward, onReload, onStop } =
     props;
-  const { onDevTools, onAddComment, onSuggestionOverlayOpenChange } = props;
+  const { onDevTools, onAddComment, onSuggestionOverlayOpenChange, siteControl } = props;
 
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
@@ -159,6 +162,7 @@ function BrowserAddressBarImpl(props: BrowserAddressBarProps): ReactElement {
     open,
     pending,
     secure,
+    siteControl,
     suggestions,
     urlInput,
     onAddComment,
@@ -188,6 +192,7 @@ interface AddressBarRenderProps {
   open: boolean;
   pending: boolean;
   secure: boolean;
+  siteControl?: ReactNode;
   suggestions: string[];
   urlInput: string;
   onAddComment: () => void;
@@ -218,6 +223,7 @@ function renderAddressBar(props: AddressBarRenderProps): ReactElement {
       />
       <BrowserUrlField
         secure={props.secure}
+        siteControl={props.siteControl}
         inputRef={props.inputRef}
         urlInput={props.urlInput}
         pending={props.pending}

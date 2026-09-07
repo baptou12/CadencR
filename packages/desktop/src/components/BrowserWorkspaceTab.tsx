@@ -5,6 +5,8 @@ import { useSuppressBrowserView } from "@/lib/browser-suppression";
 import { BrowserAddressBar } from "./browser/BrowserAddressBar";
 import { BrowserCommentDock } from "./browser/BrowserCommentDock";
 import { BrowserCommentOverlay } from "./browser/BrowserCommentOverlay";
+import { BrowserPermissionPrompt } from "./browser/BrowserPermissionPrompt";
+import { BrowserSiteInformation } from "./browser/BrowserSiteInformation";
 import {
   BrowserEmptyState,
   BrowserError,
@@ -54,24 +56,30 @@ const BrowserWorkspaceTabReady = memo(function BrowserWorkspaceTabReady({
   const comments = useBrowserComments({ runForActive: model.runForActive, onSend: onSendContext });
   useBrowserKeyboard(model, comments.addComment);
   if (model.loading) return <BrowserLoading />;
-  return <BrowserWorkspaceView model={model} comments={comments} />;
+  return <BrowserWorkspaceView scopeId={scopeId} model={model} comments={comments} />;
 });
 
 type CommentsController = ReturnType<typeof useBrowserComments>;
 
 function BrowserWorkspaceView({
+  scopeId,
   model,
   comments,
 }: {
+  scopeId: number;
   model: BrowserWorkspaceModel;
   comments: CommentsController;
 }): ReactElement {
-  const newTab = useCallback((): void => void model.newTab(), [model]);
+  const newTab = useCallback((): void => void model.newTab(), [model.newTab]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [siteOpen, setSiteOpen] = useState(false);
+  const [tabMenuOpen, setTabMenuOpen] = useState(false);
+  const [permissionPromptOpen, setPermissionPromptOpen] = useState(false);
   // Freeze the native view (and show a snapshot) whenever a renderer overlay
   // needs to sit over the page region: the URL suggestions or a comment form.
-  const overlayActive = suggestionsOpen || comments.draft !== null;
+  const overlayActive =
+    suggestionsOpen || siteOpen || tabMenuOpen || permissionPromptOpen || comments.draft !== null;
   const snapshot = useSuppressedBrowserSnapshot(overlayActive, model.activeTab);
   useSuppressBrowserView(snapshot.suppressNativeView);
   return (
@@ -80,6 +88,8 @@ function BrowserWorkspaceView({
         model={model}
         onAddComment={comments.addComment}
         onSuggestionOverlayOpenChange={setSuggestionsOpen}
+        onSiteOverlayOpenChange={setSiteOpen}
+        onChromeOverlayOpenChange={setTabMenuOpen}
       />
       {model.state.error ? (
         <BrowserError message={model.state.error} onDismiss={model.clearError} />
@@ -115,8 +125,11 @@ function BrowserWorkspaceView({
             onRemove={comments.removeComment}
           />
         ) : null}
-        {model.activeTab ? null : <BrowserEmptyState onNewTab={newTab} />}
+        {model.activeTab ? null : (
+          <BrowserEmptyState onNewTab={newTab} creating={model.creatingMode !== null} />
+        )}
       </div>
+      <BrowserPermissionPrompt scopeId={scopeId} onOpenChange={setPermissionPromptOpen} />
     </div>
   );
 }
@@ -125,17 +138,21 @@ function BrowserToolbar({
   model,
   onAddComment,
   onSuggestionOverlayOpenChange,
+  onSiteOverlayOpenChange,
+  onChromeOverlayOpenChange,
 }: {
   model: BrowserWorkspaceModel;
   onAddComment: () => void;
   onSuggestionOverlayOpenChange: (open: boolean) => void;
+  onSiteOverlayOpenChange: (open: boolean) => void;
+  onChromeOverlayOpenChange: (open: boolean) => void;
 }): ReactElement {
   return (
     // z-30 lifts the toolbar's stacking context (created by backdrop-blur) above
     // the page region, so the suggestions dropdown — trapped inside it — paints
     // over the (suppressed) viewport instead of behind its click-catching div.
     <div className="relative z-30 flex shrink-0 flex-col gap-1.5 border-b bg-card/95 px-2 pb-2 pt-1.5 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-      <BrowserTabStrip model={model} />
+      <BrowserTabStrip model={model} onChromeOverlayOpenChange={onChromeOverlayOpenChange} />
       <BrowserAddressBar
         urlInput={model.urlInput}
         pending={model.pending}
@@ -152,6 +169,12 @@ function BrowserToolbar({
         onDevTools={model.devTools}
         onAddComment={onAddComment}
         onSuggestionOverlayOpenChange={onSuggestionOverlayOpenChange}
+        siteControl={
+          <BrowserSiteInformation
+            activeTab={model.activeTab}
+            onOverlayOpenChange={onSiteOverlayOpenChange}
+          />
+        }
       />
     </div>
   );
