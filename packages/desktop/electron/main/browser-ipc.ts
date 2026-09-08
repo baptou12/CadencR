@@ -8,6 +8,7 @@ import {
   requiredString,
 } from "./browser-arg-validation";
 import { BrowserManager } from "./browser-manager";
+import { registerBrowserDownloadIpc } from "./browser-download-ipc";
 import { parseBrowserGuestShortcutBindings } from "./browser-guest-shortcuts";
 import { BrowserProfileController } from "./browser-profile-controller";
 import {
@@ -379,5 +380,6 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   registerSiteIpc(manager, options.getMainWindow);
   registerInspectionIpc(manager, options.getMainWindow);
   registerLibraryIpc(manager, options.getMainWindow);
+  registerBrowserDownloadIpc(manager, options.getMainWindow);
   return manager;
 }

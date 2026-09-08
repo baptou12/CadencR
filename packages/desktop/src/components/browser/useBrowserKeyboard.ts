@@ -12,6 +12,7 @@ function useBrowserNavigationShortcuts(
   model: BrowserWorkspaceModel,
   hasTab: boolean,
   switchTab: (delta: number) => void,
+  toggleDownloads: () => void,
 ): void {
   useScopedGlobalShortcutById(
     "browser-new-tab",
@@ -51,6 +52,14 @@ function useBrowserNavigationShortcuts(
     (event) => {
       event.preventDefault();
       switchTab(1);
+    },
+    "browser",
+  );
+  useScopedGlobalShortcutById(
+    "browser-downloads",
+    (event) => {
+      event.preventDefault();
+      toggleDownloads();
     },
     "browser",
   );
@@ -143,6 +152,7 @@ function useBrowserGuestShortcutRelay(
   hasTab: boolean,
   switchTab: (delta: number) => void,
   addComment: () => void,
+  toggleDownloads: () => void,
 ): void {
   useBrowserShortcutRelay((shortcut: BrowserShortcut) => {
     const actions: Partial<Record<BrowserShortcut, () => void>> = {
@@ -162,6 +172,7 @@ function useBrowserGuestShortcutRelay(
       "add-comment": () => {
         if (hasTab) addComment();
       },
+      downloads: toggleDownloads,
       devtools: () => {
         if (hasTab) model.devTools();
       },
@@ -172,17 +183,19 @@ function useBrowserGuestShortcutRelay(
 
 function useBrowserGuestShortcutPublication(): void {
   const find = useResolvedShortcut("browser-find");
+  const downloads = useResolvedShortcut("browser-downloads");
   const zoomReset = useResolvedShortcut("zoom-reset");
   useEffect(() => {
     void desktopBridge
       .setBrowserGuestShortcuts({
         find: { keys: find.keys, altKeys: find.altKeys },
+        downloads: { keys: downloads.keys, altKeys: downloads.altKeys },
         zoomReset: { keys: zoomReset.keys, altKeys: zoomReset.altKeys },
       })
       .catch((error: unknown) => {
         showBrowserError(error, "Could not configure Browser shortcuts");
       });
-  }, [find, zoomReset]);
+  }, [downloads, find, zoomReset]);
 }
 
 /**
@@ -193,7 +206,11 @@ function useBrowserGuestShortcutPublication(): void {
  * `browser-tab-events.ts`). Both paths map to the same actions so a shortcut
  * works regardless of where focus currently sits.
  */
-export function useBrowserKeyboard(model: BrowserWorkspaceModel, addComment: () => void): void {
+export function useBrowserKeyboard(
+  model: BrowserWorkspaceModel,
+  addComment: () => void,
+  toggleDownloads: () => void,
+): void {
   const hasTab = model.activeTab !== null;
   useBrowserGuestShortcutPublication();
 
@@ -209,7 +226,7 @@ export function useBrowserKeyboard(model: BrowserWorkspaceModel, addComment: () 
     [model],
   );
 
-  useBrowserNavigationShortcuts(model, hasTab, switchTab);
+  useBrowserNavigationShortcuts(model, hasTab, switchTab, toggleDownloads);
   useBrowserPageShortcuts(model, hasTab, addComment);
-  useBrowserGuestShortcutRelay(model, hasTab, switchTab, addComment);
+  useBrowserGuestShortcutRelay(model, hasTab, switchTab, addComment, toggleDownloads);
 }

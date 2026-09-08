@@ -1,6 +1,7 @@
 import type { BrowserWindow, HandlerDetails, WebContents } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
 import type { BrowserFocusGuard } from "./browser-focus-guard";
+import type { BrowserDownloadManager } from "./browser-download-manager";
 import type { BrowserLibraryController } from "./browser-library-controller";
 import type { BrowserNetworkCollector } from "./browser-network-collector";
 import type { BrowserOriginStore } from "./browser-origin-store";
@@ -35,6 +36,7 @@ interface BrowserTabCreationOptions {
   closer: BrowserTabCloseController;
   network: BrowserNetworkCollector;
   focusGuard: BrowserFocusGuard;
+  downloads: BrowserDownloadManager;
   site: BrowserSiteController;
   origins: BrowserOriginStore;
   library: BrowserLibraryController;
@@ -177,6 +179,7 @@ export class BrowserTabCreationController {
       this.options.network.ensure(tab.webContents.session);
       this.options.focusGuard.watch(tab.webContents);
       lifecycle.register(tab);
+      this.options.downloads.watch(tab);
       this.options.site.registerTab(tab);
       workspace.register(tab, reuseOrder);
       host.emitCounts();

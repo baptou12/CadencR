@@ -51,6 +51,7 @@ const createdViews: Array<{
 const sessionsByPartition = new Map<
   string,
   {
+    on: ReturnType<typeof vi.fn>;
     closeAllConnections: ReturnType<typeof vi.fn>;
     clearData: ReturnType<typeof vi.fn>;
     clearAuthCache: ReturnType<typeof vi.fn>;
@@ -94,6 +95,7 @@ vi.mock("electron", () => {
       const contents = Object.assign(new EventEmitter(), {
         id: nextWebContentsId,
         session: {
+          on: vi.fn(),
           webRequest: {
             onBeforeSendHeaders: vi.fn(() => {
               if (failNetworkRegistration) throw new Error("network registration failed");
@@ -158,6 +160,7 @@ vi.mock("electron", () => {
         let target = sessionsByPartition.get(partition);
         if (!target) {
           target = {
+            on: vi.fn(),
             closeAllConnections: vi.fn(async () => undefined),
             clearData: vi.fn(async () => undefined),
             clearAuthCache: vi.fn(async () => undefined),
@@ -395,6 +398,7 @@ describe("BrowserManager", () => {
     const primaryModifier = process.platform === "darwin" ? { meta: true } : { control: true };
     manager.page.setGuestShortcutBindings({
       find: { keys: ["mod", "k"] },
+      downloads: { keys: ["mod", "shift", "y"] },
       zoomReset: { keys: ["mod", "9"] },
     });
 
@@ -416,6 +420,33 @@ describe("BrowserManager", () => {
       expect(event.preventDefault).toHaveBeenCalledOnce();
       expect(win.webContents.send).toHaveBeenCalledWith("browser:shortcut", shortcut);
     }
+
+    const downloadEvent = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", downloadEvent, {
+      type: "keyDown",
+      key: "y",
+      code: "KeyZ",
+      meta: false,
+      control: false,
+      shift: true,
+      alt: false,
+      ...primaryModifier,
+    });
+    expect(downloadEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(win.webContents.send).toHaveBeenCalledWith("browser:shortcut", "downloads");
+
+    const oldDefaultEvent = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", oldDefaultEvent, {
+      type: "keyDown",
+      key: "j",
+      code: "KeyJ",
+      meta: false,
+      control: false,
+      shift: true,
+      alt: false,
+      ...primaryModifier,
+    });
+    expect(oldDefaultEvent.preventDefault).not.toHaveBeenCalled();
   });
 
   it("validates mutating automation against the live WebContents URL", async () => {
@@ -1098,6 +1129,7 @@ describe("BrowserManager", () => {
     if (!failedPartition || !pendingPartition) throw new Error("Expected private partitions");
     let finishPending: (() => void) | undefined;
     sessionsByPartition.set(failedPartition, {
+      on: vi.fn(),
       closeAllConnections: vi.fn(async () => undefined),
       clearData: vi.fn(async () => {
         throw new Error("clear failed");
@@ -1105,6 +1137,7 @@ describe("BrowserManager", () => {
       clearAuthCache: vi.fn(async () => undefined),
     });
     sessionsByPartition.set(pendingPartition, {
+      on: vi.fn(),
       closeAllConnections: vi.fn(async () => undefined),
       clearData: vi.fn(
         () =>
@@ -1289,6 +1322,7 @@ describe("BrowserManager", () => {
     const privatePartition = createdViews[2].partition;
     if (!privatePartition) throw new Error("Expected private partition");
     sessionsByPartition.set(privatePartition, {
+      on: vi.fn(),
       closeAllConnections: vi.fn(async () => undefined),
       clearData: vi.fn(async () => {
         throw new Error("private cleanup failed");

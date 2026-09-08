@@ -61,6 +61,7 @@ export function zoomWebContents(wc: WebContents, direction: "in" | "out"): void 
 const RENDERER_FOCUS_SHORTCUTS = new Set<BrowserShortcut>([
   "find",
   "focus-url",
+  "downloads",
   "pane-agent",
   "pane-terminal",
   "pane-git",

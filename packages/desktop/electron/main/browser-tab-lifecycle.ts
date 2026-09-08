@@ -75,6 +75,10 @@ export class BrowserTabLifecycle {
     this.tabs.set(tab.metadata.id, tab);
   }
 
+  acquireSessionLease(profile: BrowserProfile): () => Promise<void> {
+    return this.sessions.acquire(profile);
+  }
+
   destroy(tab: ManagedTab): Promise<void> {
     const pending = this.destructions.get(tab);
     if (pending) return pending;

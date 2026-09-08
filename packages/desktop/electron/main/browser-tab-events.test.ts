@@ -56,6 +56,7 @@ describe("guestChrome", () => {
   });
 
   it("ignores a Shift chord on an unmapped key", () => {
+    expect(guestChrome(withMod({ key: "j", code: "KeyJ", shift: true }))).toBeNull();
     expect(guestChrome(withMod({ key: "k", code: "KeyK", shift: true }))).toBeNull();
   });
 

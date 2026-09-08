@@ -74,6 +74,15 @@ function bridge(): CadencrBrowserBridge {
     createBrowserTab: vi.fn(() => Promise.resolve(state.tabs[0])),
     listBrowserTabs: vi.fn(() => Promise.resolve(state)),
     listBrowserTabCountsByScope: vi.fn(() => Promise.resolve({ 1: state.tabs.length })),
+    listBrowserDownloads: vi.fn(() =>
+      Promise.resolve({ scopeId: 1, downloads: [], activeCount: 0, aggregatePercent: null }),
+    ),
+    listBrowserDownloadCountsByScope: vi.fn(() => Promise.resolve({})),
+    pauseBrowserDownload: vi.fn(),
+    resumeBrowserDownload: vi.fn(),
+    cancelBrowserDownload: vi.fn(),
+    revealBrowserDownload: vi.fn(),
+    clearBrowserDownloads: vi.fn(),
     navigateBrowserTab: vi.fn(() => Promise.resolve(state.tabs[0])),
     activateBrowserTab: vi.fn(() => Promise.resolve(state.tabs[0])),
     closeBrowserTab: vi.fn(() => Promise.resolve(state)),
@@ -154,6 +163,8 @@ function bridge(): CadencrBrowserBridge {
     clearBrowserCommentBadges: vi.fn(() => Promise.resolve()),
     onBrowserState: vi.fn(() => () => undefined),
     onBrowserTabCounts: vi.fn(() => () => undefined),
+    onBrowserDownloadsChanged: vi.fn(() => () => undefined),
+    onBrowserDownloadCounts: vi.fn(() => () => undefined),
     onBrowserShortcut: vi.fn(() => () => undefined),
     onBrowserFindResult: vi.fn(() => () => undefined),
     onBrowserCommentBadgeClick: vi.fn(() => () => undefined),
@@ -480,6 +491,7 @@ describe("BrowserWorkspaceTab", () => {
 
     expect(mockBridge.setBrowserGuestShortcuts).toHaveBeenCalledWith({
       find: { keys: ["mod", "f"], altKeys: undefined },
+      downloads: { keys: ["mod", "shift", "j"], altKeys: undefined },
       zoomReset: { keys: ["mod", "0"], altKeys: undefined },
     });
     act(() => shortcutRelay?.("find"));

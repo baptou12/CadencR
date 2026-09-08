@@ -31,6 +31,20 @@ export class BrowserSessionLifecycle {
     this.owners.set(partition, (this.owners.get(partition) ?? 0) + 1);
   }
 
+  /**
+   * Hold a private partition independently of a tab. Downloads use this lease
+   * so closing their source tab cannot clear cookies or connections mid-flight.
+   */
+  acquire(profile: BrowserProfile): () => Promise<void> {
+    this.claim(profile);
+    let released = false;
+    return async (): Promise<void> => {
+      if (released) return;
+      released = true;
+      await this.release(profile);
+    };
+  }
+
   async release(profile: BrowserProfile): Promise<void> {
     if (!isPrivateProfile(profile)) return;
     const partition = browserPartitionForProfile(profile);

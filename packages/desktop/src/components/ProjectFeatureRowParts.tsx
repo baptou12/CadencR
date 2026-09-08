@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import {
   ArchiveIcon,
+  DownloadIcon,
   GitBranchIcon,
   GlobeIcon,
   PinIcon,
@@ -28,6 +29,7 @@ interface FeatureRowMetaLineProps {
   gitStats: GitStats | undefined;
   shellCount: number;
   browserCount: number;
+  downloadCount: number;
   ports: readonly AllocatedPort[];
   isEditingLabel: boolean;
   labelDraft: string;
@@ -50,6 +52,7 @@ export function FeatureRowMetaLine({
   gitStats,
   shellCount,
   browserCount,
+  downloadCount,
   ports,
   isEditingLabel,
   labelDraft,
@@ -64,7 +67,7 @@ export function FeatureRowMetaLine({
   // `FeaturePrIndicator` also renders for an error with no proposal — a forge
   // auth failure must not be the one thing that keeps this line from mounting.
   const hasPrIndicator = prStatus?.pr != null || prStatus?.error != null;
-  const hasActivity = shellCount > 0 || browserCount > 0 || ports.length > 0;
+  const hasActivity = shellCount > 0 || browserCount > 0 || downloadCount > 0 || ports.length > 0;
   if (!isEditingLabel && !feature.label && !hasStats && !hasActivity && !hasPrIndicator) {
     return null;
   }
@@ -103,7 +106,11 @@ export function FeatureRowMetaLine({
         />
       )}
       <FeaturePrIndicator snapshot={prStatus} />
-      <FeatureActivityIndicators shellCount={shellCount} browserCount={browserCount} />
+      <FeatureActivityIndicators
+        shellCount={shellCount}
+        browserCount={browserCount}
+        downloadCount={downloadCount}
+      />
       <FeaturePortsBadge ports={ports} onOpenPort={onOpenPort} />
     </div>
   );
@@ -270,11 +277,13 @@ export function FeatureRowActions({
 function FeatureActivityIndicators({
   shellCount,
   browserCount,
+  downloadCount,
 }: {
   shellCount: number;
   browserCount: number;
+  downloadCount: number;
 }): ReactElement | null {
-  if (shellCount <= 0 && browserCount <= 0) return null;
+  if (shellCount <= 0 && browserCount <= 0 && downloadCount <= 0) return null;
   return (
     <span data-feature-activity-indicators className="inline-flex shrink-0 items-center gap-1">
       <FeatureActivityBadge
@@ -288,6 +297,12 @@ function FeatureActivityIndicators({
         labelSingular="browser tab open"
         labelPlural="browser tabs open"
         icon={<GlobeIcon className="size-3" />}
+      />
+      <FeatureActivityBadge
+        count={downloadCount}
+        labelSingular="browser download active"
+        labelPlural="browser downloads active"
+        icon={<DownloadIcon className="size-3" />}
       />
     </span>
   );

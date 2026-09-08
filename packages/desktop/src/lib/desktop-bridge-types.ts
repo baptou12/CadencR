@@ -4,6 +4,7 @@ import type {
   BrowserBookmark,
   BrowserCommentBadgeClick,
   BrowserConsoleEntry,
+  BrowserDownloadSnapshot,
   BrowserElementContext,
   BrowserFindRequest,
   BrowserFindResult,
@@ -150,6 +151,13 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   reorderBrowserTab: (tabId: string, targetIndex: number) => Promise<BrowserStateSnapshot>;
   closeOtherBrowserTabs: (tabId: string) => Promise<BrowserStateSnapshot>;
   reopenLastClosedBrowserTab: (scopeId: number) => Promise<BrowserTabMetadata | null>;
+  listBrowserDownloads: (scopeId: number) => Promise<BrowserDownloadSnapshot>;
+  listBrowserDownloadCountsByScope: () => Promise<Record<number, number>>;
+  pauseBrowserDownload: (scopeId: number, id: string) => Promise<BrowserDownloadSnapshot>;
+  resumeBrowserDownload: (scopeId: number, id: string) => Promise<BrowserDownloadSnapshot>;
+  cancelBrowserDownload: (scopeId: number, id: string) => Promise<BrowserDownloadSnapshot>;
+  revealBrowserDownload: (scopeId: number, id: string) => Promise<void>;
+  clearBrowserDownloads: (scopeId: number) => Promise<BrowserDownloadSnapshot>;
   listBlockedBrowserPopups: (scopeId: number) => Promise<BrowserPopupRequest[]>;
   allowBrowserPopupOnce: (requestId: string) => Promise<void>;
   openBrowserPopupExternally: (requestId: string) => Promise<void>;
@@ -213,6 +221,8 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   onBrowserPermissionRequest: (cb: (request: BrowserSitePermissionRequest) => void) => () => void;
   onBrowserPermissionRequestCancelled: (cb: (event: { requestId: string }) => void) => () => void;
   onBrowserPopupRequestsChanged: (cb: (event: { scopeId: number }) => void) => () => void;
+  onBrowserDownloadsChanged: (cb: (snapshot: BrowserDownloadSnapshot) => void) => () => void;
+  onBrowserDownloadCounts: (cb: (counts: Record<number, number>) => void) => () => void;
 }
 
 declare global {

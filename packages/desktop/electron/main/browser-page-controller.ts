@@ -17,6 +17,7 @@ import type { BrowserShortcut } from "./browser-types";
 /** User-facing navigation, find, and zoom controls for native guest pages. */
 export class BrowserPageController {
   private findShortcutMatcher: BrowserShortcutInputMatcher = () => false;
+  private downloadsShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private zoomResetShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private readonly findController: BrowserFindController;
   private readonly zoomController: BrowserZoomController;
@@ -86,11 +87,13 @@ export class BrowserPageController {
     const platform =
       process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux";
     this.findShortcutMatcher = compileBrowserShortcutBinding(bindings.find, platform);
+    this.downloadsShortcutMatcher = compileBrowserShortcutBinding(bindings.downloads, platform);
     this.zoomResetShortcutMatcher = compileBrowserShortcutBinding(bindings.zoomReset, platform);
   }
 
   matchGuestShortcut(input: Input): BrowserShortcut | null {
     if (this.findShortcutMatcher(input)) return "find";
+    if (this.downloadsShortcutMatcher(input)) return "downloads";
     if (this.zoomResetShortcutMatcher(input)) return "zoom-reset";
     return null;
   }

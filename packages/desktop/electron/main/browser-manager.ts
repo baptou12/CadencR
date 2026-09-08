@@ -1,6 +1,8 @@
 import { BrowserWindow } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
 import { BrowserFocusGuard } from "./browser-focus-guard";
+import type { BrowserDownloadManager } from "./browser-download-manager";
+import { createBrowserDownloadManager, prepareBrowserShutdown } from "./browser-manager-downloads";
 import { BrowserLibraryController } from "./browser-library-controller";
 import { BrowserLibraryStore } from "./browser-library-store";
 import { BrowserManagerState } from "./browser-manager-state";
@@ -41,6 +43,7 @@ export class BrowserManager {
   readonly focusGuard = new BrowserFocusGuard(() => this.getMainWindow());
   private readonly layout = new BrowserViewLayout(() => this.getMainWindow());
   private readonly tabLifecycle = new BrowserTabLifecycle(this.tabs, this.layout);
+  readonly downloads: BrowserDownloadManager;
   private readonly workspace: BrowserTabWorkspaceController;
   private readonly organization: BrowserTabOrganizationController;
   private readonly creator: BrowserTabCreationController;
@@ -120,6 +123,14 @@ export class BrowserManager {
       () => this.lastError,
       () => this.getMainWindow(),
     );
+    this.downloads = createBrowserDownloadManager({
+      lifecycle: this.tabLifecycle,
+      getWindow: () => this.getMainWindow(),
+      reportError: (message, scopeId) => {
+        this.lastError = message;
+        this.stateAuthority.emit(scopeId);
+      },
+    });
     this.popup = new BrowserPopupController({
       getWindow: () => this.getMainWindow(),
       currentUrl: (tabId) => this.tabs.get(tabId)?.webContents.getURL() ?? null,
@@ -139,6 +150,7 @@ export class BrowserManager {
       closer: this.tabCloser,
       network: this.network,
       focusGuard: this.focusGuard,
+      downloads: this.downloads,
       site: this.siteController,
       origins: this.origins,
       library: this.library,
@@ -189,7 +201,6 @@ export class BrowserManager {
       requireTab: (tabId) => this.requireTab(tabId),
     });
   }
-
   createTab(
     rawUrl?: string,
     profileId = "fresh",
@@ -198,9 +209,7 @@ export class BrowserManager {
     const profile = profileFromSelection(profileId);
     return this.creator.create(rawUrl, profileId, profile, scopeId);
   }
-
   readonly tabCountsByScope = (): Record<number, number> => this.workspace.countByScope(this.tabs);
-
   async restoreScope(scopeId: number): Promise<BrowserStateSnapshot> {
     const activeId = await this.workspace.ensureRestored(scopeId, this.scopes.activeTabId(scopeId));
     if (
@@ -212,12 +221,10 @@ export class BrowserManager {
     }
     return this.state(scopeId);
   }
-
   async restoreScopeMetadata(scopeId: number): Promise<BrowserStateSnapshot> {
     await this.workspace.ensureRestored(scopeId, this.scopes.activeTabId(scopeId));
     return this.state(scopeId);
   }
-
   navigate(tabId: string, rawUrl: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
     const url = normalizeBrowserOpenUrl(rawUrl);
@@ -234,14 +241,12 @@ export class BrowserManager {
     });
     return tab.metadata;
   }
-
   navigateFromChrome(tabId: string, rawUrl: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
     const normalizedUrl = normalizeBrowserOpenUrl(rawUrl);
     this.creator.promoteTemporaryForChrome(tab);
     return this.navigate(tabId, normalizedUrl);
   }
-
   async activateTab(tabId: string): Promise<BrowserTabMetadata> {
     const dormant = this.workspace.dormantTab(tabId);
     if (dormant) {
@@ -264,7 +269,6 @@ export class BrowserManager {
     }
     return this.activateLiveTab(tabId);
   }
-
   private activateLiveTab(tabId: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
     this.scopes.activate(tab.metadata.scopeId, tabId);
@@ -274,11 +278,9 @@ export class BrowserManager {
     if (this.workspace.noteActivation(tabId, this.tabs)) this.persistScope(tab.metadata.scopeId);
     return tab.metadata;
   }
-
   setSuppressed(value: boolean): void {
     if (this.layout.setSuppressed(value)) this.applyLayout();
   }
-
   private applyLayout(): void {
     this.layout.apply(this.tabs, this.scopes.active, this.scopes.bounds);
   }
@@ -287,7 +289,7 @@ export class BrowserManager {
     return this.organization.close(tabId);
   }
   async closeTabsForScope(scopeId: number): Promise<BrowserStateSnapshot> {
-    return this.organization.closeScope(scopeId);
+    return this.downloads.closeScope(scopeId, () => this.organization.closeScope(scopeId));
   }
   duplicateTab(tabId: string): BrowserTabMetadata {
     return this.organization.duplicate(tabId);
@@ -312,8 +314,10 @@ export class BrowserManager {
     this.scopes.clearBounds();
   }
 
-  prepareForShutdown(): Promise<void> {
-    return this.workspace.prepareForShutdown(this.tabs, this.scopes.active);
+  async prepareForShutdown(): Promise<void> {
+    await prepareBrowserShutdown(this.downloads, () =>
+      this.workspace.prepareForShutdown(this.tabs, this.scopes.active),
+    );
   }
 
   setBounds(

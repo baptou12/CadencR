@@ -51,7 +51,11 @@ function port(overrides: Partial<AllocatedPort> = {}): AllocatedPort {
   };
 }
 
-function renderLine(prStatus: PrStatusSnapshot | undefined, ports: readonly AllocatedPort[] = []) {
+function renderLine(
+  prStatus: PrStatusSnapshot | undefined,
+  ports: readonly AllocatedPort[] = [],
+  downloadCount = 0,
+) {
   return render(
     <FeatureRowMetaLine
       feature={feature()}
@@ -59,6 +63,7 @@ function renderLine(prStatus: PrStatusSnapshot | undefined, ports: readonly Allo
       gitStats={undefined}
       shellCount={0}
       browserCount={0}
+      downloadCount={downloadCount}
       ports={ports}
       isEditingLabel={false}
       labelDraft=""
@@ -104,6 +109,13 @@ describe("FeatureRowMetaLine", () => {
 
     expect(screen.getByLabelText("Ports 3000, 5173 in use")).toBeInTheDocument();
     expect(screen.getByText("+1")).toBeInTheDocument();
+  });
+
+  it("shows active downloads independently from browser tabs", () => {
+    renderLine(undefined, [], 2);
+
+    expect(screen.getByLabelText("2 browser downloads active")).toHaveTextContent("2");
+    expect(screen.queryByLabelText(/browser tabs open/)).not.toBeInTheDocument();
   });
 });
 

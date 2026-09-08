@@ -3,6 +3,7 @@ import type {
   BrowserBounds,
   BrowserBookmark,
   BrowserCommentBadgeClick,
+  BrowserDownloadSnapshot,
   BrowserFindRequest,
   BrowserFindResult,
   BrowserGuestShortcutBindings,
@@ -254,6 +255,20 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:close-other-tabs", tabId),
   reopenLastClosedBrowserTab: (scopeId: number): Promise<BrowserTabMetadata | null> =>
     ipcRenderer.invoke("browser:reopen-last-closed-tab", scopeId),
+  listBrowserDownloads: (scopeId: number): Promise<BrowserDownloadSnapshot> =>
+    ipcRenderer.invoke("browser:list-downloads", scopeId),
+  listBrowserDownloadCountsByScope: (): Promise<Record<number, number>> =>
+    ipcRenderer.invoke("browser:list-download-counts"),
+  pauseBrowserDownload: (scopeId: number, id: string): Promise<BrowserDownloadSnapshot> =>
+    ipcRenderer.invoke("browser:pause-download", scopeId, id),
+  resumeBrowserDownload: (scopeId: number, id: string): Promise<BrowserDownloadSnapshot> =>
+    ipcRenderer.invoke("browser:resume-download", scopeId, id),
+  cancelBrowserDownload: (scopeId: number, id: string): Promise<BrowserDownloadSnapshot> =>
+    ipcRenderer.invoke("browser:cancel-download", scopeId, id),
+  revealBrowserDownload: (scopeId: number, id: string): Promise<void> =>
+    ipcRenderer.invoke("browser:reveal-download", scopeId, id),
+  clearBrowserDownloads: (scopeId: number): Promise<BrowserDownloadSnapshot> =>
+    ipcRenderer.invoke("browser:clear-downloads", scopeId),
   listBlockedBrowserPopups: (scopeId: number): Promise<BrowserPopupRequest[]> =>
     ipcRenderer.invoke("browser:list-blocked-popups", scopeId),
   allowBrowserPopupOnce: (requestId: string): Promise<void> =>
@@ -363,6 +378,10 @@ contextBridge.exposeInMainWorld("cadencr", {
     onIpc("browser:permission-request-cancelled", cb),
   onBrowserPopupRequestsChanged: (cb: (event: { scopeId: number }) => void): (() => void) =>
     onIpc("browser:popup-requests-changed", cb),
+  onBrowserDownloadsChanged: (cb: (snapshot: BrowserDownloadSnapshot) => void): (() => void) =>
+    onIpc("browser:downloads-changed", cb),
+  onBrowserDownloadCounts: (cb: (counts: Record<number, number>) => void): (() => void) =>
+    onIpc("browser:download-counts", cb),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: (): Promise<void> => ipcRenderer.invoke("app:install-update"),
   fetchChangelog: (version: string): Promise<string | null> =>

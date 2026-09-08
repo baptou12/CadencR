@@ -6,6 +6,7 @@ import { BrowserAddressBar } from "./browser/BrowserAddressBar";
 import { BrowserCommentDock } from "./browser/BrowserCommentDock";
 import { BrowserCommentOverlay } from "./browser/BrowserCommentOverlay";
 import { BrowserFindToolbar } from "./browser/BrowserFindToolbar";
+import { BrowserDownloadsPanel } from "./browser/BrowserDownloadsPanel";
 import { BrowserPermissionPrompt } from "./browser/BrowserPermissionPrompt";
 import { BrowserPopupNotice } from "./browser/BrowserPopupNotice";
 import { BrowserSiteInformation } from "./browser/BrowserSiteInformation";
@@ -56,7 +57,6 @@ const BrowserWorkspaceTabReady = memo(function BrowserWorkspaceTabReady({
 }: BrowserWorkspaceTabProps & { defaultMode: CookieMode }): ReactElement {
   const model = useBrowserWorkspaceModel(defaultMode, scopeId);
   const comments = useBrowserComments({ runForActive: model.runForActive, onSend: onSendContext });
-  useBrowserKeyboard(model, comments.addComment);
   if (model.loading) return <BrowserLoading />;
   return <BrowserWorkspaceView scopeId={scopeId} model={model} comments={comments} />;
 });
@@ -78,20 +78,31 @@ function BrowserWorkspaceView({
   const [siteOpen, setSiteOpen] = useState(false);
   const [tabMenuOpen, setTabMenuOpen] = useState(false);
   const [permissionPromptOpen, setPermissionPromptOpen] = useState(false);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const toggleDownloads = useCallback((): void => setDownloadsOpen((value) => !value), []);
+  useBrowserKeyboard(model, comments.addComment, toggleDownloads);
   // Freeze the native view (and show a snapshot) whenever a renderer overlay
   // needs to sit over the page region: the URL suggestions or a comment form.
   const overlayActive =
-    suggestionsOpen || siteOpen || tabMenuOpen || permissionPromptOpen || comments.draft !== null;
+    suggestionsOpen ||
+    siteOpen ||
+    tabMenuOpen ||
+    permissionPromptOpen ||
+    downloadsOpen ||
+    comments.draft !== null;
   const snapshot = useSuppressedBrowserSnapshot(overlayActive, model.activeTab);
   useSuppressBrowserView(snapshot.suppressNativeView);
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <BrowserToolbar
         model={model}
+        scopeId={scopeId}
         onAddComment={comments.addComment}
         onSuggestionOverlayOpenChange={setSuggestionsOpen}
         onSiteOverlayOpenChange={setSiteOpen}
         onChromeOverlayOpenChange={setTabMenuOpen}
+        downloadsOpen={downloadsOpen}
+        onDownloadsOpenChange={setDownloadsOpen}
       />
       {model.find.open ? <BrowserFindToolbar find={model.find} /> : null}
       {model.state.error ? (
@@ -140,16 +151,22 @@ function BrowserWorkspaceView({
 
 function BrowserToolbar({
   model,
+  scopeId,
   onAddComment,
   onSuggestionOverlayOpenChange,
   onSiteOverlayOpenChange,
   onChromeOverlayOpenChange,
+  downloadsOpen,
+  onDownloadsOpenChange,
 }: {
   model: BrowserWorkspaceModel;
+  scopeId: number;
   onAddComment: () => void;
   onSuggestionOverlayOpenChange: (open: boolean) => void;
   onSiteOverlayOpenChange: (open: boolean) => void;
   onChromeOverlayOpenChange: (open: boolean) => void;
+  downloadsOpen: boolean;
+  onDownloadsOpenChange: (open: boolean) => void;
 }): ReactElement {
   return (
     // z-30 lifts the toolbar's stacking context (created by backdrop-blur) above
@@ -179,6 +196,13 @@ function BrowserToolbar({
         onOpenExternal={model.openExternal}
         onAddComment={onAddComment}
         onSuggestionOverlayOpenChange={onSuggestionOverlayOpenChange}
+        downloadsControl={
+          <BrowserDownloadsPanel
+            scopeId={scopeId}
+            open={downloadsOpen}
+            onOpenChange={onDownloadsOpenChange}
+          />
+        }
         siteControl={
           <BrowserSiteInformation
             activeTab={model.activeTab}

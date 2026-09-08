@@ -37,6 +37,7 @@ interface ProjectFeatureRowProps {
   worktree: FeatureWorktreeInfo | undefined;
   shellCount: number;
   browserCount: number;
+  downloadCount: number;
   /** Ports this conversation's own terminal/agent processes are listening on. */
   ports: readonly AllocatedPort[];
   isEditingLabel: boolean;
@@ -51,7 +52,12 @@ interface ProjectFeatureRowProps {
   onArchiveOrDelete: (featureId: number) => void;
   onUnarchive: (featureId: number) => void;
   onTogglePin: (featureId: number, pinned: boolean) => void;
-  onCloseActivity: (featureId: number, shellCount: number, browserCount: number) => void;
+  onCloseActivity: (
+    featureId: number,
+    shellCount: number,
+    browserCount: number,
+    downloadCount: number,
+  ) => void;
   /** Expand/collapse twisty rendered by FeatureSubtree. */
   hierarchyControl?: ReactNode;
   /** Zero-based nesting depth; indentation stays inside the full-width row. */
@@ -82,6 +88,7 @@ function FeatureRowDetails({
     hasWorktree,
     shellCount,
     browserCount,
+    downloadCount,
     ports,
     isEditingLabel,
     labelDraft,
@@ -113,6 +120,7 @@ function FeatureRowDetails({
           gitStats={state.gitStats}
           shellCount={shellCount}
           browserCount={browserCount}
+          downloadCount={downloadCount}
           ports={ports}
           isEditingLabel={isEditingLabel}
           labelDraft={labelDraft}
@@ -152,6 +160,7 @@ function FeatureRowMenu({
     worktree,
     shellCount,
     browserCount,
+    downloadCount,
     onNavigate,
     onTogglePin,
     onCloseActivity,
@@ -166,9 +175,10 @@ function FeatureRowMenu({
       pullRequest={state.prStatus?.pr}
       isArchived={state.isArchived}
       isPinned={state.isPinned}
-      hasActivity={shellCount > 0 || browserCount > 0}
+      hasActivity={shellCount > 0 || browserCount > 0 || downloadCount > 0}
       shellCount={shellCount}
       browserCount={browserCount}
+      downloadCount={downloadCount}
       onNavigate={onNavigate}
       onTogglePin={onTogglePin}
       onStartLabelEditAfterMenuClose={onStartLabelEditAfterMenuClose}

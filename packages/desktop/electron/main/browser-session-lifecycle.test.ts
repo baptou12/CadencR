@@ -18,6 +18,21 @@ describe("BrowserSessionLifecycle", () => {
     expect(clear).toHaveBeenCalledWith("browser:fresh:private-session");
   });
 
+  it("keeps a private partition alive while an independent download lease exists", async () => {
+    const clear = vi.fn(async () => undefined);
+    const lifecycle = new BrowserSessionLifecycle(clear);
+    const profile = createBrowserProfile("fresh", "private-session");
+    lifecycle.claim(profile);
+    const releaseDownload = lifecycle.acquire(profile);
+
+    await lifecycle.release(profile);
+    expect(clear).not.toHaveBeenCalled();
+
+    await releaseDownload();
+    await releaseDownload();
+    expect(clear).toHaveBeenCalledOnce();
+  });
+
   it("never clears a persistent profile when its last tab closes", async () => {
     const clear = vi.fn(async () => undefined);
     const lifecycle = new BrowserSessionLifecycle(clear);

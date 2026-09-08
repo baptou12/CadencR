@@ -47,6 +47,7 @@ export interface BrowserAddressBarProps {
   onAddComment: () => void;
   onSuggestionOverlayOpenChange?: (open: boolean) => void;
   siteControl?: ReactNode;
+  downloadsControl?: ReactNode;
 }
 
 function BrowserAddressBarImpl(props: BrowserAddressBarProps): ReactElement {
@@ -270,6 +271,7 @@ function renderAddressBar(view: AddressBarViewProps): ReactElement {
             onAddComment={view.onAddComment}
             onMenuOpenChange={view.setActionsOpen}
           />
+          {view.downloadsControl}
         </form>
         {view.error && !view.panelOpen ? (
           <div

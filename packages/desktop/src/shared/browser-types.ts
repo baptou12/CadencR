@@ -83,6 +83,43 @@ export interface BrowserPopupRequest {
   allowExpiresAt?: string;
 }
 
+export type BrowserDownloadState =
+  | "progressing"
+  | "paused"
+  | "interrupted"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
+/** Sanitized, renderer-safe view of a native download owned by Browser chrome. */
+export interface BrowserDownload {
+  id: string;
+  tabId: string;
+  scopeId: number;
+  filename: string;
+  destination: string;
+  state: BrowserDownloadState;
+  receivedBytes: number;
+  totalBytes: number | null;
+  bytesPerSecond: number;
+  percent: number | null;
+  canPause: boolean;
+  canResume: boolean;
+  canCancel: boolean;
+  private: boolean;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+}
+
+/** Authoritative, scope-isolated snapshot; download history is never persisted. */
+export interface BrowserDownloadSnapshot {
+  scopeId: number;
+  downloads: BrowserDownload[];
+  activeCount: number;
+  aggregatePercent: number | null;
+}
+
 export interface BrowserFindRequest {
   /** Renderer-generated correlation token, established before IPC starts. */
   requestToken: string;
@@ -108,6 +145,7 @@ export interface BrowserShortcutBinding {
 
 export interface BrowserGuestShortcutBindings {
   find: BrowserShortcutBinding;
+  downloads: BrowserShortcutBinding;
   zoomReset: BrowserShortcutBinding;
 }
 
@@ -200,6 +238,7 @@ export type BrowserShortcut =
   | "focus-url"
   | "find"
   | "add-comment"
+  | "downloads"
   | "devtools"
   | "reload"
   | "zoom-in"

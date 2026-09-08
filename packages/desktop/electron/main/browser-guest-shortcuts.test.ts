@@ -7,10 +7,12 @@ describe("parseBrowserGuestShortcutBindings", () => {
     expect(
       parseBrowserGuestShortcutBindings({
         find: { keys: ["mod", "f"] },
+        downloads: { keys: ["mod", "shift", "j"] },
         zoomReset: { keys: [], altKeys: [] },
       }),
     ).toEqual({
       find: { keys: ["mod", "f"] },
+      downloads: { keys: ["mod", "shift", "j"] },
       zoomReset: { keys: [], altKeys: [] },
     });
   });
@@ -19,12 +21,14 @@ describe("parseBrowserGuestShortcutBindings", () => {
     expect(() =>
       parseBrowserGuestShortcutBindings({
         find: { id: "browser-find", keys: ["mod", "f"] },
+        downloads: { keys: ["mod", "shift", "j"] },
         zoomReset: { keys: ["mod", "0"] },
       }),
     ).toThrow();
     expect(() =>
       parseBrowserGuestShortcutBindings({
         find: { keys: ["mod"] },
+        downloads: { keys: ["mod", "shift", "j"] },
         zoomReset: { keys: ["mod", "0", "x"] },
       }),
     ).toThrow();

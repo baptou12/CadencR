@@ -17,7 +17,11 @@ const shortcutBindingSchema = z
   .strict();
 
 const guestShortcutBindingsSchema = z
-  .object({ find: shortcutBindingSchema, zoomReset: shortcutBindingSchema })
+  .object({
+    find: shortcutBindingSchema,
+    downloads: shortcutBindingSchema,
+    zoomReset: shortcutBindingSchema,
+  })
   .strict();
 
 export function parseBrowserGuestShortcutBindings(value: unknown): BrowserGuestShortcutBindings {

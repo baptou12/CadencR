@@ -68,6 +68,12 @@ export const BROWSER_SHORTCUTS = [
     scope: "browser",
   },
   {
+    id: "browser-downloads",
+    keys: ["mod", "shift", "j"],
+    description: "Show browser downloads",
+    scope: "browser",
+  },
+  {
     // ⌘⌥I matches Chrome/Electron's DevTools chord. In dev the Electron menu
     // accelerator intercepts it before the page sees it, so this binding only
     // takes effect in packaged builds — acceptable, the toolbar button covers dev.
