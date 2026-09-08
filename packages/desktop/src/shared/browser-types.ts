@@ -1,3 +1,5 @@
+import type { BrowserResponsiveState } from "./browser-responsive";
+
 export interface BrowserProfileMetadata {
   id: string;
   label: string;
@@ -62,6 +64,8 @@ export interface BrowserTabMetadata {
   temporary?: boolean;
   /** Authoritative zoom reported by the guest WebContents. */
   zoomPercent: number;
+  /** Per-tab Chromium viewport emulation. The same WebContents remains alive. */
+  responsive: BrowserResponsiveState;
   /**
    * The feature-layout scope that owns this tab. Tabs are isolated per scope so
    * a tab opened in one feature's Browser never leaks into another's. `null` is
@@ -146,6 +150,7 @@ export interface BrowserShortcutBinding {
 export interface BrowserGuestShortcutBindings {
   find: BrowserShortcutBinding;
   downloads: BrowserShortcutBinding;
+  responsive: BrowserShortcutBinding;
   zoomReset: BrowserShortcutBinding;
 }
 
@@ -239,6 +244,7 @@ export type BrowserShortcut =
   | "find"
   | "add-comment"
   | "downloads"
+  | "responsive"
   | "devtools"
   | "reload"
   | "zoom-in"

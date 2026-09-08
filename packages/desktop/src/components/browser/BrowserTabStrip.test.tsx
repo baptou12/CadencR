@@ -19,6 +19,17 @@ function tab(index: number, activeIndex: number): BrowserTabMetadata {
     pinned: false,
     suspended: false,
     zoomPercent: 100,
+    responsive: {
+      enabled: false,
+      preset: "mobile",
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      touch: true,
+      colorScheme: "system",
+      status: "ready",
+    },
     scopeId: 1,
   };
 }

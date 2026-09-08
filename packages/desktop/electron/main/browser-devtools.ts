@@ -7,12 +7,14 @@ export function toggleTabDevTools(
   tab: ManagedTab,
   applyLayout: () => void,
   emitState: () => void,
+  onDevToolsReady: () => void,
 ): BrowserTabMetadata {
   if (!tab.devtoolsView) {
     tab.devtoolsView = new WebContentsView({
       webPreferences: secureWebPreferences(tab.profile),
     });
     tab.devtoolsWebContents = tab.devtoolsView.webContents;
+    tab.devtoolsWebContents.on("did-finish-load", onDevToolsReady);
     tab.webContents.setDevToolsWebContents(tab.devtoolsWebContents);
   }
   const open = !tab.metadata.devToolsOpen;

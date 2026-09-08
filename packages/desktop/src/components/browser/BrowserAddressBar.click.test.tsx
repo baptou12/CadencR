@@ -46,6 +46,17 @@ function activeTab(sessionProfileId = "default"): BrowserTabMetadata {
     suspended: false,
     scopeId: 1,
     zoomPercent: 100,
+    responsive: {
+      enabled: false,
+      preset: "mobile",
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      touch: true,
+      colorScheme: "system",
+      status: "ready",
+    },
   };
 }
 
@@ -74,6 +85,7 @@ function setup(overrides: Partial<BrowserAddressBarProps> = {}): SetupResult {
     onDevTools: vi.fn(),
     onOpenExternal: vi.fn(),
     onAddComment: vi.fn(),
+    onResponsive: vi.fn(),
     ...overrides,
   };
   render(<BrowserAddressBar {...props} />);
@@ -191,6 +203,17 @@ describe("BrowserAddressBar omnibox interactions", () => {
           suspended: false,
           scopeId: 4,
           zoomPercent: 100,
+          responsive: {
+            enabled: false,
+            preset: "mobile",
+            width: 390,
+            height: 844,
+            deviceScaleFactor: 3,
+            mobile: true,
+            touch: true,
+            colorScheme: "system",
+            status: "ready",
+          },
         },
       ],
     });
@@ -242,13 +265,13 @@ describe("BrowserAddressBar omnibox interactions", () => {
     setup({ activeTab: active, tabs: [active], onZoomOut });
 
     expect(screen.getByRole("button", { name: "Find in page" }).parentElement).toHaveClass(
-      "@max-[44rem]:hidden",
+      "@max-[50rem]:hidden",
     );
     expect(screen.getByRole("button", { name: "Zoom out" }).parentElement).toHaveClass(
       "@max-[28rem]:hidden",
     );
     const moreActions = screen.getByRole("button", { name: "More Browser actions" });
-    expect(moreActions).toHaveClass("@max-[44rem]:inline-flex");
+    expect(moreActions).toHaveClass("@max-[50rem]:inline-flex");
 
     await user.click(moreActions);
     const compactZoomOut = await screen.findByRole("menuitem", { name: "Zoom out" });

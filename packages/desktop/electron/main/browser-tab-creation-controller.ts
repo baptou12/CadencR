@@ -8,6 +8,7 @@ import type { BrowserOriginStore } from "./browser-origin-store";
 import type { BrowserPageController } from "./browser-page-controller";
 import type { BrowserProfile } from "./browser-profiles";
 import type { BrowserPopupController } from "./browser-popup-controller";
+import type { BrowserResponsiveController } from "./browser-responsive-controller";
 import { isPrivateProfile } from "./browser-session-lifecycle";
 import type { BrowserSiteController } from "./browser-site-controller";
 import type { BrowserTabCloseController } from "./browser-tab-close-controller";
@@ -24,9 +25,10 @@ interface BrowserTabCreationHost {
   emitCounts(): void;
   emitShortcut(shortcut: BrowserShortcut): void;
   activate(tabId: string): BrowserTabMetadata;
+  activateFallback(tabId: string): Promise<BrowserTabMetadata>;
+  activeTabId(scopeId: number | null): string | null;
   navigate(tabId: string, url: string): BrowserTabMetadata;
   persist(scopeId: number | null): void;
-  handleNativeDestroyed(tab: ManagedTab): void;
 }
 
 interface BrowserTabCreationOptions {
@@ -42,6 +44,7 @@ interface BrowserTabCreationOptions {
   library: BrowserLibraryController;
   page: BrowserPageController;
   popup: BrowserPopupController;
+  responsive: BrowserResponsiveController;
   host: BrowserTabCreationHost;
 }
 
@@ -176,6 +179,7 @@ export class BrowserTabCreationController {
     try {
       this.installEvents(tab, profile);
       this.options.popup.watch(tab);
+      this.options.responsive.watch(tab);
       this.options.network.ensure(tab.webContents.session);
       this.options.focusGuard.watch(tab.webContents);
       lifecycle.register(tab);
@@ -203,7 +207,7 @@ export class BrowserTabCreationController {
       emitState: () => host.emitState(tab.metadata.scopeId),
       setLastError: (message) => host.setLastError(message),
       isTabAlive: () => tabs.has(id),
-      tabDestroyed: () => host.handleNativeDestroyed(tab),
+      tabDestroyed: () => this.handleNativeDestroyed(tab),
       recordOrigin: (url) => {
         if (!isPrivateProfile(profile) && !tab.temporary) origins.record(url);
       },
@@ -225,6 +229,29 @@ export class BrowserTabCreationController {
       emitCommentBadgeClick: (tabId, anchorId, box) =>
         sendToWindow(host.getWindow(), "browser:comment-badge-click", { tabId, anchorId, box }),
     });
+  }
+
+  private handleNativeDestroyed(tab: ManagedTab): void {
+    const { tabs, workspace, closer, host } = this.options;
+    if (!tabs.has(tab.metadata.id)) return;
+    const removal = workspace.remove(tab.metadata.id, tabs, false);
+    const wasActive = host.activeTabId(tab.metadata.scopeId) === tab.metadata.id;
+    const opener = tab.openerTabId ? tabs.get(tab.openerTabId) : null;
+    const fallbackId = wasActive
+      ? opener?.metadata.scopeId === tab.metadata.scopeId
+        ? opener.metadata.id
+        : removal?.nextId
+      : null;
+    if (fallbackId) {
+      void host.activateFallback(fallbackId).catch((error: unknown) => {
+        host.setLastError(error instanceof Error ? error.message : String(error));
+        host.emitState(tab.metadata.scopeId);
+      });
+    }
+    closer.handleNativeDestroyed(tab);
+    if (tab.metadata.scopeId !== null && tab.profile.mode === "persistent" && !tab.temporary) {
+      host.persist(tab.metadata.scopeId);
+    }
   }
 }
 

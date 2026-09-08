@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DEFAULT_BROWSER_RESPONSIVE_STATE } from "../../src/shared/browser-responsive";
 import type { ManagedTab } from "./browser-tab-events";
 import { BrowserTabPersistenceController } from "./browser-tab-persistence-controller";
 import {
@@ -340,6 +341,7 @@ export class BrowserTabWorkspaceController {
         pinned: saved.pinned,
         suspended: true,
         zoomPercent: 100,
+        responsive: { ...DEFAULT_BROWSER_RESPONSIVE_STATE },
         scopeId,
       },
     });

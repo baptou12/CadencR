@@ -13,6 +13,7 @@ import type {
   BrowserShortcut,
   BrowserTabMetadata,
 } from "./browser-types";
+import { DEFAULT_BROWSER_RESPONSIVE_STATE } from "../../src/shared/browser-responsive";
 
 const DEFAULT_URL = "about:blank";
 
@@ -138,6 +139,7 @@ export function metadataFor(
     pinned: false,
     suspended: false,
     zoomPercent: 100,
+    responsive: { ...DEFAULT_BROWSER_RESPONSIVE_STATE },
     scopeId,
   };
 }

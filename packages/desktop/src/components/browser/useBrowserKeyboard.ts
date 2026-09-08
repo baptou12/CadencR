@@ -145,6 +145,15 @@ function useBrowserPageShortcuts(
     "browser",
     actionOptions,
   );
+  useScopedGlobalShortcutById(
+    "browser-responsive",
+    (event) => {
+      event.preventDefault();
+      model.responsive.toggle();
+    },
+    "browser",
+    actionOptions,
+  );
 }
 
 function useBrowserGuestShortcutRelay(
@@ -173,6 +182,9 @@ function useBrowserGuestShortcutRelay(
         if (hasTab) addComment();
       },
       downloads: toggleDownloads,
+      responsive: () => {
+        if (hasTab) model.responsive.toggle();
+      },
       devtools: () => {
         if (hasTab) model.devTools();
       },
@@ -184,18 +196,20 @@ function useBrowserGuestShortcutRelay(
 function useBrowserGuestShortcutPublication(): void {
   const find = useResolvedShortcut("browser-find");
   const downloads = useResolvedShortcut("browser-downloads");
+  const responsive = useResolvedShortcut("browser-responsive");
   const zoomReset = useResolvedShortcut("zoom-reset");
   useEffect(() => {
     void desktopBridge
       .setBrowserGuestShortcuts({
         find: { keys: find.keys, altKeys: find.altKeys },
         downloads: { keys: downloads.keys, altKeys: downloads.altKeys },
+        responsive: { keys: responsive.keys, altKeys: responsive.altKeys },
         zoomReset: { keys: zoomReset.keys, altKeys: zoomReset.altKeys },
       })
       .catch((error: unknown) => {
         showBrowserError(error, "Could not configure Browser shortcuts");
       });
-  }, [downloads, find, zoomReset]);
+  }, [downloads, find, responsive, zoomReset]);
 }
 
 /**

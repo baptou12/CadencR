@@ -113,6 +113,7 @@ function bridge(): CadencrBrowserBridge {
     clearBrowserHistory: vi.fn(() => Promise.resolve()),
     setBrowserBookmark: vi.fn(() => Promise.resolve(null)),
     toggleBrowserDevTools: vi.fn(),
+    setBrowserResponsive: vi.fn(),
     getBrowserConsole: vi.fn(),
     getBrowserNetwork: vi.fn(),
     getBrowserSnapshot: vi.fn(),

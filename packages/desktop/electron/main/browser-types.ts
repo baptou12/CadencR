@@ -28,6 +28,13 @@ export type {
   BrowserTabMetadata,
 } from "../../src/shared/browser-types";
 
+export type {
+  BrowserResponsiveColorScheme,
+  BrowserResponsivePreset,
+  BrowserResponsiveRequest,
+  BrowserResponsiveState,
+} from "../../src/shared/browser-responsive";
+
 export {
   BROWSER_SITE_PERMISSIONS,
   BROWSER_SITE_PERMISSION_DECISIONS,
@@ -36,3 +43,12 @@ export {
   MAX_BROWSER_LIBRARY_QUERY_LENGTH,
   MAX_BROWSER_LIBRARY_URL_LENGTH,
 } from "../../src/shared/browser-types";
+
+export {
+  BROWSER_RESPONSIVE_COLOR_SCHEMES,
+  BROWSER_RESPONSIVE_PRESETS,
+  MAX_BROWSER_RESPONSIVE_DIMENSION,
+  MAX_BROWSER_RESPONSIVE_DPR,
+  MAX_BROWSER_RESPONSIVE_SURFACE,
+  MIN_BROWSER_RESPONSIVE_DIMENSION,
+} from "../../src/shared/browser-responsive";

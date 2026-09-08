@@ -10,6 +10,7 @@ import { useBrowserViewportBounds } from "../useBrowserViewportBounds";
 import { reportBrowserError, showBrowserError } from "./browser-errors";
 import { useBrowserFind, type BrowserFindModel } from "./useBrowserFind";
 import { useBrowserPageActions, type BrowserPageActions } from "./useBrowserPageActions";
+import { useBrowserResponsive, type BrowserResponsiveModel } from "./useBrowserResponsive";
 import {
   useBrowserTabOrganization,
   type BrowserTabOrganization,
@@ -36,6 +37,7 @@ export interface BrowserWorkspaceModel extends BrowserPageActions, BrowserTabOrg
   urlInputRef: React.RefObject<HTMLInputElement | null>;
   viewportRef: (node: HTMLDivElement | null) => void;
   find: BrowserFindModel;
+  responsive: BrowserResponsiveModel;
   setUrlInput: (value: string) => void;
   setUrlEditing: (editing: boolean) => void;
   clearError: () => void;
@@ -183,6 +185,7 @@ export function useBrowserWorkspaceModel(
     setCreatingMode,
   );
   const pageActions = useBrowserPageActions(runForActive);
+  const responsive = useBrowserResponsive(activeTab, runForActive);
   const clearError = useCallback((): void => {
     if (state.error) setDismissedError(state.error);
   }, [state.error]);
@@ -209,6 +212,7 @@ export function useBrowserWorkspaceModel(
     pending,
     pendingAction: organization.pendingAction,
     reload: pageActions.reload,
+    responsive,
     reopenLastClosedTab: organization.reopenLastClosedTab,
     reorderTab: organization.reorderTab,
     runForActive,
@@ -253,6 +257,7 @@ function useBrowserModelValue(model: BrowserWorkspaceModel): BrowserWorkspaceMod
       model.pending,
       model.pendingAction,
       model.reload,
+      model.responsive,
       model.reopenLastClosedTab,
       model.reorderTab,
       model.runForActive,

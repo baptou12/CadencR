@@ -6,6 +6,7 @@ import {
 import { captureElementContext } from "./browser-dom";
 import { waitForLoad } from "./browser-interactions";
 import { tabDiagnostics } from "./browser-manager-utils";
+import { browserScreenshotClipScale } from "./browser-screenshot";
 import type { ManagedTab } from "./browser-tab-events";
 import type { BrowserElementContext } from "./browser-types";
 
@@ -58,6 +59,7 @@ function captureUntilNavigation(
       },
       tabDiagnostics(tab.consoleEntries, tab.networkEntries),
       anchorId,
+      () => browserScreenshotClipScale(tab),
     ).then((context) => finish({ kind: "selected", context }), fail);
   });
 }

@@ -8,6 +8,7 @@ export class BrowserZoomController {
   constructor(
     private readonly tabs: Map<string, ManagedTab>,
     private readonly emitState: (scopeId: number | null) => void,
+    private readonly syncResponsive: (tab: ManagedTab) => void = () => undefined,
   ) {}
 
   apply(tab: ManagedTab, action: ZoomAction): void {
@@ -20,6 +21,7 @@ export class BrowserZoomController {
     const changedScopes = new Set<number | null>();
     for (const tab of this.tabs.values()) {
       if (tab.webContents.isDestroyed()) continue;
+      this.syncResponsive(tab);
       const zoomPercent = Math.round(tab.webContents.getZoomFactor() * 100);
       if (tab.metadata.zoomPercent === zoomPercent) continue;
       tab.metadata = { ...tab.metadata, zoomPercent };

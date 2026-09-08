@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DEFAULT_BROWSER_RESPONSIVE_STATE } from "../../src/shared/browser-responsive";
 import type { BrowserScopeState } from "./browser-scope-state";
 import type { ManagedTab } from "./browser-tab-events";
 import type { BrowserTabCloseController } from "./browser-tab-close-controller";
@@ -145,6 +146,7 @@ function duplicateMetadata(source: BrowserTabMetadata): BrowserTabMetadata {
     devToolsOpen: false,
     pinned: false,
     suspended: false,
+    responsive: { ...DEFAULT_BROWSER_RESPONSIVE_STATE },
   };
 }
 
@@ -162,6 +164,7 @@ function restoredMetadata(tab: RestorableBrowserTab, scopeId: number): BrowserTa
     pinned: tab.pinned,
     suspended: false,
     zoomPercent: 100,
+    responsive: { ...DEFAULT_BROWSER_RESPONSIVE_STATE },
     scopeId,
   };
 }

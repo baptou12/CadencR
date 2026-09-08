@@ -18,6 +18,7 @@ import type { BrowserShortcut } from "./browser-types";
 export class BrowserPageController {
   private findShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private downloadsShortcutMatcher: BrowserShortcutInputMatcher = () => false;
+  private responsiveShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private zoomResetShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private readonly findController: BrowserFindController;
   private readonly zoomController: BrowserZoomController;
@@ -27,9 +28,10 @@ export class BrowserPageController {
     private readonly requireTab: (tabId: string) => ManagedTab,
     emitState: (scopeId: number | null) => void,
     emitFindResult: (result: BrowserFindResult) => void,
+    syncResponsive: (tab: ManagedTab) => void = () => undefined,
   ) {
     this.findController = new BrowserFindController(emitFindResult);
-    this.zoomController = new BrowserZoomController(this.tabs, emitState);
+    this.zoomController = new BrowserZoomController(this.tabs, emitState, syncResponsive);
   }
 
   goBack(tabId: string): void {
@@ -88,12 +90,14 @@ export class BrowserPageController {
       process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux";
     this.findShortcutMatcher = compileBrowserShortcutBinding(bindings.find, platform);
     this.downloadsShortcutMatcher = compileBrowserShortcutBinding(bindings.downloads, platform);
+    this.responsiveShortcutMatcher = compileBrowserShortcutBinding(bindings.responsive, platform);
     this.zoomResetShortcutMatcher = compileBrowserShortcutBinding(bindings.zoomReset, platform);
   }
 
   matchGuestShortcut(input: Input): BrowserShortcut | null {
     if (this.findShortcutMatcher(input)) return "find";
     if (this.downloadsShortcutMatcher(input)) return "downloads";
+    if (this.responsiveShortcutMatcher(input)) return "responsive";
     if (this.zoomResetShortcutMatcher(input)) return "zoom-reset";
     return null;
   }

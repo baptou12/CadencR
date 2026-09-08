@@ -29,6 +29,12 @@ export type {
   BrowserTabMetadata,
 } from "@/shared/browser-types";
 export type {
+  BrowserResponsiveColorScheme,
+  BrowserResponsivePreset,
+  BrowserResponsiveRequest,
+  BrowserResponsiveState,
+} from "@/shared/browser-responsive";
+export type {
   CadencrBrowserBridge,
   CadencrDesktopBridge,
   DesktopTheme,
@@ -164,6 +170,7 @@ const browserBridge: CadencrBrowserBridge = {
   clearBrowserHistory: () => unavailable("clearBrowserHistory"),
   setBrowserBookmark: () => unavailable("setBrowserBookmark"),
   toggleBrowserDevTools: () => unavailable("toggleBrowserDevTools"),
+  setBrowserResponsive: () => unavailable("setBrowserResponsive"),
   getBrowserConsole: () => unavailable("getBrowserConsole"),
   getBrowserNetwork: () => unavailable("getBrowserNetwork"),
   getBrowserSnapshot: () => unavailable("getBrowserSnapshot"),

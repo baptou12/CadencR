@@ -10,11 +10,13 @@ import { MAX_BROWSER_FAVICON_DATA_URL_LENGTH } from "@/shared/browser-types";
 import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
+  type BrowserShortcut,
+  type BrowserStateSnapshot,
   type CadencrBrowserBridge,
 } from "@/lib/desktop-bridge";
 
 function bridge(): CadencrBrowserBridge {
-  const state = {
+  const state: BrowserStateSnapshot = {
     tabs: [
       {
         id: "tab-1",
@@ -29,6 +31,17 @@ function bridge(): CadencrBrowserBridge {
         pinned: false,
         suspended: false,
         zoomPercent: 100,
+        responsive: {
+          enabled: false,
+          preset: "mobile",
+          width: 390,
+          height: 844,
+          deviceScaleFactor: 3,
+          mobile: true,
+          touch: true,
+          colorScheme: "system",
+          status: "ready",
+        },
         scopeId: 1,
       },
     ],
@@ -151,6 +164,7 @@ function bridge(): CadencrBrowserBridge {
     clearBrowserHistory: vi.fn(() => Promise.resolve()),
     setBrowserBookmark: vi.fn(() => Promise.resolve(null)),
     toggleBrowserDevTools: vi.fn(() => Promise.resolve(state.tabs[0])),
+    setBrowserResponsive: vi.fn(() => Promise.resolve(state.tabs[0])),
     getBrowserConsole: vi.fn(() => Promise.resolve([])),
     getBrowserNetwork: vi.fn(() => Promise.resolve([])),
     getBrowserSnapshot: vi.fn(),
@@ -181,6 +195,9 @@ function bridge(): CadencrBrowserBridge {
 describe("BrowserWorkspaceTab", () => {
   beforeEach(() => {
     clearDesktopBridgeOverrideForTests();
+    Element.prototype.hasPointerCapture = vi.fn(() => false);
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
   });
 
   it("creates a normal tab that reuses cookies by default", async () => {
@@ -206,6 +223,81 @@ describe("BrowserWorkspaceTab", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "New private tab" }));
 
     expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "fresh", 1);
+  });
+
+  it("toggles responsive mode with the exact strict IPC request", async () => {
+    const mockBridge = bridge();
+    setDesktopBridgeOverrideForTests(mockBridge);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open responsive mode" }));
+
+    await waitFor(() =>
+      expect(mockBridge.setBrowserResponsive).toHaveBeenCalledWith("tab-1", {
+        enabled: true,
+        preset: "mobile",
+        width: 390,
+        height: 844,
+        deviceScaleFactor: 3,
+        mobile: true,
+        touch: true,
+        colorScheme: "system",
+      }),
+    );
+    expect(vi.mocked(mockBridge.setBrowserResponsive).mock.calls[0]?.[1]).not.toHaveProperty(
+      "status",
+    );
+  });
+
+  it("toggles responsive mode while the guest page owns keyboard focus", async () => {
+    let shortcutRelay: ((shortcut: BrowserShortcut) => void) | null = null;
+    const mockBridge = bridge();
+    mockBridge.onBrowserShortcut = vi.fn((callback) => {
+      shortcutRelay = callback;
+      return () => undefined;
+    });
+    setDesktopBridgeOverrideForTests(mockBridge);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+    await screen.findByRole("button", { name: "Open responsive mode" });
+
+    act(() => shortcutRelay?.("responsive"));
+
+    await waitFor(() =>
+      expect(mockBridge.setBrowserResponsive).toHaveBeenCalledWith(
+        "tab-1",
+        expect.objectContaining({ enabled: true }),
+      ),
+    );
+  });
+
+  it("keeps responsive recovery controls visible after cleanup fails", async () => {
+    const mockBridge = bridge();
+    const snapshot = await mockBridge.listBrowserTabs(1);
+    snapshot.tabs[0].responsive = {
+      ...snapshot.tabs[0].responsive,
+      enabled: false,
+      status: "error",
+    };
+    setDesktopBridgeOverrideForTests(mockBridge);
+    render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+
+    expect(await screen.findByText(/could not be fully cleared/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Exit responsive mode" })).toBeEnabled();
+  });
+
+  it("suppresses the native view while a responsive select is open", async () => {
+    const mockBridge = bridge();
+    const snapshot = await mockBridge.listBrowserTabs(1);
+    snapshot.tabs[0].responsive = { ...snapshot.tabs[0].responsive, enabled: true };
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+
+    await user.click(await screen.findByRole("combobox", { name: "Responsive device preset" }));
+    await waitFor(() => expect(mockBridge.getBrowserScreenshot).toHaveBeenCalledWith("tab-1"));
+    await waitFor(() => expect(mockBridge.setBrowserSuppressed).toHaveBeenLastCalledWith(true));
+
+    await user.click(screen.getByRole("option", { name: "Tablet" }));
+    await waitFor(() => expect(mockBridge.setBrowserSuppressed).toHaveBeenLastCalledWith(false));
   });
 
   it("supports opening a private tab from the split-button menu with the keyboard", async () => {
@@ -320,7 +412,7 @@ describe("BrowserWorkspaceTab", () => {
     );
     const mockBridge = bridge();
     mockBridge.listBrowserTabs = vi.fn(() =>
-      Promise.resolve({
+      Promise.resolve<BrowserStateSnapshot>({
         tabs: [],
         activeTabId: null,
         consoleEntries: [],
@@ -393,7 +485,7 @@ describe("BrowserWorkspaceTab", () => {
   it("does not render console or network diagnostics in the Browser footer", async () => {
     const mockBridge = bridge();
     mockBridge.listBrowserTabs = vi.fn(() =>
-      Promise.resolve({
+      Promise.resolve<BrowserStateSnapshot>({
         tabs: [
           {
             id: "tab-1",
@@ -408,6 +500,17 @@ describe("BrowserWorkspaceTab", () => {
             pinned: false,
             suspended: false,
             zoomPercent: 100,
+            responsive: {
+              enabled: false,
+              preset: "mobile",
+              width: 390,
+              height: 844,
+              deviceScaleFactor: 3,
+              mobile: true,
+              touch: true,
+              colorScheme: "system",
+              status: "ready",
+            },
             scopeId: 1,
           },
         ],
@@ -492,6 +595,7 @@ describe("BrowserWorkspaceTab", () => {
     expect(mockBridge.setBrowserGuestShortcuts).toHaveBeenCalledWith({
       find: { keys: ["mod", "f"], altKeys: undefined },
       downloads: { keys: ["mod", "shift", "j"], altKeys: undefined },
+      responsive: { keys: ["mod", "shift", "m"], altKeys: undefined },
       zoomReset: { keys: ["mod", "0"], altKeys: undefined },
     });
     act(() => shortcutRelay?.("find"));
@@ -597,7 +701,7 @@ describe("BrowserWorkspaceTab", () => {
   it("opens a new tab from the URL bar when every tab is closed", async () => {
     const mockBridge = bridge();
     mockBridge.listBrowserTabs = vi.fn(() =>
-      Promise.resolve({
+      Promise.resolve<BrowserStateSnapshot>({
         tabs: [],
         activeTabId: null,
         consoleEntries: [],
@@ -633,7 +737,7 @@ describe("BrowserWorkspaceTab", () => {
   it("lets the user dismiss persistent browser navigation errors", async () => {
     const mockBridge = bridge();
     mockBridge.listBrowserTabs = vi.fn(() =>
-      Promise.resolve({
+      Promise.resolve<BrowserStateSnapshot>({
         tabs: [
           {
             id: "tab-1",
@@ -648,6 +752,17 @@ describe("BrowserWorkspaceTab", () => {
             pinned: false,
             suspended: false,
             zoomPercent: 100,
+            responsive: {
+              enabled: false,
+              preset: "mobile",
+              width: 390,
+              height: 844,
+              deviceScaleFactor: 3,
+              mobile: true,
+              touch: true,
+              colorScheme: "system",
+              status: "ready",
+            },
             scopeId: 1,
           },
         ],

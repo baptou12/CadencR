@@ -11,6 +11,7 @@ import { BrowserManager } from "./browser-manager";
 import { registerBrowserDownloadIpc } from "./browser-download-ipc";
 import { parseBrowserGuestShortcutBindings } from "./browser-guest-shortcuts";
 import { BrowserProfileController } from "./browser-profile-controller";
+import { parseBrowserResponsiveRequest } from "./browser-responsive-schema";
 import {
   BROWSER_SITE_PERMISSIONS,
   BROWSER_SITE_PERMISSION_DECISIONS,
@@ -229,6 +230,13 @@ function registerNavigationIpc(
   ipcMain.handle("browser:toggle-devtools", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
     return manager.toggleDevTools(requiredString(tabId, "tab id"));
+  });
+  ipcMain.handle("browser:set-responsive", (event, tabId: unknown, request: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.setResponsive(
+      requiredString(tabId, "tab id"),
+      parseBrowserResponsiveRequest(request),
+    );
   });
 }
 

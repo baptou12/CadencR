@@ -22,6 +22,7 @@ import type {
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "@/shared/browser-types";
+import type { BrowserResponsiveRequest } from "@/shared/browser-responsive";
 
 export interface RuntimeConfig {
   baseUrl: string;
@@ -202,6 +203,10 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   clearBrowserHistory: () => Promise<void>;
   setBrowserBookmark: (tabId: string, bookmarked: boolean) => Promise<BrowserBookmark | null>;
   toggleBrowserDevTools: (tabId: string) => Promise<BrowserTabMetadata>;
+  setBrowserResponsive: (
+    tabId: string,
+    request: BrowserResponsiveRequest,
+  ) => Promise<BrowserTabMetadata>;
   getBrowserConsole: () => Promise<BrowserConsoleEntry[]>;
   getBrowserNetwork: () => Promise<BrowserNetworkEntry[]>;
   getBrowserSnapshot: (tabId: string) => Promise<unknown>;

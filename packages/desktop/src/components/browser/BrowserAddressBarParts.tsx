@@ -1,5 +1,4 @@
 import {
-  useRef,
   type ChangeEvent,
   type FocusEvent,
   type KeyboardEvent,
@@ -10,34 +9,19 @@ import {
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  BugIcon,
   CornerDownLeftIcon,
-  ExternalLinkIcon,
   GlobeIcon,
   Loader2Icon,
-  MoreHorizontalIcon,
-  MinusIcon,
-  PlusIcon,
   RefreshCwIcon,
-  SearchIcon,
-  SparklesIcon,
   SquareIcon,
   StarIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
 import type { BrowserOmniboxSuggestion } from "@/lib/browser-omnibox";
 import { BrowserOmniboxPanel } from "./BrowserOmniboxPanel";
-import { BrowserExternalButton } from "./BrowserExternalButton";
 import { cn } from "@/lib/utils";
 
 interface BrowserNavControlsProps {
@@ -218,177 +202,5 @@ function BrowserGoButton({ pending }: { pending: boolean }): ReactElement {
         <CornerDownLeftIcon className="size-3" />
       )}
     </Button>
-  );
-}
-
-interface BrowserToolbarActionsProps {
-  activeTab: BrowserTabMetadata | null;
-  onZoomOut: () => void;
-  onZoomReset: () => void;
-  onZoomIn: () => void;
-  onDevTools: () => void;
-  onOpenExternal: () => void;
-  onFind: () => void;
-  onAddComment: () => void;
-  onMenuOpenChange: (open: boolean) => void;
-}
-
-interface BrowserZoomMenuItemsProps {
-  disabled: boolean;
-  zoomPercent: number;
-  onZoomOut: () => void;
-  onZoomReset: () => void;
-  onZoomIn: () => void;
-}
-
-function BrowserZoomMenuItems(props: BrowserZoomMenuItemsProps): ReactElement {
-  return (
-    <>
-      <DropdownMenuItem disabled={props.disabled} onSelect={props.onZoomOut}>
-        <MinusIcon /> Zoom out
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        aria-label={`Reset zoom (${props.zoomPercent}%)`}
-        disabled={props.disabled}
-        onSelect={props.onZoomReset}
-      >
-        Reset zoom
-        <span className="ml-auto min-w-10 text-right font-mono text-[10px] text-muted-foreground">
-          {props.zoomPercent}%
-        </span>
-      </DropdownMenuItem>
-      <DropdownMenuItem disabled={props.disabled} onSelect={props.onZoomIn}>
-        <PlusIcon /> Zoom in
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-    </>
-  );
-}
-
-interface BrowserOverflowMenuProps extends BrowserToolbarActionsProps {
-  disabled: boolean;
-  zoomPercent: number;
-}
-
-function BrowserOverflowMenu(props: BrowserOverflowMenuProps): ReactElement {
-  const focusFindAfterClose = useRef(false);
-  function handleFindSelect(): void {
-    focusFindAfterClose.current = true;
-  }
-  function handleCloseAutoFocus(event: Event): void {
-    if (!focusFindAfterClose.current) return;
-    focusFindAfterClose.current = false;
-    event.preventDefault();
-    props.onFind();
-  }
-  return (
-    <DropdownMenu onOpenChange={props.onMenuOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="hidden shrink-0 @max-[44rem]:inline-flex"
-          disabled={props.disabled}
-          aria-label="More Browser actions"
-        >
-          <MoreHorizontalIcon className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onCloseAutoFocus={handleCloseAutoFocus}>
-        <BrowserZoomMenuItems
-          disabled={props.disabled}
-          zoomPercent={props.zoomPercent}
-          onZoomOut={props.onZoomOut}
-          onZoomReset={props.onZoomReset}
-          onZoomIn={props.onZoomIn}
-        />
-        <DropdownMenuItem onSelect={handleFindSelect}>
-          <SearchIcon /> Find in page
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={props.onDevTools}>
-          <BugIcon /> DevTools
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={props.disabled}
-          onSelect={props.onOpenExternal}
-          title="Cookies and sign-in state are not transferred"
-        >
-          <ExternalLinkIcon /> Open in default browser
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={props.onAddComment}>
-          <SparklesIcon /> Add comment
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-export function BrowserToolbarActions(props: BrowserToolbarActionsProps): ReactElement {
-  const disabled = !props.activeTab;
-  const zoomPercent = props.activeTab?.zoomPercent ?? 100;
-  return (
-    <>
-      <div className="flex shrink-0 items-center rounded-md bg-muted/50 p-0.5 @max-[28rem]:hidden">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          disabled={disabled}
-          onClick={props.onZoomOut}
-          aria-label="Zoom out"
-        >
-          <MinusIcon className="size-3" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          disabled={disabled}
-          onClick={props.onZoomReset}
-          aria-label="Reset page zoom to 100%"
-          className="min-w-11 px-1 font-mono text-[10px]"
-        >
-          {zoomPercent}%
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          disabled={disabled}
-          onClick={props.onZoomIn}
-          aria-label="Zoom in"
-        >
-          <PlusIcon className="size-3" />
-        </Button>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5 @max-[44rem]:hidden">
-        <BrowserExternalButton disabled={disabled} onClick={props.onOpenExternal} />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          disabled={disabled}
-          onClick={props.onFind}
-          aria-label="Find in page"
-        >
-          <SearchIcon className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          disabled={disabled}
-          onClick={props.onDevTools}
-          aria-label="DevTools"
-        >
-          <BugIcon className="size-4" />
-        </Button>
-        <Button type="button" size="sm" disabled={disabled} onClick={props.onAddComment}>
-          <SparklesIcon className="size-3.5" /> Add comment
-        </Button>
-      </div>
-      <BrowserOverflowMenu {...props} disabled={disabled} zoomPercent={zoomPercent} />
-    </>
   );
 }

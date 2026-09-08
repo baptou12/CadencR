@@ -9,11 +9,13 @@ interface MockWebContents extends EventEmitter {
     setPermissionRequestHandler: ReturnType<typeof vi.fn>;
     setPermissionCheckHandler: ReturnType<typeof vi.fn>;
   };
-  debugger: {
+  debugger: EventEmitter & {
     isAttached: () => boolean;
     attach: ReturnType<typeof vi.fn>;
     sendCommand: ReturnType<typeof vi.fn>;
   };
+  enableDeviceEmulation: ReturnType<typeof vi.fn>;
+  disableDeviceEmulation: ReturnType<typeof vi.fn>;
   loadURL: ReturnType<typeof vi.fn>;
   getURL: ReturnType<typeof vi.fn>;
   getTitle: ReturnType<typeof vi.fn>;
@@ -112,7 +114,13 @@ vi.mock("electron", () => {
           setPermissionRequestHandler: vi.fn(),
           setPermissionCheckHandler: vi.fn(),
         },
-        debugger: { isAttached: () => false, attach: vi.fn(), sendCommand: vi.fn() },
+        debugger: Object.assign(new EventEmitter(), {
+          isAttached: () => false,
+          attach: vi.fn(),
+          sendCommand: vi.fn(),
+        }),
+        enableDeviceEmulation: vi.fn(),
+        disableDeviceEmulation: vi.fn(),
         loadURL: vi.fn(async (url: string) => {
           contents.getURL.mockReturnValue(url);
         }),
@@ -398,7 +406,8 @@ describe("BrowserManager", () => {
     const primaryModifier = process.platform === "darwin" ? { meta: true } : { control: true };
     manager.page.setGuestShortcutBindings({
       find: { keys: ["mod", "k"] },
-      downloads: { keys: ["mod", "shift", "y"] },
+      downloads: { keys: ["mod", "shift", "d"] },
+      responsive: { keys: ["mod", "shift", "y"] },
       zoomReset: { keys: ["mod", "9"] },
     });
 
@@ -424,7 +433,7 @@ describe("BrowserManager", () => {
     const downloadEvent = { preventDefault: vi.fn() };
     contents.emit("before-input-event", downloadEvent, {
       type: "keyDown",
-      key: "y",
+      key: "d",
       code: "KeyZ",
       meta: false,
       control: false,
@@ -434,6 +443,33 @@ describe("BrowserManager", () => {
     });
     expect(downloadEvent.preventDefault).toHaveBeenCalledOnce();
     expect(win.webContents.send).toHaveBeenCalledWith("browser:shortcut", "downloads");
+
+    const responsiveEvent = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", responsiveEvent, {
+      type: "keyDown",
+      key: "y",
+      code: "Semicolon",
+      meta: false,
+      control: false,
+      shift: true,
+      alt: false,
+      ...primaryModifier,
+    });
+    expect(responsiveEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(win.webContents.send).toHaveBeenCalledWith("browser:shortcut", "responsive");
+
+    const oldResponsiveDefault = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", oldResponsiveDefault, {
+      type: "keyDown",
+      key: "m",
+      code: "KeyM",
+      meta: false,
+      control: false,
+      shift: true,
+      alt: false,
+      ...primaryModifier,
+    });
+    expect(oldResponsiveDefault.preventDefault).not.toHaveBeenCalled();
 
     const oldDefaultEvent = { preventDefault: vi.fn() };
     contents.emit("before-input-event", oldDefaultEvent, {
@@ -447,6 +483,33 @@ describe("BrowserManager", () => {
       ...primaryModifier,
     });
     expect(oldDefaultEvent.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("does not relay the responsive default when its binding is disabled", () => {
+    const win = mainWindow();
+    const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    manager.page.setGuestShortcutBindings({
+      find: { keys: [] },
+      downloads: { keys: [] },
+      responsive: { keys: [] },
+      zoomReset: { keys: [] },
+    });
+    const event = { preventDefault: vi.fn() };
+
+    contents.emit("before-input-event", event, {
+      type: "keyDown",
+      key: "m",
+      code: "KeyM",
+      meta: process.platform === "darwin",
+      control: process.platform !== "darwin",
+      shift: true,
+      alt: false,
+    });
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(win.webContents.send).not.toHaveBeenCalledWith("browser:shortcut", "responsive");
   });
 
   it("validates mutating automation against the live WebContents URL", async () => {
@@ -1217,6 +1280,38 @@ describe("BrowserManager", () => {
     expect(first).toMatchObject({ title: "Pinned", pinned: true, suspended: true });
     expect(second).toMatchObject({ title: "Active", isActive: true, suspended: false });
     expect(createdViews[0].partition).toBe("persist:browser:work");
+  });
+
+  it("materializes a dormant fallback after the active native tab is destroyed", async () => {
+    const { store } = tabSessionStore({
+      tabs: [
+        {
+          title: "Active",
+          url: "https://one.example/",
+          sessionProfileId: "default",
+          pinned: false,
+        },
+        { title: "Dormant", url: "https://two.example/", sessionProfileId: "work", pinned: false },
+      ],
+      activeIndex: 0,
+    });
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    const restored = await manager.restoreScope(7);
+    const dormantId = restored.tabs[1].id;
+    const activeContents = [...webContentsById.values()][0];
+
+    activeContents.isDestroyed.mockReturnValue(true);
+    activeContents.emit("destroyed");
+
+    await vi.waitFor(() => expect(manager.state(7).activeTabId).toBe(dormantId));
+    expect(manager.state(7).tabs.find((tab) => tab.id === dormantId)).toMatchObject({
+      suspended: false,
+      isActive: true,
+    });
+    expect(createdViews).toHaveLength(2);
   });
 
   it("does not reactivate a cached restored id after the scope was cleared", async () => {

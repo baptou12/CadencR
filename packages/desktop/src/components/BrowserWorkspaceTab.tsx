@@ -9,6 +9,12 @@ import { BrowserFindToolbar } from "./browser/BrowserFindToolbar";
 import { BrowserDownloadsPanel } from "./browser/BrowserDownloadsPanel";
 import { BrowserPermissionPrompt } from "./browser/BrowserPermissionPrompt";
 import { BrowserPopupNotice } from "./browser/BrowserPopupNotice";
+import { BrowserResponsiveToolbar } from "./browser/BrowserResponsiveToolbar";
+import {
+  BrowserResponsiveFrame,
+  BrowserSnapshot,
+  useBrowserResponsiveGeometry,
+} from "./browser/BrowserResponsiveViewport";
 import { BrowserSiteInformation } from "./browser/BrowserSiteInformation";
 import {
   BrowserEmptyState,
@@ -79,6 +85,8 @@ function BrowserWorkspaceView({
   const [tabMenuOpen, setTabMenuOpen] = useState(false);
   const [permissionPromptOpen, setPermissionPromptOpen] = useState(false);
   const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const [responsiveMenuOpen, setResponsiveMenuOpen] = useState(false);
+  const responsiveGeometry = useBrowserResponsiveGeometry(containerRef, model.activeTab);
   const toggleDownloads = useCallback((): void => setDownloadsOpen((value) => !value), []);
   useBrowserKeyboard(model, comments.addComment, toggleDownloads);
   // Freeze the native view (and show a snapshot) whenever a renderer overlay
@@ -89,6 +97,7 @@ function BrowserWorkspaceView({
     tabMenuOpen ||
     permissionPromptOpen ||
     downloadsOpen ||
+    responsiveMenuOpen ||
     comments.draft !== null;
   const snapshot = useSuppressedBrowserSnapshot(overlayActive, model.activeTab);
   useSuppressBrowserView(snapshot.suppressNativeView);
@@ -103,6 +112,8 @@ function BrowserWorkspaceView({
         onChromeOverlayOpenChange={setTabMenuOpen}
         downloadsOpen={downloadsOpen}
         onDownloadsOpenChange={setDownloadsOpen}
+        responsiveDisplayScale={responsiveGeometry?.displayScale ?? null}
+        onResponsiveOverlayOpenChange={setResponsiveMenuOpen}
       />
       {model.find.open ? <BrowserFindToolbar find={model.find} /> : null}
       {model.state.error ? (
@@ -115,25 +126,25 @@ function BrowserWorkspaceView({
         onSend={comments.send}
         onDiscardAll={comments.discardAll}
       />
-      <div ref={containerRef} className="relative min-h-0 flex-1">
+      <div
+        ref={containerRef}
+        className={`relative min-h-0 flex-1 ${responsiveGeometry ? "bg-muted/30" : ""}`}
+      >
         {model.activeTab?.loading ? (
           <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden bg-primary/15">
             <div className="h-full w-1/3 animate-[browser-progress_1.1s_ease-in-out_infinite] bg-primary" />
           </div>
         ) : null}
-        <div ref={model.viewportRef} className="h-full w-full" />
+        <BrowserResponsiveFrame geometry={responsiveGeometry} />
+        <div ref={model.viewportRef} className="absolute inset-0" />
         {overlayActive && snapshot.src ? (
-          <img
-            alt=""
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 h-full w-full"
-            src={snapshot.src}
-          />
+          <BrowserSnapshot src={snapshot.src} geometry={responsiveGeometry} />
         ) : null}
         {comments.draft ? (
           <BrowserCommentOverlay
             draft={comments.draft}
             containerRef={containerRef}
+            pageGeometry={responsiveGeometry}
             onSave={comments.saveDraft}
             onCancel={comments.cancelDraft}
             onToggleScreenshot={comments.toggleDraftScreenshot}
@@ -158,6 +169,8 @@ function BrowserToolbar({
   onChromeOverlayOpenChange,
   downloadsOpen,
   onDownloadsOpenChange,
+  responsiveDisplayScale,
+  onResponsiveOverlayOpenChange,
 }: {
   model: BrowserWorkspaceModel;
   scopeId: number;
@@ -167,6 +180,8 @@ function BrowserToolbar({
   onChromeOverlayOpenChange: (open: boolean) => void;
   downloadsOpen: boolean;
   onDownloadsOpenChange: (open: boolean) => void;
+  responsiveDisplayScale: number | null;
+  onResponsiveOverlayOpenChange: (open: boolean) => void;
 }): ReactElement {
   return (
     // z-30 lifts the toolbar's stacking context (created by backdrop-blur) above
@@ -195,6 +210,7 @@ function BrowserToolbar({
         onDevTools={model.devTools}
         onOpenExternal={model.openExternal}
         onAddComment={onAddComment}
+        onResponsive={model.responsive.toggle}
         onSuggestionOverlayOpenChange={onSuggestionOverlayOpenChange}
         downloadsControl={
           <BrowserDownloadsPanel
@@ -210,6 +226,15 @@ function BrowserToolbar({
           />
         }
       />
+      {model.activeTab?.responsive.enabled || model.activeTab?.responsive.status === "error" ? (
+        <BrowserResponsiveToolbar
+          tab={model.activeTab}
+          pending={model.pending}
+          displayScale={responsiveDisplayScale}
+          onApply={model.responsive.apply}
+          onOverlayOpenChange={onResponsiveOverlayOpenChange}
+        />
+      ) : null}
     </div>
   );
 }

@@ -42,6 +42,7 @@ describe("guestChrome", () => {
     expect(guestChrome(withMod({ key: "g", code: "KeyG", shift: true }))).toBe("pane-git");
     expect(guestChrome(withMod({ key: "e", code: "KeyE", shift: true }))).toBe("pane-editor");
     expect(guestChrome(withMod({ key: "b", code: "KeyB", shift: true }))).toBe("pane-browser");
+    expect(guestChrome(withMod({ key: "m", code: "Semicolon", shift: true }))).toBeNull();
   });
 
   it("toggles DevTools on the Alt-modified chord", () => {

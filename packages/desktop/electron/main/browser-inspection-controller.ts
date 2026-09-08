@@ -28,7 +28,10 @@ import type { BrowserBounds, BrowserElementContext } from "./browser-types";
 
 /** Trusted tab inspection and automation facade; BrowserManager retains tab ownership. */
 export class BrowserInspectionController {
-  constructor(private readonly requireTab: (tabId: string) => ManagedTab) {}
+  constructor(
+    private readonly requireTab: (tabId: string) => ManagedTab,
+    private readonly inputScaleGuard: (tab: ManagedTab) => () => number = () => () => 1,
+  ) {}
 
   async waitForLoad(tabId: string): Promise<void> {
     await waitForLoad(this.requireTab(tabId).webContents);
@@ -60,7 +63,8 @@ export class BrowserInspectionController {
   }
 
   async click(tabId: string, x: number, y: number): Promise<void> {
-    clickPage(this.requireTab(tabId), x, y);
+    const tab = this.requireTab(tabId);
+    clickPage(tab, x, y, this.inputScaleGuard(tab));
   }
 
   async typeText(tabId: string, text: string): Promise<void> {
@@ -76,7 +80,8 @@ export class BrowserInspectionController {
     target: BrowserTarget,
     authorize?: () => void,
   ): Promise<ResolvedTarget> {
-    return clickTargetPage(this.requireTab(tabId), target, authorize);
+    const tab = this.requireTab(tabId);
+    return clickTargetPage(tab, target, authorize, this.inputScaleGuard(tab));
   }
 
   async hover(
@@ -84,7 +89,8 @@ export class BrowserInspectionController {
     target: BrowserTarget,
     authorize?: () => void,
   ): Promise<ResolvedTarget> {
-    return hoverPage(this.requireTab(tabId), target, authorize);
+    const tab = this.requireTab(tabId);
+    return hoverPage(tab, target, authorize, this.inputScaleGuard(tab));
   }
 
   async fill(tabId: string, target: BrowserTarget, value: string): Promise<void> {

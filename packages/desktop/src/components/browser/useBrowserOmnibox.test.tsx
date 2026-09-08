@@ -46,6 +46,17 @@ function tab(id: string, url: string): BrowserTabMetadata {
     suspended: false,
     scopeId: 1,
     zoomPercent: 100,
+    responsive: {
+      enabled: false,
+      preset: "mobile",
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      touch: true,
+      colorScheme: "system",
+      status: "ready",
+    },
   };
 }
 

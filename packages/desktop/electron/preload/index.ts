@@ -10,6 +10,7 @@ import type {
   BrowserLibraryChange,
   BrowserOmniboxQueryResult,
   BrowserProfileMetadata,
+  BrowserResponsiveRequest,
   BrowserPopupRequest,
   BrowserSiteInfo,
   BrowserSitePermission,
@@ -342,6 +343,10 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:set-bookmark", tabId, bookmarked),
   toggleBrowserDevTools: (tabId: string): Promise<BrowserTabMetadata> =>
     ipcRenderer.invoke("browser:toggle-devtools", tabId),
+  setBrowserResponsive: (
+    tabId: string,
+    request: BrowserResponsiveRequest,
+  ): Promise<BrowserTabMetadata> => ipcRenderer.invoke("browser:set-responsive", tabId, request),
   getBrowserConsole: (): Promise<unknown[]> => ipcRenderer.invoke("browser:get-console"),
   getBrowserNetwork: (): Promise<unknown[]> => ipcRenderer.invoke("browser:get-network"),
   getBrowserSnapshot: (tabId: string): Promise<unknown> =>

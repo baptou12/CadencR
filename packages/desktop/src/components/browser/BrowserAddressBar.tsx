@@ -17,11 +17,8 @@ import { resolveOmniboxInput, type BrowserOmniboxSuggestion } from "@/lib/browse
 import { useBrowserSearchEngine, type BrowserSearchEngine } from "@/lib/browser-settings";
 import { MAX_BROWSER_LIBRARY_URL_LENGTH } from "@/shared/browser-types";
 import { isHttpBrowserUrl } from "@/shared/browser-url";
-import {
-  BrowserNavControls,
-  BrowserToolbarActions,
-  BrowserUrlField,
-} from "./BrowserAddressBarParts";
+import { BrowserNavControls, BrowserUrlField } from "./BrowserAddressBarParts";
+import { BrowserToolbarActions } from "./BrowserToolbarActions";
 import { isPersistentTab, useBrowserOmnibox } from "./useBrowserOmnibox";
 
 export interface BrowserAddressBarProps {
@@ -45,6 +42,7 @@ export interface BrowserAddressBarProps {
   onDevTools: () => void;
   onOpenExternal: () => void;
   onAddComment: () => void;
+  onResponsive: () => void;
   onSuggestionOverlayOpenChange?: (open: boolean) => void;
   siteControl?: ReactNode;
   downloadsControl?: ReactNode;
@@ -269,6 +267,7 @@ function renderAddressBar(view: AddressBarViewProps): ReactElement {
             onDevTools={view.onDevTools}
             onOpenExternal={view.onOpenExternal}
             onAddComment={view.onAddComment}
+            onResponsive={view.onResponsive}
             onMenuOpenChange={view.setActionsOpen}
           />
           {view.downloadsControl}
