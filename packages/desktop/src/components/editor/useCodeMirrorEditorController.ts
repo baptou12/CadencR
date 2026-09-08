@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Compartment } from "@codemirror/state";
+import { Compartment, type Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { useGetBlame, useGetFeatureWorkingDir, useReadFile } from "@/api/generated";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
@@ -202,7 +202,7 @@ function useEditorBuffer(props: CodeMirrorEditorProps, data: EditorFileData) {
         (candidate) => candidate.filePath === props.filePath,
       )?.pendingGoToLine,
   );
-  const { beforeWrite } = useEditorFormat({
+  const { beforeWrite, isFormatting } = useEditorFormat({
     projectId: props.projectId,
     featureId: props.featureId,
     filePath: props.filePath,
@@ -218,19 +218,22 @@ function useEditorBuffer(props: CodeMirrorEditorProps, data: EditorFileData) {
     viewRef,
     beforeWrite,
   });
-  const handleChange = useCallback((): void => {
-    if (data.largeFile.largeMode) return;
-    setDirty(props.featureId, props.paneId, props.filePath, true);
-    if (!autoSaveEnabledRef.current) return;
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = setTimeout(() => void saveState.saveQuiet(), AUTO_SAVE_DELAY_MS);
-  }, [data.largeFile.largeMode, props, saveState.saveQuiet, setDirty]);
+  const handleChange = useCallback(
+    (doc: Text): void => {
+      if (data.largeFile.largeMode) return;
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (!saveState.onDocChange(doc) || !autoSaveEnabledRef.current) return;
+      autoSaveTimerRef.current = setTimeout(() => void saveState.saveQuiet(), AUTO_SAVE_DELAY_MS);
+    },
+    [data.largeFile.largeMode, saveState.onDocChange, saveState.saveQuiet],
+  );
   const handleEditorViewChange = useCallback(
     (view: EditorView | null): void => {
       setEditorView(view);
+      if (view) saveState.onDocChange(view.state.doc);
       props.onEditorViewChange?.(props.paneId, view);
     },
-    [props],
+    [props, saveState.onDocChange],
   );
   const cursorExtension = useMemo(
     () =>
@@ -252,13 +255,15 @@ function useEditorBuffer(props: CodeMirrorEditorProps, data: EditorFileData) {
     editorView,
     viewRef,
     autoSaveTimerRef,
-    save: saveState.save,
+    save: saveState.saveForClose,
     clearPendingGoToLine,
     pendingGoToLine,
     setDirty,
   });
   return {
     autoSavedVisible: saveState.autoSavedVisible,
+    saveState,
+    isFormatting,
     blameCompartment,
     cursorExtension,
     cursorPosition: cursorPosition ?? { line: 1, col: 1 },
