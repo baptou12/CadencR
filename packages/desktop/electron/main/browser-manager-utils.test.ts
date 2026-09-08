@@ -71,6 +71,8 @@ describe("browser-manager-utils", () => {
       id: "tab-1",
       url: "about:blank",
       devToolsOpen: false,
+      pinned: false,
+      suspended: false,
       zoomPercent: 100,
       scopeId: 7,
     });

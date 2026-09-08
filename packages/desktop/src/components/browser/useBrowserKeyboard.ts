@@ -31,6 +31,14 @@ function useBrowserNavigationShortcuts(
     "browser",
   );
   useScopedGlobalShortcutById(
+    "browser-reopen-tab",
+    (event) => {
+      event.preventDefault();
+      model.reopenLastClosedTab();
+    },
+    "browser",
+  );
+  useScopedGlobalShortcutById(
     "browser-prev-tab",
     (event) => {
       event.preventDefault();
@@ -140,6 +148,7 @@ function useBrowserGuestShortcutRelay(
     const actions: Partial<Record<BrowserShortcut, () => void>> = {
       "new-tab": () => void model.newTab(),
       "close-tab": () => model.closeActiveTab(),
+      "reopen-tab": () => model.reopenLastClosedTab(),
       "prev-tab": () => switchTab(-1),
       "next-tab": () => switchTab(1),
       "focus-url": () => model.focusUrlBar(),

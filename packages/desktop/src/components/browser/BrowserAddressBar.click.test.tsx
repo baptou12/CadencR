@@ -42,6 +42,8 @@ function activeTab(sessionProfileId = "default"): BrowserTabMetadata {
     sessionProfileId,
     isActive: true,
     devToolsOpen: false,
+    pinned: false,
+    suspended: false,
     scopeId: 1,
     zoomPercent: 100,
   };
@@ -184,6 +186,8 @@ describe("BrowserAddressBar omnibox interactions", () => {
           sessionProfileId: "fresh",
           isActive: false,
           devToolsOpen: false,
+          pinned: false,
+          suspended: false,
           scopeId: 4,
           zoomPercent: 100,
         },

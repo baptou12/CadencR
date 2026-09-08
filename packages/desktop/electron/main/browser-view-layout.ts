@@ -81,6 +81,12 @@ export class BrowserViewLayout {
     this.attachedViews.delete(view);
   }
 
+  /** Detach every live view before its parent window is destroyed. */
+  detachAll(): void {
+    for (const view of [...this.attachedViews]) this.detach(view);
+    this.suppressed = false;
+  }
+
   private layoutView(
     view: WebContentsView,
     attached: boolean,

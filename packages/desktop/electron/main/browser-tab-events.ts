@@ -53,6 +53,8 @@ export interface TabEventHost {
   emitFindResult(result: Result): void;
   invalidateFind(): void;
   syncZoom(): void;
+  /** Persist only URL/title changes; loading/console events remain hot-path state only. */
+  persistTab(): void;
   emitCommentBadgeClick(tabId: string, anchorId: string, box: BrowserBounds | null): void;
 }
 
@@ -151,6 +153,7 @@ function installPageLifecycleEvents(tab: ManagedTab, host: TabEventHost): void {
     host.setLastError(null);
     host.recordOrigin(wc.getURL());
     refreshTabMetadata(tab, host);
+    host.persistTab();
     host.recordHistoryNavigation(wc.getURL(), pageTitle(wc));
     host.syncZoom();
   });
@@ -160,6 +163,7 @@ function installPageLifecycleEvents(tab: ManagedTab, host: TabEventHost): void {
     host.setLastError(null);
     host.recordOrigin(wc.getURL());
     refreshTabMetadata(tab, host);
+    host.persistTab();
     host.recordHistoryNavigation(wc.getURL(), pageTitle(wc));
     host.syncZoom();
   });
@@ -167,6 +171,7 @@ function installPageLifecycleEvents(tab: ManagedTab, host: TabEventHost): void {
   wc.on("zoom-changed", () => queueMicrotask(host.syncZoom));
   wc.on("page-title-updated", () => {
     refreshTabMetadata(tab, host);
+    host.persistTab();
     host.updateHistoryTitle(wc.getURL(), pageTitle(wc));
   });
   wc.on("did-fail-load", (_event, _code, description, url) => {
@@ -272,6 +277,8 @@ function guestShiftChrome(input: Input): BrowserShortcut | null {
       return "pane-editor";
     case "b":
       return "pane-browser";
+    case "u":
+      return "reopen-tab";
     default:
       return null;
   }

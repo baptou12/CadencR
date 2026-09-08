@@ -73,6 +73,8 @@ describe("buildOmniboxSuggestions", () => {
     sessionProfileId: "fresh",
     isActive: true,
     devToolsOpen: false,
+    pinned: false,
+    suspended: false,
     zoomPercent: 100,
     scopeId: 7,
   };

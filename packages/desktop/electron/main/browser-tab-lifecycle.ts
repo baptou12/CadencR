@@ -6,6 +6,7 @@ import type { BrowserProfile } from "./browser-profiles";
 import { BrowserSessionLifecycle } from "./browser-session-lifecycle";
 import type { ManagedTab } from "./browser-tab-events";
 import type { BrowserAgentAccess } from "./browser-types";
+import type { BrowserTabMetadata } from "./browser-types";
 
 /** Constructs and destroys tabs while keeping private-session ownership exact. */
 export class BrowserTabLifecycle {
@@ -22,13 +23,14 @@ export class BrowserTabLifecycle {
     profile: BrowserProfile,
     scopeId: number | null,
     automationAccess: BrowserAgentAccess,
+    restoredMetadata?: BrowserTabMetadata,
   ): ManagedTab {
     // Check before WebContentsView touches the partition, then claim immediately
     // after construction. There is no async boundary between these operations.
     this.sessions.assertAvailable(profile);
     const view = new WebContentsView({ webPreferences: secureWebPreferences(profile) });
     const tab: ManagedTab = {
-      metadata: metadataFor(randomUUID(), selectionId, scopeId),
+      metadata: restoredMetadata ?? metadataFor(randomUUID(), selectionId, scopeId),
       automationAccess,
       profile,
       view,

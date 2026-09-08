@@ -54,6 +54,10 @@ export interface BrowserTabMetadata {
   sessionProfileId: string;
   isActive: boolean;
   devToolsOpen: boolean;
+  /** Pinned tabs stay grouped first and survive bulk "close others" actions. */
+  pinned: boolean;
+  /** Restored metadata with no live WebContents yet; activating it materializes the tab. */
+  suspended: boolean;
   /** Authoritative zoom reported by the guest WebContents. */
   zoomPercent: number;
   /**
@@ -176,6 +180,7 @@ export interface BrowserStateSnapshot {
 export type BrowserShortcut =
   | "new-tab"
   | "close-tab"
+  | "reopen-tab"
   | "prev-tab"
   | "next-tab"
   | "focus-url"

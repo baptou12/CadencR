@@ -38,6 +38,8 @@ function metadata(): BrowserTabMetadata {
     sessionProfileId: "fresh",
     isActive: true,
     devToolsOpen: false,
+    pinned: false,
+    suspended: false,
     zoomPercent: 100,
     scopeId: 1,
   };

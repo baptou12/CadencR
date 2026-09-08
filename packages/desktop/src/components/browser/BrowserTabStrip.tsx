@@ -1,7 +1,33 @@
-import { memo, useState, type ReactElement } from "react";
-import { ChevronDownIcon, EyeOffIcon, GlobeIcon, Loader2Icon, PlusIcon, XIcon } from "lucide-react";
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactElement,
+  type RefObject,
+  type WheelEvent,
+} from "react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  EyeOffIcon,
+  GlobeIcon,
+  Loader2Icon,
+  PinIcon,
+  PinOffIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,9 +36,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PROFILE_ID, type CookieMode } from "@/lib/browser-settings";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
+import { cn } from "@/lib/utils";
 import { MAX_BROWSER_FAVICON_DATA_URL_LENGTH } from "@/shared/browser-types";
+import { BrowserTabOverflow } from "./BrowserTabOverflow";
 import type { BrowserWorkspaceModel } from "./useBrowserWorkspaceModel";
 
+const TAB_DRAG_TYPE = "application/x-cadencr-browser-tab";
+const MAX_VISIBLE_TABS = 20;
 const SAFE_FAVICON_DATA_URL =
   /^data:image\/(?:png|jpeg|gif|webp|x-icon|vnd\.microsoft\.icon);base64,[a-z\d+/]+={0,2}$/iu;
 
@@ -25,17 +55,39 @@ export function BrowserTabStrip({
   model,
   onChromeOverlayOpenChange,
 }: BrowserTabStripProps): ReactElement {
+  const busy = model.pendingAction !== null;
+  const pinnedCount = model.state.tabs.findIndex((tab) => !tab.pinned);
+  const pinnedEnd = pinnedCount < 0 ? model.state.tabs.length : pinnedCount;
+  const unpinnedCount = model.state.tabs.length - pinnedEnd;
+  const visibleTabs = boundedVisibleTabs(model.state.tabs, model.state.activeTabId);
+  const tabScrollerRef = useRevealActiveBrowserTab(model.state.activeTabId);
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-        {model.state.tabs.map((tab) => (
-          <BrowserTabPill
-            key={tab.id}
-            tab={tab}
-            onActivate={model.activateTab}
-            onClose={model.closeTab}
-          />
-        ))}
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        <div
+          ref={tabScrollerRef}
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onWheel={scrollBrowserTabs}
+        >
+          {visibleTabs.map(({ tab, index }) => (
+            <BrowserTabPill
+              key={tab.id}
+              tab={tab}
+              index={index}
+              groupStart={tab.pinned ? 0 : pinnedEnd}
+              groupEnd={tab.pinned ? pinnedEnd - 1 : model.state.tabs.length - 1}
+              closableOthers={unpinnedCount > (tab.pinned ? 0 : 1)}
+              busy={busy}
+              onActivate={model.activateTab}
+              onClose={model.closeTab}
+              onSetPinned={model.setTabPinned}
+              onDuplicate={model.duplicateTab}
+              onReorder={model.reorderTab}
+              onCloseOthers={model.closeOtherTabs}
+              onMenuOpenChange={onChromeOverlayOpenChange}
+            />
+          ))}
+        </div>
         <NewBrowserTabButton
           defaultMode={model.defaultMode}
           creatingMode={model.creatingMode}
@@ -43,7 +95,197 @@ export function BrowserTabStrip({
           onOpenChange={onChromeOverlayOpenChange}
         />
       </div>
+      {busy ? (
+        <span role="status" className="shrink-0" aria-label={model.pendingAction ?? undefined}>
+          <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
+        </span>
+      ) : null}
+      <BrowserTabOverflow
+        tabs={model.state.tabs}
+        activeTabId={model.state.activeTabId}
+        onActivate={model.activateTab}
+        onClose={model.closeTab}
+        onReopen={model.reopenLastClosedTab}
+        busy={busy}
+        onOpenChange={onChromeOverlayOpenChange}
+      />
     </div>
+  );
+}
+
+function useRevealActiveBrowserTab(activeTabId: string | null): RefObject<HTMLDivElement | null> {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const activeTab = scrollerRef.current?.querySelector<HTMLElement>("[aria-current='page']");
+    activeTab?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [activeTabId]);
+  return scrollerRef;
+}
+
+function scrollBrowserTabs(event: WheelEvent<HTMLDivElement>): void {
+  if (event.deltaX !== 0 || event.deltaY === 0) return;
+  const scroller = event.currentTarget;
+  const previous = scroller.scrollLeft;
+  scroller.scrollLeft += event.deltaY;
+  if (scroller.scrollLeft !== previous) event.preventDefault();
+}
+
+const BrowserTabPill = memo(function BrowserTabPill({
+  tab,
+  index,
+  groupStart,
+  groupEnd,
+  closableOthers,
+  busy,
+  onActivate,
+  onClose,
+  onSetPinned,
+  onDuplicate,
+  onReorder,
+  onCloseOthers,
+  onMenuOpenChange,
+}: {
+  tab: BrowserTabMetadata;
+  index: number;
+  groupStart: number;
+  groupEnd: number;
+  closableOthers: boolean;
+  busy: boolean;
+  onActivate: (tabId: string) => void;
+  onClose: (tabId: string) => void;
+  onSetPinned: (tabId: string, pinned: boolean) => void;
+  onDuplicate: (tabId: string) => void;
+  onReorder: (tabId: string, targetIndex: number) => void;
+  onCloseOthers: (tabId: string) => void;
+  onMenuOpenChange?: (open: boolean) => void;
+}): ReactElement {
+  const label = tab.title || "New tab";
+  const isPrivate = tab.sessionProfileId === PROFILE_ID.private;
+  const drop = (event: DragEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    const draggedId = event.dataTransfer.getData(TAB_DRAG_TYPE);
+    if (draggedId && draggedId !== tab.id) onReorder(draggedId, index);
+  };
+  return (
+    <ContextMenu onOpenChange={onMenuOpenChange}>
+      <ContextMenuTrigger asChild>
+        <div
+          draggable={!busy}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData(TAB_DRAG_TYPE, tab.id);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={drop}
+          aria-current={tab.isActive ? "page" : undefined}
+          className={cn(
+            "group/tab flex h-7 max-w-48 shrink-0 items-center gap-1.5 rounded-md pl-2 pr-1 text-xs transition-colors",
+            tab.isActive
+              ? "bg-primary/15 font-medium text-foreground shadow-xs ring-1 ring-inset ring-primary/60"
+              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+          )}
+        >
+          <button
+            type="button"
+            className="flex min-w-0 items-center gap-1.5"
+            onClick={() => onActivate(tab.id)}
+            title={tab.suspended ? `${label} — opens when selected` : tab.title || tab.url}
+          >
+            <span className="flex shrink-0 items-center gap-1">
+              {tab.pinned ? <PinIcon aria-label="Pinned tab" className="size-3" /> : null}
+              <BrowserPageIcon tab={tab} />
+              {isPrivate ? (
+                <span role="img" aria-label="Private tab" title="Private tab">
+                  <EyeOffIcon aria-hidden="true" className="size-3 shrink-0 opacity-70" />
+                </span>
+              ) : null}
+            </span>
+            <span className="truncate">{label}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Close ${label}`}
+            className="flex size-4 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover/tab:opacity-100"
+            disabled={busy}
+            onClick={() => onClose(tab.id)}
+          >
+            <XIcon className="size-3" />
+          </button>
+        </div>
+      </ContextMenuTrigger>
+      <BrowserTabContextMenu
+        tab={tab}
+        index={index}
+        groupStart={groupStart}
+        groupEnd={groupEnd}
+        closableOthers={closableOthers}
+        busy={busy}
+        onSetPinned={onSetPinned}
+        onDuplicate={onDuplicate}
+        onReorder={onReorder}
+        onCloseOthers={onCloseOthers}
+        onClose={onClose}
+      />
+    </ContextMenu>
+  );
+});
+
+function BrowserTabContextMenu({
+  tab,
+  index,
+  groupStart,
+  groupEnd,
+  closableOthers,
+  busy,
+  onSetPinned,
+  onDuplicate,
+  onReorder,
+  onCloseOthers,
+  onClose,
+}: {
+  tab: BrowserTabMetadata;
+  index: number;
+  groupStart: number;
+  groupEnd: number;
+  closableOthers: boolean;
+  busy: boolean;
+  onSetPinned: (tabId: string, pinned: boolean) => void;
+  onDuplicate: (tabId: string) => void;
+  onReorder: (tabId: string, targetIndex: number) => void;
+  onCloseOthers: (tabId: string) => void;
+  onClose: (tabId: string) => void;
+}): ReactElement {
+  return (
+    <ContextMenuContent className="min-w-52">
+      <ContextMenuItem disabled={busy} onSelect={() => onSetPinned(tab.id, !tab.pinned)}>
+        {tab.pinned ? <PinOffIcon /> : <PinIcon />}
+        {tab.pinned ? "Unpin tab" : "Pin tab"}
+      </ContextMenuItem>
+      <ContextMenuItem disabled={busy} onSelect={() => onDuplicate(tab.id)}>
+        <CopyIcon />
+        Duplicate tab
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        disabled={busy || index <= groupStart}
+        onSelect={() => onReorder(tab.id, index - 1)}
+      >
+        Move left
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={busy || index >= groupEnd}
+        onSelect={() => onReorder(tab.id, index + 1)}
+      >
+        Move right
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem disabled={busy || !closableOthers} onSelect={() => onCloseOthers(tab.id)}>
+        Close other unpinned tabs
+      </ContextMenuItem>
+      <ContextMenuItem disabled={busy} variant="destructive" onSelect={() => onClose(tab.id)}>
+        Close tab
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 }
 
@@ -111,50 +353,6 @@ const NewBrowserTabButton = memo(function NewBrowserTabButton({
   );
 });
 
-const BrowserTabPill = memo(function BrowserTabPill({
-  tab,
-  onActivate,
-  onClose,
-}: {
-  tab: BrowserTabMetadata;
-  onActivate: (id: string) => void;
-  onClose: (id: string) => void;
-}): ReactElement {
-  const label = tab.title || "New tab";
-  const isPrivate = tab.sessionProfileId === PROFILE_ID.private;
-  return (
-    <div
-      aria-current={tab.isActive ? "page" : undefined}
-      className={`group/tab flex h-7 max-w-48 shrink-0 items-center gap-1.5 rounded-md pl-2 pr-1 text-xs transition-colors ${tab.isActive ? "bg-primary/15 font-medium text-foreground shadow-xs ring-1 ring-inset ring-primary/60" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"}`}
-    >
-      <button
-        type="button"
-        className="flex min-w-0 items-center gap-1.5"
-        onClick={() => onActivate(tab.id)}
-        title={tab.title || tab.url}
-      >
-        <span className="flex shrink-0 items-center gap-1">
-          <BrowserPageIcon tab={tab} />
-          {isPrivate ? (
-            <span role="img" aria-label="Private tab" title="Private tab">
-              <EyeOffIcon aria-hidden="true" className="size-3 shrink-0 opacity-70" />
-            </span>
-          ) : null}
-        </span>
-        <span className="truncate">{label}</span>
-      </button>
-      <button
-        type="button"
-        aria-label={`Close ${label}`}
-        className="flex size-4 shrink-0 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted-foreground/20 focus-visible:opacity-100 group-hover/tab:opacity-100"
-        onClick={() => onClose(tab.id)}
-      >
-        <XIcon className="size-3" />
-      </button>
-    </div>
-  );
-});
-
 function BrowserPageIcon({ tab }: { tab: BrowserTabMetadata }): ReactElement {
   if (tab.loading) {
     return (
@@ -175,7 +373,6 @@ function isSafeFaviconDataUrl(url: string | undefined): url is string {
   );
 }
 
-// A broken or blocked favicon falls back without showing a missing-image glyph.
 function BrowserFavicon({ url }: { url: string }): ReactElement {
   const [failed, setFailed] = useState(false);
   if (failed) return <GlobeIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />;
@@ -187,4 +384,16 @@ function BrowserFavicon({ url }: { url: string }): ReactElement {
       onError={() => setFailed(true)}
     />
   );
+}
+
+function boundedVisibleTabs(
+  tabs: BrowserTabMetadata[],
+  activeTabId: string | null,
+): Array<{ tab: BrowserTabMetadata; index: number }> {
+  const indexed = tabs.map((tab, index) => ({ tab, index }));
+  if (indexed.length <= MAX_VISIBLE_TABS) return indexed;
+  const visible = indexed.slice(0, MAX_VISIBLE_TABS);
+  const active = indexed.find(({ tab }) => tab.id === activeTabId);
+  if (active && active.index >= MAX_VISIBLE_TABS) visible[MAX_VISIBLE_TABS - 1] = active;
+  return visible;
 }

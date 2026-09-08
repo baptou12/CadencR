@@ -213,6 +213,11 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   closeBrowserTab: (tabId: string) => Promise<BrowserStateSnapshot>;
   /** Close every browser tab belonging to a feature scope in one pass. */
   closeBrowserTabsForScope: (scopeId: number) => Promise<BrowserStateSnapshot>;
+  duplicateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
+  setBrowserTabPinned: (tabId: string, pinned: boolean) => Promise<BrowserStateSnapshot>;
+  reorderBrowserTab: (tabId: string, targetIndex: number) => Promise<BrowserStateSnapshot>;
+  closeOtherBrowserTabs: (tabId: string) => Promise<BrowserStateSnapshot>;
+  reopenLastClosedBrowserTab: (scopeId: number) => Promise<BrowserTabMetadata | null>;
   setBrowserBounds: (
     bounds: BrowserBounds,
     scopeId?: number | null,
@@ -356,6 +361,11 @@ const browserBridge: CadencrBrowserBridge = {
   activateBrowserTab: () => unavailable("activateBrowserTab"),
   closeBrowserTab: () => unavailable("closeBrowserTab"),
   closeBrowserTabsForScope: () => unavailable("closeBrowserTabsForScope"),
+  duplicateBrowserTab: () => unavailable("duplicateBrowserTab"),
+  setBrowserTabPinned: () => unavailable("setBrowserTabPinned"),
+  reorderBrowserTab: () => unavailable("reorderBrowserTab"),
+  closeOtherBrowserTabs: () => unavailable("closeOtherBrowserTabs"),
+  reopenLastClosedBrowserTab: () => unavailable("reopenLastClosedBrowserTab"),
   setBrowserBounds: () => unavailable("setBrowserBounds"),
   // No native browser view exists in a remote/browser tab, so suppression is a
   // no-op (resolve) rather than an error — dialogs never call it expecting work.

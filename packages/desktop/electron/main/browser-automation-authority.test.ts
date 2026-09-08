@@ -14,6 +14,8 @@ function managed(id: string, scopeId: number | null, access: BrowserAgentAccess)
     sessionProfileId: "default",
     isActive: true,
     devToolsOpen: false,
+    pinned: false,
+    suspended: false,
     zoomPercent: 100,
     scopeId,
   };

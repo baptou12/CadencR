@@ -159,6 +159,8 @@ vi.mock("electron", () => {
 
 const { BrowserManager } = await import("./browser-manager");
 const { BrowserOriginStore } = await import("./browser-origin-store");
+type BrowserTabSessionStore = import("./browser-tab-session-store").BrowserTabSessionStore;
+type RestorableBrowserScope = import("./browser-tab-session-store").RestorableBrowserScope;
 
 interface MockMainWindow {
   contentView: {
@@ -188,6 +190,24 @@ function mainWindow(): MockMainWindow {
     getBounds: () => ({ x: 0, y: 0, width: 1000, height: 800 }),
     getContentBounds: () => ({ x: 0, y: 0, width: 1000, height: 800 }),
     isDestroyed: () => false,
+  };
+}
+
+function tabSessionStore(saved: RestorableBrowserScope | null = null): {
+  store: BrowserTabSessionStore;
+  loadScope: ReturnType<typeof vi.fn>;
+  replaceScope: ReturnType<typeof vi.fn>;
+} {
+  const loadScope = vi.fn(async () => saved);
+  const replaceScope = vi.fn(async () => undefined);
+  return {
+    store: {
+      loadScope,
+      replaceScope,
+      flush: vi.fn(async () => undefined),
+    } as unknown as BrowserTabSessionStore,
+    loadScope,
+    replaceScope,
   };
 }
 
@@ -800,5 +820,303 @@ describe("BrowserManager", () => {
     await closing;
     expect(sessionsByPartition.get(partition)?.clearData).toHaveBeenCalledOnce();
     expect(manager.state(1).tabs).toEqual([]);
+  });
+
+  it("restores only the active normal tab and leaves inactive metadata dormant", async () => {
+    const saved: RestorableBrowserScope = {
+      tabs: [
+        { title: "Pinned", url: "https://one.example/", sessionProfileId: "default", pinned: true },
+        { title: "Active", url: "https://two.example/", sessionProfileId: "work", pinned: false },
+      ],
+      activeIndex: 1,
+    };
+    const { store, loadScope } = tabSessionStore(saved);
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+
+    const [first, second] = (await manager.restoreScope(7)).tabs;
+
+    expect(loadScope).toHaveBeenCalledOnce();
+    expect(createdViews).toHaveLength(1);
+    expect(first).toMatchObject({ title: "Pinned", pinned: true, suspended: true });
+    expect(second).toMatchObject({ title: "Active", isActive: true, suspended: false });
+    expect(createdViews[0].partition).toBe("persist:browser:work");
+  });
+
+  it("does not reactivate a cached restored id after the scope was cleared", async () => {
+    const { store, loadScope } = tabSessionStore({
+      tabs: [
+        {
+          title: "Saved",
+          url: "https://saved.example/",
+          sessionProfileId: "default",
+          pinned: false,
+        },
+      ],
+      activeIndex: 0,
+    });
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+
+    await manager.restoreScope(8);
+    await manager.closeTabsForScope(8);
+
+    await expect(manager.restoreScope(8)).resolves.toMatchObject({ tabs: [], activeTabId: null });
+    expect(loadScope).toHaveBeenCalledOnce();
+  });
+
+  it("retains dormant metadata when materialization fails so activation can retry", async () => {
+    const { store } = tabSessionStore({
+      tabs: [
+        {
+          title: "Active",
+          url: "https://active.example/",
+          sessionProfileId: "default",
+          pinned: false,
+        },
+        {
+          title: "Dormant",
+          url: "https://dormant.example/",
+          sessionProfileId: "work",
+          pinned: false,
+        },
+      ],
+      activeIndex: 0,
+    });
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    const dormantId = (await manager.restoreScope(9)).tabs[1].id;
+    failNetworkRegistration = true;
+
+    await expect(manager.activateTab(dormantId)).rejects.toThrow("network registration failed");
+    expect(manager.state(9).tabs.find((tab) => tab.id === dormantId)).toMatchObject({
+      suspended: true,
+    });
+
+    failNetworkRegistration = false;
+    await expect(manager.activateTab(dormantId)).resolves.toMatchObject({
+      id: dormantId,
+      suspended: false,
+    });
+  });
+
+  it("rejects an invalid new URL without creating a phantom tab", async () => {
+    const { store } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScope(10);
+
+    expect(() => manager.createTab("javascript:alert(1)", "default", 10)).toThrow();
+
+    expect(manager.state(10).tabs).toEqual([]);
+    expect(manager.tabCountsByScope()).toEqual({});
+    expect(createdViews).toHaveLength(0);
+  });
+
+  it("duplicates a private tab in the same session without inheriting agent sharing", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const original = manager.createTab(undefined, "fresh", 11);
+    const originalContents = [...webContentsById.values()][0];
+    originalContents.getURL.mockReturnValue("http://localhost:3000/");
+    manager.site.setSharing(original.id, "http://localhost:3000", true);
+
+    const duplicate = manager.duplicateTab(original.id);
+
+    expect(createdViews[1].partition).toBe(createdViews[0].partition);
+    expect(duplicate.pinned).toBe(false);
+    expect(() => manager.automation.assert(duplicate.id, 11)).toThrow("not shared");
+  });
+
+  it("persists confirmed close-others removals even when private cleanup fails", async () => {
+    const { store, replaceScope } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScope(12);
+    const keep = manager.createTab("https://keep.example/", "default", 12);
+    manager.createTab("https://remove.example/", "work", 12);
+    manager.createTab(undefined, "fresh", 12);
+    const privatePartition = createdViews[2].partition;
+    if (!privatePartition) throw new Error("Expected private partition");
+    sessionsByPartition.set(privatePartition, {
+      closeAllConnections: vi.fn(async () => undefined),
+      clearData: vi.fn(async () => {
+        throw new Error("private cleanup failed");
+      }),
+      clearAuthCache: vi.fn(async () => undefined),
+    });
+
+    await expect(manager.closeOtherTabs(keep.id)).rejects.toThrow("Browser session cleanup failed");
+    await manager.flushTabSessions();
+
+    expect(manager.state(12).tabs.map((tab) => tab.id)).toEqual([keep.id]);
+    expect(replaceScope).toHaveBeenLastCalledWith(12, {
+      tabs: [
+        {
+          title: "New tab",
+          url: "https://keep.example/",
+          sessionProfileId: "default",
+          pinned: false,
+        },
+      ],
+      activeIndex: 0,
+    });
+  });
+
+  it("reopens only normal tabs and consumes the stack after successful creation", async () => {
+    const { store } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScope(13);
+    const normal = manager.createTab("https://normal.example/", "default", 13);
+    const privateTab = manager.createTab("https://private.example/", "fresh", 13);
+    await manager.closeTab(privateTab.id);
+    expect(manager.reopenLastClosedTab(13)).toBeNull();
+    await manager.closeTab(normal.id);
+    failNetworkRegistration = true;
+    expect(() => manager.reopenLastClosedTab(13)).toThrow("network registration failed");
+    failNetworkRegistration = false;
+
+    expect(manager.reopenLastClosedTab(13)).toMatchObject({
+      url: "https://normal.example/",
+      sessionProfileId: "default",
+    });
+    expect(manager.reopenLastClosedTab(13)).toBeNull();
+  });
+
+  it("keeps per-scope active flags intact after an unscoped automation snapshot", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const first = manager.createTab(undefined, "fresh", 21);
+    const second = manager.createTab(undefined, "fresh", 22);
+
+    expect(manager.state().activeTabId).toBe(second.id);
+
+    expect(manager.state(21).tabs.find((tab) => tab.id === first.id)?.isActive).toBe(true);
+    expect(manager.state(22).tabs.find((tab) => tab.id === second.id)?.isActive).toBe(true);
+  });
+
+  it("groups pinned tabs, bounds reorder within groups, and preserves pins on close others", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const first = manager.createTab(undefined, "default", 23);
+    const second = manager.createTab(undefined, "default", 23);
+    const pinnedPrivate = manager.createTab(undefined, "fresh", 23);
+    manager.setTabPinned(pinnedPrivate.id, true);
+    manager.setTabPinned(first.id, true);
+
+    manager.reorderTab(first.id, Number.MAX_SAFE_INTEGER);
+    expect(manager.state(23).tabs.map((tab) => tab.id)).toEqual([
+      pinnedPrivate.id,
+      first.id,
+      second.id,
+    ]);
+
+    await manager.closeOtherTabs(first.id);
+    expect(manager.state(23).tabs.map((tab) => tab.id)).toEqual([pinnedPrivate.id, first.id]);
+  });
+
+  it("persists the last normal active tab while a private tab is active", async () => {
+    const { store, replaceScope } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScope(24);
+    const first = manager.createTab("https://first.example/", "default", 24);
+    manager.createTab("https://second.example/", "work", 24);
+    await manager.activateTab(first.id);
+    const privateTab = manager.createTab("https://secret.example/", "fresh", 24);
+    manager.setTabPinned(privateTab.id, true);
+
+    await manager.flushTabSessions();
+
+    expect(replaceScope).toHaveBeenLastCalledWith(24, expect.objectContaining({ activeIndex: 0 }));
+    const saved = replaceScope.mock.lastCall?.[1] as RestorableBrowserScope;
+    expect(saved.tabs.map((tab) => tab.url)).toEqual([
+      "https://first.example/",
+      "https://second.example/",
+    ]);
+  });
+
+  it("restores metadata-only before destructive scope close without creating a view", async () => {
+    const { store } = tabSessionStore({
+      tabs: [
+        {
+          title: "Saved",
+          url: "https://saved.example/",
+          sessionProfileId: "default",
+          pinned: false,
+        },
+      ],
+      activeIndex: 0,
+    });
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+
+    expect((await manager.restoreScopeMetadata(25)).tabs).toHaveLength(1);
+    expect(createdViews).toHaveLength(0);
+    await manager.closeTabsForScope(25);
+    expect(createdViews).toHaveLength(0);
+  });
+
+  it("freezes persistence before native shutdown destruction can erase saved tabs", async () => {
+    const { store, replaceScope } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScope(26);
+    manager.createTab("https://saved.example/", "default", 26);
+
+    await manager.prepareForShutdown();
+    const contents = [...webContentsById.values()][0];
+    contents.isDestroyed.mockReturnValue(true);
+    contents.emit("destroyed");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(replaceScope).toHaveBeenCalledOnce();
+    expect(replaceScope.mock.lastCall?.[1]).toMatchObject({
+      tabs: [{ url: "https://saved.example/" }],
+    });
+  });
+
+  it("detaches live views for a window-only close and reattaches them to the next window", async () => {
+    const oldWindow = mainWindow();
+    const nextWindow = mainWindow();
+    let currentWindow = oldWindow;
+    const { store, replaceScope } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => currentWindow as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScope(27);
+    const tab = manager.createTab("https://kept.example/", "default", 27);
+    manager.setBounds({ x: 0, y: 0, width: 500, height: 300 }, 27);
+    expect(oldWindow.contentView.addChildView).toHaveBeenCalledOnce();
+
+    await manager.prepareForWindowClose();
+    expect(oldWindow.contentView.removeChildView).toHaveBeenCalledOnce();
+    currentWindow = nextWindow;
+    manager.setBounds({ x: 0, y: 0, width: 500, height: 300 }, 27);
+
+    expect(nextWindow.contentView.addChildView).toHaveBeenCalledOnce();
+    expect(manager.state(27).tabs.map((item) => item.id)).toEqual([tab.id]);
+    manager.navigate(tab.id, "https://updated.example/");
+    await manager.flushTabSessions();
+    expect(replaceScope.mock.lastCall?.[1]).toMatchObject({
+      tabs: [{ url: "https://updated.example/" }],
+    });
   });
 });

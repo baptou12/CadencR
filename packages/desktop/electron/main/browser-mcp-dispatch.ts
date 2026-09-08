@@ -25,22 +25,29 @@ export interface BrowserMcpTarget {
   };
   openUrl(url: string, options?: BrowserOpenUrlOptions): Promise<BrowserTabMetadata>;
   openExternalUrl(url: string, options?: BrowserOpenUrlOptions): Promise<BrowserTabMetadata>;
-  snapshot(tabId: string, selector?: string, maxLength?: number, format?: string): Promise<unknown>;
-  screenshot(tabId: string, clip?: BrowserBounds): Promise<string>;
-  screenshotTarget(tabId: string, target: BrowserTarget, authorize?: () => void): Promise<string>;
-  evaluate(tabId: string, script: string): Promise<unknown>;
-  click(tabId: string, x: number, y: number): Promise<void>;
-  clickTarget(tabId: string, target: BrowserTarget, authorize?: () => void): Promise<unknown>;
-  fill(tabId: string, target: BrowserTarget, value: string): Promise<void>;
-  hover(tabId: string, target: BrowserTarget, authorize?: () => void): Promise<unknown>;
-  waitFor(
-    tabId: string,
-    opts: { selector?: string; text?: string },
-    timeoutMs?: number,
-  ): Promise<unknown>;
-  typeText(tabId: string, text: string): Promise<void>;
-  keypress(tabId: string, keyCode: string): Promise<void>;
-  selectElementContext(tabId: string): Promise<BrowserElementContext | unknown>;
+  inspection: {
+    snapshot(
+      tabId: string,
+      selector?: string,
+      maxLength?: number,
+      format?: string,
+    ): Promise<unknown>;
+    screenshot(tabId: string, clip?: BrowserBounds): Promise<string>;
+    screenshotTarget(tabId: string, target: BrowserTarget, authorize?: () => void): Promise<string>;
+    evaluate(tabId: string, script: string): Promise<unknown>;
+    click(tabId: string, x: number, y: number): Promise<void>;
+    clickTarget(tabId: string, target: BrowserTarget, authorize?: () => void): Promise<unknown>;
+    fill(tabId: string, target: BrowserTarget, value: string): Promise<void>;
+    hover(tabId: string, target: BrowserTarget, authorize?: () => void): Promise<unknown>;
+    waitFor(
+      tabId: string,
+      opts: { selector?: string; text?: string },
+      timeoutMs?: number,
+    ): Promise<unknown>;
+    typeText(tabId: string, text: string): Promise<void>;
+    keypress(tabId: string, keyCode: string): Promise<void>;
+    selectElementContext(tabId: string): Promise<BrowserElementContext | unknown>;
+  };
 }
 
 /** Result of a Browser MCP tool: a JSON text payload plus an optional viewable image. */
@@ -81,7 +88,7 @@ export async function dispatchBrowserMcpTool(
       const id = tabId(target, args, scopeId);
       return text(
         await authorized(target, id, scopeId, () =>
-          target.snapshot(
+          target.inspection.snapshot(
             id,
             optionalString(args.selector),
             maxLength(args),
@@ -96,7 +103,7 @@ export async function dispatchBrowserMcpTool(
       const id = tabId(target, args, scopeId);
       return text(
         await authorized(target, id, scopeId, () =>
-          target.evaluate(id, requiredString(args.script, "script")),
+          target.inspection.evaluate(id, requiredString(args.script, "script")),
         ),
       );
     }
@@ -108,7 +115,11 @@ export async function dispatchBrowserMcpTool(
       const id = tabId(target, args, scopeId);
       return text(
         await authorized(target, id, scopeId, () =>
-          target.hover(id, parseTarget(args), target.automation.guard(id, scopeId ?? null)),
+          target.inspection.hover(
+            id,
+            parseTarget(args),
+            target.automation.guard(id, scopeId ?? null),
+          ),
         ),
       );
     }
@@ -118,7 +129,7 @@ export async function dispatchBrowserMcpTool(
       {
         const id = tabId(target, args, scopeId);
         await authorized(target, id, scopeId, () =>
-          target.typeText(id, requiredString(args.text, "text")),
+          target.inspection.typeText(id, requiredString(args.text, "text")),
         );
       }
       return text({ ok: true });
@@ -126,13 +137,15 @@ export async function dispatchBrowserMcpTool(
       {
         const id = tabId(target, args, scopeId);
         await authorized(target, id, scopeId, () =>
-          target.keypress(id, requiredString(args.key, "key")),
+          target.inspection.keypress(id, requiredString(args.key, "key")),
         );
       }
       return text({ ok: true });
     case "browser_select_element_context": {
       const id = tabId(target, args, scopeId);
-      return text(await authorized(target, id, scopeId, () => target.selectElementContext(id)));
+      return text(
+        await authorized(target, id, scopeId, () => target.inspection.selectElementContext(id)),
+      );
     }
     default:
       throw new Error(`Unknown Browser MCP tool: ${toolName}`);
@@ -165,13 +178,13 @@ async function screenshot(
   const data =
     selector || ref
       ? await authorized(target, id, scopeId, () =>
-          target.screenshotTarget(
+          target.inspection.screenshotTarget(
             id,
             { selector, ref },
             target.automation.guard(id, scopeId ?? null),
           ),
         )
-      : await authorized(target, id, scopeId, () => target.screenshot(id, region));
+      : await authorized(target, id, scopeId, () => target.inspection.screenshot(id, region));
   // A hidden/blank/not-yet-rendered tab composites to nothing, so capturePage
   // returns "". Never forward an empty image: an `input_image` with no data is a
   // malformed data URI that some agents (codex) reject on every later turn,
@@ -203,12 +216,16 @@ async function click(
   if (args.selector !== undefined || args.ref !== undefined) {
     return text(
       await authorized(target, id, scopeId, () =>
-        target.clickTarget(id, parseTarget(args), target.automation.guard(id, scopeId ?? null)),
+        target.inspection.clickTarget(
+          id,
+          parseTarget(args),
+          target.automation.guard(id, scopeId ?? null),
+        ),
       ),
     );
   }
   await authorized(target, id, scopeId, () =>
-    target.click(id, requiredNumber(args.x, "x"), requiredNumber(args.y, "y")),
+    target.inspection.click(id, requiredNumber(args.x, "x"), requiredNumber(args.y, "y")),
   );
   return text({ ok: true });
 }
@@ -220,7 +237,7 @@ async function fill(
 ): Promise<BrowserBridgeResult> {
   const id = tabId(target, args, scopeId);
   await authorized(target, id, scopeId, () =>
-    target.fill(id, parseTarget(args), requiredString(args.value, "value")),
+    target.inspection.fill(id, parseTarget(args), requiredString(args.value, "value")),
   );
   return text({ ok: true });
 }
@@ -238,7 +255,7 @@ async function waitFor(
   const id = tabId(target, args, scopeId);
   return text(
     await authorized(target, id, scopeId, () =>
-      target.waitFor(id, opts, optionalNumber(args.timeout_ms)),
+      target.inspection.waitFor(id, opts, optionalNumber(args.timeout_ms)),
     ),
   );
 }

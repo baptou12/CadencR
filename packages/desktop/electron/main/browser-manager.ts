@@ -1,90 +1,66 @@
 import { BrowserWindow } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
-import type { BrowserDomOutline, BrowserDomSnapshot, BrowserEvalResult } from "./browser-dom";
-import {
-  clearCommentBadges,
-  removeCommentBadge,
-  selectElementContext,
-} from "./browser-comment-context";
 import { BrowserFocusGuard } from "./browser-focus-guard";
 import { BrowserLibraryController } from "./browser-library-controller";
 import { BrowserLibraryStore } from "./browser-library-store";
+import { BrowserManagerState } from "./browser-manager-state";
 import { BrowserAutomationAuthority } from "./browser-automation-authority";
 import { toggleTabDevTools } from "./browser-devtools";
-import {
-  clickPage,
-  clickTargetPage,
-  evaluatePage,
-  fillPage,
-  hoverPage,
-  keypressPage,
-  screenshotPage,
-  screenshotTargetPage,
-  snapshotPage,
-  typeTextPage,
-  waitForPage,
-} from "./browser-page-actions";
-import {
-  waitForLoad,
-  type BrowserTarget,
-  type BrowserWaitResult,
-  type ResolvedTarget,
-} from "./browser-interactions";
+import { BrowserInspectionController } from "./browser-inspection-controller";
 import { BrowserNetworkCollector } from "./browser-network-collector";
 import { BrowserOriginStore } from "./browser-origin-store";
+import { BrowserOpenController } from "./browser-open-controller";
 import { BrowserPageController } from "./browser-page-controller";
-import { installTabEvents, type ManagedTab } from "./browser-tab-events";
+import type { ManagedTab } from "./browser-tab-events";
 import { BrowserTabCloseController } from "./browser-tab-close-controller";
+import { BrowserTabCreationController } from "./browser-tab-creation-controller";
+import { BrowserTabOrganizationController } from "./browser-tab-organization-controller";
 import { BrowserTabLifecycle } from "./browser-tab-lifecycle";
-import { isPrivateProfile } from "./browser-session-lifecycle";
+import { BrowserTabSessionStore } from "./browser-tab-session-store";
+import { BrowserTabWorkspaceController } from "./browser-tab-workspace-controller";
 import { BrowserScopeState } from "./browser-scope-state";
 import { BrowserSiteApi } from "./browser-site-api";
 import { BrowserSiteController } from "./browser-site-controller";
 import { contentOffset, scaleBounds, windowRelativeBounds } from "./browser-manager-layout";
 import { BrowserViewLayout } from "./browser-view-layout";
-import {
-  originOf,
-  profileFromSelection,
-  pushBounded,
-  reclaimFocusForShortcut,
-} from "./browser-manager-utils";
-import type { BrowserProfile } from "./browser-profiles";
+import { profileFromSelection, pushBounded } from "./browser-manager-utils";
 import { sendToWindow } from "./safe-send";
-import {
-  MAX_NETWORK_PER_TAB,
-  countTabsByScope,
-  tabCountRecordsEqual,
-} from "./browser-manager-tabs";
+import { MAX_NETWORK_PER_TAB } from "./browser-manager-tabs";
 import type {
   BrowserBounds,
-  BrowserAgentAccess,
-  BrowserElementContext,
   BrowserOpenUrlOptions,
-  BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "./browser-types";
 
 export class BrowserManager {
   private readonly tabs = new Map<string, ManagedTab>();
-  private lastTabCountsByScope: Record<number, number> = {};
   private readonly scopes = new BrowserScopeState();
   private lastError: string | null = null;
   readonly focusGuard = new BrowserFocusGuard(() => this.getMainWindow());
   private readonly layout = new BrowserViewLayout(() => this.getMainWindow());
   private readonly tabLifecycle = new BrowserTabLifecycle(this.tabs, this.layout);
+  private readonly workspace: BrowserTabWorkspaceController;
+  private readonly organization: BrowserTabOrganizationController;
+  private readonly creator: BrowserTabCreationController;
+  private readonly opener: BrowserOpenController;
+  private readonly stateAuthority: BrowserManagerState;
   private readonly tabCloser = new BrowserTabCloseController(
     this.tabs,
     this.scopes,
     this.tabLifecycle,
     {
-      emitCounts: () => this.emitTabCountsIfChanged(),
-      activate: (tabId) => this.activateTab(tabId),
+      emitCounts: () => this.stateAuthority.emitCounts(),
+      activate: (tabId) => {
+        void this.activateTab(tabId).catch((error: unknown) => {
+          this.lastError = error instanceof Error ? error.message : String(error);
+        });
+      },
       applyLayout: () => this.applyLayout(),
-      emitState: (scope) => this.emitState(scope),
+      emitState: (scope) => this.stateAuthority.emit(scope),
       reportError: (error, scope) => {
         this.lastError = error instanceof Error ? error.message : String(error);
-        this.emitState(scope);
+        this.stateAuthority.emit(scope);
       },
       invalidateFind: (tab) => this.page.invalidateFind(tab),
     },
@@ -98,14 +74,14 @@ export class BrowserManager {
     (tabId) => this.requireTab(tabId),
     (message, scopeId) => {
       this.lastError = message;
-      this.emitState(scopeId);
+      this.stateAuthority.emit(scopeId);
     },
   );
   private readonly network = new BrowserNetworkCollector((webContentsId, entry) => {
     const tab = [...this.tabs.values()].find((t) => t.webContents.id === webContentsId);
     if (!tab) return;
     pushBounded(tab.networkEntries, { ...entry, tabId: tab.metadata.id }, MAX_NETWORK_PER_TAB);
-    this.emitState(tab.metadata.scopeId);
+    this.stateAuthority.emit(tab.metadata.scopeId);
   });
   private readonly siteController = new BrowserSiteController({
     send: (channel, payload) => sendToWindow(this.getMainWindow(), channel, payload),
@@ -115,14 +91,89 @@ export class BrowserManager {
   });
   readonly site = new BrowserSiteApi(this.siteController, (tabId) => this.requireTab(tabId));
   readonly automation = new BrowserAutomationAuthority(this.tabs, (scopeId) => this.state(scopeId));
+  readonly inspection = new BrowserInspectionController((tabId) => this.requireTab(tabId));
   readonly page = new BrowserPageController(
     this.tabs,
     (tabId) => this.requireTab(tabId),
-    (scopeId) => this.emitState(scopeId),
+    (scopeId) => this.stateAuthority.emit(scopeId),
     (result) => sendToWindow(this.getMainWindow(), "browser:find-result", result),
   );
 
-  constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
+  private readonly getMainWindow: () => BrowserWindow | null;
+
+  constructor(
+    getMainWindow: () => BrowserWindow | null,
+    sessionStore = new BrowserTabSessionStore(),
+  ) {
+    this.getMainWindow = getMainWindow;
+    this.workspace = new BrowserTabWorkspaceController(sessionStore, (message, scopeId) => {
+      this.lastError = message;
+      this.stateAuthority.emit(scopeId);
+    });
+    this.stateAuthority = new BrowserManagerState(
+      this.tabs,
+      this.scopes,
+      this.origins,
+      this.workspace,
+      () => this.lastError,
+      () => this.getMainWindow(),
+    );
+    this.creator = new BrowserTabCreationController({
+      tabs: this.tabs,
+      workspace: this.workspace,
+      lifecycle: this.tabLifecycle,
+      closer: this.tabCloser,
+      network: this.network,
+      focusGuard: this.focusGuard,
+      site: this.siteController,
+      origins: this.origins,
+      library: this.library,
+      page: this.page,
+      host: {
+        getWindow: () => this.getMainWindow(),
+        setLastError: (message) => {
+          this.lastError = message;
+        },
+        emitState: (scopeId) => this.stateAuthority.emit(scopeId),
+        emitCounts: () => this.stateAuthority.emitCounts(),
+        emitShortcut: (shortcut) => this.stateAuthority.emitShortcut(shortcut),
+        activate: (tabId) => this.activateLiveTab(tabId),
+        navigate: (tabId, url) => this.navigate(tabId, url),
+        persist: (scopeId) => this.persistScope(scopeId),
+        handleNativeDestroyed: (tab) => this.handleNativeDestroyed(tab),
+      },
+    });
+    this.organization = new BrowserTabOrganizationController(
+      this.tabs,
+      this.scopes,
+      this.workspace,
+      this.tabCloser,
+      {
+        activate: (tabId) => this.activateTab(tabId),
+        create: (source, profile, metadata) =>
+          this.creator.create(
+            source.url,
+            source.sessionProfileId,
+            profile,
+            source.scopeId,
+            "user",
+            metadata,
+          ),
+        persist: (scopeId) => this.persistScope(scopeId),
+        emitCounts: () => this.stateAuthority.emitCounts(),
+        applyLayout: () => this.applyLayout(),
+        emitState: (scopeId) => this.stateAuthority.emit(scopeId),
+        state: (scopeId) => this.state(scopeId),
+      },
+    );
+    this.opener = new BrowserOpenController(this.automation, this.inspection, {
+      activeTabId: (scopeId) => this.scopes.activeTabId(scopeId),
+      navigate: (tabId, url) => this.navigate(tabId, url),
+      createAgentTab: (url, scopeId) =>
+        this.creator.create(url, "fresh", profileFromSelection("fresh"), scopeId, "agent"),
+      requireTab: (tabId) => this.requireTab(tabId),
+    });
+  }
 
   createTab(
     rawUrl?: string,
@@ -130,83 +181,75 @@ export class BrowserManager {
     scopeId: number | null = null,
   ): BrowserTabMetadata {
     const profile = profileFromSelection(profileId);
-    return this.createTabInProfile(rawUrl, profileId, profile, scopeId);
+    return this.creator.create(rawUrl, profileId, profile, scopeId);
   }
 
-  private createTabInProfile(
-    rawUrl: string | undefined,
-    selectionId: string,
-    profile: BrowserProfile,
-    scopeId: number | null,
-    automationAccess: BrowserAgentAccess = "user",
-  ): BrowserTabMetadata {
-    const tab = this.tabLifecycle.create(selectionId, profile, scopeId, automationAccess);
-    const id = tab.metadata.id;
-    try {
-      installTabEvents(tab, {
-        emitState: () => this.emitState(scopeId),
-        setLastError: (message) => {
-          this.lastError = message;
-        },
-        openChildTab: (url) => this.openChildTab(url, tab),
-        isTabAlive: () => this.tabs.has(id),
-        tabDestroyed: () => this.tabCloser.handleNativeDestroyed(tab),
-        recordOrigin: isPrivateProfile(profile)
-          ? () => undefined
-          : (url) => this.origins.record(url),
-        recordHistoryNavigation: (url, title) => this.library.recordNavigation(tab, url, title),
-        updateHistoryTitle: (url, title) => this.library.updateTitle(tab, url, title),
-        forgetHistory: () => this.library.forget(id),
-        emitShortcut: (shortcut) => this.emitShortcut(shortcut),
-        matchGuestShortcut: (input) => this.page.matchGuestShortcut(input),
-        emitFindResult: (result) => this.page.handleFindResult(tab, result),
-        invalidateFind: () => this.page.invalidateFind(tab),
-        syncZoom: () => this.page.syncZoom(),
-        emitCommentBadgeClick: (id, anchorId, box) =>
-          sendToWindow(this.getMainWindow(), "browser:comment-badge-click", {
-            tabId: id,
-            anchorId,
-            box,
-          }),
-      });
-      this.network.ensure(tab.webContents.session);
-      this.focusGuard.watch(tab.webContents);
-      this.tabLifecycle.register(tab);
-      this.siteController.registerTab(tab);
-      this.emitTabCountsIfChanged();
-      this.activateTab(id);
-      if (rawUrl) this.navigate(id, rawUrl);
-      this.emitState(scopeId);
-      return tab.metadata;
-    } catch (error) {
-      this.tabCloser.discardFailed(tab, error);
-      throw error;
+  readonly tabCountsByScope = (): Record<number, number> => this.workspace.countByScope(this.tabs);
+
+  async restoreScope(scopeId: number): Promise<BrowserStateSnapshot> {
+    const activeId = await this.workspace.ensureRestored(scopeId, this.scopes.activeTabId(scopeId));
+    if (
+      activeId &&
+      this.scopes.activeTabId(scopeId) === null &&
+      (this.tabs.has(activeId) || this.workspace.dormantTab(activeId))
+    ) {
+      await this.activateTab(activeId);
     }
+    return this.state(scopeId);
   }
 
-  tabCountsByScope(): Record<number, number> {
-    return countTabsByScope(this.tabs.values());
+  async restoreScopeMetadata(scopeId: number): Promise<BrowserStateSnapshot> {
+    await this.workspace.ensureRestored(scopeId, this.scopes.activeTabId(scopeId));
+    return this.state(scopeId);
   }
 
   navigate(tabId: string, rawUrl: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
     const url = normalizeBrowserOpenUrl(rawUrl);
+    tab.metadata = { ...tab.metadata, url };
     this.lastError = null;
     this.page.invalidateFind(tab);
-    this.emitState(tab.metadata.scopeId);
+    this.stateAuthority.emit(tab.metadata.scopeId);
+    if (tab.profile.mode === "persistent" && tab.automationAccess !== "agent") {
+      this.persistScope(tab.metadata.scopeId);
+    }
     void tab.webContents.loadURL(url).catch((error: unknown) => {
       this.lastError = error instanceof Error ? error.message : String(error);
-      this.emitState(tab.metadata.scopeId);
+      this.stateAuthority.emit(tab.metadata.scopeId);
     });
     return tab.metadata;
   }
 
-  activateTab(tabId: string): BrowserTabMetadata {
+  async activateTab(tabId: string): Promise<BrowserTabMetadata> {
+    const dormant = this.workspace.dormantTab(tabId);
+    if (dormant) {
+      const metadata = dormant.metadata;
+      try {
+        return this.creator.create(
+          metadata.url,
+          metadata.sessionProfileId,
+          profileFromSelection(metadata.sessionProfileId),
+          metadata.scopeId,
+          "user",
+          metadata,
+          true,
+        );
+      } catch (error) {
+        this.lastError = error instanceof Error ? error.message : String(error);
+        this.stateAuthority.emit(metadata.scopeId);
+        throw error;
+      }
+    }
+    return this.activateLiveTab(tabId);
+  }
+
+  private activateLiveTab(tabId: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
     this.scopes.activate(tab.metadata.scopeId, tabId);
     this.scopes.refreshActiveFlags(this.tabs);
     this.applyLayout();
-    this.emitState(tab.metadata.scopeId);
+    this.stateAuthority.emit(tab.metadata.scopeId);
+    if (this.workspace.noteActivation(tabId, this.tabs)) this.persistScope(tab.metadata.scopeId);
     return tab.metadata;
   }
 
@@ -219,15 +262,36 @@ export class BrowserManager {
   }
 
   async closeTab(tabId: string): Promise<BrowserStateSnapshot> {
-    const tab = this.requireTab(tabId);
-    const scope = tab.metadata.scopeId;
-    await this.tabCloser.close(tab);
-    return this.state(scope);
+    return this.organization.close(tabId);
+  }
+  async closeTabsForScope(scopeId: number): Promise<BrowserStateSnapshot> {
+    return this.organization.closeScope(scopeId);
+  }
+  duplicateTab(tabId: string): BrowserTabMetadata {
+    return this.organization.duplicate(tabId);
+  }
+  setTabPinned(tabId: string, pinned: boolean): BrowserStateSnapshot {
+    return this.organization.setPinned(tabId, pinned);
+  }
+  reorderTab(tabId: string, targetIndex: number): BrowserStateSnapshot {
+    return this.organization.reorder(tabId, targetIndex);
+  }
+  async closeOtherTabs(tabId: string): Promise<BrowserStateSnapshot> {
+    return this.organization.closeOthers(tabId);
+  }
+  reopenLastClosedTab(scopeId: number): BrowserTabMetadata | null {
+    return this.organization.reopen(scopeId);
+  }
+  readonly flushTabSessions = (): Promise<void> => this.workspace.flush();
+
+  async prepareForWindowClose(): Promise<void> {
+    await this.workspace.prepareForWindowClose(this.tabs, this.scopes.active);
+    this.layout.detachAll();
+    this.scopes.clearBounds();
   }
 
-  async closeTabsForScope(scopeId: number): Promise<BrowserStateSnapshot> {
-    await this.tabCloser.closeScope(scopeId);
-    return this.state(scopeId);
+  prepareForShutdown(): Promise<void> {
+    return this.workspace.prepareForShutdown(this.tabs, this.scopes.active);
   }
 
   setBounds(
@@ -250,152 +314,52 @@ export class BrowserManager {
     return toggleTabDevTools(
       tab,
       () => this.applyLayout(),
-      () => this.emitState(tab.metadata.scopeId),
+      () => this.stateAuthority.emit(tab.metadata.scopeId),
     );
   }
 
   async openUrl(url: string, options: BrowserOpenUrlOptions = {}): Promise<BrowserTabMetadata> {
-    const scopeId = options.scopeId ?? null;
-    const activeTabId = options.newTab === true ? null : this.scopes.activeTabId(scopeId);
-    const targetTabId = options.tabId ?? activeTabId;
-    if (targetTabId) this.automation.assert(targetTabId, scopeId);
-    const meta = targetTabId
-      ? this.navigate(targetTabId, url)
-      : this.createTabInProfile(url, "fresh", profileFromSelection("fresh"), scopeId, "agent");
-    await waitForLoad(this.requireTab(meta.id).webContents);
-    this.automation.assert(meta.id, scopeId);
-    return this.requireTab(meta.id).metadata;
+    return this.opener.open(url, options);
   }
 
   async openExternalUrl(
     url: string,
     options: BrowserOpenUrlOptions = {},
   ): Promise<BrowserTabMetadata> {
-    const meta = await this.openUrl(url, options);
-    const tab = this.requireTab(meta.id);
-    this.automation.assert(meta.id, options.scopeId ?? null);
-    tab.externalAutomationOrigin = originOf(tab.webContents.getURL());
-    return tab.metadata;
-  }
-
-  async snapshot(
-    tabId: string,
-    selector?: string,
-    maxLength?: number,
-    format?: string,
-  ): Promise<BrowserDomSnapshot | BrowserDomOutline> {
-    return snapshotPage(this.requireTab(tabId), selector, maxLength, format);
-  }
-
-  async screenshot(tabId: string, clip?: BrowserBounds): Promise<string> {
-    return screenshotPage(this.requireTab(tabId), clip);
-  }
-
-  async screenshotTarget(
-    tabId: string,
-    target: BrowserTarget,
-    authorize?: () => void,
-  ): Promise<string> {
-    return screenshotTargetPage(this.requireTab(tabId), target, authorize);
-  }
-
-  async evaluate(tabId: string, script: string): Promise<BrowserEvalResult> {
-    return evaluatePage(this.requireTab(tabId), script);
+    return this.opener.openExternal(url, options);
   }
 
   async click(tabId: string, x: number, y: number): Promise<void> {
-    clickPage(this.requireTab(tabId), x, y);
-  }
-
-  async typeText(tabId: string, text: string): Promise<void> {
-    typeTextPage(this.requireTab(tabId), text);
-  }
-
-  async keypress(tabId: string, keyCode: string): Promise<void> {
-    keypressPage(this.requireTab(tabId), keyCode);
-  }
-
-  async clickTarget(
-    tabId: string,
-    target: BrowserTarget,
-    authorize?: () => void,
-  ): Promise<ResolvedTarget> {
-    return clickTargetPage(this.requireTab(tabId), target, authorize);
-  }
-
-  async hover(
-    tabId: string,
-    target: BrowserTarget,
-    authorize?: () => void,
-  ): Promise<ResolvedTarget> {
-    return hoverPage(this.requireTab(tabId), target, authorize);
-  }
-
-  async fill(tabId: string, target: BrowserTarget, value: string): Promise<void> {
-    return fillPage(this.requireTab(tabId), target, value);
-  }
-
-  async waitFor(
-    tabId: string,
-    opts: { selector?: string; text?: string },
-    timeoutMs?: number,
-  ): Promise<BrowserWaitResult> {
-    return waitForPage(this.requireTab(tabId), opts, timeoutMs);
-  }
-
-  selectElementContext(tabId: string, anchorId?: string): Promise<BrowserElementContext> {
-    return selectElementContext(this.requireTab(tabId), anchorId);
-  }
-
-  removeCommentBadge(tabId: string, anchorId: string): Promise<void> {
-    return removeCommentBadge(this.requireTab(tabId), anchorId);
-  }
-
-  clearCommentBadges(tabId: string): Promise<void> {
-    return clearCommentBadges(this.requireTab(tabId));
+    await this.inspection.click(tabId, x, y);
   }
 
   state(scopeId?: number | null): BrowserStateSnapshot {
-    return this.scopes.snapshot(scopeId, this.tabs, this.origins.list(), this.lastError);
+    return this.stateAuthority.snapshot(scopeId);
   }
 
-  private openChildTab(url: string, parent: ManagedTab): void {
-    try {
-      this.createTabInProfile(
-        url,
-        parent.metadata.sessionProfileId,
-        parent.profile,
-        parent.metadata.scopeId,
-        parent.automationAccess,
-      );
-    } catch (error) {
-      this.lastError = error instanceof Error ? error.message : String(error);
-      this.emitState(parent.metadata.scopeId);
+  private handleNativeDestroyed(tab: ManagedTab): void {
+    if (!this.tabs.has(tab.metadata.id)) return;
+    const removal = this.workspace.remove(tab.metadata.id, this.tabs, false);
+    if (this.scopes.activeTabId(tab.metadata.scopeId) === tab.metadata.id && removal?.nextId) {
+      void this.activateTab(removal.nextId).catch((error: unknown) => {
+        this.lastError = error instanceof Error ? error.message : String(error);
+        this.stateAuthority.emit(tab.metadata.scopeId);
+      });
     }
+    this.tabCloser.handleNativeDestroyed(tab);
+    if (tab.metadata.scopeId !== null && tab.profile.mode === "persistent") {
+      this.persistScope(tab.metadata.scopeId);
+    }
+  }
+
+  private persistScope(scopeId: number | null): void {
+    if (scopeId === null) return;
+    this.workspace.schedulePersistence(scopeId, this.tabs, this.scopes.activeTabId(scopeId));
   }
 
   private requireTab(tabId: string): ManagedTab {
     const tab = this.tabs.get(tabId);
     if (!tab) throw new Error(`Unknown browser tab: ${tabId}`);
     return tab;
-  }
-
-  private emitState(scope: number | null): void {
-    const win = this.getMainWindow();
-    if (scope === null) return;
-    sendToWindow(win, "browser:state", this.state(scope));
-  }
-
-  private emitTabCountsIfChanged(): void {
-    const counts = this.tabCountsByScope();
-    if (tabCountRecordsEqual(this.lastTabCountsByScope, counts)) return;
-    this.lastTabCountsByScope = counts;
-    sendToWindow(this.getMainWindow(), "browser:tab-counts", counts);
-  }
-
-  private emitShortcut(shortcut: BrowserShortcut): void {
-    const win = this.getMainWindow();
-    reclaimFocusForShortcut(win, shortcut);
-    sendToWindow(win, "browser:shortcut", shortcut);
   }
 }

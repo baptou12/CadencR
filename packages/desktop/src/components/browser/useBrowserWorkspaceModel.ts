@@ -10,6 +10,10 @@ import { useBrowserViewportBounds } from "../useBrowserViewportBounds";
 import { reportBrowserError, showBrowserError } from "./browser-errors";
 import { useBrowserFind, type BrowserFindModel } from "./useBrowserFind";
 import { useBrowserPageActions, type BrowserPageActions } from "./useBrowserPageActions";
+import {
+  useBrowserTabOrganization,
+  type BrowserTabOrganization,
+} from "./useBrowserTabOrganization";
 
 const EMPTY_STATE: BrowserStateSnapshot = {
   tabs: [],
@@ -20,7 +24,7 @@ const EMPTY_STATE: BrowserStateSnapshot = {
   error: null,
 };
 
-export interface BrowserWorkspaceModel extends BrowserPageActions {
+export interface BrowserWorkspaceModel extends BrowserPageActions, BrowserTabOrganization {
   state: BrowserStateSnapshot;
   urlInput: string;
   defaultMode: CookieMode;
@@ -154,6 +158,7 @@ export function useBrowserWorkspaceModel(
   });
   const runForActive = useRunForActive(activeTab, setPending);
   const find = useBrowserFind(activeTab);
+  const organization = useBrowserTabOrganization(scopeId);
 
   const visibleState = useMemo<BrowserStateSnapshot>(
     () => ({ ...state, error: state.error === dismissedError ? null : state.error }),
@@ -192,6 +197,8 @@ export function useBrowserWorkspaceModel(
     devTools: pageActions.devTools,
     defaultMode,
     creatingMode,
+    closeOtherTabs: organization.closeOtherTabs,
+    duplicateTab: organization.duplicateTab,
     focusUrlBar,
     find,
     forward: pageActions.forward,
@@ -199,9 +206,13 @@ export function useBrowserWorkspaceModel(
     navigate: tabActions.navigate,
     newTab: tabActions.newTab,
     pending,
+    pendingAction: organization.pendingAction,
     reload: pageActions.reload,
+    reopenLastClosedTab: organization.reopenLastClosedTab,
+    reorderTab: organization.reorderTab,
     runForActive,
     setUrlEditing,
+    setTabPinned: organization.setTabPinned,
     setUrlInput,
     state: visibleState,
     stop: pageActions.stop,
@@ -228,6 +239,8 @@ function useBrowserModelValue(model: BrowserWorkspaceModel): BrowserWorkspaceMod
       model.devTools,
       model.defaultMode,
       model.creatingMode,
+      model.closeOtherTabs,
+      model.duplicateTab,
       model.focusUrlBar,
       model.find,
       model.forward,
@@ -236,9 +249,13 @@ function useBrowserModelValue(model: BrowserWorkspaceModel): BrowserWorkspaceMod
       model.navigate,
       model.newTab,
       model.pending,
+      model.pendingAction,
       model.reload,
+      model.reopenLastClosedTab,
+      model.reorderTab,
       model.runForActive,
       model.setUrlEditing,
+      model.setTabPinned,
       model.stop,
       model.zoomIn,
       model.zoomOut,

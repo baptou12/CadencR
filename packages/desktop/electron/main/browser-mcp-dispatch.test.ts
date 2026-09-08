@@ -13,6 +13,8 @@ function tabMeta(): BrowserTabMetadata {
     sessionProfileId: "ephemeral",
     isActive: true,
     devToolsOpen: false,
+    pinned: false,
+    suspended: false,
     zoomPercent: 100,
     scopeId: null,
   };
@@ -32,18 +34,20 @@ function target(): BrowserMcpTarget {
     automation: { state, assert: vi.fn(), guard: vi.fn(() => vi.fn()) },
     openUrl: vi.fn(async () => tabMeta()),
     openExternalUrl: vi.fn(async () => tabMeta()),
-    snapshot: vi.fn(async () => ({ found: true, outline: "[e1] button" })),
-    screenshot: vi.fn(async () => "fullpng"),
-    screenshotTarget: vi.fn(async () => "elpng"),
-    evaluate: vi.fn(async () => ({ ok: true, result: 42 })),
-    click: vi.fn(async () => undefined),
-    clickTarget: vi.fn(async () => ({ center: { x: 5, y: 6 } })),
-    fill: vi.fn(async () => undefined),
-    hover: vi.fn(async () => ({ center: { x: 1, y: 2 } })),
-    waitFor: vi.fn(async () => ({ found: true, elapsedMs: 5 })),
-    typeText: vi.fn(async () => undefined),
-    keypress: vi.fn(async () => undefined),
-    selectElementContext: vi.fn(async () => ({ ok: true })),
+    inspection: {
+      snapshot: vi.fn(async () => ({ found: true, outline: "[e1] button" })),
+      screenshot: vi.fn(async () => "fullpng"),
+      screenshotTarget: vi.fn(async () => "elpng"),
+      evaluate: vi.fn(async () => ({ ok: true, result: 42 })),
+      click: vi.fn(async () => undefined),
+      clickTarget: vi.fn(async () => ({ center: { x: 5, y: 6 } })),
+      fill: vi.fn(async () => undefined),
+      hover: vi.fn(async () => ({ center: { x: 1, y: 2 } })),
+      waitFor: vi.fn(async () => ({ found: true, elapsedMs: 5 })),
+      typeText: vi.fn(async () => undefined),
+      keypress: vi.fn(async () => undefined),
+      selectElementContext: vi.fn(async () => ({ ok: true })),
+    },
   };
 }
 
@@ -76,7 +80,7 @@ describe("dispatchBrowserMcpTool", () => {
     fake.automation.assert = vi.fn(() => {
       if (!shared) throw new Error("Browser tab is not shared with the agent.");
     });
-    fake.snapshot = vi.fn(() => new Promise((resolve) => (finish = resolve)));
+    fake.inspection.snapshot = vi.fn(() => new Promise((resolve) => (finish = resolve)));
     const pending = dispatchBrowserMcpTool(fake, "browser_get_snapshot", {});
     shared = false;
     finish({ secret: "must not escape" });
@@ -96,7 +100,7 @@ describe("dispatchBrowserMcpTool", () => {
     };
     fake.automation.assert = vi.fn(assertShared);
     fake.automation.guard = vi.fn(() => assertShared);
-    fake.clickTarget = vi.fn(
+    fake.inspection.clickTarget = vi.fn(
       (_tabId, _target, authorize) =>
         new Promise((resolve, reject) => {
           finish = () => {
@@ -187,13 +191,13 @@ describe("dispatchBrowserMcpTool", () => {
       max_length: 1000,
       format: "html",
     });
-    expect(fake.snapshot).toHaveBeenCalledWith("tab-1", "#root", 1000, "html");
+    expect(fake.inspection.snapshot).toHaveBeenCalledWith("tab-1", "#root", 1000, "html");
   });
 
   it("returns a full-page screenshot as viewable image content", async () => {
     const fake = target();
     const result = await dispatchBrowserMcpTool(fake, "browser_screenshot", {});
-    expect(fake.screenshot).toHaveBeenCalledWith("tab-1", undefined);
+    expect(fake.inspection.screenshot).toHaveBeenCalledWith("tab-1", undefined);
     expect(result.image).toEqual({ mimeType: "image/png", data: "fullpng" });
   });
 
@@ -202,19 +206,19 @@ describe("dispatchBrowserMcpTool", () => {
     const result = await dispatchBrowserMcpTool(fake, "browser_screenshot", {
       selector: ".hero",
     });
-    expect(fake.screenshotTarget).toHaveBeenCalledWith(
+    expect(fake.inspection.screenshotTarget).toHaveBeenCalledWith(
       "tab-1",
       { selector: ".hero", ref: undefined },
       expect.any(Function),
     );
-    expect(fake.screenshot).not.toHaveBeenCalled();
+    expect(fake.inspection.screenshot).not.toHaveBeenCalled();
     expect(result.image).toEqual({ mimeType: "image/png", data: "elpng" });
   });
 
   it("captures a region screenshot from a ref", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_screenshot", { ref: "e7" });
-    expect(fake.screenshotTarget).toHaveBeenCalledWith(
+    expect(fake.inspection.screenshotTarget).toHaveBeenCalledWith(
       "tab-1",
       { selector: undefined, ref: "e7" },
       expect.any(Function),
@@ -226,7 +230,7 @@ describe("dispatchBrowserMcpTool", () => {
     await dispatchBrowserMcpTool(fake, "browser_screenshot", {
       clip: { x: 1, y: 2, width: 3, height: 4 },
     });
-    expect(fake.screenshot).toHaveBeenCalledWith("tab-1", {
+    expect(fake.inspection.screenshot).toHaveBeenCalledWith("tab-1", {
       x: 1,
       y: 2,
       width: 3,
@@ -243,19 +247,19 @@ describe("dispatchBrowserMcpTool", () => {
   it("clicks by coordinates when no selector or ref is given", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_click", { x: 12, y: 34 });
-    expect(fake.click).toHaveBeenCalledWith("tab-1", 12, 34);
-    expect(fake.clickTarget).not.toHaveBeenCalled();
+    expect(fake.inspection.click).toHaveBeenCalledWith("tab-1", 12, 34);
+    expect(fake.inspection.clickTarget).not.toHaveBeenCalled();
   });
 
   it("clicks by ref when one is supplied", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_click", { ref: "e3" });
-    expect(fake.clickTarget).toHaveBeenCalledWith(
+    expect(fake.inspection.clickTarget).toHaveBeenCalledWith(
       "tab-1",
       { selector: undefined, ref: "e3" },
       expect.any(Function),
     );
-    expect(fake.click).not.toHaveBeenCalled();
+    expect(fake.inspection.click).not.toHaveBeenCalled();
   });
 
   it("requires coordinates when browser_click has no target", async () => {
@@ -268,7 +272,7 @@ describe("dispatchBrowserMcpTool", () => {
       selector: "#email",
       value: "a@b.c",
     });
-    expect(fake.fill).toHaveBeenCalledWith(
+    expect(fake.inspection.fill).toHaveBeenCalledWith(
       "tab-1",
       { selector: "#email", ref: undefined },
       "a@b.c",
@@ -285,7 +289,7 @@ describe("dispatchBrowserMcpTool", () => {
   it("hovers an element by ref", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_hover", { ref: "e2" });
-    expect(fake.hover).toHaveBeenCalledWith(
+    expect(fake.inspection.hover).toHaveBeenCalledWith(
       "tab-1",
       { selector: undefined, ref: "e2" },
       expect.any(Function),
@@ -298,7 +302,7 @@ describe("dispatchBrowserMcpTool", () => {
       selector: "#ready",
       timeout_ms: 2000,
     });
-    expect(fake.waitFor).toHaveBeenCalledWith(
+    expect(fake.inspection.waitFor).toHaveBeenCalledWith(
       "tab-1",
       { selector: "#ready", text: undefined },
       2000,

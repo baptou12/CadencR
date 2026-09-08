@@ -62,7 +62,15 @@ export async function captureScreenshot(wc: WebContents, clip?: BrowserBounds): 
  * a debugger. Returns base64 PNG to match `captureScreenshot`.
  */
 export async function capturePageImage(wc: WebContents): Promise<string> {
-  const image = await wc.capturePage();
+  const image = await wc.capturePage().catch((error: unknown) => {
+    // Electron rejects with this exact message before a new tab has produced
+    // its first composited frame. Overlay previews are optional, so treat that
+    // transient state like the empty NativeImage returned for a blank tab.
+    const message = error instanceof Error ? error.message : error;
+    if (message === "Current display surface not available for capture") return null;
+    throw error;
+  });
+  if (!image) return "";
   // A freshly-created or blank tab has nothing composited yet; return "" so the
   // caller shows no preview rather than a broken/empty image.
   return image.isEmpty() ? "" : image.toPNG().toString("base64");

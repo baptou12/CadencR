@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   captureDomOutline,
   captureDomSnapshot,
+  capturePageImage,
   captureRegionScreenshot,
   captureScreenshot,
   evaluateInPage,
@@ -14,6 +15,7 @@ interface MockWebContents {
     attach: ReturnType<typeof vi.fn>;
     sendCommand: ReturnType<typeof vi.fn>;
   };
+  capturePage: ReturnType<typeof vi.fn>;
   executeJavaScript: ReturnType<typeof vi.fn>;
 }
 
@@ -24,6 +26,7 @@ function mockWebContents(overrides: Partial<MockWebContents> = {}): MockWebConte
       attach: vi.fn(),
       sendCommand: vi.fn(async () => ({ data: "png-data" })),
     },
+    capturePage: vi.fn(),
     executeJavaScript: vi.fn(),
     ...overrides,
   };
@@ -32,6 +35,30 @@ function mockWebContents(overrides: Partial<MockWebContents> = {}): MockWebConte
 function asWebContents(mock: MockWebContents): Electron.WebContents {
   return mock as unknown as Electron.WebContents;
 }
+
+describe("capturePageImage", () => {
+  it("treats the exact unavailable display surface rejection as an empty preview", async () => {
+    const wc = mockWebContents({
+      capturePage: vi.fn(async () => {
+        throw new Error("Current display surface not available for capture");
+      }),
+    });
+
+    await expect(capturePageImage(asWebContents(wc))).resolves.toBe("");
+  });
+
+  it("preserves every other capture failure", async () => {
+    const wc = mockWebContents({
+      capturePage: vi.fn(async () => {
+        throw new Error("Current display surface was destroyed");
+      }),
+    });
+
+    await expect(capturePageImage(asWebContents(wc))).rejects.toThrow(
+      "Current display surface was destroyed",
+    );
+  });
+});
 
 describe("captureScreenshot", () => {
   it("returns the base64 image data from CDP", async () => {

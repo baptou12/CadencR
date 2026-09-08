@@ -35,6 +35,10 @@ export class BrowserScopeState {
     else this.bounds.delete(scope);
   }
 
+  clearBounds(): void {
+    this.bounds.clear();
+  }
+
   /**
    * Forget a closed tab. Returns the next tab in the same scope to promote when
    * the closed tab was that scope's active one (so closing a tab never reveals
@@ -75,6 +79,7 @@ export class BrowserScopeState {
     tabs: Map<string, ManagedTab>,
     knownOrigins: string[],
     error: string | null,
+    orderedMetadata?: BrowserStateSnapshot["tabs"],
   ): BrowserStateSnapshot {
     const scoped = scopeId !== undefined;
     const visible = scoped
@@ -84,7 +89,7 @@ export class BrowserScopeState {
     const activeTab = activeTabId ? tabs.get(activeTabId) : null;
     return {
       scopeId: scoped ? scopeId : null,
-      tabs: visible.map((tab) => tab.metadata),
+      tabs: orderedMetadata ?? visible.map((tab) => tab.metadata),
       activeTabId,
       consoleEntries: activeTab?.consoleEntries ?? [],
       networkEntries: activeTab?.networkEntries ?? [],

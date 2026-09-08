@@ -21,19 +21,23 @@ export class BrowserTabCloseController {
     private readonly host: BrowserTabCloseHost,
   ) {}
 
-  async close(tab: ManagedTab): Promise<void> {
+  async close(tab: ManagedTab, activateFallback = true): Promise<void> {
     this.host.invalidateFind(tab);
     const cleanup = this.lifecycle.destroy(tab);
-    this.afterRemoval(tab);
+    this.afterRemoval(tab, activateFallback);
     await this.finish(cleanup, tab.metadata.scopeId);
   }
 
   async closeScope(scopeId: number): Promise<void> {
     const tabs = [...this.tabs.values()].filter((tab) => tab.metadata.scopeId === scopeId);
+    await this.closeMany(tabs, scopeId);
+  }
+
+  async closeMany(tabs: ManagedTab[], scopeId: number | null): Promise<void> {
     const cleanups = tabs.map((tab) => {
       this.host.invalidateFind(tab);
       const cleanup = this.lifecycle.destroy(tab);
-      this.scopes.forget(scopeId, tab.metadata.id, this.tabs);
+      this.scopes.forget(tab.metadata.scopeId, tab.metadata.id, this.tabs);
       return cleanup;
     });
     this.host.emitCounts();
@@ -56,11 +60,11 @@ export class BrowserTabCloseController {
     this.finishInBackground(cleanup, tab.metadata.scopeId, "native destruction");
   }
 
-  private afterRemoval(tab: ManagedTab): void {
+  private afterRemoval(tab: ManagedTab, activateFallback = true): void {
     const scope = tab.metadata.scopeId;
     this.host.emitCounts();
     const next = this.scopes.forget(scope, tab.metadata.id, this.tabs);
-    if (next) {
+    if (next && activateFallback) {
       this.host.activate(next);
       return;
     }

@@ -37,6 +37,7 @@ const libraryQuerySchema = z.string().max(MAX_BROWSER_LIBRARY_QUERY_LENGTH);
 const libraryLimitSchema = z.number().int().min(1).max(20).optional();
 const historyIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
 const libraryUrlSchema = z.string().min(1).max(MAX_BROWSER_LIBRARY_URL_LENGTH);
+const tabIndexSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const siteOriginSchema = z.url().refine((value) => {
   const parsed = new URL(value);
   return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.origin === value;
@@ -48,18 +49,21 @@ function registerTabIpc(
 ): void {
   ipcMain.handle(
     "browser:create-tab",
-    (event, rawUrl: unknown, profileId: unknown, scopeId: unknown) => {
+    async (event, rawUrl: unknown, profileId: unknown, scopeId: unknown) => {
       assertTrustedSender(event, getMainWindow);
+      const parsedScopeId = optionalNumber(scopeId) ?? null;
+      if (parsedScopeId !== null) await manager.restoreScope(parsedScopeId);
       return manager.createTab(
         optionalString(rawUrl),
         optionalString(profileId) ?? "fresh",
-        optionalNumber(scopeId) ?? null,
+        parsedScopeId,
       );
     },
   );
-  ipcMain.handle("browser:list-tabs", (event, scopeId: unknown) => {
+  ipcMain.handle("browser:list-tabs", async (event, scopeId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.state(optionalNumber(scopeId) ?? null);
+    const parsedScopeId = optionalNumber(scopeId) ?? null;
+    return parsedScopeId === null ? manager.state(null) : manager.restoreScope(parsedScopeId);
   });
   ipcMain.handle("browser:tab-counts-by-scope", (event) => {
     assertTrustedSender(event, getMainWindow);
@@ -79,7 +83,32 @@ function registerTabIpc(
   });
   ipcMain.handle("browser:close-tabs-for-scope", (event, scopeId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.closeTabsForScope(requiredNumber(scopeId, "scope id"));
+    const parsedScopeId = requiredNumber(scopeId, "scope id");
+    return manager
+      .restoreScopeMetadata(parsedScopeId)
+      .then(() => manager.closeTabsForScope(parsedScopeId));
+  });
+  ipcMain.handle("browser:duplicate-tab", (event, tabId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.duplicateTab(requiredString(tabId, "tab id"));
+  });
+  ipcMain.handle("browser:set-tab-pinned", (event, tabId: unknown, pinned: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.setTabPinned(requiredString(tabId, "tab id"), z.boolean().parse(pinned));
+  });
+  ipcMain.handle("browser:reorder-tab", (event, tabId: unknown, targetIndex: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.reorderTab(requiredString(tabId, "tab id"), tabIndexSchema.parse(targetIndex));
+  });
+  ipcMain.handle("browser:close-other-tabs", (event, tabId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.closeOtherTabs(requiredString(tabId, "tab id"));
+  });
+  ipcMain.handle("browser:reopen-last-closed-tab", async (event, scopeId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    const parsedScopeId = requiredNumber(scopeId, "scope id");
+    await manager.restoreScope(parsedScopeId);
+    return manager.reopenLastClosedTab(parsedScopeId);
   });
   ipcMain.handle(
     "browser:set-bounds",
@@ -238,11 +267,11 @@ function registerInspectionIpc(
   });
   ipcMain.handle("browser:get-snapshot", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.snapshot(requiredString(tabId, "tab id"));
+    return manager.inspection.snapshot(requiredString(tabId, "tab id"));
   });
   ipcMain.handle("browser:screenshot", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.screenshot(requiredString(tabId, "tab id"));
+    return manager.inspection.screenshot(requiredString(tabId, "tab id"));
   });
   ipcMain.handle("browser:click", (event, tabId: unknown, x: unknown, y: unknown) => {
     assertTrustedSender(event, getMainWindow);
@@ -254,29 +283,35 @@ function registerInspectionIpc(
   });
   ipcMain.handle("browser:type", (event, tabId: unknown, text: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.typeText(requiredString(tabId, "tab id"), requiredString(text, "text"));
+    return manager.inspection.typeText(
+      requiredString(tabId, "tab id"),
+      requiredString(text, "text"),
+    );
   });
   ipcMain.handle("browser:keypress", (event, tabId: unknown, keyCode: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.keypress(requiredString(tabId, "tab id"), requiredString(keyCode, "key"));
+    return manager.inspection.keypress(
+      requiredString(tabId, "tab id"),
+      requiredString(keyCode, "key"),
+    );
   });
   ipcMain.handle("browser:select-element-context", (event, tabId: unknown, anchorId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.selectElementContext(
+    return manager.inspection.selectElementContext(
       requiredString(tabId, "tab id"),
       requiredString(anchorId, "anchor id"),
     );
   });
   ipcMain.handle("browser:remove-comment-badge", (event, tabId: unknown, anchorId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.removeCommentBadge(
+    return manager.inspection.removeCommentBadge(
       requiredString(tabId, "tab id"),
       requiredString(anchorId, "anchor id"),
     );
   });
   ipcMain.handle("browser:clear-comment-badges", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.clearCommentBadges(requiredString(tabId, "tab id"));
+    return manager.inspection.clearCommentBadges(requiredString(tabId, "tab id"));
   });
 }
 

@@ -243,6 +243,16 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:close-tab", tabId),
   closeBrowserTabsForScope: (scopeId: number): Promise<BrowserStateSnapshot> =>
     ipcRenderer.invoke("browser:close-tabs-for-scope", scopeId),
+  duplicateBrowserTab: (tabId: string): Promise<BrowserTabMetadata> =>
+    ipcRenderer.invoke("browser:duplicate-tab", tabId),
+  setBrowserTabPinned: (tabId: string, pinned: boolean): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:set-tab-pinned", tabId, pinned),
+  reorderBrowserTab: (tabId: string, targetIndex: number): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:reorder-tab", tabId, targetIndex),
+  closeOtherBrowserTabs: (tabId: string): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:close-other-tabs", tabId),
+  reopenLastClosedBrowserTab: (scopeId: number): Promise<BrowserTabMetadata | null> =>
+    ipcRenderer.invoke("browser:reopen-last-closed-tab", scopeId),
   setBrowserBounds: (
     bounds: BrowserBounds,
     scopeId?: number | null,

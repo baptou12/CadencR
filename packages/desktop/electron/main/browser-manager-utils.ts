@@ -115,6 +115,8 @@ export function metadataFor(
     sessionProfileId: profileId,
     isActive: false,
     devToolsOpen: false,
+    pinned: false,
+    suspended: false,
     zoomPercent: 100,
     scopeId,
   };

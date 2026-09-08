@@ -25,6 +25,13 @@ export const BROWSER_SHORTCUTS = [
     scope: "browser",
   },
   {
+    // Chrome's customary Mod+Shift+T belongs to Cadencr's Terminal pane.
+    id: "browser-reopen-tab",
+    keys: ["mod", "shift", "u"],
+    description: "Reopen last closed browser tab",
+    scope: "browser",
+  },
+  {
     id: "browser-prev-tab",
     keys: ["mod", "shift", "lbracket"],
     description: "Previous browser tab",
