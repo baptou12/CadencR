@@ -7,6 +7,7 @@ import { BrowserCommentDock } from "./browser/BrowserCommentDock";
 import { BrowserCommentOverlay } from "./browser/BrowserCommentOverlay";
 import { BrowserFindToolbar } from "./browser/BrowserFindToolbar";
 import { BrowserPermissionPrompt } from "./browser/BrowserPermissionPrompt";
+import { BrowserPopupNotice } from "./browser/BrowserPopupNotice";
 import { BrowserSiteInformation } from "./browser/BrowserSiteInformation";
 import {
   BrowserEmptyState,
@@ -96,6 +97,7 @@ function BrowserWorkspaceView({
       {model.state.error ? (
         <BrowserError message={model.state.error} onDismiss={model.clearError} />
       ) : null}
+      <BrowserPopupNotice scopeId={scopeId} activeTabId={model.state.activeTabId} />
       <BrowserCommentDock
         count={comments.comments.length}
         picking={comments.picking}
@@ -174,6 +176,7 @@ function BrowserToolbar({
         onZoomReset={model.zoomReset}
         onFind={model.find.openFind}
         onDevTools={model.devTools}
+        onOpenExternal={model.openExternal}
         onAddComment={onAddComment}
         onSuggestionOverlayOpenChange={onSuggestionOverlayOpenChange}
         siteControl={

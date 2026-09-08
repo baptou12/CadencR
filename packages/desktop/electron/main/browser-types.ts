@@ -14,6 +14,7 @@ export type {
   BrowserLibraryChange,
   BrowserOmniboxQueryResult,
   BrowserProfileMetadata,
+  BrowserPopupRequest,
   BrowserSiteInfo,
   BrowserSitePermission,
   BrowserSitePermissionDecision,

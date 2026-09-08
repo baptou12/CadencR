@@ -83,6 +83,10 @@ function bridge(): CadencrBrowserBridge {
     reorderBrowserTab: vi.fn(() => Promise.resolve(state)),
     closeOtherBrowserTabs: vi.fn(() => Promise.resolve(state)),
     reopenLastClosedBrowserTab: vi.fn(() => Promise.resolve(state.tabs[0])),
+    listBlockedBrowserPopups: vi.fn(() => Promise.resolve([])),
+    allowBrowserPopupOnce: vi.fn(() => Promise.resolve()),
+    openBrowserPopupExternally: vi.fn(() => Promise.resolve()),
+    dismissBrowserPopup: vi.fn(() => Promise.resolve()),
     setBrowserBounds: vi.fn(() => Promise.resolve(state)),
     setBrowserSuppressed: vi.fn(() => Promise.resolve()),
     listBrowserProfiles: vi.fn(() =>
@@ -155,6 +159,7 @@ function bridge(): CadencrBrowserBridge {
     onBrowserCommentBadgeClick: vi.fn(() => () => undefined),
     onBrowserPermissionRequest: vi.fn(() => () => undefined),
     onBrowserPermissionRequestCancelled: vi.fn(() => () => undefined),
+    onBrowserPopupRequestsChanged: vi.fn(() => () => undefined),
     checkForUpdates: vi.fn(),
     installUpdate: vi.fn(),
     fetchChangelog: vi.fn(),

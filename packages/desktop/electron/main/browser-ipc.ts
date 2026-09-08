@@ -71,7 +71,10 @@ function registerTabIpc(
   });
   ipcMain.handle("browser:navigate", (event, tabId: unknown, rawUrl: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    return manager.navigate(requiredString(tabId, "tab id"), requiredString(rawUrl, "URL"));
+    return manager.navigateFromChrome(
+      requiredString(tabId, "tab id"),
+      requiredString(rawUrl, "URL"),
+    );
   });
   ipcMain.handle("browser:activate-tab", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
@@ -124,6 +127,28 @@ function registerTabIpc(
   ipcMain.handle("browser:set-suppressed", (event, value: unknown) => {
     assertTrustedSender(event, getMainWindow);
     manager.setSuppressed(value === true);
+  });
+}
+
+function registerPopupIpc(
+  manager: BrowserManager,
+  getMainWindow: BrowserIpcOptions["getMainWindow"],
+): void {
+  ipcMain.handle("browser:list-blocked-popups", (event, scopeId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.popup.list(requiredNumber(scopeId, "scope id"));
+  });
+  ipcMain.handle("browser:allow-popup-once", (event, requestId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    manager.popup.allowOnce(z.string().uuid().parse(requestId));
+  });
+  ipcMain.handle("browser:open-popup-externally", (event, requestId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.popup.openExternal(z.string().uuid().parse(requestId));
+  });
+  ipcMain.handle("browser:dismiss-popup", (event, requestId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    manager.popup.dismiss(z.string().uuid().parse(requestId));
   });
 }
 
@@ -348,6 +373,7 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   const manager = new BrowserManager(options.getMainWindow);
   const profiles = new BrowserProfileController();
   registerTabIpc(manager, options.getMainWindow);
+  registerPopupIpc(manager, options.getMainWindow);
   registerProfileIpc(profiles, options.getMainWindow);
   registerNavigationIpc(manager, options.getMainWindow);
   registerSiteIpc(manager, options.getMainWindow);

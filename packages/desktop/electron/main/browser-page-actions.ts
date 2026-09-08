@@ -60,23 +60,29 @@ export async function screenshotTargetPage(
 
 export function evaluatePage(tab: ManagedTab, script: string): Promise<BrowserEvalResult> {
   assertMutatingAllowed(tab);
+  clearPopupGesture(tab);
   return evaluateInPage(tab.webContents, script);
 }
 
 export function clickPage(tab: ManagedTab, x: number, y: number): void {
   assertMutatingAllowed(tab);
   const wc = tab.webContents;
+  markSyntheticPopupInput(tab, "mouse");
   wc.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
   wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
 }
 
 export function typeTextPage(tab: ManagedTab, text: string): void {
   assertMutatingAllowed(tab);
+  clearPopupGesture(tab);
   tab.webContents.insertText(text);
 }
 
 export function keypressPage(tab: ManagedTab, keyCode: string): void {
   assertMutatingAllowed(tab);
+  // Electron accepts aliases such as Space/Return and normalizes them before
+  // before-input-event. Mark every injected key and consume its exact event.
+  markSyntheticPopupInput(tab, "key");
   tab.webContents.sendInputEvent({ type: "keyDown", keyCode });
 }
 
@@ -86,10 +92,17 @@ export function clickTargetPage(
   authorize?: () => void,
 ): Promise<ResolvedTarget> {
   assertMutatingAllowed(tab);
-  return clickTargetOnPage(tab.webContents, target, () => {
-    assertMutatingAllowed(tab);
-    authorize?.();
-  });
+  return clickTargetOnPage(
+    tab.webContents,
+    target,
+    () => {
+      assertMutatingAllowed(tab);
+      authorize?.();
+    },
+    () => {
+      markSyntheticPopupInput(tab, "mouse");
+    },
+  );
 }
 
 export function hoverPage(
@@ -98,6 +111,7 @@ export function hoverPage(
   authorize?: () => void,
 ): Promise<ResolvedTarget> {
   assertMutatingAllowed(tab);
+  clearPopupGesture(tab);
   return hoverTargetOnPage(tab.webContents, target, () => {
     assertMutatingAllowed(tab);
     authorize?.();
@@ -106,7 +120,19 @@ export function hoverPage(
 
 export function fillPage(tab: ManagedTab, target: BrowserTarget, value: string): Promise<void> {
   assertMutatingAllowed(tab);
+  clearPopupGesture(tab);
   return fillTargetOnPage(tab.webContents, target, value);
+}
+
+function markSyntheticPopupInput(tab: ManagedTab, kind: "mouse" | "key"): void {
+  clearPopupGesture(tab);
+  if (kind === "mouse") tab.syntheticPopupMouseEvents += 1;
+  else tab.syntheticPopupKeyEvents += 1;
+  tab.syntheticPopupInputExpiresAt = Date.now() + 250;
+}
+
+function clearPopupGesture(tab: ManagedTab): void {
+  tab.popupGestureAt = null;
 }
 
 export function waitForPage(

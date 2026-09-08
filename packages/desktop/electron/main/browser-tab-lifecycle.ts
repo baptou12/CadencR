@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { WebContentsView, type WebContents } from "electron";
-import { metadataFor, secureWebPreferences } from "./browser-manager-utils";
+import { WebContentsView, type Session, type WebContents } from "electron";
+import { metadataFor, secureChildWebPreferences } from "./browser-manager-utils";
 import type { BrowserViewLayout } from "./browser-view-layout";
 import type { BrowserProfile } from "./browser-profiles";
 import { BrowserSessionLifecycle } from "./browser-session-lifecycle";
@@ -24,13 +24,30 @@ export class BrowserTabLifecycle {
     scopeId: number | null,
     automationAccess: BrowserAgentAccess,
     restoredMetadata?: BrowserTabMetadata,
+    nativeOptions?: Electron.WebContentsViewConstructorOptions,
+    temporary = false,
+    expectedSession?: Session,
   ): ManagedTab {
     // Check before WebContentsView touches the partition, then claim immediately
     // after construction. There is no async boundary between these operations.
     this.sessions.assertAvailable(profile);
-    const view = new WebContentsView({ webPreferences: secureWebPreferences(profile) });
+    // Electron puts its internal opener plumbing in the child preferences. Keep
+    // every supplied field, then enforce Cadencr's security/session invariants.
+    if (
+      nativeOptions?.webContents &&
+      expectedSession &&
+      nativeOptions.webContents.session !== expectedSession
+    ) {
+      throw new Error("Native child did not inherit its parent's Browser session.");
+    }
+    const adopted = nativeOptions?.webContents;
+    const view = new WebContentsView({
+      ...(adopted ? { webContents: adopted } : {}),
+      webPreferences: secureChildWebPreferences(profile, nativeOptions?.webPreferences),
+    });
+    const metadata = restoredMetadata ?? metadataFor(randomUUID(), selectionId, scopeId);
     const tab: ManagedTab = {
-      metadata: restoredMetadata ?? metadataFor(randomUUID(), selectionId, scopeId),
+      metadata: { ...metadata, temporary: temporary || undefined },
       automationAccess,
       profile,
       view,
@@ -40,6 +57,13 @@ export class BrowserTabLifecycle {
       consoleEntries: [],
       networkEntries: [],
       pendingSessionTasks: new Set(),
+      temporary,
+      popupGestureAt: null,
+      syntheticPopupMouseEvents: 0,
+      syntheticPopupKeyEvents: 0,
+      syntheticPopupInputExpiresAt: 0,
+      openerTabId: null,
+      detachOpenerRelations: null,
       externalAutomationOrigin: null,
     };
     this.sessions.claim(profile);

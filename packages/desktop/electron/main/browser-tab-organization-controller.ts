@@ -39,8 +39,10 @@ export class BrowserTabOrganizationController {
     const wasActive = this.scopes.activeTabId(metadata.scopeId) === tabId;
     const removal = this.workspace.remove(tabId, this.tabs, true);
     const cleanup = live ? this.closer.close(live, false) : this.removeDormant(metadata);
-    const activation =
-      wasActive && removal?.nextId ? this.host.activate(removal.nextId) : Promise.resolve();
+    const opener = live?.openerTabId ? this.tabs.get(live.openerTabId) : null;
+    const fallbackId =
+      opener?.metadata.scopeId === metadata.scopeId ? opener.metadata.id : removal?.nextId;
+    const activation = wasActive && fallbackId ? this.host.activate(fallbackId) : Promise.resolve();
     if (shouldPersistRemoval(metadata, live)) this.host.persist(metadata.scopeId);
     const [cleanupResult, activationResult] = await Promise.allSettled([cleanup, activation]);
     throwRejected(cleanupResult, activationResult);
@@ -59,6 +61,9 @@ export class BrowserTabOrganizationController {
     const live = this.tabs.get(tabId);
     const source = live?.metadata ?? this.workspace.dormantTab(tabId)?.metadata;
     if (!source) throw unknownTab(tabId);
+    if (live?.temporary) {
+      throw new Error("Temporary sign-in tabs cannot be duplicated or replayed as a GET request.");
+    }
     const profile = live?.profile ?? profileFromSelection(source.sessionProfileId);
     return this.host.create(source, profile, duplicateMetadata(source));
   }
@@ -164,7 +169,8 @@ function restoredMetadata(tab: RestorableBrowserTab, scopeId: number): BrowserTa
 function shouldPersistRemoval(metadata: BrowserTabMetadata, live?: ManagedTab): boolean {
   return (
     metadata.scopeId !== null &&
-    (!live || (live.profile.mode === "persistent" && live.automationAccess !== "agent"))
+    (!live || (live.profile.mode === "persistent" && live.automationAccess !== "agent")) &&
+    live?.temporary !== true
   );
 }
 

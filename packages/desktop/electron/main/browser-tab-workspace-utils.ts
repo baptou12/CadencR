@@ -27,7 +27,7 @@ export function isPersistentMetadata(metadata: BrowserTabMetadata): boolean {
 }
 
 export function isPersistableLiveTab(tab: ManagedTab): boolean {
-  return tab.profile.mode === "persistent" && tab.automationAccess !== "agent";
+  return tab.profile.mode === "persistent" && tab.automationAccess !== "agent" && !tab.temporary;
 }
 
 export function browserTabErrorMessage(error: unknown): string {

@@ -45,6 +45,8 @@ const createdViews: Array<{
   setVisible: ReturnType<typeof vi.fn>;
   setBounds: ReturnType<typeof vi.fn>;
   partition?: string;
+  webPreferences?: Electron.WebPreferences;
+  hasWebContentsOption?: boolean;
 }> = [];
 const sessionsByPartition = new Map<
   string,
@@ -63,6 +65,7 @@ vi.mock("electron", () => {
     setVisible = vi.fn();
     setBounds = vi.fn();
     partition?: string;
+    webPreferences?: Electron.WebPreferences;
 
     get webContents(): MockWebContents {
       if (this.contents.isDestroyed()) {
@@ -71,9 +74,20 @@ vi.mock("electron", () => {
       return this.contents;
     }
 
-    constructor(options?: { webPreferences?: { partition?: string } }) {
+    constructor(options?: {
+      webPreferences?: Electron.WebPreferences;
+      webContents?: MockWebContents;
+    }) {
       this.partition = options?.webPreferences?.partition;
+      this.webPreferences = options?.webPreferences;
+      (this as (typeof createdViews)[number]).hasWebContentsOption = options
+        ? Object.hasOwn(options, "webContents")
+        : false;
       createdViews.push(this);
+      if (options?.webContents) {
+        this.contents = options.webContents;
+        return;
+      }
       let destroyed = false;
       let zoomFactor = 1;
       let findRequestId = 0;
@@ -154,11 +168,14 @@ vi.mock("electron", () => {
       }),
     },
     app: { getPath: vi.fn(() => "/tmp/cadencr-browser-manager-test") },
+    shell: { openExternal: vi.fn(async () => undefined) },
   };
 });
 
 const { BrowserManager } = await import("./browser-manager");
 const { BrowserOriginStore } = await import("./browser-origin-store");
+const { BrowserLibraryController } = await import("./browser-library-controller");
+const { WebContentsView } = await import("electron");
 type BrowserTabSessionStore = import("./browser-tab-session-store").BrowserTabSessionStore;
 type RestorableBrowserScope = import("./browser-tab-session-store").RestorableBrowserScope;
 
@@ -209,6 +226,32 @@ function tabSessionStore(saved: RestorableBrowserScope | null = null): {
     loadScope,
     replaceScope,
   };
+}
+
+function popupDetails(
+  overrides: Partial<Electron.HandlerDetails> & { url: string },
+): Electron.HandlerDetails {
+  return {
+    frameName: "_blank",
+    features: "",
+    disposition: "foreground-tab",
+    referrer: { url: "", policy: "default" },
+    ...overrides,
+  };
+}
+
+function openNativeChild(
+  parent: MockWebContents,
+  details: Partial<Electron.HandlerDetails> & { url: string },
+  options: Electron.BrowserWindowConstructorOptions = {},
+): Electron.WindowOpenHandlerResponse {
+  parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+  const handler = parent.setWindowOpenHandler.mock.calls[0][0] as (
+    value: Electron.HandlerDetails,
+  ) => Electron.WindowOpenHandlerResponse;
+  const response = handler(popupDetails(details));
+  response.createWindow?.(options);
+  return response;
 }
 
 describe("BrowserManager", () => {
@@ -549,6 +592,7 @@ describe("BrowserManager", () => {
 
     expect(tab.sessionProfileId).toBe("default");
     expect(createdViews[0].partition).toBe("persist:browser:default");
+    expect(createdViews[0].hasWebContentsOption).toBe(false);
   });
 
   it("gives separate top-level private tabs separate in-memory partitions", () => {
@@ -568,25 +612,322 @@ describe("BrowserManager", () => {
     const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
     manager.createTab(undefined, "fresh", 1);
     const parent = [...webContentsById.values()][0];
-    const openChild = parent.setWindowOpenHandler.mock.calls[0][0] as (details: {
-      url: string;
-    }) => unknown;
-
-    openChild({ url: "https://example.com/child" });
+    openNativeChild(parent, { url: "https://example.com/child" });
 
     expect(createdViews).toHaveLength(2);
     expect(createdViews[1].partition).toBe(createdViews[0].partition);
     expect(manager.state(1).tabs.map((tab) => tab.sessionProfileId)).toEqual(["fresh", "fresh"]);
   });
 
+  it("keeps modifier and middle-click link tabs in the background", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const parentMeta = manager.createTab("https://example.com/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+
+    const response = openNativeChild(parent, {
+      url: "https://example.com/secondary",
+      disposition: "background-tab",
+    });
+
+    expect(response.action).toBe("allow");
+    expect(manager.state(1).activeTabId).toBe(parentMeta.id);
+    expect(manager.state(1).tabs).toHaveLength(2);
+    expect(manager.state(1).tabs[1]).toMatchObject({
+      url: "https://example.com/secondary",
+      isActive: false,
+      temporary: undefined,
+    });
+    const child = [...webContentsById.values()][1];
+    expect(child.loadURL).toHaveBeenCalledWith("https://example.com/secondary", {
+      httpReferrer: { url: "", policy: "default" },
+      postData: undefined,
+      extraHeaders: undefined,
+    });
+  });
+
+  it("preserves native child preferences while enforcing security and exact session", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab("https://example.com/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+
+    const nativeChild = new WebContentsView().webContents as unknown as MockWebContents;
+    nativeChild.session = parent.session;
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+    const handler = parent.setWindowOpenHandler.mock.calls[0][0] as (
+      value: Electron.HandlerDetails,
+    ) => Electron.WindowOpenHandlerResponse;
+    const response = handler(
+      popupDetails({
+        url: "https://login.example.com/auth",
+        frameName: "qa-login",
+        disposition: "new-window",
+        postBody: {
+          contentType: "application/x-www-form-urlencoded",
+          data: [{ type: "rawData", bytes: Buffer.from("code=secret") }],
+        },
+        referrer: { url: "https://example.com/", policy: "strict-origin" },
+      }),
+    );
+    const returned = response.createWindow?.({
+      webContents: nativeChild,
+      webPreferences: {
+        openerId: 321,
+        partition: "persist:attacker",
+        session: {} as Electron.Session,
+        preload: "/tmp/attacker.js",
+        nodeIntegration: true,
+        nodeIntegrationInWorker: true,
+      },
+    } as unknown as Electron.BrowserWindowConstructorOptions & {
+      webContents: Electron.WebContents;
+    });
+
+    const preferences = createdViews[2].webPreferences;
+    expect(returned).toBe(nativeChild);
+    expect(response.overrideBrowserWindowOptions?.webPreferences).toMatchObject({
+      partition: "persist:browser:default",
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    });
+    expect(nativeChild.loadURL).not.toHaveBeenCalled();
+    expect(preferences).toMatchObject({
+      openerId: 321,
+      partition: "persist:browser:default",
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      contextIsolation: true,
+      sandbox: true,
+    });
+    expect(preferences?.session).toBeUndefined();
+    expect(preferences?.preload).toBeUndefined();
+    expect(manager.state(1).tabs[1]).toMatchObject({ temporary: true, isActive: true });
+  });
+
+  it("allows only one child from a user gesture even after Allow once", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const parentMeta = manager.createTab("https://example.com/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+    const handler = parent.setWindowOpenHandler.mock.calls[0][0] as (
+      value: Electron.HandlerDetails,
+    ) => Electron.WindowOpenHandlerResponse;
+
+    expect(handler(popupDetails({ url: "https://login.example.com/first" })).action).toBe("deny");
+    const blocked = manager.popup.list(1)[0];
+    manager.popup.allowOnce(blocked.id);
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+    const first = handler(popupDetails({ url: "https://login.example.com/first" }));
+    expect(first.action).toBe("allow");
+    first.createWindow?.({});
+
+    expect(handler(popupDetails({ url: "https://login.example.com/second" })).action).toBe("deny");
+    expect(manager.popup.list(1)).toHaveLength(1);
+    expect(manager.state(1).tabs).toHaveLength(2);
+    expect(manager.state(1).tabs[0].id).toBe(parentMeta.id);
+  });
+
+  it("revokes popup grants on navigation and rejects unsafe native targets", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab("https://example.com/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+    const handler = parent.setWindowOpenHandler.mock.calls[0][0] as (
+      value: Electron.HandlerDetails,
+    ) => Electron.WindowOpenHandlerResponse;
+    handler(popupDetails({ url: "https://login.example.com/" }));
+    manager.popup.allowOnce(manager.popup.list(1)[0].id);
+
+    parent.emit("did-start-navigation", {}, "https://example.com/next", false, true);
+    expect(handler(popupDetails({ url: "https://login.example.com/" })).action).toBe("deny");
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+    expect(handler(popupDetails({ url: "https://user:pass@login.example.com/" })).action).toBe(
+      "deny",
+    );
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+    expect(handler(popupDetails({ url: "file:///tmp/secret" })).action).toBe("deny");
+  });
+
+  it("keeps temporary auth children out of history, persistence, and closed-tab replay", async () => {
+    const history = vi
+      .spyOn(BrowserLibraryController.prototype, "recordNavigation")
+      .mockImplementation(() => undefined);
+    const { store, replaceScope } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScopeMetadata(1);
+    const parentMeta = manager.createTab("https://example.com/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+    openNativeChild(parent, {
+      url: "https://login.example.com/auth",
+      frameName: "qa-login",
+      disposition: "new-window",
+    });
+    const childMeta = manager.state(1).tabs.find((tab) => tab.id !== parentMeta.id);
+    if (!childMeta) throw new Error("Expected temporary child");
+    const child = [...webContentsById.values()][1];
+    child.getURL.mockReturnValue("https://login.example.com/callback");
+    child.emit("did-navigate");
+
+    await manager.flushTabSessions();
+    expect(history).not.toHaveBeenCalled();
+    expect(replaceScope.mock.calls.at(-1)?.[1]?.tabs).toHaveLength(1);
+    await manager.closeTab(childMeta.id);
+    expect(manager.reopenLastClosedTab(1)).toBeNull();
+    expect(manager.state(1).activeTabId).toBe(parentMeta.id);
+  });
+
+  it("keeps a chrome-promoted child alive after its original opener closes", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const parentMeta = manager.createTab("https://example.com/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+    openNativeChild(parent, {
+      url: "https://login.example.com/auth",
+      frameName: "qa-login",
+      disposition: "new-window",
+    });
+    const childMeta = manager.state(1).tabs.find((tab) => tab.id !== parentMeta.id);
+    const child = [...webContentsById.values()][1];
+    if (!childMeta || !child) throw new Error("Expected temporary child");
+    const openerDestroyedListeners = parent.listenerCount("destroyed");
+
+    manager.navigateFromChrome(childMeta.id, "https://login.example.com/account");
+
+    expect(manager.state(1).tabs.find((tab) => tab.id === childMeta.id)).toMatchObject({
+      url: "https://login.example.com/account",
+      temporary: undefined,
+    });
+    expect(parent.listenerCount("destroyed")).toBe(openerDestroyedListeners - 1);
+
+    await manager.closeTab(parentMeta.id);
+
+    expect(child.isDestroyed()).toBe(false);
+    expect(manager.state(1).tabs.map((tab) => tab.id)).toEqual([childMeta.id]);
+  });
+
+  it("returns focus to a temporary child's opener and releases its parent listener", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const parentMeta = manager.createTab("https://example.com/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+    openNativeChild(parent, {
+      url: "https://example.com/secondary-1",
+      disposition: "background-tab",
+    });
+    openNativeChild(parent, {
+      url: "https://example.com/secondary-2",
+      disposition: "background-tab",
+    });
+    const baselineListeners = parent.listenerCount("destroyed");
+    openNativeChild(parent, {
+      url: "https://login.example.com/",
+      frameName: "qa-login",
+      disposition: "new-window",
+    });
+    const child = [...webContentsById.values()].at(-1);
+    if (!child) throw new Error("Expected auth child");
+    expect(manager.state(1).activeTabId).not.toBe(parentMeta.id);
+    expect(parent.listenerCount("destroyed")).toBe(baselineListeners + 1);
+    void manager.activateTab(parentMeta.id);
+
+    child.emit("focus");
+    expect(manager.state(1).activeTabId).toBe(parentMeta.id);
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+    child.emit("focus");
+    expect(manager.state(1).activeTabId).not.toBe(parentMeta.id);
+
+    (child.close as unknown as () => void)();
+
+    expect(manager.state(1).activeTabId).toBe(parentMeta.id);
+    expect(parent.listenerCount("destroyed")).toBe(baselineListeners);
+  });
+
+  it("preflights the persistent tab cap before returning native allow", async () => {
+    const { store } = tabSessionStore();
+    const manager = new BrowserManager(
+      () => mainWindow() as unknown as Electron.BrowserWindow,
+      store,
+    );
+    await manager.restoreScopeMetadata(1);
+    for (let index = 0; index < 100; index += 1) {
+      manager.createTab(`https://example.com/${index}`, "default", 1);
+    }
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("https://example.com/");
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "middle", x: 1, y: 1 });
+    const handler = parent.setWindowOpenHandler.mock.calls[0][0] as (
+      value: Electron.HandlerDetails,
+    ) => Electron.WindowOpenHandlerResponse;
+
+    const response = handler(
+      popupDetails({
+        url: "https://example.com/overflow",
+        disposition: "background-tab",
+      }),
+    );
+
+    expect(response).toEqual({ action: "deny" });
+    expect(createdViews).toHaveLength(100);
+    expect(manager.state(1).error).toContain("limited to 100");
+  });
+
+  it("does not treat synthetic input or stale input debt as a native popup gesture", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab("http://localhost:1420/", "default", 1);
+    const parent = [...webContentsById.values()][0];
+    parent.getURL.mockReturnValue("http://localhost:1420/");
+    const handler = parent.setWindowOpenHandler.mock.calls[0][0] as (
+      value: Electron.HandlerDetails,
+    ) => Electron.WindowOpenHandlerResponse;
+
+    await manager.click(tab.id, 1, 1);
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+    expect(handler(popupDetails({ url: "http://localhost:1420/synthetic" })).action).toBe("deny");
+
+    await manager.inspection.keypress(tab.id, "Space");
+    parent.emit(
+      "before-input-event",
+      {},
+      {
+        type: "keyDown",
+        key: " ",
+        meta: false,
+        control: false,
+        alt: false,
+      },
+    );
+    expect(handler(popupDetails({ url: "http://localhost:1420/synthetic-space" })).action).toBe(
+      "deny",
+    );
+
+    await manager.inspection.keypress(tab.id, "A");
+    parent.emit(
+      "before-input-event",
+      {},
+      {
+        type: "keyDown",
+        key: "a",
+        meta: false,
+        control: false,
+        alt: false,
+      },
+    );
+    parent.emit("before-mouse-event", {}, { type: "mouseDown", button: "left", x: 1, y: 1 });
+    expect(handler(popupDetails({ url: "http://localhost:1420/human" })).action).toBe("allow");
+  });
+
   it("clears a shared private partition only when its last tab closes", async () => {
     const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
     const parentMeta = manager.createTab(undefined, "fresh", 1);
     const parent = [...webContentsById.values()][0];
-    const openChild = parent.setWindowOpenHandler.mock.calls[0][0] as (details: {
-      url: string;
-    }) => unknown;
-    openChild({ url: "https://example.com/child" });
+    openNativeChild(parent, { url: "https://example.com/child" });
     const childMeta = manager.state(1).tabs.find((tab) => tab.id !== parentMeta.id);
     if (!childMeta) throw new Error("Expected child tab");
     const partition = createdViews[0].partition;

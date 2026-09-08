@@ -58,6 +58,8 @@ export interface BrowserTabMetadata {
   pinned: boolean;
   /** Restored metadata with no live WebContents yet; activating it materializes the tab. */
   suspended: boolean;
+  /** Native sign-in / POST child whose request cannot be safely replayed after restart. */
+  temporary?: boolean;
   /** Authoritative zoom reported by the guest WebContents. */
   zoomPercent: number;
   /**
@@ -67,6 +69,18 @@ export interface BrowserTabMetadata {
    * context, so it isn't shown in any feature's tab strip.
    */
   scopeId: number | null;
+}
+
+export interface BrowserPopupRequest {
+  id: string;
+  tabId: string;
+  scopeId: number | null;
+  /** Sanitized destination origin; the target path and POST body stay main-process-only. */
+  origin: string;
+  hasPostData: boolean;
+  externalAvailable: boolean;
+  status: "blocked" | "allowed-once";
+  allowExpiresAt?: string;
 }
 
 export interface BrowserFindRequest {

@@ -2,7 +2,6 @@ import {
   memo,
   useEffect,
   useRef,
-  useState,
   type DragEvent,
   type ReactElement,
   type RefObject,
@@ -37,14 +36,12 @@ import {
 import { PROFILE_ID, type CookieMode } from "@/lib/browser-settings";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
-import { MAX_BROWSER_FAVICON_DATA_URL_LENGTH } from "@/shared/browser-types";
 import { BrowserTabOverflow } from "./BrowserTabOverflow";
+import { BrowserPageIcon, BrowserTemporaryTabIcon } from "./BrowserTabIcons";
 import type { BrowserWorkspaceModel } from "./useBrowserWorkspaceModel";
 
 const TAB_DRAG_TYPE = "application/x-cadencr-browser-tab";
 const MAX_VISIBLE_TABS = 20;
-const SAFE_FAVICON_DATA_URL =
-  /^data:image\/(?:png|jpeg|gif|webp|x-icon|vnd\.microsoft\.icon);base64,[a-z\d+/]+={0,2}$/iu;
 
 interface BrowserTabStripProps {
   model: BrowserWorkspaceModel;
@@ -199,6 +196,7 @@ const BrowserTabPill = memo(function BrowserTabPill({
                   <EyeOffIcon aria-hidden="true" className="size-3 shrink-0 opacity-70" />
                 </span>
               ) : null}
+              {tab.temporary ? <BrowserTemporaryTabIcon /> : null}
             </span>
             <span className="truncate">{label}</span>
           </button>
@@ -261,7 +259,13 @@ function BrowserTabContextMenu({
         {tab.pinned ? <PinOffIcon /> : <PinIcon />}
         {tab.pinned ? "Unpin tab" : "Pin tab"}
       </ContextMenuItem>
-      <ContextMenuItem disabled={busy} onSelect={() => onDuplicate(tab.id)}>
+      <ContextMenuItem
+        disabled={busy || tab.temporary === true}
+        title={
+          tab.temporary ? "Temporary sign-in tabs cannot be replayed as GET requests" : undefined
+        }
+        onSelect={() => onDuplicate(tab.id)}
+      >
         <CopyIcon />
         Duplicate tab
       </ContextMenuItem>
@@ -352,39 +356,6 @@ const NewBrowserTabButton = memo(function NewBrowserTabButton({
     </div>
   );
 });
-
-function BrowserPageIcon({ tab }: { tab: BrowserTabMetadata }): ReactElement {
-  if (tab.loading) {
-    return (
-      <span role="status" aria-label="Tab loading">
-        <Loader2Icon aria-hidden="true" className="size-3.5 shrink-0 animate-spin text-primary" />
-      </span>
-    );
-  }
-  if (isSafeFaviconDataUrl(tab.faviconUrl)) {
-    return <BrowserFavicon key={tab.faviconUrl} url={tab.faviconUrl} />;
-  }
-  return <GlobeIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />;
-}
-
-function isSafeFaviconDataUrl(url: string | undefined): url is string {
-  return Boolean(
-    url && url.length <= MAX_BROWSER_FAVICON_DATA_URL_LENGTH && SAFE_FAVICON_DATA_URL.test(url),
-  );
-}
-
-function BrowserFavicon({ url }: { url: string }): ReactElement {
-  const [failed, setFailed] = useState(false);
-  if (failed) return <GlobeIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />;
-  return (
-    <img
-      src={url}
-      alt=""
-      className="size-3.5 shrink-0 rounded-sm"
-      onError={() => setFailed(true)}
-    />
-  );
-}
 
 function boundedVisibleTabs(
   tabs: BrowserTabMetadata[],

@@ -72,6 +72,7 @@ function setup(overrides: Partial<BrowserAddressBarProps> = {}): SetupResult {
     onZoomReset: vi.fn(),
     onFind: vi.fn(),
     onDevTools: vi.fn(),
+    onOpenExternal: vi.fn(),
     onAddComment: vi.fn(),
     ...overrides,
   };

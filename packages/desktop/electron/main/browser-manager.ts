@@ -11,6 +11,7 @@ import { BrowserNetworkCollector } from "./browser-network-collector";
 import { BrowserOriginStore } from "./browser-origin-store";
 import { BrowserOpenController } from "./browser-open-controller";
 import { BrowserPageController } from "./browser-page-controller";
+import { BrowserPopupController } from "./browser-popup-controller";
 import type { ManagedTab } from "./browser-tab-events";
 import { BrowserTabCloseController } from "./browser-tab-close-controller";
 import { BrowserTabCreationController } from "./browser-tab-creation-controller";
@@ -43,6 +44,7 @@ export class BrowserManager {
   private readonly workspace: BrowserTabWorkspaceController;
   private readonly organization: BrowserTabOrganizationController;
   private readonly creator: BrowserTabCreationController;
+  readonly popup: BrowserPopupController;
   private readonly opener: BrowserOpenController;
   private readonly stateAuthority: BrowserManagerState;
   private readonly tabCloser = new BrowserTabCloseController(
@@ -118,6 +120,18 @@ export class BrowserManager {
       () => this.lastError,
       () => this.getMainWindow(),
     );
+    this.popup = new BrowserPopupController({
+      getWindow: () => this.getMainWindow(),
+      currentUrl: (tabId) => this.tabs.get(tabId)?.webContents.getURL() ?? null,
+      assertCanCreateNative: (parent, temporary) =>
+        this.creator.assertCanCreateNative(parent, temporary),
+      createNativeChild: (parent, details, options, background, temporary) =>
+        this.creator.createNativeChild(parent, details, options, background, temporary),
+      reportError: (error, scopeId) => {
+        this.lastError = error instanceof Error ? error.message : String(error);
+        this.stateAuthority.emit(scopeId);
+      },
+    });
     this.creator = new BrowserTabCreationController({
       tabs: this.tabs,
       workspace: this.workspace,
@@ -129,6 +143,7 @@ export class BrowserManager {
       origins: this.origins,
       library: this.library,
       page: this.page,
+      popup: this.popup,
       host: {
         getWindow: () => this.getMainWindow(),
         setLastError: (message) => {
@@ -218,6 +233,13 @@ export class BrowserManager {
       this.stateAuthority.emit(tab.metadata.scopeId);
     });
     return tab.metadata;
+  }
+
+  navigateFromChrome(tabId: string, rawUrl: string): BrowserTabMetadata {
+    const tab = this.requireTab(tabId);
+    const normalizedUrl = normalizeBrowserOpenUrl(rawUrl);
+    this.creator.promoteTemporaryForChrome(tab);
+    return this.navigate(tabId, normalizedUrl);
   }
 
   async activateTab(tabId: string): Promise<BrowserTabMetadata> {
@@ -340,14 +362,21 @@ export class BrowserManager {
   private handleNativeDestroyed(tab: ManagedTab): void {
     if (!this.tabs.has(tab.metadata.id)) return;
     const removal = this.workspace.remove(tab.metadata.id, this.tabs, false);
-    if (this.scopes.activeTabId(tab.metadata.scopeId) === tab.metadata.id && removal?.nextId) {
-      void this.activateTab(removal.nextId).catch((error: unknown) => {
+    const wasActive = this.scopes.activeTabId(tab.metadata.scopeId) === tab.metadata.id;
+    const opener = tab.openerTabId ? this.tabs.get(tab.openerTabId) : null;
+    const fallbackId = wasActive
+      ? opener?.metadata.scopeId === tab.metadata.scopeId
+        ? opener.metadata.id
+        : removal?.nextId
+      : null;
+    if (fallbackId) {
+      void this.activateTab(fallbackId).catch((error: unknown) => {
         this.lastError = error instanceof Error ? error.message : String(error);
         this.stateAuthority.emit(tab.metadata.scopeId);
       });
     }
     this.tabCloser.handleNativeDestroyed(tab);
-    if (tab.metadata.scopeId !== null && tab.profile.mode === "persistent") {
+    if (tab.metadata.scopeId !== null && tab.profile.mode === "persistent" && !tab.temporary) {
       this.persistScope(tab.metadata.scopeId);
     }
   }

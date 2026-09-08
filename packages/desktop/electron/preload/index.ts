@@ -9,6 +9,7 @@ import type {
   BrowserLibraryChange,
   BrowserOmniboxQueryResult,
   BrowserProfileMetadata,
+  BrowserPopupRequest,
   BrowserSiteInfo,
   BrowserSitePermission,
   BrowserSitePermissionDecision,
@@ -253,6 +254,14 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:close-other-tabs", tabId),
   reopenLastClosedBrowserTab: (scopeId: number): Promise<BrowserTabMetadata | null> =>
     ipcRenderer.invoke("browser:reopen-last-closed-tab", scopeId),
+  listBlockedBrowserPopups: (scopeId: number): Promise<BrowserPopupRequest[]> =>
+    ipcRenderer.invoke("browser:list-blocked-popups", scopeId),
+  allowBrowserPopupOnce: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:allow-popup-once", requestId),
+  openBrowserPopupExternally: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:open-popup-externally", requestId),
+  dismissBrowserPopup: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:dismiss-popup", requestId),
   setBrowserBounds: (
     bounds: BrowserBounds,
     scopeId?: number | null,
@@ -352,6 +361,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     onIpc("browser:permission-request", cb),
   onBrowserPermissionRequestCancelled: (cb: (event: { requestId: string }) => void): (() => void) =>
     onIpc("browser:permission-request-cancelled", cb),
+  onBrowserPopupRequestsChanged: (cb: (event: { scopeId: number }) => void): (() => void) =>
+    onIpc("browser:popup-requests-changed", cb),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: (): Promise<void> => ipcRenderer.invoke("app:install-update"),
   fetchChangelog: (version: string): Promise<string | null> =>

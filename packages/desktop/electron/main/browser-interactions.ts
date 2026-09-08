@@ -39,11 +39,13 @@ export async function clickTarget(
   wc: WebContents,
   target: BrowserTarget,
   authorize: () => void = () => undefined,
+  beforeInput: () => void = () => undefined,
 ): Promise<ResolvedTarget> {
   const resolved = await resolveTarget(wc, target);
   authorize();
   await flashHighlight(wc, resolved.boundingBox);
   authorize();
+  beforeInput();
   const { x, y } = resolved.center;
   wc.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
   wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });

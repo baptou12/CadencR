@@ -90,13 +90,32 @@ export function secureWebPreferences(profile: BrowserProfile): Electron.WebPrefe
   return {
     partition: browserPartitionForProfile(profile),
     nodeIntegration: false,
+    nodeIntegrationInWorker: false,
+    nodeIntegrationInSubFrames: false,
     contextIsolation: true,
     sandbox: true,
     webSecurity: true,
     allowRunningInsecureContent: false,
     experimentalFeatures: false,
     plugins: false,
+    webviewTag: false,
     devTools: true,
+  };
+}
+
+/** Harden child preferences while retaining opaque fields used by Electron's opener plumbing. */
+export function secureChildWebPreferences(
+  profile: BrowserProfile,
+  native?: Electron.WebPreferences,
+): Electron.WebPreferences {
+  return {
+    ...native,
+    session: undefined,
+    preload: undefined,
+    nodeIntegrationInWorker: false,
+    nodeIntegrationInSubFrames: false,
+    webviewTag: false,
+    ...secureWebPreferences(profile),
   };
 }
 

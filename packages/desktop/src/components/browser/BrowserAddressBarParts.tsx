@@ -12,6 +12,7 @@ import {
   ArrowRightIcon,
   BugIcon,
   CornerDownLeftIcon,
+  ExternalLinkIcon,
   GlobeIcon,
   Loader2Icon,
   MoreHorizontalIcon,
@@ -36,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
 import type { BrowserOmniboxSuggestion } from "@/lib/browser-omnibox";
 import { BrowserOmniboxPanel } from "./BrowserOmniboxPanel";
+import { BrowserExternalButton } from "./BrowserExternalButton";
 import { cn } from "@/lib/utils";
 
 interface BrowserNavControlsProps {
@@ -225,6 +227,7 @@ interface BrowserToolbarActionsProps {
   onZoomReset: () => void;
   onZoomIn: () => void;
   onDevTools: () => void;
+  onOpenExternal: () => void;
   onFind: () => void;
   onAddComment: () => void;
   onMenuOpenChange: (open: boolean) => void;
@@ -306,6 +309,13 @@ function BrowserOverflowMenu(props: BrowserOverflowMenuProps): ReactElement {
         <DropdownMenuItem onSelect={props.onDevTools}>
           <BugIcon /> DevTools
         </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={props.disabled}
+          onSelect={props.onOpenExternal}
+          title="Cookies and sign-in state are not transferred"
+        >
+          <ExternalLinkIcon /> Open in default browser
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={props.onAddComment}>
           <SparklesIcon /> Add comment
         </DropdownMenuItem>
@@ -353,6 +363,7 @@ export function BrowserToolbarActions(props: BrowserToolbarActionsProps): ReactE
         </Button>
       </div>
       <div className="flex shrink-0 items-center gap-1.5 @max-[44rem]:hidden">
+        <BrowserExternalButton disabled={disabled} onClick={props.onOpenExternal} />
         <Button
           type="button"
           variant="ghost"

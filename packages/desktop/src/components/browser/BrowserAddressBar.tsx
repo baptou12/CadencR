@@ -43,6 +43,7 @@ export interface BrowserAddressBarProps {
   onZoomReset: () => void;
   onFind: () => void;
   onDevTools: () => void;
+  onOpenExternal: () => void;
   onAddComment: () => void;
   onSuggestionOverlayOpenChange?: (open: boolean) => void;
   siteControl?: ReactNode;
@@ -265,6 +266,7 @@ function renderAddressBar(view: AddressBarViewProps): ReactElement {
             onZoomReset={view.onZoomReset}
             onFind={view.onFind}
             onDevTools={view.onDevTools}
+            onOpenExternal={view.onOpenExternal}
             onAddComment={view.onAddComment}
             onMenuOpenChange={view.setActionsOpen}
           />

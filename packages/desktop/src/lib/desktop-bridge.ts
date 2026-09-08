@@ -1,26 +1,5 @@
 import { isSafeExternalUrl, isUserOpenableUrl } from "@/lib/safe-url";
-import type { LinkHoverContext, LinkMenuOpenPayload } from "@/lib/link-routing";
-import type {
-  BrowserBounds,
-  BrowserBookmark,
-  BrowserCommentBadgeClick,
-  BrowserConsoleEntry,
-  BrowserElementContext,
-  BrowserFindRequest,
-  BrowserFindResult,
-  BrowserGuestShortcutBindings,
-  BrowserLibraryChange,
-  BrowserOmniboxQueryResult,
-  BrowserNetworkEntry,
-  BrowserProfileMetadata,
-  BrowserSiteInfo,
-  BrowserSitePermission,
-  BrowserSitePermissionDecision,
-  BrowserSitePermissionRequest,
-  BrowserShortcut,
-  BrowserStateSnapshot,
-  BrowserTabMetadata,
-} from "@/shared/browser-types";
+import type { CadencrBrowserBridge, DesktopTheme } from "./desktop-bridge-types";
 
 export type {
   BrowserBounds,
@@ -37,6 +16,7 @@ export type {
   BrowserOmniboxQueryResult,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
+  BrowserPopupRequest,
   BrowserSiteInfo,
   BrowserSitePermission,
   BrowserSitePermissionDecision,
@@ -45,247 +25,21 @@ export type {
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "@/shared/browser-types";
-
-export interface RuntimeConfig {
-  baseUrl: string;
-  authToken: string | null;
-}
-
-export type RouteType = "session";
-export type DesktopTheme = "light" | "dark";
-
-export interface NotificationClickPayload {
-  feature_id: number;
-  project_id: number;
-  route_type: RouteType;
-}
-
-export interface NotificationFallbackPayload {
-  title: string;
-  body: string;
-  click: NotificationClickPayload | null;
-}
-
-/**
- * Where an agent-finished notification should be rendered. `"off"` is
- * resolved in the renderer (we just skip the bridge call entirely), so
- * the bridge only ever sees these two modes.
- */
-export type NotifyMode = "native" | "in_app";
-
-export interface NotifyBridgeOptions {
-  title: string;
-  body: string;
-  featureId: number;
-  projectId: number;
-  routeType: RouteType;
-  mode: NotifyMode;
-}
-
-export interface FileDropItem {
-  handle: string;
-  name: string;
-}
-
-export interface FileDropPayload {
-  type: "enter" | "leave" | "drop" | "error";
-  files: FileDropItem[];
-  targetPromptId?: string;
-  message?: string;
-}
-
-export type UpdateEvent =
-  | { kind: "checking" }
-  | { kind: "available"; version: string }
-  | {
-      /** Markdown body for `version`, fetched from GitHub. `null` on miss/failure. */
-      kind: "changelog";
-      version: string;
-      markdown: string | null;
-    }
-  | { kind: "not-available"; version: string }
-  | { kind: "error"; message: string }
-  | { kind: "download-progress"; percent: number; bytesPerSecond: number }
-  | { kind: "downloaded"; version: string };
-
-export interface RendererErrorReportPayload {
-  source: "error" | "unhandledrejection" | "react-boundary";
-  message: string;
-  stack?: string | null;
-  componentStack?: string | null;
-  url?: string | null;
-  line?: number | null;
-  column?: number | null;
-}
-
-export interface CadencrDesktopBridge {
-  isElectron: boolean;
-  runtimeConfig: () => Promise<RuntimeConfig>;
-  readFileBase64: (handle: string) => Promise<string>;
-  suppressNextNativeContextMenu?: () => void;
-  onFileDrop: (cb: (payload: FileDropPayload) => void) => () => void;
-  revealInFinder: (path: string) => Promise<void>;
-  openExternal: (url: string) => Promise<void>;
-  /**
-   * User-initiated "open in default browser" for a clicked link. Looser than
-   * {@link openExternal}: permits `http:` and loopback hosts so a dev-server
-   * URL can be opened in the system browser on demand, and (desktop shell
-   * only) `file:` links to local documents, opened in their default app.
-   * Still rejects credentials and other schemes (`javascript:`, `data:`).
-   */
-  openExternalLink: (url: string) => Promise<void>;
-  /**
-   * Inform the main process which link the pointer is over (or `null` on
-   * leave) so its native right-click menu can offer feature-scoped open
-   * choices. Used by the terminal and agent chat.
-   */
-  setLinkHoverContext: (context: LinkHoverContext | null) => Promise<void>;
-  /** Fired when the user picks an open action from the native link menu. */
-  onOpenLinkFromMenu: (cb: (payload: LinkMenuOpenPayload) => void) => () => void;
-  pickDirectory: () => Promise<string | null>;
-  /**
-   * Prompt the user to pick an image file (project icon). Resolves to the
-   * chosen absolute path or `null` if the dialog was canceled.
-   */
-  pickImageFile: () => Promise<string | null>;
-  /**
-   * Prompt the user with the native "Save As" dialog. Resolves to the chosen
-   * absolute path or `null` if the dialog was canceled.
-   */
-  showSaveDialog: (opts: { defaultPath: string; title?: string }) => Promise<string | null>;
-  notifyPermission: () => Promise<boolean>;
-  notify: (opts: NotifyBridgeOptions) => Promise<void>;
-  notifyTest: () => Promise<void>;
-  onNotificationClicked: (cb: (payload: NotificationClickPayload) => void) => () => void;
-  onNotificationFailed: (cb: (payload: { reason: string }) => void) => () => void;
-  onNotificationFallback: (cb: (payload: NotificationFallbackPayload) => void) => () => void;
-  onCloseRequested: (cb: () => void) => () => void;
-  confirmClose: () => Promise<void>;
-  requestQuit: () => Promise<void>;
-  reportRendererError?: (payload: RendererErrorReportPayload) => Promise<void>;
-  setZoom: (factor: number) => Promise<void>;
-  currentTheme: () => Promise<DesktopTheme>;
-  onThemeChange: (cb: (appearance: DesktopTheme) => void) => () => void;
-  /**
-   * Tell the main process whether any agent turn is currently active. Main
-   * uses this to ref-count `powerSaveBlocker('prevent-app-suspension')` so
-   * the OS keeps the system awake while agents stream and lets it sleep
-   * normally when they don't (per `feature-sleep-aware-agent-reliability`).
-   */
-  setBusy: (busy: boolean) => Promise<void>;
-  /**
-   * Request (or release) a macOS-friendly idle-system-sleep block for remote
-   * hosting. Held independently of `setBusy` so neither caller releases the
-   * other's assertion. Uses `prevent-app-suspension`, so the display may still
-   * sleep/lock; only idle system sleep is blocked. No-op off macOS / in a
-   * browser. See `feature/macos-remote-ux-sleep-prevention`.
-   */
-  setRemoteHostAwake: (enabled: boolean) => Promise<void>;
-  /** Fired just before the OS suspends. Cleanup is up to the renderer. */
-  onPowerSuspend: (cb: () => void) => () => void;
-  /** Fired right after wake-from-suspend. */
-  onPowerResume: (cb: () => void) => () => void;
-
-  /** Ask the main process to check for an update right now. */
-  checkForUpdates: () => Promise<void>;
-  /** Quit and install a downloaded update. */
-  installUpdate: () => Promise<void>;
-  /**
-   * Fetch the markdown release notes for a given version from GitHub.
-   * Returns `null` when the release isn't published or the request fails.
-   */
-  fetchChangelog: (version: string) => Promise<string | null>;
-  /** Subscribe to all auto-updater lifecycle events. */
-  onUpdateEvent: (cb: (event: UpdateEvent) => void) => () => void;
-}
-
-export interface CadencrBrowserBridge extends CadencrDesktopBridge {
-  reportRendererError: (payload: RendererErrorReportPayload) => Promise<void>;
-  createBrowserTab: (
-    url?: string,
-    profileId?: string,
-    scopeId?: number | null,
-  ) => Promise<BrowserTabMetadata>;
-  listBrowserTabs: (scopeId?: number | null) => Promise<BrowserStateSnapshot>;
-  listBrowserTabCountsByScope: () => Promise<Record<number, number>>;
-  navigateBrowserTab: (tabId: string, url: string) => Promise<BrowserTabMetadata>;
-  activateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
-  closeBrowserTab: (tabId: string) => Promise<BrowserStateSnapshot>;
-  /** Close every browser tab belonging to a feature scope in one pass. */
-  closeBrowserTabsForScope: (scopeId: number) => Promise<BrowserStateSnapshot>;
-  duplicateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
-  setBrowserTabPinned: (tabId: string, pinned: boolean) => Promise<BrowserStateSnapshot>;
-  reorderBrowserTab: (tabId: string, targetIndex: number) => Promise<BrowserStateSnapshot>;
-  closeOtherBrowserTabs: (tabId: string) => Promise<BrowserStateSnapshot>;
-  reopenLastClosedBrowserTab: (scopeId: number) => Promise<BrowserTabMetadata | null>;
-  setBrowserBounds: (
-    bounds: BrowserBounds,
-    scopeId?: number | null,
-  ) => Promise<BrowserStateSnapshot>;
-  setBrowserSuppressed: (value: boolean) => Promise<void>;
-  listBrowserProfiles: () => Promise<BrowserProfileMetadata[]>;
-  clearBrowserStorage: (profileId: string) => Promise<void>;
-  createBrowserProfile: (profileId: string) => Promise<BrowserProfileMetadata>;
-  duplicateBrowserProfile: (sourceId: string, newId: string) => Promise<BrowserProfileMetadata>;
-  deleteBrowserProfile: (profileId: string) => Promise<void>;
-  getBrowserSiteInfo: (tabId: string) => Promise<BrowserSiteInfo>;
-  setBrowserSitePermission: (
-    tabId: string,
-    origin: string,
-    permission: BrowserSitePermission,
-    decision: BrowserSitePermissionDecision,
-  ) => Promise<BrowserSiteInfo>;
-  clearBrowserSiteData: (tabId: string, origin: string) => Promise<BrowserSiteInfo>;
-  setBrowserAgentSharing: (
-    tabId: string,
-    origin: string,
-    shared: boolean,
-  ) => Promise<BrowserSiteInfo>;
-  resolveBrowserPermissionRequest: (requestId: string, allowed: boolean) => Promise<void>;
-  browserBack: (tabId: string) => Promise<void>;
-  browserForward: (tabId: string) => Promise<void>;
-  browserReload: (tabId: string) => Promise<void>;
-  browserStop: (tabId: string) => Promise<void>;
-  browserZoomIn: (tabId: string) => Promise<void>;
-  browserZoomOut: (tabId: string) => Promise<void>;
-  browserZoomReset: (tabId: string) => Promise<void>;
-  findInBrowserTab: (tabId: string, request: BrowserFindRequest) => Promise<void>;
-  stopFindingInBrowserTab: (tabId: string, focusPage: boolean) => Promise<void>;
-  setBrowserGuestShortcuts: (bindings: BrowserGuestShortcutBindings) => Promise<void>;
-  queryBrowserOmnibox: (query: string, limit?: number) => Promise<BrowserOmniboxQueryResult>;
-  getBrowserBookmark: (url: string) => Promise<BrowserBookmark | null>;
-  removeBrowserHistoryEntry: (id: string) => Promise<void>;
-  clearBrowserHistory: () => Promise<void>;
-  setBrowserBookmark: (tabId: string, bookmarked: boolean) => Promise<BrowserBookmark | null>;
-  toggleBrowserDevTools: (tabId: string) => Promise<BrowserTabMetadata>;
-  getBrowserConsole: () => Promise<BrowserConsoleEntry[]>;
-  getBrowserNetwork: () => Promise<BrowserNetworkEntry[]>;
-  getBrowserSnapshot: (tabId: string) => Promise<unknown>;
-  getBrowserScreenshot: (tabId: string) => Promise<string>;
-  browserClick: (tabId: string, x: number, y: number) => Promise<void>;
-  browserType: (tabId: string, text: string) => Promise<void>;
-  browserKeypress: (tabId: string, keyCode: string) => Promise<void>;
-  selectBrowserElementContext: (tabId: string, anchorId: string) => Promise<BrowserElementContext>;
-  /** Remove the on-page numbered badge anchored to `anchorId`. */
-  removeBrowserCommentBadge: (tabId: string, anchorId: string) => Promise<void>;
-  /** Remove every on-page comment badge from the tab. */
-  clearBrowserCommentBadges: (tabId: string) => Promise<void>;
-  onBrowserState: (cb: (state: BrowserStateSnapshot) => void) => () => void;
-  onBrowserTabCounts: (cb: (counts: Record<number, number>) => void) => () => void;
-  onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void) => () => void;
-  onBrowserFindResult: (cb: (result: BrowserFindResult) => void) => () => void;
-  onBrowserLibraryChanged: (cb: (change: BrowserLibraryChange) => void) => () => void;
-  /** A user click on an on-page comment badge, to reopen that comment's composer. */
-  onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void) => () => void;
-  onBrowserPermissionRequest: (cb: (request: BrowserSitePermissionRequest) => void) => () => void;
-  onBrowserPermissionRequestCancelled: (cb: (event: { requestId: string }) => void) => () => void;
-}
-
-declare global {
-  interface Window {
-    cadencr?: Partial<CadencrBrowserBridge>;
-  }
-}
+export type {
+  CadencrBrowserBridge,
+  CadencrDesktopBridge,
+  DesktopTheme,
+  FileDropItem,
+  FileDropPayload,
+  NotificationClickPayload,
+  NotificationFallbackPayload,
+  NotifyBridgeOptions,
+  NotifyMode,
+  RendererErrorReportPayload,
+  RouteType,
+  RuntimeConfig,
+  UpdateEvent,
+} from "./desktop-bridge-types";
 
 let bridgeOverride: Partial<CadencrBrowserBridge> | null = null;
 
@@ -366,6 +120,10 @@ const browserBridge: CadencrBrowserBridge = {
   reorderBrowserTab: () => unavailable("reorderBrowserTab"),
   closeOtherBrowserTabs: () => unavailable("closeOtherBrowserTabs"),
   reopenLastClosedBrowserTab: () => unavailable("reopenLastClosedBrowserTab"),
+  listBlockedBrowserPopups: () => unavailable("listBlockedBrowserPopups"),
+  allowBrowserPopupOnce: () => unavailable("allowBrowserPopupOnce"),
+  openBrowserPopupExternally: () => unavailable("openBrowserPopupExternally"),
+  dismissBrowserPopup: () => unavailable("dismissBrowserPopup"),
   setBrowserBounds: () => unavailable("setBrowserBounds"),
   // No native browser view exists in a remote/browser tab, so suppression is a
   // no-op (resolve) rather than an error — dialogs never call it expecting work.
@@ -415,6 +173,7 @@ const browserBridge: CadencrBrowserBridge = {
   onBrowserCommentBadgeClick: () => () => undefined,
   onBrowserPermissionRequest: () => () => undefined,
   onBrowserPermissionRequestCancelled: () => () => undefined,
+  onBrowserPopupRequestsChanged: () => () => undefined,
   checkForUpdates: () => unavailable("checkForUpdates"),
   installUpdate: () => unavailable("installUpdate"),
   fetchChangelog: () => Promise.resolve(null),

@@ -11,6 +11,7 @@ export interface BrowserPageActions {
   zoomOut: () => void;
   zoomReset: () => void;
   devTools: () => void;
+  openExternal: () => void;
 }
 
 export function useBrowserPageActions(
@@ -53,8 +54,28 @@ export function useBrowserPageActions(
       void runForActive((tab) => desktopBridge.toggleBrowserDevTools(tab.id).then(() => undefined)),
     [runForActive],
   );
-  return useMemo(
-    () => ({ back, forward, reload, stop, zoomIn, zoomOut, zoomReset, devTools }),
-    [back, devTools, forward, reload, stop, zoomIn, zoomOut, zoomReset],
+  const openExternal = useCallback(
+    (): void =>
+      void runForActive(async (tab) => {
+        assertExternalFallbackUrl(tab.url);
+        await desktopBridge.openExternalLink(tab.url);
+      }),
+    [runForActive],
   );
+  return useMemo(
+    () => ({ back, forward, reload, stop, zoomIn, zoomOut, zoomReset, devTools, openExternal }),
+    [back, devTools, forward, openExternal, reload, stop, zoomIn, zoomOut, zoomReset],
+  );
+}
+
+function assertExternalFallbackUrl(rawUrl: string): void {
+  const parsed = new URL(rawUrl);
+  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+  if (
+    parsed.username ||
+    parsed.password ||
+    (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback))
+  ) {
+    throw new Error("Only HTTPS or local HTTP pages can be opened in the default browser.");
+  }
 }

@@ -30,6 +30,18 @@ export interface ManagedTab {
   networkEntries: BrowserNetworkEntry[];
   /** Guest-session work that must settle before a private partition is cleared. */
   pendingSessionTasks: Set<Promise<void>>;
+  /** Auth/POST popup requests are not safe to persist, reopen, or add to history. */
+  temporary: boolean;
+  /** Recent trusted native gesture, kept on the tab so automation can revoke it. */
+  popupGestureAt: number | null;
+  /** Synthetic input events to exclude from popup gesture accounting. */
+  syntheticPopupMouseEvents: number;
+  syntheticPopupKeyEvents: number;
+  syntheticPopupInputExpiresAt: number;
+  /** Source tab for a temporary auth child; used only for focus return on close. */
+  openerTabId: string | null;
+  /** Releases parent/focus listeners if a temporary child is promoted or destroyed. */
+  detachOpenerRelations: (() => void) | null;
   // Origin approved via the permission-gated browser_open_external_url tool. While
   // the tab stays on this origin it is exempt from the localhost-only automation
   // (mutation) gate; navigating elsewhere re-locks it. null = not unlocked.
@@ -41,7 +53,6 @@ export interface ManagedTab {
 export interface TabEventHost {
   emitState(): void;
   setLastError(message: string | null): void;
-  openChildTab(url: string): void;
   isTabAlive(): boolean;
   tabDestroyed(): void;
   recordOrigin(url: string): void;
@@ -93,10 +104,6 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
       MAX_CONSOLE_PER_TAB,
     );
     host.emitState();
-  });
-  wc.setWindowOpenHandler(({ url }) => {
-    host.openChildTab(url);
-    return { action: "deny" };
   });
   wc.on("will-navigate", (event, url) => {
     try {
