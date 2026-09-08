@@ -458,7 +458,7 @@ async fn restoring_a_persisted_selection_puts_the_row_back() {
 
     restore_persisted_selection(&app_state.write_pool, db_id, &before)
         .await
-        .expect("restore succeeds");
+        .unwrap_or_else(|error| panic!("restore failed: {}", error.message));
 
     let after = read_persisted_selection(&app_state.read_pool, db_id)
         .await
@@ -469,4 +469,34 @@ async fn restoring_a_persisted_selection_puts_the_row_back() {
     assert_eq!(after.permission_mode, before.permission_mode);
     assert_eq!(after.codex_permission_mode, before.codex_permission_mode);
     assert_eq!(after.fast_mode, before.fast_mode);
+}
+
+#[tokio::test]
+async fn failed_selection_restoration_reports_database_error() {
+    use crate::domain::ws_session::handler::session_control::{
+        read_persisted_selection, restore_persisted_selection,
+    };
+
+    let app_state = make_test_app_state().await;
+    let mut persistence = WsSessionPersistence::new(app_state.write_pool.clone(), 1);
+    let db_id = persistence
+        .find_or_create_session(None, None)
+        .await
+        .unwrap();
+    let previous = read_persisted_selection(&app_state.read_pool, db_id)
+        .await
+        .unwrap();
+    sqlx::query(
+        "CREATE TRIGGER reject_selection_restore BEFORE UPDATE OF runtime_provider ON agent_sessions BEGIN SELECT RAISE(FAIL, 'restore rejected'); END",
+    )
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+
+    let error = restore_persisted_selection(&app_state.write_pool, db_id, &previous)
+        .await
+        .err()
+        .expect("failed compensation must surface");
+    assert_eq!(error.code, "DB_ERROR");
+    assert!(error.message.contains("could not be restored"));
 }

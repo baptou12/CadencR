@@ -751,6 +751,21 @@ describe("ws-session-store", () => {
     });
   });
 
+  it("accepts an initialized provider with an empty model", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    getWs().simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "pi-acp", model: "" },
+    });
+    expect(useWsSessionStore.getState().sessions.s1.currentSelection).toEqual({
+      providerId: "pi-acp",
+      modelId: "",
+    });
+  });
+
   it("does not replay a built-in permission mode to an installed ACP provider", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
@@ -1177,7 +1192,7 @@ describe("ws-session-store", () => {
     });
   });
 
-  it("session.initialized ignores a partial provider/model pair and keeps the previous selection", async () => {
+  it("session.initialized clears an old model when the authoritative provider has no model", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -1193,16 +1208,16 @@ describe("ws-session-store", () => {
       modelId: "opus[1m]",
     });
 
-    // A later envelope missing the model half must not blank out or
-    // half-overwrite the previously confirmed pair.
+    // The model is optional in the protocol. Do not retain the old
+    // provider and model when the backend confirms a different runtime.
     ws.simulateMessage({
       domain: "session",
       action: "initialized",
       payload: { session_id: "42", provider: "codex_cli" },
     });
     expect(useWsSessionStore.getState().sessions["s1"].currentSelection).toEqual({
-      providerId: "claude_code",
-      modelId: "opus[1m]",
+      providerId: "codex_cli",
+      modelId: "",
     });
   });
 
@@ -1566,7 +1581,7 @@ describe("ws-session-store", () => {
     });
 
     const session = useWsSessionStore.getState().sessions.s1;
-    expect(session.currentModelId).toBe("sonnet");
+    expect(session.currentSelection?.modelId).toBe("sonnet");
     expect(session.sessionConfig).toBeNull();
     expect(session.sessionConfigSupported).toBeNull();
     expect(session.sessionConfigLoading).toBe(false);

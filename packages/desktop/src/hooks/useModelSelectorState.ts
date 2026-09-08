@@ -218,6 +218,13 @@ function createSelectionActions(
     providerValue: string,
     modelValue: string,
   ): void {
+    if (providerValue === INHERIT_VALUE && modelValue === INHERIT_VALUE) {
+      // Resolved origins hide invalid stored overrides, so they cannot prove
+      // that either persisted field is already empty.
+      handleProviderChange(agentType, INHERIT_VALUE);
+      handleModelChange(agentType, INHERIT_VALUE);
+      return;
+    }
     const resolved = selectionFor(agentType);
     const providerId =
       resolved?.provider_id ?? agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER;

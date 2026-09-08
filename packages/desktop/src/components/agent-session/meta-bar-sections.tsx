@@ -1,3 +1,5 @@
+import { SessionConfigPopover, shouldShowSessionConfig } from "./SessionConfigPopover";
+import type { SessionConfigControls } from "./types";
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { SlidingText } from "@/components/SlidingText";
@@ -16,6 +18,7 @@ import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
 
 type MetaBarDerivedStateInput = Pick<
   MetaBarProps,
+  | "sessionConfigControls"
   | "providers"
   | "models"
   | "onPermissionModeToggle"
@@ -89,7 +92,10 @@ export function useMetaBarDerivedState(
   const hasProfileSelector =
     showClaudeProfileSelector && !!claudeProfile && !!onClaudeProfileChange;
   const hasTrailingGroup =
-    hasProfileSelector || hasAccessMode || !!(!secondaryBelow && runtimeSessionId && onPause);
+    hasProfileSelector ||
+    hasAccessMode ||
+    !!(!secondaryBelow && runtimeSessionId && onPause) ||
+    !!props.sessionConfigControls;
 
   return {
     pickerProviders,
@@ -103,6 +109,7 @@ export function useMetaBarDerivedState(
 }
 
 interface TrailingGroupProps {
+  sessionConfigControls?: SessionConfigControls;
   hasProfileSelector: boolean;
   hasAccessMode: boolean;
   secondaryBelow: boolean;
@@ -126,6 +133,7 @@ interface TrailingGroupProps {
 }
 
 export function MetaBarTrailingGroup(props: TrailingGroupProps) {
+  const config = props.sessionConfigControls;
   return (
     <div className="ml-auto flex items-center gap-1.5">
       {props.hasProfileSelector && props.claudeProfile && props.onClaudeProfileChange && (
@@ -151,6 +159,11 @@ export function MetaBarTrailingGroup(props: TrailingGroupProps) {
           options={props.providerAccessModes}
         />
       )}
+
+      {config &&
+        shouldShowSessionConfig(config.config, config.loading, config.supported, config.error) && (
+          <SessionConfigPopover {...config} />
+        )}
 
       {/* Session info */}
       {!props.secondaryBelow && props.runtimeSessionId && props.onPause && (

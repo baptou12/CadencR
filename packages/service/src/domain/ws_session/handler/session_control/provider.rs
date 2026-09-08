@@ -303,17 +303,7 @@ async fn persist_and_commit_switch(
     {
         Ok(committed) => Ok(committed),
         Err(rejection) => {
-            if let Err(error) =
-                restore_persisted_selection(&app_state.write_pool, db_session_id, &previous).await
-            {
-                error!(
-                    db_session_id,
-                    %error,
-                    "failed to restore the runtime selection after a rejected switch; the row is ahead of the live session"
-                );
-            }
-            // The rejection is what the caller needs to hear, even when the
-            // restore failed — the switch did not take effect either way.
+            restore_persisted_selection(&app_state.write_pool, db_session_id, &previous).await?;
             Err(rejection)
         }
     }

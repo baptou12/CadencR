@@ -10,6 +10,7 @@
  * The precedence cascade lives in the backend (`GET /agent/selection`); this
  * hook only reads the resolved pair.
  */
+import { useMemo } from "react";
 import { DEFAULT_PROVIDER, type RuntimeSelection } from "@/shared/models";
 import { useAgentCatalog } from "@/api/agentRuntime";
 import { useResolvedSelection, sessionSelectionOf } from "@/api/agentSelection";
@@ -46,5 +47,6 @@ export function useProjectRuntimeSelection(projectId: number | undefined): Proje
     catalog.isLoading ||
     (projectId != null && (selectionQuery.isLoading || selectionQuery.isPending));
 
-  return { ...selection, isLoading };
+  const { providerId, modelId } = selection;
+  return useMemo(() => ({ providerId, modelId, isLoading }), [providerId, modelId, isLoading]);
 }

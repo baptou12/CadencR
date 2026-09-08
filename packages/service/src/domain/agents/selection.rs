@@ -11,9 +11,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use utoipa::ToSchema;
 
-use super::providers::{
-    canonical_provider_or_error, provider_default_model, provider_model_catalog_entry,
-};
+use super::providers::{canonical_provider_or_error, provider_model_catalog_entry};
 use super::runtime::runtime_setting_key;
 use crate::domain::settings::{self, SettingOrigin};
 
@@ -209,9 +207,9 @@ async fn resolve_model(
         );
     }
 
-    provider_default_model(read_pool, provider_id)
+    provider_model_catalog_entry(read_pool, cwd, provider_id, None, profile)
         .await
-        .map(|model_id| (model_id, SelectionOrigin::ProviderDefault))
+        .map(|model| (model.id, SelectionOrigin::ProviderDefault))
         .ok_or_else(|| SelectionError::NoModelAvailable {
             provider_id: provider_id.to_string(),
         })

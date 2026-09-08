@@ -176,7 +176,7 @@ pub(crate) async fn restore_persisted_selection(
     pool: &sqlx::SqlitePool,
     session_id: i64,
     previous: &PersistedSelection,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), ProviderSetError> {
     sqlx::query(
         "UPDATE agent_sessions SET runtime_provider = ?, model = ?, codex_permission_mode = ?, \
          permission_mode = ?, fast_mode = ? WHERE id = ?",
@@ -188,6 +188,17 @@ pub(crate) async fn restore_persisted_selection(
     .bind(previous.fast_mode)
     .bind(session_id)
     .execute(pool)
-    .await?;
+    .await
+    .map_err(|error| {
+        tracing::error!(
+            session_id,
+            %error,
+            "failed to restore runtime selection after rejected switch"
+        );
+        ProviderSetError::new(
+            "DB_ERROR",
+            "Provider change was rejected, but the previous runtime selection could not be restored",
+        )
+    })?;
     Ok(())
 }

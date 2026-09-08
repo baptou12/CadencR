@@ -18,6 +18,7 @@ use crate::domain::agents::runtime::AgentCatalogResponse;
 use crate::domain::agents::ResolvedSelection;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
+use crate::domain::editor::file_size::EDITOR_REQUEST_BODY_BYTES;
 use crate::domain::editor::format::format_router;
 use crate::domain::editor::image_routes::image_router;
 use crate::domain::editor::mutation_routes::editor_mutation_router;
@@ -40,7 +41,7 @@ use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
 use crate::domain::ws_session::routes::prompt_commands_router;
 use crate::error::AppError;
-use axum::extract::{Query, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::routing::{any, get, put};
 use axum::Json;
 use axum::Router;
@@ -183,8 +184,8 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(sessions_router())
         .merge(schedules_router())
         .merge(terminal_router())
-        .merge(editor_router())
-        .merge(format_router())
+        .merge(editor_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
+        .merge(format_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
         .merge(image_router())
         // Raw bytes for off-loaded message payloads (screenshots, pasted
         // images). Outside the OpenAPI surface like the other byte routes.
@@ -351,5 +352,66 @@ mod tests {
             super::agent_types_for_scope(Some(1), Some(7)),
             vec!["session".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn large_editor_buffers_can_be_saved_and_formatted_without_relaxing_other_apis() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY, path TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        sqlx::query("INSERT INTO projects (id, path) VALUES (1, ?)")
+            .bind(dir.path().to_string_lossy().as_ref())
+            .execute(&pool)
+            .await
+            .unwrap();
+        let router =
+            super::build_api_routes().with_state(crate::app_state::AppState::with_pool(pool));
+        let content = "large buffer with spacing  \n".repeat(120_000);
+        assert!(content.len() > 2 * 1024 * 1024);
+        let payload = serde_json::json!({
+            "project_id": 1, "file_path": "large.txt", "content": content,
+            "formatter": "unknown-formatter",
+        })
+        .to_string();
+        let request = |uri: &str| {
+            Request::post(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(payload.clone()))
+                .unwrap()
+        };
+
+        let saved = router
+            .clone()
+            .oneshot(request("/api/editor/write"))
+            .await
+            .unwrap();
+        assert_eq!(saved.status(), StatusCode::OK);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("large.txt")).unwrap(),
+            content
+        );
+
+        // Reaching the formatter validation proves its JSON extractor accepted
+        // the whole buffer, without requiring a formatter binary in unit tests.
+        let formatted = router
+            .clone()
+            .oneshot(request("/api/editor/format"))
+            .await
+            .unwrap();
+        assert_eq!(formatted.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(formatted.into_body(), 4096)
+            .await
+            .unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("unknown formatter"));
+
+        let unrelated = router.oneshot(request("/api/projects")).await.unwrap();
+        assert_eq!(unrelated.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

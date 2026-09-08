@@ -306,7 +306,8 @@ function handleProviderSetOk(ctx: StoreAccessors, sessionId: string, payload: un
 function handleModelSetOk(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseModelPayload(payload);
   if (!p?.model || !p.provider) return;
-  const existing = ctx.getSession(sessionId).contextUsage;
+  const session = ctx.getSession(sessionId);
+  const existing = session.contextUsage;
   // The window belongs to the model, so the outgoing one is never carried over.
   // The backend seeds the incoming model's window when its adapter can answer;
   // otherwise the bar hides until the next `result`, which beats scaling by the

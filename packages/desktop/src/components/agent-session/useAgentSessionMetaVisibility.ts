@@ -27,6 +27,7 @@ export function useAgentSessionMetaVisibility(
     !!onPermissionModeToggle ||
     !!onAccessModeChange ||
     !!onModelChange ||
+    !!props.sessionConfigControls ||
     showClaudeProfileSelector ||
     !!showReadOnlyModel ||
     (showWorktreeChip && !isNarrow);

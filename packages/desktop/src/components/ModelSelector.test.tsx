@@ -9,6 +9,7 @@ const toastErrorSpy = vi.fn();
 const invalidateQueries = vi.fn();
 const workspaceProviderMutate = vi.fn();
 const projectProviderMutate = vi.fn();
+const projectModelMutate = vi.fn();
 
 const {
   mockUseResolvedSelection,
@@ -88,7 +89,7 @@ vi.mock("sonner", () => ({
 vi.mock("../api/generated", () => ({
   useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),
-  useSetProjectModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  useSetProjectModelSetting: vi.fn(() => ({ mutate: projectModelMutate })),
   getGetProjectModelSettingsQueryKey: vi.fn((id: number) => ["project", "model-settings", id]),
   useSetFeatureModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetFeatureModelSettingsQueryKey: vi.fn((id: number) => ["features", "model-settings", id]),
@@ -133,6 +134,7 @@ describe("ModelSelector", () => {
     invalidateQueries.mockReset();
     workspaceProviderMutate.mockReset();
     projectProviderMutate.mockReset();
+    projectModelMutate.mockReset();
     workspaceProviderMutationImpl.mockReset();
     projectProviderMutationImpl.mockReset();
     workspaceProviderMutationImpl.mockImplementation((options) => ({
@@ -244,6 +246,40 @@ describe("ModelSelector", () => {
     expect(toastErrorSpy).toHaveBeenCalledWith("Failed to save provider setting");
     expect(toastSuccess).not.toHaveBeenCalled();
   });
+
+  it.each(["project", "provider_default"])(
+    "clears both stored overrides when inheriting a %s provider and a fallback model",
+    async (providerOrigin) => {
+      mockUseResolvedSelection.mockReturnValue({
+        data: {
+          selections: {
+            session: {
+              provider_id: "claude_code",
+              model_id: "opus",
+              provider_origin: providerOrigin,
+              model_origin: "provider_default",
+            },
+          },
+        },
+        isLoading: false,
+        error: null,
+      });
+      const user = userEvent.setup();
+      render(<ModelSelector level="project" projectId={42} />);
+      await user.click(screen.getAllByRole("combobox")[0]);
+      await user.click(screen.getByText("Inherit selection"));
+
+      expect(projectProviderMutate).toHaveBeenCalledWith({
+        projectId: 42,
+        providerType: "session",
+        provider: "",
+      });
+      expect(projectModelMutate).toHaveBeenCalledWith({
+        id: 42,
+        data: { model_type: "session", model: "" },
+      });
+    },
+  );
 
   it("hides unavailable and coming soon providers", async () => {
     const user = userEvent.setup();
