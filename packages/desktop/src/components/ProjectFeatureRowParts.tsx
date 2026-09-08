@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode, RefObject } from "react";
 import {
   ArchiveIcon,
   DownloadIcon,
@@ -18,9 +18,9 @@ import { FeaturePortsBadge } from "@/components/FeaturePortsBadge";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { FeaturePrIndicator } from "@/components/PrStatusIndicators";
 import { NumStat } from "@/components/NumStat";
-import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
+import { SidebarStatusIndicator } from "@/components/SidebarStatusIndicator";
+import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
 import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
-import { useProviderMetadata } from "@/lib/provider-icons";
 import type { LiveAgentStatus } from "@/stores/session-status-store";
 
 interface FeatureRowMetaLineProps {
@@ -75,7 +75,7 @@ export function FeatureRowMetaLine({
   return (
     <div
       data-feature-meta-line
-      className="flex min-w-0 items-center gap-2 text-[11px] leading-tight"
+      className="flex min-w-0 items-center gap-2 pl-5 text-[11px] leading-tight"
     >
       {isEditingLabel ? (
         <FeatureLabelEditor
@@ -117,9 +117,8 @@ export function FeatureRowMetaLine({
 }
 
 /**
- * First line of a row: provider mark (idle mono, status-tinted while live),
- * worktree marker, and the title (a skeleton while the agent is still naming
- * the conversation).
+ * First line: independent status, optional worktree marker, title, and a
+ * trailing mono provider. A skeleton holds the title while auto-naming.
  */
 export function FeatureRowTitleLine({
   feature,
@@ -131,6 +130,8 @@ export function FeatureRowTitleLine({
   isActive,
   isUnread,
   onOpenConversation,
+  badgeRef,
+  children,
 }: {
   feature: Feature;
   liveTitle: string | undefined;
@@ -141,11 +142,13 @@ export function FeatureRowTitleLine({
   isActive: boolean;
   isUnread: boolean;
   onOpenConversation: () => void;
+  badgeRef?: RefObject<HTMLSpanElement | null>;
+  children?: ReactNode;
 }): ReactElement {
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
-      <FeatureRowProviderMark
-        feature={feature}
+    <div data-feature-title-line className="flex min-h-6 min-w-0 flex-1 items-center gap-1.5">
+      <SidebarStatusIndicator
+        featureId={feature.id}
         liveStatus={liveStatus}
         isActive={isActive}
         isUnread={isUnread}
@@ -158,52 +161,25 @@ export function FeatureRowTitleLine({
         />
       )}
       {isAutoNaming ? (
-        <Skeleton className="h-4 w-32 min-w-0" />
+        <Skeleton className="h-4 w-32 min-w-0 flex-1" />
       ) : (
-        <span className={`min-w-0 truncate ${isArchived ? "text-muted-foreground" : ""}`}>
+        <span className={`min-w-0 flex-1 truncate ${isArchived ? "text-muted-foreground" : ""}`}>
           {liveTitle ?? feature.title}
         </span>
       )}
+      {children}
+      <span
+        data-sidebar-identity-slot
+        className="relative inline-flex size-4 shrink-0 items-center justify-center"
+      >
+        <SidebarProviderBadge
+          providerId={feature.runtime_provider}
+          modelId={feature.model_session}
+          thinkingEffort={feature.thinking_effort}
+        />
+        {badgeRef && <SidebarShortcutBadge ref={badgeRef} inline />}
+      </span>
     </div>
-  );
-}
-
-/** One 14px slot: provider silhouette, status-tinted, gate wrap when waiting. */
-export function FeatureRowProviderMark({
-  feature,
-  liveStatus,
-  isActive,
-  isUnread,
-  onOpenConversation,
-}: {
-  feature: Feature;
-  liveStatus: LiveAgentStatus;
-  isActive: boolean;
-  isUnread: boolean;
-  onOpenConversation: () => void;
-}): ReactElement | null {
-  const metadata = useProviderMetadata(feature.runtime_provider, null, "mono");
-  const asking = liveStatus === "question";
-  const badge = (
-    <SidebarProviderBadge
-      providerId={feature.runtime_provider}
-      modelId={feature.model_session}
-      thinkingEffort={feature.thinking_effort}
-      liveStatus={liveStatus}
-      unread={isUnread}
-    />
-  );
-
-  if (!asking) return badge;
-
-  return (
-    <SidebarPendingGatePopover
-      featureId={feature.id}
-      allowAutoOpen={!isActive}
-      onOpenConversation={onOpenConversation}
-    >
-      {metadata ? badge : undefined}
-    </SidebarPendingGatePopover>
   );
 }
 
@@ -238,16 +214,14 @@ export function FeatureRowActions({
   onArchiveOrDelete: (featureId: number) => void;
 }): ReactElement {
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-1">
+    <div className="sidebar-row-actions shrink-0 items-center gap-1">
       {!isArchived && (
         <Button
           size="sm"
           variant="ghost"
           aria-pressed={isPinned}
           className={`size-6 shrink-0 p-0 hover:text-foreground transition-none ${
-            isPinned
-              ? "text-foreground"
-              : "text-muted-foreground opacity-0 group-hover/feature:opacity-100"
+            isPinned ? "text-foreground" : "text-muted-foreground"
           }`}
           onClick={(e) => {
             e.stopPropagation();
@@ -261,7 +235,7 @@ export function FeatureRowActions({
       <Button
         size="sm"
         variant="ghost"
-        className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground opacity-0 group-hover/feature:opacity-100 transition-none"
+        className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground transition-none"
         onClick={(e) => {
           e.stopPropagation();
           onArchiveOrDelete(featureId);

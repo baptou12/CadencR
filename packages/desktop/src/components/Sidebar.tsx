@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { ProjectTree } from "@/components/ProjectTree";
+import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
+import { SidebarPreferences } from "@/components/SidebarPreferences";
 import { SidebarPinnedConversations } from "@/components/SidebarPinnedConversations";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
@@ -44,48 +46,52 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
 
   return (
-    <aside
-      data-app-sidebar
-      ref={sidebarRef}
-      aria-hidden={!isMobile && collapsed ? true : undefined}
-      inert={!isMobile && collapsed ? true : undefined}
-      // Safe-area insets pad the content here (not the mobile drawer wrapper) so
-      // `bg-sidebar` reaches the screen edges while the header/footer clear the
-      // notch and home indicator. The `env()` values are 0 on desktop, so this
-      // is a no-op outside fullscreen/standalone mobile.
-      className={cn(
-        "glass-surface flex h-full flex-col border-r border-border/60 bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]",
-        !isMobile && "transition-[opacity,transform] duration-[220ms] ease-[var(--ease-fluid)]",
-        !isMobile && collapsed && "pointer-events-none -translate-x-2 opacity-0",
-      )}
-    >
-      <SidebarHeader onCollapse={() => setCollapsed(true)} />
-      {/* Flex column so the tree gets the *remaining* height (not 100%, which
+    <SidebarPreferences>
+      <ShortcutHintsProvider enabled={!collapsed}>
+        <aside
+          data-app-sidebar
+          ref={sidebarRef}
+          aria-hidden={!isMobile && collapsed ? true : undefined}
+          inert={!isMobile && collapsed ? true : undefined}
+          // Safe-area insets pad the content here (not the mobile drawer wrapper) so
+          // `bg-sidebar` reaches the screen edges while the header/footer clear the
+          // notch and home indicator. The `env()` values are 0 on desktop, so this
+          // is a no-op outside fullscreen/standalone mobile.
+          className={cn(
+            "glass-surface flex h-full flex-col border-r border-border/60 bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]",
+            !isMobile && "transition-[opacity,transform] duration-[220ms] ease-[var(--ease-fluid)]",
+            !isMobile && collapsed && "pointer-events-none -translate-x-2 opacity-0",
+          )}
+        >
+          <SidebarHeader onCollapse={() => setCollapsed(true)} />
+          {/* Flex column so the tree gets the *remaining* height (not 100%, which
           overflows past the search bar and clips the scroll area's bottom). */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
-        <div className="mb-2 shrink-0 px-1">
-          <SidebarSearchButton onSearch={onSearch} />
-        </div>
-        {/* The unified agents grid is desktop-only — hide its entry on phones.
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
+            <div className="mb-2 shrink-0 px-1">
+              <SidebarSearchButton onSearch={onSearch} />
+            </div>
+            {/* The unified agents grid is desktop-only — hide its entry on phones.
             Schedules is a plain list, so it works everywhere. */}
-        <div className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
-          {!isMobile && <UnifiedAgentsSidebarLink />}
-          <SchedulesSidebarLink />
-        </div>
-        <SidebarPinnedConversations
-          activeFeatureId={effectiveFeatureId}
-          onSelectFeature={setSelectedFeatureId}
-        />
-        <div className="min-h-0 flex-1">
-          <ProjectTree
-            activeProjectId={activeProjectId}
-            activeFeatureId={effectiveFeatureId}
-            onSelectFeature={setSelectedFeatureId}
-          />
-        </div>
-      </div>
-      <SidebarFooter />
-    </aside>
+            <div className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
+              {!isMobile && <UnifiedAgentsSidebarLink />}
+              <SchedulesSidebarLink />
+            </div>
+            <SidebarPinnedConversations
+              activeFeatureId={effectiveFeatureId}
+              onSelectFeature={setSelectedFeatureId}
+            />
+            <div className="min-h-0 flex-1">
+              <ProjectTree
+                activeProjectId={activeProjectId}
+                activeFeatureId={effectiveFeatureId}
+                onSelectFeature={setSelectedFeatureId}
+              />
+            </div>
+          </div>
+          <SidebarFooter />
+        </aside>
+      </ShortcutHintsProvider>
+    </SidebarPreferences>
   );
 }
 

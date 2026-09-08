@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@/test-utils";
+import { render, screen, waitFor, fireEvent } from "@/test-utils";
 import { Sidebar } from "./Sidebar";
 import { collectSidebarNavItems } from "@/hooks/useSidebarKeyboardNavigation";
 
+import type { Feature } from "@/api/generated";
+import { PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
+
 const mockNavigate = vi.fn();
+let mockPinnedFeatures: Feature[] = [];
 
 let mockLocation: { pathname: string; search?: Record<string, unknown> } = {
   pathname: "/",
@@ -58,6 +62,7 @@ vi.mock("@/lib/project-onboarding", () => ({
 }));
 
 vi.mock("../api/generated", () => ({
+  useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "true" }, isLoading: false })),
   useListProjects: vi.fn(() => ({
     data: [{ id: 1, name: "My Project", path: "/my-project" }],
   })),
@@ -65,7 +70,7 @@ vi.mock("../api/generated", () => ({
   useDeleteProject: vi.fn(() => ({ mutate: vi.fn() })),
   getListProjectsQueryKey: vi.fn(() => ["projects"]),
   useListFeatures: vi.fn(() => ({ data: [] })),
-  useListPinnedFeatures: vi.fn(() => ({ data: [] })),
+  useListPinnedFeatures: vi.fn(() => ({ data: mockPinnedFeatures })),
   useListFeatureActivity: vi.fn(() => ({ data: [], error: null })),
   useListFeaturePorts: vi.fn(() => ({ data: [], error: null })),
   useCreateFeature: vi.fn(() => ({ mutate: vi.fn() })),
@@ -135,6 +140,7 @@ vi.mock("@/components/SidebarContext", () => ({
 describe("Sidebar", () => {
   beforeEach(() => {
     mockNavigate.mockClear();
+    mockPinnedFeatures = [];
     mockSetCollapsed.mockClear();
     mockSidebarCollapsed = false;
     mockLogoSrc = "dracula-logo.svg";
@@ -279,5 +285,47 @@ describe("collectSidebarNavItems", () => {
       "virtual",
       "after",
     ]);
+  });
+});
+
+describe("shared sidebar number navigation", () => {
+  it("numbers pinned and project rows together and disables both while collapsed", () => {
+    mockSidebarCollapsed = false;
+    mockLocation = { pathname: "/" };
+    mockNavigate.mockClear();
+    mockPinnedFeatures = [
+      {
+        id: 42,
+        project_id: 1,
+        title: "Pinned navigation",
+        runtime_provider: "codex_cli",
+      } as Feature,
+    ];
+    const { container, rerender } = render(<Sidebar onSearch={vi.fn()} />);
+    const modifier = PLATFORM_IS_MAC ? { metaKey: true } : { ctrlKey: true };
+    const modKey = PLATFORM_IS_MAC ? "Meta" : "Control";
+    fireEvent.keyDown(window, { key: modKey, ...modifier });
+    const badges = [
+      ...container.querySelectorAll('[data-nav-shortcut-badge][data-visible="true"]'),
+    ];
+    expect(badges.map((el) => el.textContent)).toEqual(["1", "2"]);
+    expect(badges[0].closest('[data-nav-type="feature"]')).toHaveAttribute("data-nav-id", "42");
+    expect(badges[1].closest('[data-nav-type="project"]')).not.toBeNull();
+    fireEvent.keyDown(window, { key: "1", ...modifier });
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: expect.objectContaining({ featureId: 42 }) }),
+    );
+    const project = container.querySelector<HTMLElement>('[data-nav-type="project"]')!;
+    const click = vi.spyOn(project, "click");
+    fireEvent.keyDown(window, { key: "2", ...modifier });
+    expect(click).toHaveBeenCalledOnce();
+    mockSidebarCollapsed = true;
+    rerender(<Sidebar onSearch={vi.fn()} />);
+    fireEvent.keyDown(window, { key: modKey, ...modifier });
+    fireEvent.keyDown(window, { key: "2", ...modifier });
+    expect(click).toHaveBeenCalledOnce();
+    expect(container.querySelector('[data-nav-shortcut-badge][data-visible="true"]')).toBeNull();
+    mockPinnedFeatures = [];
+    mockSidebarCollapsed = false;
   });
 });
