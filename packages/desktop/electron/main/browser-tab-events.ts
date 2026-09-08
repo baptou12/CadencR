@@ -1,7 +1,7 @@
 import type { Input, Result, WebContents, WebContentsView } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
-import { faviconDataUrl } from "./browser-favicon";
-import { consoleEntry, pushBounded } from "./browser-manager-utils";
+import { installBrowserFaviconEvents } from "./browser-tab-favicon-events";
+import { consoleEntry, pushBounded, updateTabMetadata } from "./browser-manager-utils";
 import { COMMENT_BADGE_CLICK_SENTINEL } from "./browser-comment-overlay-script";
 import type { BrowserProfile } from "./browser-profiles";
 import type {
@@ -71,10 +71,8 @@ export interface TabEventHost {
 
 export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
   const wc = tab.webContents;
-  let faviconRevision = 0;
-  let faviconAbort: AbortController | null = null;
+  installBrowserFaviconEvents(tab, host);
   wc.once("destroyed", () => {
-    faviconAbort?.abort();
     host.invalidateFind();
     host.forgetHistory();
     host.tabDestroyed();
@@ -115,42 +113,6 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
       host.emitState();
     }
   });
-  wc.on("did-start-loading", () => {
-    host.invalidateFind();
-    faviconAbort?.abort();
-    faviconAbort = null;
-    faviconRevision += 1;
-    host.setLastError(null);
-    // Drop the previous page's favicon up front; page-favicon-updated supplies
-    // the new one once the next page declares it (many pages never do).
-    updateTabMetadata(tab, { loading: true, faviconUrl: undefined }, host);
-  });
-  wc.on("did-stop-loading", () => updateTabMetadata(tab, { loading: false }, host));
-  wc.on("page-favicon-updated", (_event, favicons) => {
-    faviconAbort?.abort();
-    faviconAbort = new AbortController();
-    const abort = faviconAbort;
-    const revision = ++faviconRevision;
-    const pageUrl = wc.getURL();
-    let task: Promise<void>;
-    task = faviconDataUrl(wc.session, favicons[0], abort.signal)
-      .then((dataUrl) => {
-        if (!dataUrl || faviconIsStale(revision, faviconRevision, pageUrl, tab, host)) return;
-        updateTabMetadata(tab, { faviconUrl: dataUrl }, host);
-      })
-      .catch((error: unknown) => {
-        if (faviconIsStale(revision, faviconRevision, pageUrl, tab, host)) return;
-        host.setLastError(
-          `Could not load page icon: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        host.emitState();
-      })
-      .finally(() => {
-        tab.pendingSessionTasks.delete(task);
-        if (faviconAbort === abort) faviconAbort = null;
-      });
-    tab.pendingSessionTasks.add(task);
-  });
   installPageLifecycleEvents(tab, host);
 }
 
@@ -185,22 +147,6 @@ function installPageLifecycleEvents(tab: ManagedTab, host: TabEventHost): void {
     host.setLastError(`${url}: ${description}`);
     host.emitState();
   });
-}
-
-function faviconIsStale(
-  revision: number,
-  currentRevision: number,
-  pageUrl: string,
-  tab: ManagedTab,
-  host: TabEventHost,
-): boolean {
-  const wc = tab.webContents;
-  return (
-    revision !== currentRevision ||
-    !host.isTabAlive() ||
-    wc.isDestroyed() ||
-    wc.getURL() !== pageUrl
-  );
 }
 
 // Parse a sentinel badge-click console line (`{ anchorId, box }` JSON) and hand
@@ -303,19 +249,4 @@ function refreshTabMetadata(tab: ManagedTab, host: TabEventHost): void {
 
 function pageTitle(wc: WebContents): string {
   return wc.getTitle() || wc.getURL();
-}
-
-function updateTabMetadata(
-  tab: ManagedTab,
-  patch: Partial<BrowserTabMetadata>,
-  host: TabEventHost,
-): void {
-  const wc = tab.webContents;
-  tab.metadata = {
-    ...tab.metadata,
-    ...patch,
-    canGoBack: wc.canGoBack(),
-    canGoForward: wc.canGoForward(),
-  };
-  host.emitState();
 }

@@ -1,5 +1,6 @@
 import type { BrowserWindow } from "electron";
 import { BrowserDownloadManager } from "./browser-download-manager";
+import { shutdownBrowserFaviconRasterizer } from "./browser-favicon-rasterizer";
 import type { BrowserTabLifecycle } from "./browser-tab-lifecycle";
 import { sendToWindow } from "./safe-send";
 
@@ -26,6 +27,7 @@ export async function prepareBrowserShutdown(
   try {
     await downloads.prepareForShutdown();
     await prepareWorkspace();
+    shutdownBrowserFaviconRasterizer();
   } catch (error) {
     downloads.resumeAfterShutdownAbort();
     throw error;

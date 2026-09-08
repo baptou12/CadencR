@@ -20,6 +20,7 @@ import {
 } from "@/hooks/useFilteredVirtualList";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
+import { BrowserPageIcon } from "./BrowserTabIcons";
 
 const ROW_HEIGHT = 36;
 const LIST_HEIGHT = 288;
@@ -224,6 +225,7 @@ function OverflowRow({
         className="flex min-w-0 flex-1 items-center gap-2 px-1.5 text-left text-sm"
       >
         {active ? <CheckIcon className="size-3.5 shrink-0" /> : <span className="w-3.5" />}
+        <BrowserPageIcon tab={item} />
         <span className="min-w-0 flex-1">
           <span className="block truncate">{label}</span>
           <span className="block truncate text-[10px] text-muted-foreground">{item.url}</span>

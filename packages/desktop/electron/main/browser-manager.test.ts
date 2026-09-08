@@ -44,6 +44,7 @@ interface MockWebContents extends EventEmitter {
   closeDevTools: ReturnType<typeof vi.fn>;
   inspectElement: ReturnType<typeof vi.fn>;
   executeJavaScript: ReturnType<typeof vi.fn>;
+  executeJavaScriptInIsolatedWorld: ReturnType<typeof vi.fn>;
   isLoading: ReturnType<typeof vi.fn>;
 }
 
@@ -158,6 +159,7 @@ vi.mock("electron", () => {
         closeDevTools: vi.fn(),
         inspectElement: vi.fn(),
         executeJavaScript: vi.fn(),
+        executeJavaScriptInIsolatedWorld: vi.fn(async () => []),
         isLoading: vi.fn(() => false),
       }) as MockWebContents;
       nextWebContentsId += 1;
@@ -1154,6 +1156,77 @@ describe("BrowserManager", () => {
       "https://private.example/favicon.png",
       expect.objectContaining({ credentials: "include", cache: "no-store" }),
     );
+  });
+
+  it("recovers the declared favicon when reload does not emit a favicon event", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "default", 1);
+    const contents = [...webContentsById.values()][0];
+    contents.getURL.mockReturnValue("https://example.com/page");
+    contents.executeJavaScriptInIsolatedWorld.mockResolvedValue(["https://example.com/icon.svg"]);
+
+    contents.emit("did-start-loading");
+    expect(manager.state(1).tabs[0].faviconUrl).toBeUndefined();
+    contents.emit("did-stop-loading");
+
+    await vi.waitFor(() =>
+      expect(contents.session.fetch).toHaveBeenCalledWith(
+        "https://example.com/icon.svg",
+        expect.objectContaining({ credentials: "include", cache: "no-store" }),
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(manager.state(1).tabs[0].faviconUrl).toBe("data:image/png;base64,iVBORw=="),
+    );
+  });
+
+  it("does not let a deferred reload query replace a newer favicon event", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "default", 1);
+    const contents = [...webContentsById.values()][0];
+    contents.getURL.mockReturnValue("https://example.com/page");
+    let finishQuery: ((urls: string[]) => void) | undefined;
+    contents.executeJavaScriptInIsolatedWorld.mockImplementation(
+      () => new Promise<string[]>((resolve) => (finishQuery = resolve)),
+    );
+
+    contents.emit("did-start-loading");
+    contents.emit("did-stop-loading");
+    await vi.waitFor(() => expect(finishQuery).toBeTypeOf("function"));
+    contents.emit("page-favicon-updated", {}, ["https://example.com/new.png"]);
+    finishQuery?.(["https://example.com/stale.png"]);
+
+    await vi.waitFor(() =>
+      expect(contents.session.fetch).toHaveBeenCalledWith(
+        "https://example.com/new.png",
+        expect.any(Object),
+      ),
+    );
+    expect(contents.session.fetch).not.toHaveBeenCalledWith(
+      "https://example.com/stale.png",
+      expect.any(Object),
+    );
+  });
+
+  it("does not start deferred favicon recovery after a newer navigation", async () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "default", 1);
+    const contents = [...webContentsById.values()][0];
+    contents.getURL.mockReturnValue("https://example.com/first");
+    let finishQuery: ((urls: string[]) => void) | undefined;
+    contents.executeJavaScriptInIsolatedWorld.mockImplementation(
+      () => new Promise<string[]>((resolve) => (finishQuery = resolve)),
+    );
+
+    contents.emit("did-start-loading");
+    contents.emit("did-stop-loading");
+    await vi.waitFor(() => expect(finishQuery).toBeTypeOf("function"));
+    contents.getURL.mockReturnValue("https://example.com/second");
+    contents.emit("did-start-loading");
+    finishQuery?.(["https://example.com/stale.png"]);
+    await Promise.resolve();
+
+    expect(contents.session.fetch).not.toHaveBeenCalled();
   });
 
   it("discards a favicon response from a stale navigation", async () => {

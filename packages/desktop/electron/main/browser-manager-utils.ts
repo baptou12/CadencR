@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BrowserWindow, WebContents } from "electron";
+import type { ManagedTab, TabEventHost } from "./browser-tab-events";
 import { browserAutomationAccess } from "./browser-policy";
 import {
   browserPartitionForProfile,
@@ -142,6 +143,21 @@ export function metadataFor(
     responsive: { ...DEFAULT_BROWSER_RESPONSIVE_STATE },
     scopeId,
   };
+}
+
+export function updateTabMetadata(
+  tab: ManagedTab,
+  patch: Partial<BrowserTabMetadata>,
+  host: Pick<TabEventHost, "emitState">,
+): void {
+  const wc = tab.webContents;
+  tab.metadata = {
+    ...tab.metadata,
+    ...patch,
+    canGoBack: wc.canGoBack(),
+    canGoForward: wc.canGoForward(),
+  };
+  host.emitState();
 }
 
 /**

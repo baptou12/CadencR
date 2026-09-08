@@ -27,12 +27,27 @@ describe("faviconDataUrl", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("rasterizes an SVG favicon to bounded PNG before sending it to the renderer", async () => {
+    const rasterize = vi.fn(async () => "data:image/png;base64,iVBORw==");
+    const fetch = vi.fn(
+      async () =>
+        new Response('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>', {
+          headers: { "content-type": "image/svg+xml" },
+        }),
+    );
+
+    await expect(
+      faviconDataUrl({ fetch }, "https://example.com/icon.svg", undefined, rasterize),
+    ).resolves.toBe("data:image/png;base64,iVBORw==");
+    expect(rasterize).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(AbortSignal));
+  });
+
   it("rejects unsafe image types and oversized declared bodies", async () => {
     const cancel = vi.fn();
-    const svgFetch = vi.fn(
+    const textFetch = vi.fn(
       async () =>
         new Response(new ReadableStream({ cancel }), {
-          headers: { "content-type": "image/svg+xml" },
+          headers: { "content-type": "text/html" },
         }),
     );
     const largeFetch = vi.fn(
@@ -46,7 +61,7 @@ describe("faviconDataUrl", () => {
     );
 
     await expect(
-      faviconDataUrl({ fetch: svgFetch }, "https://example.com/icon.svg"),
+      faviconDataUrl({ fetch: textFetch }, "https://example.com/icon.html"),
     ).resolves.toBeNull();
     expect(cancel).toHaveBeenCalledOnce();
     await expect(

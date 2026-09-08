@@ -1,8 +1,10 @@
 import type { Session } from "electron";
+import { isHttpBrowserUrl } from "../../src/shared/browser-url";
 
 // Keeps the resulting base64 data URL below the renderer's 256 KiB limit.
 export const MAX_FAVICON_BYTES = 190 * 1024;
 const FAVICON_TIMEOUT_MS = 5_000;
+const SVG_MIME_TYPE = "image/svg+xml";
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -10,6 +12,7 @@ const ALLOWED_MIME_TYPES = new Set([
   "image/webp",
   "image/x-icon",
   "image/vnd.microsoft.icon",
+  SVG_MIME_TYPE,
 ]);
 
 /** Fetch a favicon inside its guest session and return renderer-safe inline bytes. */
@@ -17,8 +20,9 @@ export async function faviconDataUrl(
   guestSession: Pick<Session, "fetch">,
   rawUrl: string | undefined,
   signal?: AbortSignal,
+  rasterizeSvg?: (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal) => Promise<string | null>,
 ): Promise<string | null> {
-  if (!rawUrl || !isHttpUrl(rawUrl)) return null;
+  if (!rawUrl || !isHttpBrowserUrl(rawUrl)) return null;
   const controller = new AbortController();
   const abort = (): void => controller.abort(signal?.reason);
   if (signal?.aborted) abort();
@@ -31,7 +35,7 @@ export async function faviconDataUrl(
       redirect: "follow",
       signal: controller.signal,
     });
-    if (!response.ok || (response.url && !isHttpUrl(response.url))) {
+    if (!response.ok || (response.url && !isHttpBrowserUrl(response.url))) {
       return cancelResponse(response);
     }
     const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
@@ -41,6 +45,9 @@ export async function faviconDataUrl(
     }
     const bytes = await readBounded(response.body);
     if (!bytes || bytes.byteLength === 0) return null;
+    if (mimeType === SVG_MIME_TYPE) {
+      return rasterizeSvg ? await rasterizeSvg(bytes, controller.signal) : null;
+    }
     return `data:${mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
   } finally {
     clearTimeout(timeout);
@@ -51,15 +58,6 @@ export async function faviconDataUrl(
 async function cancelResponse(response: Response): Promise<null> {
   await response.body?.cancel();
   return null;
-}
-
-function isHttpUrl(rawUrl: string): boolean {
-  try {
-    const protocol = new URL(rawUrl).protocol;
-    return protocol === "http:" || protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function declaredTooLarge(rawLength: string | null): boolean {

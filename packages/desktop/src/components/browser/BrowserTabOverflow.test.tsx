@@ -58,4 +58,25 @@ describe("BrowserTabOverflow", () => {
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
     expect(screen.queryByRole("combobox", { name: "Search browser tabs" })).toBeNull();
   });
+
+  it("shows each website favicon in the tab list", async () => {
+    const alpha = {
+      ...tab("alpha", "Alpha"),
+      faviconUrl: "data:image/png;base64,iVBORw0KGgo=",
+    };
+    const { user } = render(
+      <BrowserTabOverflow
+        tabs={[alpha]}
+        activeTabId="alpha"
+        busy={false}
+        onActivate={vi.fn()}
+        onClose={vi.fn()}
+        onReopen={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Search all 1 browser tabs" }));
+    const option = await screen.findByRole("option", { name: /Alpha/ });
+    expect(option.querySelector("img")).toHaveAttribute("src", alpha.faviconUrl);
+  });
 });
