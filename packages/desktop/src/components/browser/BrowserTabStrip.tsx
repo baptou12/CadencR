@@ -1,12 +1,4 @@
-import {
-  memo,
-  useEffect,
-  useRef,
-  type DragEvent,
-  type ReactElement,
-  type RefObject,
-  type WheelEvent,
-} from "react";
+import { memo, useCallback, useState, type DragEvent, type ReactElement } from "react";
 import {
   ChevronDownIcon,
   CopyIcon,
@@ -35,12 +27,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PROFILE_ID, type CookieMode } from "@/lib/browser-settings";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
-import { cn } from "@/lib/utils";
+import { BrowserTabDragSurface, BROWSER_TAB_DRAG_TYPE } from "./BrowserTabDragSurface";
 import { BrowserTabOverflow } from "./BrowserTabOverflow";
+import { scrollBrowserTabs, useRevealActiveBrowserTab } from "./browser-tab-strip-rail";
 import { BrowserPageIcon, BrowserTemporaryTabIcon } from "./BrowserTabIcons";
 import type { BrowserWorkspaceModel } from "./useBrowserWorkspaceModel";
 
-const TAB_DRAG_TYPE = "application/x-cadencr-browser-tab";
 const MAX_VISIBLE_TABS = 20;
 
 interface BrowserTabStripProps {
@@ -58,6 +50,16 @@ export function BrowserTabStrip({
   const unpinnedCount = model.state.tabs.length - pinnedEnd;
   const visibleTabs = boundedVisibleTabs(model.state.tabs, model.state.activeTabId);
   const tabScrollerRef = useRevealActiveBrowserTab(model.state.activeTabId);
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const draggedTab = model.state.tabs.find((tab) => tab.id === draggedTabId);
+  const finishDrag = useCallback((): void => {
+    setDraggedTabId(null);
+    setDropTargetId(null);
+  }, []);
+  const leaveDropTarget = useCallback((tabId: string): void => {
+    setDropTargetId((current) => (current === tabId ? null : current));
+  }, []);
   return (
     <div className="flex min-w-0 items-center gap-1">
       <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -82,6 +84,13 @@ export function BrowserTabStrip({
               onReorder={model.reorderTab}
               onCloseOthers={model.closeOtherTabs}
               onMenuOpenChange={onChromeOverlayOpenChange}
+              dragging={draggedTabId === tab.id}
+              dropTarget={dropTargetId === tab.id && draggedTabId !== tab.id}
+              acceptsDrop={Boolean(draggedTabId && draggedTab?.pinned === tab.pinned)}
+              onDragStart={setDraggedTabId}
+              onDragOver={setDropTargetId}
+              onDragLeave={leaveDropTarget}
+              onDragEnd={finishDrag}
             />
           ))}
         </div>
@@ -110,21 +119,27 @@ export function BrowserTabStrip({
   );
 }
 
-function useRevealActiveBrowserTab(activeTabId: string | null): RefObject<HTMLDivElement | null> {
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const activeTab = scrollerRef.current?.querySelector<HTMLElement>("[aria-current='page']");
-    activeTab?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [activeTabId]);
-  return scrollerRef;
-}
-
-function scrollBrowserTabs(event: WheelEvent<HTMLDivElement>): void {
-  if (event.deltaX !== 0 || event.deltaY === 0) return;
-  const scroller = event.currentTarget;
-  const previous = scroller.scrollLeft;
-  scroller.scrollLeft += event.deltaY;
-  if (scroller.scrollLeft !== previous) event.preventDefault();
+interface BrowserTabPillProps {
+  tab: BrowserTabMetadata;
+  index: number;
+  groupStart: number;
+  groupEnd: number;
+  closableOthers: boolean;
+  busy: boolean;
+  onActivate: (tabId: string) => void;
+  onClose: (tabId: string) => void;
+  onSetPinned: (tabId: string, pinned: boolean) => void;
+  onDuplicate: (tabId: string) => void;
+  onReorder: (tabId: string, targetIndex: number) => void;
+  onCloseOthers: (tabId: string) => void;
+  onMenuOpenChange?: (open: boolean) => void;
+  dragging: boolean;
+  dropTarget: boolean;
+  acceptsDrop: boolean;
+  onDragStart: (tabId: string) => void;
+  onDragOver: (tabId: string) => void;
+  onDragLeave: (tabId: string) => void;
+  onDragEnd: () => void;
 }
 
 const BrowserTabPill = memo(function BrowserTabPill({
@@ -141,46 +156,38 @@ const BrowserTabPill = memo(function BrowserTabPill({
   onReorder,
   onCloseOthers,
   onMenuOpenChange,
-}: {
-  tab: BrowserTabMetadata;
-  index: number;
-  groupStart: number;
-  groupEnd: number;
-  closableOthers: boolean;
-  busy: boolean;
-  onActivate: (tabId: string) => void;
-  onClose: (tabId: string) => void;
-  onSetPinned: (tabId: string, pinned: boolean) => void;
-  onDuplicate: (tabId: string) => void;
-  onReorder: (tabId: string, targetIndex: number) => void;
-  onCloseOthers: (tabId: string) => void;
-  onMenuOpenChange?: (open: boolean) => void;
-}): ReactElement {
+  dragging,
+  dropTarget,
+  acceptsDrop,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDragEnd,
+}: BrowserTabPillProps): ReactElement {
   const label = tab.title || "New tab";
   const isPrivate = tab.sessionProfileId === PROFILE_ID.private;
   const drop = (event: DragEvent<HTMLDivElement>): void => {
+    if (!acceptsDrop) return;
     event.preventDefault();
-    const draggedId = event.dataTransfer.getData(TAB_DRAG_TYPE);
+    const draggedId = event.dataTransfer.getData(BROWSER_TAB_DRAG_TYPE);
     if (draggedId && draggedId !== tab.id) onReorder(draggedId, index);
+    onDragEnd();
   };
   return (
     <ContextMenu onOpenChange={onMenuOpenChange}>
       <ContextMenuTrigger asChild>
-        <div
-          draggable={!busy}
-          onDragStart={(event) => {
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData(TAB_DRAG_TYPE, tab.id);
-          }}
-          onDragOver={(event) => event.preventDefault()}
+        <BrowserTabDragSurface
+          tabId={tab.id}
+          busy={busy}
+          active={tab.isActive}
+          dragging={dragging}
+          dropTarget={dropTarget}
+          acceptsDrop={acceptsDrop}
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDragEnd={onDragEnd}
           onDrop={drop}
-          aria-current={tab.isActive ? "page" : undefined}
-          className={cn(
-            "group/tab flex h-7 max-w-48 shrink-0 items-center gap-1.5 rounded-md pl-2 pr-1 text-xs transition-colors",
-            tab.isActive
-              ? "bg-primary/15 font-medium text-foreground shadow-xs ring-1 ring-inset ring-primary/60"
-              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-          )}
         >
           <button
             type="button"
@@ -209,7 +216,7 @@ const BrowserTabPill = memo(function BrowserTabPill({
           >
             <XIcon className="size-3" />
           </button>
-        </div>
+        </BrowserTabDragSurface>
       </ContextMenuTrigger>
       <BrowserTabContextMenu
         tab={tab}

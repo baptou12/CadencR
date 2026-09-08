@@ -561,7 +561,7 @@ describe("BrowserWorkspaceTab", () => {
     expect(await screen.findByDisplayValue("http://localhost:1420/")).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText("Browser URL"));
     await userEvent.type(screen.getByLabelText("Browser URL"), "localhost:3000");
-    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    await userEvent.type(screen.getByLabelText("Browser URL"), "{Enter}");
 
     await waitFor(() => {
       expect(mockBridge.navigateBrowserTab).toHaveBeenCalledWith("tab-1", "http://localhost:3000/");
@@ -721,7 +721,7 @@ describe("BrowserWorkspaceTab", () => {
     const urlInput = screen.getByLabelText("Browser URL");
     await userEvent.clear(urlInput);
     await userEvent.type(urlInput, "localhost:4000");
-    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    await userEvent.type(urlInput, "{Enter}");
 
     // Navigation with no active tab opens a fresh tab pointed at the URL
     // instead of calling navigate on a non-existent tab.

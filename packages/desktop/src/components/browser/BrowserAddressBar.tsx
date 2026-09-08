@@ -233,7 +233,6 @@ function renderAddressBar(view: AddressBarViewProps): ReactElement {
           <BrowserUrlField
             inputRef={view.inputRef}
             urlInput={view.urlInput}
-            pending={view.pending}
             panelOpen={view.panelOpen}
             listboxId={view.listboxId}
             activeOptionId={view.activeOptionId}

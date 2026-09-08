@@ -115,6 +115,30 @@ beforeEach(() => {
 });
 
 describe("BrowserAddressBar omnibox interactions", () => {
+  it("selects the whole URL on first pointer focus but leaves later caret edits alone", () => {
+    setup({ urlInput: "https://example.com/path" });
+    const input = screen.getByLabelText<HTMLInputElement>("Browser URL");
+
+    expect(fireEvent.pointerDown(input)).toBe(false);
+    expect(input).toHaveFocus();
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+
+    input.setSelectionRange(8, 8);
+    expect(fireEvent.pointerDown(input)).toBe(true);
+    expect(input.selectionStart).toBe(8);
+    expect(input.selectionEnd).toBe(8);
+  });
+
+  it("submits with Enter without rendering a redundant Go button", async () => {
+    const user = userEvent.setup();
+    const { onNavigate } = setup({ urlInput: "example.com" });
+    expect(screen.queryByRole("button", { name: "Go" })).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText("Browser URL"));
+    await user.keyboard("{Enter}");
+    expect(onNavigate).toHaveBeenCalledWith("https://example.com/");
+  });
+
   it("navigates to a local history suggestion on click", async () => {
     const user = userEvent.setup();
     const { onNavigate } = setup();

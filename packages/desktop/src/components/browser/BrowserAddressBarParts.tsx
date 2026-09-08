@@ -2,6 +2,7 @@ import {
   type ChangeEvent,
   type FocusEvent,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactElement,
   type ReactNode,
   type RefObject,
@@ -9,7 +10,6 @@ import {
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
-  CornerDownLeftIcon,
   GlobeIcon,
   Loader2Icon,
   RefreshCwIcon,
@@ -74,7 +74,6 @@ export function BrowserNavControls(props: BrowserNavControlsProps): ReactElement
 export interface BrowserUrlFieldProps {
   inputRef: RefObject<HTMLInputElement | null>;
   urlInput: string;
-  pending: boolean;
   panelOpen: boolean;
   listboxId: string;
   activeOptionId: string | undefined;
@@ -109,6 +108,16 @@ export function BrowserUrlField(props: BrowserUrlFieldProps): ReactElement {
   function handleInputFocus(): void {
     props.onEditingChange(true);
     props.onOpenPanel();
+    props.inputRef.current?.select();
+  }
+
+  function handleInitialPointerDown(event: PointerEvent<HTMLInputElement>): void {
+    if (event.button !== 0 || document.activeElement === event.currentTarget) return;
+    // Prevent the pointer's default caret placement from undoing the selection
+    // made when the address field first receives focus.
+    event.preventDefault();
+    event.currentTarget.focus();
+    event.currentTarget.select();
   }
 
   function handleFocusOut(event: FocusEvent<HTMLDivElement>): void {
@@ -137,6 +146,7 @@ export function BrowserUrlField(props: BrowserUrlFieldProps): ReactElement {
           value={props.urlInput}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
+          onPointerDown={handleInitialPointerDown}
           onKeyDown={props.onKeyDown}
           placeholder="Search or enter address"
           className="h-7 flex-1 font-mono text-xs"
@@ -147,7 +157,6 @@ export function BrowserUrlField(props: BrowserUrlFieldProps): ReactElement {
           disabledReason={props.bookmarkDisabledReason}
           onToggle={props.onToggleBookmark}
         />
-        <BrowserGoButton pending={props.pending} />
       </div>
       {props.panelOpen ? <BrowserOmniboxPanel {...props} /> : null}
     </div>
@@ -181,25 +190,6 @@ function BookmarkButton({
         <Loader2Icon className="size-3 animate-spin" />
       ) : (
         <StarIcon className={cn("size-3.5", bookmarked && "fill-current")} />
-      )}
-    </Button>
-  );
-}
-
-function BrowserGoButton({ pending }: { pending: boolean }): ReactElement {
-  return (
-    <Button
-      type="submit"
-      variant="ghost"
-      size="icon-xs"
-      disabled={pending}
-      aria-label="Go"
-      className="text-muted-foreground hover:text-foreground"
-    >
-      {pending ? (
-        <Loader2Icon className="size-3 animate-spin" />
-      ) : (
-        <CornerDownLeftIcon className="size-3" />
       )}
     </Button>
   );
