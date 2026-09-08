@@ -7,7 +7,7 @@ import { BrowserLibraryController } from "./browser-library-controller";
 import { BrowserLibraryStore } from "./browser-library-store";
 import { BrowserManagerState } from "./browser-manager-state";
 import { BrowserAutomationAuthority } from "./browser-automation-authority";
-import { toggleTabDevTools } from "./browser-devtools";
+import { inspectTabElement, toggleTabDevTools } from "./browser-devtools";
 import { BrowserInspectionController } from "./browser-inspection-controller";
 import { BrowserNetworkCollector } from "./browser-network-collector";
 import { BrowserOriginStore } from "./browser-origin-store";
@@ -116,7 +116,6 @@ export class BrowserManager {
   );
 
   private readonly getMainWindow: () => BrowserWindow | null;
-
   constructor(
     getMainWindow: () => BrowserWindow | null,
     sessionStore = new BrowserTabSessionStore(),
@@ -181,6 +180,8 @@ export class BrowserManager {
         activateFallback: (tabId) => this.activateTab(tabId),
         activeTabId: (scopeId) => this.scopes.activeTabId(scopeId),
         navigate: (tabId, url) => this.navigate(tabId, url),
+        inspectElement: (tabId, x, y) =>
+          inspectTabElement(this.requireTab(tabId), x, y, () => this.toggleDevTools(tabId)),
         persist: (scopeId) => this.persistScope(scopeId),
       },
     });
@@ -332,7 +333,6 @@ export class BrowserManager {
     this.layout.detachAll();
     this.scopes.clearBounds();
   }
-
   async prepareForShutdown(): Promise<void> {
     await prepareBrowserShutdown(this.downloads, () =>
       this.workspace.prepareForShutdown(this.tabs, this.scopes.active),

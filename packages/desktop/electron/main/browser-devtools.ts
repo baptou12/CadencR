@@ -25,3 +25,13 @@ export function toggleTabDevTools(
   emitState();
   return tab.metadata;
 }
+
+export function inspectTabElement(
+  tab: ManagedTab,
+  x: number,
+  y: number,
+  openDevTools: () => void,
+): void {
+  if (!tab.metadata.devToolsOpen) openDevTools();
+  tab.webContents.inspectElement(x, y);
+}

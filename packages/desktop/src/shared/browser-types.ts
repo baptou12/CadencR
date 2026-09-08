@@ -151,6 +151,7 @@ export interface BrowserGuestShortcutBindings {
   find: BrowserShortcutBinding;
   downloads: BrowserShortcutBinding;
   responsive: BrowserShortcutBinding;
+  devtools: BrowserShortcutBinding;
   zoomReset: BrowserShortcutBinding;
 }
 

@@ -19,6 +19,7 @@ export class BrowserPageController {
   private findShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private downloadsShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private responsiveShortcutMatcher: BrowserShortcutInputMatcher = () => false;
+  private devtoolsShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private zoomResetShortcutMatcher: BrowserShortcutInputMatcher = () => false;
   private readonly findController: BrowserFindController;
   private readonly zoomController: BrowserZoomController;
@@ -91,6 +92,7 @@ export class BrowserPageController {
     this.findShortcutMatcher = compileBrowserShortcutBinding(bindings.find, platform);
     this.downloadsShortcutMatcher = compileBrowserShortcutBinding(bindings.downloads, platform);
     this.responsiveShortcutMatcher = compileBrowserShortcutBinding(bindings.responsive, platform);
+    this.devtoolsShortcutMatcher = compileBrowserShortcutBinding(bindings.devtools, platform);
     this.zoomResetShortcutMatcher = compileBrowserShortcutBinding(bindings.zoomReset, platform);
   }
 
@@ -98,6 +100,7 @@ export class BrowserPageController {
     if (this.findShortcutMatcher(input)) return "find";
     if (this.downloadsShortcutMatcher(input)) return "downloads";
     if (this.responsiveShortcutMatcher(input)) return "responsive";
+    if (this.devtoolsShortcutMatcher(input)) return "devtools";
     if (this.zoomResetShortcutMatcher(input)) return "zoom-reset";
     return null;
   }

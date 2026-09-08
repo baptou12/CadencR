@@ -1,6 +1,10 @@
 import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const buildContextMenu = vi.hoisted(() =>
+  vi.fn((_items: Electron.MenuItemConstructorOptions[]) => ({ popup: vi.fn() })),
+);
+
 interface MockWebContents extends EventEmitter {
   id: number;
   session: {
@@ -38,6 +42,7 @@ interface MockWebContents extends EventEmitter {
   setDevToolsWebContents: ReturnType<typeof vi.fn>;
   openDevTools: ReturnType<typeof vi.fn>;
   closeDevTools: ReturnType<typeof vi.fn>;
+  inspectElement: ReturnType<typeof vi.fn>;
   executeJavaScript: ReturnType<typeof vi.fn>;
   isLoading: ReturnType<typeof vi.fn>;
 }
@@ -151,6 +156,7 @@ vi.mock("electron", () => {
         setDevToolsWebContents: vi.fn(),
         openDevTools: vi.fn(),
         closeDevTools: vi.fn(),
+        inspectElement: vi.fn(),
         executeJavaScript: vi.fn(),
         isLoading: vi.fn(() => false),
       }) as MockWebContents;
@@ -161,6 +167,7 @@ vi.mock("electron", () => {
   }
 
   return {
+    Menu: { buildFromTemplate: buildContextMenu },
     BrowserWindow: class BrowserWindowMock {},
     WebContentsView: WebContentsViewMock,
     session: {
@@ -266,6 +273,33 @@ function openNativeChild(
 }
 
 describe("BrowserManager", () => {
+  it("installs a context menu whose Inspect action targets the originating tab", () => {
+    const win = mainWindow();
+    const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
+    const first = manager.createTab(undefined, "default", 1);
+    const contents = [...webContentsById.values()][0];
+    const second = manager.createTab(undefined, "default", 1);
+    contents.emit(
+      "context-menu",
+      { preventDefault: vi.fn() },
+      {
+        x: 12,
+        y: 34,
+        linkURL: "",
+        misspelledWord: "",
+        dictionarySuggestions: [],
+        editFlags: {},
+      },
+    );
+    const items = buildContextMenu.mock.calls.at(-1)?.[0];
+    const inspect = items?.find((item) => item.label === "Inspect Element");
+    expect(inspect).toBeDefined();
+    inspect?.click?.(undefined as never, undefined as never, undefined as never);
+    expect(contents.inspectElement).toHaveBeenCalledWith(12, 34);
+    expect(manager.state(1).tabs.find((tab) => tab.id === first.id)?.devToolsOpen).toBe(true);
+    expect(manager.state(1).tabs.find((tab) => tab.id === second.id)?.devToolsOpen).toBe(false);
+  });
+
   beforeEach(() => {
     webContentsById.clear();
     createdViews.length = 0;
@@ -408,6 +442,7 @@ describe("BrowserManager", () => {
       find: { keys: ["mod", "k"] },
       downloads: { keys: ["mod", "shift", "d"] },
       responsive: { keys: ["mod", "shift", "y"] },
+      devtools: { keys: ["f12"] },
       zoomReset: { keys: ["mod", "9"] },
     });
 
@@ -483,6 +518,19 @@ describe("BrowserManager", () => {
       ...primaryModifier,
     });
     expect(oldDefaultEvent.preventDefault).not.toHaveBeenCalled();
+
+    const devToolsEvent = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", devToolsEvent, {
+      type: "keyDown",
+      key: "F12",
+      code: "F12",
+      meta: false,
+      control: false,
+      shift: false,
+      alt: false,
+    });
+    expect(devToolsEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(win.webContents.send).toHaveBeenCalledWith("browser:shortcut", "devtools");
   });
 
   it("does not relay the responsive default when its binding is disabled", () => {
@@ -494,6 +542,7 @@ describe("BrowserManager", () => {
       find: { keys: [] },
       downloads: { keys: [] },
       responsive: { keys: [] },
+      devtools: { keys: [] },
       zoomReset: { keys: [] },
     });
     const event = { preventDefault: vi.fn() };
@@ -510,6 +559,19 @@ describe("BrowserManager", () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(win.webContents.send).not.toHaveBeenCalledWith("browser:shortcut", "responsive");
+
+    const oldDevToolsDefault = { preventDefault: vi.fn() };
+    contents.emit("before-input-event", oldDevToolsDefault, {
+      type: "keyDown",
+      key: "i",
+      code: "KeyI",
+      meta: process.platform === "darwin",
+      control: process.platform !== "darwin",
+      shift: false,
+      alt: true,
+    });
+    expect(oldDevToolsDefault.preventDefault).not.toHaveBeenCalled();
+    expect(win.webContents.send).not.toHaveBeenCalledWith("browser:shortcut", "devtools");
   });
 
   it("validates mutating automation against the live WebContents URL", async () => {

@@ -1,5 +1,6 @@
 import type { BrowserWindow, HandlerDetails, WebContents } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
+import { installBrowserContextMenu } from "./browser-context-menu";
 import type { BrowserFocusGuard } from "./browser-focus-guard";
 import type { BrowserDownloadManager } from "./browser-download-manager";
 import type { BrowserLibraryController } from "./browser-library-controller";
@@ -28,6 +29,7 @@ interface BrowserTabCreationHost {
   activateFallback(tabId: string): Promise<BrowserTabMetadata>;
   activeTabId(scopeId: number | null): string | null;
   navigate(tabId: string, url: string): BrowserTabMetadata;
+  inspectElement(tabId: string, x: number, y: number): void;
   persist(scopeId: number | null): void;
 }
 
@@ -203,6 +205,22 @@ export class BrowserTabCreationController {
   private installEvents(tab: ManagedTab, profile: BrowserProfile): void {
     const { tabs, host, origins, library, page } = this.options;
     const id = tab.metadata.id;
+    installBrowserContextMenu(tab.webContents, host.getWindow, {
+      openLinkInNewTab: (url) => {
+        this.create(
+          url,
+          tab.metadata.sessionProfileId,
+          profile,
+          tab.metadata.scopeId,
+          tab.automationAccess,
+        );
+      },
+      inspectElement: (x, y) => host.inspectElement(id, x, y),
+      reportError: (error) => {
+        host.setLastError(error instanceof Error ? error.message : String(error));
+        host.emitState(tab.metadata.scopeId);
+      },
+    });
     installTabEvents(tab, {
       emitState: () => host.emitState(tab.metadata.scopeId),
       setLastError: (message) => host.setLastError(message),

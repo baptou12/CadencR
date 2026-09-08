@@ -596,6 +596,7 @@ describe("BrowserWorkspaceTab", () => {
       find: { keys: ["mod", "f"], altKeys: undefined },
       downloads: { keys: ["mod", "shift", "j"], altKeys: undefined },
       responsive: { keys: ["mod", "shift", "m"], altKeys: undefined },
+      devtools: { keys: ["f12"], altKeys: undefined },
       zoomReset: { keys: ["mod", "0"], altKeys: undefined },
     });
     act(() => shortcutRelay?.("find"));

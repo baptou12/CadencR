@@ -9,12 +9,14 @@ describe("parseBrowserGuestShortcutBindings", () => {
         find: { keys: ["mod", "f"] },
         downloads: { keys: ["mod", "shift", "j"] },
         responsive: { keys: ["mod", "shift", "m"] },
+        devtools: { keys: ["mod", "alt", "i"] },
         zoomReset: { keys: [], altKeys: [] },
       }),
     ).toEqual({
       find: { keys: ["mod", "f"] },
       downloads: { keys: ["mod", "shift", "j"] },
       responsive: { keys: ["mod", "shift", "m"] },
+      devtools: { keys: ["mod", "alt", "i"] },
       zoomReset: { keys: [], altKeys: [] },
     });
   });
@@ -25,6 +27,7 @@ describe("parseBrowserGuestShortcutBindings", () => {
         find: { id: "browser-find", keys: ["mod", "f"] },
         downloads: { keys: ["mod", "shift", "j"] },
         responsive: { keys: ["mod", "shift", "m"] },
+        devtools: { keys: ["mod", "alt", "i"] },
         zoomReset: { keys: ["mod", "0"] },
       }),
     ).toThrow();
@@ -33,6 +36,7 @@ describe("parseBrowserGuestShortcutBindings", () => {
         find: { keys: ["mod"] },
         downloads: { keys: ["mod", "shift", "j"] },
         responsive: { keys: ["mod", "shift", "m"] },
+        devtools: { keys: ["mod", "alt", "i"] },
         zoomReset: { keys: ["mod", "0", "x"] },
       }),
     ).toThrow();

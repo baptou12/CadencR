@@ -21,6 +21,7 @@ const guestShortcutBindingsSchema = z
     find: shortcutBindingSchema,
     downloads: shortcutBindingSchema,
     responsive: shortcutBindingSchema,
+    devtools: shortcutBindingSchema,
     zoomReset: shortcutBindingSchema,
   })
   .strict();

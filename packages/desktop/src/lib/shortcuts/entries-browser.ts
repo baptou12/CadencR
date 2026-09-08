@@ -80,11 +80,11 @@ export const BROWSER_SHORTCUTS = [
     scope: "browser",
   },
   {
-    // ⌘⌥I matches Chrome/Electron's DevTools chord. In dev the Electron menu
-    // accelerator intercepts it before the page sees it, so this binding only
-    // takes effect in packaged builds — acceptable, the toolbar button covers dev.
+    // Electron owns Cmd+Opt+I / Ctrl+Shift+I for the app renderer's DevTools.
+    // F12 is also a standard browser binding and reaches the Browser guest in
+    // both development and packaged builds without opening the wrong tools.
     id: "browser-devtools",
-    keys: ["mod", "alt", "i"],
+    keys: ["f12"],
     description: "Toggle browser DevTools",
     scope: "browser",
   },

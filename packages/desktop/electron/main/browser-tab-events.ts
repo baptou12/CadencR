@@ -237,8 +237,9 @@ export function guestChrome(
   if (configuredShortcut) return configuredShortcut;
   const mod = process.platform === "darwin" ? input.meta : input.control;
   if (!mod) return null;
-  // ⌘⌥I → toggle DevTools (the only combo that uses Alt).
-  if (input.alt) return input.key.toLowerCase() === "i" ? "devtools" : null;
+  // Alt-modified Browser actions are registry-owned and arrive through
+  // `configuredShortcut`; never retain a second hard-coded binding here.
+  if (input.alt) return null;
   // ⌘+ / ⌘- → zoom the guest page. ⌘+ is really ⌘⇧=, so check before the
   // Shift branch. Matches the produced character, like the renderer registry.
   const zoom = zoomChord(input.key);

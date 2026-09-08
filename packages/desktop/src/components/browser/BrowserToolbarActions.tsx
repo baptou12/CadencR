@@ -19,6 +19,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
+import { formatCombo } from "@/lib/shortcuts/format";
+import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { BrowserExternalButton } from "./BrowserExternalButton";
 
 interface BrowserToolbarActionsProps {
@@ -60,7 +62,9 @@ function BrowserZoomMenuItems(props: BrowserToolbarActionsProps): ReactElement {
   );
 }
 
-function BrowserOverflowMenu(props: BrowserToolbarActionsProps): ReactElement {
+function BrowserOverflowMenu(
+  props: BrowserToolbarActionsProps & { devToolsShortcut: string },
+): ReactElement {
   const focusFindAfterClose = useRef(false);
   const disabled = !props.activeTab;
   function handleFindSelect(): void {
@@ -97,6 +101,11 @@ function BrowserOverflowMenu(props: BrowserToolbarActionsProps): ReactElement {
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={props.onDevTools}>
           <BugIcon /> DevTools
+          {props.devToolsShortcut ? (
+            <span className="ml-auto text-xs tracking-widest text-muted-foreground">
+              {props.devToolsShortcut}
+            </span>
+          ) : null}
         </DropdownMenuItem>
         <DropdownMenuItem
           disabled={disabled}
@@ -119,6 +128,7 @@ export const BrowserToolbarActions = memo(function BrowserToolbarActions(
   const disabled = !props.activeTab;
   const zoomPercent = props.activeTab?.zoomPercent ?? 100;
   const responsive = props.activeTab?.responsive.enabled === true;
+  const devToolsShortcut = formatCombo(useResolvedShortcut("browser-devtools").keys).join("");
   return (
     <>
       <div className="flex shrink-0 items-center rounded-md bg-muted/50 p-0.5 @max-[28rem]:hidden">
@@ -184,6 +194,7 @@ export const BrowserToolbarActions = memo(function BrowserToolbarActions(
           disabled={disabled}
           onClick={props.onDevTools}
           aria-label="DevTools"
+          title={devToolsShortcut ? `DevTools (${devToolsShortcut})` : "DevTools"}
         >
           <BugIcon className="size-4" />
         </Button>
@@ -191,7 +202,7 @@ export const BrowserToolbarActions = memo(function BrowserToolbarActions(
           <SparklesIcon className="size-3.5" /> Add comment
         </Button>
       </div>
-      <BrowserOverflowMenu {...props} />
+      <BrowserOverflowMenu {...props} devToolsShortcut={devToolsShortcut} />
     </>
   );
 });
