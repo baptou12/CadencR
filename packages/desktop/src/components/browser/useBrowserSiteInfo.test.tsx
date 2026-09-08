@@ -21,6 +21,7 @@ function tab(id: string, url: string): BrowserTabMetadata {
     sessionProfileId: "default",
     isActive: true,
     devToolsOpen: false,
+    zoomPercent: 100,
     scopeId: 1,
   };
 }

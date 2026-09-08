@@ -1,9 +1,11 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
-import { type BrowserShortcut } from "@/lib/desktop-bridge";
+import { desktopBridge, type BrowserShortcut } from "@/lib/desktop-bridge";
 import { useBrowserShortcutRelay } from "@/hooks/useBrowserShortcutRelay";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
+import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 
+import { showBrowserError } from "./browser-errors";
 import type { BrowserWorkspaceModel } from "./useBrowserWorkspaceModel";
 
 function useBrowserNavigationShortcuts(
@@ -70,6 +72,15 @@ function useBrowserPageShortcuts(
     actionOptions,
   );
   useScopedGlobalShortcutById(
+    "browser-find",
+    (event) => {
+      event.preventDefault();
+      model.find.openFind();
+    },
+    "browser",
+    actionOptions,
+  );
+  useScopedGlobalShortcutById(
     "zoom-in",
     (event) => {
       event.preventDefault();
@@ -85,6 +96,16 @@ function useBrowserPageShortcuts(
       event.preventDefault();
       event.stopPropagation();
       model.zoomOut();
+    },
+    "browser",
+    actionOptions,
+  );
+  useScopedGlobalShortcutById(
+    "zoom-reset",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      model.zoomReset();
     },
     "browser",
     actionOptions,
@@ -122,9 +143,13 @@ function useBrowserGuestShortcutRelay(
       "prev-tab": () => switchTab(-1),
       "next-tab": () => switchTab(1),
       "focus-url": () => model.focusUrlBar(),
+      find: () => {
+        if (hasTab) model.find.openFind();
+      },
       reload: () => model.reload(),
       "zoom-in": () => model.zoomIn(),
       "zoom-out": () => model.zoomOut(),
+      "zoom-reset": () => model.zoomReset(),
       "add-comment": () => {
         if (hasTab) addComment();
       },
@@ -134,6 +159,21 @@ function useBrowserGuestShortcutRelay(
     };
     actions[shortcut]?.();
   });
+}
+
+function useBrowserGuestShortcutPublication(): void {
+  const find = useResolvedShortcut("browser-find");
+  const zoomReset = useResolvedShortcut("zoom-reset");
+  useEffect(() => {
+    void desktopBridge
+      .setBrowserGuestShortcuts({
+        find: { keys: find.keys, altKeys: find.altKeys },
+        zoomReset: { keys: zoomReset.keys, altKeys: zoomReset.altKeys },
+      })
+      .catch((error: unknown) => {
+        showBrowserError(error, "Could not configure Browser shortcuts");
+      });
+  }, [find, zoomReset]);
 }
 
 /**
@@ -146,6 +186,7 @@ function useBrowserGuestShortcutRelay(
  */
 export function useBrowserKeyboard(model: BrowserWorkspaceModel, addComment: () => void): void {
   const hasTab = model.activeTab !== null;
+  useBrowserGuestShortcutPublication();
 
   const switchTab = useCallback(
     (delta: number): void => {

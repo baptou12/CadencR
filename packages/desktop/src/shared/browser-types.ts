@@ -14,6 +14,7 @@ export type BrowserSitePermissionDecision = (typeof BROWSER_SITE_PERMISSION_DECI
 
 /** Maximum inline favicon URL accepted across the main/renderer boundary. */
 export const MAX_BROWSER_FAVICON_DATA_URL_LENGTH = 256 * 1024;
+export const MAX_BROWSER_FIND_QUERY_LENGTH = 10_000;
 
 /** Whether an agent may inspect or automate this specific tab. */
 export type BrowserAgentAccess = "user" | "shared" | "agent";
@@ -50,6 +51,8 @@ export interface BrowserTabMetadata {
   sessionProfileId: string;
   isActive: boolean;
   devToolsOpen: boolean;
+  /** Authoritative zoom reported by the guest WebContents. */
+  zoomPercent: number;
   /**
    * The feature-layout scope that owns this tab. Tabs are isolated per scope so
    * a tab opened in one feature's Browser never leaks into another's. `null` is
@@ -57,6 +60,34 @@ export interface BrowserTabMetadata {
    * context, so it isn't shown in any feature's tab strip.
    */
   scopeId: number | null;
+}
+
+export interface BrowserFindRequest {
+  /** Renderer-generated correlation token, established before IPC starts. */
+  requestToken: string;
+  query: string;
+  forward: boolean;
+  /** `true` starts a new session; `false` advances the current session. */
+  findNext: boolean;
+}
+
+export interface BrowserFindResult {
+  tabId: string;
+  requestToken: string;
+  activeMatchOrdinal: number;
+  matches: number;
+  finalUpdate: boolean;
+}
+
+/** Registry tokens forwarded to the main process for focused-guest matching. */
+export interface BrowserShortcutBinding {
+  keys: string[];
+  altKeys?: string[];
+}
+
+export interface BrowserGuestShortcutBindings {
+  find: BrowserShortcutBinding;
+  zoomReset: BrowserShortcutBinding;
 }
 
 export interface BrowserOpenUrlOptions {
@@ -121,11 +152,13 @@ export type BrowserShortcut =
   | "prev-tab"
   | "next-tab"
   | "focus-url"
+  | "find"
   | "add-comment"
   | "devtools"
   | "reload"
   | "zoom-in"
   | "zoom-out"
+  | "zoom-reset"
   | "pane-agent"
   | "pane-terminal"
   | "pane-git"

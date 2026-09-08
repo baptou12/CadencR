@@ -14,6 +14,7 @@ function managed(id: string, scopeId: number | null, access: BrowserAgentAccess)
     sessionProfileId: "default",
     isActive: true,
     devToolsOpen: false,
+    zoomPercent: 100,
     scopeId,
   };
   return { metadata, automationAccess: access } as unknown as ManagedTab;

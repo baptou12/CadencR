@@ -1,4 +1,4 @@
-import type { Input, WebContents, WebContentsView } from "electron";
+import type { Input, Result, WebContents, WebContentsView } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
 import { faviconDataUrl } from "./browser-favicon";
 import { consoleEntry, pushBounded } from "./browser-manager-utils";
@@ -46,6 +46,10 @@ export interface TabEventHost {
   tabDestroyed(): void;
   recordOrigin(url: string): void;
   emitShortcut(shortcut: BrowserShortcut): void;
+  matchGuestShortcut(input: Input): BrowserShortcut | null;
+  emitFindResult(result: Result): void;
+  invalidateFind(): void;
+  syncZoom(): void;
   emitCommentBadgeClick(tabId: string, anchorId: string, box: BrowserBounds | null): void;
 }
 
@@ -55,13 +59,14 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
   let faviconAbort: AbortController | null = null;
   wc.once("destroyed", () => {
     faviconAbort?.abort();
+    host.invalidateFind();
     host.tabDestroyed();
   });
   // A focused guest page swallows keydown before the renderer's window
   // listener can see it, so the browser-chrome chords (⌘T new tab, ⌘W close
   // tab) are intercepted here and relayed to the renderer.
   wc.on("before-input-event", (event, input) => {
-    const shortcut = guestChrome(input);
+    const shortcut = guestChrome(input, host.matchGuestShortcut(input));
     if (!shortcut) return;
     event.preventDefault();
     host.emitShortcut(shortcut);
@@ -90,6 +95,7 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
   wc.on("will-navigate", (event, url) => {
     try {
       normalizeBrowserOpenUrl(url);
+      host.invalidateFind();
     } catch (error) {
       event.preventDefault();
       host.setLastError(error instanceof Error ? error.message : String(error));
@@ -97,6 +103,7 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
     }
   });
   wc.on("did-start-loading", () => {
+    host.invalidateFind();
     faviconAbort?.abort();
     faviconAbort = null;
     faviconRevision += 1;
@@ -131,12 +138,30 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
       });
     tab.pendingSessionTasks.add(task);
   });
+  installPageLifecycleEvents(tab, host);
+}
+
+function installPageLifecycleEvents(tab: ManagedTab, host: TabEventHost): void {
+  const wc = tab.webContents;
   wc.on("did-navigate", () => {
     host.setLastError(null);
     host.recordOrigin(wc.getURL());
     refreshTabMetadata(tab, host);
+    host.syncZoom();
   });
-  wc.on("page-title-updated", () => refreshTabMetadata(tab, host));
+  wc.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
+    if (!isMainFrame) return;
+    host.invalidateFind();
+    host.setLastError(null);
+    host.recordOrigin(wc.getURL());
+    refreshTabMetadata(tab, host);
+    host.syncZoom();
+  });
+  wc.on("found-in-page", (_event, result) => host.emitFindResult(result));
+  wc.on("zoom-changed", () => queueMicrotask(host.syncZoom));
+  wc.on("page-title-updated", () => {
+    refreshTabMetadata(tab, host);
+  });
   wc.on("did-fail-load", (_event, _code, description, url) => {
     host.setLastError(`${url}: ${description}`);
     host.emitState();
@@ -185,8 +210,12 @@ function parseBox(box: unknown): BrowserBounds | null {
 // renderer registry so the chords still fire while the guest page holds
 // keyboard focus (the renderer's window listener never sees those events).
 // Exported for unit testing.
-export function guestChrome(input: Input): BrowserShortcut | null {
+export function guestChrome(
+  input: Input,
+  configuredShortcut?: BrowserShortcut | null,
+): BrowserShortcut | null {
   if (input.type !== "keyDown") return null;
+  if (configuredShortcut) return configuredShortcut;
   const mod = process.platform === "darwin" ? input.meta : input.control;
   if (!mod) return null;
   // ⌘⌥I → toggle DevTools (the only combo that uses Alt).

@@ -30,6 +30,7 @@ import {
 } from "./browser-interactions";
 import { BrowserNetworkCollector } from "./browser-network-collector";
 import { BrowserOriginStore } from "./browser-origin-store";
+import { BrowserPageController } from "./browser-page-controller";
 import { installTabEvents, type ManagedTab } from "./browser-tab-events";
 import { BrowserTabCloseController } from "./browser-tab-close-controller";
 import { BrowserTabLifecycle } from "./browser-tab-lifecycle";
@@ -44,7 +45,6 @@ import {
   profileFromSelection,
   pushBounded,
   reclaimFocusForShortcut,
-  zoomWebContents,
 } from "./browser-manager-utils";
 import type { BrowserProfile } from "./browser-profiles";
 import { sendToWindow } from "./safe-send";
@@ -84,6 +84,7 @@ export class BrowserManager {
         this.lastError = error instanceof Error ? error.message : String(error);
         this.emitState(scope);
       },
+      invalidateFind: (tab) => this.page.invalidateFind(tab),
     },
   );
   private readonly origins = new BrowserOriginStore();
@@ -101,6 +102,12 @@ export class BrowserManager {
   });
   readonly site = new BrowserSiteApi(this.siteController, (tabId) => this.requireTab(tabId));
   readonly automation = new BrowserAutomationAuthority(this.tabs, (scopeId) => this.state(scopeId));
+  readonly page = new BrowserPageController(
+    this.tabs,
+    (tabId) => this.requireTab(tabId),
+    (scopeId) => this.emitState(scopeId),
+    (result) => sendToWindow(this.getMainWindow(), "browser:find-result", result),
+  );
 
   constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
 
@@ -135,6 +142,10 @@ export class BrowserManager {
           ? () => undefined
           : (url) => this.origins.record(url),
         emitShortcut: (shortcut) => this.emitShortcut(shortcut),
+        matchGuestShortcut: (input) => this.page.matchGuestShortcut(input),
+        emitFindResult: (result) => this.page.handleFindResult(tab, result),
+        invalidateFind: () => this.page.invalidateFind(tab),
+        syncZoom: () => this.page.syncZoom(),
         emitCommentBadgeClick: (id, anchorId, box) =>
           sendToWindow(this.getMainWindow(), "browser:comment-badge-click", {
             tabId: id,
@@ -165,6 +176,7 @@ export class BrowserManager {
     const tab = this.requireTab(tabId);
     const url = normalizeBrowserOpenUrl(rawUrl);
     this.lastError = null;
+    this.page.invalidateFind(tab);
     this.emitState(tab.metadata.scopeId);
     void tab.webContents.loadURL(url).catch((error: unknown) => {
       this.lastError = error instanceof Error ? error.message : String(error);
@@ -215,32 +227,6 @@ export class BrowserManager {
     );
     this.applyLayout();
     return this.state(scopeId);
-  }
-
-  goBack(tabId: string): void {
-    const contents = this.requireTab(tabId).webContents;
-    if (contents.canGoBack()) contents.goBack();
-  }
-
-  goForward(tabId: string): void {
-    const contents = this.requireTab(tabId).webContents;
-    if (contents.canGoForward()) contents.goForward();
-  }
-
-  reload(tabId: string): void {
-    this.requireTab(tabId).webContents.reload();
-  }
-
-  stop(tabId: string): void {
-    this.requireTab(tabId).webContents.stop();
-  }
-
-  zoomIn(tabId: string): void {
-    zoomWebContents(this.requireTab(tabId).webContents, "in");
-  }
-
-  zoomOut(tabId: string): void {
-    zoomWebContents(this.requireTab(tabId).webContents, "out");
   }
 
   toggleDevTools(tabId: string): BrowserTabMetadata {

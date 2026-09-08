@@ -19,6 +19,13 @@ interface MockWebContents extends EventEmitter {
   getTitle: ReturnType<typeof vi.fn>;
   canGoBack: ReturnType<typeof vi.fn>;
   canGoForward: ReturnType<typeof vi.fn>;
+  goBack: ReturnType<typeof vi.fn>;
+  goForward: ReturnType<typeof vi.fn>;
+  getZoomFactor: ReturnType<typeof vi.fn<() => number>>;
+  setZoomFactor: ReturnType<typeof vi.fn>;
+  findInPage: ReturnType<typeof vi.fn>;
+  stopFindInPage: ReturnType<typeof vi.fn>;
+  focus: ReturnType<typeof vi.fn>;
   sendInputEvent: ReturnType<typeof vi.fn>;
   insertText: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
@@ -68,6 +75,8 @@ vi.mock("electron", () => {
       this.partition = options?.webPreferences?.partition;
       createdViews.push(this);
       let destroyed = false;
+      let zoomFactor = 1;
+      let findRequestId = 0;
       const contents = Object.assign(new EventEmitter(), {
         id: nextWebContentsId,
         session: {
@@ -95,6 +104,15 @@ vi.mock("electron", () => {
         getTitle: vi.fn(() => ""),
         canGoBack: vi.fn(() => false),
         canGoForward: vi.fn(() => false),
+        goBack: vi.fn(),
+        goForward: vi.fn(),
+        getZoomFactor: vi.fn(() => zoomFactor),
+        setZoomFactor: vi.fn((factor: number) => {
+          zoomFactor = factor;
+        }),
+        findInPage: vi.fn(() => ++findRequestId),
+        stopFindInPage: vi.fn(),
+        focus: vi.fn(),
         sendInputEvent: vi.fn(),
         insertText: vi.fn(),
         close: vi.fn(() => {
@@ -151,6 +169,7 @@ interface MockMainWindow {
     getZoomFactor: () => number;
     isDestroyed: () => boolean;
     send: ReturnType<typeof vi.fn>;
+    focus: ReturnType<typeof vi.fn>;
   };
   getBounds: () => Electron.Rectangle;
   getContentBounds: () => Electron.Rectangle;
@@ -160,7 +179,12 @@ interface MockMainWindow {
 function mainWindow(): MockMainWindow {
   return {
     contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
-    webContents: { getZoomFactor: () => 1, isDestroyed: () => false, send: vi.fn() },
+    webContents: {
+      getZoomFactor: () => 1,
+      isDestroyed: () => false,
+      send: vi.fn(),
+      focus: vi.fn(),
+    },
     getBounds: () => ({ x: 0, y: 0, width: 1000, height: 800 }),
     getContentBounds: () => ({ x: 0, y: 0, width: 1000, height: 800 }),
     isDestroyed: () => false,
@@ -200,6 +224,135 @@ describe("BrowserManager", () => {
     manager.setBounds({ x: 100, y: 50, width: 300, height: 200 }, 1);
 
     expect(view.setBounds).toHaveBeenLastCalledWith({ x: 100, y: 50, width: 300, height: 200 });
+  });
+
+  it("synchronizes main-frame SPA navigation without a title event and ignores subframes", () => {
+    const win = mainWindow();
+    const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    contents.getURL.mockReturnValue("https://example.com/iframe-route");
+    contents.canGoBack.mockReturnValue(true);
+
+    contents.emit("did-navigate-in-page", {}, "https://example.com/iframe-route", false, 2, 3);
+    expect(manager.state(1).tabs[0]?.url).toBe("about:blank");
+
+    contents.getURL.mockReturnValue("https://example.com/spa-replaced?test=lot2a");
+    contents.emit(
+      "did-navigate-in-page",
+      {},
+      "https://example.com/spa-replaced?test=lot2a",
+      true,
+      2,
+      1,
+    );
+
+    expect(manager.state(1).tabs[0]).toMatchObject({
+      id: tab.id,
+      url: "https://example.com/spa-replaced?test=lot2a",
+      canGoBack: true,
+    });
+  });
+
+  it("correlates find results and drops stale results after navigation", () => {
+    const win = mainWindow();
+    const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
+    const tab = manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    manager.page.find(tab.id, {
+      requestToken: "renderer-request-1",
+      query: "cadencrneedle",
+      forward: true,
+      findNext: true,
+    });
+    expect(contents.findInPage).toHaveBeenCalledWith("cadencrneedle", {
+      forward: true,
+      findNext: true,
+    });
+
+    contents.emit(
+      "found-in-page",
+      {},
+      {
+        requestId: 1,
+        activeMatchOrdinal: 1,
+        matches: 3,
+        selectionArea: { x: 0, y: 0, width: 10, height: 10 },
+        finalUpdate: true,
+      },
+    );
+    expect(win.webContents.send).toHaveBeenCalledWith("browser:find-result", {
+      tabId: tab.id,
+      requestToken: "renderer-request-1",
+      activeMatchOrdinal: 1,
+      matches: 3,
+      finalUpdate: true,
+    });
+
+    win.webContents.send.mockClear();
+    manager.navigate(tab.id, "https://example.com/next");
+    expect(contents.stopFindInPage).toHaveBeenCalledWith("clearSelection");
+    contents.emit(
+      "found-in-page",
+      {},
+      {
+        requestId: 1,
+        activeMatchOrdinal: 2,
+        matches: 3,
+        selectionArea: { x: 0, y: 0, width: 10, height: 10 },
+        finalUpdate: true,
+      },
+    );
+    expect(win.webContents.send).not.toHaveBeenCalledWith("browser:find-result", expect.anything());
+  });
+
+  it("reads actual zoom factors for the changed tab and same-origin siblings", () => {
+    const manager = new BrowserManager(() => mainWindow() as unknown as Electron.BrowserWindow);
+    const first = manager.createTab(undefined, "fresh", 1);
+    manager.createTab(undefined, "fresh", 1);
+    const [firstContents, siblingContents] = [...webContentsById.values()];
+    siblingContents.getZoomFactor.mockReturnValue(1.2);
+
+    manager.page.zoom(first.id, "in");
+
+    expect(firstContents.setZoomFactor).toHaveBeenCalledWith(1.2);
+    expect(manager.state(1).tabs.map((tab) => tab.zoomPercent)).toEqual([120, 120]);
+
+    siblingContents.getZoomFactor.mockReturnValue(1);
+    manager.page.zoom(first.id, "reset");
+    expect(firstContents.setZoomFactor).toHaveBeenLastCalledWith(1);
+    expect(manager.state(1).tabs.map((tab) => tab.zoomPercent)).toEqual([100, 100]);
+  });
+
+  it("relays configured find and zoom-reset shortcuts from a focused guest", () => {
+    const win = mainWindow();
+    const manager = new BrowserManager(() => win as unknown as Electron.BrowserWindow);
+    manager.createTab(undefined, "fresh", 1);
+    const contents = [...webContentsById.values()][0];
+    const primaryModifier = process.platform === "darwin" ? { meta: true } : { control: true };
+    manager.page.setGuestShortcutBindings({
+      find: { keys: ["mod", "k"] },
+      zoomReset: { keys: ["mod", "9"] },
+    });
+
+    for (const [key, shortcut] of [
+      ["k", "find"],
+      ["9", "zoom-reset"],
+    ] as const) {
+      const event = { preventDefault: vi.fn() };
+      contents.emit("before-input-event", event, {
+        type: "keyDown",
+        key,
+        code: key === "k" ? "KeyK" : "Digit9",
+        meta: false,
+        control: false,
+        shift: false,
+        alt: false,
+        ...primaryModifier,
+      });
+      expect(event.preventDefault).toHaveBeenCalledOnce();
+      expect(win.webContents.send).toHaveBeenCalledWith("browser:shortcut", shortcut);
+    }
   });
 
   it("validates mutating automation against the live WebContents URL", async () => {

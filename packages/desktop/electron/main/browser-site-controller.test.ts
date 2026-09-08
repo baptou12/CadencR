@@ -64,6 +64,7 @@ function fakeBrowser(mode: "fresh" | "persistent" = "fresh"): FakeBrowser {
       sessionProfileId: mode === "persistent" ? "default" : "fresh",
       isActive: true,
       devToolsOpen: false,
+      zoomPercent: 100,
       scopeId: 7,
     },
     profile,

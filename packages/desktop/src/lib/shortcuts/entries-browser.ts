@@ -49,6 +49,12 @@ export const BROWSER_SHORTCUTS = [
     scope: "browser",
   },
   {
+    id: "browser-find",
+    keys: ["mod", "f"],
+    description: "Find in page",
+    scope: "browser",
+  },
+  {
     id: "browser-add-comment",
     keys: ["mod", "s"],
     description: "Add a page comment",

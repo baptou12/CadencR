@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 import type {
   BrowserBounds,
   BrowserCommentBadgeClick,
+  BrowserFindRequest,
+  BrowserFindResult,
+  BrowserGuestShortcutBindings,
   BrowserProfileMetadata,
   BrowserSiteInfo,
   BrowserSitePermission,
@@ -283,6 +286,14 @@ contextBridge.exposeInMainWorld("cadencr", {
   browserStop: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:stop", tabId),
   browserZoomIn: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:zoom-in", tabId),
   browserZoomOut: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:zoom-out", tabId),
+  browserZoomReset: (tabId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:zoom-reset", tabId),
+  findInBrowserTab: (tabId: string, request: BrowserFindRequest): Promise<void> =>
+    ipcRenderer.invoke("browser:find", tabId, request),
+  stopFindingInBrowserTab: (tabId: string, focusPage: boolean): Promise<void> =>
+    ipcRenderer.invoke("browser:stop-find", tabId, focusPage),
+  setBrowserGuestShortcuts: (bindings: BrowserGuestShortcutBindings): Promise<void> =>
+    ipcRenderer.invoke("browser:set-guest-shortcuts", bindings),
   toggleBrowserDevTools: (tabId: string): Promise<BrowserTabMetadata> =>
     ipcRenderer.invoke("browser:toggle-devtools", tabId),
   getBrowserConsole: (): Promise<unknown[]> => ipcRenderer.invoke("browser:get-console"),
@@ -309,6 +320,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     onIpc("browser:tab-counts", cb),
   onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void): (() => void) =>
     onIpc("browser:shortcut", cb),
+  onBrowserFindResult: (cb: (result: BrowserFindResult) => void): (() => void) =>
+    onIpc("browser:find-result", cb),
   onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void): (() => void) =>
     onIpc("browser:comment-badge-click", cb),
   onBrowserPermissionRequest: (cb: (request: BrowserSitePermissionRequest) => void): (() => void) =>

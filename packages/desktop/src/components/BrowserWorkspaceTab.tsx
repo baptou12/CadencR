@@ -5,6 +5,7 @@ import { useSuppressBrowserView } from "@/lib/browser-suppression";
 import { BrowserAddressBar } from "./browser/BrowserAddressBar";
 import { BrowserCommentDock } from "./browser/BrowserCommentDock";
 import { BrowserCommentOverlay } from "./browser/BrowserCommentOverlay";
+import { BrowserFindToolbar } from "./browser/BrowserFindToolbar";
 import { BrowserPermissionPrompt } from "./browser/BrowserPermissionPrompt";
 import { BrowserSiteInformation } from "./browser/BrowserSiteInformation";
 import {
@@ -91,6 +92,7 @@ function BrowserWorkspaceView({
         onSiteOverlayOpenChange={setSiteOpen}
         onChromeOverlayOpenChange={setTabMenuOpen}
       />
+      {model.find.open ? <BrowserFindToolbar find={model.find} /> : null}
       {model.state.error ? (
         <BrowserError message={model.state.error} onDismiss={model.clearError} />
       ) : null}

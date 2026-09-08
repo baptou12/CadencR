@@ -71,6 +71,7 @@ describe("browser-manager-utils", () => {
       id: "tab-1",
       url: "about:blank",
       devToolsOpen: false,
+      zoomPercent: 100,
       scopeId: 7,
     });
   });
@@ -107,14 +108,21 @@ describe("browser-manager-utils", () => {
       }
     });
 
-    it("leaves focus alone for shortcuts that stay in the browser", () => {
+    it("reclaims renderer focus for browser chrome controls", () => {
+      for (const shortcut of ["find", "focus-url"] as BrowserShortcut[]) {
+        const { win, focus } = fakeWindow();
+        reclaimFocusForShortcut(win, shortcut);
+        expect(focus).toHaveBeenCalledOnce();
+      }
+    });
+
+    it("leaves focus alone for shortcuts handled by the guest page", () => {
       for (const shortcut of [
         "pane-browser",
         "reload",
         "zoom-in",
         "zoom-out",
         "new-tab",
-        "focus-url",
       ] as BrowserShortcut[]) {
         const { win, focus } = fakeWindow();
         reclaimFocusForShortcut(win, shortcut);

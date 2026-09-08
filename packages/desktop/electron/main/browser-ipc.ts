@@ -8,8 +8,13 @@ import {
   requiredString,
 } from "./browser-arg-validation";
 import { BrowserManager } from "./browser-manager";
+import { parseBrowserGuestShortcutBindings } from "./browser-guest-shortcuts";
 import { BrowserProfileController } from "./browser-profile-controller";
-import { BROWSER_SITE_PERMISSIONS, BROWSER_SITE_PERMISSION_DECISIONS } from "./browser-types";
+import {
+  BROWSER_SITE_PERMISSIONS,
+  BROWSER_SITE_PERMISSION_DECISIONS,
+  MAX_BROWSER_FIND_QUERY_LENGTH,
+} from "./browser-types";
 import { assertTrustedSender } from "./ipc";
 
 interface BrowserIpcOptions {
@@ -18,6 +23,14 @@ interface BrowserIpcOptions {
 
 const sitePermissionSchema = z.enum(BROWSER_SITE_PERMISSIONS);
 const siteDecisionSchema = z.enum(BROWSER_SITE_PERMISSION_DECISIONS);
+const findRequestSchema = z
+  .object({
+    requestToken: z.string().min(1).max(128),
+    query: z.string().min(1).max(MAX_BROWSER_FIND_QUERY_LENGTH),
+    forward: z.boolean(),
+    findNext: z.boolean(),
+  })
+  .strict();
 const siteOriginSchema = z.url().refine((value) => {
   const parsed = new URL(value);
   return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.origin === value;
@@ -114,27 +127,43 @@ function registerNavigationIpc(
 ): void {
   ipcMain.handle("browser:back", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    manager.goBack(requiredString(tabId, "tab id"));
+    manager.page.goBack(requiredString(tabId, "tab id"));
   });
   ipcMain.handle("browser:forward", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    manager.goForward(requiredString(tabId, "tab id"));
+    manager.page.goForward(requiredString(tabId, "tab id"));
   });
   ipcMain.handle("browser:reload", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    manager.reload(requiredString(tabId, "tab id"));
+    manager.page.reload(requiredString(tabId, "tab id"));
   });
   ipcMain.handle("browser:stop", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    manager.stop(requiredString(tabId, "tab id"));
+    manager.page.stop(requiredString(tabId, "tab id"));
   });
   ipcMain.handle("browser:zoom-in", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    manager.zoomIn(requiredString(tabId, "tab id"));
+    manager.page.zoom(requiredString(tabId, "tab id"), "in");
   });
   ipcMain.handle("browser:zoom-out", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    manager.zoomOut(requiredString(tabId, "tab id"));
+    manager.page.zoom(requiredString(tabId, "tab id"), "out");
+  });
+  ipcMain.handle("browser:zoom-reset", (event, tabId: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    manager.page.zoom(requiredString(tabId, "tab id"), "reset");
+  });
+  ipcMain.handle("browser:find", (event, tabId: unknown, request: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    manager.page.find(requiredString(tabId, "tab id"), findRequestSchema.parse(request));
+  });
+  ipcMain.handle("browser:stop-find", (event, tabId: unknown, focusPage: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    manager.page.stopFind(requiredString(tabId, "tab id"), z.boolean().parse(focusPage));
+  });
+  ipcMain.handle("browser:set-guest-shortcuts", (event, bindings: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    manager.page.setGuestShortcutBindings(parseBrowserGuestShortcutBindings(bindings));
   });
   ipcMain.handle("browser:toggle-devtools", (event, tabId: unknown) => {
     assertTrustedSender(event, getMainWindow);

@@ -3,6 +3,9 @@ export type {
   BrowserCommentBadgeClick,
   BrowserConsoleEntry,
   BrowserElementContext,
+  BrowserFindRequest,
+  BrowserFindResult,
+  BrowserGuestShortcutBindings,
   BrowserNetworkEntry,
   BrowserOpenUrlOptions,
   BrowserAgentAccess,
@@ -12,6 +15,7 @@ export type {
   BrowserSitePermissionDecision,
   BrowserSitePermissionRequest,
   BrowserShortcut,
+  BrowserShortcutBinding,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "../../src/shared/browser-types";
@@ -20,4 +24,5 @@ export {
   BROWSER_SITE_PERMISSIONS,
   BROWSER_SITE_PERMISSION_DECISIONS,
   MAX_BROWSER_FAVICON_DATA_URL_LENGTH,
+  MAX_BROWSER_FIND_QUERY_LENGTH,
 } from "../../src/shared/browser-types";

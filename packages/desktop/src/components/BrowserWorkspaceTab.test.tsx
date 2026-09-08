@@ -26,6 +26,7 @@ function bridge(): CadencrBrowserBridge {
         sessionProfileId: "default",
         isActive: true,
         devToolsOpen: false,
+        zoomPercent: 100,
         scopeId: 1,
       },
     ],
@@ -117,6 +118,10 @@ function bridge(): CadencrBrowserBridge {
     browserStop: vi.fn(),
     browserZoomIn: vi.fn(),
     browserZoomOut: vi.fn(),
+    browserZoomReset: vi.fn(),
+    findInBrowserTab: vi.fn(() => Promise.resolve()),
+    stopFindingInBrowserTab: vi.fn(() => Promise.resolve()),
+    setBrowserGuestShortcuts: vi.fn(() => Promise.resolve()),
     toggleBrowserDevTools: vi.fn(() => Promise.resolve(state.tabs[0])),
     getBrowserConsole: vi.fn(() => Promise.resolve([])),
     getBrowserNetwork: vi.fn(() => Promise.resolve([])),
@@ -131,6 +136,7 @@ function bridge(): CadencrBrowserBridge {
     onBrowserState: vi.fn(() => () => undefined),
     onBrowserTabCounts: vi.fn(() => () => undefined),
     onBrowserShortcut: vi.fn(() => () => undefined),
+    onBrowserFindResult: vi.fn(() => () => undefined),
     onBrowserCommentBadgeClick: vi.fn(() => () => undefined),
     onBrowserPermissionRequest: vi.fn(() => () => undefined),
     onBrowserPermissionRequestCancelled: vi.fn(() => () => undefined),
@@ -368,6 +374,7 @@ describe("BrowserWorkspaceTab", () => {
             sessionProfileId: "ephemeral",
             isActive: true,
             devToolsOpen: false,
+            zoomPercent: 100,
             scopeId: 1,
           },
         ],
@@ -425,6 +432,134 @@ describe("BrowserWorkspaceTab", () => {
     });
   });
 
+  it("relays guest find, reports native matches, advances, reverses, and closes", async () => {
+    let shortcutRelay: ((shortcut: "find") => void) | null = null;
+    let findResultRelay:
+      | ((result: {
+          tabId: string;
+          requestToken: string;
+          activeMatchOrdinal: number;
+          matches: number;
+          finalUpdate: boolean;
+        }) => void)
+      | null = null;
+    const mockBridge = bridge();
+    mockBridge.onBrowserShortcut = vi.fn((callback) => {
+      shortcutRelay = callback;
+      return () => undefined;
+    });
+    mockBridge.onBrowserFindResult = vi.fn((callback) => {
+      findResultRelay = callback;
+      return () => undefined;
+    });
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+    await screen.findByDisplayValue("http://localhost:1420/");
+
+    expect(mockBridge.setBrowserGuestShortcuts).toHaveBeenCalledWith({
+      find: { keys: ["mod", "f"], altKeys: undefined },
+      zoomReset: { keys: ["mod", "0"], altKeys: undefined },
+    });
+    act(() => shortcutRelay?.("find"));
+    const input = await screen.findByRole("textbox", { name: "Find in page" });
+    await waitFor(() => expect(input).toHaveFocus());
+    await user.type(input, "cadencrneedle");
+    const initialRequest = vi.mocked(mockBridge.findInBrowserTab).mock.calls.at(-1);
+    if (!initialRequest) throw new Error("Expected find request");
+    expect(initialRequest).toEqual([
+      "tab-1",
+      expect.objectContaining({ query: "cadencrneedle", forward: true, findNext: true }),
+    ]);
+
+    act(() =>
+      findResultRelay?.({
+        tabId: "tab-1",
+        requestToken: initialRequest[1].requestToken,
+        activeMatchOrdinal: 1,
+        matches: 3,
+        finalUpdate: true,
+      }),
+    );
+    expect(screen.getByRole("status", { name: "Find results" })).toHaveTextContent("1 of 3");
+
+    await user.keyboard("{Enter}");
+    expect(mockBridge.findInBrowserTab).toHaveBeenLastCalledWith(
+      "tab-1",
+      expect.objectContaining({ forward: true, findNext: false }),
+    );
+    await user.keyboard("{Shift>}{Enter}{/Shift}");
+    expect(mockBridge.findInBrowserTab).toHaveBeenLastCalledWith(
+      "tab-1",
+      expect.objectContaining({ forward: false, findNext: false }),
+    );
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("textbox", { name: "Find in page" })).not.toBeInTheDocument();
+    expect(mockBridge.stopFindingInBrowserTab).toHaveBeenLastCalledWith("tab-1", true);
+  });
+
+  it("restarts find after a same-URL reload and ignores the invalidated result", async () => {
+    let shortcutRelay: ((shortcut: "find") => void) | null = null;
+    let stateRelay:
+      | ((state: Awaited<ReturnType<CadencrBrowserBridge["listBrowserTabs"]>>) => void)
+      | null = null;
+    let findResultRelay:
+      | ((result: {
+          tabId: string;
+          requestToken: string;
+          activeMatchOrdinal: number;
+          matches: number;
+          finalUpdate: boolean;
+        }) => void)
+      | null = null;
+    const mockBridge = bridge();
+    const snapshot = await mockBridge.listBrowserTabs(1);
+    mockBridge.onBrowserShortcut = vi.fn((callback) => {
+      shortcutRelay = callback;
+      return () => undefined;
+    });
+    mockBridge.onBrowserState = vi.fn((callback) => {
+      stateRelay = callback;
+      return () => undefined;
+    });
+    mockBridge.onBrowserFindResult = vi.fn((callback) => {
+      findResultRelay = callback;
+      return () => undefined;
+    });
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+    await screen.findByDisplayValue("http://localhost:1420/");
+    act(() => shortcutRelay?.("find"));
+    const input = await screen.findByRole("textbox", { name: "Find in page" });
+    await waitFor(() => expect(input).toHaveFocus());
+    await user.type(input, "needle");
+    const staleRequest = vi.mocked(mockBridge.findInBrowserTab).mock.calls.at(-1)?.[1];
+    if (!staleRequest) throw new Error("Expected initial find request");
+    const requestCount = vi.mocked(mockBridge.findInBrowserTab).mock.calls.length;
+
+    act(() => stateRelay?.({ ...snapshot, tabs: [{ ...snapshot.tabs[0], loading: true }] }));
+    expect(screen.getByRole("status", { name: "Find results" })).toHaveTextContent("Searching");
+    act(() =>
+      findResultRelay?.({
+        tabId: "tab-1",
+        requestToken: staleRequest.requestToken,
+        activeMatchOrdinal: 1,
+        matches: 99,
+        finalUpdate: true,
+      }),
+    );
+    expect(screen.getByRole("status", { name: "Find results" })).not.toHaveTextContent("99");
+
+    act(() => stateRelay?.({ ...snapshot, tabs: [{ ...snapshot.tabs[0], loading: false }] }));
+    await waitFor(() =>
+      expect(vi.mocked(mockBridge.findInBrowserTab).mock.calls.length).toBe(requestCount + 1),
+    );
+    expect(mockBridge.findInBrowserTab).toHaveBeenLastCalledWith(
+      "tab-1",
+      expect.objectContaining({ query: "needle", findNext: true }),
+    );
+  });
+
   it("opens a new tab from the URL bar when every tab is closed", async () => {
     const mockBridge = bridge();
     mockBridge.listBrowserTabs = vi.fn(() =>
@@ -472,6 +607,7 @@ describe("BrowserWorkspaceTab", () => {
             sessionProfileId: "ephemeral",
             isActive: true,
             devToolsOpen: false,
+            zoomPercent: 100,
             scopeId: 1,
           },
         ],

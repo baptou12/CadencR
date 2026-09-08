@@ -5,6 +5,9 @@ import type {
   BrowserCommentBadgeClick,
   BrowserConsoleEntry,
   BrowserElementContext,
+  BrowserFindRequest,
+  BrowserFindResult,
+  BrowserGuestShortcutBindings,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
   BrowserSiteInfo,
@@ -22,6 +25,9 @@ export type {
   BrowserCommentBadgeClick,
   BrowserConsoleEntry,
   BrowserElementContext,
+  BrowserFindRequest,
+  BrowserFindResult,
+  BrowserGuestShortcutBindings,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
   BrowserSiteInfo,
@@ -230,6 +236,10 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   browserStop: (tabId: string) => Promise<void>;
   browserZoomIn: (tabId: string) => Promise<void>;
   browserZoomOut: (tabId: string) => Promise<void>;
+  browserZoomReset: (tabId: string) => Promise<void>;
+  findInBrowserTab: (tabId: string, request: BrowserFindRequest) => Promise<void>;
+  stopFindingInBrowserTab: (tabId: string, focusPage: boolean) => Promise<void>;
+  setBrowserGuestShortcuts: (bindings: BrowserGuestShortcutBindings) => Promise<void>;
   toggleBrowserDevTools: (tabId: string) => Promise<BrowserTabMetadata>;
   getBrowserConsole: () => Promise<BrowserConsoleEntry[]>;
   getBrowserNetwork: () => Promise<BrowserNetworkEntry[]>;
@@ -246,6 +256,7 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   onBrowserState: (cb: (state: BrowserStateSnapshot) => void) => () => void;
   onBrowserTabCounts: (cb: (counts: Record<number, number>) => void) => () => void;
   onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void) => () => void;
+  onBrowserFindResult: (cb: (result: BrowserFindResult) => void) => () => void;
   /** A user click on an on-page comment badge, to reopen that comment's composer. */
   onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void) => () => void;
   onBrowserPermissionRequest: (cb: (request: BrowserSitePermissionRequest) => void) => () => void;
@@ -352,6 +363,10 @@ const browserBridge: CadencrBrowserBridge = {
   browserStop: () => unavailable("browserStop"),
   browserZoomIn: () => unavailable("browserZoomIn"),
   browserZoomOut: () => unavailable("browserZoomOut"),
+  browserZoomReset: () => unavailable("browserZoomReset"),
+  findInBrowserTab: () => unavailable("findInBrowserTab"),
+  stopFindingInBrowserTab: () => unavailable("stopFindingInBrowserTab"),
+  setBrowserGuestShortcuts: () => unavailable("setBrowserGuestShortcuts"),
   toggleBrowserDevTools: () => unavailable("toggleBrowserDevTools"),
   getBrowserConsole: () => unavailable("getBrowserConsole"),
   getBrowserNetwork: () => unavailable("getBrowserNetwork"),
@@ -367,6 +382,7 @@ const browserBridge: CadencrBrowserBridge = {
   onBrowserState: () => () => undefined,
   onBrowserTabCounts: () => () => undefined,
   onBrowserShortcut: () => () => undefined,
+  onBrowserFindResult: () => () => undefined,
   onBrowserCommentBadgeClick: () => () => undefined,
   onBrowserPermissionRequest: () => () => undefined,
   onBrowserPermissionRequestCancelled: () => () => undefined,

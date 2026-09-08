@@ -15,6 +15,7 @@ function snapshot(scopeId: number | null, tabCount: number): BrowserStateSnapsho
       sessionProfileId: "fresh",
       isActive: index === 0,
       devToolsOpen: false,
+      zoomPercent: 100,
       scopeId,
     })),
     activeTabId: tabCount > 0 ? `tab-${scopeId}-0` : null,

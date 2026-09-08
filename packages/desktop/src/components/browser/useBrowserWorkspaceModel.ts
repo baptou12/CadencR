@@ -8,6 +8,8 @@ import { PROFILE_ID, type CookieMode } from "@/lib/browser-settings";
 import { useBrowserStore } from "@/stores/browser-store";
 import { useBrowserViewportBounds } from "../useBrowserViewportBounds";
 import { reportBrowserError, showBrowserError } from "./browser-errors";
+import { useBrowserFind, type BrowserFindModel } from "./useBrowserFind";
+import { useBrowserPageActions, type BrowserPageActions } from "./useBrowserPageActions";
 
 const EMPTY_STATE: BrowserStateSnapshot = {
   tabs: [],
@@ -18,7 +20,7 @@ const EMPTY_STATE: BrowserStateSnapshot = {
   error: null,
 };
 
-export interface BrowserWorkspaceModel {
+export interface BrowserWorkspaceModel extends BrowserPageActions {
   state: BrowserStateSnapshot;
   urlInput: string;
   defaultMode: CookieMode;
@@ -29,6 +31,7 @@ export interface BrowserWorkspaceModel {
   knownOrigins: string[];
   urlInputRef: React.RefObject<HTMLInputElement | null>;
   viewportRef: (node: HTMLDivElement | null) => void;
+  find: BrowserFindModel;
   setUrlInput: (value: string) => void;
   setUrlEditing: (editing: boolean) => void;
   clearError: () => void;
@@ -38,13 +41,6 @@ export interface BrowserWorkspaceModel {
   activateTab: (tabId: string) => void;
   closeTab: (tabId: string) => void;
   closeActiveTab: () => void;
-  back: () => void;
-  forward: () => void;
-  reload: () => void;
-  stop: () => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
-  devTools: () => void;
   runForActive: (action: (tab: BrowserTabMetadata) => Promise<void>) => Promise<void>;
 }
 
@@ -126,53 +122,6 @@ function useBrowserTabActions(
   );
 }
 
-type BrowserPageActions = Pick<
-  BrowserWorkspaceModel,
-  "back" | "forward" | "reload" | "stop" | "zoomIn" | "zoomOut" | "devTools"
->;
-
-function useBrowserPageActions(
-  runForActive: BrowserWorkspaceModel["runForActive"],
-): BrowserPageActions {
-  const bridgeAction = useCallback(
-    (action: (tabId: string) => Promise<void>): void => void runForActive((tab) => action(tab.id)),
-    [runForActive],
-  );
-  const back = useCallback(
-    () => bridgeAction((tabId) => desktopBridge.browserBack(tabId)),
-    [bridgeAction],
-  );
-  const forward = useCallback(
-    () => bridgeAction((tabId) => desktopBridge.browserForward(tabId)),
-    [bridgeAction],
-  );
-  const reload = useCallback(
-    () => bridgeAction((tabId) => desktopBridge.browserReload(tabId)),
-    [bridgeAction],
-  );
-  const stop = useCallback(
-    () => bridgeAction((tabId) => desktopBridge.browserStop(tabId)),
-    [bridgeAction],
-  );
-  const zoomIn = useCallback(
-    () => bridgeAction((tabId) => desktopBridge.browserZoomIn(tabId)),
-    [bridgeAction],
-  );
-  const zoomOut = useCallback(
-    () => bridgeAction((tabId) => desktopBridge.browserZoomOut(tabId)),
-    [bridgeAction],
-  );
-  const devTools = useCallback(
-    (): void =>
-      void runForActive((tab) => desktopBridge.toggleBrowserDevTools(tab.id).then(() => undefined)),
-    [runForActive],
-  );
-  return useMemo(
-    () => ({ back, forward, reload, stop, zoomIn, zoomOut, devTools }),
-    [back, devTools, forward, reload, stop, zoomIn, zoomOut],
-  );
-}
-
 export function useBrowserWorkspaceModel(
   defaultMode: CookieMode,
   scopeId: number,
@@ -204,6 +153,7 @@ export function useBrowserWorkspaceModel(
     scopeId,
   });
   const runForActive = useRunForActive(activeTab, setPending);
+  const find = useBrowserFind(activeTab);
 
   const visibleState = useMemo<BrowserStateSnapshot>(
     () => ({ ...state, error: state.error === dismissedError ? null : state.error }),
@@ -243,6 +193,7 @@ export function useBrowserWorkspaceModel(
     defaultMode,
     creatingMode,
     focusUrlBar,
+    find,
     forward: pageActions.forward,
     loading,
     navigate: tabActions.navigate,
@@ -256,6 +207,7 @@ export function useBrowserWorkspaceModel(
     stop: pageActions.stop,
     zoomIn: pageActions.zoomIn,
     zoomOut: pageActions.zoomOut,
+    zoomReset: pageActions.zoomReset,
     urlInput,
     urlInputRef,
     viewportRef,
@@ -277,6 +229,7 @@ function useBrowserModelValue(model: BrowserWorkspaceModel): BrowserWorkspaceMod
       model.defaultMode,
       model.creatingMode,
       model.focusUrlBar,
+      model.find,
       model.forward,
       model.knownOrigins,
       model.loading,
@@ -289,6 +242,7 @@ function useBrowserModelValue(model: BrowserWorkspaceModel): BrowserWorkspaceMod
       model.stop,
       model.zoomIn,
       model.zoomOut,
+      model.zoomReset,
       model.state,
       model.urlInput,
       model.viewportRef,

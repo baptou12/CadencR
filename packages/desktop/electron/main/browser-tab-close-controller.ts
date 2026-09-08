@@ -9,6 +9,7 @@ interface BrowserTabCloseHost {
   applyLayout(): void;
   emitState(scope: number | null): void;
   reportError(error: unknown, scope: number | null): void;
+  invalidateFind(tab: ManagedTab): void;
 }
 
 /** Coordinates tab removal and asynchronous session teardown. */
@@ -21,6 +22,7 @@ export class BrowserTabCloseController {
   ) {}
 
   async close(tab: ManagedTab): Promise<void> {
+    this.host.invalidateFind(tab);
     const cleanup = this.lifecycle.destroy(tab);
     this.afterRemoval(tab);
     await this.finish(cleanup, tab.metadata.scopeId);
@@ -29,6 +31,7 @@ export class BrowserTabCloseController {
   async closeScope(scopeId: number): Promise<void> {
     const tabs = [...this.tabs.values()].filter((tab) => tab.metadata.scopeId === scopeId);
     const cleanups = tabs.map((tab) => {
+      this.host.invalidateFind(tab);
       const cleanup = this.lifecycle.destroy(tab);
       this.scopes.forget(scopeId, tab.metadata.id, this.tabs);
       return cleanup;
@@ -40,6 +43,7 @@ export class BrowserTabCloseController {
 
   discardFailed(tab: ManagedTab, setupError: unknown): void {
     this.host.reportError(setupError, tab.metadata.scopeId);
+    this.host.invalidateFind(tab);
     const cleanup = this.lifecycle.destroy(tab);
     this.afterRemoval(tab);
     this.finishInBackground(cleanup, tab.metadata.scopeId, "setup failure");
