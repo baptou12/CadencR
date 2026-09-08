@@ -9,6 +9,7 @@ import { useBrowserStore } from "@/stores/browser-store";
 interface FeatureActivityCounts {
   shellCountsByFeatureId: Map<number, number>;
   browserCountsByFeatureId: Record<number, number>;
+  downloadCountsByFeatureId: Record<number, number>;
 }
 
 export function useFeatureActivityCounts(projectId: number): FeatureActivityCounts {
@@ -23,6 +24,7 @@ export function useFeatureActivityCounts(projectId: number): FeatureActivityCoun
     { query: { refetchInterval: 10_000 } },
   );
   const browserCountsByFeatureId = useBrowserStore((state) => state.countsByScope);
+  const downloadCountsByFeatureId = useBrowserStore((state) => state.activeDownloadCountsByScope);
 
   useEffect(() => {
     if (!activityQuery.error) return;
@@ -33,6 +35,7 @@ export function useFeatureActivityCounts(projectId: number): FeatureActivityCoun
 
   useEffect(() => {
     let alive = true;
+    let downloadRevision = 0;
     void desktopBridge
       .listBrowserTabCountsByScope()
       .then((counts) => {
@@ -44,9 +47,27 @@ export function useFeatureActivityCounts(projectId: number): FeatureActivityCoun
     const unsubscribe = desktopBridge.onBrowserTabCounts((counts) => {
       useBrowserStore.getState().setCountsByScope(counts);
     });
+    const initialDownloadRevision = downloadRevision;
+    const unsubscribeDownloads = desktopBridge.onBrowserDownloadCounts((counts) => {
+      downloadRevision += 1;
+      useBrowserStore.getState().setActiveDownloadCountsByScope(counts);
+    });
+    void desktopBridge
+      .listBrowserDownloadCountsByScope()
+      .then((counts) => {
+        if (alive && downloadRevision === initialDownloadRevision) {
+          useBrowserStore.getState().setActiveDownloadCountsByScope(counts);
+        }
+      })
+      .catch((error: unknown) => {
+        if (alive && downloadRevision === initialDownloadRevision) {
+          showBrowserError(error, "Failed to load browser download counts");
+        }
+      });
     return () => {
       alive = false;
       unsubscribe();
+      unsubscribeDownloads();
     };
   }, []);
 
@@ -59,7 +80,7 @@ export function useFeatureActivityCounts(projectId: number): FeatureActivityCoun
   }, [activityQuery.data]);
 
   return useMemo(
-    () => ({ shellCountsByFeatureId, browserCountsByFeatureId }),
-    [browserCountsByFeatureId, shellCountsByFeatureId],
+    () => ({ shellCountsByFeatureId, browserCountsByFeatureId, downloadCountsByFeatureId }),
+    [browserCountsByFeatureId, downloadCountsByFeatureId, shellCountsByFeatureId],
   );
 }

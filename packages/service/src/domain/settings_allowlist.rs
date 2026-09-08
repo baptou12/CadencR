@@ -342,6 +342,7 @@ mod tests {
     #[test]
     fn workspace_accepts_browser_settings() {
         assert!(is_workspace_key_allowed("browser_default_mode"));
+        assert!(is_workspace_key_allowed("browser_search_engine"));
         assert!(is_workspace_key_allowed("browser_mcp_enabled"));
         assert!(is_workspace_key_allowed("project_mcp_enabled"));
         assert!(is_workspace_key_allowed("workspace_mcp_enabled"));
@@ -350,6 +351,8 @@ mod tests {
         assert!(!is_workspace_key_allowed("project_mcp_allow_send_message"));
         assert!(!is_feature_key_allowed("browser_mcp_enabled"));
         assert!(!is_project_key_allowed("browser_mcp_enabled"));
+        assert!(!is_feature_key_allowed("browser_search_engine"));
+        assert!(!is_project_key_allowed("browser_search_engine"));
     }
 
     #[test]

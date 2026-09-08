@@ -59,7 +59,8 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
     { project_id: projectId },
     { query: { staleTime: 5 * 60 * 1000 } },
   );
-  const { shellCountsByFeatureId, browserCountsByFeatureId } = useFeatureActivityCounts(projectId);
+  const { shellCountsByFeatureId, browserCountsByFeatureId, downloadCountsByFeatureId } =
+    useFeatureActivityCounts(projectId);
   const portsByFeatureId = useFeaturePorts();
   const liveMeta = useLiveFeatureMeta();
   const activeFeatures = useMemo(
@@ -115,6 +116,7 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
     activeFeatures,
     archivedFeatures,
     browserCountsByFeatureId,
+    downloadCountsByFeatureId,
     features,
     getLiveTitle,
     isAutoNaming,
@@ -248,8 +250,19 @@ function useProjectFeatureActions(props: ProjectFeaturesProps, data: ProjectFeat
     [navigate, props],
   );
   return {
-    closeActivity: (featureId: number, shellCount: number, browserCount: number): void =>
-      closeFeatureActivity({ projectId: props.projectId, featureId, shellCount, browserCount }),
+    closeActivity: (
+      featureId: number,
+      shellCount: number,
+      browserCount: number,
+      downloadCount: number,
+    ): void =>
+      closeFeatureActivity({
+        projectId: props.projectId,
+        featureId,
+        shellCount,
+        browserCount,
+        downloadCount,
+      }),
     deleteFeature: (featureId: number): void => deleteMutation.mutate({ id: featureId }),
     navigateToFeature,
     togglePin: (featureId: number, pinned: boolean): void =>
@@ -313,6 +326,7 @@ function createFeatureRenderer(
       worktree={data.worktreeByFeatureId.get(feature.id)}
       shellCount={data.shellCountsByFeatureId.get(feature.id) ?? 0}
       browserCount={data.browserCountsByFeatureId[feature.id] ?? 0}
+      downloadCount={data.downloadCountsByFeatureId[feature.id] ?? 0}
       ports={data.portsByFeatureId.get(feature.id) ?? NO_PORTS}
       isEditingLabel={labels.editingFeatureId === feature.id}
       labelDraft={labels.editingFeatureId === feature.id ? labels.draft : ""}
