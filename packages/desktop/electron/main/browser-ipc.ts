@@ -14,6 +14,8 @@ import {
   BROWSER_SITE_PERMISSIONS,
   BROWSER_SITE_PERMISSION_DECISIONS,
   MAX_BROWSER_FIND_QUERY_LENGTH,
+  MAX_BROWSER_LIBRARY_QUERY_LENGTH,
+  MAX_BROWSER_LIBRARY_URL_LENGTH,
 } from "./browser-types";
 import { assertTrustedSender } from "./ipc";
 
@@ -31,6 +33,10 @@ const findRequestSchema = z
     findNext: z.boolean(),
   })
   .strict();
+const libraryQuerySchema = z.string().max(MAX_BROWSER_LIBRARY_QUERY_LENGTH);
+const libraryLimitSchema = z.number().int().min(1).max(20).optional();
+const historyIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/);
+const libraryUrlSchema = z.string().min(1).max(MAX_BROWSER_LIBRARY_URL_LENGTH);
 const siteOriginSchema = z.url().refine((value) => {
   const parsed = new URL(value);
   return (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.origin === value;
@@ -274,6 +280,35 @@ function registerInspectionIpc(
   });
 }
 
+function registerLibraryIpc(
+  manager: BrowserManager,
+  getMainWindow: BrowserIpcOptions["getMainWindow"],
+): void {
+  ipcMain.handle("browser:query-omnibox", (event, query: unknown, limit: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.library.query(libraryQuerySchema.parse(query), libraryLimitSchema.parse(limit));
+  });
+  ipcMain.handle("browser:get-bookmark", (event, url: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.library.getBookmark(libraryUrlSchema.parse(url));
+  });
+  ipcMain.handle("browser:remove-history", (event, id: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.library.removeHistoryEntry(historyIdSchema.parse(id));
+  });
+  ipcMain.handle("browser:clear-history", (event) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.library.clearHistory();
+  });
+  ipcMain.handle("browser:set-bookmark", (event, tabId: unknown, bookmarked: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return manager.library.setBookmark(
+      requiredString(tabId, "tab id"),
+      z.boolean().parse(bookmarked),
+    );
+  });
+}
+
 export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   const manager = new BrowserManager(options.getMainWindow);
   const profiles = new BrowserProfileController();
@@ -282,5 +317,6 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   registerNavigationIpc(manager, options.getMainWindow);
   registerSiteIpc(manager, options.getMainWindow);
   registerInspectionIpc(manager, options.getMainWindow);
+  registerLibraryIpc(manager, options.getMainWindow);
   return manager;
 }

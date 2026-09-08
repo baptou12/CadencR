@@ -169,11 +169,13 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // the animation completes (or the user clicks to skip).
     "onboarding_intro_shown",
     // Browser workspace preferences. `browser_default_mode` is "normal" or
-    // "private" (see packages/desktop/src/lib/browser-settings.ts) and seeds
-    // the Browser tab's first tab + toolbar toggle. `browser_mcp_enabled` is
-    // "true"/"false" (default enabled) and gates whether the `cadencr-browser`
-    // MCP is attached to agent turns — read in the session-prompt spawn path.
+    // "private" and `browser_search_engine` selects the address-bar search
+    // provider (see packages/desktop/src/lib/browser-settings.ts).
+    // `browser_mcp_enabled` is "true"/"false" (default enabled) and gates
+    // whether the `cadencr-browser` MCP is attached to agent turns — read in
+    // the session-prompt spawn path.
     "browser_default_mode",
+    "browser_search_engine",
     // JSON array of domains whose links open in Cadencr's own browser tab
     // (instead of the system browser). Default seeded by the frontend with
     // localhost/127.0.0.1. See packages/desktop/src/lib/link-routing.ts.

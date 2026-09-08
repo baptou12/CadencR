@@ -7,6 +7,8 @@ import {
   selectElementContext,
 } from "./browser-comment-context";
 import { BrowserFocusGuard } from "./browser-focus-guard";
+import { BrowserLibraryController } from "./browser-library-controller";
+import { BrowserLibraryStore } from "./browser-library-store";
 import { BrowserAutomationAuthority } from "./browser-automation-authority";
 import { toggleTabDevTools } from "./browser-devtools";
 import {
@@ -88,6 +90,17 @@ export class BrowserManager {
     },
   );
   private readonly origins = new BrowserOriginStore();
+  readonly library = new BrowserLibraryController(
+    new BrowserLibraryStore(undefined, undefined, (change) =>
+      sendToWindow(this.getMainWindow(), "browser:library-changed", change),
+    ),
+    this.origins,
+    (tabId) => this.requireTab(tabId),
+    (message, scopeId) => {
+      this.lastError = message;
+      this.emitState(scopeId);
+    },
+  );
   private readonly network = new BrowserNetworkCollector((webContentsId, entry) => {
     const tab = [...this.tabs.values()].find((t) => t.webContents.id === webContentsId);
     if (!tab) return;
@@ -141,6 +154,9 @@ export class BrowserManager {
         recordOrigin: isPrivateProfile(profile)
           ? () => undefined
           : (url) => this.origins.record(url),
+        recordHistoryNavigation: (url, title) => this.library.recordNavigation(tab, url, title),
+        updateHistoryTitle: (url, title) => this.library.updateTitle(tab, url, title),
+        forgetHistory: () => this.library.forget(id),
         emitShortcut: (shortcut) => this.emitShortcut(shortcut),
         matchGuestShortcut: (input) => this.page.matchGuestShortcut(input),
         emitFindResult: (result) => this.page.handleFindResult(tab, result),

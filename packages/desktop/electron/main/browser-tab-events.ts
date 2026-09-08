@@ -45,6 +45,9 @@ export interface TabEventHost {
   isTabAlive(): boolean;
   tabDestroyed(): void;
   recordOrigin(url: string): void;
+  recordHistoryNavigation(url: string, title: string): void;
+  updateHistoryTitle(url: string, title: string): void;
+  forgetHistory(): void;
   emitShortcut(shortcut: BrowserShortcut): void;
   matchGuestShortcut(input: Input): BrowserShortcut | null;
   emitFindResult(result: Result): void;
@@ -60,6 +63,7 @@ export function installTabEvents(tab: ManagedTab, host: TabEventHost): void {
   wc.once("destroyed", () => {
     faviconAbort?.abort();
     host.invalidateFind();
+    host.forgetHistory();
     host.tabDestroyed();
   });
   // A focused guest page swallows keydown before the renderer's window
@@ -147,6 +151,7 @@ function installPageLifecycleEvents(tab: ManagedTab, host: TabEventHost): void {
     host.setLastError(null);
     host.recordOrigin(wc.getURL());
     refreshTabMetadata(tab, host);
+    host.recordHistoryNavigation(wc.getURL(), pageTitle(wc));
     host.syncZoom();
   });
   wc.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
@@ -155,12 +160,14 @@ function installPageLifecycleEvents(tab: ManagedTab, host: TabEventHost): void {
     host.setLastError(null);
     host.recordOrigin(wc.getURL());
     refreshTabMetadata(tab, host);
+    host.recordHistoryNavigation(wc.getURL(), pageTitle(wc));
     host.syncZoom();
   });
   wc.on("found-in-page", (_event, result) => host.emitFindResult(result));
   wc.on("zoom-changed", () => queueMicrotask(host.syncZoom));
   wc.on("page-title-updated", () => {
     refreshTabMetadata(tab, host);
+    host.updateHistoryTitle(wc.getURL(), pageTitle(wc));
   });
   wc.on("did-fail-load", (_event, _code, description, url) => {
     host.setLastError(`${url}: ${description}`);
@@ -277,6 +284,10 @@ function refreshTabMetadata(tab: ManagedTab, host: TabEventHost): void {
     { title: wc.getTitle() || wc.getURL(), url: wc.getURL() || DEFAULT_URL },
     host,
   );
+}
+
+function pageTitle(wc: WebContents): string {
+  return wc.getTitle() || wc.getURL();
 }
 
 function updateTabMetadata(

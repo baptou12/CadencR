@@ -9,6 +9,10 @@ export type {
   BrowserNetworkEntry,
   BrowserOpenUrlOptions,
   BrowserAgentAccess,
+  BrowserBookmark,
+  BrowserHistoryEntry,
+  BrowserLibraryChange,
+  BrowserOmniboxQueryResult,
   BrowserProfileMetadata,
   BrowserSiteInfo,
   BrowserSitePermission,
@@ -25,4 +29,6 @@ export {
   BROWSER_SITE_PERMISSION_DECISIONS,
   MAX_BROWSER_FAVICON_DATA_URL_LENGTH,
   MAX_BROWSER_FIND_QUERY_LENGTH,
+  MAX_BROWSER_LIBRARY_QUERY_LENGTH,
+  MAX_BROWSER_LIBRARY_URL_LENGTH,
 } from "../../src/shared/browser-types";

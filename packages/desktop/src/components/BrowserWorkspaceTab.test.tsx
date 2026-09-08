@@ -122,6 +122,14 @@ function bridge(): CadencrBrowserBridge {
     findInBrowserTab: vi.fn(() => Promise.resolve()),
     stopFindingInBrowserTab: vi.fn(() => Promise.resolve()),
     setBrowserGuestShortcuts: vi.fn(() => Promise.resolve()),
+    queryBrowserOmnibox: vi.fn(() =>
+      Promise.resolve({ history: [], bookmarks: [], historyCount: 0, bookmarkCount: 0 }),
+    ),
+    onBrowserLibraryChanged: vi.fn(() => () => undefined),
+    getBrowserBookmark: vi.fn(() => Promise.resolve(null)),
+    removeBrowserHistoryEntry: vi.fn(() => Promise.resolve()),
+    clearBrowserHistory: vi.fn(() => Promise.resolve()),
+    setBrowserBookmark: vi.fn(() => Promise.resolve(null)),
     toggleBrowserDevTools: vi.fn(() => Promise.resolve(state.tabs[0])),
     getBrowserConsole: vi.fn(() => Promise.resolve([])),
     getBrowserNetwork: vi.fn(() => Promise.resolve([])),
@@ -428,7 +436,7 @@ describe("BrowserWorkspaceTab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
 
     await waitFor(() => {
-      expect(mockBridge.navigateBrowserTab).toHaveBeenCalledWith("tab-1", "localhost:3000");
+      expect(mockBridge.navigateBrowserTab).toHaveBeenCalledWith("tab-1", "http://localhost:3000/");
     });
   });
 
@@ -587,7 +595,11 @@ describe("BrowserWorkspaceTab", () => {
     // Navigation with no active tab opens a fresh tab pointed at the URL
     // instead of calling navigate on a non-existent tab.
     await waitFor(() => {
-      expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith("localhost:4000", "default", 1);
+      expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(
+        "http://localhost:4000/",
+        "default",
+        1,
+      );
     });
     expect(mockBridge.navigateBrowserTab).not.toHaveBeenCalled();
   });

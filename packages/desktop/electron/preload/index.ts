@@ -1,10 +1,13 @@
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 import type {
   BrowserBounds,
+  BrowserBookmark,
   BrowserCommentBadgeClick,
   BrowserFindRequest,
   BrowserFindResult,
   BrowserGuestShortcutBindings,
+  BrowserLibraryChange,
+  BrowserOmniboxQueryResult,
   BrowserProfileMetadata,
   BrowserSiteInfo,
   BrowserSitePermission,
@@ -294,6 +297,15 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("browser:stop-find", tabId, focusPage),
   setBrowserGuestShortcuts: (bindings: BrowserGuestShortcutBindings): Promise<void> =>
     ipcRenderer.invoke("browser:set-guest-shortcuts", bindings),
+  queryBrowserOmnibox: (query: string, limit?: number): Promise<BrowserOmniboxQueryResult> =>
+    ipcRenderer.invoke("browser:query-omnibox", query, limit),
+  getBrowserBookmark: (url: string): Promise<BrowserBookmark | null> =>
+    ipcRenderer.invoke("browser:get-bookmark", url),
+  removeBrowserHistoryEntry: (id: string): Promise<void> =>
+    ipcRenderer.invoke("browser:remove-history", id),
+  clearBrowserHistory: (): Promise<void> => ipcRenderer.invoke("browser:clear-history"),
+  setBrowserBookmark: (tabId: string, bookmarked: boolean): Promise<BrowserBookmark | null> =>
+    ipcRenderer.invoke("browser:set-bookmark", tabId, bookmarked),
   toggleBrowserDevTools: (tabId: string): Promise<BrowserTabMetadata> =>
     ipcRenderer.invoke("browser:toggle-devtools", tabId),
   getBrowserConsole: (): Promise<unknown[]> => ipcRenderer.invoke("browser:get-console"),
@@ -322,6 +334,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     onIpc("browser:shortcut", cb),
   onBrowserFindResult: (cb: (result: BrowserFindResult) => void): (() => void) =>
     onIpc("browser:find-result", cb),
+  onBrowserLibraryChanged: (cb: (change: BrowserLibraryChange) => void): (() => void) =>
+    onIpc("browser:library-changed", cb),
   onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void): (() => void) =>
     onIpc("browser:comment-badge-click", cb),
   onBrowserPermissionRequest: (cb: (request: BrowserSitePermissionRequest) => void): (() => void) =>

@@ -1,5 +1,6 @@
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
+import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
 import {
@@ -94,6 +95,14 @@ function bridge(): CadencrBrowserBridge {
     findInBrowserTab: vi.fn(() => Promise.resolve()),
     stopFindingInBrowserTab: vi.fn(() => Promise.resolve()),
     setBrowserGuestShortcuts: vi.fn(() => Promise.resolve()),
+    queryBrowserOmnibox: vi.fn(() =>
+      Promise.resolve({ history: [], bookmarks: [], historyCount: 0, bookmarkCount: 0 }),
+    ),
+    onBrowserLibraryChanged: vi.fn(() => () => undefined),
+    getBrowserBookmark: vi.fn(() => Promise.resolve(null)),
+    removeBrowserHistoryEntry: vi.fn(() => Promise.resolve()),
+    clearBrowserHistory: vi.fn(() => Promise.resolve()),
+    setBrowserBookmark: vi.fn(() => Promise.resolve(null)),
     toggleBrowserDevTools: vi.fn(),
     getBrowserConsole: vi.fn(),
     getBrowserNetwork: vi.fn(),
@@ -120,7 +129,10 @@ function bridge(): CadencrBrowserBridge {
 }
 
 describe("BrowserWorkspaceTab URL suggestions", () => {
-  afterEach(() => clearDesktopBridgeOverrideForTests());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    clearDesktopBridgeOverrideForTests();
+  });
 
   it("captures a preview before suppressing the native browser view", async () => {
     const mockBridge = bridge();
@@ -165,5 +177,32 @@ describe("BrowserWorkspaceTab URL suggestions", () => {
     act(() => onBrowserState?.({ ...SNAPSHOT, knownOrigins: [] }));
 
     expect(input).toHaveValue("loc");
+  });
+
+  it("does not report a rejected snapshot after its overlay has closed", async () => {
+    let rejectCapture: ((error: Error) => void) | null = null;
+    const mockBridge = bridge();
+    mockBridge.getBrowserScreenshot = vi.fn(
+      () =>
+        new Promise<string>((_resolve, reject) => {
+          rejectCapture = reject;
+        }),
+    );
+    const errorToast = vi.spyOn(toast, "error");
+    setDesktopBridgeOverrideForTests(mockBridge);
+    const { user } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+    const input = await screen.findByLabelText("Browser URL");
+
+    await user.clear(input);
+    await user.type(input, "loc");
+    await waitFor(() => expect(mockBridge.getBrowserScreenshot).toHaveBeenCalledWith("tab-1"));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    await act(async () => {
+      rejectCapture?.(new Error("capture became obsolete"));
+      await Promise.resolve();
+    });
+
+    expect(errorToast).not.toHaveBeenCalled();
   });
 });

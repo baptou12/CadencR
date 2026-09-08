@@ -159,15 +159,20 @@ function BrowserToolbar({
         urlInput={model.urlInput}
         pending={model.pending}
         activeTab={model.activeTab}
-        knownOrigins={model.knownOrigins}
+        tabs={model.state.tabs}
         inputRef={model.urlInputRef}
         onUrlChange={model.setUrlInput}
         onUrlEditingChange={model.setUrlEditing}
         onNavigate={(url) => void model.navigate(url)}
+        onActivateTab={model.activateTab}
         onBack={model.back}
         onForward={model.forward}
         onReload={model.reload}
         onStop={model.stop}
+        onZoomIn={model.zoomIn}
+        onZoomOut={model.zoomOut}
+        onZoomReset={model.zoomReset}
+        onFind={model.find.openFind}
         onDevTools={model.devTools}
         onAddComment={onAddComment}
         onSuggestionOverlayOpenChange={onSuggestionOverlayOpenChange}
@@ -226,8 +231,12 @@ function useSuppressedBrowserSnapshot(
         setSuppressNativeView(true);
       })
       .catch((error: unknown) => {
+        // Closing the overlay or navigating invalidates an in-flight native
+        // capture. Its rejection belongs to the obsolete snapshot request,
+        // not the now-visible page, so it must not surface as a user error.
+        if (!alive) return;
         showBrowserError(error, "Could not preview Browser page");
-        if (alive) setSuppressNativeView(true);
+        setSuppressNativeView(true);
       });
     return () => {
       alive = false;

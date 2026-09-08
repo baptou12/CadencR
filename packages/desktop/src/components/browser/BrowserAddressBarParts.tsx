@@ -1,7 +1,8 @@
 import {
+  useRef,
   type ChangeEvent,
+  type FocusEvent,
   type KeyboardEvent,
-  type PointerEvent,
   type ReactElement,
   type ReactNode,
   type RefObject,
@@ -12,16 +13,29 @@ import {
   BugIcon,
   CornerDownLeftIcon,
   GlobeIcon,
-  LockIcon,
   Loader2Icon,
+  MoreHorizontalIcon,
+  MinusIcon,
+  PlusIcon,
   RefreshCwIcon,
+  SearchIcon,
   SparklesIcon,
   SquareIcon,
+  StarIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { BrowserTabMetadata } from "@/lib/desktop-bridge";
+import type { BrowserOmniboxSuggestion } from "@/lib/browser-omnibox";
+import { BrowserOmniboxPanel } from "./BrowserOmniboxPanel";
 import { cn } from "@/lib/utils";
 
 interface BrowserNavControlsProps {
@@ -61,6 +75,7 @@ export function BrowserNavControls(props: BrowserNavControlsProps): ReactElement
         type="button"
         variant="ghost"
         size="icon-sm"
+        disabled={!activeTab}
         onClick={loading ? onStop : onReload}
         aria-label={loading ? "Stop" : "Reload"}
       >
@@ -70,104 +85,118 @@ export function BrowserNavControls(props: BrowserNavControlsProps): ReactElement
   );
 }
 
-interface BrowserUrlFieldProps {
-  secure: boolean;
+export interface BrowserUrlFieldProps {
   inputRef: RefObject<HTMLInputElement | null>;
   urlInput: string;
   pending: boolean;
-  open: boolean;
-  hasSuggestions: boolean;
+  panelOpen: boolean;
   listboxId: string;
   activeOptionId: string | undefined;
-  suggestions: string[];
+  suggestions: BrowserOmniboxSuggestion[];
   highlighted: number;
+  isQuerying: boolean;
+  error: string | null;
+  historyCount: number;
+  isBookmarked: boolean;
+  bookmarkPending: boolean;
+  bookmarkDisabledReason: string | null;
   onChange: (value: string) => void;
-  onOpenSuggestions: () => void;
-  onCloseSuggestions: () => void;
+  onOpenPanel: () => void;
+  onClosePanel: () => void;
   onEditingChange: (editing: boolean) => void;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
-  onSelectSuggestion: (origin: string) => void;
+  onSelectSuggestion: (suggestion: BrowserOmniboxSuggestion) => void;
   onHighlightSuggestion: (index: number) => void;
+  onRemoveHistory: (id: string) => void;
+  onClearHistory: () => void;
+  onToggleBookmark: () => void;
+  onDismissError: () => void;
   siteControl?: ReactNode;
 }
 
 export function BrowserUrlField(props: BrowserUrlFieldProps): ReactElement {
-  const {
-    secure,
-    inputRef,
-    urlInput,
-    pending,
-    open,
-    hasSuggestions,
-    listboxId,
-    activeOptionId,
-    suggestions,
-    highlighted,
-    onChange,
-    onOpenSuggestions,
-    onCloseSuggestions,
-    onEditingChange,
-    onKeyDown,
-    onSelectSuggestion,
-    onHighlightSuggestion,
-    siteControl,
-  } = props;
-
   function handleInputChange(event: ChangeEvent<HTMLInputElement>): void {
-    onChange(event.target.value);
+    props.onDismissError();
+    props.onChange(event.target.value);
   }
 
   function handleInputFocus(): void {
-    onEditingChange(true);
-    if (hasSuggestions) onOpenSuggestions();
+    props.onEditingChange(true);
+    props.onOpenPanel();
   }
 
-  function handleInputBlur(): void {
-    onEditingChange(false);
-    onCloseSuggestions();
+  function handleFocusOut(event: FocusEvent<HTMLDivElement>): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    props.onEditingChange(false);
+    props.onClosePanel();
   }
 
   return (
-    <div className="relative min-w-0 flex-1">
+    <div className="relative min-w-0 flex-1" onBlurCapture={handleFocusOut}>
       <div className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 transition-colors focus-within:border-primary focus-within:bg-card focus-within:ring-2 focus-within:ring-primary/20">
-        {siteControl ??
-          (secure ? (
-            <LockIcon className="size-3.5 shrink-0 text-[var(--acc-green)]" aria-label="Secure" />
-          ) : (
-            <GlobeIcon
-              className="size-3.5 shrink-0 text-muted-foreground"
-              aria-label="Not secure"
-            />
-          ))}
+        {props.siteControl ?? (
+          <GlobeIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        )}
         <Input
-          ref={inputRef}
+          ref={props.inputRef}
           aria-label="Browser URL"
           variant="ghost"
           role="combobox"
-          aria-expanded={open}
-          aria-controls={listboxId}
+          aria-expanded={props.panelOpen}
+          aria-controls={props.panelOpen ? props.listboxId : undefined}
           aria-autocomplete="list"
-          aria-activedescendant={activeOptionId}
-          value={urlInput}
+          aria-activedescendant={props.activeOptionId}
+          aria-invalid={props.error ? true : undefined}
+          value={props.urlInput}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
-          onBlur={handleInputBlur}
-          onKeyDown={onKeyDown}
+          onKeyDown={props.onKeyDown}
           placeholder="Search or enter address"
           className="h-7 flex-1 font-mono text-xs"
         />
-        <BrowserGoButton pending={pending} />
-      </div>
-      {open && hasSuggestions ? (
-        <BrowserSuggestionList
-          listboxId={listboxId}
-          suggestions={suggestions}
-          highlighted={highlighted}
-          onSelect={onSelectSuggestion}
-          onHighlight={onHighlightSuggestion}
+        <BookmarkButton
+          bookmarked={props.isBookmarked}
+          pending={props.bookmarkPending}
+          disabledReason={props.bookmarkDisabledReason}
+          onToggle={props.onToggleBookmark}
         />
-      ) : null}
+        <BrowserGoButton pending={props.pending} />
+      </div>
+      {props.panelOpen ? <BrowserOmniboxPanel {...props} /> : null}
     </div>
+  );
+}
+
+function BookmarkButton({
+  bookmarked,
+  pending,
+  disabledReason,
+  onToggle,
+}: {
+  bookmarked: boolean;
+  pending: boolean;
+  disabledReason: string | null;
+  onToggle: () => void;
+}): ReactElement {
+  const label = bookmarked ? "Remove bookmark" : "Bookmark this page";
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      disabled={pending || disabledReason !== null}
+      aria-label={label}
+      title={disabledReason ?? label}
+      onClick={onToggle}
+      className={cn("text-muted-foreground hover:text-foreground", bookmarked && "text-primary")}
+    >
+      {pending ? (
+        <Loader2Icon className="size-3 animate-spin" />
+      ) : (
+        <StarIcon className={cn("size-3.5", bookmarked && "fill-current")} />
+      )}
+    </Button>
   );
 }
 
@@ -190,113 +219,165 @@ function BrowserGoButton({ pending }: { pending: boolean }): ReactElement {
   );
 }
 
-interface BrowserSuggestionListProps {
-  listboxId: string;
-  suggestions: string[];
-  highlighted: number;
-  onSelect: (origin: string) => void;
-  onHighlight: (index: number) => void;
-}
-
-function BrowserSuggestionList(props: BrowserSuggestionListProps): ReactElement {
-  const { listboxId, suggestions, highlighted, onSelect, onHighlight } = props;
-  return (
-    <ul
-      id={listboxId}
-      role="listbox"
-      className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-    >
-      {suggestions.map((origin, index) => (
-        <BrowserSuggestionOption
-          key={origin}
-          id={`${listboxId}-option-${index}`}
-          origin={origin}
-          index={index}
-          highlighted={index === highlighted}
-          onSelect={onSelect}
-          onHighlight={onHighlight}
-        />
-      ))}
-    </ul>
-  );
-}
-
-interface BrowserSuggestionOptionProps {
-  id: string;
-  origin: string;
-  index: number;
-  highlighted: boolean;
-  onSelect: (origin: string) => void;
-  onHighlight: (index: number) => void;
-}
-
-function BrowserSuggestionOption(props: BrowserSuggestionOptionProps): ReactElement {
-  const { id, origin, index, highlighted, onSelect, onHighlight } = props;
-
-  function handlePointerDown(event: PointerEvent<HTMLLIElement>): void {
-    event.preventDefault();
-    onSelect(origin);
-  }
-
-  function handleMouseEnter(): void {
-    onHighlight(index);
-  }
-
-  return (
-    <li
-      id={id}
-      role="option"
-      aria-selected={highlighted}
-      className={cn(
-        "flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 font-mono text-xs",
-        highlighted
-          ? "bg-accent text-accent-foreground"
-          : "hover:bg-accent hover:text-accent-foreground",
-      )}
-      // Run on pointerdown so the input keeps focus and the selection registers
-      // before any blur handler can close the dropdown in Electron's
-      // native-view event ordering.
-      onPointerDown={handlePointerDown}
-      onMouseEnter={handleMouseEnter}
-    >
-      <GlobeIcon className="size-3.5 shrink-0 opacity-70" />
-      <span className="truncate">{origin}</span>
-    </li>
-  );
-}
-
 interface BrowserToolbarActionsProps {
+  activeTab: BrowserTabMetadata | null;
+  onZoomOut: () => void;
+  onZoomReset: () => void;
+  onZoomIn: () => void;
   onDevTools: () => void;
+  onFind: () => void;
   onAddComment: () => void;
-  /** Both actions need a live tab; greyed out when none is open. */
+  onMenuOpenChange: (open: boolean) => void;
+}
+
+interface BrowserZoomMenuItemsProps {
   disabled: boolean;
+  zoomPercent: number;
+  onZoomOut: () => void;
+  onZoomReset: () => void;
+  onZoomIn: () => void;
+}
+
+function BrowserZoomMenuItems(props: BrowserZoomMenuItemsProps): ReactElement {
+  return (
+    <>
+      <DropdownMenuItem disabled={props.disabled} onSelect={props.onZoomOut}>
+        <MinusIcon /> Zoom out
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        aria-label={`Reset zoom (${props.zoomPercent}%)`}
+        disabled={props.disabled}
+        onSelect={props.onZoomReset}
+      >
+        Reset zoom
+        <span className="ml-auto min-w-10 text-right font-mono text-[10px] text-muted-foreground">
+          {props.zoomPercent}%
+        </span>
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={props.disabled} onSelect={props.onZoomIn}>
+        <PlusIcon /> Zoom in
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+    </>
+  );
+}
+
+interface BrowserOverflowMenuProps extends BrowserToolbarActionsProps {
+  disabled: boolean;
+  zoomPercent: number;
+}
+
+function BrowserOverflowMenu(props: BrowserOverflowMenuProps): ReactElement {
+  const focusFindAfterClose = useRef(false);
+  function handleFindSelect(): void {
+    focusFindAfterClose.current = true;
+  }
+  function handleCloseAutoFocus(event: Event): void {
+    if (!focusFindAfterClose.current) return;
+    focusFindAfterClose.current = false;
+    event.preventDefault();
+    props.onFind();
+  }
+  return (
+    <DropdownMenu onOpenChange={props.onMenuOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="hidden shrink-0 @max-[44rem]:inline-flex"
+          disabled={props.disabled}
+          aria-label="More Browser actions"
+        >
+          <MoreHorizontalIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onCloseAutoFocus={handleCloseAutoFocus}>
+        <BrowserZoomMenuItems
+          disabled={props.disabled}
+          zoomPercent={props.zoomPercent}
+          onZoomOut={props.onZoomOut}
+          onZoomReset={props.onZoomReset}
+          onZoomIn={props.onZoomIn}
+        />
+        <DropdownMenuItem onSelect={handleFindSelect}>
+          <SearchIcon /> Find in page
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={props.onDevTools}>
+          <BugIcon /> DevTools
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={props.onAddComment}>
+          <SparklesIcon /> Add comment
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export function BrowserToolbarActions(props: BrowserToolbarActionsProps): ReactElement {
-  const { onDevTools, onAddComment, disabled } = props;
+  const disabled = !props.activeTab;
+  const zoomPercent = props.activeTab?.zoomPercent ?? 100;
   return (
     <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="shrink-0"
-        disabled={disabled}
-        onClick={onDevTools}
-        aria-label="DevTools"
-      >
-        <BugIcon className="size-4" />
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        className="shrink-0"
-        disabled={disabled}
-        onClick={onAddComment}
-      >
-        <SparklesIcon className="size-3.5" />
-        Add comment
-      </Button>
+      <div className="flex shrink-0 items-center rounded-md bg-muted/50 p-0.5 @max-[28rem]:hidden">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={disabled}
+          onClick={props.onZoomOut}
+          aria-label="Zoom out"
+        >
+          <MinusIcon className="size-3" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          disabled={disabled}
+          onClick={props.onZoomReset}
+          aria-label="Reset page zoom to 100%"
+          className="min-w-11 px-1 font-mono text-[10px]"
+        >
+          {zoomPercent}%
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          disabled={disabled}
+          onClick={props.onZoomIn}
+          aria-label="Zoom in"
+        >
+          <PlusIcon className="size-3" />
+        </Button>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5 @max-[44rem]:hidden">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          disabled={disabled}
+          onClick={props.onFind}
+          aria-label="Find in page"
+        >
+          <SearchIcon className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          disabled={disabled}
+          onClick={props.onDevTools}
+          aria-label="DevTools"
+        >
+          <BugIcon className="size-4" />
+        </Button>
+        <Button type="button" size="sm" disabled={disabled} onClick={props.onAddComment}>
+          <SparklesIcon className="size-3.5" /> Add comment
+        </Button>
+      </div>
+      <BrowserOverflowMenu {...props} disabled={disabled} zoomPercent={zoomPercent} />
     </>
   );
 }

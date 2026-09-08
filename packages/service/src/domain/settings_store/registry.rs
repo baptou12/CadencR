@@ -115,6 +115,10 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         "browser_default_mode" => {
             SettingSpec::new(ValueKind::Enum(&["normal", "private"]), Some("normal"))
         }
+        "browser_search_engine" => SettingSpec::new(
+            ValueKind::Enum(&["google", "duckduckgo", "bing", "brave"]),
+            Some("google"),
+        ),
         "editor_file_tree_icon_set" => SettingSpec::new(
             ValueKind::Enum(&["minimal", "standard", "complete"]),
             Some("standard"),
@@ -192,6 +196,16 @@ mod tests {
         let spec = workspace_spec("notification_mode").unwrap();
         assert!(spec.is_valid("native"));
         assert!(!spec.is_valid("loud"));
+    }
+
+    #[test]
+    fn browser_search_engine_spec_matches_frontend_options() {
+        let spec = workspace_spec("browser_search_engine").unwrap();
+        for valid in ["google", "duckduckgo", "bing", "brave"] {
+            assert!(spec.is_valid(valid), "expected {valid} to be valid");
+        }
+        assert!(!spec.is_valid("ask-jeeves"));
+        assert_eq!(spec.default, Some("google"));
     }
 
     #[test]

@@ -2,12 +2,15 @@ import { isSafeExternalUrl, isUserOpenableUrl } from "@/lib/safe-url";
 import type { LinkHoverContext, LinkMenuOpenPayload } from "@/lib/link-routing";
 import type {
   BrowserBounds,
+  BrowserBookmark,
   BrowserCommentBadgeClick,
   BrowserConsoleEntry,
   BrowserElementContext,
   BrowserFindRequest,
   BrowserFindResult,
   BrowserGuestShortcutBindings,
+  BrowserLibraryChange,
+  BrowserOmniboxQueryResult,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
   BrowserSiteInfo,
@@ -21,6 +24,7 @@ import type {
 
 export type {
   BrowserBounds,
+  BrowserBookmark,
   BrowserAgentAccess,
   BrowserCommentBadgeClick,
   BrowserConsoleEntry,
@@ -28,6 +32,9 @@ export type {
   BrowserFindRequest,
   BrowserFindResult,
   BrowserGuestShortcutBindings,
+  BrowserHistoryEntry,
+  BrowserLibraryChange,
+  BrowserOmniboxQueryResult,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
   BrowserSiteInfo,
@@ -240,6 +247,11 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   findInBrowserTab: (tabId: string, request: BrowserFindRequest) => Promise<void>;
   stopFindingInBrowserTab: (tabId: string, focusPage: boolean) => Promise<void>;
   setBrowserGuestShortcuts: (bindings: BrowserGuestShortcutBindings) => Promise<void>;
+  queryBrowserOmnibox: (query: string, limit?: number) => Promise<BrowserOmniboxQueryResult>;
+  getBrowserBookmark: (url: string) => Promise<BrowserBookmark | null>;
+  removeBrowserHistoryEntry: (id: string) => Promise<void>;
+  clearBrowserHistory: () => Promise<void>;
+  setBrowserBookmark: (tabId: string, bookmarked: boolean) => Promise<BrowserBookmark | null>;
   toggleBrowserDevTools: (tabId: string) => Promise<BrowserTabMetadata>;
   getBrowserConsole: () => Promise<BrowserConsoleEntry[]>;
   getBrowserNetwork: () => Promise<BrowserNetworkEntry[]>;
@@ -257,6 +269,7 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   onBrowserTabCounts: (cb: (counts: Record<number, number>) => void) => () => void;
   onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void) => () => void;
   onBrowserFindResult: (cb: (result: BrowserFindResult) => void) => () => void;
+  onBrowserLibraryChanged: (cb: (change: BrowserLibraryChange) => void) => () => void;
   /** A user click on an on-page comment badge, to reopen that comment's composer. */
   onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void) => () => void;
   onBrowserPermissionRequest: (cb: (request: BrowserSitePermissionRequest) => void) => () => void;
@@ -367,6 +380,11 @@ const browserBridge: CadencrBrowserBridge = {
   findInBrowserTab: () => unavailable("findInBrowserTab"),
   stopFindingInBrowserTab: () => unavailable("stopFindingInBrowserTab"),
   setBrowserGuestShortcuts: () => unavailable("setBrowserGuestShortcuts"),
+  queryBrowserOmnibox: () => unavailable("queryBrowserOmnibox"),
+  getBrowserBookmark: () => unavailable("getBrowserBookmark"),
+  removeBrowserHistoryEntry: () => unavailable("removeBrowserHistoryEntry"),
+  clearBrowserHistory: () => unavailable("clearBrowserHistory"),
+  setBrowserBookmark: () => unavailable("setBrowserBookmark"),
   toggleBrowserDevTools: () => unavailable("toggleBrowserDevTools"),
   getBrowserConsole: () => unavailable("getBrowserConsole"),
   getBrowserNetwork: () => unavailable("getBrowserNetwork"),
@@ -383,6 +401,7 @@ const browserBridge: CadencrBrowserBridge = {
   onBrowserTabCounts: () => () => undefined,
   onBrowserShortcut: () => () => undefined,
   onBrowserFindResult: () => () => undefined,
+  onBrowserLibraryChanged: () => () => undefined,
   onBrowserCommentBadgeClick: () => () => undefined,
   onBrowserPermissionRequest: () => () => undefined,
   onBrowserPermissionRequestCancelled: () => () => undefined,

@@ -15,6 +15,9 @@ export type BrowserSitePermissionDecision = (typeof BROWSER_SITE_PERMISSION_DECI
 /** Maximum inline favicon URL accepted across the main/renderer boundary. */
 export const MAX_BROWSER_FAVICON_DATA_URL_LENGTH = 256 * 1024;
 export const MAX_BROWSER_FIND_QUERY_LENGTH = 10_000;
+/** Main/renderer contract for persisted Browser library lookups. */
+export const MAX_BROWSER_LIBRARY_QUERY_LENGTH = 256;
+export const MAX_BROWSER_LIBRARY_URL_LENGTH = 2048;
 
 /** Whether an agent may inspect or automate this specific tab. */
 export type BrowserAgentAccess = "user" | "shared" | "agent";
@@ -95,6 +98,30 @@ export interface BrowserOpenUrlOptions {
   newTab?: boolean;
   scopeId?: number | null;
 }
+
+export interface BrowserHistoryEntry {
+  id: string;
+  url: string;
+  title: string;
+  visitedAt: string;
+}
+
+export interface BrowserBookmark {
+  id: string;
+  url: string;
+  title: string;
+  createdAt: string;
+}
+
+export interface BrowserOmniboxQueryResult {
+  history: BrowserHistoryEntry[];
+  bookmarks: BrowserBookmark[];
+  historyCount: number;
+  bookmarkCount: number;
+}
+
+/** Narrow invalidation signal; persisted library contents remain main-process-owned. */
+export type BrowserLibraryChange = { kind: "history" } | { kind: "bookmark"; url: string };
 
 export interface BrowserConsoleEntry {
   id: string;
