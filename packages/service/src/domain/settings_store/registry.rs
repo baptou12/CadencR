@@ -96,6 +96,7 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         | "onboarding_intro_shown" => SettingSpec::new(BOOL, Some("false")),
         // These default on.
         "editor_auto_save"
+        | "sidebar_provider_logos"
         | "animations_enabled"
         | "browser_mcp_enabled"
         | "project_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
@@ -277,6 +278,15 @@ mod tests {
         }
         assert!(!spec.is_valid("4"));
         assert!(!spec.is_valid("true"));
+    }
+
+    #[test]
+    fn sidebar_provider_logos_default_on_and_validate() {
+        let spec = workspace_spec("sidebar_provider_logos").unwrap();
+        assert_eq!(spec.default, Some("true"));
+        assert!(spec.is_valid("true"));
+        assert!(spec.is_valid("false"));
+        assert!(!spec.is_valid("hidden"));
     }
 
     #[test]

@@ -69,6 +69,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "cursor_access_mode",
     // UI chrome
     "sidebar_left_width",
+    "sidebar_provider_logos",
     "sidebar_collapsed",
     "sidebar_right_collapsed",
     "loader_style",

@@ -37,6 +37,8 @@ export interface ProviderMetadata {
   label: string;
   iconSrc: string | null;
   isMonochrome: boolean;
+  /** Alpha-bounds compensation for bundled compact silhouettes. */
+  monoIconScale?: number;
 }
 
 /** Map provider IDs to their bundled icon assets. */
@@ -47,12 +49,12 @@ const PROVIDER_ICONS: Record<ProviderId, string> = {
   [PROVIDER_IDS.CURSOR]: cursorLogo,
 };
 
-/** Black-on-transparent silhouettes for compact chrome (sidebar, etc.). */
-const PROVIDER_MONO_ICONS: Record<ProviderId, string> = {
-  [PROVIDER_IDS.CLAUDE_CODE]: claudeMonoLogo,
-  [PROVIDER_IDS.CODEX_CLI]: codexMonoLogo,
-  [PROVIDER_IDS.OPENCODE]: opencodeMonoLogo,
-  [PROVIDER_IDS.CURSOR]: cursorMonoLogo,
+/** Bundled silhouettes with scale compensation for their transparent 64px canvases. */
+const PROVIDER_MONO_ICONS: Record<ProviderId, { src: string; scale: number }> = {
+  [PROVIDER_IDS.CLAUDE_CODE]: { src: claudeMonoLogo, scale: 64 / 56 },
+  [PROVIDER_IDS.CODEX_CLI]: { src: codexMonoLogo, scale: 64 / 43 },
+  [PROVIDER_IDS.OPENCODE]: { src: opencodeMonoLogo, scale: 64 / 46 },
+  [PROVIDER_IDS.CURSOR]: { src: cursorMonoLogo, scale: 64 / 56 },
 };
 
 /** Canonical display names for known providers (Anthropic-recommended branding). */
@@ -77,8 +79,8 @@ export function getProviderMetadata(
   if (!providerId) {
     return null;
   }
-  const icons = variant === "mono" ? PROVIDER_MONO_ICONS : PROVIDER_ICONS;
-  const bundledIcon = icons[providerId as ProviderId];
+  const monoIcon = variant === "mono" ? PROVIDER_MONO_ICONS[providerId as ProviderId] : undefined;
+  const bundledIcon = variant === "mono" ? monoIcon?.src : PROVIDER_ICONS[providerId as ProviderId];
   return {
     id: providerId,
     label:
@@ -88,6 +90,7 @@ export function getProviderMetadata(
       formatProviderId(providerId),
     iconSrc:
       bundledIcon ?? catalogMetadata?.iconData ?? PROVIDER_ICONS[providerId as ProviderId] ?? null,
+    monoIconScale: monoIcon?.scale,
     isMonochrome: variant === "mono" && bundledIcon != null,
   };
 }
