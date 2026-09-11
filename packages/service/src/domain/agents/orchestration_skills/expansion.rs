@@ -308,6 +308,46 @@ mod tests {
     }
 
     #[test]
+    fn quoted_examples_never_expand_into_a_workflow() {
+        // Each of these once slipped past the scanner and appended a full
+        // workflow — including `review`, which tells the agent to spawn a
+        // session — from what the user wrote as an example.
+        for text in [
+            "Example:\n````text\n```\n/cadencr:review\n```\n````",
+            "Example:\n```text\n~~~\n/cadencr:review\n~~~\n```",
+            "Example: `literal\n/cadencr:review\nend`",
+            "Example: `` unmatched then `literal /cadencr:review`",
+        ] {
+            let expanded = expand_prompt(text);
+            assert_eq!(expanded, text, "text {text:?}");
+            assert!(
+                !expanded.contains("CadencR workflow boundary"),
+                "text {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_real_invocation_after_a_quoted_example_still_expands() {
+        // The fix must not mask the rest of the message.
+        for (text, marker) in [
+            (
+                "Example:\n````\n/cadencr:review\n````\n\nNow do /cadencr:status",
+                "### cadencr:status",
+            ),
+            (
+                "Example: `literal\nend` then /cadencr:status",
+                "### cadencr:status",
+            ),
+        ] {
+            let expanded = expand_prompt(text);
+            assert!(expanded.starts_with(text), "text {text:?}");
+            assert!(expanded.contains(marker), "text {text:?}");
+            assert!(!expanded.contains("### cadencr:review"), "text {text:?}");
+        }
+    }
+
+    #[test]
     fn embedded_references_ignore_code_quotes_and_urls() {
         for text in [
             "run it with `/cadencr:status` when ready",

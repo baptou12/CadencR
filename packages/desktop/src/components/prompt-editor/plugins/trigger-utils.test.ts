@@ -9,6 +9,8 @@ import {
   createEditor,
   type LexicalEditor,
 } from "lexical";
+import { $createSlashCommandNode, SlashCommandNode } from "../nodes/SlashCommandNode";
+import { getEditorText } from "../editor-utils";
 import { getTriggerMatch, replaceTriggerWithNode } from "./trigger-utils";
 
 /** Minimal mock of a Lexical TextNode for getTriggerMatch */
@@ -72,6 +74,7 @@ describe("getTriggerMatch", () => {
 /** Headless editor holding one paragraph per line, like the prompt editor. */
 function editorWithLines(lines: string[]): LexicalEditor {
   const editor = createEditor({
+    nodes: [SlashCommandNode],
     onError: (error) => {
       throw error;
     },
@@ -106,18 +109,28 @@ function placeCursor(editor: LexicalEditor, lineIndex: number, offset: number): 
   );
 }
 
+/** Serialize exactly the way the composer does when the prompt is sent. */
 function readLines(editor: LexicalEditor): string {
   // A headless editor commits updates asynchronously; a discrete no-op update
   // flushes whatever `replaceTriggerWithNode` queued.
   editor.update(() => {}, { discrete: true });
   let text = "";
   editor.getEditorState().read(() => {
-    text = $getRoot()
-      .getChildren()
-      .map((child) => child.getTextContent())
-      .join("\n");
+    text = getEditorText();
   });
   return text;
+}
+
+function commandChips(editor: LexicalEditor): string[] {
+  let names: string[] = [];
+  editor.getEditorState().read(() => {
+    names = $getRoot()
+      .getChildren()
+      .flatMap((child) => ($isElementNode(child) ? child.getChildren() : []))
+      .filter((node): node is SlashCommandNode => node instanceof SlashCommandNode)
+      .map((node) => node.getCommandName());
+  });
+  return names;
 }
 
 describe("replaceTriggerWithNode", () => {
@@ -128,13 +141,14 @@ describe("replaceTriggerWithNode", () => {
     replaceTriggerWithNode(
       editor,
       "/",
-      (name) => $createTextNode(`/${name}`),
+      (name) => $createSlashCommandNode(name, "/"),
       "cadencr:status",
       () => {},
     );
 
     // A space is inserted after the token node so the caret has a text position.
     expect(readLines(editor)).toBe("check the diff, then /cadencr:status  and report back");
+    expect(commandChips(editor)).toEqual(["cadencr:status"]);
   });
 
   it("replaces a trigger on a later line without touching the other lines", () => {
@@ -144,12 +158,13 @@ describe("replaceTriggerWithNode", () => {
     replaceTriggerWithNode(
       editor,
       "$",
-      (name) => $createTextNode(`$${name}`),
+      (name) => $createSlashCommandNode(name, "$"),
       "cadencr:status",
       () => {},
     );
 
     expect(readLines(editor)).toBe("first line\nthen $cadencr:status  at the end");
+    expect(commandChips(editor)).toEqual(["cadencr:status"]);
   });
 
   it("replaces a trigger at the very end of a line", () => {
@@ -159,7 +174,7 @@ describe("replaceTriggerWithNode", () => {
     replaceTriggerWithNode(
       editor,
       "/",
-      (name) => $createTextNode(`/${name}`),
+      (name) => $createSlashCommandNode(name, "/"),
       "cadencr:status",
       () => {},
     );
