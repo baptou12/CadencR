@@ -362,7 +362,64 @@ describe("PromptEditor", () => {
     });
 
     expect(screen.getByText("/review")).toBeInTheDocument();
-    expect(screen.queryByText("/cadencr:review")).not.toBeInTheDocument();
+    expect(screen.getByText("/cadencr:review")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["slash", SLASH_ANYWHERE_POLICY, "/"],
+    ["slash at start", SLASH_AT_START_POLICY, "/"],
+    ["dollar", DOLLAR_SKILLS_POLICY, "$"],
+  ] as const)(
+    "offers Cadencr skills mid-prompt with the %s trigger",
+    async (_name, promptCommandPolicy, triggerChar) => {
+      const ref = createRef<PromptEditorHandle>();
+      render(
+        <PromptEditor
+          ref={ref}
+          slashCommands={[
+            {
+              name: "cadencr:status",
+              description: "Render the live session tree",
+              kind: "cadencr" as const,
+            },
+          ]}
+          slashCommandsLoading={false}
+          promptCommandPolicy={promptCommandPolicy}
+        />,
+      );
+
+      await act(async () => {
+        ref.current!.setText(`look at the diff, then ${triggerChar}cadencr:sta`);
+      });
+      expect(screen.getByText(`${triggerChar}cadencr:status`)).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.mouseDown(screen.getByText(`${triggerChar}cadencr:status`));
+      });
+      expect(ref.current!.getText()).toBe(`look at the diff, then ${triggerChar}cadencr:status `);
+    },
+  );
+
+  it("keeps native commands at the prompt start when only Cadencr skills go mid-prompt", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(
+      <PromptEditor
+        ref={ref}
+        slashCommands={[
+          { name: "compact", description: "Compact the conversation", kind: "command" as const },
+          { name: "cadencr:status", description: "Session tree", kind: "cadencr" as const },
+        ]}
+        slashCommandsLoading={false}
+        promptCommandPolicy={SLASH_AT_START_POLICY}
+      />,
+    );
+
+    await act(async () => {
+      ref.current!.setText("first do this then /c");
+    });
+
+    expect(screen.getByText("/cadencr:status")).toBeInTheDocument();
+    expect(screen.queryByText("/compact")).not.toBeInTheDocument();
   });
 
   it.each([
