@@ -33,6 +33,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Turbo does not include the root script tests run by `pnpm test`.
+      - name: Root script tests
+        timeout-minutes: 2
+        run: node --test scripts/*.test.mjs scripts/*.test.mts
+
       # Run the Rust tests on their own, before the Turbo pipeline. Turbo
       # buffers each task's output until it finishes, so a hanging test leaves
       # no trace in the log — it just burns the job timeout in silence. A
