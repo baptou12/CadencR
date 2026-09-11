@@ -85,13 +85,7 @@ console.log("ok");`,
 });
 
 test("every build-tool minimatch line consumes its patched brace-expansion line", async () => {
-  const owners = [
-    "@electron/asar",
-    "filelist",
-    "@electron/universal",
-    "@ibm-cloud/openapi-ruleset",
-    "app-builder-lib",
-  ];
+  const owners = ["@electron/asar", "filelist", "@electron/universal", "app-builder-lib"];
   for (const owner of owners) {
     const entry = dependency(owner, "minimatch");
     const minimatchRequire = createRequire(entry);

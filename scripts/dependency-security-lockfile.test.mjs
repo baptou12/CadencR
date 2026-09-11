@@ -28,6 +28,7 @@ const safeVersions = {
   "fast-uri": "^2.4.6 || ^3.1.7 || >=4.1.4",
   "js-yaml": ">=4.3.2",
   nanoid: "^3.3.18 || >=5.1.16",
+  orval: ">=8.22.0",
   postcss: ">=8.5.23",
   sharp: ">=0.35.4",
   "smol-toml": ">=1.7.1",
@@ -95,6 +96,27 @@ test("desktop, landing, coverage and Vitest internals stay on one patched versio
     if (key.startsWith("@vitest/") || key.startsWith("vitest@")) {
       assert.equal(key.slice(key.lastIndexOf("@") + 1), version, `${key} is out of sync`);
     }
+  }
+});
+
+test("Orval and its @orval packages stay on one patched release", () => {
+  const desktop = JSON.parse(read("packages/desktop/package.json"));
+  const version = desktop.devDependencies.orval;
+  assert.ok(semver.satisfies(version, safeVersions.orval));
+  for (const section of ["packages", "snapshots"]) {
+    let packageCount = 0;
+    for (const key of Object.keys(lock[section])) {
+      const packageName = key.match(/^(@orval\/[^@]+)@/)?.[1];
+      if (packageName) {
+        packageCount += 1;
+        assert.equal(
+          key.slice(packageName.length + 1).split("(")[0],
+          version,
+          `${key} is out of sync with orval@${version}`,
+        );
+      }
+    }
+    assert.ok(packageCount > 0, `@orval packages missing from lockfile ${section}`);
   }
 });
 
