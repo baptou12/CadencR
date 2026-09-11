@@ -178,6 +178,8 @@ CadencR adds five provider-neutral commands to the prompt menu. They are virtual
 
 Invoke them with `/` or `$`; for example, `/cadencr:review unstaged` and `$cadencr:review unstaged` are equivalent. The `/` form appears in CadencR's slash-command picker. Both Project MCP and Workspace MCP must be enabled.
 
+You can also name one inside a sentence — `Check the changes, then /cadencr:review focusing on UX regressions.` CadencR keeps your message intact and appends the referenced skill's instructions, so the surrounding text stays the request. Only an explicit `/cadencr:` or `$cadencr:` token counts: mentions inside inline code, fenced code blocks, Markdown quotes, or URLs stay plain text.
+
 | Command               | What it does                                                                                                                                                       | Example                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | `cadencr:review`      | Spawns a read-only reviewer on the current worktree and relays prioritized findings. The default scope is uncommitted changes; pass `branch` for the whole branch. | `/cadencr:review unstaged`                                    |

@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { getTriggerMatch } from "./trigger-utils";
+import {
+  $createParagraphNode,
+  $createRangeSelection,
+  $createTextNode,
+  $getRoot,
+  $isElementNode,
+  $setSelection,
+  createEditor,
+  type LexicalEditor,
+} from "lexical";
+import { getTriggerMatch, replaceTriggerWithNode } from "./trigger-utils";
 
 /** Minimal mock of a Lexical TextNode for getTriggerMatch */
 function fakeTextNode(text: string) {
@@ -56,5 +66,104 @@ describe("getTriggerMatch", () => {
       query: "",
       triggerOffset: 0,
     });
+  });
+});
+
+/** Headless editor holding one paragraph per line, like the prompt editor. */
+function editorWithLines(lines: string[]): LexicalEditor {
+  const editor = createEditor({
+    onError: (error) => {
+      throw error;
+    },
+  });
+  editor.update(
+    () => {
+      const root = $getRoot();
+      root.clear();
+      for (const line of lines) {
+        const paragraph = $createParagraphNode();
+        paragraph.append($createTextNode(line));
+        root.append(paragraph);
+      }
+    },
+    { discrete: true },
+  );
+  return editor;
+}
+
+function placeCursor(editor: LexicalEditor, lineIndex: number, offset: number): void {
+  editor.update(
+    () => {
+      const paragraph = $getRoot().getChildAtIndex(lineIndex);
+      const textNode = $isElementNode(paragraph) ? paragraph.getFirstChild() : null;
+      if (!textNode) throw new Error("missing text node");
+      const selection = $createRangeSelection();
+      selection.anchor.set(textNode.getKey(), offset, "text");
+      selection.focus.set(textNode.getKey(), offset, "text");
+      $setSelection(selection);
+    },
+    { discrete: true },
+  );
+}
+
+function readLines(editor: LexicalEditor): string {
+  // A headless editor commits updates asynchronously; a discrete no-op update
+  // flushes whatever `replaceTriggerWithNode` queued.
+  editor.update(() => {}, { discrete: true });
+  let text = "";
+  editor.getEditorState().read(() => {
+    text = $getRoot()
+      .getChildren()
+      .map((child) => child.getTextContent())
+      .join("\n");
+  });
+  return text;
+}
+
+describe("replaceTriggerWithNode", () => {
+  it("replaces only the trigger, keeping text before and after the cursor", () => {
+    const editor = editorWithLines(["check the diff, then /cadencr:sta and report back"]);
+    placeCursor(editor, 0, "check the diff, then /cadencr:sta".length);
+
+    replaceTriggerWithNode(
+      editor,
+      "/",
+      (name) => $createTextNode(`/${name}`),
+      "cadencr:status",
+      () => {},
+    );
+
+    // A space is inserted after the token node so the caret has a text position.
+    expect(readLines(editor)).toBe("check the diff, then /cadencr:status  and report back");
+  });
+
+  it("replaces a trigger on a later line without touching the other lines", () => {
+    const editor = editorWithLines(["first line", "then $cadencr:sta at the end"]);
+    placeCursor(editor, 1, "then $cadencr:sta".length);
+
+    replaceTriggerWithNode(
+      editor,
+      "$",
+      (name) => $createTextNode(`$${name}`),
+      "cadencr:status",
+      () => {},
+    );
+
+    expect(readLines(editor)).toBe("first line\nthen $cadencr:status  at the end");
+  });
+
+  it("replaces a trigger at the very end of a line", () => {
+    const editor = editorWithLines(["please /cadencr:sta"]);
+    placeCursor(editor, 0, "please /cadencr:sta".length);
+
+    replaceTriggerWithNode(
+      editor,
+      "/",
+      (name) => $createTextNode(`/${name}`),
+      "cadencr:status",
+      () => {},
+    );
+
+    expect(readLines(editor)).toBe("please /cadencr:status ");
   });
 });
