@@ -20,6 +20,7 @@ const workspace = parse(read("pnpm-workspace.yaml"));
 const safeVersions = {
   "@vitest/mocker": ">=4.1.11",
   "@xmldom/xmldom": ">=0.8.15",
+  astro: ">=7.2.8",
   "baseline-browser-mapping": ">=2.11.0",
   "brace-expansion": "^1.1.18 || ^2.1.4 || >=5.0.9",
   browserslist: ">=4.28.7",
@@ -28,6 +29,7 @@ const safeVersions = {
   "js-yaml": ">=4.3.2",
   nanoid: "^3.3.18 || >=5.1.16",
   postcss: ">=8.5.23",
+  sharp: ">=0.35.4",
   "smol-toml": ">=1.7.1",
   svgo: ">=4.1.0",
   undici: "^6.28.0 || >=7.29.0",
@@ -57,6 +59,19 @@ for (const name of Object.keys(safeVersions)) {
     }
   });
 }
+
+test("Sharp's native packages include patched binaries on every locked platform", () => {
+  for (const section of ["packages", "snapshots"]) {
+    const binaries = Object.keys(lock[section]).filter((key) => key.startsWith("@img/sharp-"));
+    assert.ok(binaries.length > 0, `native Sharp packages missing from ${section}`);
+    for (const key of binaries) {
+      const packageKey = key.split("(")[0];
+      const version = packageKey.slice(packageKey.lastIndexOf("@") + 1);
+      const floor = key.startsWith("@img/sharp-libvips-") ? "1.3.3" : "0.35.4";
+      assert.ok(semver.gte(version, floor), `${key} predates the patched libheif bundle`);
+    }
+  }
+});
 
 test("workspace overrides cannot reintroduce an old vulnerable transitive", () => {
   assert.deepEqual(lock.overrides, workspace.overrides, "lockfile overrides are stale");
