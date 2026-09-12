@@ -21,11 +21,46 @@ afterEach(() => {
 });
 
 describe("useFeatureActivityCounts", () => {
+  it("does not call or subscribe to the native browser outside Electron", async () => {
+    const calls = {
+      listBrowserTabCountsByScope: vi.fn(),
+      listBrowserDownloadCountsByScope: vi.fn(),
+      onBrowserTabCounts: vi.fn(),
+      onBrowserDownloadCounts: vi.fn(),
+    };
+    setDesktopBridgeOverrideForTests({ isElectron: false, ...calls });
+    const { unmount } = renderHook(() => useFeatureActivityCounts(1));
+    await act(async () => undefined);
+    unmount();
+    for (const call of Object.values(calls)) expect(call).not.toHaveBeenCalled();
+    expect(showBrowserError).not.toHaveBeenCalled();
+  });
+
+  it("still reports real desktop download failures", async () => {
+    const error = new Error("download IPC failed");
+    setDesktopBridgeOverrideForTests({
+      isElectron: true,
+      listBrowserTabCountsByScope: vi.fn(async () => ({})),
+      listBrowserDownloadCountsByScope: vi.fn(async () => {
+        throw error;
+      }),
+    });
+    const { unmount } = renderHook(() => useFeatureActivityCounts(1));
+    await waitFor(() =>
+      expect(showBrowserError).toHaveBeenCalledWith(
+        error,
+        "Failed to load browser download counts",
+      ),
+    );
+    unmount();
+  });
+
   it("does not surface a stale hydration error after a live download count", async () => {
     const initial = deferred<Record<number, number>>();
     let listener: ((counts: Record<number, number>) => void) | null = null;
     setDesktopBridgeOverrideForTests({
       ...desktopBridge,
+      isElectron: true,
       listBrowserTabCountsByScope: vi.fn(async () => ({})),
       onBrowserTabCounts: vi.fn(() => () => undefined),
       listBrowserDownloadCountsByScope: vi.fn(() => initial.promise),

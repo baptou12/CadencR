@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListFeatureActivityQueryKey, useKillTerminalSessions } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { closeFeatureActivityNoun } from "@/lib/feature-activity-close";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 
@@ -33,6 +33,10 @@ export function useCloseFeatureActivity(): (args: CloseFeatureActivityArgs) => v
       browserCount,
       downloadCount,
     }: CloseFeatureActivityArgs): void => {
+      if (!isDesktopShell()) {
+        browserCount = 0;
+        downloadCount = 0;
+      }
       if (shellCount <= 0 && browserCount <= 0 && downloadCount <= 0) return;
       const noun = closeFeatureActivityNoun(shellCount, browserCount, downloadCount);
       const work = (async (): Promise<void> => {
