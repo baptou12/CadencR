@@ -6,6 +6,16 @@
 > - **Reference SDK:** `packages/provider-plugin-sdk-rs/`
 > - **External reference provider:** `cadencr-plugin-provider-pi` — native `pi --mode rpc`, no `pi-acp`
 
+## Marketplace delivery decision — 2026-09-11
+
+The accepted distribution plan is [GitHub-only Marketplace V1](../MARKETPLACE_V1.md):
+metadata PRs in a public registry, approved archives mirrored into Cadencr-owned
+GitHub Releases, protected Actions publishing the signed index/blocklist, and
+in-app discovery and installation. No S3, required website or publisher portal.
+This decision does not mark publication infrastructure or marketplace UI as
+implemented; the existing backend and all trust, isolation and packaged-app QA
+gates below remain in force. Follow the linked R1–R9 checklist for delivery.
+
 ## Why providers require code
 
 ACP v1 intentionally exposes models and other session configuration only after
@@ -368,7 +378,7 @@ Conformance is compatibility evidence, not a trust or authentication decision:
 | `initialize`         | Negotiates ACP v1 and reports parseable capabilities.                                                                                                       |
 | Disposable session   | `session/new` returns an ID and a live selector compatible with pre-session discovery.                                                                      |
 | Model reconciliation | The selected model can be set and is authoritatively confirmed before prompting.                                                                            |
-| Cleanup              | The disposable session is closed when advertised and the complete process tree is drained within a bound without sending a billable prompt.                    |
+| Cleanup              | The disposable session is closed when advertised and the complete process tree is drained within a bound without sending a billable prompt.                 |
 | Resume compatibility | If advertised, `session/resume` is probed; legacy `session/load` is tested only as fallback. Unsupported explicit resume must fail rather than start fresh. |
 | Close compatibility  | If advertised, `session/close` releases the disposable session within a bound.                                                                              |
 
@@ -429,15 +439,15 @@ explicit sandbox/release-policy decision, not a solved guarantee of this backend
 
 All mutations are host-authenticated and loopback-only:
 
-| Operation | Endpoint |
-| --- | --- |
-| Inventory | `GET /api/agents/managed-providers` |
-| Install | `POST /api/agents/managed-providers` |
-| Update | `POST /api/agents/managed-providers/{provider_id}/update` |
-| Rollback | `POST /api/agents/managed-providers/{provider_id}/rollback` |
-| Enable/disable | `PUT /api/agents/managed-providers/{provider_id}/enabled` |
-| Remove activation | `DELETE /api/agents/managed-providers/{provider_id}` |
-| Refresh kill switch | `POST /api/agents/managed-providers/blocklist/refresh` |
+| Operation           | Endpoint                                                    |
+| ------------------- | ----------------------------------------------------------- |
+| Inventory           | `GET /api/agents/managed-providers`                         |
+| Install             | `POST /api/agents/managed-providers`                        |
+| Update              | `POST /api/agents/managed-providers/{provider_id}/update`   |
+| Rollback            | `POST /api/agents/managed-providers/{provider_id}/rollback` |
+| Enable/disable      | `PUT /api/agents/managed-providers/{provider_id}/enabled`   |
+| Remove activation   | `DELETE /api/agents/managed-providers/{provider_id}`        |
+| Refresh kill switch | `POST /api/agents/managed-providers/blocklist/refresh`      |
 
 Install/update requests carry the signed index envelope, provider id, and exact
 version—not a public key, registry URL, arbitrary executable, or credential.
