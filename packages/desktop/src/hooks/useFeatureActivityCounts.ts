@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useListFeatureActivity } from "@/api/generated";
 import { showBrowserError } from "@/components/browser/browser-errors";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { useBrowserStore } from "@/stores/browser-store";
 
 interface FeatureActivityCounts {
@@ -34,6 +34,7 @@ export function useFeatureActivityCounts(projectId: number): FeatureActivityCoun
   }, [activityQuery.error]);
 
   useEffect(() => {
+    if (!isDesktopShell()) return;
     let alive = true;
     let downloadRevision = 0;
     void desktopBridge

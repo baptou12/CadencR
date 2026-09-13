@@ -193,6 +193,20 @@ function bridge(): CadencrBrowserBridge {
 }
 
 describe("BrowserWorkspaceTab", () => {
+  it("renders the expected remote state without any native browser operations", async () => {
+    const native = bridge();
+    setDesktopBridgeOverrideForTests({ ...native, isElectron: false });
+    const { unmount } = render(<BrowserWorkspaceTab scopeId={1} onSendContext={vi.fn()} />);
+    expect(
+      screen.getByText("The embedded browser is only available in the desktop app."),
+    ).toBeInTheDocument();
+    await act(async () => undefined);
+    unmount();
+    for (const [name, call] of Object.entries(native)) {
+      if (/browser/i.test(name) && vi.isMockFunction(call)) expect(call).not.toHaveBeenCalled();
+    }
+  });
+
   beforeEach(() => {
     clearDesktopBridgeOverrideForTests();
     Element.prototype.hasPointerCapture = vi.fn(() => false);

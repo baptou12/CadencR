@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { desktopBridge, type BrowserTabMetadata } from "@/lib/desktop-bridge";
+import { desktopBridge, isDesktopShell, type BrowserTabMetadata } from "@/lib/desktop-bridge";
 import { useBrowserDefaultMode, type CookieMode } from "@/lib/browser-settings";
 import { useSuppressBrowserView } from "@/lib/browser-suppression";
 import { BrowserAddressBar } from "./browser/BrowserAddressBar";
@@ -39,7 +39,20 @@ interface BrowserWorkspaceTabProps {
   onSendContext: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
 }
 
-export const BrowserWorkspaceTab = memo(function BrowserWorkspaceTab({
+export const BrowserWorkspaceTab = memo(function BrowserWorkspaceTab(
+  props: BrowserWorkspaceTabProps,
+): ReactElement {
+  if (!isDesktopShell()) {
+    return (
+      <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+        The embedded browser is only available in the desktop app.
+      </div>
+    );
+  }
+  return <DesktopBrowserWorkspaceTab {...props} />;
+});
+
+const DesktopBrowserWorkspaceTab = memo(function DesktopBrowserWorkspaceTab({
   scopeId,
   onSendContext,
 }: BrowserWorkspaceTabProps): ReactElement {
