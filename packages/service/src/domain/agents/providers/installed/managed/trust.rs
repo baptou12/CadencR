@@ -192,6 +192,10 @@ pub struct VerifiedManagedProviderIndex {
 }
 
 impl VerifiedManagedProviderIndex {
+    pub fn envelope(&self) -> &SignedManagedProviderIndex {
+        &self.envelope
+    }
+
     pub fn index(&self) -> &ManagedProviderIndex {
         &self.envelope.signed
     }

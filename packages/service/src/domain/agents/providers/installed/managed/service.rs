@@ -54,6 +54,7 @@ impl ManagedProviderService {
         version: &str,
         index: SignedManagedProviderIndex,
     ) -> Result<ManagedMutation, AppError> {
+        ensure_current_catalog(&index)?;
         install::ingest(
             self,
             provider_id,
@@ -70,6 +71,7 @@ impl ManagedProviderService {
         version: &str,
         index: SignedManagedProviderIndex,
     ) -> Result<ManagedMutation, AppError> {
+        ensure_current_catalog(&index)?;
         install::ingest(
             self,
             provider_id,
@@ -136,6 +138,16 @@ impl ManagedProviderService {
         })
         .await
         .map_err(|error| AppError::Internal(format!("managed inventory task failed: {error}")))
+    }
+
+    pub async fn catalog(&self, force_refresh: bool) -> super::catalog::ManagedCatalogResponse {
+        super::catalog::acquire(
+            &self.client,
+            &self.storage.catalog_cache_path(),
+            &self.trust_store,
+            force_refresh,
+        )
+        .await
     }
 
     pub async fn refresh_blocklist(&self) -> Result<bool, AppError> {
@@ -205,6 +217,18 @@ impl ManagedProviderService {
             }
         }
     }
+}
+
+fn ensure_current_catalog(index: &SignedManagedProviderIndex) -> Result<(), AppError> {
+    super::validation::validate_publication_window(&index.signed, chrono::Utc::now()).map_err(
+        |error| {
+            AppError::coded(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "MANAGED_CATALOG_STALE",
+                error.message,
+            )
+        },
+    )
 }
 
 /// Refresh the release-owned blocklist without delaying service startup.

@@ -2292,6 +2292,10 @@ export interface ManagedProviderPackage {
  * The deterministic payload covered by an index signature.
  */
 export interface ManagedProviderIndex {
+  /** Hard freshness boundary. Expired catalogs are never exposed or installed. */
+  expires_at: string;
+  /** Monotonic publication time used to reject replayed catalog snapshots. */
+  generated_at: string;
   packages: ManagedProviderPackage[];
   /** @minimum 0 */
   schema_version: number;
@@ -2508,6 +2512,36 @@ export interface ManagedBlocklistInventory {
   /** @nullable */
   signer_key_id?: string | null;
   source_configured: boolean;
+}
+
+export type ManagedCatalogCacheStatus =
+  (typeof ManagedCatalogCacheStatus)[keyof typeof ManagedCatalogCacheStatus];
+
+export const ManagedCatalogCacheStatus = {
+  missing: "missing",
+  verified: "verified",
+  invalid: "invalid",
+  expired: "expired",
+} as const;
+
+export type ManagedCatalogResponseIndex = null | SignedManagedProviderIndex;
+
+export interface ManagedCatalogResponse {
+  cache_status: ManagedCatalogCacheStatus;
+  /** @nullable */
+  error?: string | null;
+  /** @nullable */
+  error_code?: string | null;
+  /** @nullable */
+  expires_at?: string | null;
+  /** @nullable */
+  generated_at?: string | null;
+  index?: ManagedCatalogResponseIndex;
+  refreshed: boolean;
+  /** @nullable */
+  signer_key_id?: string | null;
+  source_configured: boolean;
+  used_cached_verified_catalog: boolean;
 }
 
 export type ManagedFailureStage = (typeof ManagedFailureStage)[keyof typeof ManagedFailureStage];
@@ -5682,6 +5716,149 @@ export const useRefreshBlocklist = <TError = ErrorType<unknown>, TContext = unkn
   queryClient?: QueryClient,
 ): UseMutationResult<Awaited<ReturnType<typeof refreshBlocklist>>, TError, void, TContext> => {
   return useMutation(getRefreshBlocklistMutationOptions(options), queryClient);
+};
+
+export const catalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedCatalogResponse>({
+    url: `/api/agents/managed-providers/catalog`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getCatalogQueryKey = () => {
+  return [`/api/agents/managed-providers/catalog`] as const;
+};
+
+export const getCatalogQueryOptions = <
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getCatalogQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof catalog>>> = ({ signal }) =>
+    catalog(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof catalog>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type CatalogQueryResult = NonNullable<Awaited<ReturnType<typeof catalog>>>;
+export type CatalogQueryError = ErrorType<unknown>;
+
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof catalog>>,
+          TError,
+          Awaited<ReturnType<typeof catalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof catalog>>,
+          TError,
+          Awaited<ReturnType<typeof catalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCatalogQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const refreshCatalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedCatalogResponse>({
+    url: `/api/agents/managed-providers/catalog/refresh`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getRefreshCatalogMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext>;
+}): UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext> => {
+  const mutationKey = ["refreshCatalog"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshCatalog>>, void> = () => {
+    return refreshCatalog();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshCatalogMutationResult = NonNullable<Awaited<ReturnType<typeof refreshCatalog>>>;
+
+export type RefreshCatalogMutationError = ErrorType<unknown>;
+
+export const useRefreshCatalog = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshCatalog>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext> => {
+  return useMutation(getRefreshCatalogMutationOptions(options), queryClient);
 };
 
 export const remove = (providerId: string, signal?: AbortSignal) => {

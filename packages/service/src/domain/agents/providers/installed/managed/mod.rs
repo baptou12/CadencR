@@ -8,12 +8,14 @@
 
 use std::collections::BTreeMap;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::descriptor::AcpAgentEntry;
 
 pub mod archive;
 pub mod blocklist;
+pub mod catalog;
 pub mod conformance;
 pub mod download;
 mod error;
@@ -46,6 +48,12 @@ pub struct SignedManagedProviderIndex {
 #[serde(deny_unknown_fields)]
 pub struct ManagedProviderIndex {
     pub schema_version: u32,
+    /// Monotonic publication time used to reject replayed catalog snapshots.
+    #[schema(value_type = String)]
+    pub generated_at: DateTime<Utc>,
+    /// Hard freshness boundary. Expired catalogs are never exposed or installed.
+    #[schema(value_type = String)]
+    pub expires_at: DateTime<Utc>,
     pub packages: Vec<ManagedProviderPackage>,
 }
 
