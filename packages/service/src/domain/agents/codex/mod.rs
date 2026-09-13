@@ -6,6 +6,7 @@ mod event_command_execution;
 mod event_inputs;
 mod event_items;
 mod event_json;
+mod event_lifecycle;
 mod event_loop;
 mod event_mcp_items;
 mod event_payloads;

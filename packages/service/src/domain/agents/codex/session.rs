@@ -1,4 +1,5 @@
 mod input;
+mod interrupt;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -37,6 +38,7 @@ pub(super) struct CodexSession {
     active_turn_id: Arc<RwLock<Option<String>>>,
     /// Interrupt fallback when `active_turn_id` is None — see `event_turn_state`.
     last_root_turn_id: Arc<RwLock<Option<String>>>,
+    child_turn_ids: Arc<RwLock<HashMap<String, Option<String>>>>,
     model: Arc<RwLock<Option<String>>>,
     effort: Arc<RwLock<Option<String>>>,
     fast_mode: Arc<AtomicBool>,
@@ -78,6 +80,7 @@ impl CodexSession {
             thread_id,
             active_turn_id: Arc::new(RwLock::new(None)),
             last_root_turn_id: Arc::new(RwLock::new(None)),
+            child_turn_ids: Arc::new(RwLock::new(HashMap::new())),
             model: Arc::new(RwLock::new(options.model)),
             effort: Arc::new(RwLock::new(options.effort)),
             fast_mode: Arc::new(AtomicBool::new(options.fast_mode)),
@@ -179,6 +182,7 @@ impl AgentRuntimeSession for CodexSession {
                 active_turn_id: Arc::clone(&self.active_turn_id),
                 last_root_turn_id: Arc::clone(&self.last_root_turn_id),
                 root_thread_id: self.thread_id.clone(),
+                child_turn_ids: Arc::clone(&self.child_turn_ids),
             },
             self.model.clone(),
             Arc::clone(&self.closing),
@@ -251,25 +255,29 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn interrupt(&self) -> Result<(), RuntimeError> {
-        // Live turn: surface RPC failures so the UI shows Stop failed.
-        if let Some(turn_id) = self.active_turn_id.read().await.clone() {
-            return self
-                .client
-                .turn_interrupt(&self.thread_id, &turn_id)
-                .await
-                .map_err(RuntimeError::from);
+        // Snapshot before awaiting RPCs; completion events keep updating the tracker.
+        let children = self.child_turn_ids.read().await.clone();
+        let root_turn = self.active_turn_id.read().await.clone();
+        let root_fallback = self.last_root_turn_id.read().await.clone();
+        let mut targets = Vec::with_capacity(children.len() + 1);
+        let fallback = root_turn.is_none();
+        if let Some(turn) = root_turn.or(root_fallback) {
+            targets.push(interrupt::InterruptTarget {
+                thread: self.thread_id.clone(),
+                turn: Some(turn),
+                fallback,
+            });
         }
-        // Fallback (race between Stop and the next turn/started). Errors
-        // are treated as success — nothing to interrupt is the user's goal.
-        let Some(turn_id) = self.last_root_turn_id.read().await.clone() else {
-            return Ok(());
-        };
-        let _ = with_probe_timeout(
-            "Codex turn/interrupt (fallback)",
-            self.client.turn_interrupt(&self.thread_id, &turn_id),
-        )
-        .await;
-        Ok(())
+        targets.extend(
+            children
+                .into_iter()
+                .map(|(thread, turn)| interrupt::InterruptTarget {
+                    thread,
+                    turn,
+                    fallback: false,
+                }),
+        );
+        interrupt::interrupt_turns(&self.client, targets).await
     }
 
     async fn compact(&self) -> Result<(), RuntimeError> {

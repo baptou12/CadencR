@@ -80,12 +80,16 @@ impl StreamReaderTask {
         let _ = self.send_mcp_servers_if_init(&runtime_event).await;
 
         if self.handle_provider_error(&runtime_event).await {
-            state.turn_state.mark_error_surfaced();
+            state
+                .turn_state
+                .mark_error_surfaced(runtime_event.parent_tool_use_id());
             return;
         }
 
         if self.handle_unknown_message(&runtime_event).await {
-            state.turn_state.mark_error_surfaced();
+            state
+                .turn_state
+                .mark_error_surfaced(runtime_event.parent_tool_use_id());
             return;
         }
 
@@ -100,7 +104,9 @@ impl StreamReaderTask {
                 )
                 .await
         {
-            state.turn_state.mark_error_surfaced();
+            state
+                .turn_state
+                .mark_error_surfaced(runtime_event.parent_tool_use_id());
         }
 
         if self.handle_non_result_signal(state, &runtime_event).await {
