@@ -1,6 +1,9 @@
-use axum::extract::ws::Message;
-use tracing::{debug, error, info};
-
+use super::super::send_runtime_session_id;
+use super::mcp_servers::{refresh_mcp_servers_for_active_session, send_mcp_servers_if_init};
+use super::stream_reader_background_agents::track_background_agents;
+use super::stream_reader_forward::{forward_immediate_event, ForwardOutcome};
+use super::stream_reader_resume::runtime_allows_resume_persistence;
+use super::stream_reader_task::{StreamReaderState, StreamReaderTask};
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeEvent, RuntimeTurnStartedSource};
 use crate::domain::runtime_stream::{
     capture_runtime_session_id, permission_request_payload, persist_usage,
@@ -10,13 +13,8 @@ use crate::domain::ws_session::persistence::{PendingUserInput, WsSessionPersiste
 use crate::domain::ws_session::protocol::{
     permission_request_envelope, PermissionRequestPayload, WsEnvelope,
 };
-
-use super::super::send_runtime_session_id;
-use super::mcp_servers::{refresh_mcp_servers_for_active_session, send_mcp_servers_if_init};
-use super::stream_reader_background_agents::track_background_agents;
-use super::stream_reader_forward::{forward_immediate_event, ForwardOutcome};
-use super::stream_reader_task::{StreamReaderState, StreamReaderTask};
-
+use axum::extract::ws::Message;
+use tracing::{debug, error, info};
 impl StreamReaderTask {
     /// Process one runtime event. A closed owner socket is no longer fatal:
     /// every send becomes best-effort because the agent must keep running on
@@ -182,6 +180,7 @@ impl StreamReaderTask {
             super::super::session_init_resume::persistable_resume_session_id_for_provider(
                 &self.runtime_provider,
                 Some(&runtime_sid),
+                runtime_allows_resume_persistence(self.runtime_session_handle.as_ref()).await,
             )
             .is_some();
         state.runtime_session_id = Some(runtime_sid.clone());

@@ -31,8 +31,11 @@ pub(super) async fn persist_and_close_query(
 ) -> Option<String> {
     let mut q = query.write().await;
     let cli_sid = q.session_id().await;
-    let resume_sid =
-        persistable_resume_session_id_for_provider(runtime_provider, cli_sid.as_deref());
+    let resume_sid = persistable_resume_session_id_for_provider(
+        runtime_provider,
+        cli_sid.as_deref(),
+        q.allows_resume_persistence(),
+    );
     if let Some(ref sid) = resume_sid {
         debug!(
             db_session_id,

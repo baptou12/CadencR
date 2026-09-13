@@ -15,18 +15,15 @@ use crate::domain::agents::adapter::RuntimePermissionMode;
 pub struct InstalledAcpHooks {
     model_config_id: String,
     thinking_effort_config_id: RwLock<Option<String>>,
-    capabilities: std::sync::Arc<InstalledAcpCapabilities>,
+    capabilities: InstalledAcpCapabilities,
 }
 
 impl InstalledAcpHooks {
-    pub fn new(
-        model_config_id: String,
-        capabilities: std::sync::Arc<InstalledAcpCapabilities>,
-    ) -> Self {
+    pub fn new(model_config_id: String) -> Self {
         Self {
             model_config_id,
             thinking_effort_config_id: RwLock::new(None),
-            capabilities,
+            capabilities: InstalledAcpCapabilities::default(),
         }
     }
 
@@ -43,7 +40,7 @@ impl InstalledAcpHooks {
     }
 }
 
-/// Process-local memory of the latest connector handshake. Stored resume IDs
+/// Session-local memory of this connector handshake. Stored resume IDs
 /// remain independently valid inputs so a capability downgrade fails visibly
 /// instead of silently starting a new session.
 pub(super) struct InstalledAcpCapabilities {
@@ -112,17 +109,13 @@ impl AcpProviderHooks for InstalledAcpHooks {
 
 #[cfg(test)]
 mod tests {
-    use super::{InstalledAcpCapabilities, InstalledAcpHooks};
+    use super::InstalledAcpHooks;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use agent_client_protocol::schema::v1::SessionConfigOption;
     use serde_json::json;
-    use std::sync::Arc;
 
     fn hooks(model_config_id: &str) -> InstalledAcpHooks {
-        InstalledAcpHooks::new(
-            model_config_id.to_string(),
-            Arc::new(InstalledAcpCapabilities::default()),
-        )
+        InstalledAcpHooks::new(model_config_id.to_string())
     }
 
     #[test]

@@ -128,6 +128,10 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         self.current_session_id().await
     }
 
+    fn allows_resume_persistence(&self) -> bool {
+        self.hooks.supports_durable_resume()
+    }
+
     async fn available_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
         Ok(self.mcp_servers.read().await.clone())
     }

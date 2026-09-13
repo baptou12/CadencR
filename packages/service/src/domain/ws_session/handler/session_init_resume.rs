@@ -3,7 +3,11 @@ use crate::domain::agents::runtime_adapter;
 pub(super) fn persistable_resume_session_id_for_provider(
     provider_id: &str,
     runtime_session_id: Option<&str>,
+    runtime_allows_persistence: bool,
 ) -> Option<String> {
+    if !runtime_allows_persistence {
+        return None;
+    }
     runtime_adapter(provider_id)?.persistable_resume_session_id(runtime_session_id)
 }
 
@@ -20,7 +24,7 @@ pub(super) fn resume_session_id_for_provider(
 
 #[cfg(test)]
 mod tests {
-    use super::resume_session_id_for_provider;
+    use super::{persistable_resume_session_id_for_provider, resume_session_id_for_provider};
     use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 
     #[test]
@@ -58,5 +62,22 @@ mod tests {
         let mismatched =
             resume_session_id_for_provider("claude_code", Some("opencode"), Some(opencode_sid));
         assert_eq!(mismatched, None);
+    }
+
+    #[test]
+    fn persistence_respects_live_session_eligibility_without_changing_builtin_validation() {
+        let sid = "11111111-1111-4111-8111-111111111111";
+        assert_eq!(
+            persistable_resume_session_id_for_provider(DEFAULT_PROVIDER, Some(sid), true),
+            Some(sid.to_string())
+        );
+        assert_eq!(
+            persistable_resume_session_id_for_provider(DEFAULT_PROVIDER, Some(sid), false),
+            None
+        );
+        assert_eq!(
+            persistable_resume_session_id_for_provider(DEFAULT_PROVIDER, Some("not-a-uuid"), true),
+            None
+        );
     }
 }
