@@ -6,6 +6,20 @@
 > - **Reference SDK:** `packages/provider-plugin-sdk-rs/`
 > - **External reference provider:** `cadencr-plugin-provider-pi` — native `pi --mode rpc`, no `pi-acp`
 
+## Local release scope — 2026-09-12
+
+v0.12.0 ships **local themes and providers**, without marketplace UI. Both create
+projects in the developer's Cadencr instance; a durable theme/provider authoring
+marker is required for later GitHub publication and initial/new-version registry
+submission. The marker is implemented for new project rows only; existing projects remain unchanged. See the authoritative
+[local release checklist](../LOCAL_PLUGINS_V0_12.md); public trust provisioning and
+marketplace UI are not local-release blockers.
+
+Session-scoped resume eligibility and signed catalog acquisition now have
+working-tree implementations under review. The historical audit/checklists below
+remain evidence of their recorded baseline, not an assertion that those newer
+changes are committed or fully QA-verified.
+
 ## Marketplace delivery decision — 2026-09-11
 
 The accepted distribution plan is [GitHub-only Marketplace V1](../MARKETPLACE_V1.md):
@@ -441,6 +455,8 @@ All mutations are host-authenticated and loopback-only:
 
 | Operation           | Endpoint                                                    |
 | ------------------- | ----------------------------------------------------------- |
+| Official catalog    | `GET /api/agents/managed-providers/catalog`                 |
+| Refresh catalog     | `POST /api/agents/managed-providers/catalog/refresh`        |
 | Inventory           | `GET /api/agents/managed-providers`                         |
 | Install             | `POST /api/agents/managed-providers`                        |
 | Update              | `POST /api/agents/managed-providers/{provider_id}/update`   |

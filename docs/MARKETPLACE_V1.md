@@ -1,5 +1,27 @@
 # Marketplace V1 — GitHub-only distribution
 
+## Scheduling update — 2026-09-12
+
+**Deferred beyond the current v0.12.0 scope.** The release goal is local themes
+and providers, without marketplace UI. Follow [Local Plugins v0.12.0](./LOCAL_PLUGINS_V0_12.md)
+first. Both plugin types must have an identifiable project in the developer's
+Cadencr instance; a durable theme/provider marker enables the later GitHub
+publication plus initial/new-version registry workflow.
+
+The GitHub-only architecture below remains accepted. R1–R9 are the future public
+distribution checklist, not prerequisites for shipping the local release.
+
+### Implementation progress (working tree, not release approval)
+
+- Session-scoped resume eligibility and regression coverage have been added.
+- Official signed catalog acquisition/cache and API routes have been added;
+  index publication timestamps now support freshness/replay checks. No UI exists.
+- Local registry validation/index tooling and workflow templates have been added,
+  with tests against the service fixture. Templates do not mirror, sign or publish.
+- Production release configuration, GitHub resources and packaged public lifecycle
+  QA remain undone. The plugin-project marker now exists for new rows only;
+  existing projects are not backfilled or reclassified.
+
 ## Decision and scope
 
 Accepted on **2026-09-11**. Ship an in-app marketplace for code-backed ACP provider
@@ -22,7 +44,7 @@ Repository names and final URLs remain to be chosen; examples are not deployed
 infrastructure. Start with a public registry repository that also owns distribution
 Releases; split metadata and artifact repositories later only if necessary.
 
-## Code baseline checked on 2026-09-11
+## Historical code baseline checked on 2026-09-11
 
 Read-only inspection of worktree HEAD `8a2141ab8`; no new live-app validation or
 external GitHub repository audit was performed for this documentation change.
@@ -86,7 +108,7 @@ response still cost maintainer time. Sources: [Actions billing](https://docs.git
 8. The app refreshes the index and offers the new version. Download and install
    remain host-verified and user-initiated. Each later version repeats this flow.
 
-## Remaining implementation sequence
+## Deferred public-distribution implementation sequence
 
 - [ ] **R1 — Close runtime release gates.** Fix session-scoped resume eligibility
       with opposing-capability concurrent-session tests. Decide and document required

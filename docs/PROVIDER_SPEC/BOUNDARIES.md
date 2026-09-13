@@ -6,6 +6,20 @@
 > - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the implemented local-backend format and its refusal codes
 > - **Parent plan:** `docs/PLUGIN_STRATEGY.md` — this document is step 2 ("bring your own agent") of the four-step extensibility ladder; the ladder's marketplace phasing, signing, and renderer invariants govern here too
 
+## Local release scope — 2026-09-12
+
+v0.12.0 ships **local themes and providers**, without marketplace UI. Both create
+projects in the developer's Cadencr instance; a durable theme/provider authoring
+marker is required for later GitHub publication and initial/new-version registry
+submission. The marker is implemented for new project rows only; existing projects remain unchanged. See the authoritative
+[local release checklist](../LOCAL_PLUGINS_V0_12.md); public trust provisioning and
+marketplace UI are not local-release blockers.
+
+Session-scoped resume eligibility and signed catalog acquisition now have
+working-tree implementations under review. The historical audit/checklists below
+remain evidence of their recorded baseline, not an assertion that those newer
+changes are committed or fully QA-verified.
+
 ## Marketplace delivery decision — 2026-09-11
 
 The accepted distribution plan is [GitHub-only Marketplace V1](../MARKETPLACE_V1.md):
@@ -536,7 +550,7 @@ checklist. Use the following ordering for remaining work:
 
 | Priority / lane                 | Next step                                                                                           | Acceptance boundary                                                                                                                                                            |
 | ------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Immediate backend follow-up     | Make resume-persistence eligibility session-scoped rather than adapter-global                       | Opposite-capability concurrent handshakes cannot change another session's persisted resume eligibility; retain explicit-resume refusal                                         |
+| Local release verification      | Review and QA the working-tree session-scoped resume-persistence implementation                     | Opposite-capability concurrent handshakes cannot change another session's persisted resume eligibility; retain explicit-resume refusal                                         |
 | Before marketplace distribution | Provision production signing trust pins, signed blocklist URL, publishing and revocation operations | Real independently published package and policy validate through the generic backend; missing/untrusted policy fails closed                                                    |
 | Before marketplace distribution | Decide and document required OS isolation                                                           | Explicitly accept or address filesystem/network access and platform resource-control gaps; process cleanup is not an OS sandbox                                                |
 | Before marketplace distribution | Run signed-package lifecycle QA in packaged apps on supported platforms                             | Install, pre-prompt model selection, first turn, restart/resume where supported, update, rollback, disable and uninstall preserve transcripts and enforce current trust policy |
@@ -549,13 +563,13 @@ current backend slice.
 
 ### Existing-baseline follow-up identified during finish-job review
 
-- [ ] Scope installed-provider resume-persistence eligibility to the negotiated
-      session rather than the adapter's latest shared capability observation.
-      `InstalledAcpCapabilities` and `persistable_resume_session_id` already use
-      shared state in the committed baseline; concurrent handshakes advertising
-      different capabilities can affect another session's ID persistence. Add
-      opposing-capability concurrent-session coverage when changing that contract.
-      This is tracked separately from the current package-backend simplification.
+- [x] Implement session-scoped installed-provider resume-persistence eligibility
+      in the working tree (2026-09-12): hooks are isolated per spawn, persistence
+      consults the exact live runtime, and missing runtime ownership fails closed.
+      Review adds same-adapter opposite-capability and public WS/DB regressions.
+      This checkbox records implementation, not a commit or packaged-app QA claim.
+- [ ] Complete local packaged-app resume/persistence QA alongside the plugin-project
+      identity work in [Local Plugins v0.12.0](../LOCAL_PLUGINS_V0_12.md).
 
 Launch verification is pathname-based, not atomic verify-and-execute against a
 same-user attacker. The precise boundary and remaining isolation decision are

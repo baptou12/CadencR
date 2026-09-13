@@ -1,6 +1,21 @@
 # Cadencr Plugin Strategy
 
-Status: GitHub-only provider marketplace V1 accepted on 2026-09-11; local authoring and managed marketplace backend implemented, public distribution not yet shipped. Grounded in a full audit of the service, desktop, and packaging layers, plus prior-art research (VS Code, Obsidian, Zed, JetBrains, Raycast, Figma) current to mid-2026.
+Status: v0.12.0 targets local theme/provider plugins (decision 2026-09-12).
+GitHub-only public distribution remains accepted for later, not the current
+release objective.
+
+## Current release priority — 2026-09-12
+
+[Local Plugins v0.12.0](./LOCAL_PLUGINS_V0_12.md) is the authoritative immediate
+release checklist. Both themes and providers create ordinary projects inside
+the developer's Cadencr instance. Add durable, queryable plugin-project identity
+with a theme/provider discriminator for a later GitHub publication and registry
+initial/new-version workflow. The marker is implemented for new project rows only; existing projects are not backfilled or reclassified.
+
+No marketplace UI or production registry provisioning is required for v0.12.0.
+Keep code used by local flows and real tooling; the explicit future-facing
+runtime exception is registry package-download infrastructure. Do not add inactive
+publishing UI or placeholder runtime behavior.
 
 ## Current provider delivery boundary
 
@@ -10,7 +25,7 @@ Local authoring and the managed package/install/conformance backend are
 implemented. Marketplace UI remains deferred, and provider-account
 configuration and authentication remain the user's native CLI responsibility.
 
-The immediate backend follow-up is session-scoped resume-persistence eligibility.
+Session-scoped resume-persistence eligibility is implemented in the current working tree and under review; it is not a new committed release baseline.
 Production trust/blocklist provisioning, publishing and revocation operations,
 an explicit OS-isolation decision, and real signed-package lifecycle QA in
 packaged apps remain distribution gates. Canonical-event and built-in control
@@ -20,7 +35,7 @@ for ordering and acceptance criteria.
 
 ## Accepted marketplace delivery decision — 2026-09-11
 
-Ship the first public marketplace for **code-backed ACP provider connectors**
+For the later public-distribution phase, ship the first marketplace for **code-backed ACP provider connectors**
 using public GitHub repositories, metadata PRs, GitHub Actions, and approved
 packages mirrored into GitHub Releases under Cadencr control. Publish a signed
 index and signed blocklist; discover and install inside Cadencr. No S3, dedicated
@@ -29,7 +44,7 @@ marketplace backend, publisher portal, or required website in V1.
 The executable contract and local **Add provider** flow already exist; this is
 not a plan to implement them again. The source-backed remaining work and external
 contribution process are in [Marketplace V1](./MARKETPLACE_V1.md), the authoritative
-delivery checklist for this decision. Public themes, custom tabs, and deeper
+delivery checklist for that deferred decision, not for v0.12.0. Public themes, custom tabs, and deeper
 plugin contributions follow independently; themes are no longer a prerequisite
 for shipping the provider marketplace.
 
@@ -70,7 +85,7 @@ The strategic model is **Raycast/Figma/Zed (control by construction), not VS Cod
 
 **Why useful:** a theme is pure data (CSS custom-property values), so there is no behavior to sandbox and no review burden beyond schema + contrast checks — yet it is the highest-visibility personalization an IDE can offer. It also forces the small decisions every later step inherits: manifest schema conventions, an install directory, validation, enable/disable UI, and persistence.
 
-**What exists:** the TS theme registry is clean (`lib/themes/registry.ts`; apply = one DOM attribute), but values are build-time CSS. The packaged CSP already allows `style-src 'unsafe-inline'`, so injecting CSS variables at runtime needs no CSP change. `DESIGN.md` defines the token vocabulary.
+**What exists:** local theme creation, validation/application, and Git-backed theme authoring workspaces already exist (`domain/themes/`, `ThemeLibrary.tsx`). Shared plugin-project identity is now persisted for newly created projects only, and theme creation returns a ready project/conversation or an actionable partial-setup error. Remaining delivery work is lifecycle validation, not inventing theme authoring again. The phase details below describe the capability track and must not be read as an entirely unimplemented backlog. The packaged CSP already allows `style-src 'unsafe-inline'`, so injecting CSS variables at runtime needs no CSP change. `DESIGN.md` defines the token vocabulary.
 
 **Phases (each mergeable):**
 
