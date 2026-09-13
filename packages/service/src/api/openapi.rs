@@ -236,6 +236,7 @@ use crate::domain::ws_session::routes as ws_routes;
         themes_models::ThemeIssue,
         themes_models::XtermPalette,
         themes_models::CreateThemeRequest,
+        themes_models::CreateThemeResponse,
         themes_models::WriteThemeRequest,
         themes_models::WriteThemeResponse,
         themes_models::DeleteThemeResponse,

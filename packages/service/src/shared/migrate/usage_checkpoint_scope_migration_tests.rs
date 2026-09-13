@@ -14,6 +14,14 @@ async fn legacy_pool() -> sqlx::SqlitePool {
         .unwrap();
     sqlx::raw_sql(
         "PRAGMA foreign_keys = ON;
+         CREATE TABLE projects (
+             id INTEGER PRIMARY KEY,
+             name TEXT NOT NULL,
+             path TEXT NOT NULL UNIQUE,
+             branch_prefix TEXT,
+             created_at TEXT NOT NULL DEFAULT (datetime('now')),
+             kind TEXT NOT NULL DEFAULT 'user'
+         );
          CREATE TABLE agent_sessions (
              id INTEGER PRIMARY KEY,
              runtime_session_id TEXT

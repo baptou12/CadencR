@@ -1,10 +1,11 @@
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestQueryClient } from "@/test-utils";
 import { CADENCR_DARK_THEME } from "@/lib/themes/cadencr-dark";
 import { FROST_DARK_THEME } from "@/lib/themes/frost-dark";
 import { DRACULA_THEME } from "@/lib/themes/dracula";
+import type { CreateThemeResponse } from "@/api/generated";
 import type { ThemeDefinition } from "@/lib/themes";
 import { useThemeLibraryActions } from "./useThemeLibraryActions";
 
@@ -26,11 +27,12 @@ vi.mock("@/lib/themes/user-theme", async (importOriginal) => ({
 
 function renderActions() {
   const client = createTestQueryClient();
-  return renderHook(() => useThemeLibraryActions(), {
+  const hook = renderHook(() => useThemeLibraryActions(), {
     wrapper: ({ children }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     ),
   });
+  return { ...hook, client };
 }
 
 /** What the create request would carry for `source`. */
@@ -69,6 +71,39 @@ describe("duplicating a theme", () => {
       tabs: "underline",
       texture: { base: null, halos: [], image: null, grain: null, veil: false },
     });
+  });
+
+  it("forwards the ready workspace and refreshes project discovery after creation", () => {
+    const { result, client } = renderActions();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const onCreated = vi.fn();
+    const response: CreateThemeResponse = {
+      theme: {
+        id: "mine",
+        label: "Mine",
+        path: "/themes/mine/theme.json",
+        content: "{}",
+        assets: {},
+        issues: [],
+      },
+      workspace: { project_id: 7, feature_id: 12, cwd: "/themes/mine", created: true },
+    };
+    result.current.duplicate(DRACULA_THEME, "Mine", onCreated);
+    act(() => create.mock.calls[0][1].onSuccess(response));
+    expect(onCreated).toHaveBeenCalledWith(response.theme, response.workspace);
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("refreshes retained themes after setup failure so Edit can retry without duplication", () => {
+    const { result, client } = renderActions();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const onCreated = vi.fn();
+    result.current.duplicate(DRACULA_THEME, "Mine", onCreated);
+    act(() =>
+      create.mock.calls[0][1].onError(new Error("Theme retained; reopen to retry project setup")),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["/api/themes"] });
+    expect(onCreated).not.toHaveBeenCalled();
   });
 
   describe("texture assets", () => {

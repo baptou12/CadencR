@@ -1176,6 +1176,123 @@ export interface CreateThemeRequest {
   xterm: XtermPalette;
 }
 
+/**
+ * Why a theme can't be applied. Every issue is surfaced in the gallery; a
+ * theme with any issue is never registered as applicable.
+ */
+export interface ThemeIssue {
+  message: string;
+  /**
+   * The offending token (`--background`), or `None` for document-level
+   * problems such as invalid JSON.
+   * @nullable
+   */
+  token?: string | null;
+}
+
+/**
+ * `--token` → CSS color value. Ordered so a round-trip through the editor
+ * doesn't reshuffle the file.
+ */
+export type ThemeDocumentCssVars = { [key: string]: string };
+
+/**
+ * A user theme exactly as stored in `~/.cadencr/plugins/themes/<id>/theme.json`.
+ *
+ * This is the whole extensibility surface of step 1: pure data, no behavior.
+ * `css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
+ * values must parse as CSS colors — a theme can never introduce arbitrary CSS.
+ */
+export interface ThemeDocument {
+  /**
+   * Points at the JSON Schema Cadencr keeps beside this file, so an editor
+   * completes and checks the document as it is typed (see `schema.rs`).
+   * Optional and round-tripped rather than required: a theme written before
+   * this existed, or one whose author deleted the line, is still a theme.
+   * @nullable
+   */
+  $schema?: string | null;
+  appearance: ThemeAppearance;
+  /**
+   * Chassis, tabs and background texture (see `chrome.rs`). Defaulted, so a
+   * theme file written before chrome existed still parses — it simply gets
+   * the plain chrome every non-CadencR, non-Frost theme already had.
+   */
+  chrome?: ThemeChrome;
+  /**
+   * `--token` → CSS color value. Ordered so a round-trip through the editor
+   * doesn't reshuffle the file.
+   */
+  cssVars: ThemeDocumentCssVars;
+  label: string;
+  xterm: XtermPalette;
+}
+
+/**
+ * Asset file name → `data:` URL, for the files the theme's chrome
+ * references. Inlined rather than served from a URL: the renderer may be
+ * talking to a remote backend, its CSP allows `data:` images, and a
+ * stylesheet `url()` can't carry the API token anyway. Empty for the
+ * themes — nearly all of them — that reference no asset.
+ */
+export type UserThemeAssets = { [key: string]: string };
+
+export type UserThemeTheme = null | ThemeDocument;
+
+/**
+ * One entry in the theme gallery.
+ */
+export interface UserTheme {
+  /**
+   * Asset file name → `data:` URL, for the files the theme's chrome
+   * references. Inlined rather than served from a URL: the renderer may be
+   * talking to a remote backend, its CSP allows `data:` images, and a
+   * stylesheet `url()` can't carry the API token anyway. Empty for the
+   * themes — nearly all of them — that reference no asset.
+   */
+  assets: UserThemeAssets;
+  /** Raw file text, for the JSON editor and for export-to-file. */
+  content: string;
+  /**
+   * Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as
+   * `user:<id>`.
+   */
+  id: string;
+  issues: ThemeIssue[];
+  /**
+   * The document's declared name, kept even when validation failed so the
+   * gallery can say *which* theme broke. `None` only when the file isn't
+   * parseable JSON at all.
+   * @nullable
+   */
+  label?: string | null;
+  /** Absolute path to `theme.json`, so the gallery can show and copy it. */
+  path: string;
+  theme?: UserThemeTheme;
+}
+
+/**
+ * Where a theme is edited. The renderer needs all three to route to the
+ * conversation; the ws session id is derived from `feature_id`.
+ */
+export interface ThemeWorkspace {
+  /**
+   * Whether this call created the conversation. The renderer arranges the
+   * panes — the theme file beside the agent — only on that first open, so a
+   * layout the user rearranged afterwards is theirs to keep.
+   */
+  created: boolean;
+  /** The theme directory — the project root, and the agent's cwd. */
+  cwd: string;
+  feature_id: number;
+  project_id: number;
+}
+
+export interface CreateThemeResponse {
+  theme: UserTheme;
+  workspace: ThemeWorkspace;
+}
+
 export interface CreateWorktreeBody {
   feature_id: number;
   feature_title: string;
@@ -2924,13 +3041,29 @@ export interface ProfilesResponse {
   profiles: ProfileView[];
 }
 
+/**
+ * The plugin content authored by an otherwise ordinary user project.
+ */
+export type ProjectAuthoringTarget =
+  (typeof ProjectAuthoringTarget)[keyof typeof ProjectAuthoringTarget];
+
+export const ProjectAuthoringTarget = {
+  theme: "theme",
+  provider: "provider",
+} as const;
+
+export type ProjectAuthoringTargetProperty = null | ProjectAuthoringTarget;
+
 export interface Project {
+  authoring_target?: ProjectAuthoringTargetProperty;
   /** @nullable */
   branch_prefix?: string | null;
   created_at: string;
   id: number;
   name: string;
   path: string;
+  /** @nullable */
+  plugin_id?: string | null;
 }
 
 /**
@@ -3877,75 +4010,6 @@ export interface TerminalSessionInfo {
   pty_id: string;
 }
 
-/**
- * `--token` → CSS color value. Ordered so a round-trip through the editor
- * doesn't reshuffle the file.
- */
-export type ThemeDocumentCssVars = { [key: string]: string };
-
-/**
- * A user theme exactly as stored in `~/.cadencr/plugins/themes/<id>/theme.json`.
- *
- * This is the whole extensibility surface of step 1: pure data, no behavior.
- * `css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
- * values must parse as CSS colors — a theme can never introduce arbitrary CSS.
- */
-export interface ThemeDocument {
-  /**
-   * Points at the JSON Schema Cadencr keeps beside this file, so an editor
-   * completes and checks the document as it is typed (see `schema.rs`).
-   * Optional and round-tripped rather than required: a theme written before
-   * this existed, or one whose author deleted the line, is still a theme.
-   * @nullable
-   */
-  $schema?: string | null;
-  appearance: ThemeAppearance;
-  /**
-   * Chassis, tabs and background texture (see `chrome.rs`). Defaulted, so a
-   * theme file written before chrome existed still parses — it simply gets
-   * the plain chrome every non-CadencR, non-Frost theme already had.
-   */
-  chrome?: ThemeChrome;
-  /**
-   * `--token` → CSS color value. Ordered so a round-trip through the editor
-   * doesn't reshuffle the file.
-   */
-  cssVars: ThemeDocumentCssVars;
-  label: string;
-  xterm: XtermPalette;
-}
-
-/**
- * Why a theme can't be applied. Every issue is surfaced in the gallery; a
- * theme with any issue is never registered as applicable.
- */
-export interface ThemeIssue {
-  message: string;
-  /**
-   * The offending token (`--background`), or `None` for document-level
-   * problems such as invalid JSON.
-   * @nullable
-   */
-  token?: string | null;
-}
-
-/**
- * Where a theme is edited. The renderer needs all three to route to the
- * conversation; the ws session id is derived from `feature_id`.
- */
-export interface ThemeWorkspace {
-  /**
-   * Whether this call created the conversation. The renderer arranges the
-   * panes — the theme file beside the agent — only on that first open, so a
-   * layout the user rearranged afterwards is theirs to keep.
-   */
-  created: boolean;
-  /** The theme directory — the project root, and the agent's cwd. */
-  cwd: string;
-  feature_id: number;
-  project_id: number;
-}
-
 export interface TrashPathRequest {
   /** @nullable */
   feature_id?: number | null;
@@ -4198,49 +4262,6 @@ export interface UserMessagePayload {
   origin?: UserMessagePayloadOrigin;
   prompt_delivery_state?: UserMessagePayloadPromptDeliveryState;
   text: string;
-}
-
-/**
- * Asset file name → `data:` URL, for the files the theme's chrome
- * references. Inlined rather than served from a URL: the renderer may be
- * talking to a remote backend, its CSP allows `data:` images, and a
- * stylesheet `url()` can't carry the API token anyway. Empty for the
- * themes — nearly all of them — that reference no asset.
- */
-export type UserThemeAssets = { [key: string]: string };
-
-export type UserThemeTheme = null | ThemeDocument;
-
-/**
- * One entry in the theme gallery.
- */
-export interface UserTheme {
-  /**
-   * Asset file name → `data:` URL, for the files the theme's chrome
-   * references. Inlined rather than served from a URL: the renderer may be
-   * talking to a remote backend, its CSP allows `data:` images, and a
-   * stylesheet `url()` can't carry the API token anyway. Empty for the
-   * themes — nearly all of them — that reference no asset.
-   */
-  assets: UserThemeAssets;
-  /** Raw file text, for the JSON editor and for export-to-file. */
-  content: string;
-  /**
-   * Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as
-   * `user:<id>`.
-   */
-  id: string;
-  issues: ThemeIssue[];
-  /**
-   * The document's declared name, kept even when validation failed so the
-   * gallery can say *which* theme broke. `None` only when the file isn't
-   * parseable JSON at all.
-   * @nullable
-   */
-  label?: string | null;
-  /** Absolute path to `theme.json`, so the gallery can show and copy it. */
-  path: string;
-  theme?: UserThemeTheme;
 }
 
 /**
@@ -21975,7 +21996,7 @@ export function useListThemes<
 }
 
 export const createTheme = (createThemeRequest: CreateThemeRequest, signal?: AbortSignal) => {
-  return customInstance<UserTheme>({
+  return customInstance<CreateThemeResponse>({
     url: `/api/themes`,
     method: "POST",
     headers: { "Content-Type": "application/json" },

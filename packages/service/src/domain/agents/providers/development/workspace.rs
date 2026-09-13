@@ -12,12 +12,17 @@ use crate::domain::agents::providers::installed::descriptor::{
 };
 use crate::domain::agents::providers::installed::{descriptors_dir, lifecycle};
 use crate::domain::agents::providers::provider_registry;
+use crate::domain::agents::providers::registry::{
+    builtin_provider_identifiers, provider_identifier_key,
+};
 use crate::domain::{features, projects, settings_store};
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git, run_git_output_with_env, run_git_with_env};
 
 use super::models::ProviderWorkspace;
 use super::scaffold;
+
+mod ownership;
 
 const MAX_DISPLAY_NAME_LENGTH: usize = 80;
 const WORKSPACES_DIR: &str = "provider-workspaces";
@@ -60,34 +65,103 @@ async fn create_with_roots(
     })?;
     let display_name = validate_display_name(display_name)?;
     let active_provider_ids = provider_registry().provider_ids();
-    lifecycle::ensure_descriptor_id_available(
-        &roots.descriptors,
-        provider_id,
-        &active_provider_ids,
-    )?;
+    let provider_key = provider_identifier_key(provider_id);
+    let resumable_directory = resumable_workspace_directory(&roots.workspaces, provider_id)?;
+    ownership::ensure_provider_identity_path(pool, provider_id, resumable_directory.as_deref())
+        .await?;
+    if builtin_provider_identifiers()
+        .iter()
+        .any(|builtin| provider_identifier_key(builtin) == provider_key)
+    {
+        lifecycle::ensure_descriptor_id_available(
+            &roots.descriptors,
+            provider_id,
+            &active_provider_ids,
+        )?;
+    }
+    if resumable_directory.is_none() {
+        // New/unowned paths cannot be recovery attempts. Reject reserved and
+        // externally installed identities before creating any filesystem entry.
+        lifecycle::ensure_descriptor_id_available(
+            &roots.descriptors,
+            provider_id,
+            &active_provider_ids,
+        )?;
+    }
     let directory = ensure_workspace_directory(&roots.workspaces, provider_id)?;
     let relative_executable = PathBuf::from("bin").join(provider_binary_name());
+    let cwd = directory.to_string_lossy().into_owned();
+    let executable = directory.join(&relative_executable);
+    let expected_descriptor = descriptor(provider_id, &display_name, &directory, &executable);
+    let owned_project_id = ownership::existing_owned_project_id(pool, &cwd, provider_id).await?;
+    let owned_retry = owned_project_id.is_some()
+        && descriptor_matches(&roots.descriptors, provider_id, &expected_descriptor)?;
+    if resumable_directory.is_some() && !owned_retry {
+        lifecycle::ensure_descriptor_id_available(
+            &roots.descriptors,
+            provider_id,
+            &active_provider_ids,
+        )?;
+    }
 
     scaffold::write(&directory, provider_id, &display_name, &relative_executable)?;
     ensure_repository(&directory).await?;
 
-    let cwd = directory.to_string_lossy().into_owned();
-    let executable = directory.join(relative_executable);
-    let (project_id, feature_id) = ensure_project_and_feature(pool, &display_name, &cwd).await?;
+    let (project_id, feature_id) =
+        ensure_project_and_feature(pool, owned_project_id, &display_name, &cwd, provider_id)
+            .await?;
     // Publish the restart-gated descriptor last. Every earlier step is
     // idempotent, so an interrupted request can be retried without leaving an
     // identity that permanently blocks its own workspace.
-    lifecycle::install_descriptor(
-        &roots.descriptors,
-        descriptor(provider_id, &display_name, &directory, &executable),
-        &active_provider_ids,
-    )
-    .await?;
+    if !owned_retry {
+        lifecycle::install_descriptor(
+            &roots.descriptors,
+            expected_descriptor,
+            &active_provider_ids,
+        )
+        .await?;
+    }
 
     Ok(ProviderWorkspace {
         project_id,
         feature_id,
     })
+}
+
+fn resumable_workspace_directory(
+    root: &Path,
+    provider_id: &str,
+) -> Result<Option<PathBuf>, AppError> {
+    let Ok(root) = std::fs::canonicalize(root) else {
+        return Ok(None);
+    };
+    let directory = root.join(provider_id);
+    if !directory.is_dir() || directory.is_symlink() {
+        return Ok(None);
+    }
+    Ok(scaffold::can_resume(&directory, provider_id)?.then_some(directory))
+}
+
+fn descriptor_matches(
+    directory: &Path,
+    provider_id: &str,
+    expected: &ProviderDescriptor,
+) -> Result<bool, AppError> {
+    let path = lifecycle::descriptor_path(directory, provider_id)?;
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let actual: serde_json::Value = match std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    {
+        Some(actual) => actual,
+        None => return Ok(false),
+    };
+    let expected = serde_json::to_value(expected).map_err(|error| {
+        AppError::Internal(format!("failed to compare provider descriptor: {error}"))
+    })?;
+    Ok(actual == expected)
 }
 
 fn creation_lock() -> &'static tokio::sync::Mutex<()> {
@@ -178,18 +252,21 @@ async fn ensure_repository(directory: &Path) -> Result<(), AppError> {
 
 async fn ensure_project_and_feature(
     pool: &SqlitePool,
+    existing_project_id: Option<i64>,
     display_name: &str,
     cwd: &str,
+    provider_id: &str,
 ) -> Result<(i64, i64), AppError> {
-    let project_id: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM projects WHERE path = ? AND kind = 'user'")
-            .bind(cwd)
-            .fetch_optional(pool)
-            .await?;
-    let project_id = match project_id {
+    let project_id = match existing_project_id {
         Some(id) => id,
         None => {
-            projects::service::create_project(pool, &format!("Provider: {display_name}"), cwd)
+            projects::service::create_author_project()
+                .pool(pool)
+                .name(&format!("Provider: {display_name}"))
+                .path(cwd)
+                .authoring_target(projects::models::ProjectAuthoringTarget::Provider)
+                .plugin_id(provider_id)
+                .call()
                 .await?
                 .id
         }
@@ -330,11 +407,12 @@ mod tests {
             .trim()
             .is_empty());
 
-        let kind: String = sqlx::query_scalar("SELECT kind FROM projects WHERE id = ?")
-            .bind(created.project_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let project_marker: (String, Option<String>, Option<String>) =
+            sqlx::query_as("SELECT kind, authoring_target, plugin_id FROM projects WHERE id = ?")
+                .bind(created.project_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         let feature: (String, i64) = sqlx::query_as(
             "SELECT type, (SELECT COUNT(*) FROM feature_settings WHERE feature_id = features.id) \
              FROM features WHERE id = ?",
@@ -343,8 +421,23 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(kind, "user");
+        assert_eq!(
+            project_marker,
+            (
+                "user".to_string(),
+                Some("provider".to_string()),
+                Some("workspace-test-provider".to_string())
+            )
+        );
         assert_eq!(feature, ("ws-session".to_string(), 0));
+        let repeated =
+            create_with_roots(&pool, "workspace-test-provider", "Workspace Test", &roots)
+                .await
+                .unwrap();
+        assert_eq!(
+            (repeated.project_id, repeated.feature_id),
+            (created.project_id, created.feature_id)
+        );
 
         let saved: ProviderDescriptor = serde_json::from_str(
             &std::fs::read_to_string(roots.descriptors.join("workspace-test-provider.json"))
@@ -369,6 +462,50 @@ mod tests {
                 .is_err()
         );
         assert!(!roots.workspaces.join("claude").exists());
+    }
+
+    #[tokio::test]
+    async fn a_forged_owned_workspace_cannot_claim_a_builtin_id() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        let directory = roots.workspaces.join("claude");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join(".cadencr-provider-workspace"), "claude").unwrap();
+        let cwd = std::fs::canonicalize(&directory)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let project = crate::domain::projects::service::create_project(
+            &pool,
+            "Provider: Forged Claude",
+            &cwd,
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE projects SET authoring_target = 'provider', plugin_id = 'claude' WHERE id = ?",
+        )
+        .bind(project.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        std::fs::create_dir_all(&roots.descriptors).unwrap();
+        let forged = descriptor(
+            "claude",
+            "Forged Claude",
+            &directory,
+            &directory.join("bin").join(provider_binary_name()),
+        );
+        std::fs::write(
+            roots.descriptors.join("claude.json"),
+            serde_json::to_vec_pretty(&forged).unwrap(),
+        )
+        .unwrap();
+
+        assert!(create_with_roots(&pool, "claude", "Forged Claude", &roots)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -403,6 +540,131 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!((project_count, feature_count), (1, 1));
+        let marker: (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT authoring_target, plugin_id FROM projects WHERE id = ?")
+                .bind(project.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            marker,
+            (None, None),
+            "legacy projects must not be backfilled"
+        );
+        let repeated = create_with_roots(&pool, "retry-provider", "Retry", &roots)
+            .await
+            .unwrap();
+        assert_eq!(
+            (repeated.project_id, repeated.feature_id),
+            (created.project_id, created.feature_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn retries_a_matching_marked_provider_project() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        let directory = roots.workspaces.join("marked-provider");
+        std::fs::create_dir_all(&directory).unwrap();
+        let cwd = std::fs::canonicalize(&directory)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let project =
+            crate::domain::projects::service::create_project(&pool, "Provider: Marked", &cwd)
+                .await
+                .unwrap();
+        sqlx::query(
+            "UPDATE projects SET authoring_target = 'provider', plugin_id = 'marked-provider' \
+             WHERE id = ?",
+        )
+        .bind(project.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let created = create_with_roots(&pool, "marked-provider", "Marked", &roots)
+            .await
+            .unwrap();
+        assert_eq!(created.project_id, project.id);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_project_marked_for_another_authoring_identity() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        let directory = roots.workspaces.join("conflicted-provider");
+        std::fs::create_dir_all(&directory).unwrap();
+        let cwd = std::fs::canonicalize(&directory)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let project =
+            crate::domain::projects::service::create_project(&pool, "Provider: Conflicted", &cwd)
+                .await
+                .unwrap();
+        sqlx::query(
+            "UPDATE projects SET authoring_target = 'theme', plugin_id = 'other-theme' WHERE id = ?",
+        )
+        .bind(project.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert!(
+            create_with_roots(&pool, "conflicted-provider", "Conflicted", &roots)
+                .await
+                .is_err()
+        );
+        let marker: (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT authoring_target, plugin_id FROM projects WHERE id = ?")
+                .bind(project.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            marker,
+            (Some("theme".to_string()), Some("other-theme".to_string()))
+        );
+        assert!(!roots.descriptors.join("conflicted-provider.json").exists());
+    }
+
+    #[tokio::test]
+    async fn refuses_a_provider_identity_owned_at_another_path_before_scaffolding() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        let other_directory = temp.path().join("other-project");
+        std::fs::create_dir_all(&other_directory).unwrap();
+        let other_cwd = std::fs::canonicalize(&other_directory)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let project = crate::domain::projects::service::create_project(
+            &pool,
+            "Other provider project",
+            &other_cwd,
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE projects SET authoring_target = 'provider', plugin_id = 'claimed-provider' \
+             WHERE id = ?",
+        )
+        .bind(project.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert!(
+            create_with_roots(&pool, "claimed-provider", "Claimed", &roots)
+                .await
+                .is_err()
+        );
+        assert!(!roots.workspaces.join("claimed-provider").exists());
+        assert!(!roots.descriptors.join("claimed-provider.json").exists());
     }
 
     #[tokio::test]
@@ -423,6 +685,35 @@ mod tests {
             std::fs::read_to_string(directory.join("user-file.txt")).unwrap(),
             "keep me"
         );
+    }
+
+    #[tokio::test]
+    async fn refuses_to_adopt_an_unrelated_installed_descriptor() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        std::fs::create_dir_all(&roots.descriptors).unwrap();
+        let external = descriptor(
+            "external-provider",
+            "External",
+            Path::new("/tmp/external-provider"),
+            Path::new("/tmp/external-provider/bin/provider"),
+        );
+        let descriptor_path = roots.descriptors.join("external-provider.json");
+        let original = serde_json::to_vec_pretty(&external).unwrap();
+        std::fs::write(&descriptor_path, &original).unwrap();
+
+        assert!(
+            create_with_roots(&pool, "external-provider", "External", &roots)
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(descriptor_path).unwrap(), original);
+        let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(projects, 0);
     }
 
     fn roots(temp: &TempDir) -> WorkspaceRoots {

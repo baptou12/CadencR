@@ -6,6 +6,7 @@ import {
   useCreateTheme,
   useDeleteTheme,
   type UserTheme,
+  type ThemeWorkspace,
 } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
@@ -23,7 +24,7 @@ interface ThemeLibraryActions {
   duplicate: (
     source: ThemeDefinition,
     label: string,
-    onCreated?: (created: UserTheme) => void,
+    onCreated?: (created: UserTheme, workspace: ThemeWorkspace) => void,
   ) => void;
   remove: (theme: UserTheme) => void;
   exportTheme: (theme: UserTheme) => void;
@@ -52,15 +53,22 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
   const release = useReleaseTheme();
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Only the theme list. Both paths below deal with the project a theme owns
-  // themselves — a create has none yet (the workspace endpoint makes it, and
-  // refreshes the sidebar), and a delete sweeps it explicitly.
+  // Refresh after partial creation too: the retained theme can be reopened to
+  // retry project setup, instead of asking the user to create another copy.
   const refresh = useCallback((): void => {
-    void queryClient.invalidateQueries({ queryKey: getListThemesQueryKey() });
+    void queryClient
+      .invalidateQueries({ queryKey: getListThemesQueryKey() })
+      .catch((error: unknown) => {
+        toast.error(apiErrorMessage(error, "Could not refresh the theme library"));
+      });
   }, [queryClient]);
 
   const duplicate = useCallback(
-    (source: ThemeDefinition, label: string, onCreated?: (created: UserTheme) => void): void => {
+    (
+      source: ThemeDefinition,
+      label: string,
+      onCreated?: (created: UserTheme, workspace: ThemeWorkspace) => void,
+    ): void => {
       let cssVars;
       try {
         cssVars = readThemeCssVars(source.id, source.cssVars);
@@ -88,14 +96,21 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
         {
           onSuccess: (created) => {
             refresh();
-            toast.success(`Created “${userThemeLabel(created)}”`);
-            onCreated?.(created);
+            void invalidateByUrlPrefix(queryClient, ["/api/projects", "/api/features"]).catch(
+              (error: unknown) =>
+                toast.error(apiErrorMessage(error, "Could not refresh plugin projects")),
+            );
+            toast.success(`Created “${userThemeLabel(created.theme)}”`);
+            onCreated?.(created.theme, created.workspace);
           },
-          onError: (error) => toast.error(apiErrorMessage(error, "Failed to duplicate theme")),
+          onError: (error) => {
+            refresh();
+            toast.error(apiErrorMessage(error, "Failed to duplicate theme"));
+          },
         },
       );
     },
-    [create, refresh],
+    [create, queryClient, refresh],
   );
 
   const removeTheme = useCallback(
