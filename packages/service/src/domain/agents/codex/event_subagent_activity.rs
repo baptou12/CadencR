@@ -17,7 +17,10 @@ pub(super) fn subagent_activity_events(
     item: &CodexItem,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
-    if item.fields.get("kind").and_then(Value::as_str) != Some("started") {
+    if !matches!(
+        item.fields.get("kind").and_then(Value::as_str),
+        Some("started" | "interacted")
+    ) {
         return Vec::new();
     }
     let Some(parent_thread_id) = required(parent_thread_id, "threadId") else {
@@ -33,6 +36,15 @@ pub(super) fn subagent_activity_events(
     // This direct id-to-id join works both with and without the raw spawn
     // event. If rawResponseItem arrived first, `has_index` deduplicates the
     // Agent block while the child route is still refreshed authoritatively.
+    // A resumed child may first appear through send_message/followup_task,
+    // not a fresh spawn. Keep an existing route; otherwise materialize an
+    // Agent block for this activity before any child output arrives.
+    if index_state
+        .subagent_parent_tool_use_id(child_thread_id)
+        .is_some()
+    {
+        return Vec::new();
+    }
     let parent_tool_use_id = index_state.canonical_id(activity_id);
     index_state.record_subagent_thread(child_thread_id, &parent_tool_use_id);
     if index_state.has_index(&parent_tool_use_id) {
@@ -161,5 +173,34 @@ mod tests {
             &mut indexes,
         );
         assert_eq!(child[0].parent_tool_use_id(), Some("call_spawn"));
+    }
+    #[test]
+    fn interacted_recovers_resumed_child_without_replacing_existing_route() {
+        let mut indexes = IndexState::for_root_thread("root");
+        for (call, expected_len) in [("followup", 1), ("send_message", 0)] {
+            let events = notification_events(
+                "item/started",
+                json!({
+                    "threadId":"root", "item": {"id":call,"type":"subAgentActivity",
+                    "kind":"interacted","agentThreadId":"child","agentPath":"/root/reviewer"}
+                }),
+                None,
+                &mut indexes,
+            );
+            assert_eq!(events.len(), expected_len);
+        }
+        assert_eq!(
+            indexes.subagent_parent_tool_use_id("child"),
+            Some("followup")
+        );
+        let events = notification_events(
+            "item/agentMessage/delta",
+            json!({
+                "threadId":"child","itemId":"text","delta":"working"
+            }),
+            None,
+            &mut indexes,
+        );
+        assert_eq!(events[0].parent_tool_use_id(), Some("followup"));
     }
 }

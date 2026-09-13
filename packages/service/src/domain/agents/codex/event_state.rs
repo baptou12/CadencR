@@ -64,6 +64,13 @@ pub(super) struct IndexState {
 }
 
 impl IndexState {
+    pub(super) fn for_root_thread(thread_id: &str) -> Self {
+        Self {
+            root_thread_id: Some(thread_id.to_string()),
+            ..Self::default()
+        }
+    }
+
     pub(super) fn reset(&mut self) {
         self.next = 0;
         self.by_id.clear();

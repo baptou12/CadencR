@@ -8,13 +8,16 @@
 
 use serde_json::Value;
 
+use super::event_json::runtime_stream_event;
 use super::event_state::IndexState;
+use super::event_subagents::agent_tool_block;
+use crate::domain::agents::adapter::{RuntimeEvent, RuntimeStreamEvent};
 
 pub(super) fn register_thread_started_route(
     method: &str,
     params: &Value,
     index_state: &mut IndexState,
-) {
+) -> Vec<RuntimeEvent> {
     // App-server writes notifications on one ordered stream: the model's raw
     // function_call is emitted before Codex executes it and can create this
     // thread, so the matching pending spawn already exists here.
@@ -22,24 +25,42 @@ pub(super) fn register_thread_started_route(
         .then(|| route_from_thread_started(params))
         .flatten();
     let Some(route) = route else {
-        return;
+        return Vec::new();
     };
-    register_route(route, index_state);
+    register_route(route, index_state)
 }
 
-fn register_route(route: SubagentRoute<'_>, index_state: &mut IndexState) {
+fn register_route(route: SubagentRoute<'_>, index_state: &mut IndexState) -> Vec<RuntimeEvent> {
     if index_state
         .subagent_parent_tool_use_id(route.child_thread_id)
         .is_some()
     {
-        return;
+        return Vec::new();
     }
-    let Some(parent_tool_use_id) =
+    if let Some(parent_tool_use_id) =
         index_state.take_pending_spawn_route(route.parent_thread_id, route.agent_path)
-    else {
-        return;
-    };
+    {
+        index_state.record_subagent_thread(route.child_thread_id, &parent_tool_use_id);
+        return Vec::new();
+    }
+    // Rehydrated children have no pending spawn in this transport. Give them
+    // a stable visible parent before their first turn/status or content event.
+    let parent_tool_use_id = format!("codex-agent-{}", route.child_thread_id);
     index_state.record_subagent_thread(route.child_thread_id, &parent_tool_use_id);
+    let item = serde_json::json!({ "agentPath": route.agent_path });
+    let mut event = runtime_stream_event(
+        route.parent_thread_id,
+        RuntimeStreamEvent::ContentBlockStart {
+            index: index_state.index_for(&parent_tool_use_id),
+            block: agent_tool_block(&parent_tool_use_id, &item),
+        },
+    );
+    event.set_parent_tool_use_id(
+        index_state
+            .subagent_parent_tool_use_id(route.parent_thread_id)
+            .map(ToOwned::to_owned),
+    );
+    vec![event]
 }
 
 struct SubagentRoute<'a> {
@@ -298,5 +319,48 @@ mod tests {
             indexes.subagent_parent_tool_use_id("thread_v1_child"),
             Some("call_v1")
         );
+    }
+    #[test]
+    fn resumed_child_is_routed_before_its_first_turn_without_raw_spawn() {
+        let mut indexes = IndexState::for_root_thread("root");
+        let params = json!({"thread":{"id":"child", "source":{"subAgent":{
+            "thread_spawn":{"parent_thread_id":"root","agent_path":"/root/reviewer"}
+        }}}});
+        let events = notification_events("thread/started", params.clone(), None, &mut indexes);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            indexes.subagent_parent_tool_use_id("child"),
+            Some("codex-agent-child")
+        );
+        assert!(!indexes.should_reset_for_turn_started("child"));
+        assert!(notification_events("thread/started", params, None, &mut indexes).is_empty());
+    }
+    #[test]
+    fn recovered_grandchild_block_and_content_keep_both_nesting_levels() {
+        let mut indexes = IndexState::for_root_thread("root");
+        indexes.record_subagent_thread("child", "spawn-child");
+        let events = notification_events(
+            "thread/started",
+            json!({"thread":{
+                "id":"grandchild", "source":{"subAgent":{"thread_spawn":{
+                    "parent_thread_id":"child","agent_path":"/root/child/grandchild"
+                }}}
+            }}),
+            None,
+            &mut indexes,
+        );
+        assert_eq!(events[0].parent_tool_use_id(), Some("spawn-child"));
+        assert_eq!(events[0].raw_json()["parent_tool_use_id"], "spawn-child");
+        let content = notification_events(
+            "item/agentMessage/delta",
+            json!({
+                "threadId":"grandchild", "itemId":"text", "delta":"working"
+            }),
+            None,
+            &mut indexes,
+        );
+        assert!(content
+            .iter()
+            .all(|event| event.parent_tool_use_id() == Some("codex-agent-grandchild")));
     }
 }

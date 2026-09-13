@@ -5,9 +5,10 @@ use std::sync::Arc;
 use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient};
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 
+use super::event_lifecycle::SessionLifecycle;
 use super::event_state::IndexState;
 use super::event_system::{permission_request_event, request_key};
-use super::event_turn_state::{belongs_to_root_thread, update_turn_state, RootTurnTracker};
+use super::event_turn_state::{update_turn_state, RootTurnTracker};
 use super::events::notification_events;
 use super::permissions::PendingCodexRequest;
 use super::prompt_receipts::PendingPromptReceipts;
@@ -17,7 +18,7 @@ use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 
 pub(super) fn spawn_event_loop(
     client: CodexAppServerClient,
-    mut source_rx: broadcast::Receiver<AppServerEvent>,
+    source_rx: broadcast::Receiver<AppServerEvent>,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
     pending_prompt_receipts: Arc<PendingPromptReceipts>,
@@ -25,55 +26,46 @@ pub(super) fn spawn_event_loop(
     model: Arc<RwLock<Option<String>>>,
     closing: Arc<AtomicBool>,
 ) {
-    tokio::spawn(async move {
-        let mut command_outputs = HashMap::new();
-        let mut index_state = IndexState::default();
+    let event_loop = EventLoop {
+        client,
+        tx,
+        pending_requests,
+        pending_prompt_receipts,
+        turns,
+        model,
+        closing,
+    };
+    tokio::spawn(async move { event_loop.run(source_rx).await });
+}
+
+struct EventLoop {
+    client: CodexAppServerClient,
+    tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+    pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
+    pending_prompt_receipts: Arc<PendingPromptReceipts>,
+    turns: RootTurnTracker,
+    model: Arc<RwLock<Option<String>>>,
+    closing: Arc<AtomicBool>,
+}
+
+struct NotificationState {
+    command_outputs: HashMap<String, String>,
+    index_state: IndexState,
+    lifecycle: SessionLifecycle,
+}
+
+impl EventLoop {
+    async fn run(&self, mut source_rx: broadcast::Receiver<AppServerEvent>) {
+        let mut state = NotificationState {
+            command_outputs: HashMap::new(),
+            index_state: IndexState::for_root_thread(&self.turns.root_thread_id),
+            lifecycle: SessionLifecycle::default(),
+        };
         loop {
             match source_rx.recv().await {
-                Ok(AppServerEvent::Notification { method, mut params }) => {
-                    if method == "turn/started" {
-                        let thread_id = params
-                            .get("threadId")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("");
-                        // Codex multiplexes every thread (root + each
-                        // sub-agent) onto one stream; sub-agent turn/starteds
-                        // must not clobber the root's per-turn caches.
-                        if index_state.should_reset_for_turn_started(thread_id) {
-                            index_state.reset();
-                            command_outputs.clear();
-                        }
-                    }
-                    update_turn_state(
-                        &method,
-                        &params,
-                        &turns.active_turn_id,
-                        &turns.last_root_turn_id,
-                        &turns.root_thread_id,
-                    )
-                    .await;
-                    if !should_forward_notification(&method, &params, &turns.root_thread_id) {
-                        continue;
-                    }
-                    clear_resolved_request(&method, &params, &pending_requests).await;
-                    enrich_command_output(&method, &mut params, &mut command_outputs);
-                    if let Some(receipt_event) = pending_prompt_receipts
-                        .acknowledge_completed_user_message(&method, &params, &turns.root_thread_id)
-                    {
-                        if tx.send(Ok(receipt_event)).await.is_err() {
-                            return;
-                        }
-                    }
-                    let current_model = model.read().await.clone();
-                    for event in notification_events(
-                        &method,
-                        params,
-                        current_model.as_deref(),
-                        &mut index_state,
-                    ) {
-                        if tx.send(Ok(event)).await.is_err() {
-                            return;
-                        }
+                Ok(AppServerEvent::Notification { method, params }) => {
+                    if !self.notification(method, params, &mut state).await {
+                        return;
                     }
                 }
                 Ok(AppServerEvent::ServerRequest { id, method, params }) => {
@@ -81,7 +73,7 @@ pub(super) fn spawn_event_loop(
                         trusted_cadencr_browser_permission_response(&id, &method, &params)
                     {
                         let result = response_value(&method, &params, &response);
-                        match client.respond_server_request(id.clone(), result).await {
+                        match self.client.respond_server_request(id.clone(), result).await {
                             Ok(()) => continue,
                             Err(error) => {
                                 tracing::warn!(
@@ -91,7 +83,7 @@ pub(super) fn spawn_event_loop(
                             }
                         }
                     }
-                    pending_requests.lock().await.insert(
+                    self.pending_requests.lock().await.insert(
                         request_key(&id),
                         PendingCodexRequest {
                             id: id.clone(),
@@ -100,16 +92,17 @@ pub(super) fn spawn_event_loop(
                         },
                     );
                     let event = permission_request_event(&id, &method, &params);
-                    if tx.send(Ok(event)).await.is_err() {
+                    if self.tx.send(Ok(event)).await.is_err() {
                         return;
                     }
                 }
                 Ok(AppServerEvent::TransportError { message }) => {
-                    if closing.load(Ordering::SeqCst) {
+                    if self.closing.load(Ordering::SeqCst) {
                         return;
                     }
                     tracing::warn!(%message, "Codex app-server transport failed");
-                    let _ = tx
+                    let _ = self
+                        .tx
                         .send(Err(RuntimeError::new(format!(
                             "Codex app-server transport failed: {message}"
                         ))))
@@ -117,20 +110,22 @@ pub(super) fn spawn_event_loop(
                     return;
                 }
                 Ok(AppServerEvent::ProcessExited { status, signal }) => {
-                    if closing.load(Ordering::SeqCst) {
+                    if self.closing.load(Ordering::SeqCst) {
                         return;
                     }
                     tracing::warn!(?status, ?signal, "Codex app-server exited");
-                    let _ = tx
+                    let _ = self
+                        .tx
                         .send(Err(RuntimeError::new("Codex app-server exited")))
                         .await;
                     return;
                 }
                 Err(broadcast::error::RecvError::Closed) => {
-                    if closing.load(Ordering::SeqCst) {
+                    if self.closing.load(Ordering::SeqCst) {
                         return;
                     }
-                    let _ = tx
+                    let _ = self
+                        .tx
                         .send(Err(RuntimeError::new(
                             "Codex app-server event stream closed",
                         )))
@@ -138,7 +133,7 @@ pub(super) fn spawn_event_loop(
                     return;
                 }
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    pending_prompt_receipts.clear();
+                    self.pending_prompt_receipts.clear();
                     tracing::warn!(
                         skipped,
                         "Codex app-server event stream lagged; UI may miss deltas"
@@ -146,15 +141,86 @@ pub(super) fn spawn_event_loop(
                 }
             }
         }
-    });
-}
-
-fn should_forward_notification(
-    method: &str,
-    params: &serde_json::Value,
-    root_thread_id: &str,
-) -> bool {
-    method != "turn/completed" || belongs_to_root_thread(params, root_thread_id)
+    }
+    async fn notification(
+        &self,
+        method: String,
+        mut params: serde_json::Value,
+        state: &mut NotificationState,
+    ) -> bool {
+        if method == "turn/started" {
+            let thread_id = params
+                .get("threadId")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            // Codex multiplexes every thread (root + each
+            // sub-agent) onto one stream; sub-agent turn/starteds
+            // must not clobber the root's per-turn caches.
+            if state.index_state.should_reset_for_turn_started(thread_id) {
+                state.index_state.reset();
+                state.command_outputs.clear();
+            }
+        }
+        update_turn_state(
+            &method,
+            &params,
+            &self.turns.active_turn_id,
+            &self.turns.last_root_turn_id,
+            &self.turns.root_thread_id,
+        )
+        .await;
+        clear_resolved_request(&method, &params, &self.pending_requests).await;
+        enrich_command_output(&method, &mut params, &mut state.command_outputs);
+        if let Some(receipt_event) = self
+            .pending_prompt_receipts
+            .acknowledge_completed_user_message(&method, &params, &self.turns.root_thread_id)
+        {
+            if self.tx.send(Ok(receipt_event)).await.is_err() {
+                return false;
+            }
+        }
+        let current_model = self.model.read().await.clone();
+        let lifecycle_params = matches!(
+            method.as_str(),
+            "turn/started"
+                | "turn/completed"
+                | "thread/started"
+                | "thread/closed"
+                | "thread/status/changed"
+        )
+        .then(|| params.clone())
+        .or_else(|| {
+            (matches!(method.as_str(), "item/started" | "item/completed")
+                && params["item"]["type"] == "subAgentActivity")
+                .then(|| params.clone())
+        });
+        let mut events = notification_events(
+            &method,
+            params,
+            current_model.as_deref(),
+            &mut state.index_state,
+        );
+        if let Some(params) = lifecycle_params {
+            state.lifecycle.apply(
+                &method,
+                &params,
+                &self.turns.root_thread_id,
+                &state.index_state,
+                &mut events,
+            );
+            self.turns
+                .child_turn_ids
+                .write()
+                .await
+                .clone_from(&state.lifecycle.children);
+        }
+        for event in events {
+            if self.tx.send(Ok(event)).await.is_err() {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 async fn clear_resolved_request(
@@ -243,7 +309,7 @@ mod tests {
 
     use super::super::event_system::request_key;
     use super::super::permissions::PendingCodexRequest;
-    use super::{clear_resolved_request, enrich_command_output, should_forward_notification};
+    use super::{clear_resolved_request, enrich_command_output};
 
     #[tokio::test]
     async fn server_request_resolved_clears_matching_pending_request() {
@@ -296,19 +362,5 @@ mod tests {
 
         assert_eq!(completed["item"]["aggregatedOutput"], json!("hello world"));
         assert!(outputs.is_empty());
-    }
-
-    #[test]
-    fn only_root_turn_completion_is_forwarded() {
-        assert!(should_forward_notification(
-            "turn/completed",
-            &json!({ "threadId": "thread_root" }),
-            "thread_root",
-        ));
-        assert!(!should_forward_notification(
-            "turn/completed",
-            &json!({ "threadId": "thread_child" }),
-            "thread_root",
-        ));
     }
 }
