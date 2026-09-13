@@ -77,7 +77,7 @@ impl AcpRuntimeSession {
                 .pending_prompt_receipts
                 .acknowledge_client_message_id(client_message_id)
             {
-                let _ = self.local_tx.send(Ok(event)).await;
+                let _ = self.local_tx().send(Ok(event)).await;
             }
         }
         await_event_loop_barrier(&self.client).await?;
@@ -85,7 +85,7 @@ impl AcpRuntimeSession {
             if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
                 tracing::debug!(stop_reason = reason, "session/prompt completed");
                 finalize_turn(
-                    &self.local_tx,
+                    self.local_tx(),
                     &self.indexer,
                     self.current_session_id().await,
                     self.context_window,

@@ -119,6 +119,73 @@ async fn spawn_runs_handshake_initial_config_and_prompt() {
 }
 
 #[tokio::test]
+async fn close_during_initial_prompt_closes_stream_with_runtime_retained() {
+    let temp = TempDir::new().unwrap();
+    let log = temp.path().join("hanging-acp.log");
+    let script = temp.path().join("hanging_acp.py");
+    fs::write(&script, hanging_prompt_agent_script(&log)).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut command = Command::new("python3");
+    command.arg(&script).kill_on_drop(true);
+    let mut session = spawn_acp_runtime_session(AcpRuntimeSpawnArgs {
+        command,
+        spawn_guard: None,
+        client_info: AcpClientInfo::default(),
+        stderr_policy: AcpStderrPolicy::Log,
+        process_tree_policy: AcpProcessTreePolicy::Inherit,
+        config: RuntimeSpawnConfig {
+            cwd: temp.path().to_path_buf(),
+            ..RuntimeSpawnConfig::default()
+        },
+        initial_content: Value::String("remain in flight".to_string()),
+        context_window: None,
+        hooks: Arc::new(SpawnHooks),
+    })
+    .await
+    .unwrap();
+
+    let mut runtime_rx = session.take_message_rx();
+    let init = tokio::time::timeout(std::time::Duration::from_secs(2), runtime_rx.recv())
+        .await
+        .expect("initialization event timed out")
+        .expect("runtime stream closed before initialization")
+        .expect("initialization failed");
+    assert!(init.init().is_some());
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if fs::read_to_string(&log)
+                .is_ok_and(|contents| contents.lines().any(|line| line == "session/prompt"))
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("initial prompt did not start");
+
+    tokio::time::timeout(std::time::Duration::from_secs(2), session.close())
+        .await
+        .expect("runtime close exceeded the process-wide shutdown deadline");
+    tokio::time::timeout(std::time::Duration::from_millis(100), async {
+        while runtime_rx.recv().await.is_some() {}
+    })
+    .await
+    .expect("runtime stream remained pending after close");
+
+    assert_eq!(
+        session.session_id().await.as_deref(),
+        Some("ses_hanging"),
+        "closed runtime should remain available for resume metadata"
+    );
+    let log = fs::read_to_string(log).unwrap();
+    assert!(log.lines().any(|line| line == "session/close"));
+    // The fallback cancel is verified by the in-memory close test. This peer
+    // may be killed before it reads that notification; EOF is the contract here.
+}
+
+#[tokio::test]
 async fn stream_input_waits_for_active_turn_and_cancel_emits_terminal_result() {
     let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
     spawn_event_barrier_acker(&client);
@@ -487,6 +554,32 @@ for line in sys.stdin:
         send({{"jsonrpc":"2.0","id":req["id"],"result":{{}}}})
     elif method == "session/prompt":
         send({{"jsonrpc":"2.0","id":req["id"],"result":{{"stopReason":"end_turn"}}}})
+"#,
+        log_path = serde_json::to_string(&log.to_string_lossy()).unwrap()
+    )
+}
+
+fn hanging_prompt_agent_script(log: &std::path::Path) -> String {
+    format!(
+        r#"import json, sys
+log_path = {log_path}
+def log(item):
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(item + "\n")
+def send(value):
+    print(json.dumps(value), flush=True)
+for line in sys.stdin:
+    req = json.loads(line)
+    method = req.get("method")
+    log(method)
+    if method == "initialize":
+        send({{"jsonrpc":"2.0","id":req["id"],"result":{{"protocolVersion":1,"agentCapabilities":{{"loadSession":False,"sessionCapabilities":{{"close":{{}}}}}}}}}})
+    elif method == "session/new":
+        send({{"jsonrpc":"2.0","id":req["id"],"result":{{"sessionId":"ses_hanging","modes":{{"currentModeId":"build"}}}}}})
+    elif method == "session/prompt":
+        pass
+    elif method == "session/close":
+        pass
 "#,
         log_path = serde_json::to_string(&log.to_string_lossy()).unwrap()
     )
