@@ -191,8 +191,11 @@ Requirements:
 
 ## Remaining release work
 
-1. Build a real local ACP connector from its generated instructions, verify model
-   discovery, send a real turn, then exercise resume/non-resume together.
+1. Complete generated-scaffold and mixed resume/non-resume QA. The existing external
+   Pi connector has passed real discovery, conversation, permissions, cancellation
+   and context recall after a service restart; see the
+   [2026-09-13 QA report](./LOCAL_PLUGINS_QA_2026_09_13.md). This does not close L4
+   or prove the generated-scaffold workflow.
 2. Finish theme edit/live-apply, failure/retry, rename and cleanup checks on
    supported packaged targets; development-renderer interactions are not packaged QA.
 3. Review the final diff and obtain commit approval, then record the v0.12.0
