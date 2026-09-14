@@ -19,9 +19,10 @@ use crate::domain::{features, projects, settings_store};
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git, run_git_output_with_env, run_git_with_env};
 
-use super::models::ProviderWorkspace;
+use super::models::{CreateProviderWorkspaceRequest, ProviderWorkspace};
 use super::scaffold;
 
+mod import;
 mod ownership;
 
 const MAX_DISPLAY_NAME_LENGTH: usize = 80;
@@ -37,14 +38,13 @@ const COMMIT_IDENTITY: [(&str, &str); 4] = [
 
 pub(super) async fn create(
     pool: &SqlitePool,
-    provider_id: &str,
-    display_name: &str,
+    request: &CreateProviderWorkspaceRequest,
 ) -> Result<ProviderWorkspace, AppError> {
     let roots = WorkspaceRoots {
         workspaces: settings_store::dir::sibling_dir(WORKSPACES_DIR),
         descriptors: descriptors_dir(),
     };
-    create_with_roots(pool, provider_id, display_name, &roots).await
+    create_with_roots(pool, request, &roots).await
 }
 
 struct WorkspaceRoots {
@@ -54,21 +54,33 @@ struct WorkspaceRoots {
 
 async fn create_with_roots(
     pool: &SqlitePool,
-    provider_id: &str,
-    display_name: &str,
+    request: &CreateProviderWorkspaceRequest,
     roots: &WorkspaceRoots,
 ) -> Result<ProviderWorkspace, AppError> {
     let _guard = creation_lock().lock().await;
-    let provider_id = provider_id.trim();
+    let provider_id = request.provider_id.trim();
     validate_provider_id(provider_id).map_err(|error| {
         AppError::coded(StatusCode::BAD_REQUEST, error.code.as_str(), error.message)
     })?;
-    let display_name = validate_display_name(display_name)?;
+    let display_name = validate_display_name(&request.display_name)?;
     let active_provider_ids = provider_registry().provider_ids();
     let provider_key = provider_identifier_key(provider_id);
-    let resumable_directory = resumable_workspace_directory(&roots.workspaces, provider_id)?;
-    ownership::ensure_provider_identity_path(pool, provider_id, resumable_directory.as_deref())
-        .await?;
+    let imported_directory = match request.directory.as_deref() {
+        Some(directory) => {
+            Some(import::validate_directory(directory, provider_binary_name()).await?)
+        }
+        None => None,
+    };
+    let importing = imported_directory.is_some();
+    let resumable_directory = if imported_directory.is_some() {
+        None
+    } else {
+        resumable_workspace_directory(&roots.workspaces, provider_id)?
+    };
+    let expected_directory = imported_directory
+        .as_deref()
+        .or(resumable_directory.as_deref());
+    ownership::ensure_provider_identity_path(pool, provider_id, expected_directory).await?;
     if builtin_provider_identifiers()
         .iter()
         .any(|builtin| provider_identifier_key(builtin) == provider_key)
@@ -79,7 +91,7 @@ async fn create_with_roots(
             &active_provider_ids,
         )?;
     }
-    if resumable_directory.is_none() {
+    if expected_directory.is_none() {
         // New/unowned paths cannot be recovery attempts. Reject reserved and
         // externally installed identities before creating any filesystem entry.
         lifecycle::ensure_descriptor_id_available(
@@ -88,15 +100,19 @@ async fn create_with_roots(
             &active_provider_ids,
         )?;
     }
-    let directory = ensure_workspace_directory(&roots.workspaces, provider_id)?;
+    let directory = match imported_directory.as_ref() {
+        Some(directory) => directory.clone(),
+        None => ensure_workspace_directory(&roots.workspaces, provider_id)?,
+    };
     let relative_executable = PathBuf::from("bin").join(provider_binary_name());
     let cwd = directory.to_string_lossy().into_owned();
     let executable = directory.join(&relative_executable);
     let expected_descriptor = descriptor(provider_id, &display_name, &directory, &executable);
-    let owned_project_id = ownership::existing_owned_project_id(pool, &cwd, provider_id).await?;
+    let owned_project_id =
+        ownership::existing_owned_project_id(pool, &cwd, provider_id, !importing).await?;
     let owned_retry = owned_project_id.is_some()
         && descriptor_matches(&roots.descriptors, provider_id, &expected_descriptor)?;
-    if resumable_directory.is_some() && !owned_retry {
+    if expected_directory.is_some() && !owned_retry {
         lifecycle::ensure_descriptor_id_available(
             &roots.descriptors,
             provider_id,
@@ -104,8 +120,10 @@ async fn create_with_roots(
         )?;
     }
 
-    scaffold::write(&directory, provider_id, &display_name, &relative_executable)?;
-    ensure_repository(&directory).await?;
+    if !importing {
+        scaffold::write(&directory, provider_id, &display_name, &relative_executable)?;
+        ensure_repository(&directory).await?;
+    }
 
     let (project_id, feature_id) =
         ensure_project_and_feature(pool, owned_project_id, &display_name, &cwd, provider_id)
@@ -345,13 +363,17 @@ fn provider_binary_name() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_with_roots, descriptor, provider_binary_name, validate_display_name, WorkspaceRoots,
+        create_with_roots, descriptor, provider_binary_name, validate_display_name,
+        CreateProviderWorkspaceRequest, WorkspaceRoots,
     };
     use crate::domain::agents::providers::installed::descriptor::ProviderDescriptor;
     use crate::shared::git_cli::run_git;
     use sqlx::SqlitePool;
     use std::path::Path;
     use tempfile::TempDir;
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn descriptor_points_at_the_stable_build_output() {
@@ -391,9 +413,13 @@ mod tests {
         let pool = test_pool().await;
         let temp = TempDir::new().unwrap();
         let roots = roots(&temp);
-        let created = create_with_roots(&pool, "workspace-test-provider", "Workspace Test", &roots)
-            .await
-            .unwrap();
+        let created = create_with_roots(
+            &pool,
+            &request("workspace-test-provider", "Workspace Test", None),
+            &roots,
+        )
+        .await
+        .unwrap();
         let directory =
             std::fs::canonicalize(roots.workspaces.join("workspace-test-provider")).unwrap();
         let executable = directory.join("bin").join(provider_binary_name());
@@ -430,10 +456,13 @@ mod tests {
             )
         );
         assert_eq!(feature, ("ws-session".to_string(), 0));
-        let repeated =
-            create_with_roots(&pool, "workspace-test-provider", "Workspace Test", &roots)
-                .await
-                .unwrap();
+        let repeated = create_with_roots(
+            &pool,
+            &request("workspace-test-provider", "Workspace Test", None),
+            &roots,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             (repeated.project_id, repeated.feature_id),
             (created.project_id, created.feature_id)
@@ -452,12 +481,213 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn imports_an_existing_connector_without_changing_its_source() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        let directory = existing_connector(&temp, "source").await;
+        let original_status = git_status(&directory).await;
+        let original_files = snapshot_files(&directory);
+
+        let created = create_with_roots(
+            &pool,
+            &request(
+                "imported-provider",
+                "Imported",
+                Some(directory.to_str().unwrap()),
+            ),
+            &roots,
+        )
+        .await
+        .unwrap();
+
+        let project: (String, String, Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT kind, path, authoring_target, plugin_id FROM projects WHERE id = ?",
+        )
+        .bind(created.project_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(project.0, "user");
+        assert_eq!(project.1, directory.to_string_lossy());
+        assert_eq!(project.2.as_deref(), Some("provider"));
+        assert_eq!(project.3.as_deref(), Some("imported-provider"));
+        assert_eq!(snapshot_files(&directory), original_files);
+        assert_eq!(git_status(&directory).await, original_status);
+        assert!(!directory.join("INSTRUCTION.md").exists());
+
+        let repeated = create_with_roots(
+            &pool,
+            &request(
+                "imported-provider",
+                "Imported",
+                Some(directory.to_str().unwrap()),
+            ),
+            &roots,
+        )
+        .await
+        .unwrap();
+        assert_eq!(repeated.project_id, created.project_id);
+        assert_eq!(repeated.feature_id, created.feature_id);
+    }
+
+    #[tokio::test]
+    async fn import_preserves_tracked_untracked_files_and_git_metadata() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        let directory = existing_connector(&temp, "committed-source").await;
+        run_git(&["add", "."], &directory).await.unwrap();
+        run_git(
+            &[
+                "-c",
+                "user.name=QA",
+                "-c",
+                "user.email=qa@example.test",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+            &directory,
+        )
+        .await
+        .unwrap();
+        std::fs::write(directory.join("README.md"), "uncommitted edits").unwrap();
+        std::fs::write(directory.join("local-only.txt"), "untracked source").unwrap();
+        let before = snapshot_files(&directory);
+        let request = request("preserved-import", "Preserved", directory.to_str());
+        create_with_roots(&pool, &request, &roots).await.unwrap();
+        assert_eq!(snapshot_files(&directory), before);
+        create_with_roots(&pool, &request, &roots).await.unwrap();
+        assert_eq!(
+            snapshot_files(&directory),
+            before,
+            "retry must preserve files too"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_rejects_invalid_paths_and_connectors() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        assert!(create_with_roots(
+            &pool,
+            &request("relative-provider", "Relative", Some("relative")),
+            &roots
+        )
+        .await
+        .is_err());
+
+        let not_git = temp.path().join("not-git");
+        std::fs::create_dir(&not_git).unwrap();
+        assert!(create_with_roots(
+            &pool,
+            &request(
+                "not-git-provider",
+                "Not Git",
+                Some(not_git.to_str().unwrap())
+            ),
+            &roots,
+        )
+        .await
+        .is_err());
+
+        let missing = existing_repository(&temp, "missing").await;
+        assert!(create_with_roots(
+            &pool,
+            &request(
+                "missing-provider",
+                "Missing",
+                Some(missing.to_str().unwrap())
+            ),
+            &roots,
+        )
+        .await
+        .is_err());
+
+        #[cfg(unix)]
+        {
+            let non_executable = existing_repository(&temp, "non-executable").await;
+            let binary = non_executable.join("bin/provider");
+            std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+            std::fs::write(&binary, "connector").unwrap();
+            assert!(create_with_roots(
+                &pool,
+                &request(
+                    "non-executable-provider",
+                    "Non executable",
+                    Some(non_executable.to_str().unwrap()),
+                ),
+                &roots,
+            )
+            .await
+            .is_err());
+        }
+        let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(projects, 0);
+    }
+
+    #[tokio::test]
+    async fn import_rejects_project_and_identity_collisions() {
+        let pool = test_pool().await;
+        let temp = TempDir::new().unwrap();
+        let roots = roots(&temp);
+        let directory = existing_connector(&temp, "collision").await;
+        let cwd = directory.to_string_lossy().into_owned();
+        crate::domain::projects::service::create_project(&pool, "Existing", &cwd)
+            .await
+            .unwrap();
+        assert!(create_with_roots(
+            &pool,
+            &request("collision-provider", "Collision", Some(&cwd)),
+            &roots
+        )
+        .await
+        .is_err());
+
+        let other = existing_connector(&temp, "other").await;
+        let project = crate::domain::projects::service::create_project(
+            &pool,
+            "Claimed identity",
+            &other.to_string_lossy(),
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE projects SET authoring_target = 'provider', plugin_id = 'claimed-import' WHERE id = ?",
+        )
+        .bind(project.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let candidate = existing_connector(&temp, "candidate").await;
+        assert!(create_with_roots(
+            &pool,
+            &request(
+                "claimed-import",
+                "Claimed",
+                Some(candidate.to_str().unwrap()),
+            ),
+            &roots,
+        )
+        .await
+        .is_err());
+        assert!(!roots.descriptors.join("claimed-import.json").exists());
+    }
+
+    #[tokio::test]
     async fn reserved_ids_are_refused_before_a_workspace_is_created() {
         let pool = test_pool().await;
         let temp = TempDir::new().unwrap();
         let roots = roots(&temp);
         assert!(
-            create_with_roots(&pool, "claude", "Claude impostor", &roots)
+            create_with_roots(&pool, &request("claude", "Claude impostor", None), &roots)
                 .await
                 .is_err()
         );
@@ -503,9 +733,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(create_with_roots(&pool, "claude", "Forged Claude", &roots)
-            .await
-            .is_err());
+        assert!(
+            create_with_roots(&pool, &request("claude", "Forged Claude", None), &roots)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -524,7 +756,7 @@ mod tests {
                 .await
                 .unwrap();
 
-        let created = create_with_roots(&pool, "retry-provider", "Retry", &roots)
+        let created = create_with_roots(&pool, &request("retry-provider", "Retry", None), &roots)
             .await
             .unwrap();
         assert_eq!(created.project_id, project.id);
@@ -551,7 +783,7 @@ mod tests {
             (None, None),
             "legacy projects must not be backfilled"
         );
-        let repeated = create_with_roots(&pool, "retry-provider", "Retry", &roots)
+        let repeated = create_with_roots(&pool, &request("retry-provider", "Retry", None), &roots)
             .await
             .unwrap();
         assert_eq!(
@@ -584,7 +816,7 @@ mod tests {
         .await
         .unwrap();
 
-        let created = create_with_roots(&pool, "marked-provider", "Marked", &roots)
+        let created = create_with_roots(&pool, &request("marked-provider", "Marked", None), &roots)
             .await
             .unwrap();
         assert_eq!(created.project_id, project.id);
@@ -613,11 +845,13 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(
-            create_with_roots(&pool, "conflicted-provider", "Conflicted", &roots)
-                .await
-                .is_err()
-        );
+        assert!(create_with_roots(
+            &pool,
+            &request("conflicted-provider", "Conflicted", None),
+            &roots
+        )
+        .await
+        .is_err());
         let marker: (Option<String>, Option<String>) =
             sqlx::query_as("SELECT authoring_target, plugin_id FROM projects WHERE id = ?")
                 .bind(project.id)
@@ -659,7 +893,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            create_with_roots(&pool, "claimed-provider", "Claimed", &roots)
+            create_with_roots(&pool, &request("claimed-provider", "Claimed", None), &roots)
                 .await
                 .is_err()
         );
@@ -676,11 +910,13 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join("user-file.txt"), "keep me").unwrap();
 
-        assert!(
-            create_with_roots(&pool, "occupied-provider", "Occupied", &roots)
-                .await
-                .is_err()
-        );
+        assert!(create_with_roots(
+            &pool,
+            &request("occupied-provider", "Occupied", None),
+            &roots
+        )
+        .await
+        .is_err());
         assert_eq!(
             std::fs::read_to_string(directory.join("user-file.txt")).unwrap(),
             "keep me"
@@ -703,11 +939,13 @@ mod tests {
         let original = serde_json::to_vec_pretty(&external).unwrap();
         std::fs::write(&descriptor_path, &original).unwrap();
 
-        assert!(
-            create_with_roots(&pool, "external-provider", "External", &roots)
-                .await
-                .is_err()
-        );
+        assert!(create_with_roots(
+            &pool,
+            &request("external-provider", "External", None),
+            &roots
+        )
+        .await
+        .is_err());
         assert_eq!(std::fs::read(descriptor_path).unwrap(), original);
         let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
             .fetch_one(&pool)
@@ -721,6 +959,85 @@ mod tests {
             workspaces: temp.path().join("provider-workspaces"),
             descriptors: temp.path().join("providers"),
         }
+    }
+
+    fn request(
+        provider_id: &str,
+        display_name: &str,
+        directory: Option<&str>,
+    ) -> CreateProviderWorkspaceRequest {
+        CreateProviderWorkspaceRequest {
+            provider_id: provider_id.to_string(),
+            display_name: display_name.to_string(),
+            directory: directory.map(str::to_string),
+        }
+    }
+
+    async fn existing_repository(temp: &TempDir, name: &str) -> std::path::PathBuf {
+        let directory = temp.path().join(name);
+        std::fs::create_dir(&directory).unwrap();
+        run_git(&["init", "-q", "-b", "main"], &directory)
+            .await
+            .unwrap();
+        std::fs::canonicalize(directory).unwrap()
+    }
+
+    async fn existing_connector(temp: &TempDir, name: &str) -> std::path::PathBuf {
+        let directory = existing_repository(temp, name).await;
+        std::fs::write(directory.join("README.md"), "user-owned source").unwrap();
+        let binary = directory.join("bin").join(provider_binary_name());
+        std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        std::fs::write(&binary, "connector").unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        directory
+    }
+
+    async fn git_status(directory: &Path) -> String {
+        let output = crate::shared::git_cli::run_git_output_with_env(
+            &["status", "--porcelain", "--untracked-files=all"],
+            directory,
+            &[],
+        )
+        .await
+        .unwrap();
+        String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn snapshot_files(
+        root: &Path,
+    ) -> std::collections::BTreeMap<std::path::PathBuf, (Vec<u8>, u32)> {
+        fn visit(
+            root: &Path,
+            directory: &Path,
+            files: &mut std::collections::BTreeMap<std::path::PathBuf, (Vec<u8>, u32)>,
+        ) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                let metadata = std::fs::symlink_metadata(&path).unwrap();
+                #[cfg(unix)]
+                let mode = metadata.permissions().mode();
+                #[cfg(not(unix))]
+                let mode = u32::from(metadata.permissions().readonly());
+                let content = if metadata.is_dir() {
+                    visit(root, &path, files);
+                    Vec::new()
+                } else {
+                    assert!(
+                        metadata.is_file(),
+                        "fixture contains an unexpected special file"
+                    );
+                    std::fs::read(&path).unwrap()
+                };
+                files.insert(
+                    path.strip_prefix(root).unwrap().to_path_buf(),
+                    (content, mode),
+                );
+            }
+        }
+        let mut files = std::collections::BTreeMap::new();
+        visit(root, root, &mut files);
+        files
     }
 
     async fn test_pool() -> SqlitePool {

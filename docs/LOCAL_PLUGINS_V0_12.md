@@ -21,21 +21,75 @@ and a published registry version are separate concepts.
 
 ## Source-backed state after implementation
 
-| Area                 | Current implementation                                                                                                                                             | Scope / remaining verification                                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| Provider authoring   | **Add provider** generates a Git project, conversation, instructions and local descriptor targeting `bin/provider`; the developer implements/builds the connector. | New rows carry `authoring_target=provider` and `plugin_id`; old rows remain unmarked.                                        |
-| Theme authoring      | Theme creation prepares the local folder, project and conversation before returning `{theme, workspace}`; the UI opens that returned workspace.                    | Partial setup returns `THEME_PROJECT_SETUP_FAILED`; the retained theme can be reopened to retry without recreating it.       |
-| Theme identification | New theme projects use `kind='user'` plus `authoring_target=theme` and `plugin_id`; legacy `kind='theme'` remains readable unchanged.                              | No migration or reopen path reclassifies existing projects.                                                                  |
-| Local runtime        | Installed ACP connector flow, generic model discovery, restart-gated registration and theme application/validation exist.                                          | Complete local lifecycle QA; avoid describing a generated project as an already-implemented connector.                       |
-| Resume isolation     | Working-tree changes scope installed ACP capability state to each runtime and gate ID persistence through the live session.                                        | Runtime/WS persistence regression tests pass; packaged-app lifecycle QA remains separate.                                    |
-| Future downloads     | Managed package lifecycle, trust, conformance and new signed catalog acquisition/cache exist in backend.                                                           | Explicitly retained exception to the no-unused-future-mechanisms rule; not a local release prerequisite or a marketplace UI. |
-| Registry tooling     | Runnable local validation/index tools and workflow templates exist under `tooling/marketplace-registry/`.                                                          | Not a deployed registry/publisher; no package copying, signing or publication is implemented by the template.                |
+| Area                 | Current implementation                                                                                                                                                   | Scope / remaining verification                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Provider authoring   | **Add provider** scaffolds a new connector or imports an existing built Git repository; both register a local `bin/provider` descriptor and open a project/conversation. | New rows carry `authoring_target=provider` and `plugin_id`; old rows remain unmarked.                                        |
+| Theme authoring      | Theme creation prepares the local folder, project and conversation before returning `{theme, workspace}`; the UI opens that returned workspace.                          | Partial setup returns `THEME_PROJECT_SETUP_FAILED`; the retained theme can be reopened to retry without recreating it.       |
+| Theme identification | New theme projects use `kind='user'` plus `authoring_target=theme` and `plugin_id`; legacy `kind='theme'` remains readable unchanged.                                    | No migration or reopen path reclassifies existing projects.                                                                  |
+| Local runtime        | Installed ACP connector flow, generic model discovery, restart-gated registration and theme application/validation exist.                                                | Complete local lifecycle QA; avoid describing a generated project as an already-implemented connector.                       |
+| Resume isolation     | Working-tree changes scope installed ACP capability state to each runtime and gate ID persistence through the live session.                                              | Runtime/WS persistence regression tests pass; packaged-app lifecycle QA remains separate.                                    |
+| Future downloads     | Managed package lifecycle, trust, conformance and new signed catalog acquisition/cache exist in backend.                                                                 | Explicitly retained exception to the no-unused-future-mechanisms rule; not a local release prerequisite or a marketplace UI. |
+| Registry tooling     | Runnable local validation/index tools and workflow templates exist under `tooling/marketplace-registry/`.                                                                | Not a deployed registry/publisher; no package copying, signing or publication is implemented by the template.                |
 
 Source anchors: `agents/providers/development/workspace.rs`, `themes/workspace.rs`,
 `themes/routes.rs`, `projects/models.rs`, `projects/repository.rs`,
 `components/theme/ThemeLibrary.tsx` and `agents/providers/installed/`.
 Backend paths are relative to `packages/service/src/domain/`; component paths
 are relative to `packages/desktop/src/`.
+
+## Existing-folder provider import — 2026-09-13
+
+The local authoring scope also includes **Add provider → From existing folder**.
+The developer supplies a name, stable provider ID and existing Git repository root.
+The connector must already be built at `bin/provider` (`bin/provider.exe` on Windows).
+
+- Import registers a local descriptor and creates a new ordinary project and
+  conversation with `authoring_target=provider` and `plugin_id`.
+- Existing source files and Git history are preserved: no scaffold writes,
+  automatic build, Git initialization or automatic commit.
+- Existing unrelated project rows are not adopted or reclassified. Identity/path
+  collisions are rejected; an identical owned import can be retried.
+- The folder and executable are structurally validated. Import is not ACP
+  conformance certification; only import trusted local code, then restart Cadencr
+  to discover and test the connector.
+- Native directory selection and manual absolute-path entry belong to this local
+  flow. Marketplace browsing, publication and registry submission remain deferred.
+
+Verification on the integrated implementation:
+
+- 19 focused Rust development tests pass on macOS, covering creation/import,
+  retry, collisions, invalid roots/executables and symlink canonicalization.
+- Full frontend suite: 4,307 tests across 551 files; the final copy-only correction
+  was followed by 8 passing dialog tests. TypeScript, desktop lint, knip, Rust
+  check/build, formatting and provider-boundary scan pass.
+- Real renderer interactions against an isolated running service: import an unborn
+  Git repository, navigate to its conversation, show an invalid-folder error and
+  recover by importing a valid folder. Final-binary import and retry return the
+  same project/conversation IDs; the scaffold API still creates a new connector.
+- API checks confirm persisted provider authoring identity and reject an existing
+  ordinary project without adding markers. Import leaves a file-hash snapshot of
+  the connector source and Git metadata unchanged.
+- Restarting the service loads the imported Pi connector as `installed_local`,
+  `available`, with eight discovered models. This run does not repeat Pi prompt,
+  tool or resume QA; see the earlier Pi QA report for that separate evidence.
+- QA used explicit temporary database/settings CLI paths and the real Vite
+  renderer, rather than an unrestricted `pnpm dev` against the existing dev DB.
+  Native OS folder-picker interaction and packaged Windows/Linux builds were not
+  exercised; picker behavior is covered with mocked bridge tests.
+
+Finish-job refinements (2026-09-14) reuse the shared Git-root resolver and the
+runtime's executable-file admission rule. Regression coverage also checks complete
+content/mode preservation of source and Git metadata (including dirty tracked and
+untracked files), native-picker failure recovery and switching back to creation.
+The dialog remains within the lint-enforced function-size limit; no extra
+state-management abstraction was added.
+Finish-job checks: 223 provider Rust tests passed (1 ignored), 13 focused frontend
+tests passed, plus TypeScript, desktop lint and knip. The earlier full frontend
+and UI QA results above remain applicable to unchanged production frontend code.
+The final service build also passed isolated API smoke checks for import/retry,
+source/Git preservation, provider markers, and rejection of missing or
+non-executable connectors and nested repository paths. Build, Rust check,
+formatting and the provider-boundary scan passed.
 
 ## Review progress — 2026-09-12
 

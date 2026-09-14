@@ -38,22 +38,22 @@ pub(super) async fn existing_owned_project_id(
     pool: &SqlitePool,
     cwd: &str,
     provider_id: &str,
+    allow_unmarked: bool,
 ) -> Result<Option<i64>, AppError> {
-    let marker: Option<(i64, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT id, authoring_target, plugin_id FROM projects WHERE path = ? AND kind = 'user'",
-    )
-    .bind(cwd)
-    .fetch_optional(pool)
-    .await?;
+    let marker: Option<(i64, String, Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT id, kind, authoring_target, plugin_id FROM projects WHERE path = ?")
+            .bind(cwd)
+            .fetch_optional(pool)
+            .await?;
     match marker {
         None => Ok(None),
-        Some((id, None, None)) => Ok(Some(id)),
-        Some((id, Some(target), Some(id_provider)))
-            if target == "provider" && id_provider == provider_id =>
+        Some((id, kind, None, None)) if kind == "user" && allow_unmarked => Ok(Some(id)),
+        Some((id, kind, Some(target), Some(id_provider)))
+            if kind == "user" && target == "provider" && id_provider == provider_id =>
         {
             Ok(Some(id))
         }
-        Some((_id, target, plugin_id)) => {
+        Some((_id, _kind, target, plugin_id)) => {
             Err(project_ownership_conflict(provider_id, target, plugin_id))
         }
     }

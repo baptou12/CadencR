@@ -978,9 +978,16 @@ export interface CreateProjectRequest {
 }
 
 /**
+ * Existing connector repository to import instead of scaffolding a new one.
+ */
+export type CreateProviderWorkspaceRequestDirectory = string | null;
+
+/**
  * The stable identity and human label for a new provider connector project.
  */
 export interface CreateProviderWorkspaceRequest {
+  /** Existing connector repository to import instead of scaffolding a new one. */
+  directory?: CreateProviderWorkspaceRequestDirectory;
   /** Human-readable name used in the project and scaffold. */
   display_name: string;
   /** ACP Registry-compatible provider id, e.g. `pi-connector`. */
