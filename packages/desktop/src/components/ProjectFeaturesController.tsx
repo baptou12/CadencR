@@ -4,7 +4,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   useDeleteFeature,
-  useIsFeatureEmpty,
   useListFeatures,
   useListFeatureWorktrees,
   useUpdateFeatureLabel,
@@ -18,19 +17,16 @@ import { FeatureSubtree } from "@/components/FeatureSubtree";
 import { ProjectFeatureRow } from "@/components/ProjectFeatureRow";
 import {
   adjacentFeature,
-  archiveFeatureInCachedLists,
   closeFeatureSession,
   navigateToFeatureOrHome,
   removeFeatureFromCachedLists,
 } from "@/components/project-feature-navigation";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { getArchiveCleanupAvailability } from "@/components/archive-cleanup-availability";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { partitionActiveFeatures } from "@/lib/feature-grouping";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { buildFeatureForest } from "@/lib/feature-hierarchy";
 import { normalizeLabel, uniqueLabels } from "@/lib/feature-labels";
-import { getPendingFeatureArchiveAction } from "@/lib/feature-archive-decision";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
@@ -39,6 +35,8 @@ import { useFeatureActivityCounts } from "@/hooks/useFeatureActivityCounts";
 import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import { useLiveFeatureMeta } from "@/hooks/useLiveFeatureMeta";
+import { useArchiveFeatureAction } from "@/hooks/useArchiveFeatureAction";
+import { useFeatureArchiveConfirmation } from "@/components/useFeatureArchiveConfirmation";
 
 export const ACTIVE_FEATURE_STATUS: FeatureStatus = "active";
 export const ARCHIVED_FEATURE_STATUS: FeatureStatus = "archived";
@@ -184,23 +182,14 @@ function useProjectFeatureActions(props: ProjectFeaturesProps, data: ProjectFeat
     () => void invalidateByUrlPrefix(queryClient, "/api/features"),
     [queryClient],
   );
+  const archiveFeature = useArchiveFeatureAction({
+    activeFeatureId: props.activeFeatureId,
+    activeFeatures: data.activeFeatures,
+    projectId: props.projectId,
+  });
   const updateStatusMutation = useUpdateFeatureStatus({
     mutation: {
-      onSuccess: (_data, variables) => {
-        if (
-          variables.id === props.activeFeatureId &&
-          variables.data.status === ARCHIVED_FEATURE_STATUS
-        ) {
-          archiveFeatureInCachedLists(queryClient, variables.id);
-          closeFeatureSession(variables.id);
-          navigateToFeatureOrHome(
-            navigate,
-            props.projectId,
-            adjacentFeature(data.activeFeatures, variables.id),
-          );
-        }
-        invalidateFeatures();
-      },
+      onSuccess: invalidateFeatures,
       onError: (error) => toast.error(apiErrorMessage(error, "Failed to update feature status")),
     },
   });
@@ -226,11 +215,6 @@ function useProjectFeatureActions(props: ProjectFeaturesProps, data: ProjectFeat
       onError: (error) => toast.error(apiErrorMessage(error, "Failed to update pinned state")),
     },
   });
-  const updateStatus = useCallback(
-    (featureId: number, status: FeatureStatus): void =>
-      updateStatusMutation.mutate({ id: featureId, data: { status } }),
-    [updateStatusMutation],
-  );
   const navigateToFeature = useCallback(
     (feature: Feature): void => {
       props.onSelectFeature(feature.id);
@@ -267,44 +251,13 @@ function useProjectFeatureActions(props: ProjectFeaturesProps, data: ProjectFeat
     navigateToFeature,
     togglePin: (featureId: number, pinned: boolean): void =>
       pinnedMutation.mutate({ id: featureId, data: { pinned } }),
-    unarchive: (featureId: number): void => updateStatus(featureId, ACTIVE_FEATURE_STATUS),
-    updateStatus,
+    archiveFeature,
+    unarchive: (featureId: number): void =>
+      updateStatusMutation.mutate({ id: featureId, data: { status: ACTIVE_FEATURE_STATUS } }),
   };
 }
 
 type ProjectFeatureActions = ReturnType<typeof useProjectFeatureActions>;
-
-function useFeatureConfirmation(
-  confirmFeatureId: number | null,
-  data: ProjectFeaturesData,
-): {
-  action: ReturnType<typeof getPendingFeatureArchiveAction>;
-  cleanup: ReturnType<typeof getArchiveCleanupAvailability>;
-  feature: Feature | undefined;
-} {
-  const feature = data.features.find((candidate) => candidate.id === confirmFeatureId);
-  const isDelete = feature?.status === ARCHIVED_FEATURE_STATUS;
-  const emptyCheck = useIsFeatureEmpty(confirmFeatureId ?? 0, {
-    query: { enabled: confirmFeatureId != null && !isDelete, refetchOnMount: "always" },
-  });
-  const action = getPendingFeatureArchiveAction({
-    feature,
-    emptyResponse: emptyCheck.data,
-    isCheckingEmpty: emptyCheck.isLoading || emptyCheck.isFetching,
-    hasEmptyCheckError: emptyCheck.error != null,
-  });
-  useEffect(() => {
-    if (emptyCheck.error == null || confirmFeatureId == null || isDelete) return;
-    toast.error(apiErrorMessage(emptyCheck.error, "Failed to check whether session is empty"));
-  }, [confirmFeatureId, emptyCheck.error, isDelete]);
-  return {
-    action,
-    cleanup: getArchiveCleanupAvailability(
-      feature ? data.worktreeByFeatureId.get(feature.id) : null,
-    ),
-    feature,
-  };
-}
 
 function createFeatureRenderer(
   props: ProjectFeaturesProps,
@@ -353,7 +306,11 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
   const data = useProjectFeaturesData(props);
   const labels = useProjectFeatureLabels(data);
   const actions = useProjectFeatureActions(props, data);
-  const confirmation = useFeatureConfirmation(confirmFeatureId, data);
+  const confirmation = useFeatureArchiveConfirmation(
+    confirmFeatureId,
+    data.features,
+    data.worktreeByFeatureId,
+  );
   useEffect(() => {
     if (data.activeFeature?.status === ARCHIVED_FEATURE_STATUS) setShowArchived(true);
   }, [data.activeFeature?.status]);

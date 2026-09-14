@@ -399,4 +399,5 @@ pub fn features_router() -> Router<AppState> {
             post(crate::domain::features::auto_name_route::auto_name_feature_handler),
         )
         .merge(crate::domain::features::pending_gate::pending_gate_routes())
+        .merge(crate::domain::features::archive_routes::archive_routes())
 }

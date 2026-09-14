@@ -63,6 +63,13 @@ vi.mock("@/lib/project-onboarding", () => ({
 
 vi.mock("../api/generated", () => ({
   useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "true" }, isLoading: false })),
+  useArchiveFeature: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useGetFeatureArchivePreview: vi.fn(() => ({
+    data: { parent_ids: [], descendant_ids: [], has_relations: false },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  })),
   useListProjects: vi.fn(() => ({
     data: [{ id: 1, name: "My Project", path: "/my-project" }],
   })),

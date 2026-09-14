@@ -17,6 +17,7 @@ use crate::domain::editor::mutation_routes as editor_mutation_routes;
 use crate::domain::editor::routes as editor_routes;
 use crate::domain::feature_layouts::models as feature_layouts_models;
 use crate::domain::feature_layouts::routes as feature_layouts_routes;
+use crate::domain::features::archive_routes as features_archive_routes;
 use crate::domain::features::auto_name_route as features_auto_name_route;
 use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
@@ -106,6 +107,8 @@ use crate::domain::ws_session::routes as ws_routes;
         features_routes::delete_feature_handler,
         features_routes::update_feature_title_handler,
         features_routes::update_feature_status_handler,
+        features_archive_routes::archive_preview_handler,
+        features_archive_routes::archive_feature_handler,
         features_routes::update_feature_label_handler,
         features_routes::update_feature_pinned_handler,
         features_routes::is_empty_handler,
@@ -338,6 +341,9 @@ use crate::domain::ws_session::routes as ws_routes;
         features_models::FeatureStatus,
         features_models::CreateFeatureRequest,
         features_models::CreateFeatureResponse,
+        features_models::ArchivePreview,
+        features_models::ArchiveRequest,
+        features_models::ArchiveResponse,
         features_models::UpdateTitleRequest,
         features_models::UpdateStatusRequest,
         features_models::UpdateLabelRequest,
