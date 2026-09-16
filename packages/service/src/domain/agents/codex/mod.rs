@@ -21,6 +21,7 @@ mod event_reasoning;
 mod event_reasoning_state;
 mod event_state;
 mod event_subagent_activity;
+mod event_subagent_recovery;
 mod event_subagent_routes;
 mod event_subagents;
 mod event_system;
