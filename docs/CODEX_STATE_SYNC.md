@@ -1,5 +1,200 @@
 # Codex session-state synchronization investigation
 
+## Regression and corrective follow-up (2026-09-14)
+
+The sections below this follow-up describe the earlier fix, not proof that it
+covered upward messaging. The merged `bbf4cf234` change incorrectly treated
+`subAgentActivity.kind = interacted` as a spawn edge.
+
+### Proven failure
+
+Production was opened read-only (`mode=ro` / `query_only`). The bounded snapshot
+of **Archive Parent Child Conversations**, feature `2376`, session `3885`, ends
+at message `2303356`; it is not a claim about later activity in that conversation.
+
+1. Child `01a0a176-ae8e-7a72-8ce8-35d10e6bc46c` sent a message to root
+   `01a0a173-455a-72a0-8100-13be6d11aec3` at `19:48:31.863 UTC`.
+2. Its native `SubAgentActivity/interacted` item made the adapter register the
+   **root** as a child of messaging call `call_mWd2XE0HwgfqP0CwO4Bc6Yza`.
+3. Subsequent root content acquired that wrong `parent_tool_use_id`. Of the
+   `1,210` rows through the cutoff, `587` are affected: `244` tool calls,
+   `207` tool results, `124` thinking rows, and `12` text rows.
+4. Root `turn/completed` was then suppressed as a child result. The poisoned
+   route survived per-turn resets, explaining the persistent working state.
+5. Separately, summary selected an empty last text block before compaction
+   instead of the last nonblank answer (production message `2303091`).
+
+This is primarily incorrect ancestry, not reversed database message IDs. Sorting
+by timestamps or forcing idle in the frontend would mask symptoms, not repair
+the fault.
+
+### Implemented invariants
+
+| Boundary               | Correction                                                                                                                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root identity          | Reject root/empty child registrations; root lookup cannot return a child parent, even with a stale poisoned map.                                                                        |
+| Messaging              | `interacted` never creates a spawn edge from its sender or messaging call. Known child routes are preserved.                                                                            |
+| Unknown resumed target | Read `thread/read` metadata and prove its entire `thread_spawn` ancestry reaches the session root or an already verified descendant; register ancestor-first using real parents.        |
+| Recovery limits        | Coalesce attempts per target/root turn; bound the whole lookup to three seconds and 64 ancestors; detect cycles and mismatched identities before changing routes.                       |
+| Active recovered child | Consume the metadata's active status, even when no fresh child turn-start event arrives. Preserve existing deferred completion and Stop behavior.                                       |
+| Failure/isolation      | Surface metadata failures as `CODEX_SUBAGENT_LINEAGE`; foreign/guardian/unresolved content and terminal events cannot become root content/completion. Preserve usage-accounting events. |
+| Summary                | Select the last nonblank text, without hiding active streaming placeholders.                                                                                                            |
+
+No polling, optimistic frontend status, dependency change, automatic retry,
+database migration, or automatic history rewrite was introduced. Provider-specific
+behavior remains inside the Codex adapter. The frontend still consumes only the
+canonical `session_status` stream for working/idle state.
+
+### Initial regression verification (2026-09-14)
+
+| Check                                                 | Result                                                                                                                                                                            |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex adapter unit tests                              | 237 passed                                                                                                                                                                        |
+| Stream-reader / canonical status / history repository | 42 / 17 / 81 passed                                                                                                                                                               |
+| Complete desktop test suite                           | 639 files, 4,897 tests passed                                                                                                                                                     |
+| Summary/display subset                                | 40 tests passed (included in the desktop suite)                                                                                                                                   |
+| Read-only repair planner                              | 4 tests passed; exact IDs, stable hashes, bounded cutoff, real children and unrelated sessions preserved                                                                          |
+| Subprocess integration                                | One automated integration test covers eight scenarios through HTTP/WS, persistence, and history hydration                                                                         |
+| Live development app                                  | Eight HTTP/WS scenarios passed on a new isolated DB; second root turn and reconnect snapshots also verified                                                                       |
+| Chrome UI                                             | Summary enabled through Settings; compaction order survives reload; parent and next-turn answers remain outside the child recap; active child shows working and Stop returns idle |
+
+Workspace lint/provider boundaries, desktop type-check/Knip, formatting, and
+diff-whitespace checks passed. Turbo emitted sandbox IO warnings but all six
+lint tasks succeeded; these were not compiler or linter failures.
+
+The deterministic fixture covers `legacy` (no thread-status notifications),
+`upward`, `sibling`, `resumed`, `stop-status`, `read-failure`, `foreign`, and
+`summary`. It launches no model or delegated agents and executes no tools.
+This does not claim live native multi-agent scheduler coverage or execution of
+older CLI binaries. Chrome console checks found no errors or warnings in the
+tested conversation pages. Development-server startup reports existing route-file
+warnings; the initial QA script's numeric session ID and missing fixture skill
+catalog were corrected before the successful replay.
+
+```bash
+pnpm rust -- test -p cadencr-service --test codex_conversation_state_test -- --nocapture
+node --test scripts/codex-conversation-repair.test.mjs
+pnpm --filter @cadencr/desktop test
+```
+
+Live QA used `pnpm dev --filter=@cadencr/desktop` plus a separately started service
+with explicit isolated `--db-path` and `--settings-dir`; the existing worktree DB
+was not used or replaced. Logs and the exact production dry-run manifest are in
+`/tmp/cadencr-conversation-sync-qa/`. The integration test prints its preserved
+temporary database directory.
+The QA-owned service/frontend were stopped, ports `5105`/`1426` verified closed,
+and the QA Chrome tab closed. All database files were preserved.
+
+### Finish-job review hardening (2026-09-15)
+
+- Continue draining the SDK broadcast during metadata recovery and replay the
+  queued events in order. This prevents the three-second metadata wait from
+  overflowing the SDK's 512-event ring. The queue is bounded at 8,192 events and
+  an estimated 16 MiB retained payload; overflow or detected event loss ends the
+  stream with a visible error, never a silent success. Queued events, including
+  approvals, wait for the bounded lookup rather than overtaking unresolved ancestry.
+- Share strict spawn-parent validation between live routes and recovery: reject
+  missing, malformed or conflicting task parents; keep valid foreign/guardian
+  metadata distinct from corrupt task metadata.
+- Ignore foreign senders' activity even when it targets an already tracked child.
+- Reuse the canonical WebSocket envelope in integration tests.
+- Index only repair-anchor metadata and fetch content only for exact candidates;
+  reject duplicate spawn anchors. The planner remains strictly read-only.
+
+Final verification after the review:
+
+| Check                                               | Result                                                                                                                                             |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex adapter unit tests                            | 244 passed, including burst/approval ordering, queue limits, malformed ancestry and foreign lifecycle events                                       |
+| Stream-reader / session-status / repository filters | 42 / 17 / 181 passed                                                                                                                               |
+| Complete desktop suite                              | 639 files / 4,897 tests passed                                                                                                                     |
+| Summary/display subset / repair planner             | 40 / 6 passed                                                                                                                                      |
+| Subprocess integration                              | 12 scenarios passed, plus a subsequent root turn                                                                                                   |
+| Live dev HTTP/WS replay                             | 12 scenarios passed on a new isolated database                                                                                                     |
+| UI                                                  | Summary order survives reload; parent and next-turn answers stay visible outside child recaps; recovered child keeps working until Stop, then idle |
+| Static checks                                       | Workspace lint, desktop type-check/Knip, formatting, provider boundaries and diff whitespace checks passed                                         |
+
+The integration fixture now also covers `burst` (1,600 deltas while `thread/read`
+waits two seconds), `read-timeout`, `missing-parent`, and `conflicting-parent`.
+The queue unit test preserves an approval and completion after the burst.
+A dev-console orphan-delta warning was traced to the fixture omitting
+`item/started`; the fixture was corrected, integration and UI Stop were replayed,
+and that stream warning disappeared. Chrome still reports CSP/meta,
+non-desktop runtime-config and navigation-time WebSocket warnings; this is not a
+claim of a warning-free browser run. No native model or native scheduler was used.
+
+Current live QA artifacts: `/tmp/cadencr-finish-job-qa-20260915-7epuj8ja/`.
+Rust/test/check logs: `/tmp/finish-job-*.log`. QA databases are preserved.
+The QA-owned frontend/service and Chrome tab were closed; ports `1426`/`5105`
+were verified to have no listener.
+
+### Existing production history: read-only planner
+
+`scripts/codex-conversation-repair.mjs` is deliberately **dry-run only**. It requires
+native root/child rollout evidence, session identity, and an explicit message-ID
+cutoff. It verifies the real child spawn and messaging anchors, and emits exact
+candidate IDs plus content/row hashes, without printing message content.
+
+```bash
+node scripts/codex-conversation-repair.mjs \
+  --database "$HOME/.cadencr/database/cadencr.db" \
+  --session 3885 \
+  --root-rollout /absolute/path/to/root-rollout.jsonl \
+  --child-rollout /absolute/path/to/child-rollout.jsonl \
+  --through-message-id 2303356
+```
+
+The planner cannot apply a manifest. Any repair is a separate operation requiring
+explicit approval, a quiet affected runtime, an online SQLite backup and integrity
+check, and transactional revalidation of every row/hash. Only proven wrong parent
+pointers may change; content, ordering, and real child nesting must stay untouched.
+Runtime reconciliation remains separate: a database edit cannot clear a poisoned
+in-memory provider route.
+
+### Authorized one-off production repair (2026-09-15)
+
+A later approved manifest extended the cutoff to `2303523`: **672** wrong parent
+pointers among **1,296** session rows, including 85 subsequent rows independently
+matched to the native root history. The completed transaction changed only
+`agent_messages.parent_tool_use_id`, in 0.087 seconds. Content, IDs, ordering,
+real children, session status (`paused`), revisions, schema and migration bookkeeping
+were preserved. Post-write checks found no remaining wrong pointer, integrity
+`ok`, and no foreign-key violations.
+
+The full online backup and one-off write/audit scripts were preserved outside the
+repository under `~/.cadencr/backups/codex-parent-repair-20260915-453ilfsl/`.
+Five safety tests and two full-copy rehearsals preceded the write; each rehearsal
+compared 41 tables / 1,376,955 rows and found only the 672 planned column changes.
+No write script or temporary migration is shipped with this change.
+
+**Fully reload the conversation/window after this kind of repair.**
+`content_revision` / `message_revision` only drive incremental mutable tool-input
+content updates; that protocol does not carry ancestry. Bumping these revisions
+would not refresh parent pointers and is deliberately not part of the repair.
+The runtime fix must still be integrated to prevent recurrence.
+
+### Files changed in this follow-up
+
+- `packages/desktop/src/components/agentStreamSummary.ts`
+- `packages/desktop/src/components/agentStreamSummary.test.ts`
+- `packages/service/src/domain/agents/codex/event_state.rs`
+- `packages/service/src/domain/agents/codex/event_state/subagents.rs`
+- `packages/service/src/domain/agents/codex/event_subagent_activity.rs`
+- `packages/service/src/domain/agents/codex/event_subagent_routes.rs`
+- `packages/service/src/domain/agents/codex/event_subagent_routes/ancestry.rs`
+- `packages/service/src/domain/agents/codex/event_subagent_recovery.rs`
+- `packages/service/src/domain/agents/codex/event_lifecycle.rs`
+- `packages/service/src/domain/agents/codex/event_lifecycle/children.rs`
+- `packages/service/src/domain/agents/codex/event_loop.rs`
+- `packages/service/src/domain/agents/codex/event_loop/buffer.rs`
+- `packages/service/src/domain/agents/codex/events/mod.rs`
+- `packages/service/src/domain/agents/codex/mod.rs`
+- `packages/service/tests/codex_conversation_state_test.rs`
+- `packages/service/tests/fixtures/fake_codex_conversation.py`
+- `scripts/codex-conversation-repair.mjs`
+- `scripts/codex-conversation-repair.test.mjs`
+- `docs/CODEX_STATE_SYNC.md`
+
 ## Evidence (2026-09-12)
 
 Production was queried read-only. No production session was resumed, interrupted,
