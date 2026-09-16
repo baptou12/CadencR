@@ -6,12 +6,16 @@
 //! child event with `parent_tool_use_id`. Authoritative `subAgentActivity`
 //! items are handled separately by [`super::event_subagent_activity`].
 
+mod ancestry;
+
+use ancestry::subagent_spawn_source;
+pub(super) use ancestry::{lineage_error, thread_spawn_parent};
 use serde_json::Value;
 
 use super::event_json::runtime_stream_event;
 use super::event_state::IndexState;
 use super::event_subagents::agent_tool_block;
-use crate::domain::agents::adapter::{RuntimeEvent, RuntimeStreamEvent};
+use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamEvent};
 
 pub(super) fn register_thread_started_route(
     method: &str,
@@ -21,19 +25,29 @@ pub(super) fn register_thread_started_route(
     // App-server writes notifications on one ordered stream: the model's raw
     // function_call is emitted before Codex executes it and can create this
     // thread, so the matching pending spawn already exists here.
-    let route = (method == "thread/started")
-        .then(|| route_from_thread_started(params))
-        .flatten();
-    let Some(route) = route else {
+    if method != "thread/started" {
         return Vec::new();
+    }
+    let route = match route_from_thread_started(params) {
+        Ok(Some(route)) => route,
+        Ok(None) => return Vec::new(),
+        Err(error) => {
+            return vec![lineage_error(
+                params["thread"]["id"].as_str().unwrap_or(""),
+                error,
+            )]
+        }
     };
     register_route(route, index_state)
 }
 
 fn register_route(route: SubagentRoute<'_>, index_state: &mut IndexState) -> Vec<RuntimeEvent> {
-    if index_state
-        .subagent_parent_tool_use_id(route.child_thread_id)
-        .is_some()
+    if index_state.is_root_thread(route.child_thread_id)
+        || route.child_thread_id == route.parent_thread_id
+        || index_state.is_untracked_thread(route.parent_thread_id)
+        || index_state
+            .subagent_parent_tool_use_id(route.child_thread_id)
+            .is_some()
     {
         return Vec::new();
     }
@@ -69,30 +83,21 @@ struct SubagentRoute<'a> {
     agent_path: Option<&'a str>,
 }
 
-fn route_from_thread_started(params: &Value) -> Option<SubagentRoute<'_>> {
-    let thread = params.get("thread")?;
-    let child_thread_id = thread.get("id").and_then(Value::as_str)?;
-    // Exclude guardian/review/compaction subagents. They also carry a
-    // `parentThreadId`, but there is no visible spawn `Agent` block to attach
-    // them to. Only an explicit `thread_spawn` source is routable here.
-    let spawn_source = subagent_spawn_source(thread.get("source")?)?;
-    let parent_thread_id = thread
-        .get("parentThreadId")
-        .and_then(Value::as_str)
-        .or_else(|| spawn_source.get("parent_thread_id").and_then(Value::as_str))?;
-    let agent_path = spawn_source.get("agent_path").and_then(Value::as_str);
-    Some(SubagentRoute {
+fn route_from_thread_started(params: &Value) -> Result<Option<SubagentRoute<'_>>, RuntimeError> {
+    let thread = &params["thread"];
+    let Some(child_thread_id) = thread["id"].as_str() else {
+        return Ok(None);
+    };
+    let Some(parent_thread_id) = thread_spawn_parent(thread)? else {
+        return Ok(None);
+    };
+    let agent_path =
+        subagent_spawn_source(&thread["source"]).and_then(|spawn| spawn["agent_path"].as_str());
+    Ok(Some(SubagentRoute {
         parent_thread_id,
         child_thread_id,
         agent_path,
-    })
-}
-
-fn subagent_spawn_source(source: &Value) -> Option<&Value> {
-    let subagent = source.get("subAgent").or_else(|| source.get("subagent"))?;
-    subagent
-        .get("thread_spawn")
-        .or_else(|| subagent.get("threadSpawn"))
+    }))
 }
 
 #[cfg(test)]

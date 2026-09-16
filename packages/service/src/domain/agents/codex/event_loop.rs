@@ -1,3 +1,5 @@
+mod buffer;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -5,8 +7,11 @@ use std::sync::Arc;
 use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient};
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 
+use buffer::EventBuffer;
+
 use super::event_lifecycle::SessionLifecycle;
 use super::event_state::IndexState;
+use super::event_subagent_recovery::recover_interacted_routes;
 use super::event_system::{permission_request_event, request_key};
 use super::event_turn_state::{update_turn_state, RootTurnTracker};
 use super::events::notification_events;
@@ -55,16 +60,20 @@ struct NotificationState {
 }
 
 impl EventLoop {
-    async fn run(&self, mut source_rx: broadcast::Receiver<AppServerEvent>) {
+    async fn run(&self, source_rx: broadcast::Receiver<AppServerEvent>) {
+        let mut source = EventBuffer::new(source_rx);
         let mut state = NotificationState {
             command_outputs: HashMap::new(),
             index_state: IndexState::for_root_thread(&self.turns.root_thread_id),
             lifecycle: SessionLifecycle::default(),
         };
         loop {
-            match source_rx.recv().await {
+            match source.recv().await {
                 Ok(AppServerEvent::Notification { method, params }) => {
-                    if !self.notification(method, params, &mut state).await {
+                    if !self
+                        .notification(method, params, &mut state, &mut source)
+                        .await
+                    {
                         return;
                     }
                 }
@@ -134,10 +143,13 @@ impl EventLoop {
                 }
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     self.pending_prompt_receipts.clear();
-                    tracing::warn!(
-                        skipped,
-                        "Codex app-server event stream lagged; UI may miss deltas"
-                    );
+                    let _ = self
+                        .tx
+                        .send(Err(RuntimeError::new(format!(
+                            "Codex event stream lost {skipped} events"
+                        ))))
+                        .await;
+                    return;
                 }
             }
         }
@@ -147,6 +159,7 @@ impl EventLoop {
         method: String,
         mut params: serde_json::Value,
         state: &mut NotificationState,
+        source: &mut EventBuffer,
     ) -> bool {
         if method == "turn/started" {
             let thread_id = params
@@ -194,12 +207,27 @@ impl EventLoop {
                 && params["item"]["type"] == "subAgentActivity")
                 .then(|| params.clone())
         });
-        let mut events = notification_events(
+        let recovery = recover_interacted_routes(
+            &self.client,
+            &method,
+            &params,
+            &self.turns.root_thread_id,
+            &mut state.index_state,
+            &mut state.lifecycle,
+        );
+        let mut events = match source.during(recovery).await {
+            Ok(events) => events,
+            Err(error) => {
+                let _ = self.tx.send(Err(error)).await;
+                return false;
+            }
+        };
+        events.extend(notification_events(
             &method,
             params,
             current_model.as_deref(),
             &mut state.index_state,
-        );
+        ));
         if let Some(params) = lifecycle_params {
             state.lifecycle.apply(
                 &method,

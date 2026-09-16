@@ -1,6 +1,8 @@
 //! A Codex session includes the root and its live, user-spawned descendants.
 //! Turn boundaries remain the fallback for old CLIs; newer thread status
 //! notifications also cover work resumed without a user turn/start request.
+mod children;
+
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
@@ -78,42 +80,6 @@ impl SessionLifecycle {
         }
     }
 
-    fn observe_activity(&mut self, method: &str, params: &Value, indexes: &IndexState) {
-        if method == "thread/started" {
-            let thread = &params["thread"];
-            if let Some(id) = thread["id"]
-                .as_str()
-                .filter(|id| indexes.subagent_parent_tool_use_id(id).is_some())
-            {
-                if thread["status"]["type"] == "active" {
-                    self.children.entry(id.to_string()).or_default();
-                }
-            }
-        }
-        if !matches!(method, "item/started" | "item/completed")
-            || params["item"]["type"] != "subAgentActivity"
-        {
-            return;
-        }
-        let item = &params["item"];
-        let Some(id) = item["agentThreadId"]
-            .as_str()
-            .filter(|id| indexes.subagent_parent_tool_use_id(id).is_some())
-        else {
-            return;
-        };
-        match item["kind"].as_str() {
-            Some("started") => {
-                self.children.entry(id.to_string()).or_default();
-            }
-            Some("completed" | "interrupted") => {
-                self.children.remove(id);
-            }
-            // send_message can target an idle child without starting it.
-            _ => {}
-        }
-    }
-
     fn observe_root(
         &mut self,
         method: &str,
@@ -187,39 +153,6 @@ impl SessionLifecycle {
             ));
         }
         self.pending_result = Some(result.with_result_error(None));
-    }
-
-    fn observe_child(&mut self, method: &str, params: &Value, thread: &str) {
-        match method {
-            "turn/started" => {
-                self.children.insert(
-                    thread.to_string(),
-                    params["turn"]["id"].as_str().map(ToOwned::to_owned),
-                );
-            }
-            "thread/status/changed" if params["status"]["type"] == "active" => {
-                self.children.entry(thread.to_string()).or_default();
-            }
-            "turn/completed" => {
-                let completed = params["turn"]["id"].as_str();
-                let active = self.children.get(thread).and_then(|id| id.as_deref());
-                if completed.is_none() || active.is_none() || completed == active {
-                    self.children.remove(thread);
-                }
-            }
-            "thread/closed" => {
-                self.children.remove(thread);
-            }
-            "thread/status/changed"
-                if matches!(
-                    params["status"]["type"].as_str(),
-                    Some("idle" | "notLoaded" | "systemError")
-                ) =>
-            {
-                self.children.remove(thread);
-            }
-            _ => {}
-        }
     }
 }
 
