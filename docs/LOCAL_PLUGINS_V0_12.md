@@ -239,21 +239,36 @@ Requirements:
       edit/build/apply/use it, restart, and confirm project identity survives. Test
       resumable/non-resumable connectors together and preserve transcripts. Verify
       failures, retry, rename and cleanup on supported packaged targets.
+      **macOS arm64 themes passed packaged UI QA on 2026-09-17**, including live
+      edits, invalid-theme recovery, full restart, stable identity and native Trash
+      preservation. Packaged-provider coverage and the remaining target matrix
+      still prevent closing the broader gate.
 - [ ] **L5 — Record release readiness.** Update verified results and unresolved
       v0.12.0 blockers; do not infer readiness from compilation alone. No remote
       registry, signing key, marketplace UI or publisher portal is required for L1–L4.
 
 ## Remaining release work
 
-1. Complete generated-scaffold and mixed resume/non-resume QA. The existing external
-   Pi connector has passed real discovery, conversation, permissions, cancellation
-   and context recall after a service restart; see the
-   [2026-09-13 QA report](./LOCAL_PLUGINS_QA_2026_09_13.md). This does not close L4
-   or prove the generated-scaffold workflow.
-2. Finish theme edit/live-apply, failure/retry, rename and cleanup checks on
-   supported packaged targets; development-renderer interactions are not packaged QA.
-3. Review the final diff and obtain commit approval, then record the v0.12.0
-   release gates with their evidence. No commit/push/release is implied by this plan.
+1. Generated-scaffold/build/use/rebuild and mixed resume/non-resume host behavior
+   now pass in the development app with deterministic connector fixtures; see the
+   [2026-09-16 QA report](./LOCAL_PLUGINS_QA_2026_09_16.md). The external Pi connector
+   separately passed real model/permission/resume QA in the
+   [2026-09-13 report](./LOCAL_PLUGINS_QA_2026_09_13.md). Neither result alone
+   certifies a new production AI connector or closes packaged lifecycle gate L4.
+2. Extend packaged lifecycle coverage to providers and the remaining release
+   target matrix. **macOS arm64 theme QA passes** in the actual packaged Electron
+   app: creation/application, in-app and external live edits, automatic rename,
+   invalid-theme recovery, reopen, full restart and native Trash cleanup preserving
+   all 34 theme/Git files. See the final section of the
+   [2026-09-17 packaged QA report](./LOCAL_PLUGINS_QA_2026_09_17.md).
+   Isolated pnpm inspection unblocked packaging; launching from Terminal unblocked
+   native UI QA. The earlier watcher failure does not reproduce there. Production
+   DB/WAL/SHM remain unchanged. These theme checks alone do not close L4/L5.
+   Review the single residual project-settings `404` recorded after theme/project
+   deletion; visible cleanup and Trash preservation both pass.
+3. Record remaining v0.12.0 blockers and review integration with the target branch
+   before proposing a merge. Implementation is locally committed as `0f13ac748`;
+   the current QA documentation update is not a merge/push/release authorization.
 
 There is no registry provisioning blocker for the local milestone. The public
 GitHub publication workflow and marketplace UI remain deliberately deferred.
