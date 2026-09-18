@@ -1,4 +1,4 @@
-import type { TerminalTransport } from "celeritty";
+import type { TerminalOutputOptions, TerminalTransport } from "celeritty";
 
 export interface ByteTerminalSocket {
   write: (bytes: Uint8Array) => void;
@@ -7,9 +7,9 @@ export interface ByteTerminalSocket {
 
 /** A terminal may finish loading well after its PTY starts producing output. */
 export function createTerminalTransportBridge(socket: ByteTerminalSocket) {
-  const dataListeners = new Set<(bytes: Uint8Array) => void>();
+  const dataListeners = new Set<(bytes: Uint8Array, options?: TerminalOutputOptions) => void>();
   const closeListeners = new Set<(reason?: string) => void>();
-  let pending: Uint8Array[] = [];
+  let pending: Array<{ bytes: Uint8Array; options?: TerminalOutputOptions }> = [];
   let pendingBytes = 0;
   let closed: { reason?: string } | undefined;
 
@@ -31,12 +31,12 @@ export function createTerminalTransportBridge(socket: ByteTerminalSocket) {
     const buffered = pending;
     pending = [];
     pendingBytes = 0;
-    for (const bytes of buffered) {
-      for (const callback of dataListeners) callback(bytes);
+    for (const { bytes, options } of buffered) {
+      for (const callback of dataListeners) callback(bytes, options);
     }
   };
 
-  const deliverData = (bytes: Uint8Array): void => {
+  const deliverData = (bytes: Uint8Array, options?: TerminalOutputOptions): void => {
     if (closed || bytes.byteLength === 0) return;
     if (dataListeners.size === 0 || pending.length > 0) {
       // Never silently trim a terminal stream mid escape sequence. Fail visibly
@@ -47,11 +47,11 @@ export function createTerminalTransportBridge(socket: ByteTerminalSocket) {
         );
         return;
       }
-      pending.push(bytes.slice());
+      pending.push({ bytes: bytes.slice(), options });
       pendingBytes += bytes.byteLength;
       return;
     }
-    for (const callback of dataListeners) callback(bytes);
+    for (const callback of dataListeners) callback(bytes, options);
   };
 
   const transport: TerminalTransport = {
@@ -59,8 +59,7 @@ export function createTerminalTransportBridge(socket: ByteTerminalSocket) {
     resize: (columns, rows) => socket.resize(columns, rows),
     onData(callback) {
       dataListeners.add(callback);
-      // attach() installs its outbound parser-response listener after onData.
-      // Let attachment finish before replaying startup terminal queries.
+      // Let attachment finish before draining buffered startup output and closure.
       queueMicrotask(flushPending);
       return () => {
         dataListeners.delete(callback);
@@ -87,8 +86,9 @@ export function createTerminalTransportBridge(socket: ByteTerminalSocket) {
       pending = [];
       pendingBytes = 0;
       closed = undefined;
-      deliverData(new TextEncoder().encode("\x1bc"));
-      deliverData(bytes);
+      const replay = { replyToQueries: false };
+      deliverData(new TextEncoder().encode("\x1bc"), replay);
+      deliverData(bytes, replay);
     },
     deliverClose,
   };

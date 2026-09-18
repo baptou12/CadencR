@@ -1,10 +1,11 @@
 import { act, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement } from "react";
+import { createElement, createRef } from "react";
 import type { TerminalTransport } from "celeritty";
 import type { UseTerminalWebSocketOptions } from "@/hooks/useTerminalWebSocket";
 
 const mocks = vi.hoisted(() => ({
+  paste: vi.fn(),
   socket: {
     connect: vi.fn(),
     disconnect: vi.fn(),
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   optionsError: null as string | null,
 }));
 
+vi.mock("./terminal-paste", () => ({ pasteTerminalText: mocks.paste }));
 vi.mock("./useTerminalOptions", () => ({
   useTerminalOptions: () => ({
     options: mocks.optionsError ? undefined : {},
@@ -47,6 +49,7 @@ vi.mock("./useCelerittyTerminal", () => ({
 vi.mock("@/components/links/LinkRoutingContext", () => ({ useLinkRouting: () => null }));
 
 import { useTerminalCoreInstanceController } from "./useTerminalCoreInstanceController";
+import type { TerminalCoreInstanceHandle } from "./TerminalCoreInstance.types";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -59,6 +62,17 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("shell terminal startup and reconnect", () => {
+  it("routes clipboard actions through native input rather than raw socket writes", () => {
+    const ref = createRef<TerminalCoreInstanceHandle>();
+    const { result } = renderHook(() =>
+      useTerminalCoreInstanceController({ featureId: 1, projectId: 2 }, ref),
+    );
+    const host = document.createElement("div");
+    result.current.hostRef.current = host;
+    ref.current?.paste("clipboard\ntext");
+    expect(mocks.paste).toHaveBeenCalledExactlyOnceWith(host, "clipboard\ntext");
+    expect(mocks.socket.write).not.toHaveBeenCalled();
+  });
   it("delivers startup output and replays reconnects without rebuilding the transport", async () => {
     const { rerender } = renderHook(() =>
       useTerminalCoreInstanceController({ featureId: 1, projectId: 2 }, null),

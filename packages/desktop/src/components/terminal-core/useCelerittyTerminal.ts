@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TerminalOptions, TerminalTransport } from "celeritty";
-import { attachTerminalTextInput } from "./terminal-text-input";
+import { toast } from "sonner";
 import { createTerminalEngine } from "./create-terminal-engine";
 import type { TerminalEngine } from "./terminal-engine";
 
@@ -38,6 +38,7 @@ export function useCelerittyTerminal({
     if (!host || !initialOptions) return;
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
+    let unsubscribeDiagnostic: (() => void) | undefined;
     const lifecycle = createTerminalEngine(host, initialOptions);
     const fail = (error: unknown): void => {
       if (cancelled) return;
@@ -46,19 +47,26 @@ export function useCelerittyTerminal({
         status: "error",
         errorMessage: error instanceof Error ? error.message : "Terminal initialization failed",
       });
-      // The upstream render loop schedules its next frame after emitting an error.
+      // Dispose outside the event callback to avoid reentrant renderer teardown.
       queueMicrotask(lifecycle.dispose);
     };
     void lifecycle.ready
       .then((instance) => {
         if (cancelled || !instance) return;
         unsubscribe = instance.on("error", fail);
+        unsubscribeDiagnostic = instance.on("diagnostic", (error) => {
+          toast.warning("Terminal rendering warning", {
+            id: "terminal-renderer-diagnostic",
+            description: error.message,
+          });
+        });
         setState({ terminal: instance, status: "ready", errorMessage: null });
       })
       .catch(fail);
     return () => {
       cancelled = true;
       unsubscribe?.();
+      unsubscribeDiagnostic?.();
       lifecycle.dispose();
     };
   }, [hostRef, hasOptions]);
@@ -73,10 +81,5 @@ export function useCelerittyTerminal({
     return () => state.terminal?.detach();
   }, [transport, state.terminal]);
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host || !state.terminal || host.dataset.terminalRenderer !== "celeritty") return;
-    return attachTerminalTextInput(host, state.terminal);
-  }, [hostRef, state.terminal]);
   return state;
 }

@@ -30,6 +30,6 @@ export interface TerminalCoreInstanceHandle {
   /** The current selection, celeritty's own text-mode buffer copy — there is
    *  no DOM selection to read (the terminal draws to a WebGPU canvas). */
   getSelection: () => string | null;
-  /** Sends text to the PTY, as if typed — unlike `write`, this reaches the shell. */
+  /** Paste through the renderer's native input, preserving bracketed-paste handling. */
   paste: (text: string) => void;
 }

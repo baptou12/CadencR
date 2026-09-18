@@ -1,7 +1,7 @@
 {
   "name": "@cadencr/desktop",
-  "private": true,
   "version": "0.11.5",
+  "private": true,
   "description": "Cadencr desktop shell — Electron app with a React frontend for driving local AI coding agents.",
   "license": "Apache-2.0",
   "main": "out/main/index.js",
@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@fontsource-variable/figtree": "^5.2.10",
-    "celeritty": "1.0.1",
+    "celeritty": "1.2.2",
     "dotenv": "^17.4.2",
     "electron-updater": "^6.8.9",
     "streamdown": "^2.5.0"
