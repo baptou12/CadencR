@@ -17,6 +17,7 @@ import { toControlChar } from "@/lib/terminal-keys";
 import { useLinkRouting } from "@/components/links/LinkRoutingContext";
 import { attachTouchScroll } from "./terminal-touch-scroll";
 import { attachNavigationKeys } from "./terminal-navigation-keys";
+import { pasteTerminalText } from "./terminal-paste";
 import type {
   TerminalCoreInstanceProps,
   TerminalCoreInstanceHandle,
@@ -336,10 +337,10 @@ export function useTerminalCoreInstanceController(
         markForKill: () => (refs.shouldKillRef.current = true),
         write: (data: string) => t?.write(data),
         getSelection: () => t?.getSelection() ?? null,
-        paste: (text: string) => connection.write(text),
+        paste: (text: string) => pasteTerminalText(hostRef.current, text),
       };
     },
-    [connection, refs],
+    [connection, refs, hostRef],
   );
 
   useEffect(() => {

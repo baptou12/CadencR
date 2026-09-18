@@ -71,8 +71,8 @@ importers:
         specifier: ^5.2.10
         version: 5.2.10
       celeritty:
-        specifier: 1.0.1
-        version: 1.0.1
+        specifier: 1.2.2
+        version: 1.2.2
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -4653,9 +4653,9 @@ packages:
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
 
-  celeritty@1.0.1:
-    resolution: {integrity: sha512-8EPSnBG6iDUDq4w+BOUDFDrtAXwuM2Me1a3jQ2fTZ+/0U8LGtf8aDK6SzRtRwjZFnrKZLOestkNOYQjqdo+Q6w==}
-    engines: {node: '>=22.18.0 <23.0.0'}
+  celeritty@1.2.2:
+    resolution: {integrity: sha512-jSoyA8lPDJYM/fBaC9aa5CpPKrBwulscPi2pTC1CLeFR2zDKlOt3gGxxAPME0ZiOjPCkfc5T2ozcFgne+bEUmg==}
+    engines: {node: '>=22.18.0 <25.0.0'}
 
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
@@ -12340,7 +12340,7 @@ snapshots:
 
   ccount@2.0.1: {}
 
-  celeritty@1.0.1: {}
+  celeritty@1.2.2: {}
 
   chai@6.2.2: {}
 

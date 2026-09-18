@@ -1,3 +1,4 @@
+import type { TerminalOutputOptions } from "celeritty";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useCelerittyTransport } from "./useCelerittyTransport";
@@ -7,6 +8,29 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 describe("terminal transport bridges", () => {
+  it.each([false, true])(
+    "marks only replay chunks as local output (attached: %s)",
+    async (attached) => {
+      const { result } = renderHook(() =>
+        useCelerittyTransport({ write: vi.fn(), resize: vi.fn() }),
+      );
+      const chunks: Array<{ text: string; options?: TerminalOutputOptions }> = [];
+      const subscribe = () =>
+        result.current.transport.onData((bytes, options) => {
+          chunks.push({ text: decoder.decode(bytes), options });
+        });
+      if (attached) subscribe();
+      result.current.deliverSnapshot("history\x1b[6n");
+      result.current.deliverData("live\x1b[6n");
+      if (!attached) subscribe();
+      await act(async () => {});
+      expect(chunks).toEqual([
+        { text: "\x1bc", options: { replyToQueries: false } },
+        { text: "history\x1b[6n", options: { replyToQueries: false } },
+        { text: "live\x1b[6n", options: undefined },
+      ]);
+    },
+  );
   it("preserves startup output and listener identity as the shell socket changes state", async () => {
     const first = { write: vi.fn(), resize: vi.fn(), isConnected: false };
     const { result, rerender } = renderHook((socket) => useCelerittyTransport(socket), {
@@ -69,10 +93,19 @@ describe("terminal transport bridges", () => {
     bytes.fill(0);
     rerender({ write: vi.fn(), resize: vi.fn() });
     expect(result.current).toBe(bridge);
-    const received: string[] = [];
-    bridge.transport.onData((data) => received.push(decoder.decode(data)));
+    const received: Array<{ text: string; options?: TerminalOutputOptions }> = [];
+    bridge.transport.onData((data, options) =>
+      received.push({ text: decoder.decode(data), options }),
+    );
     await act(async () => {});
-    expect(received.join("")).toBe("é editor");
+    expect(received).toEqual([{ text: "é editor", options: undefined }]);
+    bridge.deliverSnapshot(encoder.encode("history\x1b[6n"));
+    bridge.deliverData(encoder.encode("live\x1b[6n"));
+    expect(received.slice(1)).toEqual([
+      { text: "\x1bc", options: { replyToQueries: false } },
+      { text: "history\x1b[6n", options: { replyToQueries: false } },
+      { text: "live\x1b[6n", options: undefined },
+    ]);
   });
 
   it("replays buffered exit output before notifying an attaching terminal of closure", async () => {

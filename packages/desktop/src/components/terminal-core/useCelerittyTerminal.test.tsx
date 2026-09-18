@@ -5,6 +5,7 @@ import type { TerminalOptions, TerminalTransport } from "celeritty";
 import { useCelerittyTerminal } from "./useCelerittyTerminal";
 
 const mocks = vi.hoisted(() => ({
+  warning: vi.fn(),
   instances: [] as Array<{
     ready: Promise<void>;
     resolve: () => void;
@@ -14,8 +15,10 @@ const mocks = vi.hoisted(() => ({
     dispose: ReturnType<typeof vi.fn>;
     setOptions: ReturnType<typeof vi.fn>;
     error: ((error: Error) => void) | undefined;
+    diagnostic: ((error: Error) => void) | undefined;
   }>,
 }));
+vi.mock("sonner", () => ({ toast: { warning: mocks.warning } }));
 vi.mock("./xterm-compatibility", () => ({
   XtermCompatibility: class {
     constructor() {
@@ -34,17 +37,23 @@ vi.mock("celeritty", () => ({
     dispose = vi.fn();
     setOptions = vi.fn();
     error: ((error: Error) => void) | undefined;
-    constructor() {
+    diagnostic: ((error: Error) => void) | undefined;
+    constructor(host: HTMLElement) {
+      // CeleriTTY 1.2 owns the native input; the host must not add a second one.
+      const input = document.createElement("textarea");
+      input.dataset.celerittyInput = "";
+      host.appendChild(input);
+      this.dispose.mockImplementation(() => input.remove());
       this.ready = new Promise((resolve, reject) => {
         this.resolve = resolve;
         this.reject = reject;
       });
       mocks.instances.push(this);
     }
-    on(_name: string, callback: (error: Error) => void) {
-      this.error = callback;
+    on(name: "error" | "diagnostic", callback: (error: Error) => void) {
+      this[name] = callback;
       return () => {
-        this.error = undefined;
+        this[name] = undefined;
       };
     }
   },
@@ -74,6 +83,7 @@ function Harness({ config = options }: { config?: TerminalOptions }) {
 }
 beforeEach(() => {
   mocks.instances.length = 0;
+  mocks.warning.mockClear();
 });
 
 describe("useCelerittyTerminal", () => {
@@ -84,6 +94,8 @@ describe("useCelerittyTerminal", () => {
     expect(terminal.attach).not.toHaveBeenCalled();
     await act(async () => terminal.resolve());
     expect(view.getByText("ready")).toBeTruthy();
+    expect(view.container.querySelectorAll("textarea")).toHaveLength(1);
+    expect(view.container.querySelector("textarea")).toHaveAttribute("data-celeritty-input");
     view.rerender(<Harness config={{ ...options, scrollback: 2000 }} />);
     expect(mocks.instances).toHaveLength(1);
     expect(terminal.attach).toHaveBeenCalledTimes(1);
@@ -113,6 +125,22 @@ describe("useCelerittyTerminal", () => {
     expect(mocks.instances[0].dispose).toHaveBeenCalledTimes(1);
     expect(mocks.instances[0].attach).not.toHaveBeenCalled();
     expect(mocks.instances[1].attach).toHaveBeenCalledTimes(1);
+    expect(view.container.querySelectorAll("textarea")).toHaveLength(1);
+  });
+  it("surfaces diagnostics without disposing the terminal and unsubscribes on unmount", async () => {
+    const view = render(<Harness />);
+    const terminal = mocks.instances[0];
+    await act(async () => terminal.resolve());
+    act(() => terminal.diagnostic?.(new Error("Transient frame failure")));
+    expect(view.getByText("ready")).toBeTruthy();
+    expect(terminal.dispose).not.toHaveBeenCalled();
+    expect(mocks.warning).toHaveBeenCalledWith("Terminal rendering warning", {
+      id: "terminal-renderer-diagnostic",
+      description: "Transient frame failure",
+    });
+    view.unmount();
+    expect(terminal.error).toBeUndefined();
+    expect(terminal.diagnostic).toBeUndefined();
   });
   it("surfaces asynchronous renderer errors", async () => {
     const view = render(<Harness />);
