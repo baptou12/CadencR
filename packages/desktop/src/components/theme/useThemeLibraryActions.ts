@@ -9,7 +9,7 @@ import {
   type ThemeWorkspace,
 } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { invalidateByUrlPrefix } from "@/lib/queryClient";
+import { invalidateByExactUrl, invalidateByUrlPrefix } from "@/lib/queryClient";
 import { downloadJsonFile } from "@/lib/download";
 import { type ThemeDefinition } from "@/lib/themes";
 import { chromeOf } from "@/lib/themes/chrome";
@@ -125,9 +125,13 @@ export function useThemeLibraryActions(): ThemeLibraryActions {
             // a new theme ever landed on the same id.
             release(theme);
             refresh();
-            // The theme's project went with it, so the sidebar is now showing a
-            // project that no longer exists.
-            void invalidateByUrlPrefix(queryClient, ["/api/projects", "/api/features"]);
+            // Refresh discovery lists, not details for the deleted workspace:
+            // its mounted settings observers can outlive the sidebar refresh.
+            void invalidateByExactUrl(queryClient, ["/api/projects", "/api/features"], {
+              throwOnError: true,
+            }).catch((error: unknown) =>
+              toast.error(apiErrorMessage(error, "Could not refresh plugin projects")),
+            );
             toast.success(`Deleted “${userThemeLabel(theme)}”. It is in the Trash.`);
           },
           onError: (error) => toast.error(apiErrorMessage(error, "Failed to delete theme")),

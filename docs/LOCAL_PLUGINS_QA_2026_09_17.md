@@ -189,3 +189,30 @@ is left open; quit it before restarting the installed production app on `5004`.
 Remaining scope is packaged-provider lifecycle coverage, the release target
 matrix beyond this macOS arm64 run, and integration/readiness review. This report
 does not authorize a commit, merge, push or release.
+
+## Follow-up: deletion request regression — 2026-09-18
+
+Validated in the development renderer (`1424`) and backend (`5103`), with a
+fresh database, settings directory and backend home under
+`/tmp/cadencr-theme-dev-qa.UqFXLL`. Production remained running on `5004`.
+
+- Fixed theme deletion to invalidate project/conversation **list URLs only**,
+  rather than refetching still-mounted details for the deleted workspace.
+- Created `Dev Delete QA 0918` from Dracula through the UI and opened its editor.
+  Project settings requests returned `200` before deletion.
+- Cancelled the confirmation: theme and project remained available.
+- Confirmed deletion: `DELETE /api/themes/dev-delete-qa-0918` returned `200`;
+  theme/project/conversation lists refreshed successfully, with no subsequent
+  `/api/projects/1/settings` request and no `404`.
+- Reloaded the page: empty theme/project lists and CadencR Dark remained selected.
+- No deletion-time console errors. Reload produced the existing meta-CSP warning,
+  browser-only desktop-runtime fallback warning, and a WebSocket close-before-open
+  warning; these are not claimed fixed by this change.
+- Focused hook/cache tests: **15 passed**. Regression coverage keeps detail-query
+  observers mounted during deletion, checks failed deletion preserves caches, and
+  verifies a refresh failure surfaces an error toast. Refetch error propagation is
+  explicitly enabled for this deletion path only.
+
+Network evidence and server logs are retained in the isolated directory above.
+This closes the theme-deletion request regression, not packaged-provider QA or
+the cross-platform release matrix.

@@ -264,8 +264,9 @@ Requirements:
    Isolated pnpm inspection unblocked packaging; launching from Terminal unblocked
    native UI QA. The earlier watcher failure does not reproduce there. Production
    DB/WAL/SHM remain unchanged. These theme checks alone do not close L4/L5.
-   Review the single residual project-settings `404` recorded after theme/project
-   deletion; visible cleanup and Trash preservation both pass.
+   The residual project-settings `404` after theme/project deletion is fixed by
+   list-only query invalidation and verified in isolated dev UI QA on 2026-09-18;
+   creation, cancellation, deletion and reload pass, with 15 focused tests green.
 3. Record remaining v0.12.0 blockers and review integration with the target branch
    before proposing a merge. Implementation is locally committed as `0f13ac748`;
    the current QA documentation update is not a merge/push/release authorization.
