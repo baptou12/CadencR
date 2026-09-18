@@ -22,19 +22,26 @@ export function ProviderDevelopmentCard(): React.JSX.Element {
 
   const create = useCallback(
     (draft: ProviderWorkspaceDraft): void => {
+      const data = {
+        provider_id: draft.providerId,
+        display_name: draft.displayName,
+        ...(draft.directory ? { directory: draft.directory } : {}),
+      };
       mutate(
         {
-          data: {
-            provider_id: draft.providerId,
-            display_name: draft.displayName,
-          },
+          data,
         },
         {
           onSuccess: (workspace) => {
             setDialogOpen(false);
-            toast.success("Provider project created", {
-              description: "Ask your agent to read INSTRUCTION.md, then restart Cadencr to test.",
-            });
+            toast.success(
+              draft.directory ? "Provider project imported" : "Provider project created",
+              {
+                description: draft.directory
+                  ? "The trusted local connector is registered. Restart Cadencr to test it."
+                  : "Ask your agent to read INSTRUCTION.md, then restart Cadencr to test.",
+              },
+            );
             navigateToFeatureIdOrHome(navigate, workspace.project_id, workspace.feature_id);
             void invalidateByExactUrl(queryClient, ["/api/projects", "/api/features"]).catch(
               (error: unknown) => {
@@ -43,7 +50,12 @@ export function ProviderDevelopmentCard(): React.JSX.Element {
             );
           },
           onError: (error: unknown) => {
-            toastError(error, "Failed to create the provider project");
+            toastError(
+              error,
+              draft.directory
+                ? "Failed to import the provider project"
+                : "Failed to create the provider project",
+            );
           },
         },
       );

@@ -8,6 +8,8 @@ pub struct CreateProviderWorkspaceRequest {
     pub provider_id: String,
     /// Human-readable name used in the project and scaffold.
     pub display_name: String,
+    /// Existing connector repository to import instead of scaffolding a new one.
+    pub directory: Option<String>,
 }
 
 /// The ordinary Cadencr project and conversation created for provider work.

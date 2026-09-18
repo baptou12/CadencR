@@ -50,6 +50,7 @@ jobs:
       - name: Run pre-commit checks
         run: |
           pnpm run test:release-scripts
+          node --test scripts/marketplace-registry.test.mjs
           pnpm turbo run format:check lint ts-check knip --log-order=stream
           # @cadencr/service already ran in the "Rust tests" step above —
           # exclude it here so cargo test doesn't run twice.

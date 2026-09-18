@@ -1,9 +1,34 @@
 # Cadencr code-backed provider package contract
 
 > - **Status:** Local v1 code-and-icon plus managed package/install/conformance backend implemented; release trust pins and marketplace UI deferred
+> - **Plan reviewed:** 2026-09-05; see [remaining work and release gates](./BOUNDARIES.md#implementation-audit--2026-09-05)
 > - **Contract version:** `acp-config-options-v1` + `acp-v1`
 > - **Reference SDK:** `packages/provider-plugin-sdk-rs/`
 > - **External reference provider:** `cadencr-plugin-provider-pi` — native `pi --mode rpc`, no `pi-acp`
+
+## Local release scope — 2026-09-12
+
+v0.12.0 ships **local themes and providers**, without marketplace UI. Both create
+projects in the developer's Cadencr instance; a durable theme/provider authoring
+marker is required for later GitHub publication and initial/new-version registry
+submission. The marker is implemented for new project rows only; existing projects remain unchanged. See the authoritative
+[local release checklist](../LOCAL_PLUGINS_V0_12.md); public trust provisioning and
+marketplace UI are not local-release blockers.
+
+Session-scoped resume eligibility and signed catalog acquisition now have
+working-tree implementations under review. The historical audit/checklists below
+remain evidence of their recorded baseline, not an assertion that those newer
+changes are committed or fully QA-verified.
+
+## Marketplace delivery decision — 2026-09-11
+
+The accepted distribution plan is [GitHub-only Marketplace V1](../MARKETPLACE_V1.md):
+metadata PRs in a public registry, approved archives mirrored into Cadencr-owned
+GitHub Releases, protected Actions publishing the signed index/blocklist, and
+in-app discovery and installation. No S3, required website or publisher portal.
+This decision does not mark publication infrastructure or marketplace UI as
+implemented; the existing backend and all trust, isolation and packaged-app QA
+gates below remain in force. Follow the linked R1–R9 checklist for delivery.
 
 ## Why providers require code
 
@@ -367,7 +392,7 @@ Conformance is compatibility evidence, not a trust or authentication decision:
 | `initialize`         | Negotiates ACP v1 and reports parseable capabilities.                                                                                                       |
 | Disposable session   | `session/new` returns an ID and a live selector compatible with pre-session discovery.                                                                      |
 | Model reconciliation | The selected model can be set and is authoritatively confirmed before prompting.                                                                            |
-| Cleanup              | The disposable session is closed when advertised and the complete process tree is drained within a bound without sending a billable prompt.                    |
+| Cleanup              | The disposable session is closed when advertised and the complete process tree is drained within a bound without sending a billable prompt.                 |
 | Resume compatibility | If advertised, `session/resume` is probed; legacy `session/load` is tested only as fallback. Unsupported explicit resume must fail rather than start fresh. |
 | Close compatibility  | If advertised, `session/close` releases the disposable session within a bound.                                                                              |
 
@@ -428,15 +453,17 @@ explicit sandbox/release-policy decision, not a solved guarantee of this backend
 
 All mutations are host-authenticated and loopback-only:
 
-| Operation | Endpoint |
-| --- | --- |
-| Inventory | `GET /api/agents/managed-providers` |
-| Install | `POST /api/agents/managed-providers` |
-| Update | `POST /api/agents/managed-providers/{provider_id}/update` |
-| Rollback | `POST /api/agents/managed-providers/{provider_id}/rollback` |
-| Enable/disable | `PUT /api/agents/managed-providers/{provider_id}/enabled` |
-| Remove activation | `DELETE /api/agents/managed-providers/{provider_id}` |
-| Refresh kill switch | `POST /api/agents/managed-providers/blocklist/refresh` |
+| Operation           | Endpoint                                                    |
+| ------------------- | ----------------------------------------------------------- |
+| Official catalog    | `GET /api/agents/managed-providers/catalog`                 |
+| Refresh catalog     | `POST /api/agents/managed-providers/catalog/refresh`        |
+| Inventory           | `GET /api/agents/managed-providers`                         |
+| Install             | `POST /api/agents/managed-providers`                        |
+| Update              | `POST /api/agents/managed-providers/{provider_id}/update`   |
+| Rollback            | `POST /api/agents/managed-providers/{provider_id}/rollback` |
+| Enable/disable      | `PUT /api/agents/managed-providers/{provider_id}/enabled`   |
+| Remove activation   | `DELETE /api/agents/managed-providers/{provider_id}`        |
+| Refresh kill switch | `POST /api/agents/managed-providers/blocklist/refresh`      |
 
 Install/update requests carry the signed index envelope, provider id, and exact
 version—not a public key, registry URL, arbitrary executable, or credential.

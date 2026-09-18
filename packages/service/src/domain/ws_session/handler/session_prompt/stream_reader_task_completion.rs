@@ -55,6 +55,14 @@ impl StreamReaderTask {
         state
             .canonical_projection
             .apply_runtime_event(runtime_event);
+        // Init and Other are operational signals, not transcript blocks. Their
+        // meaningful state has already been consumed by the stream reader
+        // (runtime id, MCP servers, usage, permissions, and provider-specific
+        // observers), so forwarding their provider-native raw JSON only makes
+        // the desktop parser warn about an unknown message type.
+        if runtime_event.is_operational_only() {
+            return None;
+        }
         let projected_model = state
             .canonical_projection
             .model_for_event(runtime_event)

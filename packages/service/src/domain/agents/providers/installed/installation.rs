@@ -189,7 +189,7 @@ fn evaluate_quarantine(agent: &AcpAgentEntry, executable: &LocalExecutable) -> O
             return quarantine(code, format!("{}: {error}", executable.command.display()));
         }
     };
-    if !metadata.is_file() || !is_executable(&metadata) {
+    if !is_executable_file(&metadata) {
         return quarantine(
             QuarantineCode::ExecutableNotExecutable,
             format!("{} is not an executable file", executable.command.display()),
@@ -198,15 +198,22 @@ fn evaluate_quarantine(agent: &AcpAgentEntry, executable: &LocalExecutable) -> O
     None
 }
 
-#[cfg(unix)]
-fn is_executable(metadata: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    metadata.permissions().mode() & 0o111 != 0
-}
-
-#[cfg(not(unix))]
-fn is_executable(_metadata: &std::fs::Metadata) -> bool {
-    true
+/// Shared structural admission check for local imports and runtime quarantine.
+pub(in crate::domain::agents::providers) fn is_executable_file(
+    metadata: &std::fs::Metadata,
+) -> bool {
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 #[cfg(test)]

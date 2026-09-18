@@ -1,10 +1,34 @@
 # Cadencr Provider Boundary and Marketplace Migration Plan
 
-> - **Status:** Accepted direction; runtime registry and local ACP backend implemented, roadmap active
-> - **Last reviewed:** 2026-09-05 against the current provider worktree
+> - **Status:** Local authoring and managed package backend implemented behind release gates; broader boundary migration active
+> - **Last reviewed:** 2026-09-05 against implementation `7d572e5dd`, rebased onto local `v0.12.0` at `302cf0183`
 > - **Scope:** Service, desktop, provider SDKs, CLI discovery, persistence, WebSocket APIs, and the provider marketplace
 > - **Descriptor reference:** `docs/PROVIDER_SPEC/INSTALLED_ACP_PROVIDERS.md` — the implemented local-backend format and its refusal codes
 > - **Parent plan:** `docs/PLUGIN_STRATEGY.md` — this document is step 2 ("bring your own agent") of the four-step extensibility ladder; the ladder's marketplace phasing, signing, and renderer invariants govern here too
+
+## Local release scope — 2026-09-12
+
+v0.12.0 ships **local themes and providers**, without marketplace UI. Both create
+projects in the developer's Cadencr instance; a durable theme/provider authoring
+marker is required for later GitHub publication and initial/new-version registry
+submission. The marker is implemented for new project rows only; existing projects remain unchanged. See the authoritative
+[local release checklist](../LOCAL_PLUGINS_V0_12.md); public trust provisioning and
+marketplace UI are not local-release blockers.
+
+Session-scoped resume eligibility and signed catalog acquisition now have
+working-tree implementations under review. The historical audit/checklists below
+remain evidence of their recorded baseline, not an assertion that those newer
+changes are committed or fully QA-verified.
+
+## Marketplace delivery decision — 2026-09-11
+
+The accepted distribution plan is [GitHub-only Marketplace V1](../MARKETPLACE_V1.md):
+metadata PRs in a public registry, approved archives mirrored into Cadencr-owned
+GitHub Releases, protected Actions publishing the signed index/blocklist, and
+in-app discovery and installation. No S3, required website or publisher portal.
+This decision does not mark publication infrastructure or marketplace UI as
+implemented; the existing backend and all trust, isolation and packaged-app QA
+gates below remain in force. Follow the linked R1–R9 checklist for delivery.
 
 ## Backend review hardening — 2026-09-05
 
@@ -27,7 +51,7 @@ Real signing-key and blocklist provisioning, the OS-sandbox policy decision,
 packaged-app signed-package verification, and publishing infrastructure remain
 release gates. Provider-account authentication stays outside Cadencr's scope.
 
-Validation for this review pass: service library tests **2,934 passed, 1 ignored**;
+Historical pre-rebase validation: service library tests **2,934 passed, 1 ignored**;
 installed-provider HTTP/WebSocket integration **1 passed**; format, lint,
 desktop TypeScript/knip, generated API, and agent-instruction mirror checks passed.
 Live `pnpm dev` API checks used isolated provider settings and verified corrupt
@@ -39,11 +63,42 @@ Finish-job reuse/quality/efficiency reviews additionally consolidated prepared
 launch policy, moved expensive launch/admission/inventory filesystem work off
 async workers, reused startup projection validation in inventory, replaced full
 inventory rebuilds after mutations with targeted reads, and made identical
-concurrent revision commits converge. The final workspace `pnpm test` passed
+concurrent revision commits converge. The pre-rebase workspace `pnpm test` passed
 (including 4,278 desktop tests and the service integration suites), with no Rust
 `FAILED` markers. Regression tests cover tampered inventory, concurrent commits,
 blocking-worker responsiveness/error propagation, and caller-thread storage
 context in managed launch verification.
+
+## Release-base integration verification — 2026-09-05
+
+The implementation is on `feature/define-provider-boundary-spec-de8e` at
+`7d572e5dd`, twelve commits ahead of local `v0.12.0` (`302cf0183`). The original
+branch was fast-forwarded to the completed work without changing its files.
+This records feature-branch readiness, not a release-branch merge or approval
+to distribute marketplace packages.
+
+- The rebase preserves release sidebar working/waiting/unread styling together
+  with catalog-owned connector icons and iconless-provider fallbacks.
+- A release-side call to the removed static icon helper was migrated to the
+  catalog-aware hook; regression tests cover built-in and external provider
+  pending-gate marks.
+- Full `pnpm test` passed: 4,295 desktop tests; service library 2,945 passed,
+  1 ignored; service binary 2,952 passed, 1 ignored; integration and script
+  suites passed. The final additional external-provider regression passed in
+  the focused suite (15 tests), followed by normal full pre-commit checks.
+- Format, lint, TypeScript, knip, instruction-mirror and diff checks passed.
+  Regenerated API bindings were unchanged.
+- Live `pnpm dev` with isolated provider settings verified a non-default model
+  selection before the first prompt, a complete fixture response, cancellation,
+  and the sidebar's working-to-idle transition. Managed API checks covered
+  corrupt inventory isolation, damaged-install disable/re-enable refusal,
+  reserved IDs, unauthorized requests and missing blocklist configuration.
+- Waiting/unread and connector-owned icon combinations have automated coverage;
+  this smoke pass is not a new live parity audit of every built-in provider or
+  the external Pi connector. Browser checks reported runtime-config/reconnect
+  and unknown-`session.init` warnings, not a warning-free run.
+- The QA-owned dev stack was stopped; production app/data were untouched.
+  Packaged-app signed-install lifecycle verification remains open.
 
 ## Executive decision
 
@@ -338,38 +393,38 @@ the flow only by producing the same canonical operations.
 This inventory identifies migration targets; it is not an instruction to rewrite
 all files in one change.
 
-| Area                                                                                             | Current coupling                                                                                                                                                                                                                              | Required direction                                                                                                                           |
-| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/service/src/domain/agents/providers/registry.rs`                                       | **Resolved.** `ProviderRegistry::startup()` is built from the `BUILTIN_PROVIDERS` factory table plus validated local and managed ACP installations (`providers/installed/`)                                                                 | Preserve one provider-neutral startup registry; managed lifecycle changes remain restart-gated                                                |
-| `packages/service/src/domain/agents/acp/runtime/lifecycle.rs`                                    | **Partially resolved.** Stable v1 restore prefers `session/resume`, falls back to legacy `session/load`, never starts fresh for an explicit resume, and propagates graceful-close support; v1 initialization, client filesystem/terminal, and modes remain in one lifecycle module | Preserve the verified v1 lifecycle, then isolate any later v2 lifecycle without mixing wire assumptions                                  |
-| `packages/service/src/domain/agents/acp/incoming.rs`                                             | Typed v1 requests (permission, fs; terminal deliberately raw); session-update notifications stay fully raw                                                                                                                                    | Versioned, typed codecs that preserve unknown fields                                                                                         |
-| `packages/service/src/domain/agents/acp/runtime/turn_lifecycle.rs`                               | Assumes a v1 prompt response completes a turn                                                                                                                                                                                                 | Lifecycle state machine selected by negotiated version                                                                                       |
-| `packages/service/src/domain/agents/acp/runtime/provider_hooks.rs`                               | 33-method hook trait (4 required, 29 defaulted as reviewed on 2026-08-02) shaped by Cursor/OpenCode quirks in shared runtime                                                                                                                  | Standard ACP behavior in codecs; provider quirks in the owning built-in adapter                                                              |
-| `packages/service/src/domain/agents/adapter/adapter_trait.rs`                                    | Catalog, launch, session, UI policy, profiles, commands, permissions, branching, and compaction in one trait                                                                                                                                  | Small composable capabilities plus a session factory                                                                                         |
-| `packages/service/src/domain/agents/adapter/event_types.rs`                                      | **Partially resolved.** Stream start/block/chunk/stop events are assigned stable canonical IDs and materialized; the legacy event type still carries indexes/raw data for the current wire and persistence path                               | Extend canonical operations to every event family, persistence, and versioned DTOs                                                           |
-| `packages/service/src/domain/ws_session/handler/session_prompt/stream_reader_task_completion.rs` | Sends raw runtime JSON to the desktop WebSocket                                                                                                                                                                                               | Project typed canonical operations into a versioned desktop DTO                                                                              |
-| `packages/service/src/domain/ws_session/**`                                                      | Claude profile, Codex/Cursor access modes, OpenCode content shaping, and provider-name branches (the OpenCode question side-channel lives in the ACP hooks and the OpenCode adapter)                                                          | Provider-neutral commands and adapter-owned translations                                                                                     |
-| `packages/service/src/domain/mcp/control/spawn_resolve.rs`                                       | Codex-specific spawn permission mapping                                                                                                                                                                                                       | Generic launch policy resolved by the selected provider factory                                                                              |
-| `packages/service/src/domain/agents/discovery/**`                                                | **Resolved for built-ins.** Shared discovery iterates registry metadata and settings keys without fixed provider fields or SDK calls                                                                                                          | Installed descriptors already carry explicit executables; future downloaded distributions need a generic resolver                            |
-| `packages/cli-discovery/src/types.rs`                                                            | **Resolved.** `DiscoverySpec` owns strings and vectors, so registry/imported metadata is not constrained to `'static` literals                                                                                                                | Preserve the owned contract when distribution manifests begin producing discovery data                                                       |
-| Service settings allowlist and generated APIs                                                    | Provider-specific setting keys and `claude_profile` / `codex_permission_mode` fields                                                                                                                                                          | Namespaced provider installation data and generic config operations                                                                          |
-| `packages/desktop/src/lib/providers.ts`                                                          | Built-in IDs, labels, icons, and default remain compiled; installed-provider labels and bounded package-owned icons now flow from the service catalog                                                                                         | Persisted catalog default and removal of the remaining built-in-only fallbacks                                                               |
-| `packages/desktop/src/lib/provider-modes.ts`                                                     | Provider-specific mode arrays and normalization                                                                                                                                                                                               | Render negotiated configuration options                                                                                                      |
-| `packages/desktop/src/types/permission-mode.ts`                                                  | Fixed provider modes and encoded OpenCode agent IDs                                                                                                                                                                                           | Standard permission/config types plus opaque stable option IDs                                                                               |
-| `packages/desktop/src/lib/provider-access-modes.ts`                                              | Codex/Cursor-only tables and setting keys                                                                                                                                                                                                     | Capability-driven controls described by service data                                                                                         |
-| `packages/desktop/src/lib/provider-model-aliases.ts`                                             | Frontend copy of Claude alias behavior                                                                                                                                                                                                        | Adapter-resolved canonical option IDs and labels                                                                                             |
-| `packages/desktop/src/lib/prompt-attachments.ts`                                                 | MIME and attachment behavior selected by provider ID                                                                                                                                                                                          | Prompt capabilities and standard ACP content blocks                                                                                          |
-| `packages/desktop/src/lib/provider-resume-command.ts`                                            | Four-provider command switch                                                                                                                                                                                                                  | Session capability and service-issued actions                                                                                                |
-| `packages/desktop/src/components/settings/ProvidersSection.tsx`                                  | One tab and component per compiled provider                                                                                                                                                                                                   | Installed-provider list plus schema-driven settings                                                                                          |
-| Session controls, feature tabs, and info chips                                                   | Claude/OpenCode/Codex checks                                                                                                                                                                                                                  | Catalog capabilities and observed canonical state                                                                                            |
-| Shared tool parsing/rendering                                                                    | Provider keys, tool names, and Cursor repair paths                                                                                                                                                                                            | Standard tool kind/content first; built-in normalization before the boundary                                                                 |
-| `.claude/rules/provider-boundaries.md`                                                           | Describes providers under a path that does not match all current directories                                                                                                                                                                  | Align the documented and enforced ownership boundary (project `CLAUDE.md` repeats the stale path; rule edits require `pnpm build:agents-md`) |
-| `packages/service/src/domain/agents/runtime.rs`                                                  | **Partially resolved.** Shared service defaults resolve from registry order; the desktop still has a compiled fallback and there is no separately persisted catalog default                                                                   | Add a persisted user default and remove the desktop fallback when the catalog-driven UI slice lands                                          |
-| `packages/service/src/domain/imports/**`                                                         | Per-provider import branches (`claude_code_jsonl`, `codex_rollout`, `opencode_sqlite`) in shared service code                                                                                                                                 | Importer registry dispatched per installed provider                                                                                          |
-| `packages/service/src/domain/mcp/servers/project_schema*.rs`, `mcp/tools/project_providers.rs`   | **Partially resolved.** Provider enums, aliases, and guidance are catalog-driven; the legacy `codex_permission_mode` compatibility field remains                                                                                              | Replace the legacy provider-specific spawn field with registered launch policy                                                               |
-| `packages/service/src/domain/settings_store/validate.rs` and settings repositories               | `thinking_effort_model_<provider>_<model>` key grammar validated in shared settings code                                                                                                                                                      | Namespaced provider settings storage                                                                                                         |
-| `packages/desktop/src/components/import/*`, `onboarding/steps/DiscoverCliStep.tsx`               | Second hard-coded provider list/default in the import flow; four-provider onboarding discovery                                                                                                                                                | Catalog-driven lists                                                                                                                         |
-| `packages/desktop/src/stores/ws-envelope-*.ts`                                                   | `claude_profile` / `codex_permission_mode` fields handled in the shared WS store layer                                                                                                                                                        | Provider-neutral config payloads                                                                                                             |
+| Area                                                                                             | Current coupling                                                                                                                                                                                                                                                                   | Required direction                                                                                                                           |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/service/src/domain/agents/providers/registry.rs`                                       | **Resolved.** `ProviderRegistry::startup()` is built from the `BUILTIN_PROVIDERS` factory table plus validated local and managed ACP installations (`providers/installed/`)                                                                                                        | Preserve one provider-neutral startup registry; managed lifecycle changes remain restart-gated                                               |
+| `packages/service/src/domain/agents/acp/runtime/lifecycle.rs`                                    | **Partially resolved.** Stable v1 restore prefers `session/resume`, falls back to legacy `session/load`, never starts fresh for an explicit resume, and propagates graceful-close support; v1 initialization, client filesystem/terminal, and modes remain in one lifecycle module | Preserve the verified v1 lifecycle, then isolate any later v2 lifecycle without mixing wire assumptions                                      |
+| `packages/service/src/domain/agents/acp/incoming.rs`                                             | Typed v1 requests (permission, fs; terminal deliberately raw); session-update notifications stay fully raw                                                                                                                                                                         | Versioned, typed codecs that preserve unknown fields                                                                                         |
+| `packages/service/src/domain/agents/acp/runtime/turn_lifecycle.rs`                               | Assumes a v1 prompt response completes a turn                                                                                                                                                                                                                                      | Lifecycle state machine selected by negotiated version                                                                                       |
+| `packages/service/src/domain/agents/acp/runtime/provider_hooks.rs`                               | 33-method hook trait (4 required, 29 defaulted as reviewed on 2026-08-02) shaped by Cursor/OpenCode quirks in shared runtime                                                                                                                                                       | Standard ACP behavior in codecs; provider quirks in the owning built-in adapter                                                              |
+| `packages/service/src/domain/agents/adapter/adapter_trait.rs`                                    | Catalog, launch, session, UI policy, profiles, commands, permissions, branching, and compaction in one trait                                                                                                                                                                       | Small composable capabilities plus a session factory                                                                                         |
+| `packages/service/src/domain/agents/adapter/event_types.rs`                                      | **Partially resolved.** Stream start/block/chunk/stop events are assigned stable canonical IDs and materialized; the legacy event type still carries indexes/raw data for the current wire and persistence path                                                                    | Extend canonical operations to every event family, persistence, and versioned DTOs                                                           |
+| `packages/service/src/domain/ws_session/handler/session_prompt/stream_reader_task_completion.rs` | Sends raw runtime JSON to the desktop WebSocket                                                                                                                                                                                                                                    | Project typed canonical operations into a versioned desktop DTO                                                                              |
+| `packages/service/src/domain/ws_session/**`                                                      | Claude profile, Codex/Cursor access modes, OpenCode content shaping, and provider-name branches (the OpenCode question side-channel lives in the ACP hooks and the OpenCode adapter)                                                                                               | Provider-neutral commands and adapter-owned translations                                                                                     |
+| `packages/service/src/domain/mcp/control/spawn_resolve.rs`                                       | Codex-specific spawn permission mapping                                                                                                                                                                                                                                            | Generic launch policy resolved by the selected provider factory                                                                              |
+| `packages/service/src/domain/agents/discovery/**`                                                | **Resolved for built-ins.** Shared discovery iterates registry metadata and settings keys without fixed provider fields or SDK calls                                                                                                                                               | Installed descriptors already carry explicit executables; future downloaded distributions need a generic resolver                            |
+| `packages/cli-discovery/src/types.rs`                                                            | **Resolved.** `DiscoverySpec` owns strings and vectors, so registry/imported metadata is not constrained to `'static` literals                                                                                                                                                     | Preserve the owned contract when distribution manifests begin producing discovery data                                                       |
+| Service settings allowlist and generated APIs                                                    | Provider-specific setting keys and `claude_profile` / `codex_permission_mode` fields                                                                                                                                                                                               | Namespaced provider installation data and generic config operations                                                                          |
+| `packages/desktop/src/lib/providers.ts`                                                          | Built-in IDs, labels, icons, and default remain compiled; installed-provider labels and bounded package-owned icons now flow from the service catalog                                                                                                                              | Persisted catalog default and removal of the remaining built-in-only fallbacks                                                               |
+| `packages/desktop/src/lib/provider-modes.ts`                                                     | Provider-specific mode arrays and normalization                                                                                                                                                                                                                                    | Render negotiated configuration options                                                                                                      |
+| `packages/desktop/src/types/permission-mode.ts`                                                  | Fixed provider modes and encoded OpenCode agent IDs                                                                                                                                                                                                                                | Standard permission/config types plus opaque stable option IDs                                                                               |
+| `packages/desktop/src/lib/provider-access-modes.ts`                                              | Codex/Cursor-only tables and setting keys                                                                                                                                                                                                                                          | Capability-driven controls described by service data                                                                                         |
+| `packages/desktop/src/lib/provider-model-aliases.ts`                                             | Frontend copy of Claude alias behavior                                                                                                                                                                                                                                             | Adapter-resolved canonical option IDs and labels                                                                                             |
+| `packages/desktop/src/lib/prompt-attachments.ts`                                                 | MIME and attachment behavior selected by provider ID                                                                                                                                                                                                                               | Prompt capabilities and standard ACP content blocks                                                                                          |
+| `packages/desktop/src/lib/provider-resume-command.ts`                                            | Four-provider command switch                                                                                                                                                                                                                                                       | Session capability and service-issued actions                                                                                                |
+| `packages/desktop/src/components/settings/ProvidersSection.tsx`                                  | One tab and component per compiled provider                                                                                                                                                                                                                                        | Installed-provider list plus schema-driven settings                                                                                          |
+| Session controls, feature tabs, and info chips                                                   | Claude/OpenCode/Codex checks                                                                                                                                                                                                                                                       | Catalog capabilities and observed canonical state                                                                                            |
+| Shared tool parsing/rendering                                                                    | Provider keys, tool names, and Cursor repair paths                                                                                                                                                                                                                                 | Standard tool kind/content first; built-in normalization before the boundary                                                                 |
+| `.claude/rules/provider-boundaries.md`                                                           | Describes providers under a path that does not match all current directories                                                                                                                                                                                                       | Align the documented and enforced ownership boundary (project `CLAUDE.md` repeats the stale path; rule edits require `pnpm build:agents-md`) |
+| `packages/service/src/domain/agents/runtime.rs`                                                  | **Partially resolved.** Shared service defaults resolve from registry order; the desktop still has a compiled fallback and there is no separately persisted catalog default                                                                                                        | Add a persisted user default and remove the desktop fallback when the catalog-driven UI slice lands                                          |
+| `packages/service/src/domain/imports/**`                                                         | Per-provider import branches (`claude_code_jsonl`, `codex_rollout`, `opencode_sqlite`) in shared service code                                                                                                                                                                      | Importer registry dispatched per installed provider                                                                                          |
+| `packages/service/src/domain/mcp/servers/project_schema*.rs`, `mcp/tools/project_providers.rs`   | **Partially resolved.** Provider enums, aliases, and guidance are catalog-driven; the legacy `codex_permission_mode` compatibility field remains                                                                                                                                   | Replace the legacy provider-specific spawn field with registered launch policy                                                               |
+| `packages/service/src/domain/settings_store/validate.rs` and settings repositories               | `thinking_effort_model_<provider>_<model>` key grammar validated in shared settings code                                                                                                                                                                                           | Namespaced provider settings storage                                                                                                         |
+| `packages/desktop/src/components/import/*`, `onboarding/steps/DiscoverCliStep.tsx`               | Second hard-coded provider list/default in the import flow; four-provider onboarding discovery                                                                                                                                                                                     | Catalog-driven lists                                                                                                                         |
+| `packages/desktop/src/stores/ws-envelope-*.ts`                                                   | `claude_profile` / `codex_permission_mode` fields handled in the shared WS store layer                                                                                                                                                                                             | Provider-neutral config payloads                                                                                                             |
 
 ## Implementation backlog
 
@@ -430,10 +485,10 @@ ACP v2 leaves draft: nothing in "install a third-party ACP agent" requires v2,
 and an unwired `acp::v2` module fights the workspace's deny-`dead_code` and
 `knip` gates until something consumes it.
 
-### Implementation audit — 2026-08-26
+### Implementation audit — 2026-09-05
 
 The checkboxes below describe the complete provider-boundary program, not the
-merge gate for the local-descriptor backend. At the current `v0.12.0` baseline,
+merge gate for the local-descriptor backend. On the feature branch rebased onto `v0.12.0`,
 the runtime registry, local ACP execution/lifecycle path, pre-session model
 contract, developer authoring workspace, connector-owned icon path, stable
 resume/load/close lifecycle, first canonical stream slice, CI boundary
@@ -442,15 +497,15 @@ production code. Capability-driven desktop, canonical persistence/DTOs,
 production trust provisioning, an independently released package proof, the OS
 sandbox decision, and the marketplace UI remain future increments.
 
-| Workstream                        | Current state                                                                                                                                                                                                                 | Next acceptance boundary                                                                                                                                                                                                                           |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local provider backend            | Shipped: startup descriptors, generic adapter, mandatory code-backed model discovery, direct ACP execution, quarantine, diagnostics, restart-gated loopback lifecycle API, and authenticated HTTP/WS integration tests        | Preserve this authoring path separately from signed managed installation                                                                                                                                                                           |
-| Built-in regression guardrails    | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze later UI work; complete stream/workflow golden suites remain open                                                           | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                                                                                                                               |
-| Installed-provider desktop        | Catalog origin and generic live configuration exist; **Add provider** creates a local code-authoring project, while the free-form executable installer remains withdrawn                                                      | Add general installation only after the package installer can install validated code plus assets                                                                                                                                                   |
-| Models and live configuration     | Provider binaries return pre-session ACP model options; live ACP select/boolean snapshots remain authoritative and model choice is reconciled before prompting                                                                | Add conformance probing and migrate legacy built-in model/mode/effort controls                                                                                                                                                                     |
-| Canonical events and ACP v2       | Started: the stream-event slice now produces stable message/block operations and a turn-bounded materialized projection before the unchanged legacy WS projection; persistence and most event families remain legacy          | Keep v2 deferred; migrate one typed event family at a time, then version the desktop DTO and persistence                                                                                                                                           |
+| Workstream                        | Current state                                                                                                                                                                                                                                  | Next acceptance boundary                                                                                                                                                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local provider backend            | Shipped: startup descriptors, generic adapter, mandatory code-backed model discovery, direct ACP execution, quarantine, diagnostics, restart-gated loopback lifecycle API, and authenticated HTTP/WS integration tests                         | Preserve this authoring path separately from signed managed installation                                                                                                                                                                                   |
+| Built-in regression guardrails    | `FEATURES.md` is an ACP-grounded coverage ledger and focused Claude/Codex catalog fixtures freeze later UI work; complete stream/workflow golden suites remain open                                                                            | Extend executable parity only for each later refactor's blast radius before removing its legacy path                                                                                                                                                       |
+| Installed-provider desktop        | Catalog origin and generic live configuration exist; **Add provider** creates a local code-authoring project, while the free-form executable installer remains withdrawn                                                                       | Keep marketplace UI deferred until production trust, sandbox policy, and signed packaged-app lifecycle gates are satisfied                                                                                                                                 |
+| Models and live configuration     | Provider binaries return pre-session ACP model options; live ACP select/boolean snapshots remain authoritative and model choice is reconciled before prompting                                                                                 | Preserve implemented bounded conformance probes; migrate legacy built-in model/mode/effort controls separately                                                                                                                                             |
+| Canonical events and ACP v2       | Started: the stream-event slice now produces stable message/block operations and a turn-bounded materialized projection before the unchanged legacy WS projection; persistence and most event families remain legacy                           | Keep v2 deferred; migrate one typed event family at a time, then version the desktop DTO and persistence                                                                                                                                                   |
 | Marketplace distribution/security | Managed package schema, signed-index ingestion, defensive download/extraction, integrity checks, immutable installation, history, rollback, quarantine, cached blocklist, conformance, and process policy are implemented behind release gates | Provision production trust pins and blocklist URL, resolve the documented OS-sandbox limitations, and validate an independently released connector through the generic install path before enabling downloaded connectors; marketplace UI remains deferred |
-| Boundary enforcement              | `scripts/check-provider-boundaries.mjs` runs in `pnpm lint`, rejects new exact provider IDs and named-provider dependencies, checks SDK-to-service direction, and carries explicit temporary legacy/false-positive exceptions | Shrink the reviewed legacy dependency and desktop exceptions as Phase 5/6 migrations land                                                                                                                                                          |
+| Boundary enforcement              | `scripts/check-provider-boundaries.mjs` runs in `pnpm lint`, rejects new exact provider IDs and named-provider dependencies, checks SDK-to-service direction, and carries explicit temporary legacy/false-positive exceptions                  | Shrink the reviewed legacy dependency and desktop exceptions as Phase 5/6 migrations land                                                                                                                                                                  |
 
 Recommended increments from this baseline:
 
@@ -489,20 +544,32 @@ increments are:
 9. [x] add bounded conformance probes, signed-index ingestion, a cached
        blocklist, stable quarantine receipts, and independent process resource,
        lifecycle, working-directory, and environment policy;
-10. [ ] continue the started Phase 3/4/6 canonical-event workstream separately
-        and keep ACP v2 deferred while its specification is draft. The normal-user
-        marketplace browser/install UI is a later slice over the completed
-        package backend.
+
+The completed increments above are not the complete marketplace release
+checklist. Use the following ordering for remaining work:
+
+| Priority / lane                 | Next step                                                                                           | Acceptance boundary                                                                                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Local release verification      | Review and QA the working-tree session-scoped resume-persistence implementation                     | Opposite-capability concurrent handshakes cannot change another session's persisted resume eligibility; retain explicit-resume refusal                                         |
+| Before marketplace distribution | Provision production signing trust pins, signed blocklist URL, publishing and revocation operations | Real independently published package and policy validate through the generic backend; missing/untrusted policy fails closed                                                    |
+| Before marketplace distribution | Decide and document required OS isolation                                                           | Explicitly accept or address filesystem/network access and platform resource-control gaps; process cleanup is not an OS sandbox                                                |
+| Before marketplace distribution | Run signed-package lifecycle QA in packaged apps on supported platforms                             | Install, pre-prompt model selection, first turn, restart/resume where supported, update, rollback, disable and uninstall preserve transcripts and enforce current trust policy |
+| Separate incremental cleanup    | Continue Phase 3/4/6 canonical events, session capabilities and built-in control migration          | Add parity tests for each touched path before removing legacy behavior; shrink boundary exceptions                                                                             |
+| Explicitly deferred             | Normal-user marketplace browser/install UI and ACP v2                                               | No marketplace UI in this backend scope; v2 remains a separate negotiated, feature-flagged future implementation                                                               |
+
+Provider-native account authentication remains outside every lane. These gates
+do not require completing the entire canonical-event rewrite before merging the
+current backend slice.
 
 ### Existing-baseline follow-up identified during finish-job review
 
-- [ ] Scope installed-provider resume-persistence eligibility to the negotiated
-      session rather than the adapter's latest shared capability observation.
-      `InstalledAcpCapabilities` and `persistable_resume_session_id` already use
-      shared state in the committed baseline; concurrent handshakes advertising
-      different capabilities can affect another session's ID persistence. Add
-      opposing-capability concurrent-session coverage when changing that contract.
-      This is tracked separately from the current package-backend simplification.
+- [x] Implement session-scoped installed-provider resume-persistence eligibility
+      in the working tree (2026-09-12): hooks are isolated per spawn, persistence
+      consults the exact live runtime, and missing runtime ownership fails closed.
+      Review adds same-adapter opposite-capability and public WS/DB regressions.
+      This checkbox records implementation, not a commit or packaged-app QA claim.
+- [ ] Complete local packaged-app resume/persistence QA alongside the plugin-project
+      identity work in [Local Plugins v0.12.0](../LOCAL_PLUGINS_V0_12.md).
 
 Launch verification is pathname-based, not atomic verify-and-execute against a
 same-user attacker. The precise boundary and remaining isolation decision are
@@ -795,11 +862,11 @@ documented in `PROVIDER_PACKAGE.md` under "Local integrity boundary".
       per-id versioned install directories following the LSP downloader
       precedent (SHA-256 verification, private directories and receipts).
 - [~] Define integrity policy per ACP distribution: require SHA-256 for binary
-      archives even though the ACP Registry field is optional; require exact
-      package versions plus captured package-manager integrity/lock data for
-      `npx` and `uvx`; reject moving versions and ranges.
-      Binary archives are complete; package-manager distributions remain
-      deliberately unsupported rather than partially trusted.
+  archives even though the ACP Registry field is optional; require exact
+  package versions plus captured package-manager integrity/lock data for
+  `npx` and `uvx`; reject moving versions and ranges.
+  Binary archives are complete; package-manager distributions remain
+  deliberately unsupported rather than partially trusted.
 - [x] Extract archives defensively: reject path traversal and escaping symlinks,
       duplicate or oversized entries, and require declared executable/assets to
       remain inside the staged versioned install directory. Activate only by an
@@ -811,11 +878,11 @@ documented in `PROVIDER_PACKAGE.md` under "Local integrity boundary".
       index, host metadata, full payload manifest, and conformance evidence;
       rollback and launch verify them against the current pinned keyring.
 - [~] Sign the registry index and ship a launch-fetched blocklist kill-switch
-      before third-party content ships (`docs/PLUGIN_STRATEGY.md` §7, M1–M2).
-      Exact Ed25519 verification, compile-time host pins, bounded HTTPS startup
-      refresh, verified-cache fallback, launch matching, and inventory health are
-      implemented. A real release key/URL plus auto-disable/user notification
-      must still be provisioned before marketplace distribution.
+  before third-party content ships (`docs/PLUGIN_STRATEGY.md` §7, M1–M2).
+  Exact Ed25519 verification, compile-time host pins, bounded HTTPS startup
+  refresh, verified-cache fallback, launch matching, and inventory health are
+  implemented. A real release key/URL plus auto-disable/user notification
+  must still be provisioned before marketplace distribution.
 - [x] Launch executable plus argument arrays directly; never interpolate a shell
       command from marketplace data. `GenericAcpAdapter::spawn` execs the
       resolved absolute path with its argument vector; relative commands are
@@ -827,12 +894,12 @@ documented in `PROVIDER_PACKAGE.md` under "Local integrity boundary".
       validation, and no secret-bearing stderr in API errors. A provider with no
       verified model/default is unavailable and cannot receive a prompt.
 - [x] Keep provider-account credentials outside packages, descriptors, APIs, and
-  logs. Users preconfigure the native provider CLI; Cadencr neither stores nor
-  brokers its login. The diagnostics API already omits the argument vector and
-  all environment names/values, and Unix lifecycle writes enforce owner-only
-  `0600` descriptor files. Managed-package validation rejects credential-like
-  launch metadata, runtime environment policy strips host auth/config overrides,
-  and conformance/receipts/quarantine never expose environment or stderr values.
+      logs. Users preconfigure the native provider CLI; Cadencr neither stores nor
+      brokers its login. The diagnostics API already omits the argument vector and
+      all environment names/values, and Unix lifecycle writes enforce owner-only
+      `0600` descriptor files. Managed-package validation rejects credential-like
+      launch metadata, runtime environment policy strips host auth/config overrides,
+      and conformance/receipts/quarantine never expose environment or stderr values.
 - [x] Apply process resource, lifecycle, and working-directory policy independently
       of ACP capabilities, including bounded child count, output, setup and close
       timeouts, and a documented inherited-environment policy.
@@ -842,10 +909,10 @@ documented in `PROVIDER_PACKAGE.md` under "Local integrity boundary".
       reports unavailable Unix child-count or macOS memory controls. This does
       not claim filesystem or network sandboxing.
 - [x] Run bounded conformance probes. Admission and rollback run `version`,
-  authoritative pre-session models, ACP initialize, disposable session/model
-  reconciliation, advertised resume-or-legacy-load, and advertised close without
-  a prompt. Cleanup is bounded and complete process trees are terminated. The
-  probes never test or configure provider-account authentication.
+      authoritative pre-session models, ACP initialize, disposable session/model
+      reconciliation, advertised resume-or-legacy-load, and advertised close without
+      a prompt. Cleanup is bounded and complete process trees are terminated. The
+      probes never test or configure provider-account authentication.
 - [x] Quarantine or clearly mark incompatible versions instead of crashing the
       provider catalog. A valid descriptor whose executable is missing, is not
       executable, or targets another platform stays registered and renders
@@ -853,11 +920,11 @@ documented in `PROVIDER_PACKAGE.md` under "Local integrity boundary".
       be trusted is refused outright. Both carry a stable SCREAMING_SNAKE code
       and are reported at `GET /api/agents/installed-providers`.
 - [x] Preserve local transcripts and installation history on disable or uninstall.
-  Managed lifecycle routes never touch session/transcript rows, serialize through
-  one mutation lock, compare-and-swap the complete prior activation, and retain
-  immutable version/digest trees, monotonic history, signed receipts, and redacted
-  quarantine evidence for rollback/audit. Garbage collection and a retention cap
-  are explicitly deferred; removal only clears desired activation.
+      Managed lifecycle routes never touch session/transcript rows, serialize through
+      one mutation lock, compare-and-swap the complete prior activation, and retain
+      immutable version/digest trees, monotonic history, signed receipts, and redacted
+      quarantine evidence for rollback/audit. Garbage collection and a retention cap
+      are explicitly deferred; removal only clears desired activation.
 - [x] Distinguish ACP conformance from trust, publisher verification, and sandbox
       policy; protocol compliance is not a security endorsement. The installation
       model and its receipt explicitly separate signed publisher/package trust,
@@ -974,12 +1041,12 @@ The provider boundary is complete when all of the following are true:
       Cadencr source change. The project also owns `icon.svg`; the generated
       descriptor resolves and safely inlines it without a provider-ID mapping.
 - [~] The backend can ingest a signed provider index, download and verify a
-      current-platform code-and-assets package, run bounded conformance, install
-      and activate it atomically, record history, update, roll back, enable,
-      disable, uninstall, quarantine, and apply a cached blocklist without
-      touching transcripts. The loopback backend and generated client implement
-      this path; final completion requires provisioning the real release signing
-      key/blocklist URL and packaged-app end-to-end verification.
+  current-platform code-and-assets package, run bounded conformance, install
+  and activate it atomically, record history, update, roll back, enable,
+  disable, uninstall, quarantine, and apply a cached blocklist without
+  touching transcripts. The loopback backend and generated client implement
+  this path; final completion requires provisioning the real release signing
+  key/blocklist URL and packaged-app end-to-end verification.
 - [ ] A normal user can install and manage those backend-validated packages from
       a marketplace UI. This is deliberately deferred until the backend item
       above is complete; the former arbitrary-executable form is not an

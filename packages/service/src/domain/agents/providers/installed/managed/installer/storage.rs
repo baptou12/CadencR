@@ -71,6 +71,10 @@ impl ManagedStorage {
         self.root.join("blocklist.json")
     }
 
+    pub fn catalog_cache_path(&self) -> PathBuf {
+        self.root.join("catalog.json")
+    }
+
     pub(crate) fn provider_ids(&self) -> Vec<String> {
         let mut ids = std::fs::read_dir(&self.root)
             .into_iter()

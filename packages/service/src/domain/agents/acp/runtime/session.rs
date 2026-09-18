@@ -542,6 +542,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn close_closes_runtime_stream_while_session_remains_alive() {
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let mut session = assembled_session(&client, "s-close-stream", true);
+        let mut runtime_rx = session.take_message_rx();
+        let responder = tokio::spawn(async move {
+            let request = read_one_request(&mut agent_stdin).await;
+            assert_eq!(request["method"], "session/close");
+            write_frame(
+                &mut agent_stdout,
+                json!({ "jsonrpc": "2.0", "id": request["id"], "result": {} }),
+            )
+            .await;
+        });
+
+        session.close().await;
+        responder.await.unwrap();
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), runtime_rx.recv())
+                .await
+                .expect("closed runtime stream should not remain pending")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn unresponsive_session_close_still_closes_runtime_stream() {
+        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let mut session = assembled_session(&client, "s-close-timeout", true);
+        let mut runtime_rx = session.take_message_rx();
+        let agent = tokio::spawn(async move {
+            let close = read_one_request(&mut agent_stdin).await;
+            assert_eq!(close["method"], "session/close");
+            let cancel_request = read_one_request(&mut agent_stdin).await;
+            assert_eq!(cancel_request["method"], "$/cancel_request");
+            let cancel = read_one_request(&mut agent_stdin).await;
+            assert_eq!(cancel["method"], "session/cancel");
+            assert!(cancel.get("id").is_none());
+        });
+
+        tokio::time::timeout(Duration::from_secs(2), session.close())
+            .await
+            .expect("local teardown must beat the stream-reader deadline");
+        agent.await.unwrap();
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), runtime_rx.recv())
+                .await
+                .expect("timed-out close must still close the runtime stream")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
     async fn close_uses_cancel_when_session_close_is_not_advertised() {
         let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let mut session = assembled_session(&client, "s-cancel-close", false);

@@ -51,6 +51,7 @@ const PROVIDER_ID: &str = "fake-acp-agent";
 const CONFIG_PROVIDER_ID: &str = "fake-config-acp-agent";
 const RICH_PROVIDER_ID: &str = "fake-rich-acp-agent";
 const DURABLE_PROVIDER_ID: &str = "fake-durable-acp-agent";
+const MIXED_CAPABILITY_PROVIDER_ID: &str = "fake-mixed-capability-acp-agent";
 const QUARANTINED_PROVIDER_ID: &str = "quarantined-acp-agent";
 const EVENT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -361,6 +362,29 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
         "fake-durable-acp-agent.json",
         &durable_descriptor,
     );
+    let mixed_state = home.path().join("mixed-durable-session.json");
+    let mixed_wrapper = home.path().join("mixed-capability-agent.sh");
+    std::fs::write(
+        &mixed_wrapper,
+        format!(
+            "#!/bin/sh\nif [ \"$FAKE_ACP_DURABLE\" = \"1\" ]; then\n  exec '{}' \"$@\" --durable '{}'\nelse\n  exec '{}' \"$@\"\nfi\n",
+            agent.display(),
+            mixed_state.display(),
+            agent.display(),
+        ),
+    )
+    .expect("mixed-capability wrapper");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&mixed_wrapper, std::fs::Permissions::from_mode(0o755))
+            .expect("mixed-capability wrapper permissions");
+    }
+    write_descriptor(
+        &providers,
+        "fake-mixed-capability-acp-agent.json",
+        &descriptor(MIXED_CAPABILITY_PROVIDER_ID, &mixed_wrapper),
+    );
     // A second descriptor claiming a built-in id must lose to the built-in.
     write_descriptor(&providers, "cursor.json", &descriptor("cursor", &agent));
     // Disabled entries reserve names too, and aliases are part of the built-in
@@ -391,6 +415,7 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
             PROVIDER_ID,
             CONFIG_PROVIDER_ID,
             DURABLE_PROVIDER_ID,
+            MIXED_CAPABILITY_PROVIDER_ID,
             RICH_PROVIDER_ID,
             QUARANTINED_PROVIDER_ID,
         ],
@@ -443,17 +468,11 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
         .session_id()
         .await
         .expect("durable provider session id");
-    assert_eq!(
-        durable_adapter
-            .persistable_resume_session_id(Some(&durable_session_id))
-            .as_deref(),
-        Some(durable_session_id.as_str())
-    );
+    assert!(first_runtime.allows_resume_persistence());
     first_runtime.close().await;
 
-    // Recreate the adapter too: after a service restart its process-local
-    // capability cache is unknown until the replacement connector completes
-    // `initialize`, while the DB-owned resume id is already available.
+    // Recreate the adapter too: the DB-owned resume id is available before the
+    // replacement connector completes its own `initialize` negotiation.
     let durable_installation = installed::startup_load()
         .installations
         .iter()
@@ -473,6 +492,7 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
         )
         .await
         .expect("durable provider resumed spawn");
+    assert!(resumed_runtime.allows_resume_persistence());
     let resumed_events = collect_runtime_turn(resumed_runtime.as_mut()).await;
     resumed_runtime.close().await;
     assert!(
@@ -485,12 +505,44 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
             .as_deref(),
         Some(durable_session_id.as_str())
     );
-    assert_eq!(
-        restarted_adapter
-            .persistable_resume_session_id(Some(&durable_session_id))
-            .as_deref(),
-        Some(durable_session_id.as_str())
-    );
+    // Capability is owned by each live runtime, not cached on the adapter. The
+    // same installed adapter can therefore host overlapping sessions whose
+    // connector handshakes advertise opposite resume support.
+    let mixed_adapter = registry
+        .adapter(MIXED_CAPABILITY_PROVIDER_ID)
+        .expect("mixed-capability installed provider should resolve");
+    let mut non_resumable_runtime = mixed_adapter
+        .spawn(
+            json!("non-resumable overlapping session"),
+            RuntimeSpawnConfig {
+                cwd: home.path().to_path_buf(),
+                model: Some("fake-small".to_string()),
+                ..RuntimeSpawnConfig::default()
+            },
+        )
+        .await
+        .expect("non-resumable mixed-provider spawn");
+    let mut resumable_runtime = mixed_adapter
+        .spawn(
+            json!("resumable overlapping session"),
+            RuntimeSpawnConfig {
+                cwd: home.path().to_path_buf(),
+                model: Some("fake-small".to_string()),
+                env: Some(std::collections::HashMap::from([(
+                    "FAKE_ACP_DURABLE".to_string(),
+                    "1".to_string(),
+                )])),
+                ..RuntimeSpawnConfig::default()
+            },
+        )
+        .await
+        .expect("resumable mixed-provider spawn");
+    assert!(!non_resumable_runtime.allows_resume_persistence());
+    assert!(resumable_runtime.allows_resume_persistence());
+    collect_runtime_turn(non_resumable_runtime.as_mut()).await;
+    collect_runtime_turn(resumable_runtime.as_mut()).await;
+    non_resumable_runtime.close().await;
+    resumable_runtime.close().await;
     // The colliding descriptor was refused, and `cursor` still resolves to the
     // built-in adapter.
     let rejections = &installed::startup_load().rejections;
@@ -552,6 +604,7 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
             entry["id"] == PROVIDER_ID
                 || entry["id"] == RICH_PROVIDER_ID
                 || entry["id"] == DURABLE_PROVIDER_ID
+                || entry["id"] == MIXED_CAPABILITY_PROVIDER_ID
         })
         .all(|entry| entry["origin"] == "installed_local"));
     assert!(catalog["providers"]
@@ -678,6 +731,82 @@ async fn a_local_acp_executable_is_selectable_and_drives_a_full_turn() {
     assert!(
         persisted.1.is_none(),
         "an agent without resume/load support must not leave an unusable resume id"
+    );
+
+    // The positive half of the negotiated gate crosses the same public path:
+    // a durable connector's runtime ID is persisted by the stream reader.
+    sqlx::query(
+        "INSERT INTO features (id, project_id, title, type) \
+         VALUES (5, 1, 'Durable ACP Feature', 'ws-session')",
+    )
+    .execute(&server.pool)
+    .await
+    .expect("durable ACP feature");
+    let durable_init_id = send_session_payload(
+        &mut socket,
+        "init",
+        SessionInitPayload {
+            provider: Some(DURABLE_PROVIDER_ID.to_string()),
+            model: Some("fake-small".to_string()),
+            thinking_effort: None,
+            permission_mode: None,
+            system_prompt: None,
+            cwd: Some(server.repo_path().to_string_lossy().into_owned()),
+            feature_id: Some(5),
+        },
+    )
+    .await;
+    let durable_initialized_envelope =
+        next_session_action(&mut socket, WsSessionAction::Initialized).await;
+    assert_eq!(
+        durable_initialized_envelope.r#ref.as_deref(),
+        Some(durable_init_id.as_str())
+    );
+    let durable_initialized: SessionInitializedPayload =
+        serde_json::from_value(durable_initialized_envelope.payload)
+            .expect("durable session.initialized payload should match its DTO");
+    let durable_db_session_id = durable_initialized.session_id;
+    send_session_payload(
+        &mut socket,
+        "prompt.send",
+        prompt_payload(&durable_db_session_id, "remember websocket persistence"),
+    )
+    .await;
+    let (_, durable_ended) = collect_ws_turn(&mut socket).await;
+    assert_eq!(durable_ended.reason, "turn_complete");
+    let durable_persisted: (String, Option<String>) = sqlx::query_as(
+        "SELECT runtime_provider, runtime_session_id FROM agent_sessions WHERE id = ?",
+    )
+    .bind(
+        durable_db_session_id
+            .parse::<i64>()
+            .expect("numeric durable session id"),
+    )
+    .fetch_one(&server.pool)
+    .await
+    .expect("persisted durable session");
+    assert_eq!(durable_persisted.0, DURABLE_PROVIDER_ID);
+    assert_eq!(durable_persisted.1.as_deref(), Some("fake-acp-session-1"));
+    let persisted_resume_id = durable_persisted
+        .1
+        .expect("durable WebSocket turn should persist its resume ID");
+    let mut db_resumed_runtime = restarted_adapter
+        .spawn(
+            json!("recall the value persisted through the WebSocket path"),
+            RuntimeSpawnConfig {
+                cwd: server.repo_path().to_path_buf(),
+                model: Some("fake-small".to_string()),
+                resume_session_id: Some(persisted_resume_id),
+                ..RuntimeSpawnConfig::default()
+            },
+        )
+        .await
+        .expect("runtime should restore from the ID persisted in the DB");
+    let db_resumed_events = collect_runtime_turn(db_resumed_runtime.as_mut()).await;
+    db_resumed_runtime.close().await;
+    assert!(
+        db_resumed_events.contains("durable-host-memory"),
+        "DB-persisted resume ID did not restore connector context: {db_resumed_events}"
     );
 
     // Cancellation crosses the same public WebSocket boundary. Wait for the

@@ -269,7 +269,7 @@ impl AcpRuntimeSession {
             message_rx: Some(rx),
             loop_task: None,
             side_channel_task: None,
-            local_tx,
+            local_tx: Some(local_tx),
             hooks,
             indexer,
             replay_suppression: Arc::new(AtomicBool::new(false)),

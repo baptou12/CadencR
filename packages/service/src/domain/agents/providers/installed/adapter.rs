@@ -23,7 +23,7 @@ use crate::domain::agents::adapter::{
 };
 use crate::domain::agents::runtime::{ProviderCatalogEntry, ProviderStatus};
 
-use super::hooks::{InstalledAcpCapabilities, InstalledAcpHooks};
+use super::hooks::InstalledAcpHooks;
 use super::installation::HostInstallation;
 use super::model_discovery::{discover_models, DiscoveredModels};
 use super::provider_command::{prepare_provider_command, PreparedProviderCommand};
@@ -39,7 +39,6 @@ struct CatalogCacheEntry {
 
 pub struct GenericAcpAdapter {
     installation: Arc<HostInstallation>,
-    capabilities: Arc<InstalledAcpCapabilities>,
     catalog_cache: RwLock<HashMap<PathBuf, CatalogCacheEntry>>,
     catalog_refreshes: Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>,
 }
@@ -48,7 +47,6 @@ impl GenericAcpAdapter {
     pub fn new(installation: Arc<HostInstallation>) -> Self {
         Self {
             installation,
-            capabilities: Arc::new(InstalledAcpCapabilities::default()),
             catalog_cache: RwLock::new(HashMap::new()),
             catalog_refreshes: Mutex::new(HashMap::new()),
         }
@@ -176,13 +174,6 @@ impl AgentRuntimeAdapter for GenericAcpAdapter {
             .map(ToOwned::to_owned)
     }
 
-    fn persistable_resume_session_id(&self, runtime_session_id: Option<&str>) -> Option<String> {
-        self.capabilities
-            .supports_durable_resume()
-            .then(|| self.resolve_resume_session_id(runtime_session_id))
-            .flatten()
-    }
-
     /// Read back the runtime's own provider-neutral permission envelope so
     /// standard ACP `session/request_permission` prompts reach the user.
     fn parse_permission_request(&self, raw: &Value) -> Option<RuntimePermissionRequest> {
@@ -249,10 +240,7 @@ impl AgentRuntimeAdapter for GenericAcpAdapter {
             // Context window is reported by the agent through `usage_update`;
             // there is nothing to pre-seed it from.
             context_window: None,
-            hooks: Arc::new(InstalledAcpHooks::new(
-                discovered.config_id,
-                Arc::clone(&self.capabilities),
-            )),
+            hooks: Arc::new(InstalledAcpHooks::new(discovered.config_id)),
         })
         .await
     }
@@ -376,10 +364,10 @@ mod tests {
     }
 
     /// A stored ID survives capability discovery so an unsupported resume
-    /// fails in the ACP handshake, while new IDs are persisted only after the
-    /// connector advertised stable resume or legacy load support.
+    /// fails explicitly in the ACP handshake rather than silently starting a
+    /// new session. Live persistence eligibility belongs to the spawned runtime.
     #[tokio::test]
-    async fn separates_stored_resume_validation_from_persistence() {
+    async fn stored_resume_validation_remains_adapter_owned() {
         let dir = tempfile::tempdir().unwrap();
         let adapter = adapter(&runnable_binary(dir.path()));
         assert!(adapter.is_valid_resume_session_id("ses-1"));
@@ -387,7 +375,6 @@ mod tests {
             adapter.resolve_resume_session_id(Some("ses-1")).as_deref(),
             Some("ses-1")
         );
-        assert_eq!(adapter.persistable_resume_session_id(Some("ses-1")), None);
         assert!(adapter.session_branching().is_none());
         assert!(adapter.compaction_strategy().is_none());
         assert!(!adapter.supports_builtin_compact_command());

@@ -1,10 +1,56 @@
 # Cadencr Plugin Strategy
 
-Status: proposal with the step-2 code-backed provider substrate and managed marketplace backend implemented (rev. 2026-08-26). Grounded in a full audit of the service, desktop, and packaging layers, plus prior-art research (VS Code, Obsidian, Zed, JetBrains, Raycast, Figma) current to mid-2026.
+Status: v0.12.0 targets local theme/provider plugins (decision 2026-09-12).
+GitHub-only public distribution remains accepted for later, not the current
+release objective.
+
+## Current release priority — 2026-09-12
+
+[Local Plugins v0.12.0](./LOCAL_PLUGINS_V0_12.md) is the authoritative immediate
+release checklist. Both themes and providers create ordinary projects inside
+the developer's Cadencr instance. Add durable, queryable plugin-project identity
+with a theme/provider discriminator for a later GitHub publication and registry
+initial/new-version workflow. The marker is implemented for new project rows only; existing projects are not backfilled or reclassified.
+
+No marketplace UI or production registry provisioning is required for v0.12.0.
+Keep code used by local flows and real tooling; the explicit future-facing
+runtime exception is registry package-download infrastructure. Do not add inactive
+publishing UI or placeholder runtime behavior.
+
+## Current provider delivery boundary
+
+The provider implementation at `7d572e5dd` has been rebased and verified against
+local `v0.12.0` (`302cf0183`); this is not a recorded release-branch merge.
+Local authoring and the managed package/install/conformance backend are
+implemented. Marketplace UI remains deferred, and provider-account
+configuration and authentication remain the user's native CLI responsibility.
+
+Session-scoped resume-persistence eligibility is implemented in the current working tree and under review; it is not a new committed release baseline.
+Production trust/blocklist provisioning, publishing and revocation operations,
+an explicit OS-isolation decision, and real signed-package lifecycle QA in
+packaged apps remain distribution gates. Canonical-event and built-in control
+migration are separate incremental work, not a reason to pre-check the wider
+boundary plan. See [the current provider audit](./PROVIDER_SPEC/BOUNDARIES.md#implementation-audit--2026-09-05)
+for ordering and acceptance criteria.
+
+## Accepted marketplace delivery decision — 2026-09-11
+
+For the later public-distribution phase, ship the first marketplace for **code-backed ACP provider connectors**
+using public GitHub repositories, metadata PRs, GitHub Actions, and approved
+packages mirrored into GitHub Releases under Cadencr control. Publish a signed
+index and signed blocklist; discover and install inside Cadencr. No S3, dedicated
+marketplace backend, publisher portal, or required website in V1.
+
+The executable contract and local **Add provider** flow already exist; this is
+not a plan to implement them again. The source-backed remaining work and external
+contribution process are in [Marketplace V1](./MARKETPLACE_V1.md), the authoritative
+delivery checklist for that deferred decision, not for v0.12.0. Public themes, custom tabs, and deeper
+plugin contributions follow independently; themes are no longer a prerequisite
+for shipping the provider marketplace.
 
 ## 0. Thesis
 
-Extensibility ships as a ladder of four steps, each independently mergeable and valuable to users on its own, each building machinery the next step reuses:
+Extensibility has four capability tracks, each independently mergeable and valuable to users. The original theme-first ordering below is superseded for public marketplace delivery by the accepted provider-first V1:
 
 1. **Custom themes** — pure data, zero new security surface, immediate visible value. Establishes the import → validate → enable → persist pipeline everything later reuses.
 2. **Bring your own agent (ACP)** — the ACP layer (`packages/service/src/domain/agents/acp/`, ~13k lines) is a strong provider-neutral base; Cursor and OpenCode ride it today, but provider hooks and shared-code leaks still need the boundary work in `docs/PROVIDER_SPEC/BOUNDARIES.md`. Third-party integrations become **independently distributed, code-backed connector processes that speak standard ACP**. Their provider-native mapping code never becomes Cadencr source code.
@@ -37,15 +83,15 @@ The strategic model is **Raycast/Figma/Zed (control by construction), not VS Cod
 
 ## 2. Step 1 — Custom themes
 
-**Why first:** a theme is pure data (CSS custom-property values), so there is no behavior to sandbox and no review burden beyond schema + contrast checks — yet it is the highest-visibility personalization an IDE can offer. It also forces the small decisions every later step inherits: manifest schema conventions, an install directory, validation, enable/disable UI, and persistence.
+**Why useful:** a theme is pure data (CSS custom-property values), so there is no behavior to sandbox and no review burden beyond schema + contrast checks — yet it is the highest-visibility personalization an IDE can offer. It also forces the small decisions every later step inherits: manifest schema conventions, an install directory, validation, enable/disable UI, and persistence.
 
-**What exists:** the TS theme registry is clean (`lib/themes/registry.ts`; apply = one DOM attribute), but values are build-time CSS. The packaged CSP already allows `style-src 'unsafe-inline'`, so injecting CSS variables at runtime needs no CSP change. `DESIGN.md` defines the token vocabulary.
+**What exists:** local theme creation, validation/application, and Git-backed theme authoring workspaces already exist (`domain/themes/`, `ThemeLibrary.tsx`). Shared plugin-project identity is now persisted for newly created projects only, and theme creation returns a ready project/conversation or an actionable partial-setup error. Remaining delivery work is lifecycle validation, not inventing theme authoring again. The phase details below describe the capability track and must not be read as an entirely unimplemented backlog. The packaged CSP already allows `style-src 'unsafe-inline'`, so injecting CSS variables at runtime needs no CSP change. `DESIGN.md` defines the token vocabulary.
 
 **Phases (each mergeable):**
 
 - **1a — Themes as data (internal, zero behavior change).** Add `cssVars?: Record<string,string>` to `ThemeDefinition`, inject on apply; port one first-party theme to the data path to prove parity. The allowed variable namespace is the closed set of `DESIGN.md` tokens — themes set known tokens only, never arbitrary CSS.
 - **1b — Theme library (local-first creation).** One "Themes" gallery in the appearance settings showing built-in and user themes side by side: create by **duplicating any built-in theme**, edit as JSON with live reload/preview, enable, export, delete. Schema validation + automated contrast check on every load — one malformed token value silently kills whole gradients (the `hsl(var(--background))` bug class), so errors must surface on the creator's machine before the format freezes into a public contract. Files live under `~/.cadencr/themes/<id>/` (never inside `Contents/Resources` — `signIgnore` + notarization mean bundle writes invalidate the signature); enablement persists in the DB. Keep the editor minimal (duplicate + JSON + live preview = ~80% of the value); a visual token editor is a later phase. Custom Actions is the in-house precedent for DB-backed user-created content with management UI.
-- **1c — Sharing + registry (same gallery, new source).** "Share this theme" exports the JSON and opens a prefilled PR against `cadencr/registry` (marketplace M0 seed, §7 — zero backend); the registry index then appears as just another source in the identical gallery (browse/install/update). The storefront UI thus ships and gets polished on zero-stakes content before any third-party trust decision exists, and publishing is gated on the creator having actually lived with the theme.
+- **1c — Sharing + registry (after provider marketplace V1).** Export a validated theme and submit metadata by PR to the same registry. Add themes as a new content type and gallery source only after their schema and runtime path are ready; theme sharing is not a prerequisite for provider distribution. Reuse the publication machinery in [Marketplace V1](./MARKETPLACE_V1.md).
 
 ## 3. Step 2 — Bring your own agent (ACP)
 
@@ -73,7 +119,7 @@ Provider-account authentication is outside Cadencr's connector contract. A user 
 
 ## 5. Step 4 — Deeper behavior changes (the plugin system proper)
 
-Only here do manifests, an installer, and a plugin runtime arrive. The renderer stays locked down (`sandbox: true`, `contextIsolation: true`, packaged CSP `script-src 'self'`, all navigation denied): first-party host behavior runs in the Rust service, while third-party behavior runs only in a constrained plugin-owned subprocess (often an MCP server bundled by the plugin); plugin _UI_ is declared, and first-party React renders it from a fixed component vocabulary. This is the Raycast model — brand and UX control hold by construction.
+Here the provider package/installer foundations expand into general plugin contributions and a dedicated plugin runtime. The renderer stays locked down (`sandbox: true`, `contextIsolation: true`, packaged CSP `script-src 'self'`, all navigation denied): first-party host behavior runs in the Rust service, while third-party behavior runs only in a constrained plugin-owned subprocess (often an MCP server bundled by the plugin); plugin _UI_ is declared, and first-party React renders it from a fixed component vocabulary. This is the Raycast model — brand and UX control hold by construction.
 
 **Phases (each mergeable):**
 
@@ -111,26 +157,26 @@ Precedent that the team already accepts DB-backed, user-contributed UI: **Custom
 
 ## 7. Marketplace
 
-The registry grows one content type per step — themes (step 1c) → agent manifests (step 2c) → action packs and plugin manifests (step 4) — rather than launching as its own project.
+**Accepted V1: GitHub-only, ACP providers first.** The detailed plan and
+contribution checklist live in [Marketplace V1](./MARKETPLACE_V1.md).
 
-**Phase M0 — git registry, no backend.** `cadencr/registry` repo with a JSON index; submissions by PR; CI validates schema, verifies the source repo, lints; index served from a CDN. The Astro landing site (`packages/landing`) renders the index as the storefront. (Raycast, Obsidian, and Zed all launched exactly this way.)
+| Phase                                       | State and remaining scope                                                                                                                                                                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **M0 — Public registry and publishing**     | Pending: public metadata repository, author PRs, human approval for every executable version, isolated CI, protected publication into Cadencr-owned GitHub Releases. Source remains in author repositories; binaries are release assets, not Git blobs. |
+| **M1 — Integrity**                          | Verification and immutable local installation exist. Provision production trust and publish the exact existing canonical signed-index format; keep downloaded approved bytes immutable.                                                                 |
+| **M2 — Compatibility and revocation**       | Backend compatibility, signed blocklist cache and launch enforcement exist. Provision the production source, expiry/refresh operations, incident ownership and user-visible revocation handling; resolve OS-isolation and packaged-app QA gates.        |
+| **M3 — In-app marketplace V1**              | Pending: fetch/cache the official signed index and expose browse/install/update/disable/remove plus restart and trust diagnostics. No required web storefront.                                                                                          |
+| **Later — Other content and publishing UX** | Themes, action packs and declarative plugins require their own runtime contracts. Website, publisher portal, alternative storage, private registries and monetization are outside V1.                                                                   |
 
-**Phase M1 — integrity. _Backend implemented; release key not provisioned._** Content-addressed binary artifacts, mandatory `sha256`, exact versions, canonical Ed25519 index verification, immutable payload manifests, and current-key rollback/launch verification are implemented. The public key is compile-time host policy and request-supplied keys are refused by construction. A real reviewed release key still has to be provisioned; package-manager distributions remain unsupported rather than receiving weaker integrity.
+The goal is zero hosting spend using public repositories and standard hosted
+Actions runners, not a guarantee of permanently free service or zero review and
+operations cost. GitHub is transport/storage, not a replacement for Cadencr
+signatures, checksums or revocation policy.
 
-**Phase M2 — compat + kill-switch. _Backend implemented; release source and UX pending._** `min_app_version`/`max_app_version`, compile-time-pinned signed HTTPS blocklist refresh at startup, bounded verified caching, network fallback to a still-valid cache, fail-closed matching/corrupt/expired cache at launch, and inventory health are implemented. A real release URL/key, automatic durable disable, and user notification remain required. **The single most important operational lever** — GlassWorm's damage came from the detection-to-removal window. It must be fully provisioned before any marketplace-distributed executable ships, including agent distributions in step 2c and plugins in step 4; theme-only M0 does not require it.
-
-**Phase M3 — hosted index** only when PR review is the bottleneck (search, install counts, featured/editorial).
-
-**Phase M4 — monetization.** Free-only until there's a supply problem. Then BYO-license first (developer sells, platform takes 0% — no payment rails, no tax liability, looks generous). Platform-managed payments only if plugins become a real acquisition channel.
-
-**Review, sized for a small team — automated-first:** the common case needs no human. Themes = schema + auto contrast check. Manifests = validate + repo verify + install-command scan, every version. Humans review exactly three triggers: (1) first submission from a new publisher, (2) any elevated plugin-capability request, (3) any version whose host authority changes — for agents, distribution or launch policy; for plugins, declared capabilities. Changes in negotiated ACP runtime capabilities trigger compatibility diagnostics, not a security approval by themselves.
-
-**Policy, published before the registry opens:**
-
-- Scope boundary doc: what core owns forever vs. what plugins own. Cheapest inoculation against sherlocking backlash (Obsidian took real damage skipping this).
-- Proposed-API tier: unstable APIs usable in dev builds, not publishable.
-- Declared asymmetry: first-party APIs are privileged; say so rather than pretending parity.
-- Developer agreement + takedown process from day one.
+Publish contribution rules, identifier ownership/transfer, supported platforms,
+compatibility guarantees, license requirements, security reporting and takedown
+procedures before accepting external submissions. No executable version is
+published automatically just because its author created a release.
 
 ## 8. Parked — skills & MCP helper (separate subject, later)
 
@@ -142,20 +188,20 @@ Skills and MCP servers are **not plugins and not registry content**: they are pr
 
 ## 9. Roadmap
 
-| Step                         | Phases                                                                                                                                                                                                                                                                                                                                     | Size |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- |
-| **1 — Custom themes**        | 1a themes-as-data → 1b user theme import + validation → 1c sharing + themes-only registry (M0)                                                                                                                                                                                                                                             | S–M  |
-| **2 — Bring your own agent** | 2a registry dynamism + de-staticization → 2b generic ACP adapter + local agent entries → 2b.1 code-backed executable contract, pre-session models, native Pi validation, developer workspace, and stable v1 resume/close → 2c signed package/install/conformance backend + M1/M2 gates → marketplace UI later | L    |
-| **3 — Custom tabs**          | 3a `parseTabKindArray` fix + open `TabKind` → 3b user web tabs on browser infra → 3c plugin-declared tabs (after 4a/4b)                                                                                                                                                                                                                    | M    |
-| **4 — Deeper behavior**      | 4a foundations (fuses/ASAR, tables, installer, `plugin` WS domain, M2 kill-switch) → 4b contribution surfaces (§5.1) → 4c behavior + events + scoped tokens → 4d escape hatches only on proven demand; M3/M4 when warranted                                                                                                                | XL   |
+| Step                         | Phases                                                                                                                                                                                                                                                                                                                           | Size |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| **1 — Custom themes**        | 1a themes-as-data → 1b user theme import + validation → 1c theme sharing through the registry after provider marketplace V1                                                                                                                                                                                                      | S–M  |
+| **2 — Bring your own agent** | 2a registry dynamism + de-staticization → 2b generic ACP adapter + local agent entries → 2b.1 code-backed executable contract, pre-session models, native Pi validation, developer workspace, and stable v1 resume/close → 2c existing signed package backend → GitHub publication + M1/M2 release gates → in-app marketplace V1 | L    |
+| **3 — Custom tabs**          | 3a `parseTabKindArray` fix + open `TabKind` → 3b user web tabs on browser infra → 3c plugin-declared tabs (after 4a/4b)                                                                                                                                                                                                          | M    |
+| **4 — Deeper behavior**      | 4a foundations (fuses/ASAR, tables, installer, `plugin` WS domain, M2 kill-switch) → 4b contribution surfaces (§5.1) → 4c behavior + events + scoped tokens → 4d escape hatches only on proven demand; broader publishing UX when warranted                                                                                      | XL   |
 
-Each phase merges on its own; gate each step on the previous one running in production. The skills/MCP helper (§8) is scheduled independently, later.
+Each phase merges on its own; gate releases on their actual runtime and security dependencies, not on completion of an unrelated content track. The skills/MCP helper (§8) is scheduled independently, later.
 
 ## 10. Risks & open questions
 
 - **ACP fidelity gap:** a generic ACP provider may expose less detail than rich built-in adapters (for example nested subagents or provider-native compaction/background signals). Show negotiated capability coverage and identify the ACP source in the catalog instead of using a quality-coded "community" label or papering over missing detail.
 - **Saved-layout durability** is the sharpest UX edge of custom tabs — the unknown-id tolerance fix (3a) must land _before_ any non-built-in tab ships.
 - **Component vocabulary scope creep:** the declarative UI tier will face constant "can I do X → no." Hold the line; the pressure valve is a first-party component addition, not an escape hatch to raw JS.
-- **Registry ops load:** even automated-first review needs an on-call rotation for the kill-switch. Decide who owns it before M0 opens.
+- **Registry ops load:** human approval of executable versions and revocation operations need named owners for the kill-switch. Decide who owns it before M0 opens.
 - **Open (needs a decision, not research):** plugin API versioning scheme (single `apiVersion` int vs semver); whether plugin WS events are remote-device-reachable at launch (recommend: loopback-only first); registry naming ("Cadencr Registry" vs "Extensions").
 - **Verification debt:** monetization norms, Figma `networkAccess` details, and exact Electron fuse names came from model knowledge, not primary sources — confirm before any public developer docs.

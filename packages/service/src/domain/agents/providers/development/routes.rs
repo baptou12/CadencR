@@ -23,12 +23,7 @@ pub async fn create_provider_workspace_handler(
     State(state): State<AppState>,
     Json(request): Json<CreateProviderWorkspaceRequest>,
 ) -> Result<Json<ProviderWorkspace>, AppError> {
-    let created = workspace::create(
-        &state.write_pool,
-        &request.provider_id,
-        &request.display_name,
-    )
-    .await?;
+    let created = workspace::create(&state.write_pool, &request).await?;
     state.feature_events_tx.emit(
         created.feature_id,
         Some(created.project_id),

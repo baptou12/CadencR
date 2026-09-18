@@ -5,6 +5,20 @@ use crate::domain::agents::adapter::{RuntimeSessionWeakHandle, RuntimeSpawnConfi
 use super::super::session_init_resume::persistable_resume_session_id_for_provider;
 use super::super::{QueryState, SdkSessions};
 
+pub(super) async fn runtime_allows_resume_persistence(
+    runtime: Option<&RuntimeSessionWeakHandle>,
+) -> bool {
+    let Some(runtime) = runtime.and_then(std::sync::Weak::upgrade) else {
+        // Negotiated capability belongs to the exact live runtime. If that
+        // runtime is already gone, persisting its ID would be a fail-open guess
+        // and could make the next process attempt an unusable resume.
+        return false;
+    };
+    let session = runtime.read().await;
+    let allows_persistence = session.allows_resume_persistence();
+    allows_persistence
+}
+
 pub(super) async fn transition_active_to_pending_on_stream_end(
     sdk_sessions: &SdkSessions,
     db_session_id: i64,
@@ -39,6 +53,7 @@ pub(super) async fn transition_active_to_pending_on_stream_end(
     let resume_session_id = persistable_resume_session_id_for_provider(
         &handle.runtime_provider,
         runtime_session_id.as_deref(),
+        q.allows_resume_persistence(),
     );
     handle.runtime_control_endpoint = q.runtime_control_endpoint();
     drop(q);
@@ -61,4 +76,12 @@ pub(super) async fn transition_active_to_pending_on_stream_end(
         "stream ended, transitioning Active -> Pending for resume"
     );
     handle.state = QueryState::Pending(options);
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn missing_live_runtime_fails_closed() {
+        assert!(!super::runtime_allows_resume_persistence(None).await);
+    }
 }

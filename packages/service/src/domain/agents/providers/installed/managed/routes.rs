@@ -4,6 +4,7 @@ use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use super::catalog::ManagedCatalogResponse;
 use super::receipt::ManagedRevision;
 use super::service::{
     ManagedMutation, ManagedProviderInventoryEntry, ManagedProviderService,
@@ -162,8 +163,35 @@ pub async fn refresh_blocklist_handler() -> Result<Json<RefreshManagedBlocklistR
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/agents/managed-providers/catalog",
+    responses((status = 200, body = ManagedCatalogResponse))
+)]
+pub async fn catalog_handler() -> Result<Json<ManagedCatalogResponse>, AppError> {
+    Ok(Json(
+        ManagedProviderService::production()?.catalog(false).await,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/agents/managed-providers/catalog/refresh",
+    responses((status = 200, body = ManagedCatalogResponse))
+)]
+pub async fn refresh_catalog_handler() -> Result<Json<ManagedCatalogResponse>, AppError> {
+    Ok(Json(
+        ManagedProviderService::production()?.catalog(true).await,
+    ))
+}
+
 pub fn inventory_router() -> Router<AppState> {
-    Router::new().route("/api/agents/managed-providers", get(inventory_handler))
+    Router::new()
+        .route("/api/agents/managed-providers", get(inventory_handler))
+        .route(
+            "/api/agents/managed-providers/catalog",
+            get(catalog_handler),
+        )
 }
 
 pub fn lifecycle_router() -> Router<AppState> {
@@ -172,6 +200,10 @@ pub fn lifecycle_router() -> Router<AppState> {
         .route(
             "/api/agents/managed-providers/blocklist/refresh",
             post(refresh_blocklist_handler),
+        )
+        .route(
+            "/api/agents/managed-providers/catalog/refresh",
+            post(refresh_catalog_handler),
         )
         .route(
             "/api/agents/managed-providers/{provider_id}/update",

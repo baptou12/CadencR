@@ -978,9 +978,16 @@ export interface CreateProjectRequest {
 }
 
 /**
+ * Existing connector repository to import instead of scaffolding a new one.
+ */
+export type CreateProviderWorkspaceRequestDirectory = string | null;
+
+/**
  * The stable identity and human label for a new provider connector project.
  */
 export interface CreateProviderWorkspaceRequest {
+  /** Existing connector repository to import instead of scaffolding a new one. */
+  directory?: CreateProviderWorkspaceRequestDirectory;
   /** Human-readable name used in the project and scaffold. */
   display_name: string;
   /** ACP Registry-compatible provider id, e.g. `pi-connector`. */
@@ -1174,6 +1181,123 @@ export interface CreateThemeRequest {
   /** Human-readable name; the on-disk id is slugified from it. */
   label: string;
   xterm: XtermPalette;
+}
+
+/**
+ * Why a theme can't be applied. Every issue is surfaced in the gallery; a
+ * theme with any issue is never registered as applicable.
+ */
+export interface ThemeIssue {
+  message: string;
+  /**
+   * The offending token (`--background`), or `None` for document-level
+   * problems such as invalid JSON.
+   * @nullable
+   */
+  token?: string | null;
+}
+
+/**
+ * `--token` → CSS color value. Ordered so a round-trip through the editor
+ * doesn't reshuffle the file.
+ */
+export type ThemeDocumentCssVars = { [key: string]: string };
+
+/**
+ * A user theme exactly as stored in `~/.cadencr/plugins/themes/<id>/theme.json`.
+ *
+ * This is the whole extensibility surface of step 1: pure data, no behavior.
+ * `css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
+ * values must parse as CSS colors — a theme can never introduce arbitrary CSS.
+ */
+export interface ThemeDocument {
+  /**
+   * Points at the JSON Schema Cadencr keeps beside this file, so an editor
+   * completes and checks the document as it is typed (see `schema.rs`).
+   * Optional and round-tripped rather than required: a theme written before
+   * this existed, or one whose author deleted the line, is still a theme.
+   * @nullable
+   */
+  $schema?: string | null;
+  appearance: ThemeAppearance;
+  /**
+   * Chassis, tabs and background texture (see `chrome.rs`). Defaulted, so a
+   * theme file written before chrome existed still parses — it simply gets
+   * the plain chrome every non-CadencR, non-Frost theme already had.
+   */
+  chrome?: ThemeChrome;
+  /**
+   * `--token` → CSS color value. Ordered so a round-trip through the editor
+   * doesn't reshuffle the file.
+   */
+  cssVars: ThemeDocumentCssVars;
+  label: string;
+  xterm: XtermPalette;
+}
+
+/**
+ * Asset file name → `data:` URL, for the files the theme's chrome
+ * references. Inlined rather than served from a URL: the renderer may be
+ * talking to a remote backend, its CSP allows `data:` images, and a
+ * stylesheet `url()` can't carry the API token anyway. Empty for the
+ * themes — nearly all of them — that reference no asset.
+ */
+export type UserThemeAssets = { [key: string]: string };
+
+export type UserThemeTheme = null | ThemeDocument;
+
+/**
+ * One entry in the theme gallery.
+ */
+export interface UserTheme {
+  /**
+   * Asset file name → `data:` URL, for the files the theme's chrome
+   * references. Inlined rather than served from a URL: the renderer may be
+   * talking to a remote backend, its CSP allows `data:` images, and a
+   * stylesheet `url()` can't carry the API token anyway. Empty for the
+   * themes — nearly all of them — that reference no asset.
+   */
+  assets: UserThemeAssets;
+  /** Raw file text, for the JSON editor and for export-to-file. */
+  content: string;
+  /**
+   * Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as
+   * `user:<id>`.
+   */
+  id: string;
+  issues: ThemeIssue[];
+  /**
+   * The document's declared name, kept even when validation failed so the
+   * gallery can say *which* theme broke. `None` only when the file isn't
+   * parseable JSON at all.
+   * @nullable
+   */
+  label?: string | null;
+  /** Absolute path to `theme.json`, so the gallery can show and copy it. */
+  path: string;
+  theme?: UserThemeTheme;
+}
+
+/**
+ * Where a theme is edited. The renderer needs all three to route to the
+ * conversation; the ws session id is derived from `feature_id`.
+ */
+export interface ThemeWorkspace {
+  /**
+   * Whether this call created the conversation. The renderer arranges the
+   * panes — the theme file beside the agent — only on that first open, so a
+   * layout the user rearranged afterwards is theirs to keep.
+   */
+  created: boolean;
+  /** The theme directory — the project root, and the agent's cwd. */
+  cwd: string;
+  feature_id: number;
+  project_id: number;
+}
+
+export interface CreateThemeResponse {
+  theme: UserTheme;
+  workspace: ThemeWorkspace;
 }
 
 export interface CreateWorktreeBody {
@@ -2175,6 +2299,10 @@ export interface ManagedProviderPackage {
  * The deterministic payload covered by an index signature.
  */
 export interface ManagedProviderIndex {
+  /** Hard freshness boundary. Expired catalogs are never exposed or installed. */
+  expires_at: string;
+  /** Monotonic publication time used to reject replayed catalog snapshots. */
+  generated_at: string;
   packages: ManagedProviderPackage[];
   /** @minimum 0 */
   schema_version: number;
@@ -2391,6 +2519,36 @@ export interface ManagedBlocklistInventory {
   /** @nullable */
   signer_key_id?: string | null;
   source_configured: boolean;
+}
+
+export type ManagedCatalogCacheStatus =
+  (typeof ManagedCatalogCacheStatus)[keyof typeof ManagedCatalogCacheStatus];
+
+export const ManagedCatalogCacheStatus = {
+  missing: "missing",
+  verified: "verified",
+  invalid: "invalid",
+  expired: "expired",
+} as const;
+
+export type ManagedCatalogResponseIndex = null | SignedManagedProviderIndex;
+
+export interface ManagedCatalogResponse {
+  cache_status: ManagedCatalogCacheStatus;
+  /** @nullable */
+  error?: string | null;
+  /** @nullable */
+  error_code?: string | null;
+  /** @nullable */
+  expires_at?: string | null;
+  /** @nullable */
+  generated_at?: string | null;
+  index?: ManagedCatalogResponseIndex;
+  refreshed: boolean;
+  /** @nullable */
+  signer_key_id?: string | null;
+  source_configured: boolean;
+  used_cached_verified_catalog: boolean;
 }
 
 export type ManagedFailureStage = (typeof ManagedFailureStage)[keyof typeof ManagedFailureStage];
@@ -2924,13 +3082,29 @@ export interface ProfilesResponse {
   profiles: ProfileView[];
 }
 
+/**
+ * The plugin content authored by an otherwise ordinary user project.
+ */
+export type ProjectAuthoringTarget =
+  (typeof ProjectAuthoringTarget)[keyof typeof ProjectAuthoringTarget];
+
+export const ProjectAuthoringTarget = {
+  theme: "theme",
+  provider: "provider",
+} as const;
+
+export type ProjectAuthoringTargetProperty = null | ProjectAuthoringTarget;
+
 export interface Project {
+  authoring_target?: ProjectAuthoringTargetProperty;
   /** @nullable */
   branch_prefix?: string | null;
   created_at: string;
   id: number;
   name: string;
   path: string;
+  /** @nullable */
+  plugin_id?: string | null;
 }
 
 /**
@@ -3877,75 +4051,6 @@ export interface TerminalSessionInfo {
   pty_id: string;
 }
 
-/**
- * `--token` → CSS color value. Ordered so a round-trip through the editor
- * doesn't reshuffle the file.
- */
-export type ThemeDocumentCssVars = { [key: string]: string };
-
-/**
- * A user theme exactly as stored in `~/.cadencr/plugins/themes/<id>/theme.json`.
- *
- * This is the whole extensibility surface of step 1: pure data, no behavior.
- * `css_vars` is a closed set of known design tokens (see `tokens.rs`) whose
- * values must parse as CSS colors — a theme can never introduce arbitrary CSS.
- */
-export interface ThemeDocument {
-  /**
-   * Points at the JSON Schema Cadencr keeps beside this file, so an editor
-   * completes and checks the document as it is typed (see `schema.rs`).
-   * Optional and round-tripped rather than required: a theme written before
-   * this existed, or one whose author deleted the line, is still a theme.
-   * @nullable
-   */
-  $schema?: string | null;
-  appearance: ThemeAppearance;
-  /**
-   * Chassis, tabs and background texture (see `chrome.rs`). Defaulted, so a
-   * theme file written before chrome existed still parses — it simply gets
-   * the plain chrome every non-CadencR, non-Frost theme already had.
-   */
-  chrome?: ThemeChrome;
-  /**
-   * `--token` → CSS color value. Ordered so a round-trip through the editor
-   * doesn't reshuffle the file.
-   */
-  cssVars: ThemeDocumentCssVars;
-  label: string;
-  xterm: XtermPalette;
-}
-
-/**
- * Why a theme can't be applied. Every issue is surfaced in the gallery; a
- * theme with any issue is never registered as applicable.
- */
-export interface ThemeIssue {
-  message: string;
-  /**
-   * The offending token (`--background`), or `None` for document-level
-   * problems such as invalid JSON.
-   * @nullable
-   */
-  token?: string | null;
-}
-
-/**
- * Where a theme is edited. The renderer needs all three to route to the
- * conversation; the ws session id is derived from `feature_id`.
- */
-export interface ThemeWorkspace {
-  /**
-   * Whether this call created the conversation. The renderer arranges the
-   * panes — the theme file beside the agent — only on that first open, so a
-   * layout the user rearranged afterwards is theirs to keep.
-   */
-  created: boolean;
-  /** The theme directory — the project root, and the agent's cwd. */
-  cwd: string;
-  feature_id: number;
-  project_id: number;
-}
-
 export interface TrashPathRequest {
   /** @nullable */
   feature_id?: number | null;
@@ -4198,49 +4303,6 @@ export interface UserMessagePayload {
   origin?: UserMessagePayloadOrigin;
   prompt_delivery_state?: UserMessagePayloadPromptDeliveryState;
   text: string;
-}
-
-/**
- * Asset file name → `data:` URL, for the files the theme's chrome
- * references. Inlined rather than served from a URL: the renderer may be
- * talking to a remote backend, its CSP allows `data:` images, and a
- * stylesheet `url()` can't carry the API token anyway. Empty for the
- * themes — nearly all of them — that reference no asset.
- */
-export type UserThemeAssets = { [key: string]: string };
-
-export type UserThemeTheme = null | ThemeDocument;
-
-/**
- * One entry in the theme gallery.
- */
-export interface UserTheme {
-  /**
-   * Asset file name → `data:` URL, for the files the theme's chrome
-   * references. Inlined rather than served from a URL: the renderer may be
-   * talking to a remote backend, its CSP allows `data:` images, and a
-   * stylesheet `url()` can't carry the API token anyway. Empty for the
-   * themes — nearly all of them — that reference no asset.
-   */
-  assets: UserThemeAssets;
-  /** Raw file text, for the JSON editor and for export-to-file. */
-  content: string;
-  /**
-   * Directory slug under `~/.cadencr/plugins/themes/`. The renderer applies it as
-   * `user:<id>`.
-   */
-  id: string;
-  issues: ThemeIssue[];
-  /**
-   * The document's declared name, kept even when validation failed so the
-   * gallery can say *which* theme broke. `None` only when the file isn't
-   * parseable JSON at all.
-   * @nullable
-   */
-  label?: string | null;
-  /** Absolute path to `theme.json`, so the gallery can show and copy it. */
-  path: string;
-  theme?: UserThemeTheme;
 }
 
 /**
@@ -5661,6 +5723,149 @@ export const useRefreshBlocklist = <TError = ErrorType<unknown>, TContext = unkn
   queryClient?: QueryClient,
 ): UseMutationResult<Awaited<ReturnType<typeof refreshBlocklist>>, TError, void, TContext> => {
   return useMutation(getRefreshBlocklistMutationOptions(options), queryClient);
+};
+
+export const catalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedCatalogResponse>({
+    url: `/api/agents/managed-providers/catalog`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getCatalogQueryKey = () => {
+  return [`/api/agents/managed-providers/catalog`] as const;
+};
+
+export const getCatalogQueryOptions = <
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getCatalogQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof catalog>>> = ({ signal }) =>
+    catalog(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof catalog>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type CatalogQueryResult = NonNullable<Awaited<ReturnType<typeof catalog>>>;
+export type CatalogQueryError = ErrorType<unknown>;
+
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof catalog>>,
+          TError,
+          Awaited<ReturnType<typeof catalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof catalog>>,
+          TError,
+          Awaited<ReturnType<typeof catalog>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useCatalog<
+  TData = Awaited<ReturnType<typeof catalog>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof catalog>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCatalogQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const refreshCatalog = (signal?: AbortSignal) => {
+  return customInstance<ManagedCatalogResponse>({
+    url: `/api/agents/managed-providers/catalog/refresh`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getRefreshCatalogMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext>;
+}): UseMutationOptions<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext> => {
+  const mutationKey = ["refreshCatalog"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshCatalog>>, void> = () => {
+    return refreshCatalog();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshCatalogMutationResult = NonNullable<Awaited<ReturnType<typeof refreshCatalog>>>;
+
+export type RefreshCatalogMutationError = ErrorType<unknown>;
+
+export const useRefreshCatalog = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshCatalog>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<Awaited<ReturnType<typeof refreshCatalog>>, TError, void, TContext> => {
+  return useMutation(getRefreshCatalogMutationOptions(options), queryClient);
 };
 
 export const remove = (providerId: string, signal?: AbortSignal) => {
@@ -21975,7 +22180,7 @@ export function useListThemes<
 }
 
 export const createTheme = (createThemeRequest: CreateThemeRequest, signal?: AbortSignal) => {
-  return customInstance<UserTheme>({
+  return customInstance<CreateThemeResponse>({
     url: `/api/themes`,
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use base64::Engine as _;
+use chrono::{DateTime, Utc};
 use semver::Version;
 
 use super::{
@@ -74,6 +75,37 @@ fn validate_index(index: &ManagedProviderIndex) -> Result<(), ManagedContractErr
             ));
         }
         previous = Some(identity);
+    }
+    Ok(())
+}
+
+pub(super) fn validate_publication_window(
+    index: &ManagedProviderIndex,
+    now: DateTime<Utc>,
+) -> Result<(), ManagedContractError> {
+    if index.expires_at <= index.generated_at {
+        return Err(ManagedContractError::new(
+            ManagedContractErrorCode::InvalidHostMetadata,
+            "managed index expires_at must follow generated_at",
+        ));
+    }
+    if index.generated_at > now + chrono::Duration::minutes(5) {
+        return Err(ManagedContractError::new(
+            ManagedContractErrorCode::InvalidHostMetadata,
+            "managed index generated_at is too far in the future",
+        ));
+    }
+    if index.expires_at - index.generated_at > chrono::Duration::days(14) {
+        return Err(ManagedContractError::new(
+            ManagedContractErrorCode::InvalidHostMetadata,
+            "managed index validity window exceeds 14 days",
+        ));
+    }
+    if now >= index.expires_at {
+        return Err(ManagedContractError::new(
+            ManagedContractErrorCode::InvalidHostMetadata,
+            format!("managed index expired at {}", index.expires_at),
+        ));
     }
     Ok(())
 }

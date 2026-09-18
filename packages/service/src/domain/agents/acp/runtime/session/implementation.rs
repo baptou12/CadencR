@@ -38,7 +38,10 @@ use super::super::turn_lifecycle::{PromptCancel, PromptTurnLock};
 /// Channel buffer for the per-session runtime stream. Matches the size used
 /// by other adapters; deltas are coalesced upstream so even noisy turns fit.
 pub const MESSAGE_CHANNEL_CAPACITY: usize = 1024;
-const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+// Must stay below the process-wide stream-reader shutdown deadline (2s): a
+// peer that advertises `session/close` but never replies must still leave time
+// to close the local runtime channel before the reader is joined.
+const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Provider-neutral ACP session.
 pub struct AcpRuntimeSession {
@@ -77,7 +80,7 @@ pub struct AcpRuntimeSession {
     /// channel). Aborted on `close()`.
     pub(in crate::domain::agents::acp::runtime) side_channel_task: Option<JoinHandle<()>>,
     pub(in crate::domain::agents::acp::runtime) local_tx:
-        mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+        Option<mpsc::Sender<Result<RuntimeEvent, RuntimeError>>>,
     pub(in crate::domain::agents::acp::runtime) hooks: Arc<dyn AcpProviderHooks>,
     /// Shared streaming-block indexer (also held by the event loop) used to
     /// drain still-open text/thinking blocks at turn end (W4).
@@ -101,6 +104,12 @@ pub struct AcpRuntimeSession {
 }
 
 impl AcpRuntimeSession {
+    pub(super) fn local_tx(&self) -> &mpsc::Sender<Result<RuntimeEvent, RuntimeError>> {
+        self.local_tx
+            .as_ref()
+            .expect("ACP runtime sender unavailable after close")
+    }
+
     pub async fn current_session_id(&self) -> Option<String> {
         self.session_id.read().await.clone()
     }
@@ -126,6 +135,10 @@ impl AgentRuntimeSession for AcpRuntimeSession {
 
     async fn session_id(&self) -> Option<String> {
         self.current_session_id().await
+    }
+
+    fn allows_resume_persistence(&self) -> bool {
+        self.hooks.supports_durable_resume()
     }
 
     async fn available_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
@@ -225,6 +238,10 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         if let Some(task) = self.side_channel_task.take() {
             task.abort();
         }
+        // The stream receiver is owned outside the runtime. Drop our last
+        // steady-state sender after stopping producer tasks so it observes EOF
+        // even while the closed runtime remains registered for resume metadata.
+        self.local_tx.take();
         self.client.shutdown().await;
     }
 
