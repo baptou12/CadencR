@@ -1,5 +1,6 @@
 import type { AgentMessageOrigin } from "@/api/generated";
 import type { PromptDeliveryState } from "@/types/agent";
+import { canRenderBashPreview } from "@/lib/bash-content-preview";
 
 export type BlockType =
   | "text"
@@ -71,6 +72,8 @@ export interface AgentBlockData {
 export function shouldGateFullContent(block: AgentBlockData): boolean {
   if (block.truncatedContent !== true) return false;
   if (block.type === "tool_result" && block.sourceToolName === "Bash") return false;
+  if (block.type === "tool_call" && block.toolName === "Bash" && canRenderBashPreview(block))
+    return false;
   return ["text", "code", "thinking", "error", "tool_call", "tool_result", "user_message"].includes(
     block.type,
   );
