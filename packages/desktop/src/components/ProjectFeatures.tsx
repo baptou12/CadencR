@@ -2,7 +2,6 @@ import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { ArchivedFeatureList } from "@/components/ArchivedFeatureList";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
-  ARCHIVED_FEATURE_STATUS,
   useProjectFeaturesController,
   type ProjectFeaturesController,
   type ProjectFeaturesProps,
@@ -81,9 +80,7 @@ function ProjectFeatureDialogs({
         onOpenChange={(open) => {
           if (!open) controller.setConfirmFeatureId(null);
         }}
-        onArchive={(featureId) => {
-          controller.actions.updateStatus(featureId, ARCHIVED_FEATURE_STATUS);
-        }}
+        onArchive={controller.actions.archiveFeature}
       />
       <ConfirmDialog
         open={controller.confirmFeatureId != null && confirmation.action === "delete"}

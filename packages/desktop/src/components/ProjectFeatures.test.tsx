@@ -113,6 +113,13 @@ const mockFeatures = [
 
 vi.mock("@/api/generated", () => ({
   FeatureStatus: { active: "active", archived: "archived" },
+  useArchiveFeature: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useGetFeatureArchivePreview: vi.fn(() => ({
+    data: { parent_ids: [], descendant_ids: [], has_relations: false },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  })),
   useListFeatures: vi.fn(() => ({ data: mockFeatures })),
   useListFeaturePorts: vi.fn(() => ({ data: [], error: null })),
   useListFeatureActivity: vi.fn(() => ({

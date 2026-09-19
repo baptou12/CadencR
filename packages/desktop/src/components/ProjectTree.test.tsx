@@ -43,6 +43,13 @@ vi.mock("@/lib/project-onboarding", () => ({
 }));
 
 vi.mock("../api/generated", () => ({
+  useArchiveFeature: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useGetFeatureArchivePreview: vi.fn(() => ({
+    data: { parent_ids: [], descendant_ids: [], has_relations: false },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  })),
   useListProjects: vi.fn(() => ({
     data: [
       { id: 1, name: "Alpha Project", path: "/alpha" },

@@ -418,6 +418,21 @@ export interface AllocatedPort {
   source: PortSource;
 }
 
+export interface ArchivePreview {
+  descendant_ids: number[];
+  has_relations: boolean;
+  parent_ids: number[];
+}
+
+export interface ArchiveRequest {
+  include_descendants?: boolean;
+  include_parent?: boolean;
+}
+
+export interface ArchiveResponse {
+  archived_ids: number[];
+}
+
 export type ArchivedCleanupRunStatus =
   (typeof ArchivedCleanupRunStatus)[keyof typeof ArchivedCleanupRunStatus];
 
@@ -11574,6 +11589,199 @@ export const useDeleteFeature = <TError = ErrorType<unknown>, TContext = unknown
 > => {
   return useMutation(getDeleteFeatureMutationOptions(options), queryClient);
 };
+
+export const archiveFeature = (
+  id: number,
+  archiveRequest: ArchiveRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ArchiveResponse>({
+    url: `/api/features/${id}/archive`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: archiveRequest,
+    signal,
+  });
+};
+
+export const getArchiveFeatureMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof archiveFeature>>,
+    TError,
+    ArchiveFeatureMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof archiveFeature>>,
+  TError,
+  ArchiveFeatureMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["archiveFeature"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof archiveFeature>>,
+    ArchiveFeatureMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return archiveFeature(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArchiveFeatureMutationResult = NonNullable<Awaited<ReturnType<typeof archiveFeature>>>;
+export type ArchiveFeatureMutationBody = ArchiveRequest;
+export type ArchiveFeatureMutationError = ErrorType<unknown>;
+export type ArchiveFeatureMutationVariables = { id: number; data: ArchiveRequest };
+
+export const useArchiveFeature = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof archiveFeature>>,
+      TError,
+      ArchiveFeatureMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof archiveFeature>>,
+  TError,
+  ArchiveFeatureMutationVariables,
+  TContext
+> => {
+  return useMutation(getArchiveFeatureMutationOptions(options), queryClient);
+};
+
+export const getFeatureArchivePreview = (id: number, signal?: AbortSignal) => {
+  return customInstance<ArchivePreview>({
+    url: `/api/features/${id}/archive-preview`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetFeatureArchivePreviewQueryKey = (id: number) => {
+  return [`/api/features/${id}/archive-preview`] as const;
+};
+
+export const getGetFeatureArchivePreviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFeatureArchivePreview>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureArchivePreview>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetFeatureArchivePreviewQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFeatureArchivePreview>>> = ({
+    signal,
+  }) => getFeatureArchivePreview(id, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getFeatureArchivePreview>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetFeatureArchivePreviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFeatureArchivePreview>>
+>;
+export type GetFeatureArchivePreviewQueryError = ErrorType<unknown>;
+
+export function useGetFeatureArchivePreview<
+  TData = Awaited<ReturnType<typeof getFeatureArchivePreview>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureArchivePreview>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFeatureArchivePreview>>,
+          TError,
+          Awaited<ReturnType<typeof getFeatureArchivePreview>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetFeatureArchivePreview<
+  TData = Awaited<ReturnType<typeof getFeatureArchivePreview>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureArchivePreview>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFeatureArchivePreview>>,
+          TError,
+          Awaited<ReturnType<typeof getFeatureArchivePreview>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetFeatureArchivePreview<
+  TData = Awaited<ReturnType<typeof getFeatureArchivePreview>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureArchivePreview>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetFeatureArchivePreview<
+  TData = Awaited<ReturnType<typeof getFeatureArchivePreview>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureArchivePreview>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetFeatureArchivePreviewQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 /**
  * We deliberately allow this on default titles ("Session N", "Untitled
