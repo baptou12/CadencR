@@ -43,7 +43,8 @@ const mockFeatures = [
   },
 ];
 
-vi.mock("@/api/generated", () => ({
+vi.mock("@/api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/generated")>()),
   FeatureStatus: { active: "active", archived: "archived" },
   useArchiveFeature: vi.fn(
     (opts?: { mutation?: { onSuccess?: (data: { archived_ids: number[] }) => void } }) => ({

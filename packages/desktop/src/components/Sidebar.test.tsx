@@ -61,7 +61,8 @@ vi.mock("@/lib/project-onboarding", () => ({
   }),
 }));
 
-vi.mock("../api/generated", () => ({
+vi.mock("../api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/generated")>()),
   useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "true" }, isLoading: false })),
   useArchiveFeature: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useGetFeatureArchivePreview: vi.fn(() => ({
