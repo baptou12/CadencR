@@ -5,6 +5,10 @@ import { isFileChangeTool } from "@/lib/tool-adapter";
 import { parseToolArgsObject } from "@/lib/tool-args";
 import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 
+import { blockMessageDbId } from "./ws-message-identity";
+import { recoverToolMessageIds } from "./ws-tool-message-identity";
+
+export { blockMessageDbId, messageDbIdFromBlockId } from "./ws-message-identity";
 export { normalizeMessageUuid } from "@/lib/message-uuid";
 
 export interface CanonicalUserMessage {
@@ -32,18 +36,6 @@ export function canonicalUserMessageBlock(message: CanonicalUserMessage): AgentB
     ...(message.origin ? { origin: message.origin } : {}),
     ...(message.promptDeliveryState ? { promptDeliveryState: message.promptDeliveryState } : {}),
   });
-}
-
-/** Numeric SQLite cursor carried explicitly or encoded in `msg-<id>`. */
-export function blockMessageDbId(block: AgentBlockData): number | null {
-  if (typeof block.messageDbId === "number") return block.messageDbId;
-  return messageDbIdFromBlockId(block.id);
-}
-
-export function messageDbIdFromBlockId(id: string): number | null {
-  if (!id.startsWith("msg-")) return null;
-  const parsed = Number(id.slice(4));
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 /**
@@ -74,6 +66,7 @@ export function mergeCanonicalBlocks(
   incoming: AgentBlockData[],
 ): AgentBlockData[] {
   if (incoming.length === 0) return existing;
+  existing = recoverToolMessageIds(existing, incoming);
   const indexes = buildIdentityIndexes(existing);
   let working = existing;
   let changed = false;

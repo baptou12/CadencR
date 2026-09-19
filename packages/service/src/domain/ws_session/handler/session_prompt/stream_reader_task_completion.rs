@@ -7,7 +7,7 @@ use tracing::{error, info};
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 use crate::domain::session_status::AgentStatus;
 use crate::domain::ws_session::persistence::{
-    raw_event_with_agent_message_id, PersistedMessageRef, WsSessionPersistence,
+    raw_event_with_agent_message_id, PersistedEventRef, WsSessionPersistence,
 };
 use crate::domain::ws_session::protocol::{
     SessionEndedPayload, SessionErrorPayload, SessionMessagePayload, SessionUsageUpdatePayload,
@@ -42,7 +42,7 @@ impl StreamReaderTask {
         &self,
         state: &mut StreamReaderState,
         runtime_event: &RuntimeEvent,
-        persisted_message: Option<PersistedMessageRef>,
+        persisted_message: Option<PersistedEventRef>,
         current_model: Option<&str>,
         interrupted_generation: Option<u64>,
     ) -> Option<WsEnvelope> {

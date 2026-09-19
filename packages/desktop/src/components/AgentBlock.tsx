@@ -31,7 +31,7 @@ import { isTaskTodoTool } from "@/lib/tool-adapter";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 import { semanticSkillPresentation, shouldHideToolCall } from "@/lib/tool-display-policy";
 import { verbosityControlsCollapse, type AgentVerbosityMode } from "@/lib/agent-verbosity";
-import { messageDbIdFromBlockId } from "@/stores/ws-user-message-reconciliation";
+import { blockMessageDbId } from "@/stores/ws-message-identity";
 import type { SessionReplyEnvelope } from "@/lib/session-reply";
 
 export type { AgentBlockData, BlockType } from "@/components/agent-block-types";
@@ -86,7 +86,7 @@ export const AgentBlock = memo(function AgentBlock({
     ? !isCollapsedByPolicy
     : undefined;
   if (shouldGateFullContent(block)) {
-    const messageId = block.messageDbId ?? messageDbIdFromBlockId(block.id) ?? undefined;
+    const messageId = blockMessageDbId(block) ?? undefined;
     return (
       <FullContentPreview preview={block.content} messageId={messageId}>
         {(content) => (
@@ -208,7 +208,7 @@ function ToolCallContent({
         content={resultOutput ?? extractBashOutput(block.toolArgs)}
         running={!result && isToolCallRunning(block.toolArgs)}
         isError={result?.isError ?? isToolCallError(block.toolArgs)}
-        messageId={messageDbIdFromBlockId(outputBlock.id) ?? undefined}
+        messageId={blockMessageDbId(outputBlock) ?? undefined}
         truncatedContent={outputBlock.truncatedContent === true}
         expanded={controlledExpanded}
         onExpandedChange={onExpandedChange}

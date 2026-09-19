@@ -41,6 +41,48 @@ afterEach(() => {
 });
 
 describe("FullContentPreview", () => {
+  it("retains a Bash card and loads the result row only when older lines are requested", async () => {
+    const user = userEvent.setup();
+    fetchFull.mockResolvedValue({ content: JSON.stringify({ output: "earlier\nlast" }) });
+    const args = JSON.stringify({ command: "pnpm test", output: "call tail" });
+    render(
+      <AgentBlock
+        block={{
+          id: "ws-call",
+          messageDbId: 41,
+          type: "tool_call",
+          toolName: "Bash",
+          toolUseId: "tool",
+          content: args,
+          toolArgs: args,
+          truncatedContent: true,
+        }}
+        toolResultMap={
+          new Map([
+            [
+              "tool",
+              {
+                id: "ws-result",
+                messageDbId: 42,
+                type: "tool_result",
+                toolUseId: "tool",
+                sourceToolName: "Bash",
+                content: "last",
+                truncatedContent: true,
+              },
+            ],
+          ])
+        }
+      />,
+    );
+    expect(screen.queryByText("Large content preview")).not.toBeInTheDocument();
+    expect(screen.getByText("Bash")).toBeInTheDocument();
+    expect(fetchFull).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Load previous lines" }));
+    expect(await screen.findByText(/earlier/)).toBeInTheDocument();
+    expect(fetchFull).toHaveBeenCalledExactlyOnceWith(42, expect.any(AbortSignal));
+  });
+
   it("loads only after an explicit action and releases content on collapse", async () => {
     const user = userEvent.setup();
     fetchFull.mockResolvedValue({ content: "complete content" });

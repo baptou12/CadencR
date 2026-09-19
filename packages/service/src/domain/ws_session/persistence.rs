@@ -51,22 +51,8 @@ pub struct PersistedMessageRef {
     pub id: i64,
 }
 
-pub fn raw_event_with_agent_message_id(
-    raw: &serde_json::Value,
-    persisted: Option<PersistedMessageRef>,
-) -> serde_json::Value {
-    let Some(message_ref) = persisted else {
-        return raw.clone();
-    };
-    let mut value = raw.clone();
-    if let serde_json::Value::Object(object) = &mut value {
-        object.insert(
-            "agent_message_id".to_string(),
-            serde_json::Value::Number(message_ref.id.into()),
-        );
-    }
-    value
-}
+mod event_identity;
+pub use event_identity::{raw_event_with_agent_message_id, PersistedEventRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MergeableMessageType {
@@ -115,6 +101,7 @@ include!("persistence/session_tool_input_buffer.rs");
 include!("persistence/session_mergeable_blocks.rs");
 include!("persistence/session_events/compact.rs");
 include!("persistence/session_events.rs");
+include!("persistence/session_tool_results.rs");
 // session_events' `#[cfg(test)]` suite is too large to keep inline under the
 // 400-line cap; its overflow tests are split into these two included files
 // (same flat module scope as session_events via `include!`).

@@ -135,16 +135,7 @@ export function processSdkMessage(
   }
 }
 
-export function blockIdFromAgentMessage(msg: Record<string, unknown>): string | null {
-  const rawId = msg.agent_message_id;
-  if (typeof rawId === "number" && Number.isSafeInteger(rawId)) {
-    return `msg-${rawId}`;
-  }
-  if (typeof rawId === "string" && /^\d+$/.test(rawId)) {
-    return `msg-${rawId}`;
-  }
-  return null;
-}
+export { blockIdFromAgentMessage } from "./ws-message-identity";
 
 function processAssistantMessage(
   msg: Record<string, unknown>,
