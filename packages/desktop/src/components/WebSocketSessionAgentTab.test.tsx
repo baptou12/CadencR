@@ -3,15 +3,17 @@ import { handleModelChange } from "./WebSocketSessionAgentTab";
 
 type Controls = Parameters<typeof handleModelChange>[2];
 
-function makeControls(currentProviderId: string | undefined) {
+function makeControls(currentProviderId: string | undefined, supportsConfigInheritance = false) {
   const setProvider = vi.fn();
   const setModel = vi.fn();
   const setThinkingEffort = vi.fn();
+  const setRuntimeOverrides = vi.fn().mockResolvedValue(undefined);
   const controls = {
     ws: {
       setProvider,
       setModel,
       setThinkingEffort,
+      setRuntimeOverrides,
       currentThinkingEffort: undefined,
       currentSelection: currentProviderId
         ? { providerId: currentProviderId, modelId: "old-model" }
@@ -19,8 +21,9 @@ function makeControls(currentProviderId: string | undefined) {
     },
     agentCatalog: { data: { providers: [] } },
     resolveModelThinkingEffort: () => undefined,
+    supportsConfigInheritance,
   } as unknown as Controls;
-  return { controls, setProvider, setModel, setThinkingEffort };
+  return { controls, setProvider, setModel, setThinkingEffort, setRuntimeOverrides };
 }
 
 describe("handleModelChange", () => {
@@ -48,6 +51,13 @@ describe("handleModelChange", () => {
     handleModelChange("claude_code", "sonnet", controls);
 
     expect(setProvider).toHaveBeenCalledWith("claude_code", "sonnet");
+    expect(setModel).not.toHaveBeenCalled();
+  });
+
+  it("uses an explicit model override only when config inheritance is supported", () => {
+    const { controls, setModel, setRuntimeOverrides } = makeControls("codex_cli", true);
+    handleModelChange("codex_cli", "gpt-5.6-sol", controls);
+    expect(setRuntimeOverrides).toHaveBeenCalledWith({ model: "gpt-5.6-sol" });
     expect(setModel).not.toHaveBeenCalled();
   });
 });

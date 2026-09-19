@@ -20,7 +20,7 @@ export function useAgentSessionMetaVisibility(
   } = props;
   const showWorktreeChip =
     blocks.length === 0 && !!onWorktreeModeChange && worktreeProjectId != null;
-  const showClaudeProfileSelector = isClaudeProvider && blocks.length === 0;
+  const showClaudeProfileSelector = isClaudeProvider;
   const showAutoScrollChip = !!shouldShowPromptBar;
 
   const hasInlineMeta =
@@ -35,6 +35,7 @@ export function useAgentSessionMetaVisibility(
     showWorktreeChip ||
     showAutoScrollChip ||
     !!(todos && todos.length > 0) ||
+    showClaudeProfileSelector ||
     !!(runtimeSessionId && onStop);
   const hasMeta = hasInlineMeta || (hasSecondaryMeta && !isNarrow);
 

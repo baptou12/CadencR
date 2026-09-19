@@ -528,7 +528,7 @@ describe("AgentSession auto-scroll", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Session info" }));
-    await user.click(screen.getByLabelText("Claude profile"));
+    await user.click(screen.getByLabelText("Profile"));
     await user.click(screen.getByRole("option", { name: /bedrock/i }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Hi there" } });
     await user.click(screen.getByLabelText("Send message"));

@@ -18,7 +18,7 @@ interface ConfirmDialogProps {
   confirmText?: string;
   variant?: "default" | "destructive";
   busy?: boolean;
-  onConfirm: () => void | null | Promise<void>;
+  onConfirm: () => void | null | boolean | Promise<void | boolean>;
 }
 
 export function ConfirmDialog({
@@ -34,8 +34,8 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const handleConfirm = async (): Promise<void> => {
     if (busy) return;
-    await onConfirm();
-    onOpenChange(false);
+    const confirmed = await onConfirm();
+    if (confirmed !== false) onOpenChange(false);
   };
 
   return (

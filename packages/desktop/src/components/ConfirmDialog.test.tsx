@@ -41,3 +41,20 @@ it("keeps an async confirmation open and disabled until it completes", async () 
   finish();
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 });
+
+it("stays open when the caller reports an already-presented failure", async () => {
+  const onOpenChange = vi.fn();
+  render(
+    <ConfirmDialog
+      open
+      onOpenChange={onOpenChange}
+      title="Confirm change?"
+      onConfirm={() => false}
+    />,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+  expect(onOpenChange).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+});

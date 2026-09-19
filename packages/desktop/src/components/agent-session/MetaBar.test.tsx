@@ -343,7 +343,8 @@ describe("MetaBar mode chip", () => {
     expect(toggle).toHaveAttribute("data-state", "on");
   });
 
-  it("places the pre-first-prompt Claude profile selector at the end of the top line", () => {
+  it("puts the pre-first-prompt profile selector inside Info", async () => {
+    const user = userEvent.setup();
     renderChip({
       currentSelection: { providerId: PROVIDER_IDS.CLAUDE_CODE, modelId: "claude-sonnet" },
       showClaudeProfileSelector: true,
@@ -356,11 +357,10 @@ describe("MetaBar mode chip", () => {
       showWorktreeChip: false,
     });
 
-    const modelText = screen.getByText("claude-sonnet");
-    const profileCombobox = screen.getByRole("combobox", { name: /Claude profile/i });
-    expect(modelText.compareDocumentPosition(profileCombobox)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(screen.queryByRole("combobox", { name: "Profile" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Session info" }));
+    expect(screen.getByRole("combobox", { name: "Profile" })).toBeInTheDocument();
+    expect(screen.queryByText("Session ID")).not.toBeInTheDocument();
   });
 });
 

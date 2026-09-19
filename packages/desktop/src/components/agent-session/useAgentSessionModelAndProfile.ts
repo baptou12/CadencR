@@ -33,6 +33,11 @@ export function useAgentSessionModelAndProfile(
   const isClaudeProvider =
     model.activeProviderId === PROVIDER_IDS.CLAUDE_CODE ||
     runtimeProvider === PROVIDER_IDS.CLAUDE_CODE;
+  const supportsProfiles = Boolean(
+    agentCatalogData?.providers.find((provider) => provider.id === model.activeProviderId)
+      ?.profile_capability,
+  );
+  const sendsProfile = supportsProfiles || isClaudeProvider;
 
   const localClaudeProfileSelection = useClaudeProfileSelection({
     isClaudeProvider: isClaudeProvider && claudeProfileSelection == null,
@@ -59,10 +64,10 @@ export function useAgentSessionModelAndProfile(
   const handleSend = useCallback(
     (message: string, images?: Parameters<AgentSessionProps["onSend"]>[1]) => {
       scrollToBottom();
-      const claudeProfile = isClaudeProvider ? profile.selectedClaudeProfile : undefined;
+      const claudeProfile = sendsProfile ? profile.selectedClaudeProfile : undefined;
       return onSend(message, images, claudeProfile);
     },
-    [isClaudeProvider, onSend, scrollToBottom, profile.selectedClaudeProfile],
+    [onSend, profile.selectedClaudeProfile, scrollToBottom, sendsProfile],
   );
 
   const visibleProviders = model.canChangeProvider
@@ -71,7 +76,7 @@ export function useAgentSessionModelAndProfile(
 
   return {
     model,
-    isClaudeProvider,
+    isClaudeProvider: supportsProfiles || isClaudeProvider,
     profile,
     handleSend,
     visibleProviders,

@@ -5,6 +5,7 @@ import { AgentSession } from "@/components/agent-session";
 import { SessionInfoMcpServersProvider } from "@/components/agent-session/SessionInfoChip";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 import { resolveWorktreeChoice } from "@/lib/worktree-mode";
+import { toastError } from "@/lib/api-errors";
 import { checkoutSelectedBranch, saveWorktreeChoice } from "@/components/worktree-send-helpers";
 import type { FirstPromptBranchSetup } from "@/lib/ws-envelope";
 import type { FeatureTabDef } from "@/components/feature-layout/types";
@@ -115,9 +116,9 @@ function AgentTabContent({
           handleModelChange(nextProviderId, modelId, controls)
         }
         currentThinkingEffort={controls.ws.currentThinkingEffort}
-        onThinkingEffortChange={controls.ws.setThinkingEffort}
+        onThinkingEffortChange={(effort) => setEffort(controls, effort)}
         fastMode={controls.ws.fastMode}
-        onFastModeChange={controls.ws.setFastMode}
+        onFastModeChange={(enabled) => setFastMode(controls, enabled)}
         runtimeProvider={controls.ws.currentSelection?.providerId}
         runtimeSessionId={controls.ws.runtimeSessionId || undefined}
         sessionConfigControls={sessionConfigControls}
@@ -141,6 +142,27 @@ function AgentTabContent({
       />
     </SessionInfoMcpServersProvider>
   );
+}
+
+function setEffort(
+  controls: ReturnType<typeof useSessionControls>,
+  effort: string | undefined,
+): void {
+  if (controls.supportsConfigInheritance)
+    void controls.ws
+      .setRuntimeOverrides({ thinking_effort: effort ?? null })
+      .catch((error) => toastError(error, "Could not update thinking effort"));
+  else controls.ws.setThinkingEffort(effort);
+}
+
+function setFastMode(
+  controls: ReturnType<typeof useSessionControls>,
+  enabled: boolean,
+): Promise<void> {
+  if (controls.supportsConfigInheritance) {
+    return controls.ws.setRuntimeOverrides({ fast_mode: enabled });
+  }
+  return controls.ws.setFastMode(enabled);
 }
 
 export function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
@@ -263,7 +285,11 @@ export function handleModelChange(
   // legal mid-conversation.
   const currentProviderId = controls.ws.currentSelection?.providerId;
   if (currentProviderId !== undefined && currentProviderId === nextProviderId) {
-    controls.ws.setModel(modelId, nextProviderId);
+    if (controls.supportsConfigInheritance) {
+      void controls.ws
+        .setRuntimeOverrides({ model: modelId })
+        .catch((error) => toastError(error, "Could not update model"));
+    } else controls.ws.setModel(modelId, nextProviderId);
   } else {
     controls.ws.setProvider(nextProviderId, modelId);
   }
@@ -273,9 +299,10 @@ export function handleModelChange(
     ?.models.find((model) => model.id === modelId);
   const nextLevels = supportedThinkingEffortLevels(nextModel);
   const nextEffort = controls.resolveModelThinkingEffort(nextProviderId, modelId);
-  if (nextEffort) {
-    controls.ws.setThinkingEffort(nextEffort);
-  } else if (!nextLevels.includes(controls.ws.currentThinkingEffort as never)) {
-    controls.ws.setThinkingEffort(undefined);
+  if (!controls.supportsConfigInheritance) {
+    if (nextEffort) controls.ws.setThinkingEffort(nextEffort);
+    else if (!nextLevels.includes(controls.ws.currentThinkingEffort as never)) {
+      controls.ws.setThinkingEffort(undefined);
+    }
   }
 }

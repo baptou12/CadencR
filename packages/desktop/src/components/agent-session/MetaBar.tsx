@@ -81,6 +81,7 @@ export interface MetaBarProps {
   claudeProfilesLoading?: boolean;
   claudeProfilesError?: boolean;
   onClaudeProfileChange?: (profile: string) => void;
+  activeClaudeProfile?: string;
   showReadOnlyModel?: boolean;
   /** The confirmed runtime pair, or `null` while it is unknown (loading state). */
   currentSelection: RuntimeSelection | null;
@@ -186,6 +187,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
           claudeProfilesLoading={input.claudeProfilesLoading}
           claudeProfilesError={input.claudeProfilesError}
           onClaudeProfileChange={input.onClaudeProfileChange}
+          activeClaudeProfile={props.activeClaudeProfile}
           accessMode={props.accessMode}
           accessModeDefault={input.accessModeDefault}
           isAccessModePending={input.isAccessModePending}

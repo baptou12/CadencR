@@ -92,6 +92,10 @@ export interface WsSessionStore {
   setThinkingEffort: (sessionId: string, thinkingEffort?: string) => void;
   setFastMode: (sessionId: string, enabled: boolean) => Promise<void>;
   setProfile: (sessionId: string, profile: string) => void;
+  setRuntimeOverrides: (
+    sessionId: string,
+    patch: import("@/lib/ws-envelope").RuntimeConfigOverridePatch,
+  ) => Promise<void>;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   setAccessMode: (sessionId: string, mode: AccessMode) => void;
   approvePlan: (sessionId: string) => void;
@@ -107,7 +111,12 @@ export interface WsSessionStore {
   sendRequest: (sessionId: string, envelope: WsEnvelope) => Promise<unknown>;
 
   retryWorktreeSetup: (sessionId: string) => void;
-  requestSlashCommands: (sessionId: string, cwd: string, provider: string) => void;
+  requestSlashCommands: (
+    sessionId: string,
+    cwd: string,
+    provider: string,
+    profile?: string,
+  ) => void;
 
   markPersistedLoaded: (sessionId: string) => void;
   setPersistedState: (sessionId: string, options: PersistedStatePayload) => void;

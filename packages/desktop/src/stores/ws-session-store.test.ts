@@ -341,6 +341,67 @@ describe("ws-session-store", () => {
     });
   });
 
+  it("sends presence-aware runtime override patches including explicit null and false", async () => {
+    const { store, ws } = await connectInitializedSession();
+    const pending = store.setRuntimeOverrides("s1", { model: null, fast_mode: false });
+    const envelope = ws.sent.map((raw) => JSON.parse(raw)).at(-1);
+    expect(envelope).toMatchObject({
+      domain: "session",
+      action: "runtime_overrides.set",
+      payload: { session_id: "srv-1", runtime_overrides: { model: null, fast_mode: false } },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "runtime_overrides.set.ok",
+      ref: envelope.id,
+      payload: { ok: true },
+    });
+    await pending;
+  });
+
+  it("applies the confirmed snapshot from a correlated runtime override reply", async () => {
+    const { store, ws } = await connectInitializedSession();
+    const pending = store.setRuntimeOverrides("s1", { thinking_effort: null });
+    const envelope = JSON.parse(ws.sent[ws.sent.length - 1]);
+
+    expect(useWsSessionStore.getState().sessions["s1"].runtimeOverridesPending).toBe(true);
+    ws.simulateMessage({
+      domain: "session",
+      action: "runtime_overrides.changed",
+      ref: envelope.id,
+      payload: {
+        runtime_overrides: { model: null, thinking_effort: null, fast_mode: null },
+        effective: { model: "gpt-5", thinking_effort: "low", fast_mode: false },
+      },
+    });
+    await pending;
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.runtimeOverrides).toEqual({
+      model: null,
+      thinking_effort: null,
+      fast_mode: null,
+    });
+    expect(session.currentThinkingEffort).toBe("low");
+    expect(session.runtimeOverridesPending).toBe(false);
+  });
+
+  it("rejects a failed runtime override without changing confirmed state", async () => {
+    const { store, ws } = await connectInitializedSession();
+    const pending = store.setRuntimeOverrides("s1", { fast_mode: false });
+    const envelope = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(useWsSessionStore.getState().sessions["s1"].runtimeOverridesPending).toBe(true);
+    ws.simulateMessage({
+      domain: "session",
+      action: "error",
+      ref: envelope.id,
+      payload: { error: "Profile rejected" },
+    });
+    await expect(pending).rejects.toThrow("Profile rejected");
+    expect(useWsSessionStore.getState().sessions["s1"].runtimeOverrides).toBeUndefined();
+    expect(useWsSessionStore.getState().sessions["s1"].runtimeOverridesPending).toBe(false);
+  });
+
   it("sendPrompt marks mid-turn messages as pending when prompt receipts are supported", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
@@ -1283,7 +1344,7 @@ describe("ws-session-store", () => {
     expect(session.currentProfile).toBe("bedrock");
   });
 
-  it("session.profile.changed updates profile without changing provider or model", async () => {
+  it("session.profile.changed applies its confirmed effective runtime snapshot", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -1305,15 +1366,35 @@ describe("ws-session-store", () => {
         provider: "claude_code",
         model: "claude-opus-4-5",
         profile: "bedrock",
+        effective: { model: "claude-haiku", thinking_effort: "low", fast_mode: false },
       },
     });
 
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.currentSelection).toEqual({
       providerId: "claude_code",
-      modelId: "claude-sonnet-4-5",
+      modelId: "claude-haiku",
     });
     expect(session.currentProfile).toBe("bedrock");
+    expect(session.currentThinkingEffort).toBe("low");
+  });
+
+  it("accepts only a complete confirmed runtime override snapshot", async () => {
+    const { ws } = await connectInitializedSession();
+    ws.simulateMessage({
+      domain: "session",
+      action: "runtime_overrides.changed",
+      payload: {
+        runtime_overrides: { model: null, thinking_effort: "high", fast_mode: false },
+        effective: { model: "gpt-5", thinking_effort: "high", fast_mode: false },
+      },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].runtimeOverrides).toEqual({
+      model: null,
+      thinking_effort: "high",
+      fast_mode: false,
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].currentThinkingEffort).toBe("high");
   });
 
   it("session.access_mode.changed updates the stored access chip", async () => {
@@ -1408,6 +1489,54 @@ describe("ws-session-store", () => {
       providerId: "claude_code",
       modelId: "opus",
     });
+  });
+
+  it("provider confirmation replaces profile and override state together", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    useWsSessionStore.setState((state) =>
+      updateSession(state, "s1", {
+        currentSelection: { providerId: "claude_code", modelId: "opus" },
+        currentProfile: "bedrock",
+        currentThinkingEffort: "high",
+        fastMode: true,
+        runtimeOverrides: { model: "opus", thinking_effort: "high", fast_mode: true },
+      }),
+    );
+    ws.simulateMessage({
+      domain: "session",
+      action: "provider.set.ok",
+      payload: {
+        provider: "codex_cli",
+        model: "chosen-model",
+        profile: "codex-home",
+        thinking_effort: null,
+        fast_mode: false,
+        runtime_overrides: { model: "chosen-model", thinking_effort: null, fast_mode: false },
+      },
+    });
+    expect(useWsSessionStore.getState().sessions.s1).toMatchObject({
+      currentSelection: { providerId: "codex_cli", modelId: "chosen-model" },
+      currentProfile: "codex-home",
+      currentThinkingEffort: undefined,
+      fastMode: false,
+      runtimeOverrides: { model: "chosen-model", thinking_effort: null, fast_mode: false },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "provider.set.ok",
+      payload: {
+        provider: "cursor",
+        model: "auto",
+        profile: null,
+        thinking_effort: null,
+        fast_mode: false,
+        runtime_overrides: { model: null, thinking_effort: null, fast_mode: null },
+      },
+    });
+    expect(useWsSessionStore.getState().sessions.s1.currentProfile).toBeUndefined();
   });
 
   it("setProvider with modelId sends the model in the payload", async () => {
@@ -3748,7 +3877,7 @@ describe("ws-session-store", () => {
             userShell: true,
           },
           slashCommandsLoading: false,
-          slashCommandsKey: "claude_code::/repo",
+          slashCommandsKey: "claude_code::::/repo",
           slashCommandsRequestRef: firstRequest.id,
         }),
       );
@@ -3779,7 +3908,7 @@ describe("ws-session-store", () => {
         updateSession(state, "s1", {
           slashCommands: [{ name: "compact", description: "Compact", kind: "command" }],
           slashCommandsLoading: false,
-          slashCommandsKey: "codex_cli::/repo",
+          slashCommandsKey: "codex_cli::::/repo",
           slashCommandsRequestRef: "previous-request",
         }),
       );
@@ -3796,6 +3925,23 @@ describe("ws-session-store", () => {
       ]);
       expect(session.slashCommandsLoading).toBe(true);
       expect(session.slashCommandsRequestRef).toBe(request.id);
+    });
+
+    it("scopes slash command requests and cache identity to the selected profile", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      store.requestSlashCommands("s1", "/repo", "codex_cli", "work-id");
+      const request = JSON.parse(ws.sent[ws.sent.length - 1]);
+      expect(request.payload).toMatchObject({
+        cwd: "/repo",
+        provider: "codex_cli",
+        profile: "work-id",
+      });
+      expect(useWsSessionStore.getState().sessions["s1"].slashCommandsKey).toBe(
+        "codex_cli::work-id::/repo",
+      );
     });
 
     it("ignores stale slash command responses for an older provider", async () => {

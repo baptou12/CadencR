@@ -1,3 +1,4 @@
+import { handleRuntimeOverridesChanged } from "./ws-envelope-runtime-handlers";
 import type { SlashCommand } from "@/lib/slash-command";
 import { promptCommandPolicyFromPayload } from "@/lib/prompt-command-policy";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
@@ -64,7 +65,16 @@ export function handleEnvelope(
     if (cb) {
       session.pendingWsRequests.delete(envelope.ref);
       cb(envelope.payload);
-      return;
+      // Most correlated replies contain request-only acknowledgements. Runtime
+      // override replies are different: the payload is also the canonical
+      // confirmed snapshot that drives the visible controls. Apply it after
+      // resolving the request rather than waiting for a separate broadcast.
+      if (
+        envelope.domain !== "session" ||
+        envelope.action !== SESSION_ACTION.runtimeOverridesChanged
+      ) {
+        return;
+      }
     }
   }
 
@@ -166,6 +176,7 @@ const SESSION_ACTION_HANDLERS: Record<SessionActionName, SessionActionHandler> =
   [SESSION_ACTION.effortSetOk]: handleEffortSetOk,
   [SESSION_ACTION.fastModeSetOk]: handleFastModeSetOk,
   [SESSION_ACTION.profileChanged]: handleProfileChanged,
+  [SESSION_ACTION.runtimeOverridesChanged]: handleRuntimeOverridesChanged,
   [SESSION_ACTION.compactStarted]: handleCompactStarted,
   [SESSION_ACTION.compactOk]: handleCompactOk,
   [SESSION_ACTION.cleared]: handleCleared,
@@ -290,7 +301,16 @@ function handleProviderSetOk(ctx: StoreAccessors, sessionId: string, payload: un
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       currentSelection: { providerId: p.provider, modelId: p.model },
-      ...(providerChanged ? { fastMode: false } : {}),
+      ...(p.profile !== undefined || providerChanged
+        ? { currentProfile: p.profile ?? undefined }
+        : {}),
+      ...(p.runtime_overrides !== undefined || providerChanged
+        ? { runtimeOverrides: p.runtime_overrides }
+        : {}),
+      ...(p.thinking_effort !== undefined || providerChanged
+        ? { currentThinkingEffort: p.thinking_effort ?? undefined }
+        : {}),
+      fastMode: p.fast_mode ?? (providerChanged ? false : session.fastMode),
       mcpServers: null,
       ...createSessionConfigState(),
       supportsPromptReceipts: p.supports_prompt_receipts ?? false,
@@ -345,8 +365,21 @@ function handleFastModeSetOk(ctx: StoreAccessors, sessionId: string, payload: un
 function handleProfileChanged(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseProfilePayload(payload);
   if (p?.profile) {
-    if (ctx.get().sessions[sessionId]?.currentProfile === p.profile) return;
-    ctx.set(updateSession(ctx.get(), sessionId, { currentProfile: p.profile }));
+    const current = ctx.get().sessions[sessionId]?.currentSelection;
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        currentProfile: p.profile,
+        ...(p.effective
+          ? {
+              currentSelection: current
+                ? { providerId: current.providerId, modelId: p.effective.model ?? "" }
+                : null,
+              currentThinkingEffort: p.effective.thinking_effort ?? undefined,
+              fastMode: p.effective.fast_mode,
+            }
+          : {}),
+      }),
+    );
   }
 }
 

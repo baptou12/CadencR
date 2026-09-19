@@ -87,6 +87,12 @@ export interface UseWebSocketSessionReturn {
   currentThinkingEffort?: string;
   fastMode: boolean;
   currentProfile?: string;
+  runtimeOverrides?: {
+    model: string | null;
+    thinking_effort: string | null;
+    fast_mode: boolean | null;
+  };
+  runtimeOverridesPending: boolean;
   runtimeSessionId: string;
   sessionConfig: RuntimeSessionConfigSnapshot | null;
   sessionConfigLoading: boolean;
@@ -101,6 +107,9 @@ export interface UseWebSocketSessionReturn {
   setThinkingEffort: (thinkingEffort?: string) => void;
   setFastMode: (enabled: boolean) => Promise<void>;
   setProfile: (profile: string) => void;
+  setRuntimeOverrides: (
+    patch: import("@/lib/ws-envelope").RuntimeConfigOverridePatch,
+  ) => Promise<void>;
   setProvider: (providerId: string, modelId?: string) => void;
   sendPrompt: (text: string, options?: PromptDispatchOptions) => void;
   respondToPermission: (
@@ -136,6 +145,7 @@ type SessionActions = Pick<
   | "setThinkingEffort"
   | "setFastMode"
   | "setProfile"
+  | "setRuntimeOverrides"
   | "setPermissionMode"
   | "setAccessMode"
   | "approvePlan"
@@ -286,6 +296,7 @@ function useSessionActions(sessionId: string): SessionActions {
         s.setThinkingEffort(sessionId, thinkingEffort),
       setFastMode: (enabled: boolean): Promise<void> => s.setFastMode(sessionId, enabled),
       setProfile: (profile: string): void => s.setProfile(sessionId, profile),
+      setRuntimeOverrides: (patch): Promise<void> => s.setRuntimeOverrides(sessionId, patch),
       setPermissionMode: (mode: PermissionMode): void => s.setPermissionMode(sessionId, mode),
       setAccessMode: (mode: AccessMode): void => s.setAccessMode(sessionId, mode),
       approvePlan: (): void => s.approvePlan(sessionId),
@@ -344,6 +355,8 @@ function useSessionSnapshot(
       currentThinkingEffort: session?.currentThinkingEffort,
       fastMode: session?.fastMode ?? false,
       currentProfile: session?.currentProfile,
+      runtimeOverrides: session?.runtimeOverrides,
+      runtimeOverridesPending: session?.runtimeOverridesPending ?? false,
       runtimeSessionId: session?.runtimeSessionId ?? "",
       sessionConfig: session?.sessionConfig ?? null,
       sessionConfigLoading: session?.sessionConfigLoading ?? false,
