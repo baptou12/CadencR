@@ -42,7 +42,8 @@ vi.mock("@/lib/project-onboarding", () => ({
   }),
 }));
 
-vi.mock("../api/generated", () => ({
+vi.mock("../api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/generated")>()),
   useArchiveFeature: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useGetFeatureArchivePreview: vi.fn(() => ({
     data: { parent_ids: [], descendant_ids: [], has_relations: false },

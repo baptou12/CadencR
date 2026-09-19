@@ -111,7 +111,8 @@ const mockFeatures = [
   },
 ];
 
-vi.mock("@/api/generated", () => ({
+vi.mock("@/api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/generated")>()),
   FeatureStatus: { active: "active", archived: "archived" },
   useArchiveFeature: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useGetFeatureArchivePreview: vi.fn(() => ({
