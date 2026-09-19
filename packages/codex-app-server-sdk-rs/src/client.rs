@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -9,6 +10,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{broadcast, oneshot, Mutex};
 
 use crate::client_io::{spawn_reader, spawn_reaper, spawn_stderr_reader, ReaderState};
+use crate::client_launch::profile_aware_command;
 use crate::client_state::{Inner, PendingRequestGuard};
 use crate::discovery::resolved_codex_command;
 use crate::error::SdkError;
@@ -33,6 +35,10 @@ pub struct CodexAppServerClient {
 #[derive(Debug, Clone, Default, bon::Builder)]
 pub struct AppServerSpawnOptions {
     pub env: Option<HashMap<String, String>>,
+    /// Environment keys removed from the already login-hydrated service env.
+    #[builder(default)]
+    pub env_unset: Vec<String>,
+    pub cwd: Option<PathBuf>,
     #[builder(default)]
     pub enable_features: Vec<String>,
     #[builder(default)]
@@ -44,20 +50,21 @@ pub struct AppServerSpawnOptions {
 impl CodexAppServerClient {
     pub async fn spawn_with_options(options: AppServerSpawnOptions) -> Result<Self, SdkError> {
         let binary = resolved_codex_command().await?;
-        let mut command = cli_discovery::login_shell_exec_command(
+        let args = app_server_args(&options.enable_features);
+        let mut command = profile_aware_command(
             binary.as_os_str(),
-            app_server_args(&options.enable_features)
-                .into_iter()
-                .map(std::ffi::OsString::from),
+            &args,
+            options.env.as_ref(),
+            &options.env_unset,
         );
+        if let Some(cwd) = options.cwd {
+            command.current_dir(cwd);
+        }
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        if let Some(env) = options.env {
-            command.envs(env);
-        }
         let mut child = command.spawn()?;
         let pid = child.id();
         let stdin = child
@@ -173,6 +180,18 @@ impl CodexAppServerClient {
             }
         }
         Ok(models)
+    }
+
+    /// Read Codex's effective configuration, including user and project layers.
+    pub async fn config_read(&self, cwd: &std::path::Path) -> Result<Value, SdkError> {
+        self.request(
+            "config/read",
+            json!({
+                "cwd": cwd.to_string_lossy(),
+                "includeLayers": true,
+            }),
+        )
+        .await
     }
 
     pub async fn turn_start(&self, params: Value) -> Result<TurnHandle, SdkError> {
