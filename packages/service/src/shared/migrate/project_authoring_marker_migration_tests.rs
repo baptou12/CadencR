@@ -17,10 +17,13 @@ async fn migration_preserves_existing_projects_and_children_unmarked() {
          branch_prefix TEXT, created_at TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'user'); \
          CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL \
          REFERENCES projects(id) ON DELETE CASCADE); \
+         CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL \
+         REFERENCES features(id) ON DELETE CASCADE); \
          INSERT INTO projects (id, name, path, created_at, kind) VALUES \
          (1, 'Ordinary', '/tmp/ordinary', '2026-01-01', 'user'), \
          (2, 'Legacy theme', '/tmp/theme', '2026-01-02', 'theme'); \
-         INSERT INTO features (id, project_id) VALUES (10, 1), (20, 2)",
+         INSERT INTO features (id, project_id) VALUES (10, 1), (20, 2); \
+         INSERT INTO agent_sessions (id, feature_id) VALUES (100, 10), (200, 20)",
     )
     .execute(&pool)
     .await
@@ -49,6 +52,12 @@ async fn migration_preserves_existing_projects_and_children_unmarked() {
             .await
             .unwrap();
     assert_eq!(children, vec![(10, 1), (20, 2)]);
+    let sessions: Vec<(i64, i64, Option<String>)> =
+        sqlx::query_as("SELECT id, feature_id, runtime_overrides FROM agent_sessions ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sessions, vec![(100, 10, None), (200, 20, None)]);
     let foreign_key_violations: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
             .fetch_one(&pool)

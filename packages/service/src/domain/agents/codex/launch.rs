@@ -30,7 +30,9 @@ pub(super) fn effective_thread_config(config: &RuntimeSpawnConfig, effective: &V
             .as_object_mut()
             .expect("Codex MCP config is an object");
         for (name, value) in native_servers {
-            target.entry(name.clone()).or_insert_with(|| value.clone());
+            target
+                .entry(name.clone())
+                .or_insert_with(|| mcp_config_override(value));
         }
     }
     if config.resume_session_id.is_some() {
@@ -66,6 +68,23 @@ pub(super) fn effective_thread_config(config: &RuntimeSpawnConfig, effective: &V
         }
     }
     result
+}
+
+// `config/read` includes null optional MCP fields. Thread overrides are converted
+// to TOML by Codex, where null becomes an empty string (invalid for timeouts).
+// Omit absent fields while retaining explicit values, including empty strings.
+fn mcp_config_override(value: &Value) -> Value {
+    match value {
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .filter(|(_, value)| !value.is_null())
+                .map(|(key, value)| (key.clone(), mcp_config_override(value)))
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(mcp_config_override).collect()),
+        value => value.clone(),
+    }
 }
 
 pub(super) async fn start_or_resume_thread(
@@ -137,5 +156,53 @@ mod tests {
         assert_eq!(result["model"], "native-model");
         assert_eq!(result["model_reasoning_effort"], "low");
         assert_eq!(result["service_tier"], "flex");
+    }
+
+    #[test]
+    fn native_mcp_overrides_omit_null_fields_for_start_and_resume() {
+        for resume_session_id in [None, Some("thread-1".to_string())] {
+            let config = RuntimeSpawnConfig {
+                resume_session_id,
+                ..RuntimeSpawnConfig::default()
+            };
+            let result = effective_thread_config(
+                &config,
+                &json!({"config": {"mcp_servers": {
+                    "chrome-devtools": {
+                        "command": "chrome-devtools-mcp",
+                        "args": [],
+                        "enabled": false,
+                        "tool_timeout_sec": null,
+                        "startup_timeout_sec": null,
+                        "env": {"EMPTY": "", "UNSET": null}
+                    },
+                    "explicit": {
+                        "url": "https://example.test/mcp",
+                        "tool_timeout_sec": 12.5,
+                        "startup_timeout_sec": 0,
+                        "enabled_tools": ["first", "second"],
+                        "disabled_tools": []
+                    }
+                }}}),
+            );
+            assert_eq!(
+                result["mcp_servers"],
+                json!({
+                    "chrome-devtools": {
+                        "command": "chrome-devtools-mcp",
+                        "args": [],
+                        "enabled": false,
+                        "env": {"EMPTY": ""}
+                    },
+                    "explicit": {
+                        "url": "https://example.test/mcp",
+                        "tool_timeout_sec": 12.5,
+                        "startup_timeout_sec": 0,
+                        "enabled_tools": ["first", "second"],
+                        "disabled_tools": []
+                    }
+                })
+            );
+        }
     }
 }
