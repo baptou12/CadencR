@@ -449,7 +449,7 @@ async fn restoring_a_persisted_selection_puts_the_row_back() {
         .expect("row readable");
 
     sqlx::query(
-        "UPDATE agent_sessions SET runtime_provider = 'codex_cli', model = 'gpt-5.3-codex', fast_mode = 1 WHERE id = ?",
+        "UPDATE agent_sessions SET runtime_provider = 'codex_cli', model = 'gpt-5.3-codex', fast_mode = 1, profile = 'changed-profile', thinking_effort = 'high', runtime_overrides = '{\"model\":\"changed\"}' WHERE id = ?",
     )
     .bind(db_id)
     .execute(&app_state.write_pool)
@@ -469,6 +469,7 @@ async fn restoring_a_persisted_selection_puts_the_row_back() {
     assert_eq!(after.permission_mode, before.permission_mode);
     assert_eq!(after.codex_permission_mode, before.codex_permission_mode);
     assert_eq!(after.fast_mode, before.fast_mode);
+    assert_eq!(after, before);
 }
 
 #[tokio::test]
@@ -499,4 +500,63 @@ async fn failed_selection_restoration_reports_database_error() {
         .expect("failed compensation must surface");
     assert_eq!(error.code, "DB_ERROR");
     assert!(error.message.contains("could not be restored"));
+}
+
+#[tokio::test]
+async fn same_provider_model_switch_preserves_profile_and_other_controls() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sessions = Arc::new(Mutex::new(HashMap::new()));
+    let state = make_test_app_state().await;
+    let id = init_session(&tx, &mut rx, &sessions, &state, 1).await;
+    let db_id = id.parse().unwrap();
+    {
+        let mut sessions = sessions.lock().await;
+        let handle = sessions.get_mut(&db_id).unwrap();
+        handle.config.env = Some(HashMap::from([("TOKEN".into(), "kept".into())]));
+        handle.config.env_unset = vec!["UNSET_ME".into()];
+        handle.config.profile_revision = Some("kept-revision".into());
+        handle.config.profile_state_identity = Some("kept-home".into());
+        handle.config.overrides.thinking_effort = Some("high".into());
+        handle.config.overrides.fast_mode = Some(false);
+        handle.desired_permission_mode =
+            Some(crate::domain::agents::adapter::RuntimePermissionMode::Plan);
+    }
+    dispatch_envelope(
+        make_envelope(
+            "session",
+            "provider.set",
+            serde_json::json!({
+                "session_id": id, "provider": "claude_code", "model": "sonnet",
+            }),
+        ),
+        &tx,
+        &sessions,
+        &state,
+    )
+    .await;
+    let Message::Text(reply) = rx.recv().await.unwrap() else {
+        panic!("text expected")
+    };
+    let reply: WsEnvelope = serde_json::from_str(&reply).unwrap();
+    assert_eq!(reply.action, "provider.set.ok");
+    let sessions = sessions.lock().await;
+    let handle = sessions.get(&db_id).unwrap();
+    let QueryState::Pending(config) = &handle.state else {
+        panic!("pending expected")
+    };
+    assert_eq!(config.model.as_deref(), Some("sonnet"));
+    assert_eq!(config.env.as_ref().unwrap()["TOKEN"], "kept");
+    assert_eq!(config.env_unset, ["UNSET_ME"]);
+    assert_eq!(config.profile_revision.as_deref(), Some("kept-revision"));
+    assert_eq!(config.profile_state_identity.as_deref(), Some("kept-home"));
+    assert_eq!(config.overrides.thinking_effort.as_deref(), Some("high"));
+    assert_eq!(config.overrides.fast_mode, Some(false));
+    assert_eq!(
+        config.permission_mode,
+        Some(crate::domain::agents::adapter::RuntimePermissionMode::Plan)
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "same-provider selection must not reset mode"
+    );
 }

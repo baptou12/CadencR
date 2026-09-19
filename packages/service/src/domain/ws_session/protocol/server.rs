@@ -40,6 +40,7 @@ pub struct SessionInitializedPayload {
     pub fast_mode: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    pub runtime_overrides: crate::domain::agents::adapter::RuntimeConfigOverrides,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_permission_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -284,6 +285,10 @@ pub struct ProviderSetOkPayload {
     pub codex_permission_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_mode: Option<String>,
+    pub profile: Option<String>,
+    pub runtime_overrides: crate::domain::agents::adapter::RuntimeConfigOverrides,
+    pub thinking_effort: Option<String>,
+    pub fast_mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -321,6 +326,14 @@ pub struct ProfileChangedPayload {
     pub provider: String,
     pub model: Option<String>,
     pub profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective: Option<crate::domain::agents::adapter::RuntimeEffectiveConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RuntimeOverridesChangedPayload {
+    pub runtime_overrides: crate::domain::agents::adapter::RuntimeConfigOverrides,
+    pub effective: crate::domain::agents::adapter::RuntimeEffectiveConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -459,6 +472,10 @@ mod tests {
     fn provider_set_ok_carries_the_active_model() {
         let payload = ProviderSetOkPayload {
             provider: "opencode".to_string(),
+            profile: None,
+            runtime_overrides: Default::default(),
+            thinking_effort: None,
+            fast_mode: false,
             model: "lmstudio/qwen-3.6:35b-a3b".to_string(),
             supports_prompt_receipts: false,
             codex_permission_mode: None,

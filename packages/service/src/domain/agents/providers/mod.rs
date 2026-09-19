@@ -113,11 +113,25 @@ pub async fn provider_catalog_live_for_cwd(
     cwd: Option<&Path>,
     profile: Option<&str>,
 ) -> AgentCatalogResponse {
-    let providers = provider_catalog_entries_with_origin_live_for_cwd(read_pool, cwd, profile)
-        .await
-        .into_iter()
-        .filter(|provider| provider.status == ProviderStatus::Available)
-        .collect::<Vec<_>>();
+    provider_catalog_live_for_profile(read_pool, cwd, None, profile).await
+}
+
+pub async fn provider_catalog_live_for_profile(
+    read_pool: &SqlitePool,
+    cwd: Option<&Path>,
+    profile_provider: Option<&str>,
+    profile: Option<&str>,
+) -> AgentCatalogResponse {
+    let providers = provider_catalog_entries_with_origin_live_for_cwd(
+        read_pool,
+        cwd,
+        profile_provider,
+        profile,
+    )
+    .await
+    .into_iter()
+    .filter(|provider| provider.status == ProviderStatus::Available)
+    .collect::<Vec<_>>();
 
     let default_provider = providers
         .iter()
@@ -140,7 +154,7 @@ pub async fn provider_catalog_entries_live_for_cwd(
     cwd: Option<&Path>,
     profile: Option<&str>,
 ) -> Vec<super::runtime::ProviderCatalogEntry> {
-    provider_catalog_entries_with_origin_live_for_cwd(read_pool, cwd, profile)
+    provider_catalog_entries_with_origin_live_for_cwd(read_pool, cwd, None, profile)
         .await
         .into_iter()
         .map(|entry| entry.provider)
@@ -150,19 +164,40 @@ pub async fn provider_catalog_entries_live_for_cwd(
 async fn provider_catalog_entries_with_origin_live_for_cwd(
     read_pool: &SqlitePool,
     cwd: Option<&Path>,
+    profile_provider: Option<&str>,
     profile: Option<&str>,
 ) -> Vec<ProviderCatalogResponseEntry> {
     futures::future::join_all(provider_registry().iter().map(|registered| async move {
+        let adapter = registered.adapter();
+        let selected_profile = profile.filter(|_| {
+            profile_provider.is_some_and(|provider_id| provider_id == adapter.catalog_entry().id)
+        });
         let provider = provider_catalog_entry_live_for_settings(
             read_pool,
             cwd,
-            profile,
-            registered.adapter().as_adapter(),
+            selected_profile,
+            adapter.as_adapter(),
         )
         .await;
+        let profile_capability = match adapter.profile_catalog(cwd).await {
+            Ok(catalog) => catalog.map(|catalog| super::runtime::ProviderProfileCapability {
+                active_profile: catalog.active_profile,
+                default_profile: catalog.default_profile,
+                supports_config_inheritance: adapter.supports_profile_config_inheritance(),
+            }),
+            Err(error) => {
+                tracing::warn!(
+                    provider = %provider.id,
+                    %error,
+                    "failed to load provider profile metadata"
+                );
+                None
+            }
+        };
         ProviderCatalogResponseEntry {
             provider,
             origin: registered.origin(),
+            profile_capability,
         }
     }))
     .await

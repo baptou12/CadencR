@@ -5,6 +5,7 @@ use utoipa::OpenApi;
 
 use crate::app_state::AppState;
 use crate::domain::agents::claude_code::routes as claude_code_routes;
+use crate::domain::agents::codex::routes as codex_routes;
 use crate::domain::agents::discovery::routes as discovery_routes;
 use crate::domain::agents::providers::development::routes as provider_development_routes;
 use crate::domain::agents::providers::installed::managed::routes as managed_provider_routes;
@@ -167,6 +168,13 @@ use crate::domain::ws_session::routes as ws_routes;
         terminal_routes::kill_terminal_sessions_handler,
         terminal_routes::alacritty_config_route,
         super::get_agent_catalog,
+        super::get_agent_profiles,
+        codex_routes::list_profiles_handler,
+        codex_routes::create_profile_handler,
+        codex_routes::update_profile_handler,
+        codex_routes::delete_profile_handler,
+        codex_routes::set_active_profile_handler,
+        codex_routes::validate_profile_handler,
         super::get_agent_selection,
         discovery_routes::binary_discovery_handler,
         provider_development_routes::create_provider_workspace_handler,
@@ -242,6 +250,18 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::themes::workspace::ThemeWorkspace,
         crate::domain::agents::runtime::AgentCatalogResponse,
         crate::domain::agents::runtime::ProviderCatalogResponseEntry,
+        crate::domain::agents::runtime::ProviderProfileCapability,
+        crate::domain::agents::runtime::ProviderProfileEntry,
+        crate::domain::agents::runtime::ProviderProfilesResponse,
+        crate::domain::agents::adapter::RuntimeConfigOverrides,
+        crate::domain::agents::adapter::RuntimeEffectiveConfig,
+        crate::domain::agents::codex::profiles::CodexProfileView,
+        crate::domain::agents::codex::profiles::ProfileDraft,
+        crate::domain::agents::codex::profiles::ProfileUpdate,
+        crate::domain::agents::codex::profiles::ValidationResult,
+        codex_routes::ProfilesResponse,
+        codex_routes::SetActiveProfileRequest,
+        codex_routes::SuccessResponse,
         crate::domain::agents::runtime::ProviderOrigin,
         crate::domain::agents::runtime::ProviderCatalogEntry,
         crate::domain::agents::runtime::ModelCatalogEntry,
@@ -500,6 +520,8 @@ use crate::domain::ws_session::routes as ws_routes;
         ws_protocol::SessionConfigSnapshotPayload,
         ws_protocol::FastModeSetOkPayload,
         ws_protocol::ProfileChangedPayload,
+        ws_protocol::RuntimeOverridesChangedPayload,
+        ws_protocol::RuntimeOverridesSetPayload,
         ws_protocol::RuntimeSessionIdPayload,
         ws_protocol::BranchRewoundPayload,
         ws_protocol::BranchForkedPayload,

@@ -56,6 +56,9 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
 pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // Active Claude Code env profile name
     "claude_code_active_profile",
+    // Structured Codex app-server profiles and the stable id selected by default.
+    "codex_profiles",
+    "codex_active_profile",
     // Onboarding-set CLI binary paths (consumed by `apply_binary_overrides_from_settings`).
     "claude_cli_path",
     "opencode_cli_path",

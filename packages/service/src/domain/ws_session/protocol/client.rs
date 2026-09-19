@@ -73,6 +73,12 @@ pub struct PromptSendPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RuntimeOverridesSetPayload {
+    pub session_id: String,
+    pub runtime_overrides: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PermissionRespondPayload {
     pub session_id: String,
     pub request_id: String,

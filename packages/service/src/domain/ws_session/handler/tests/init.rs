@@ -4,6 +4,66 @@
 use super::support::*;
 
 #[tokio::test]
+async fn claude_reconnect_preserves_changed_controls_over_stale_runtime_overrides() {
+    assert_claude_controls_survive_stale_overrides(Some("low")).await;
+}
+
+#[tokio::test]
+async fn claude_reconnect_preserves_cleared_effort_over_stale_runtime_overrides() {
+    assert_claude_controls_survive_stale_overrides(None).await;
+}
+
+async fn assert_claude_controls_survive_stale_overrides(stored_effort: Option<&str>) {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+    sqlx::query(
+        "INSERT INTO agent_sessions
+         (feature_id, agent_type, status, runtime_provider, runtime_session_id,
+          model, profile, thinking_effort, runtime_overrides)
+         VALUES (1, 'session', 'paused', 'claude_code',
+          '11111111-1111-4111-8111-111111111111', 'opus', 'default', ?, ?)",
+    )
+    .bind(stored_effort)
+    .bind(r#"{"model":"haiku","thinking_effort":"high","fast_mode":null}"#)
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+
+    let response = init_session_and_get_response(
+        &tx,
+        &mut rx,
+        &sdk_sessions,
+        &app_state,
+        SessionInitPayload {
+            provider: None,
+            model: None,
+            thinking_effort: None,
+            permission_mode: None,
+            system_prompt: None,
+            cwd: Some("/tmp/test".into()),
+            feature_id: Some(1),
+        },
+    )
+    .await;
+    assert_eq!(response.model.as_deref(), Some("opus"));
+    assert_eq!(response.thinking_effort.as_deref(), stored_effort);
+    assert_eq!(response.profile.as_deref(), Some("default"));
+
+    let session_id = response.session_id.parse::<i64>().unwrap();
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&session_id).unwrap();
+    assert_eq!(handle.desired_model.as_deref(), Some("opus"));
+    assert_eq!(handle.desired_thinking_effort.as_deref(), stored_effort);
+    let QueryState::Pending(options) = &handle.state else {
+        panic!("expected pending session after reconnect");
+    };
+    assert_eq!(options.model.as_deref(), Some("opus"));
+    assert_eq!(options.thinking_effort.as_deref(), stored_effort);
+    assert_eq!(options.profile.as_deref(), Some("default"));
+}
+
+#[tokio::test]
 async fn test_init_persists_resolved_pair_before_reconnect() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
@@ -118,7 +178,7 @@ async fn test_init_captures_resume_session_id_from_db() {
 
     // Pre-create a session row with a runtime_session_id (simulating previous app run)
     sqlx::query(
-        "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_session_id) VALUES (1, 'session', 'paused', ?)"
+        "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider, runtime_session_id) VALUES (1, 'session', 'paused', 'claude_code', ?)"
     )
     .bind(resume_sid)
     .execute(&app_state.write_pool)

@@ -34,6 +34,14 @@ impl From<RuntimeSlashCommandKind> for SlashCommandKind {
 }
 
 pub async fn resolve_commands(cwd: &str, provider: &str) -> Vec<SlashCommand> {
+    resolve_commands_for_profile(cwd, provider, None).await
+}
+
+pub async fn resolve_commands_for_profile(
+    cwd: &str,
+    provider: &str,
+    profile: Option<&str>,
+) -> Vec<SlashCommand> {
     let mut commands = Vec::new();
     let mut seen = HashSet::new();
 
@@ -49,7 +57,12 @@ pub async fn resolve_commands(cwd: &str, provider: &str) -> Vec<SlashCommand> {
     merge_commands(&mut commands, &mut seen, orchestration_skill_commands());
 
     const COMMANDS_TIMEOUT: Duration = Duration::from_secs(15);
-    match tokio::time::timeout(COMMANDS_TIMEOUT, adapter.runtime_slash_commands(cwd)).await {
+    match tokio::time::timeout(
+        COMMANDS_TIMEOUT,
+        adapter.runtime_slash_commands_for_profile(cwd, profile),
+    )
+    .await
+    {
         Ok(inner) => match inner {
             Ok(native_commands) => {
                 merge_commands(&mut commands, &mut seen, to_slash_commands(native_commands));

@@ -340,6 +340,11 @@ pub(crate) async fn handle_clear(
         thinking_effort: handle.desired_thinking_effort.clone(),
         system_prompt: handle.config.system_prompt.clone(),
         env: handle.config.env.clone(),
+        env_unset: handle.config.env_unset.clone(),
+        profile: handle.config.claude_profile.clone(),
+        overrides: handle.config.overrides.clone(),
+        profile_revision: handle.config.profile_revision.clone(),
+        profile_state_identity: handle.config.profile_state_identity.clone(),
         ..RuntimeSpawnConfig::default()
     };
     handle.state = QueryState::Pending(fresh_options);

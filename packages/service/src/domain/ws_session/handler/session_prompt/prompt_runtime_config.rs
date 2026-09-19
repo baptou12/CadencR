@@ -40,6 +40,7 @@ fn dispatch_changes_for_active(handle: &SdkHandle, is_active: bool) -> DispatchC
     let access_changed = handle.desired_access_mode != handle.spawned_access_mode;
     let effort_changed = handle.desired_thinking_effort != handle.spawned_thinking_effort;
     let profile_changed = handle.desired_claude_profile != handle.spawned_claude_profile;
+    let overrides_changed = handle.config.runtime_overrides_dirty;
     DispatchChanges {
         model_changed,
         mode_changed,
@@ -51,7 +52,8 @@ fn dispatch_changes_for_active(handle: &SdkHandle, is_active: bool) -> DispatchC
                 || mode_changed
                 || access_changed
                 || effort_changed
-                || profile_changed),
+                || profile_changed
+                || overrides_changed),
     }
 }
 
@@ -101,6 +103,11 @@ fn reset_handle_to_pending(handle: &mut SdkHandle, resume_session_id: Option<Str
         resume_session_id,
         allow_bypass_permissions: handle.config.allow_bypass_permissions,
         env: handle.config.env.clone(),
+        env_unset: handle.config.env_unset.clone(),
+        profile: handle.config.claude_profile.clone(),
+        overrides: handle.config.overrides.clone(),
+        profile_revision: handle.config.profile_revision.clone(),
+        profile_state_identity: handle.config.profile_state_identity.clone(),
         ..RuntimeSpawnConfig::default()
     };
     handle.spawned_model = handle.desired_model.clone();
@@ -112,6 +119,7 @@ fn reset_handle_to_pending(handle: &mut SdkHandle, resume_session_id: Option<Str
     handle.config.access_mode = handle.desired_access_mode.clone();
     handle.config.thinking_effort = handle.desired_thinking_effort.clone();
     handle.config.claude_profile = handle.desired_claude_profile.clone();
+    handle.config.runtime_overrides_dirty = false;
     handle.state = QueryState::Pending(options);
 }
 
@@ -183,6 +191,11 @@ mod tests {
                 allow_bypass_permissions: false,
                 claude_profile: Some("bedrock".to_string()),
                 env: None,
+                env_unset: Vec::new(),
+                overrides: Default::default(),
+                runtime_overrides_dirty: false,
+                profile_revision: None,
+                profile_state_identity: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),
             manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),

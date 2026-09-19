@@ -41,7 +41,9 @@ pub(super) struct CodexSession {
     child_turn_ids: Arc<RwLock<HashMap<String, Option<String>>>>,
     model: Arc<RwLock<Option<String>>>,
     effort: Arc<RwLock<Option<String>>>,
-    fast_mode: Arc<AtomicBool>,
+    effective_model: Arc<RwLock<Option<String>>>,
+    effective_effort: Arc<RwLock<Option<String>>>,
+    fast_mode: Arc<RwLock<Option<bool>>>,
     permission_mode: Arc<RwLock<Option<RuntimePermissionMode>>>,
     access_mode: Arc<RwLock<Option<RuntimeAccessMode>>>,
     cwd: PathBuf,
@@ -59,7 +61,9 @@ pub(super) struct CodexSession {
 pub(super) struct CodexSessionOptions {
     pub(super) model: Option<String>,
     pub(super) effort: Option<String>,
-    pub(super) fast_mode: bool,
+    pub(super) effective_model: Option<String>,
+    pub(super) effective_effort: Option<String>,
+    pub(super) fast_mode: Option<bool>,
     pub(super) permission_mode: Option<RuntimePermissionMode>,
     pub(super) access_mode: Option<RuntimeAccessMode>,
     pub(super) cwd: PathBuf,
@@ -83,7 +87,9 @@ impl CodexSession {
             child_turn_ids: Arc::new(RwLock::new(HashMap::new())),
             model: Arc::new(RwLock::new(options.model)),
             effort: Arc::new(RwLock::new(options.effort)),
-            fast_mode: Arc::new(AtomicBool::new(options.fast_mode)),
+            effective_model: Arc::new(RwLock::new(options.effective_model)),
+            effective_effort: Arc::new(RwLock::new(options.effective_effort)),
+            fast_mode: Arc::new(RwLock::new(options.fast_mode)),
             permission_mode: Arc::new(RwLock::new(options.permission_mode)),
             access_mode: Arc::new(RwLock::new(options.access_mode)),
             cwd: options.cwd,
@@ -102,7 +108,7 @@ impl CodexSession {
     pub(super) async fn send_init_event(&self) {
         let event = init_event(
             &self.thread_id,
-            self.model.read().await.clone(),
+            self.effective_model.read().await.clone(),
             self.context_window,
             self.mcp_servers.read().await.clone(),
         );
@@ -121,7 +127,9 @@ impl CodexSession {
     ) -> Result<(), RuntimeError> {
         let model = self.model.read().await.clone();
         let effort = self.effort.read().await.clone();
-        let fast_mode = self.fast_mode.load(Ordering::Relaxed);
+        let collaboration_model = self.effective_model.read().await.clone();
+        let collaboration_effort = self.effective_effort.read().await.clone();
+        let fast_mode = *self.fast_mode.read().await;
         let permission_mode = self.permission_mode.read().await.clone();
         let access_mode = self.access_mode.read().await.clone();
         let mut params = turn_start_params(
@@ -133,6 +141,8 @@ impl CodexSession {
                 access_mode: access_mode.as_ref(),
                 model,
                 effort,
+                collaboration_model,
+                collaboration_effort,
                 fast_mode,
             },
         );
@@ -184,7 +194,7 @@ impl AgentRuntimeSession for CodexSession {
                 root_thread_id: self.thread_id.clone(),
                 child_turn_ids: Arc::clone(&self.child_turn_ids),
             },
-            self.model.clone(),
+            self.effective_model.clone(),
             Arc::clone(&self.closing),
         );
         spawn_local_forwarder(local_rx, tx);
@@ -301,6 +311,7 @@ impl AgentRuntimeSession for CodexSession {
 
     async fn set_model(&self, model: &str) -> Result<(), RuntimeError> {
         *self.model.write().await = Some(model.to_string());
+        *self.effective_model.write().await = Some(model.to_string());
         Ok(())
     }
 
@@ -319,11 +330,12 @@ impl AgentRuntimeSession for CodexSession {
 
     async fn set_thinking_effort(&self, effort: Option<String>) -> Result<(), RuntimeError> {
         *self.effort.write().await = effort;
+        *self.effective_effort.write().await = self.effort.read().await.clone();
         Ok(())
     }
 
     async fn set_fast_mode(&self, enabled: bool) -> Result<(), RuntimeError> {
-        self.fast_mode.store(enabled, Ordering::Relaxed);
+        *self.fast_mode.write().await = Some(enabled);
         Ok(())
     }
 

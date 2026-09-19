@@ -211,8 +211,17 @@ export const ProviderOrigin = {
   installed_local: "installed_local",
 } as const;
 
+export interface ProviderProfileCapability {
+  active_profile: string;
+  default_profile: string;
+  supports_config_inheritance: boolean;
+}
+
+export type ProviderCatalogResponseEntryAllOfProfileCapability = null | ProviderProfileCapability;
+
 export type ProviderCatalogResponseEntryAllOf = {
   origin: ProviderOrigin;
+  profile_capability?: ProviderCatalogResponseEntryAllOfProfileCapability;
 };
 
 /**
@@ -635,8 +644,90 @@ export interface ClaudeCodeSuccessResponse {
   ok: boolean;
 }
 
+export type CodexProfileDraftEnv = { [key: string]: string };
+
+export interface CodexProfileDraft {
+  /** @nullable */
+  config_path?: string | null;
+  env?: CodexProfileDraftEnv;
+  env_unset?: string[];
+  name: string;
+}
+
+export type CodexProfileUpdateEnvAnyOf = { [key: string]: string };
+
+/**
+ * @nullable
+ */
+export type CodexProfileUpdateEnv = CodexProfileUpdateEnvAnyOf | null;
+
+export interface CodexProfileUpdate {
+  /** @nullable */
+  config_path?: string | null;
+  /** @nullable */
+  env?: CodexProfileUpdateEnv;
+  /** @nullable */
+  env_unset?: string[] | null;
+  /** @nullable */
+  name?: string | null;
+  preserve_env_keys?: string[];
+}
+
+export interface CodexProfileView {
+  /** @nullable */
+  config_path?: string | null;
+  /** @nullable */
+  effective_home?: string | null;
+  env_keys: string[];
+  env_unset: string[];
+  id: string;
+  is_active: boolean;
+  name: string;
+  revision: string;
+}
+
+export interface CodexProfilesResponse {
+  /** @nullable */
+  active_profile_id?: string | null;
+  profiles: CodexProfileView[];
+}
+
+export interface CodexSetActiveProfileRequest {
+  /** @nullable */
+  profile_id?: string | null;
+}
+
+export interface CodexSuccessResponse {
+  ok: boolean;
+}
+
+export interface CodexValidationIssue {
+  code: string;
+  field: string;
+  message: string;
+}
+
+export interface CodexValidationResult {
+  /** @nullable */
+  codex_compatible?: boolean | null;
+  config_exists: boolean;
+  /** @nullable */
+  effective_home?: string | null;
+  errors: CodexValidationIssue[];
+  /** @nullable */
+  revision?: string | null;
+  valid: boolean;
+  /**
+   * `local_syntax` validates storage, env, path, and TOML only. Runtime
+   * resolution additionally calls Codex `config/read` in the launch cwd.
+   */
+  validation_scope: string;
+}
+
 export interface CommandsGetPayload {
   cwd: string;
+  /** @nullable */
+  profile?: string | null;
   /**
    * Runtime provider for the active session (e.g. `"claude_code"`,
    * `"opencode"`). Required so command discovery is scoped to the active
@@ -2899,7 +2990,18 @@ export interface PrStatusSnapshot {
   unresolved_threads?: number | null;
 }
 
+export interface RuntimeEffectiveConfig {
+  fast_mode: boolean;
+  /** @nullable */
+  model?: string | null;
+  /** @nullable */
+  thinking_effort?: string | null;
+}
+
+export type ProfileChangedPayloadEffective = null | RuntimeEffectiveConfig;
+
 export interface ProfileChangedPayload {
+  effective?: ProfileChangedPayloadEffective;
   /** @nullable */
   model?: string | null;
   profile: string;
@@ -3036,18 +3138,53 @@ export interface ProviderDescriptor {
   schema_version: number;
 }
 
+export interface ProviderProfileEntry {
+  /** @nullable */
+  description?: string | null;
+  id: string;
+  is_default: boolean;
+  label: string;
+}
+
+export interface ProviderProfilesResponse {
+  active_profile: string;
+  default_profile: string;
+  profiles: ProviderProfileEntry[];
+  provider: string;
+}
+
+/**
+ * User-authored overrides layered over a provider profile's native config.
+ * `None` means inherit; notably, `Some(false)` is an explicit fast-mode
+ * override and must never be collapsed into inheritance.
+ */
+export interface RuntimeConfigOverrides {
+  /** @nullable */
+  fast_mode?: boolean | null;
+  /** @nullable */
+  model?: string | null;
+  /** @nullable */
+  thinking_effort?: string | null;
+}
+
 export interface ProviderSetOkPayload {
   /** @nullable */
   access_mode?: string | null;
   /** @nullable */
   codex_permission_mode?: string | null;
+  fast_mode: boolean;
   /**
    * Always sent alongside the provider: the frontend stores the pair
    * atomically and cannot accept a half-update.
    */
   model: string;
+  /** @nullable */
+  profile?: string | null;
   provider: string;
+  runtime_overrides: RuntimeConfigOverrides;
   supports_prompt_receipts: boolean;
+  /** @nullable */
+  thinking_effort?: string | null;
 }
 
 export interface ProviderSetPayload {
@@ -3347,6 +3484,16 @@ export interface RollbackManagedProviderRequest {
  */
 export interface RunResponse {
   run_id: number;
+}
+
+export interface RuntimeOverridesChangedPayload {
+  effective: RuntimeEffectiveConfig;
+  runtime_overrides: RuntimeConfigOverrides;
+}
+
+export interface RuntimeOverridesSetPayload {
+  runtime_overrides: unknown;
+  session_id: string;
 }
 
 export type RuntimeSessionConfigChoicesOneOfLayout =
@@ -4325,6 +4472,7 @@ export const WsSessionAction = {
   fast_modesetok: "fast_mode.set.ok",
   modechanged: "mode.changed",
   profilechanged: "profile.changed",
+  runtime_overrideschanged: "runtime_overrides.changed",
   branchrewound: "branch.rewound",
   branchforked: "branch.forked",
   runtime_session_id: "runtime_session_id",
@@ -4339,9 +4487,24 @@ export type GetAgentCatalogParams = {
    */
   cwd?: string;
   /**
-   * Claude Code profile to scope the model probe to; defaults to the active profile
+   * Provider owning the scoped profile selection
+   */
+  provider?: string;
+  /**
+   * Provider profile to scope the model probe to; defaults to the provider's active profile
    */
   profile?: string;
+};
+
+export type GetAgentProfilesParams = {
+  /**
+   * Registered provider id
+   */
+  provider: string;
+  /**
+   * Workspace path for project-local profiles
+   */
+  cwd?: string;
 };
 
 export type GetAgentSelectionParams = {
@@ -4912,6 +5075,111 @@ export function useGetAgentCatalog<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAgentCatalogQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getAgentProfiles = (params: GetAgentProfilesParams, signal?: AbortSignal) => {
+  return customInstance<ProviderProfilesResponse>({
+    url: `/api/agent-profiles`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetAgentProfilesQueryKey = (params?: GetAgentProfilesParams) => {
+  return [`/api/agent-profiles`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAgentProfilesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAgentProfiles>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentProfilesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAgentProfiles>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAgentProfilesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAgentProfiles>>> = ({ signal }) =>
+    getAgentProfiles(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAgentProfiles>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAgentProfilesQueryResult = NonNullable<Awaited<ReturnType<typeof getAgentProfiles>>>;
+export type GetAgentProfilesQueryError = ErrorType<void>;
+
+export function useGetAgentProfiles<
+  TData = Awaited<ReturnType<typeof getAgentProfiles>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentProfilesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAgentProfiles>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAgentProfiles>>,
+          TError,
+          Awaited<ReturnType<typeof getAgentProfiles>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAgentProfiles<
+  TData = Awaited<ReturnType<typeof getAgentProfiles>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentProfilesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAgentProfiles>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAgentProfiles>>,
+          TError,
+          Awaited<ReturnType<typeof getAgentProfiles>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAgentProfiles<
+  TData = Awaited<ReturnType<typeof getAgentProfiles>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentProfilesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAgentProfiles>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetAgentProfiles<
+  TData = Awaited<ReturnType<typeof getAgentProfiles>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentProfilesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAgentProfiles>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAgentProfilesQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
@@ -6687,6 +6955,468 @@ export const useDeleteProfile = <TError = ErrorType<unknown>, TContext = unknown
   TContext
 > => {
   return useMutation(getDeleteProfileMutationOptions(options), queryClient);
+};
+
+export const codexListProfiles = (signal?: AbortSignal) => {
+  return customInstance<CodexProfilesResponse>({
+    url: `/api/codex/profiles`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getCodexListProfilesQueryKey = () => {
+  return [`/api/codex/profiles`] as const;
+};
+
+export const getCodexListProfilesQueryOptions = <
+  TData = Awaited<ReturnType<typeof codexListProfiles>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof codexListProfiles>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getCodexListProfilesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof codexListProfiles>>> = ({ signal }) =>
+    codexListProfiles(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof codexListProfiles>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type CodexListProfilesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof codexListProfiles>>
+>;
+export type CodexListProfilesQueryError = ErrorType<unknown>;
+
+export function useCodexListProfiles<
+  TData = Awaited<ReturnType<typeof codexListProfiles>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof codexListProfiles>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof codexListProfiles>>,
+          TError,
+          Awaited<ReturnType<typeof codexListProfiles>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCodexListProfiles<
+  TData = Awaited<ReturnType<typeof codexListProfiles>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof codexListProfiles>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof codexListProfiles>>,
+          TError,
+          Awaited<ReturnType<typeof codexListProfiles>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useCodexListProfiles<
+  TData = Awaited<ReturnType<typeof codexListProfiles>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof codexListProfiles>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useCodexListProfiles<
+  TData = Awaited<ReturnType<typeof codexListProfiles>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof codexListProfiles>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getCodexListProfilesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const codexCreateProfile = (codexProfileDraft: CodexProfileDraft, signal?: AbortSignal) => {
+  return customInstance<CodexProfileView>({
+    url: `/api/codex/profiles`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: codexProfileDraft,
+    signal,
+  });
+};
+
+export const getCodexCreateProfileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof codexCreateProfile>>,
+    TError,
+    CodexCreateProfileMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof codexCreateProfile>>,
+  TError,
+  CodexCreateProfileMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["codexCreateProfile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof codexCreateProfile>>,
+    CodexCreateProfileMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return codexCreateProfile(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CodexCreateProfileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof codexCreateProfile>>
+>;
+export type CodexCreateProfileMutationBody = CodexProfileDraft;
+export type CodexCreateProfileMutationError = ErrorType<unknown>;
+export type CodexCreateProfileMutationVariables = { data: CodexProfileDraft };
+
+export const useCodexCreateProfile = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof codexCreateProfile>>,
+      TError,
+      CodexCreateProfileMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof codexCreateProfile>>,
+  TError,
+  CodexCreateProfileMutationVariables,
+  TContext
+> => {
+  return useMutation(getCodexCreateProfileMutationOptions(options), queryClient);
+};
+
+export const codexSetActiveProfile = (
+  codexSetActiveProfileRequest: CodexSetActiveProfileRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<CodexProfilesResponse>({
+    url: `/api/codex/profiles/active`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: codexSetActiveProfileRequest,
+    signal,
+  });
+};
+
+export const getCodexSetActiveProfileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof codexSetActiveProfile>>,
+    TError,
+    CodexSetActiveProfileMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof codexSetActiveProfile>>,
+  TError,
+  CodexSetActiveProfileMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["codexSetActiveProfile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof codexSetActiveProfile>>,
+    CodexSetActiveProfileMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return codexSetActiveProfile(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CodexSetActiveProfileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof codexSetActiveProfile>>
+>;
+export type CodexSetActiveProfileMutationBody = CodexSetActiveProfileRequest;
+export type CodexSetActiveProfileMutationError = ErrorType<unknown>;
+export type CodexSetActiveProfileMutationVariables = { data: CodexSetActiveProfileRequest };
+
+export const useCodexSetActiveProfile = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof codexSetActiveProfile>>,
+      TError,
+      CodexSetActiveProfileMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof codexSetActiveProfile>>,
+  TError,
+  CodexSetActiveProfileMutationVariables,
+  TContext
+> => {
+  return useMutation(getCodexSetActiveProfileMutationOptions(options), queryClient);
+};
+
+export const codexValidateProfile = (
+  codexProfileDraft: CodexProfileDraft,
+  signal?: AbortSignal,
+) => {
+  return customInstance<CodexValidationResult>({
+    url: `/api/codex/profiles/validate`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: codexProfileDraft,
+    signal,
+  });
+};
+
+export const getCodexValidateProfileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof codexValidateProfile>>,
+    TError,
+    CodexValidateProfileMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof codexValidateProfile>>,
+  TError,
+  CodexValidateProfileMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["codexValidateProfile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof codexValidateProfile>>,
+    CodexValidateProfileMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return codexValidateProfile(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CodexValidateProfileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof codexValidateProfile>>
+>;
+export type CodexValidateProfileMutationBody = CodexProfileDraft;
+export type CodexValidateProfileMutationError = ErrorType<unknown>;
+export type CodexValidateProfileMutationVariables = { data: CodexProfileDraft };
+
+export const useCodexValidateProfile = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof codexValidateProfile>>,
+      TError,
+      CodexValidateProfileMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof codexValidateProfile>>,
+  TError,
+  CodexValidateProfileMutationVariables,
+  TContext
+> => {
+  return useMutation(getCodexValidateProfileMutationOptions(options), queryClient);
+};
+
+export const codexUpdateProfile = (
+  id: string,
+  codexProfileUpdate: CodexProfileUpdate,
+  signal?: AbortSignal,
+) => {
+  return customInstance<CodexProfileView>({
+    url: `/api/codex/profiles/${id}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: codexProfileUpdate,
+    signal,
+  });
+};
+
+export const getCodexUpdateProfileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof codexUpdateProfile>>,
+    TError,
+    CodexUpdateProfileMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof codexUpdateProfile>>,
+  TError,
+  CodexUpdateProfileMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["codexUpdateProfile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof codexUpdateProfile>>,
+    CodexUpdateProfileMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return codexUpdateProfile(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CodexUpdateProfileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof codexUpdateProfile>>
+>;
+export type CodexUpdateProfileMutationBody = CodexProfileUpdate;
+export type CodexUpdateProfileMutationError = ErrorType<unknown>;
+export type CodexUpdateProfileMutationVariables = { id: string; data: CodexProfileUpdate };
+
+export const useCodexUpdateProfile = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof codexUpdateProfile>>,
+      TError,
+      CodexUpdateProfileMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof codexUpdateProfile>>,
+  TError,
+  CodexUpdateProfileMutationVariables,
+  TContext
+> => {
+  return useMutation(getCodexUpdateProfileMutationOptions(options), queryClient);
+};
+
+export const codexDeleteProfile = (id: string, signal?: AbortSignal) => {
+  return customInstance<CodexSuccessResponse>({
+    url: `/api/codex/profiles/${id}`,
+    method: "DELETE",
+    signal,
+  });
+};
+
+export const getCodexDeleteProfileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof codexDeleteProfile>>,
+    TError,
+    CodexDeleteProfileMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof codexDeleteProfile>>,
+  TError,
+  CodexDeleteProfileMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["codexDeleteProfile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof codexDeleteProfile>>,
+    CodexDeleteProfileMutationVariables
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return codexDeleteProfile(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CodexDeleteProfileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof codexDeleteProfile>>
+>;
+
+export type CodexDeleteProfileMutationError = ErrorType<unknown>;
+export type CodexDeleteProfileMutationVariables = { id: string };
+
+export const useCodexDeleteProfile = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof codexDeleteProfile>>,
+      TError,
+      CodexDeleteProfileMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof codexDeleteProfile>>,
+  TError,
+  CodexDeleteProfileMutationVariables,
+  TContext
+> => {
+  return useMutation(getCodexDeleteProfileMutationOptions(options), queryClient);
 };
 
 export const listCustomActions = (params: ListCustomActionsParams, signal?: AbortSignal) => {
