@@ -76,6 +76,12 @@ export interface PersistedStatePayload {
   currentSelection?: RuntimeSelection;
   currentThinkingEffort?: string;
   currentProfile?: string;
+  runtimeOverrides?: {
+    model: string | null;
+    thinking_effort: string | null;
+    fast_mode: boolean | null;
+  };
+  runtimeOverridesPending?: boolean;
   currentModelId?: string;
   permissionMode?: PermissionMode;
   accessMode?: AccessMode;
@@ -132,6 +138,12 @@ export function createStreamHealth(): StreamHealth {
 // ---------------------------------------------------------------------------
 
 export interface SessionEntry extends SessionConfigState {
+  runtimeOverrides?: {
+    model: string | null;
+    thinking_effort: string | null;
+    fast_mode: boolean | null;
+  };
+  runtimeOverridesPending?: boolean;
   conn: WsConnection | null;
   isConnected: boolean;
   serverSessionId: string;

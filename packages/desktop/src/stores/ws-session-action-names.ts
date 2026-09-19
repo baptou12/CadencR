@@ -32,6 +32,7 @@ export const SESSION_ACTION = {
   effortSetOk: "effort.set.ok",
   fastModeSetOk: "fast_mode.set.ok",
   profileChanged: "profile.changed",
+  runtimeOverridesChanged: "runtime_overrides.changed",
   compactStarted: "compact.started",
   compactOk: "compact.ok",
   cleared: "cleared",

@@ -124,6 +124,9 @@ for line in sys.stdin:
     result = {}
     if method == "initialize":
         result = {"userAgent": "codex-cli/0.154.0"}
+    elif method == "config/read":
+        result = {"config": {"model": "qa-model", "model_reasoning_effort": "low",
+                             "service_tier": None}}
     elif method == "model/list":
         result = {"data": [{"id": "qa-model", "model": "qa-model", "displayName": "QA model",
                             "isDefault": True, "supportedReasoningEfforts": [],

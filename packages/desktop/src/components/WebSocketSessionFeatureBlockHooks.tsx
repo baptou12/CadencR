@@ -20,9 +20,9 @@ import { PROVIDER_IDS } from "@/lib/providers";
 import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 export { useSessionControls } from "@/components/WebSocketSessionControls";
 
-/** The Claude profile to attach to an outgoing prompt, or undefined for non-Claude providers. */
+/** The selected native profile to attach to an outgoing prompt when supported. */
 export function claudeProfileForPrompt(controls: SessionControls): string | undefined {
-  return controls.activeProviderId === PROVIDER_IDS.CLAUDE_CODE
+  return controls.supportsProfiles || controls.activeProviderId === PROVIDER_IDS.CLAUDE_CODE
     ? controls.claudeProfile.selectedClaudeProfile
     : undefined;
 }
@@ -230,10 +230,17 @@ export function useWsSessionEffects(args: WsSessionEffectsArgs): void {
   useEffect(() => {
     if (!hotkeysEnabled) return;
     if (serverSessionId && data.effectiveCwd) {
-      data.requestSlashCommands(sessionId, data.effectiveCwd, controls.activeProviderId);
+      data.requestSlashCommands(
+        sessionId,
+        data.effectiveCwd,
+        controls.activeProviderId,
+        controls.supportsProfiles ? controls.claudeProfile.selectedClaudeProfile : undefined,
+      );
     }
   }, [
     controls.activeProviderId,
+    controls.claudeProfile.selectedClaudeProfile,
+    controls.supportsProfiles,
     data.effectiveCwd,
     data.requestSlashCommands,
     hotkeysEnabled,

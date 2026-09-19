@@ -69,6 +69,7 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
     updates.currentSelection = { providerId: p.provider, modelId: p.model ?? "" };
   }
   if (p.profile) updates.currentProfile = p.profile;
+  if (p.runtime_overrides) updates.runtimeOverrides = p.runtime_overrides;
   const accessMode = p.access_mode ?? p.codex_permission_mode;
   if (accessMode) {
     updates.accessMode = parseAccessMode(accessMode);

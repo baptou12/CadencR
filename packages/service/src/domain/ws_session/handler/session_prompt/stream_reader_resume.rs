@@ -68,6 +68,11 @@ pub(super) async fn transition_active_to_pending_on_stream_end(
         resume_session_id,
         allow_bypass_permissions: handle.config.allow_bypass_permissions,
         env: handle.config.env.clone(),
+        env_unset: handle.config.env_unset.clone(),
+        profile: handle.config.claude_profile.clone(),
+        overrides: handle.config.overrides.clone(),
+        profile_revision: handle.config.profile_revision.clone(),
+        profile_state_identity: handle.config.profile_state_identity.clone(),
         ..RuntimeSpawnConfig::default()
     };
 

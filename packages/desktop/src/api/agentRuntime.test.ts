@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTestQueryClient } from "@/test-utils";
 import {
   useAgentCatalog,
+  useAgentProfiles,
   useSetActiveClaudeCodeProfile,
   useUpsertClaudeCodeProfile,
   useDeleteClaudeCodeProfile,
@@ -12,6 +13,7 @@ import {
   useDeleteClaudeCodeCustomModel,
 } from "./agentRuntime";
 import { getGetAgentSelectionQueryKey } from "./generated";
+import { PROVIDER_IDS } from "@/lib/providers";
 
 const mockCustomInstance = vi.fn();
 vi.mock("./client", () => ({
@@ -24,7 +26,18 @@ function renderWithSpiedClient<T>(useHook: () => T) {
   const wrapper = ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client: queryClient }, children);
   const { result } = renderHook(useHook, { wrapper });
-  return { result, invalidateSpy };
+  return { result, invalidateSpy, queryClient };
+}
+
+function renderWithClient<T>(useHook: () => T) {
+  const queryClient = createTestQueryClient();
+  queryClient.setDefaultOptions({
+    queries: { retry: false, gcTime: Number.POSITIVE_INFINITY },
+    mutations: { retry: false },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: queryClient }, children);
+  return { ...renderHook(useHook, { wrapper }), queryClient };
 }
 
 describe("Claude Code profile mutations", () => {
@@ -42,9 +55,12 @@ describe("Claude Code profile mutations", () => {
       await result.current.mutateAsync({ name: "bedrock" });
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["claude-code", "profiles"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["agent-profiles", PROVIDER_IDS.CLAUDE_CODE],
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["agent-catalog"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: getGetAgentSelectionQueryKey() });
-    expect(invalidateSpy).toHaveBeenCalledTimes(3);
+    expect(invalidateSpy).toHaveBeenCalledTimes(4);
   });
 
   it("invalidates both profiles and the agent catalog when upserting a profile", async () => {
@@ -54,9 +70,12 @@ describe("Claude Code profile mutations", () => {
       await result.current.mutateAsync({ name: "bedrock", env: { CLAUDE_CODE_USE_BEDROCK: "1" } });
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["claude-code", "profiles"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["agent-profiles", PROVIDER_IDS.CLAUDE_CODE],
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["agent-catalog"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: getGetAgentSelectionQueryKey() });
-    expect(invalidateSpy).toHaveBeenCalledTimes(3);
+    expect(invalidateSpy).toHaveBeenCalledTimes(4);
   });
 
   it("invalidates both profiles and the agent catalog when deleting a profile", async () => {
@@ -65,9 +84,24 @@ describe("Claude Code profile mutations", () => {
       await result.current.mutateAsync({ name: "bedrock" });
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["claude-code", "profiles"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["agent-profiles", PROVIDER_IDS.CLAUDE_CODE],
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["agent-catalog"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: getGetAgentSelectionQueryKey() });
-    expect(invalidateSpy).toHaveBeenCalledTimes(3);
+    expect(invalidateSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it("marks the generic Claude profile cache invalid in a real QueryClient", async () => {
+    const { result, queryClient } = renderWithClient(useSetActiveClaudeCodeProfile);
+    const key = ["agent-profiles", PROVIDER_IDS.CLAUDE_CODE, "/work"] as const;
+    queryClient.setQueryData(key, { profiles: [] });
+
+    await act(async () => {
+      await result.current.mutateAsync({ name: "bedrock" });
+    });
+
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
   });
 });
 
@@ -109,13 +143,13 @@ describe("useAgentCatalog profile scoping", () => {
   // request, so the picker shows the chosen profile's models, not stale ones.
   it("sends the selected profile and keys the cache by it", async () => {
     const { result } = renderWithSpiedClient(() =>
-      useAgentCatalog({ cwd: "/work", profile: "bedrock" }),
+      useAgentCatalog({ cwd: "/work", provider: "claude_code", profile: "bedrock" }),
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockCustomInstance).toHaveBeenCalledWith({
       method: "GET",
       url: "/api/agent-catalog",
-      params: { cwd: "/work", profile: "bedrock" },
+      params: { cwd: "/work", provider: "claude_code", profile: "bedrock" },
     });
   });
 
@@ -126,6 +160,28 @@ describe("useAgentCatalog profile scoping", () => {
       method: "GET",
       url: "/api/agent-catalog",
       params: { cwd: "/work" },
+    });
+  });
+});
+
+describe("useAgentProfiles", () => {
+  beforeEach(() => {
+    mockCustomInstance.mockReset();
+    mockCustomInstance.mockResolvedValue({
+      provider: "codex",
+      active_profile: "work",
+      default_profile: "work",
+      profiles: [],
+    });
+  });
+
+  it("scopes profile discovery by provider and cwd", async () => {
+    const { result } = renderWithSpiedClient(() => useAgentProfiles("codex", "/work"));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockCustomInstance).toHaveBeenCalledWith({
+      method: "GET",
+      url: "/api/agent-profiles",
+      params: { provider: "codex", cwd: "/work" },
     });
   });
 });

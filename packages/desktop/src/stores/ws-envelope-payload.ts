@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { CommandsListPayload } from "@/lib/ws-envelope";
 import type { McpServerStatus } from "./ws-session-types";
 import type {
@@ -227,11 +228,28 @@ export function parseInitializedPayload(payload: unknown): {
   output_tokens?: number;
   context_window?: number;
   supports_prompt_receipts?: boolean;
+  runtime_overrides?: {
+    model: string | null;
+    thinking_effort: string | null;
+    fast_mode: boolean | null;
+  };
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
   const explicitSessionDbId = optionalNumber(record, "session_db_id");
   const sessionId = optionalString(record, "session_id");
+  const overrides = asRecord(record.runtime_overrides);
+  const runtimeOverrides =
+    overrides &&
+    (overrides.model === null || typeof overrides.model === "string") &&
+    (overrides.thinking_effort === null || typeof overrides.thinking_effort === "string") &&
+    (overrides.fast_mode === null || typeof overrides.fast_mode === "boolean")
+      ? {
+          model: overrides.model,
+          thinking_effort: overrides.thinking_effort,
+          fast_mode: overrides.fast_mode,
+        }
+      : undefined;
   return {
     session_id: sessionId,
     sessionDbId: explicitSessionDbId ?? sessionDbIdFromSessionId(sessionId),
@@ -246,6 +264,7 @@ export function parseInitializedPayload(payload: unknown): {
     output_tokens: optionalNumber(record, "output_tokens"),
     context_window: optionalNumber(record, "context_window"),
     supports_prompt_receipts: optionalBoolean(record, "supports_prompt_receipts"),
+    runtime_overrides: runtimeOverrides,
   };
 }
 
@@ -273,22 +292,29 @@ export function parseModelPayload(payload: unknown): {
   };
 }
 
-export function parseProviderPayload(payload: unknown): {
-  provider?: string;
-  model?: string;
-  supports_prompt_receipts?: boolean;
-  codex_permission_mode?: string;
-  access_mode?: string;
-} | null {
-  const record = asRecord(payload);
-  if (!record) return null;
-  return {
-    provider: optionalString(record, "provider"),
-    model: optionalString(record, "model"),
-    supports_prompt_receipts: optionalBoolean(record, "supports_prompt_receipts"),
-    codex_permission_mode: optionalString(record, "codex_permission_mode"),
-    access_mode: optionalString(record, "access_mode"),
-  };
+const providerPayloadSchema = z.object({
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  supports_prompt_receipts: z.boolean().optional(),
+  codex_permission_mode: z.string().optional(),
+  access_mode: z.string().optional(),
+  profile: z.string().nullable().optional(),
+  thinking_effort: z.string().nullable().optional(),
+  fast_mode: z.boolean().optional(),
+  runtime_overrides: z
+    .object({
+      model: z.string().nullable(),
+      thinking_effort: z.string().nullable(),
+      fast_mode: z.boolean().nullable(),
+    })
+    .optional(),
+});
+
+export function parseProviderPayload(
+  payload: unknown,
+): z.infer<typeof providerPayloadSchema> | null {
+  const result = providerPayloadSchema.safeParse(payload);
+  return result.success ? result.data : null;
 }
 
 export function parseModePayload(payload: unknown): { mode?: string } | null {
@@ -297,10 +323,25 @@ export function parseModePayload(payload: unknown): { mode?: string } | null {
   return { mode: optionalString(record, "mode") };
 }
 
-export function parseProfilePayload(payload: unknown): { profile?: string } | null {
+export function parseProfilePayload(payload: unknown): {
+  profile?: string;
+  effective?: { model: string | null; thinking_effort: string | null; fast_mode: boolean };
+} | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { profile: optionalString(record, "profile") };
+  const effective = asRecord(record.effective);
+  const parsedEffective =
+    effective &&
+    (effective.model === null || typeof effective.model === "string") &&
+    (effective.thinking_effort === null || typeof effective.thinking_effort === "string") &&
+    typeof effective.fast_mode === "boolean"
+      ? {
+          model: effective.model,
+          thinking_effort: effective.thinking_effort,
+          fast_mode: effective.fast_mode,
+        }
+      : undefined;
+  return { profile: optionalString(record, "profile"), effective: parsedEffective };
 }
 
 export function parseEffortPayload(payload: unknown): { thinking_effort?: string } | null {

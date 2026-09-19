@@ -163,8 +163,31 @@ pub(super) async fn resolve_spawn_runtime(
                 .map_err(|error| AppError::BadRequest(error.to_string()))?
         }
     };
-    let profile = runtime_adapter(&effective_provider)
-        .and_then(|adapter| adapter.profile_name_for_new_session());
+    let inherited_profile = if body.profile.is_none() {
+        let source_runtime: Option<(Option<String>, Option<String>)> =
+            sqlx::query_as("SELECT runtime_provider, profile FROM agent_sessions WHERE id = ?")
+                .bind(source.session_id)
+                .fetch_optional(&state.read_pool)
+                .await?;
+        source_runtime
+            .filter(|(provider, _)| provider.as_deref() == Some(effective_provider.as_str()))
+            .and_then(|(_, profile)| profile)
+    } else {
+        None
+    };
+    let requested_profile = trimmed_optional(body.profile.as_deref())
+        .or_else(|| trimmed_optional(inherited_profile.as_deref()));
+    let adapter = runtime_adapter(&effective_provider).ok_or_else(|| {
+        AppError::BadRequest(format!("provider '{effective_provider}' is unavailable"))
+    })?;
+    let profile = adapter
+        .resolve_profile(
+            requested_profile.as_deref(),
+            std::path::Path::new(&target_project.path),
+        )
+        .await
+        .map_err(|error| AppError::BadRequest(error.to_string()))?
+        .map(|resolved| resolved.identity);
     let (model, model_entry) = match trimmed_optional(body.model.as_deref()) {
         Some(model) => {
             let (model, catalog_entry) = resolve_model_or_error_for_profile(

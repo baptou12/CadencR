@@ -1,5 +1,18 @@
 #[bon::bon]
 impl WsSessionPersistence {
+    pub async fn update_runtime_overrides_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        overrides: &crate::domain::agents::adapter::RuntimeConfigOverrides,
+    ) -> Result<(), sqlx::Error> {
+        let json = serde_json::to_string(overrides).expect("runtime overrides serialize");
+        sqlx::query("UPDATE agent_sessions SET runtime_overrides = ? WHERE id = ?")
+            .bind(json)
+            .bind(session_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
     pub async fn mark_paused_static(pool: &SqlitePool, session_id: i64) {
         let now = chrono::Utc::now().to_rfc3339();
         if let Err(e) =

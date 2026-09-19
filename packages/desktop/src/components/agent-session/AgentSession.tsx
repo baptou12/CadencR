@@ -284,6 +284,7 @@ export const AgentSession = memo(
         claudeProfilesLoading={s.profile.claudeProfilesLoading}
         claudeProfilesError={s.profile.claudeProfilesError}
         onClaudeProfileChange={s.profile.handleClaudeProfileChange}
+        activeClaudeProfile={s.profile.activeClaudeProfile}
       />
     );
 

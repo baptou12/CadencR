@@ -5,6 +5,7 @@ pub mod openapi;
 
 use crate::app_state::{AppState, BrowserBridgeConfig};
 use crate::domain::agents::claude_code::routes::claude_code_router;
+use crate::domain::agents::codex::routes::codex_router;
 use crate::domain::agents::discovery::routes::discovery_router;
 use crate::domain::agents::providers::development::routes::provider_development_router;
 use crate::domain::agents::providers::installed::managed::routes::{
@@ -53,7 +54,8 @@ use std::path::{Path, PathBuf};
     path = "/api/agent-catalog",
     params(
         ("cwd" = Option<String>, Query, description = "Workspace path used to discover project-local provider modes"),
-        ("profile" = Option<String>, Query, description = "Claude Code profile to scope the model probe to; defaults to the active profile")
+        ("provider" = Option<String>, Query, description = "Provider owning the scoped profile selection"),
+        ("profile" = Option<String>, Query, description = "Provider profile to scope the model probe to; defaults to the provider's active profile")
     ),
     responses((status = 200, body = AgentCatalogResponse))
 )]
@@ -61,9 +63,15 @@ pub async fn get_agent_catalog(
     State(state): State<AppState>,
     Query(query): Query<AgentCatalogQuery>,
 ) -> Json<AgentCatalogResponse> {
-    let catalog = crate::domain::agents::providers::provider_catalog_live_for_cwd(
+    let catalog = crate::domain::agents::providers::provider_catalog_live_for_profile(
         &state.read_pool,
         query.cwd.as_deref(),
+        query.provider.as_deref().or_else(|| {
+            query
+                .profile
+                .as_ref()
+                .map(|_| crate::domain::agents::claude_code::PROVIDER_ID)
+        }),
         query.profile.as_deref(),
     )
     .await;
@@ -73,10 +81,47 @@ pub async fn get_agent_catalog(
 #[derive(Debug, Deserialize)]
 pub struct AgentCatalogQuery {
     cwd: Option<PathBuf>,
-    /// Claude Code profile name. Scopes the model probe to that profile's env
-    /// (Bedrock / Vertex expose different model ids than Anthropic) instead of
-    /// the globally active profile. Providers without env profiles ignore it.
+    /// Provider owning `profile`; prevents one provider's selection from being
+    /// interpreted by every profile-aware adapter.
+    provider: Option<String>,
     profile: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AgentProfilesQuery {
+    provider: String,
+    cwd: Option<PathBuf>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/agent-profiles",
+    params(
+        ("provider" = String, Query, description = "Registered provider id"),
+        ("cwd" = Option<String>, Query, description = "Workspace path for project-local profiles")
+    ),
+    responses(
+        (status = 200, body = crate::domain::agents::runtime::ProviderProfilesResponse),
+        (status = 404, description = "Provider or profile capability not found")
+    )
+)]
+pub async fn get_agent_profiles(
+    State(_state): State<AppState>,
+    Query(query): Query<AgentProfilesQuery>,
+) -> Result<Json<crate::domain::agents::runtime::ProviderProfilesResponse>, AppError> {
+    let adapter = crate::domain::agents::providers::runtime_adapter(&query.provider)
+        .ok_or_else(|| AppError::NotFound(format!("provider '{}' not found", query.provider)))?;
+    let catalog = adapter
+        .profile_catalog(query.cwd.as_deref())
+        .await
+        .map_err(|error| AppError::BadRequest(error.to_string()))?
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "provider '{}' does not expose profiles",
+                query.provider
+            ))
+        })?;
+    Ok(Json(catalog))
 }
 
 #[derive(Debug, Deserialize)]
@@ -209,6 +254,8 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(crate::domain::push::routes::vapid_key_router())
         .route("/ws", get(ws_handler))
         .route("/api/agent-catalog", get(get_agent_catalog))
+        .route("/api/agent-profiles", get(get_agent_profiles))
+        .merge(codex_router())
         .route("/api/agent-runtime/selection", get(get_agent_selection))
 }
 

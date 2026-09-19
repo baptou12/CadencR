@@ -18,7 +18,7 @@ const INSERT_MESSAGE_SQL: &str =
     "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
 /// A row from the `agent_sessions` table with the fields needed by the WS handler.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 #[allow(dead_code)]
 pub struct SessionRow {
     pub id: i64,
@@ -37,6 +37,7 @@ pub struct SessionRow {
     pub context_window: Option<i64>,
     pub thinking_effort: Option<String>,
     pub fast_mode: bool,
+    pub runtime_overrides: Option<String>,
 }
 
 impl SessionRow {

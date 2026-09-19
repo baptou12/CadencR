@@ -14,7 +14,6 @@ import type { MetaBarProps } from "./MetaBar";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 import { AccessModePopover } from "./AccessModePopover";
 import { getDisplayMode } from "./meta-bar-codex-modes";
-import { ClaudeProfileCombobox } from "./ClaudeProfileCombobox";
 
 type MetaBarDerivedStateInput = Pick<
   MetaBarProps,
@@ -118,6 +117,7 @@ interface TrailingGroupProps {
   claudeProfilesLoading: boolean;
   claudeProfilesError: boolean;
   onClaudeProfileChange?: (profile: string) => void;
+  activeClaudeProfile?: string;
   accessMode?: AccessMode;
   accessModeDefault?: AccessMode;
   isAccessModePending: boolean;
@@ -136,18 +136,6 @@ export function MetaBarTrailingGroup(props: TrailingGroupProps) {
   const config = props.sessionConfigControls;
   return (
     <div className="ml-auto flex items-center gap-1.5">
-      {props.hasProfileSelector && props.claudeProfile && props.onClaudeProfileChange && (
-        <ClaudeProfileCombobox
-          value={props.claudeProfile}
-          profiles={props.claudeProfiles}
-          isLoading={props.claudeProfilesLoading}
-          isError={props.claudeProfilesError}
-          onChange={props.onClaudeProfileChange}
-          variant="compact"
-          label="Profile"
-        />
-      )}
-
       {/* Provider access chip — separate from collaboration mode; no keyboard shortcut. */}
       {props.accessMode && props.onAccessModeChange && props.providerAccessModes.length > 0 && (
         <AccessModePopover
@@ -166,23 +154,26 @@ export function MetaBarTrailingGroup(props: TrailingGroupProps) {
         )}
 
       {/* Session info */}
-      {!props.secondaryBelow && props.runtimeSessionId && props.onPause && (
-        <SessionInfoChip
-          runtimeProvider={props.displayProviderId}
-          runtimeSessionId={props.runtimeSessionId}
-          featureId={props.featureId}
-          wsSessionId={props.wsSessionId}
-          projectPath={props.projectPath}
-          isRunning={props.isRunning}
-          onPause={props.onPause}
-          chipClass={META_BAR_CHIP}
-          claudeProfile={props.claudeProfile}
-          claudeProfiles={props.claudeProfiles}
-          claudeProfilesLoading={props.claudeProfilesLoading}
-          claudeProfilesError={props.claudeProfilesError}
-          onClaudeProfileChange={props.onClaudeProfileChange}
-        />
-      )}
+      {!props.secondaryBelow &&
+        (props.hasProfileSelector || (props.runtimeSessionId && props.onPause)) && (
+          <SessionInfoChip
+            runtimeProvider={props.displayProviderId}
+            runtimeSessionId={props.runtimeSessionId}
+            featureId={props.featureId}
+            wsSessionId={props.wsSessionId}
+            projectPath={props.projectPath}
+            isRunning={props.isRunning}
+            onPause={props.onPause}
+            chipClass={META_BAR_CHIP}
+            claudeProfile={props.claudeProfile}
+            claudeProfiles={props.claudeProfiles}
+            claudeProfilesLoading={props.claudeProfilesLoading}
+            claudeProfilesError={props.claudeProfilesError}
+            onClaudeProfileChange={props.onClaudeProfileChange}
+            activeClaudeProfile={props.activeClaudeProfile}
+            showProfileSelector={props.hasProfileSelector}
+          />
+        )}
     </div>
   );
 }

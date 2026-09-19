@@ -14,6 +14,7 @@ pub mod permission_modes;
 pub mod providers;
 pub mod response_style;
 pub mod runtime;
+pub(crate) mod runtime_overrides;
 pub mod selection;
 
 pub use discovery::apply_binary_overrides_from_settings;

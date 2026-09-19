@@ -125,6 +125,32 @@ pub struct ProviderCatalogResponseEntry {
     #[serde(flatten)]
     pub provider: ProviderCatalogEntry,
     pub origin: ProviderOrigin,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_capability: Option<ProviderProfileCapability>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderProfileCapability {
+    pub active_profile: String,
+    pub default_profile: String,
+    pub supports_config_inheritance: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderProfileEntry {
+    pub id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderProfilesResponse {
+    pub provider: String,
+    pub active_profile: String,
+    pub default_profile: String,
+    pub profiles: Vec<ProviderProfileEntry>,
 }
 
 impl std::ops::Deref for ProviderCatalogResponseEntry {

@@ -37,11 +37,8 @@ import {
   EMPTY_PROVIDER_MODES,
   usePermissionModeToggle,
 } from "@/components/WebSocketSessionPermissionMode";
-import { PROVIDER_IDS } from "@/lib/providers";
-import {
-  useClaudeProfileSelection,
-  type ClaudeProfileSelection,
-} from "@/components/agent-session/useClaudeProfileSelection";
+import type { ClaudeProfileSelection } from "@/components/agent-session/useClaudeProfileSelection";
+import { useAgentProfileSelection } from "@/components/agent-session/useAgentProfileSelection";
 
 type WsSession = ReturnType<typeof useWebSocketSession>;
 const EMPTY_PROVIDER_ACCESS_MODES: readonly RuntimeProviderAccessModeOption[] = [];
@@ -79,6 +76,8 @@ export interface SessionControls
   initializedRef: RefObject<string | null>;
   handlePermissionModeToggle: () => void;
   claudeProfile: ClaudeProfileSelection;
+  supportsProfiles: boolean;
+  supportsConfigInheritance: boolean;
   initialCwd: string;
 }
 
@@ -125,8 +124,10 @@ function useRuntimeSelection(
   resolvedProviderId: string,
 ): RuntimeSelectionControls {
   const { resolveModel, resolveModelThinkingEffort } = useResolvedModelContext();
+  const activeProviderId = ws.currentSelection?.providerId ?? resolvedProviderId;
   const agentCatalog = useAgentCatalog({
     cwd: effectiveCwd,
+    provider: catalogClaudeProfile ? activeProviderId : undefined,
     profile: catalogClaudeProfile,
     enabled: agentCatalogEnabled,
     staleTime: 30_000,
@@ -136,7 +137,6 @@ function useRuntimeSelection(
   // `currentSelection` is the backend-confirmed pair; before it arrives, fall
   // back to the client-resolved provider so pre-connection UI (Claude profile
   // selector, catalog probe) isn't blocked on a round trip.
-  const activeProviderId = ws.currentSelection?.providerId ?? resolvedProviderId;
   const activeProvider = agentCatalog.data?.providers.find(
     (provider) => provider.id === activeProviderId,
   );
@@ -222,10 +222,20 @@ export function useSessionControls(
   // resolvedProviderId is computed once here and threaded into the runtime hook.
   const { resolveProvider } = useResolvedModelContext();
   const resolvedProviderId = resolveProvider("session");
-  const isClaudeProvider =
-    (ws.currentSelection?.providerId ?? resolvedProviderId) === PROVIDER_IDS.CLAUDE_CODE;
-  const claudeProfile = useClaudeProfileSelection({
-    isClaudeProvider,
+  const activeProviderId = ws.currentSelection?.providerId ?? resolvedProviderId;
+  const baseCatalog = useAgentCatalog({ cwd: effectiveCwd, enabled: options?.agentCatalogEnabled });
+  const supportsProfiles = Boolean(
+    baseCatalog.data?.providers.find((provider) => provider.id === activeProviderId)
+      ?.profile_capability,
+  );
+  const supportsConfigInheritance = Boolean(
+    baseCatalog.data?.providers.find((provider) => provider.id === activeProviderId)
+      ?.profile_capability?.supports_config_inheritance,
+  );
+  const claudeProfile = useAgentProfileSelection({
+    providerId: activeProviderId,
+    supportsProfiles,
+    cwd: effectiveCwd,
     wsSessionId: sessionId,
     sessionProfile: ws.currentProfile,
     onSessionProfileChange: ws.setProfile,
@@ -234,7 +244,7 @@ export function useSessionControls(
     ws,
     effectiveCwd,
     options?.agentCatalogEnabled ?? true,
-    isClaudeProvider ? claudeProfile.catalogProfile : undefined,
+    supportsProfiles ? claudeProfile.catalogProfile : undefined,
     resolvedProviderId,
   );
   useEffect(() => {
@@ -270,6 +280,8 @@ export function useSessionControls(
       ...runtime,
       handlePermissionModeToggle,
       claudeProfile,
+      supportsProfiles,
+      supportsConfigInheritance,
       ...codex,
       initialCwd: effectiveCwd,
     }),
@@ -281,6 +293,8 @@ export function useSessionControls(
       initializedRef,
       runtime,
       selectedBranch,
+      supportsProfiles,
+      supportsConfigInheritance,
       worktree,
       ws,
     ],

@@ -5,6 +5,7 @@ import { CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY } from "@/shared/permission-mode-
 import { BinaryDiscoverySection } from "./BinaryDiscoverySection";
 import { ProviderAccessModeSetting } from "./ProviderAccessModeSetting";
 import { CustomModelsSection } from "./CustomModelsSection";
+import { CodexProfilesSection } from "./CodexProfilesSection";
 import { DangerousModeToggle } from "./DangerousModeToggle";
 import { ProfilesSection } from "./ProfilesSection";
 import { ProviderDevelopmentCard } from "./ProviderDevelopmentCard";
@@ -131,6 +132,9 @@ function CodexProviderPanel(): React.JSX.Element {
             </>
           }
         />
+      </SettingsSubsection>
+      <SettingsSubsection>
+        <CodexProfilesSection />
       </SettingsSubsection>
       <SettingsSubsection>
         <ProviderAccessModeSetting providerId={PROVIDER_IDS.CODEX_CLI} />

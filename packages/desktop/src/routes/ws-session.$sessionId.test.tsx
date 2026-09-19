@@ -256,6 +256,15 @@ vi.mock("@/api/agentRuntime", () => ({
     isLoading: false,
     isError: false,
   })),
+  useAgentProfiles: vi.fn(() => ({
+    data: {
+      active_profile: "default",
+      default_profile: "default",
+      profiles: [{ id: "bedrock", label: "Bedrock", is_default: false }],
+    },
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 vi.mock("@/api/generated", () => ({
