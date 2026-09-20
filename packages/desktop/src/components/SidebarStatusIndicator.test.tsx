@@ -18,7 +18,7 @@ vi.mock("@/hooks/useFeaturePendingGate", () => ({
   useFeaturePendingGate: () => ({ isLoading: false, isSubmitting: false }),
 }));
 
-describe("sidebar pending status", () => {
+describe("sidebar status", () => {
   beforeEach(() => {
     gate.setOpen.mockClear();
     gate.usePopoverOpen.mockReset().mockReturnValue({
@@ -27,6 +27,25 @@ describe("sidebar pending status", () => {
       setHovered: vi.fn(),
       hoveredFeatureId: null,
     });
+  });
+
+  it("prioritizes ongoing work over unread completion, then clears completion once read", () => {
+    const props = {
+      featureId: 42,
+      isActive: false,
+      onOpenConversation: vi.fn(),
+    };
+    const { rerender } = render(<SidebarStatusIndicator {...props} liveStatus="agent" isUnread />);
+    expect(screen.getByRole("img", { name: "Agent working" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Unread agent messages" })).not.toBeInTheDocument();
+
+    rerender(<SidebarStatusIndicator {...props} liveStatus="idle" isUnread />);
+    expect(screen.getByRole("img", { name: "Unread agent messages" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Agent working" })).not.toBeInTheDocument();
+
+    rerender(<SidebarStatusIndicator {...props} liveStatus="idle" isUnread={false} />);
+    expect(screen.getByRole("img", { name: "Agent idle" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Unread agent messages" })).not.toBeInTheDocument();
   });
 
   it.each([

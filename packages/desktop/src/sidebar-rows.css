@@ -1,32 +1,25 @@
-/* Status and branding have separate jobs. Preserve the historical sidebar
- * palette: working/unread blue, permission amber, question primary. */
-.sidebar-status-dot {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow:
-    0 0 0 2px color-mix(in oklab, currentColor 15%, transparent),
-    0 0 8px color-mix(in oklab, currentColor 45%, transparent);
-}
-
-.sidebar-status-working,
-.sidebar-status-unread {
-  color: var(--color-blue-500);
-}
-
+/* Shape and color distinguish activity from a finished, unread response,
+ * even with animations disabled. Provider branding stays independent. */
 .sidebar-status-working {
-  animation: sidebar-status-breathe 2.4s ease-in-out infinite;
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  color: var(--color-blue-500);
+  border: 2px solid color-mix(in oklab, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-right-color: currentColor;
+  animation: sidebar-status-spin 1s linear infinite;
 }
 
-@keyframes sidebar-status-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
+.sidebar-status-unread {
+  display: inline-flex;
+  color: var(--acc-green);
+}
+
+@keyframes sidebar-status-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

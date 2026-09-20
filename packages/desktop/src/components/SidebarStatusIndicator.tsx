@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { Check } from "lucide-react";
 import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
 import type { LiveAgentStatus } from "@/stores/session-status-store";
 
@@ -31,14 +32,18 @@ export const SidebarStatusIndicator = memo(function SidebarStatusIndicator({
         <span
           role="img"
           aria-label="Agent working"
-          className="sidebar-status-dot sidebar-status-working"
+          title="Agent working"
+          className="sidebar-status-working"
         />
       ) : isUnread ? (
         <span
           role="img"
           aria-label="Unread agent messages"
-          className="sidebar-status-dot sidebar-status-unread"
-        />
+          title="Agent finished · Unread messages"
+          className="sidebar-status-unread"
+        >
+          <Check aria-hidden="true" className="size-3.5" strokeWidth={3} />
+        </span>
       ) : (
         <span
           role="img"
