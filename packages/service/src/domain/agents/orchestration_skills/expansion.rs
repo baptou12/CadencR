@@ -38,19 +38,24 @@ const EMBEDDED_ARGUMENTS: &str = "(none — use the user's message above as the 
 /// message like "review this diff" can never be hijacked.
 pub fn expand_prompt(text: &str) -> Cow<'_, str> {
     let head = head_invocation(text);
-    let scanned = head.map_or(text, |(_, rest)| rest);
-    let embedded = embedded_skills(scanned, head.map(|(skill, _)| skill));
-
-    match (head, embedded.is_empty()) {
-        (None, true) => Cow::Borrowed(text),
-        (Some((skill, args)), true) => Cow::Owned(skill.expand(args)),
-        (None, false) => Cow::Owned(format!("{text}\n\n{}", embedded_section(&embedded, None))),
-        (Some((skill, args)), false) => Cow::Owned(format!(
-            "{}\n\n{}",
-            skill.expand(args),
-            embedded_section(&embedded, Some(skill))
-        )),
+    let embedded = embedded_skills(
+        head.map_or(text, |(_, rest)| rest),
+        head.map(|(skill, _)| skill),
+    );
+    if head.is_none() && embedded.is_empty() {
+        return Cow::Borrowed(text);
     }
+    let expanded = match head {
+        Some((skill, args)) => skill.expand(args),
+        None => text.to_string(),
+    };
+    if embedded.is_empty() {
+        return Cow::Owned(expanded);
+    }
+    Cow::Owned(format!(
+        "{expanded}\n\n{}",
+        embedded_section(&embedded, head.map(|(skill, _)| skill))
+    ))
 }
 
 /// The skill invoked by the first token, with the text that follows it.
@@ -66,25 +71,18 @@ fn head_invocation(text: &str) -> Option<(&'static OrchestrationSkill, &str)> {
     Some((find_skill(name)?, rest))
 }
 
-/// Known skills referenced inside `text`, in order of appearance, each listed
-/// once and never repeating the skill the leading command already expanded.
+/// Known skills referenced inside `text`, in order of first appearance, never
+/// repeating the skill the leading command already expanded. Unknown names are
+/// dropped here so they stay plain text.
 fn embedded_skills(
     text: &str,
     head: Option<&OrchestrationSkill>,
 ) -> Vec<&'static OrchestrationSkill> {
-    let mut skills: Vec<&'static OrchestrationSkill> = Vec::new();
-    for name in scan_references(text) {
-        if head.is_some_and(|skill| skill.name == name) {
-            continue;
-        }
-        if skills.iter().any(|skill| skill.name == name) {
-            continue;
-        }
-        if let Some(skill) = find_skill(name) {
-            skills.push(skill);
-        }
-    }
-    skills
+    scan_references(text)
+        .into_iter()
+        .filter(|name| !head.is_some_and(|skill| skill.name == *name))
+        .filter_map(find_skill)
+        .collect()
 }
 
 fn find_skill(name: &str) -> Option<&'static OrchestrationSkill> {
@@ -95,35 +93,32 @@ fn find_skill(name: &str) -> Option<&'static OrchestrationSkill> {
 /// Shared boundaries are emitted once, and skipped when the leading command's
 /// own expansion already carries them.
 fn embedded_section(skills: &[&OrchestrationSkill], head: Option<&OrchestrationSkill>) -> String {
-    let mut section = String::from(
-        "[CADENCR SKILL INSTRUCTIONS]\n\
-The user's message above references the CadencR virtual skills below. Treat that message as the request and run each skill's instructions in the order listed, using the message as their context.\n",
-    );
-    if head.is_none() {
-        section.push('\n');
-        section.push_str(PORTABLE_WORKFLOW_BOUNDARY);
-        section.push('\n');
-    }
-    let head_has_child_boundary =
-        head.is_some_and(|skill| skill.includes_child_completion_boundary);
-    if !head_has_child_boundary
+    let needs_workflow_boundary = head.is_none();
+    let needs_child_boundary = !head.is_some_and(|skill| skill.includes_child_completion_boundary)
         && skills
             .iter()
-            .any(|skill| skill.includes_child_completion_boundary)
-    {
-        section.push('\n');
-        section.push_str(CHILD_COMPLETION_BOUNDARY);
-        section.push('\n');
+            .any(|skill| skill.includes_child_completion_boundary);
+
+    let mut parts = vec![
+        "The user's message above references the CadencR virtual skills below. Treat that message as the request and run each skill's instructions in the order listed, using the message as their context.".to_string(),
+    ];
+    if needs_workflow_boundary {
+        parts.push(PORTABLE_WORKFLOW_BOUNDARY.to_string());
     }
-    for skill in skills {
-        section.push_str(&format!(
-            "\n### {}\n\n{}\n",
+    if needs_child_boundary {
+        parts.push(CHILD_COMPLETION_BOUNDARY.to_string());
+    }
+    parts.extend(skills.iter().map(|skill| {
+        format!(
+            "### {}\n\n{}",
             skill.command(),
             skill.body.replace("$ARGUMENTS", EMBEDDED_ARGUMENTS)
-        ));
-    }
-    section.push_str("[/CADENCR SKILL INSTRUCTIONS]");
-    section
+        )
+    }));
+    format!(
+        "[CADENCR SKILL INSTRUCTIONS]\n{}\n[/CADENCR SKILL INSTRUCTIONS]",
+        parts.join("\n\n")
+    )
 }
 
 #[cfg(test)]

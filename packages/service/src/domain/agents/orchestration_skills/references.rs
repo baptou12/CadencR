@@ -23,17 +23,39 @@
 //! the opener and with nothing but spaces after it, and a code span may cross
 //! lines within a paragraph. Indented (4-space) code blocks are not modelled.
 
+use std::ops::Range;
+use std::sync::LazyLock;
+
+use regex_lite::Regex;
+
 use super::ORCHESTRATION_SKILL_PREFIX;
 
-/// One opened fence: its marker byte and the length of the opening run.
-type Fence = (u8, usize);
+/// Candidate reference token; the surrounding characters are checked in
+/// `scan_block` because `regex_lite` has no look-around.
+static REFERENCE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[/$]cadencr:[A-Za-z0-9-]+").expect("skill reference regex must compile")
+});
 
-/// Every skill name referenced in `text`, in order of appearance (duplicates
-/// included — the caller owns catalog lookup and de-duplication).
+/// One opened fence: only a run of the same marker, at least as long, closes it.
+struct Fence {
+    marker: u8,
+    run_len: usize,
+}
+
+/// Every skill name referenced in `text`, deduplicated in order of first
+/// appearance. Catalog lookup stays with the caller — unknown names are
+/// reported so it can leave them untouched.
 pub(super) fn scan_references(text: &str) -> Vec<&str> {
-    let mut names = Vec::new();
+    if !text.contains(ORCHESTRATION_SKILL_PREFIX) {
+        return Vec::new();
+    }
+    let mut names: Vec<&str> = Vec::new();
     for block in prose_blocks(text) {
-        scan_block(block, &mut names);
+        for name in scan_block(block) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
     }
     names
 }
@@ -65,8 +87,8 @@ fn prose_blocks(text: &str) -> Vec<&str> {
 
 /// Whether `line` is scannable prose, advancing the fence state as it goes.
 fn is_prose(line: &str, fence: &mut Option<Fence>) -> bool {
-    if let Some((marker, len)) = *fence {
-        if closes_fence(line, marker, len) {
+    if let Some(open) = fence {
+        if closes_fence(line, open) {
             *fence = None;
         }
         return false;
@@ -88,105 +110,85 @@ fn opens_fence(line: &str) -> Option<Fence> {
         b'~' => b'~',
         _ => return None,
     };
-    let len = trimmed.bytes().take_while(|byte| *byte == marker).count();
-    if len < 3 || (marker == b'`' && trimmed[len..].contains('`')) {
+    let run_len = trimmed.bytes().take_while(|byte| *byte == marker).count();
+    if run_len < 3 || (marker == b'`' && trimmed[run_len..].contains('`')) {
         return None;
     }
-    Some((marker, len))
+    Some(Fence { marker, run_len })
 }
 
 /// Only the same marker, at least as long as the opener and followed by nothing
 /// but spaces, closes a fence — so ``` never closes ```` and ~~~ never closes
 /// a backtick fence.
-fn closes_fence(line: &str, marker: u8, len: usize) -> bool {
+fn closes_fence(line: &str, fence: &Fence) -> bool {
     let trimmed = line.trim_start();
-    let run = trimmed.bytes().take_while(|byte| *byte == marker).count();
-    run >= len && trimmed[run..].trim().is_empty()
-}
-
-fn scan_block<'a>(block: &'a str, names: &mut Vec<&'a str>) {
-    let code_spans = inline_code_spans(block);
-    for (index, character) in block.char_indices() {
-        if character != '/' && character != '$' {
-            continue;
-        }
-        if code_spans
-            .iter()
-            .any(|(start, end)| (*start..*end).contains(&index))
-        {
-            continue;
-        }
-        if !block[..index]
-            .chars()
-            .next_back()
-            .is_none_or(char::is_whitespace)
-        {
-            continue;
-        }
-        if let Some(name) = reference_name(&block[index + character.len_utf8()..]) {
-            names.push(name);
-        }
-    }
-}
-
-/// Reads `cadencr:<name>` at the start of `text`, requiring a clean trailing
-/// boundary so `/cadencr:reviewer`, `/cadencr:review/x` and `/cadencr:review:x`
-/// do not match the `review` skill.
-fn reference_name(text: &str) -> Option<&str> {
-    let after_prefix = text.strip_prefix(ORCHESTRATION_SKILL_PREFIX)?;
-    let name_len = after_prefix
+    let run = trimmed
         .bytes()
-        .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+        .take_while(|byte| *byte == fence.marker)
         .count();
-    if name_len == 0 {
-        return None;
-    }
-    let boundary = after_prefix[name_len..].chars().next();
-    if boundary.is_some_and(|c| c.is_alphanumeric() || c == ':' || c == '/' || c == '_') {
-        return None;
-    }
-    Some(&after_prefix[..name_len])
+    run >= fence.run_len && trimmed[run..].trim().is_empty()
 }
 
-/// Byte ranges covered by inline code spans, matching runs of backticks
-/// pairwise the way Markdown does. A run with no matching closer is literal
-/// text, so scanning continues past it and a later well-formed span still
-/// masks its contents.
-fn inline_code_spans(text: &str) -> Vec<(usize, usize)> {
+/// Reference names in one prose block, in order, skipping inline code spans
+/// and tokens without clean boundaries on both sides.
+fn scan_block(block: &str) -> Vec<&str> {
+    let code_spans = inline_code_spans(block);
+    REFERENCE_REGEX
+        .find_iter(block)
+        .filter(|token| !code_spans.iter().any(|span| span.contains(&token.start())))
+        .filter(|token| {
+            block[..token.start()]
+                .chars()
+                .next_back()
+                .is_none_or(char::is_whitespace)
+        })
+        .filter(|token| {
+            // `/cadencr:review/x`, `:x`, `_x` are longer identifiers or paths,
+            // never the `review` skill with trailing noise.
+            let boundary = block[token.end()..].chars().next();
+            !boundary.is_some_and(|c| c.is_alphanumeric() || matches!(c, ':' | '/' | '_'))
+        })
+        .map(|token| &block[token.start() + 1 + ORCHESTRATION_SKILL_PREFIX.len()..token.end()])
+        .collect()
+}
+
+/// Byte ranges covered by inline code spans: an opening backtick run is closed
+/// by the next run of exactly the same length, the way Markdown pairs them. A
+/// run with no matching closer is literal text, so a later well-formed span
+/// still masks its contents.
+fn inline_code_spans(text: &str) -> Vec<Range<usize>> {
+    let runs = backtick_runs(text);
     let mut spans = Vec::new();
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] != b'`' {
-            index += 1;
-            continue;
-        }
-        let open_start = index;
-        let run_len = bytes[index..].iter().take_while(|b| **b == b'`').count();
-        index += run_len;
-        if let Some(close_end) = closing_run(bytes, index, run_len) {
-            spans.push((open_start, close_end));
-            index = close_end;
+    let mut current = 0;
+    while let Some((open_start, open_len)) = runs.get(current).copied() {
+        match runs[current + 1..]
+            .iter()
+            .position(|(_, run_len)| *run_len == open_len)
+        {
+            Some(closer) => {
+                let (close_start, close_len) = runs[current + 1 + closer];
+                spans.push(open_start..close_start + close_len);
+                current += closer + 2;
+            }
+            None => current += 1,
         }
     }
     spans
 }
 
-/// End offset of the next run of exactly `run_len` backticks at or after `from`.
-fn closing_run(bytes: &[u8], from: usize, run_len: usize) -> Option<usize> {
-    let mut index = from;
-    while index < bytes.len() {
-        if bytes[index] != b'`' {
-            index += 1;
+/// Maximal runs of consecutive backticks as `(start, len)` pairs.
+fn backtick_runs(text: &str) -> Vec<(usize, usize)> {
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for (index, byte) in text.bytes().enumerate() {
+        if byte != b'`' {
             continue;
         }
-        let run = bytes[index..].iter().take_while(|b| **b == b'`').count();
-        if run == run_len {
-            return Some(index + run);
+        match runs.last_mut() {
+            Some((start, len)) if *start + *len == index => *len += 1,
+            _ => runs.push((index, 1)),
         }
-        index += run;
     }
-    None
+    runs
 }
 
 #[cfg(test)]
@@ -206,10 +208,10 @@ mod tests {
     }
 
     #[test]
-    fn keeps_appearance_order_and_duplicates_for_the_caller() {
+    fn deduplicates_references_in_appearance_order() {
         assert_eq!(
             scan_references("/cadencr:status then /cadencr:review then /cadencr:status"),
-            vec!["status", "review", "status"]
+            vec!["status", "review"]
         );
     }
 
