@@ -1,8 +1,20 @@
+import type { ReactElement } from "react";
+import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, render, screen } from "@/test-utils";
+import { act, fireEvent, render as renderWithProviders, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { ProjectTree } from "./ProjectTree";
 import { resetMockIds } from "@/test-fixtures";
+
+// Numeric hints are now owned by Sidebar so pinned and project rows share one registry.
+function render(ui: ReactElement) {
+  return renderWithProviders(<ShortcutHintsProvider enabled>{ui}</ShortcutHintsProvider>);
+}
+
+vi.mock("@/lib/shortcuts/format", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/shortcuts/format")>()),
+  PLATFORM_IS_MAC: true,
+}));
 
 const mockNavigate = vi.fn();
 const mockCreateProject = vi.fn();
@@ -30,7 +42,15 @@ vi.mock("@/lib/project-onboarding", () => ({
   }),
 }));
 
-vi.mock("../api/generated", () => ({
+vi.mock("../api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/generated")>()),
+  useArchiveFeature: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useGetFeatureArchivePreview: vi.fn(() => ({
+    data: { parent_ids: [], descendant_ids: [], has_relations: false },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  })),
   useListProjects: vi.fn(() => ({
     data: [
       { id: 1, name: "Alpha Project", path: "/alpha" },

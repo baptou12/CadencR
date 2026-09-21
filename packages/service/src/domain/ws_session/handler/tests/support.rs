@@ -222,7 +222,8 @@ pub(crate) async fn make_test_app_state() -> AppState {
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,
                 thinking_effort TEXT,
-                fast_mode INTEGER NOT NULL DEFAULT 0
+                fast_mode INTEGER NOT NULL DEFAULT 0,
+                runtime_overrides TEXT
             )"#,
     )
     .execute(&pool)
@@ -377,7 +378,11 @@ pub(crate) async fn init_session_and_get_response(
     let msg = rx.recv().await.unwrap();
     if let Message::Text(text) = msg {
         let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-        assert_eq!(env.action, "initialized");
+        assert_eq!(
+            env.action, "initialized",
+            "unexpected payload: {:?}",
+            env.payload
+        );
         serde_json::from_value(env.payload).unwrap()
     } else {
         panic!("expected text message");
@@ -418,6 +423,11 @@ pub(crate) fn make_active_handle(feature_id: i64, session_id: Option<String>) ->
             allow_bypass_permissions: false,
             claude_profile: None,
             env: None,
+            env_unset: Vec::new(),
+            overrides: Default::default(),
+            runtime_overrides_dirty: false,
+            profile_revision: None,
+            profile_state_identity: None,
         },
         manual_compact_cancel: Arc::new(AtomicBool::new(false)),
         manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
@@ -456,6 +466,11 @@ pub(crate) fn make_in_place_effort_handle(feature_id: i64) -> SdkHandle {
             allow_bypass_permissions: false,
             claude_profile: None,
             env: None,
+            env_unset: Vec::new(),
+            overrides: Default::default(),
+            runtime_overrides_dirty: false,
+            profile_revision: None,
+            profile_state_identity: None,
         },
         manual_compact_cancel: Arc::new(AtomicBool::new(false)),
         manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),

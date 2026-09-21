@@ -1,5 +1,6 @@
 pub mod client;
 mod client_io;
+mod client_launch;
 mod client_state;
 mod client_threads;
 mod commands;

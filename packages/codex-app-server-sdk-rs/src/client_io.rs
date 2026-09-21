@@ -65,7 +65,12 @@ pub(crate) fn spawn_stderr_reader(stderr: ChildStderr, max_line_bytes: usize) ->
         let mut reader = BufReader::new(stderr);
         loop {
             match read_bounded_line(&mut reader, max_line_bytes).await {
-                Ok(Some(line)) => tracing::warn!(target: "codex_app_server", "{line}"),
+                // Codex diagnostics can quote config values. Never forward raw
+                // stderr because profile TOML and env may contain credentials.
+                Ok(Some(_line)) => tracing::warn!(
+                    target: "codex_app_server",
+                    "codex app-server emitted a stderr diagnostic (content redacted)"
+                ),
                 Ok(None) => break,
                 Err(error) => {
                     tracing::warn!(%error, "codex app-server stderr read failed");

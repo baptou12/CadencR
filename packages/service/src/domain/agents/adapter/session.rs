@@ -35,6 +35,12 @@ pub trait AgentRuntimeSession: Send + Sync {
         None
     }
     async fn session_id(&self) -> Option<String>;
+    /// Whether this exact live runtime negotiated durable resume support.
+    /// Native runtimes default to persistable; ACP runtimes override this with
+    /// the capability negotiated by their per-session provider hooks.
+    fn allows_resume_persistence(&self) -> bool {
+        true
+    }
     async fn available_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
         Ok(Vec::new())
     }

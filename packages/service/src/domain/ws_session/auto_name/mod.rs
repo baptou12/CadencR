@@ -203,7 +203,13 @@ async fn run_auto_name(
     };
 
     let prompt = build_prompt(&user_input);
-    let config = build_spawn_config(adapter.as_adapter(), &model_id, &cwd);
+    let config = match build_spawn_config(adapter.as_adapter(), &model_id, &cwd).await {
+        Ok(config) => config,
+        Err(error) => {
+            error!(feature_id, provider = %provider_id, %error, "auto-name: profile resolution failed");
+            return None;
+        }
+    };
     debug!(
         feature_id,
         prompt_len = prompt.len(),
@@ -295,12 +301,19 @@ fn build_prompt(user_input: &str) -> String {
     )
 }
 
-fn build_spawn_config(
+async fn build_spawn_config(
     adapter: &dyn crate::domain::agents::adapter::AgentRuntimeAdapter,
     model_id: &str,
     cwd: &str,
-) -> RuntimeSpawnConfig {
-    let env = adapter.environment_for_new_session();
+) -> Result<RuntimeSpawnConfig, crate::domain::agents::adapter::RuntimeError> {
+    let resolved_profile = adapter
+        .resolve_profile(None, std::path::Path::new(cwd))
+        .await?;
+    let env = resolved_profile
+        .as_ref()
+        .map(|profile| profile.env.clone())
+        .filter(|env| !env.is_empty())
+        .or_else(|| adapter.environment_for_new_session());
     // Auto-naming is a tiny "produce 3-7 words" task — extended thinking adds
     // latency and is a known silent-failure mode here: the 30s drain deadline
     // (drain::AUTO_NAME_DEADLINE) can fire mid-thinking before any text block
@@ -308,7 +321,7 @@ fn build_spawn_config(
     // its default "Session N" title. Force thinking off regardless of the
     // user's per-model preference for the naming spawn only.
 
-    RuntimeSpawnConfig {
+    Ok(RuntimeSpawnConfig {
         cwd: PathBuf::from(cwd),
         permission_mode: Some(RuntimePermissionMode::Plan),
         access_mode: None,
@@ -321,7 +334,24 @@ fn build_spawn_config(
         mcp_servers: None,
         permission_handler: None,
         env,
-    }
+        profile: resolved_profile
+            .as_ref()
+            .map(|profile| profile.identity.clone())
+            .or_else(|| adapter.profile_name_for_new_session()),
+        env_unset: resolved_profile
+            .as_ref()
+            .map(|profile| profile.env_unset.clone())
+            .unwrap_or_default(),
+        overrides: crate::domain::agents::adapter::RuntimeConfigOverrides {
+            model: Some(model_id.to_string()),
+            thinking_effort: None,
+            fast_mode: Some(false),
+        },
+        profile_revision: resolved_profile
+            .as_ref()
+            .map(|profile| profile.revision.clone()),
+        profile_state_identity: resolved_profile.and_then(|profile| profile.state_identity),
+    })
 }
 
 fn extract_name(accumulated_text: &str) -> String {

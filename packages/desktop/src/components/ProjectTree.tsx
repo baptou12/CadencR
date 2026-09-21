@@ -43,8 +43,6 @@ import { toast } from "sonner";
 import { SidebarProjectsHeader } from "./SidebarProjectsHeader";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
-import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
-import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { ProjectRowButton } from "./ProjectRowButton";
 import { ProjectTreeDialogs } from "./ProjectTreeDialogs";
 
@@ -115,7 +113,6 @@ function useProjectTreeMutations(
 
 function useProjectTreeController(props: ProjectTreeProps) {
   const ordered = useOrderedProjects();
-  const { collapsed } = useSidebarCollapsed();
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const onboarding = useNewProjectOnboarding();
   const mutations = useProjectTreeMutations(ordered.projects, onboarding.maybeOnboard);
@@ -151,7 +148,6 @@ function useProjectTreeController(props: ProjectTreeProps) {
   return useMemo(
     () => ({
       addProject,
-      collapsed,
       deleteProject,
       expanded,
       importProject,
@@ -168,7 +164,6 @@ function useProjectTreeController(props: ProjectTreeProps) {
     }),
     [
       addProject,
-      collapsed,
       deleteProject,
       expanded,
       importProject,
@@ -187,35 +182,33 @@ export type ProjectTreeController = ReturnType<typeof useProjectTreeController>;
 export function ProjectTree(props: ProjectTreeProps) {
   const controller = useProjectTreeController(props);
   return (
-    <ShortcutHintsProvider enabled={!controller.collapsed}>
-      <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
-        <SidebarProjectsHeader
-          onAddProject={controller.addProject}
-          isAddingProject={
-            controller.isSelectingFolder || controller.mutations.createProject.isPending
-          }
-          canAddProject={isDesktopShell()}
-          onRefresh={() => void controller.ordered.refresh()}
-          isRefreshing={controller.ordered.isRefreshing}
-        />
-        <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
-          <div className="flex min-w-0 flex-col gap-0.5 px-1">
-            {controller.ordered.projects.map((project) => (
-              <ProjectTreeRow
-                key={project.id}
-                project={project}
-                props={props}
-                controller={controller}
-              />
-            ))}
-            {controller.ordered.projects.length === 0 && (
-              <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
-            )}
-          </div>
-        </ScrollArea>
-        <ProjectTreeDialogs controller={controller} />
-      </div>
-    </ShortcutHintsProvider>
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+      <SidebarProjectsHeader
+        onAddProject={controller.addProject}
+        isAddingProject={
+          controller.isSelectingFolder || controller.mutations.createProject.isPending
+        }
+        canAddProject={isDesktopShell()}
+        onRefresh={() => void controller.ordered.refresh()}
+        isRefreshing={controller.ordered.isRefreshing}
+      />
+      <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
+        <div className="flex min-w-0 flex-col gap-0.5 px-1">
+          {controller.ordered.projects.map((project) => (
+            <ProjectTreeRow
+              key={project.id}
+              project={project}
+              props={props}
+              controller={controller}
+            />
+          ))}
+          {controller.ordered.projects.length === 0 && (
+            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
+          )}
+        </div>
+      </ScrollArea>
+      <ProjectTreeDialogs controller={controller} />
+    </div>
   );
 }
 
