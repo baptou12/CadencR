@@ -18,12 +18,9 @@ describe("prompt command policy", () => {
       {
         triggerChar: "/",
         commandKindsAtPromptStart: ["command", "skill", "cadencr"],
-        commandKindsMidPrompt: ["command", "skill"],
+        commandKindsMidPrompt: ["command", "skill", "cadencr"],
       },
     ]);
-    expect(promptCommandTriggers(DEFAULT_PROMPT_COMMAND_POLICY)[0].commandKindsMidPrompt).toEqual(
-      [],
-    );
     expect(supportsDollarSkillReferences(anywhere)).toBe(false);
   });
 
@@ -43,9 +40,23 @@ describe("prompt command policy", () => {
       {
         triggerChar: "$",
         commandKindsAtPromptStart: ["skill", "cadencr"],
-        commandKindsMidPrompt: ["skill"],
+        commandKindsMidPrompt: ["skill", "cadencr"],
       },
     ]);
     expect(supportsDollarSkillReferences(policy)).toBe(true);
+  });
+
+  it("keeps Cadencr skills available mid-prompt without widening native placement", () => {
+    // Cadencr expands its own virtual skills, so a provider that only parses
+    // native commands at the start of a turn still gets them mid-prompt.
+    const [slash] = promptCommandTriggers(DEFAULT_PROMPT_COMMAND_POLICY);
+    expect(slash.commandKindsMidPrompt).toEqual(["cadencr"]);
+
+    const [dollarProviderSlash] = promptCommandTriggers({
+      slashCommandPlacement: "prompt_start",
+      skillReferenceTrigger: "dollar",
+      userShell: false,
+    });
+    expect(dollarProviderSlash.commandKindsMidPrompt).toEqual([]);
   });
 });
