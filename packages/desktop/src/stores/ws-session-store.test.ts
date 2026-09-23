@@ -3183,6 +3183,34 @@ describe("ws-session-store", () => {
       vi.useRealTimers();
     });
 
+    it("keeps the turn paused while answering one gate with another still queued", async () => {
+      const ws = await setupActiveSession();
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000);
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: { request_id: "req-1", tool_name: "Bash", tool_input: {} },
+      });
+      ws.simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: { request_id: "req-2", tool_name: "Bash", tool_input: {} },
+      });
+      vi.setSystemTime(5_000);
+      // Answering req-1 does not end the wait: req-2 is still queued, so a
+      // streamed chunk must not flip the turn back to active.
+      useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+      streamTextMessage(ws, "chunk while second gate queued");
+
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
+        phase: "paused",
+        reason: "permission",
+      });
+      vi.useRealTimers();
+    });
+
     it("adds a visible turn summary even when a turn completes without output blocks", async () => {
       const ws = await setupActiveSession();
       vi.useFakeTimers();

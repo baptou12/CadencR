@@ -224,18 +224,19 @@ function usePersistedSessionLoader(
     const restoredBlocks = serverBlocksToAgentBlocks(lastSession.blocks);
 
     // The live status store (fed by the backend's session_status snapshot) is
-    // the source of truth for "is a turn running" — the persisted `running`
-    // column alone can be stale after a crash. When it confirms a live turn,
-    // hydrate straight into `active` and anchor Worked to the server-stamped
-    // turn start instead of leaving the lifecycle idle until the next event.
+    // the source of truth for "is a turn live" — the persisted `running`
+    // column alone can be stale after a crash. When it confirms a live turn
+    // (streaming or waiting at a gate), hydrate straight into it and anchor
+    // Worked to the server-stamped turn start instead of leaving the
+    // lifecycle idle until the next event.
     const statusEntry =
       lastSession.sessionDbId != null
         ? useSessionStatusStore.getState().bySession[lastSession.sessionDbId]
         : undefined;
-    const runningLive = statusEntry?.status === "agent";
+    const turnLive = statusEntry?.status === "agent" || statusEntry?.status === "question";
     const restoredLifecycle = persistedSessionToLifecycle(
       lastSession,
-      runningLive ? { runningStatus: "active" } : undefined,
+      turnLive ? { runningStatus: "active" } : undefined,
     );
 
     const persistedContextUsage: ContextUsageState | null =
@@ -252,7 +253,7 @@ function usePersistedSessionLoader(
     store.setPersistedState(sessionId, {
       blocks: restoredBlocks,
       lifecycle: restoredLifecycle,
-      ...(runningLive
+      ...(turnLive
         ? { turnTiming: anchorTurnTiming(statusEntry?.turnStartedAtMs ?? Date.now()) }
         : {}),
       hasMore: lastSession.hasMore,
