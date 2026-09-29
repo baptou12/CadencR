@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   app,
   dialog,
@@ -246,12 +246,13 @@ export async function openExternal(rawUrl: unknown): Promise<void> {
  * `openExternal` (which also backs auto navigation-interception): permits
  * `http:` and loopback so a dev-server URL can be opened in the system
  * browser on demand, and `file:` so agent-emitted links to local documents
- * open in their default app. Still rejects credentials and any other scheme
- * (`javascript:`, `data:`, ...).
+ * open in their default app. Agents often emit a bare absolute path instead
+ * of a `file:` URL, so those are treated as file links too. Still rejects
+ * credentials and any other scheme (`javascript:`, `data:`, ...).
  */
 export async function openExternalLink(rawUrl: unknown): Promise<void> {
   if (typeof rawUrl !== "string") throw new Error("Expected a URL.");
-  const parsed = new URL(rawUrl);
+  const parsed = path.isAbsolute(rawUrl) ? pathToFileURL(rawUrl) : new URL(rawUrl);
   if (parsed.protocol === "file:") {
     // A file URL host becomes a UNC host on Windows (`\\server\share`), and
     // merely stat-ing that path dials out over SMB — local files only.
