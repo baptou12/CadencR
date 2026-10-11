@@ -116,6 +116,11 @@ const browserBridge: CadencrBrowserBridge = {
   setRemoteHostAwake: () => Promise.resolve(),
   onPowerSuspend: () => () => undefined,
   onPowerResume: () => () => undefined,
+  notchCapabilities: () => Promise.resolve({ supported: false, hardware: false }),
+  notchConfigure: () => Promise.resolve(),
+  notchPushSnapshot: () => Promise.resolve(),
+  notchNotify: () => unavailable("notchNotify"),
+  onNotchDismissed: () => () => undefined,
 
   createBrowserTab: () => unavailable("createBrowserTab"),
   listBrowserTabs: () => unavailable("listBrowserTabs"),

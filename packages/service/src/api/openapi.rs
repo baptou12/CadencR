@@ -39,6 +39,7 @@ use crate::domain::remote::routes as remote_routes;
 use crate::domain::schedules::models as schedules_models;
 use crate::domain::schedules::recurrence as schedules_recurrence;
 use crate::domain::schedules::routes as schedules_routes;
+use crate::domain::sessions::activity_digest as sessions_activity_digest;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
 use crate::domain::terminal::alacritty_config as terminal_alacritty_config;
@@ -162,6 +163,7 @@ use crate::domain::ws_session::routes as ws_routes;
         sessions_routes::list_conversation_references_handler,
         sessions_routes::get_feature_agent_state_handler,
         sessions_routes::get_unified_agents_handler,
+        sessions_routes::get_agent_activity_digest_handler,
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
         sessions_routes::refresh_session_handler,
@@ -441,6 +443,9 @@ use crate::domain::ws_session::routes as ws_routes;
         sessions_models::UnifiedAgentFeature,
         sessions_models::UnifiedAgentEntry,
         sessions_models::UnifiedAgentsResponse,
+        sessions_activity_digest::AgentDigestToolCall,
+        sessions_activity_digest::AgentActivityDigestEntry,
+        sessions_activity_digest::AgentActivityDigestResponse,
         sessions_models::DraftResponse,
         sessions_models::SaveDraftRequest,
         sessions_models::SaveDraftResponse,

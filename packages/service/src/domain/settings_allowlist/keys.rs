@@ -131,9 +131,17 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // never live here; they are stored separately in an owner-only file.
     crate::domain::git::forge::FORGE_HOSTS_SETTING,
     // Where agent-finished notifications appear: "native" (system banner),
-    // "in_app" (Sonner toast inside Cadencr), or "off". Mirrors
+    // "in_app" (Sonner toast inside Cadencr), "notch" (the macOS notch
+    // island), or "off". Mirrors
     // NOTIFICATION_MODE_KEY in packages/desktop/src/lib/notification-mode.ts.
     "notification_mode",
+    // Notch island behavior (notification_mode = "notch"): `always_on` keeps
+    // the compact island visible while agents are tracked, `always_animate`
+    // lets the logo keep moving in the compact state. `notch_default_applied`
+    // records the one-time switch of existing macOS installs to the notch.
+    "notch_always_on",
+    "notch_always_animate",
+    "notch_default_applied",
     // Workspace-scope agent defaults. `auto_name` is global-only.
     "model_session",
     "model_auto_name",

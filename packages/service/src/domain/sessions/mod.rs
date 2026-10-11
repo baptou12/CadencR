@@ -1,3 +1,4 @@
+pub mod activity_digest;
 pub mod limits;
 pub mod message_dispatch;
 pub mod models;

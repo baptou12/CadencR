@@ -5,6 +5,9 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::app_state::AppState;
+use crate::domain::sessions::activity_digest::{
+    load_activity_digest, parse_feature_ids, ActivityDigestParams, AgentActivityDigestResponse,
+};
 use crate::domain::sessions::limits::normalize_agent_message_limit;
 use crate::domain::sessions::models::*;
 use crate::domain::sessions::repository;
@@ -123,6 +126,22 @@ pub async fn get_unified_agents_handler(
     ))
 }
 
+#[utoipa::path(get, path = "/api/agents/activity-digest",
+    params(ActivityDigestParams),
+    responses(
+        (status = 200, body = AgentActivityDigestResponse),
+        (status = 400, description = "Malformed or too many feature ids")
+    ))]
+pub async fn get_agent_activity_digest_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ActivityDigestParams>,
+) -> Result<Json<AgentActivityDigestResponse>, AppError> {
+    let feature_ids = parse_feature_ids(&params.feature_ids)?;
+    Ok(Json(
+        load_activity_digest(&state.read_pool, &feature_ids).await?,
+    ))
+}
+
 #[utoipa::path(get, path = "/api/sessions/{session_id}/draft",
     params(("session_id" = i64, Path,)),
     responses((status = 200, body = DraftResponse)))]
@@ -212,6 +231,10 @@ pub fn sessions_router() -> Router<AppState> {
             get(get_feature_agent_state_handler),
         )
         .route("/api/agents/unified", get(get_unified_agents_handler))
+        .route(
+            "/api/agents/activity-digest",
+            get(get_agent_activity_digest_handler),
+        )
         .route(
             "/api/sessions/conversation-references",
             get(list_conversation_references_handler),
