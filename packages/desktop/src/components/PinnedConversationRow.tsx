@@ -10,9 +10,7 @@ import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
 import { NO_PORTS } from "@/hooks/useFeaturePorts";
 import { useBrowserStore } from "@/stores/browser-store";
 import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
-import { FeatureRowMetaLine } from "@/components/ProjectFeatureRowParts";
-import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
-import { SidebarPendingRequestLine } from "@/components/SidebarPendingRequestLine";
+import { FeatureRowBody } from "@/components/FeatureRowBody";
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 
 interface PinnedConversationRowProps {
@@ -100,34 +98,26 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
         <ProjectBadge projectId={feature.project_id} />
       </span>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <FeatureRowTitleLine
-          feature={feature}
-          liveTitle={liveTitle ?? undefined}
-          isAutoNaming={isAutoNaming}
-          isArchived={false}
-          hasWorktree={hasLiveWorktree}
-          worktree={worktree}
-          attention={state.attention}
-          isActive={isActive}
-          badgeRef={badgeRef}
-          onOpenConversation={handleOpenConversation}
-        >
-          {onUnpin && <UnpinAction featureId={feature.id} onUnpin={onUnpin} />}
-        </FeatureRowTitleLine>
-        <SidebarPendingRequestLine attention={state.attention} />
-        <FeatureRowMetaLine
-          feature={feature}
-          worktree={worktree}
-          prStatus={state.prStatus}
-          gitStats={state.gitStats}
-          shellCount={shellCount}
-          browserCount={browserCount}
-          downloadCount={downloadCount}
-          ports={ports}
-          onOpenPort={handleOpenPort}
-        />
-      </div>
+      <FeatureRowBody
+        feature={feature}
+        liveTitle={liveTitle ?? undefined}
+        isAutoNaming={isAutoNaming}
+        isArchived={false}
+        hasWorktree={hasLiveWorktree}
+        worktree={worktree}
+        attention={state.attention}
+        isActive={isActive}
+        badgeRef={badgeRef}
+        onOpenConversation={handleOpenConversation}
+        actions={onUnpin && <UnpinAction featureId={feature.id} onUnpin={onUnpin} />}
+        prStatus={state.prStatus}
+        gitStats={state.gitStats}
+        shellCount={shellCount}
+        browserCount={browserCount}
+        downloadCount={downloadCount}
+        ports={ports}
+        onOpenPort={handleOpenPort}
+      />
     </div>
   );
 });

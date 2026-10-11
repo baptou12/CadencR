@@ -9,9 +9,8 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMenu";
-import { FeatureRowActions, FeatureRowMetaLine } from "@/components/ProjectFeatureRowParts";
-import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
-import { SidebarPendingRequestLine } from "@/components/SidebarPendingRequestLine";
+import { FeatureRowActions } from "@/components/ProjectFeatureRowParts";
+import { FeatureRowBody } from "@/components/FeatureRowBody";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
@@ -110,19 +109,18 @@ function FeatureRowDetails({
     onArchiveOrDelete,
   } = props;
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-      <FeatureRowTitleLine
-        feature={feature}
-        liveTitle={liveTitle}
-        isAutoNaming={isAutoNaming}
-        isArchived={state.isArchived}
-        hasWorktree={hasWorktree}
-        worktree={worktree}
-        attention={state.attention}
-        isActive={state.isActive}
-        onOpenConversation={onOpenConversation}
-        badgeRef={badgeRef}
-      >
+    <FeatureRowBody
+      feature={feature}
+      liveTitle={liveTitle}
+      isAutoNaming={isAutoNaming}
+      isArchived={state.isArchived}
+      hasWorktree={hasWorktree}
+      worktree={worktree}
+      attention={state.attention}
+      isActive={state.isActive}
+      badgeRef={badgeRef}
+      onOpenConversation={onOpenConversation}
+      actions={
         <FeatureRowActions
           featureId={feature.id}
           isArchived={state.isArchived}
@@ -130,32 +128,27 @@ function FeatureRowDetails({
           onTogglePin={onTogglePin}
           onArchiveOrDelete={onArchiveOrDelete}
         />
-      </FeatureRowTitleLine>
-      <SidebarPendingRequestLine attention={state.attention} />
-      <FeatureRowMetaLine
-        feature={feature}
-        worktree={worktree}
-        prStatus={state.prStatus}
-        gitStats={state.gitStats}
-        shellCount={shellCount}
-        browserCount={browserCount}
-        downloadCount={downloadCount}
-        ports={ports}
-        labelEditor={
-          isEditingLabel
-            ? {
-                draft: labelDraft,
-                suggestions: labelSuggestions,
-                isSaving: isSavingLabel,
-                onDraftChange: onLabelDraftChange,
-                onSave: (override) => onSaveLabel(feature.id, override),
-                onCancel: onCancelLabelEdit,
-              }
-            : undefined
-        }
-        onOpenPort={onOpenPort}
-      />
-    </div>
+      }
+      prStatus={state.prStatus}
+      gitStats={state.gitStats}
+      shellCount={shellCount}
+      browserCount={browserCount}
+      downloadCount={downloadCount}
+      ports={ports}
+      labelEditor={
+        isEditingLabel
+          ? {
+              draft: labelDraft,
+              suggestions: labelSuggestions,
+              isSaving: isSavingLabel,
+              onDraftChange: onLabelDraftChange,
+              onSave: (override) => onSaveLabel(feature.id, override),
+              onCancel: onCancelLabelEdit,
+            }
+          : undefined
+      }
+      onOpenPort={onOpenPort}
+    />
   );
 }
 

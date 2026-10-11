@@ -1,14 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  ChevronDown,
-  Download,
-  Ellipsis,
-  PlusIcon,
-  Settings,
-  Trash2,
-} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type Project,
@@ -22,22 +13,10 @@ import {
 import { useOrderedProjects } from "@/hooks/useOrderedProjects";
 import { useProjectExpansion } from "@/hooks/useProjectExpansion";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { ContextMenuActionItem } from "@/components/ContextMenuActionItem";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ProjectRowActions, ProjectRowContextMenu } from "./ProjectRowMenus";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
-import { ProjectBadge } from "@/components/ProjectBadge";
 import { PROJECT_COLORS } from "@/lib/project-colors";
 import { useNewProjectOnboarding } from "@/lib/project-onboarding";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -45,7 +24,7 @@ import { toast } from "sonner";
 import { SidebarProjectsHeader } from "./SidebarProjectsHeader";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
-import { ProjectRowButton } from "./ProjectRowButton";
+import { ProjectRowButton, ProjectRowLabel } from "./ProjectRowButton";
 import { ProjectTreeDialogs } from "./ProjectTreeDialogs";
 import { FilteredProjectList } from "./FilteredProjectList";
 import type { ProjectFilterMatch } from "@/hooks/useSidebarFilterMatches";
@@ -205,37 +184,53 @@ export function ProjectTree(props: ProjectTreeProps) {
       />
       <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
         <div ref={treeRef} className="flex min-w-0 flex-col gap-0.5 px-1">
-          {filterQuery ? (
-            <FilteredProjectList
-              projects={controller.ordered.projects}
-              query={filterQuery}
-              renderProject={(project, match) => (
-                <ProjectTreeRow
-                  key={project.id}
-                  project={project}
-                  props={props}
-                  controller={controller}
-                  filterMatch={match}
-                />
-              )}
-            />
-          ) : (
-            controller.ordered.projects.map((project) => (
-              <ProjectTreeRow
-                key={project.id}
-                project={project}
-                props={props}
-                controller={controller}
-              />
-            ))
-          )}
-          {controller.ordered.projects.length === 0 && (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
-          )}
+          <ProjectTreeRows props={props} controller={controller} filterQuery={filterQuery} />
         </div>
       </ScrollArea>
       <ProjectTreeDialogs controller={controller} />
     </div>
+  );
+}
+
+function ProjectTreeRows({
+  props,
+  controller,
+  filterQuery,
+}: {
+  props: ProjectTreeProps;
+  controller: ProjectTreeController;
+  filterQuery: string;
+}) {
+  return (
+    <>
+      {filterQuery ? (
+        <FilteredProjectList
+          projects={controller.ordered.projects}
+          query={filterQuery}
+          renderProject={(project, match) => (
+            <ProjectTreeRow
+              key={project.id}
+              project={project}
+              props={props}
+              controller={controller}
+              filterMatch={match}
+            />
+          )}
+        />
+      ) : (
+        controller.ordered.projects.map((project) => (
+          <ProjectTreeRow
+            key={project.id}
+            project={project}
+            props={props}
+            controller={controller}
+          />
+        ))
+      )}
+      {controller.ordered.projects.length === 0 && (
+        <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
+      )}
+    </>
   );
 }
 
@@ -263,18 +258,7 @@ function ProjectTreeRow({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <ProjectRowButton projectId={project.id} isActive={isActive} onClick={toggle}>
-            {isExpanded ? (
-              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-            )}
-            <span
-              data-sidebar-project-badge
-              className="inline-flex size-3.5 shrink-0 items-center justify-center"
-            >
-              <ProjectBadge projectId={project.id} className="max-w-none" />
-            </span>
-            <span className="min-w-0 truncate">{project.name}</span>
+            <ProjectRowLabel projectId={project.id} name={project.name} expanded={isExpanded} />
             {!isExpanded && <ProjectRowAttention projectId={project.id} />}
             <ProjectRowActions project={project} controller={controller} />
           </ProjectRowButton>
@@ -291,110 +275,5 @@ function ProjectTreeRow({
         />
       )}
     </div>
-  );
-}
-
-function ProjectRowActions({
-  project,
-  controller,
-}: {
-  project: ProjectSummary;
-  controller: ProjectTreeController;
-}) {
-  const target = {
-    id: project.id,
-    name: project.name,
-    authoringTarget: project.authoring_target,
-  };
-  return (
-    // Hidden (not just transparent) until hover, keyboard focus, or an open menu,
-    // so the actions don't reserve width and truncate the project name.
-    <div className="ml-auto flex shrink-0 items-center gap-0.5 can-hover:hidden can-hover:group-hover/project:flex can-hover:group-focus-visible/project:flex can-hover:has-data-[state=open]:flex">
-      <span
-        role="button"
-        tabIndex={0}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-        onClick={(event) => {
-          event.stopPropagation();
-          controller.startSession(project.id);
-        }}
-      >
-        <PlusIcon className="h-3.5 w-3.5" />
-      </span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <span
-            role="button"
-            tabIndex={0}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Ellipsis className="h-3.5 w-3.5" />
-          </span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onClick={(event) => {
-              event.stopPropagation();
-              controller.setSettingsProject(target);
-            }}
-          >
-            <Settings className="size-4" /> Project Settings
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={(event) => {
-              event.stopPropagation();
-              controller.setImportProject(target);
-            }}
-          >
-            <Download className="size-4" /> Import existing sessions
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="text-destructive focus:text-destructive"
-            onClick={(event) => {
-              event.stopPropagation();
-              controller.setDeleteProject(target);
-            }}
-          >
-            <Trash2 className="size-4" /> Delete Project
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
-
-function ProjectRowContextMenu({
-  project,
-  controller,
-}: {
-  project: ProjectSummary;
-  controller: ProjectTreeController;
-}) {
-  const target = {
-    id: project.id,
-    name: project.name,
-    authoringTarget: project.authoring_target,
-  };
-  return (
-    <ContextMenuContent>
-      <ContextMenuActionItem icon={PlusIcon} onSelect={() => controller.startSession(project.id)}>
-        New Session
-      </ContextMenuActionItem>
-      <ContextMenuSeparator />
-      <ContextMenuActionItem icon={Settings} onSelect={() => controller.setSettingsProject(target)}>
-        Project Settings
-      </ContextMenuActionItem>
-      <ContextMenuActionItem icon={Download} onSelect={() => controller.setImportProject(target)}>
-        Import existing sessions
-      </ContextMenuActionItem>
-      <ContextMenuActionItem
-        icon={Trash2}
-        variant="destructive"
-        onSelect={() => controller.setDeleteProject(target)}
-      >
-        Delete Project
-      </ContextMenuActionItem>
-    </ContextMenuContent>
   );
 }
