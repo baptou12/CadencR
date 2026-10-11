@@ -321,6 +321,14 @@ mod tests {
         assert!(!is_project_key_allowed("agent_stream_summary_mode"));
     }
     #[test]
+    fn workspace_accepts_agent_message_navigator_enabled() {
+        // Persisted by Settings → Interface → "Message navigator" toggle via
+        // useDebouncedSetting; without this the toggle 400s.
+        assert!(is_workspace_key_allowed("agent_message_navigator_enabled"));
+        assert!(!is_feature_key_allowed("agent_message_navigator_enabled"));
+        assert!(!is_project_key_allowed("agent_message_navigator_enabled"));
+    }
+    #[test]
     fn auto_layout_keys_are_scoped() {
         // Workspace default from Settings → Interface; per-feature override
         // from the auto layout toggle beside the layout menu.

@@ -249,6 +249,32 @@ html[data-animations="off"] .worktree-reuse-flash {
   outline: none;
 }
 
+/* The prompt the message navigator just scrolled to: one soft primary halo so
+ * the eye lands on it. Same outline-fade keyframes as the worktree flash. */
+@utility user-message-arrival-flash {
+  --flash-color: color-mix(in oklab, var(--primary) 65%, transparent);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  animation: outline-flash 900ms ease-out 1;
+}
+
+html[data-animations="off"] .user-message-arrival-flash {
+  animation-name: none;
+  outline: none;
+}
+
+/* A far message-navigator jump: Virtuoso reaches an unmeasured row through a
+ * few estimate corrections, so the list hides (instantly) while the jump
+ * settles and fades back in on landing. */
+[data-testid="agent-stream-scroller"] [data-testid="virtuoso-item-list"] {
+  transition: opacity 140ms var(--ease-fluid);
+}
+
+[data-testid="agent-stream-scroller"][data-nav-jumping] [data-testid="virtuoso-item-list"] {
+  opacity: 0;
+  transition-duration: 0ms;
+}
+
 /* Sidebar pull/merge-request chip whose checks are still running: a breathing
  * halo. Only this one transient state glows — a settled verdict is already
  * carried by the chip's border and fill, and a permanent glow on every row

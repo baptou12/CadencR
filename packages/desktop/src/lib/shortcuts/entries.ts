@@ -316,6 +316,20 @@ const APP_SHORTCUTS = [
     scope: "agent",
   },
   {
+    id: "agent-previous-message",
+    keys: ["alt", "up"],
+    description: "Jump to your previous message",
+    scope: "agent",
+    aliases: ["navigator", "prompt"],
+  },
+  {
+    id: "agent-next-message",
+    keys: ["alt", "down"],
+    description: "Jump to your next message",
+    scope: "agent",
+    aliases: ["navigator", "prompt"],
+  },
+  {
     id: "agent-use-referenced-worktree",
     keys: ["mod", "shift", "w"],
     description: "Reuse referenced conversation worktree",

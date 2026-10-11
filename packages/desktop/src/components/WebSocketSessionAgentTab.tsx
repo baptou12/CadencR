@@ -130,6 +130,7 @@ function AgentTabContent({
         claudeProfileSelection={controls.claudeProfile}
         hasMore={controls.ws.hasMore}
         onLoadOlder={controls.ws.loadOlderMessages}
+        onLoadPromptTurn={controls.ws.loadPromptTurn}
         worktreeMode={controls.worktreeMode}
         onWorktreeModeChange={controls.setWorktreeMode}
         worktreeProjectId={projectId}

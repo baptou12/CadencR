@@ -10,6 +10,7 @@ use crate::domain::sessions::activity_digest::{
 };
 use crate::domain::sessions::limits::normalize_agent_message_limit;
 use crate::domain::sessions::models::*;
+use crate::domain::sessions::prompt_index::{list_session_prompts, SessionPromptsResponse};
 use crate::domain::sessions::repository;
 use crate::domain::sessions::unified_agents::{list_unified_agents, UnifiedAgentsQuery};
 use crate::error::AppError;
@@ -216,6 +217,18 @@ pub async fn get_message_preview_handler(
     Ok(Json(MessagePreviewResponse { preview }))
 }
 
+#[utoipa::path(get, path = "/api/sessions/{session_id}/prompts",
+    params(("session_id" = i64, Path,)),
+    responses((status = 200, body = SessionPromptsResponse), (status = 404)))]
+pub async fn list_session_prompts_handler(
+    State(state): State<AppState>,
+    Path(session_id): Path<i64>,
+) -> Result<Json<SessionPromptsResponse>, AppError> {
+    Ok(Json(
+        list_session_prompts(&state.read_pool, session_id).await?,
+    ))
+}
+
 pub fn sessions_router() -> Router<AppState> {
     Router::new()
         .route(
@@ -238,6 +251,10 @@ pub fn sessions_router() -> Router<AppState> {
         .route(
             "/api/sessions/conversation-references",
             get(list_conversation_references_handler),
+        )
+        .route(
+            "/api/sessions/{session_id}/prompts",
+            get(list_session_prompts_handler),
         )
         .route(
             "/api/sessions/{session_id}/draft",
