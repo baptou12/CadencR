@@ -77,6 +77,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "sidebar_provider_logos",
     "sidebar_collapsed",
     "sidebar_right_collapsed",
+    // Sidebar expansion memory, each a JSON array of ids: expanded project ids,
+    // collapsed parent-conversation ids, project ids with archived shown.
+    "sidebar_expanded_projects",
+    "sidebar_collapsed_subtrees",
+    "sidebar_archived_open_projects",
     "loader_style",
     // UI zoom is kept per device type: desktop scales via the Electron native
     // zoom factor, mobile (remote browser/PWA) via CSS zoom — independent levels.

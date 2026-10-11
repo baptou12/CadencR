@@ -31,14 +31,18 @@ interface FeatureRowMetaLineProps {
   browserCount: number;
   downloadCount: number;
   ports: readonly AllocatedPort[];
-  isEditingLabel: boolean;
-  labelDraft: string;
-  labelSuggestions: readonly string[];
-  isSavingLabel: boolean;
-  onLabelDraftChange: (value: string) => void;
-  onSaveLabel: (featureId: number, override?: string) => void;
-  onCancelLabelEdit: () => void;
+  /** Present while the label is being edited; read-only rows never pass it. */
+  labelEditor?: FeatureLabelEditing;
   onOpenPort: (port: number) => void;
+}
+
+export interface FeatureLabelEditing {
+  draft: string;
+  suggestions: readonly string[];
+  isSaving: boolean;
+  onDraftChange: (value: string) => void;
+  onSave: (override?: string) => void;
+  onCancel: () => void;
 }
 
 /**
@@ -54,13 +58,7 @@ export function FeatureRowMetaLine({
   browserCount,
   downloadCount,
   ports,
-  isEditingLabel,
-  labelDraft,
-  labelSuggestions,
-  isSavingLabel,
-  onLabelDraftChange,
-  onSaveLabel,
-  onCancelLabelEdit,
+  labelEditor,
   onOpenPort,
 }: FeatureRowMetaLineProps): ReactElement | null {
   const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
@@ -68,7 +66,7 @@ export function FeatureRowMetaLine({
   // auth failure must not be the one thing that keeps this line from mounting.
   const hasPrIndicator = prStatus?.pr != null || prStatus?.error != null;
   const hasActivity = shellCount > 0 || browserCount > 0 || downloadCount > 0 || ports.length > 0;
-  if (!isEditingLabel && !feature.label && !hasStats && !hasActivity && !hasPrIndicator) {
+  if (!labelEditor && !feature.label && !hasStats && !hasActivity && !hasPrIndicator) {
     return null;
   }
 
@@ -77,11 +75,11 @@ export function FeatureRowMetaLine({
       data-feature-meta-line
       className="flex min-w-0 items-center gap-2 pl-5 text-[11px] leading-tight"
     >
-      {isEditingLabel ? (
+      {labelEditor ? (
         <FeatureLabelEditor
-          value={labelDraft}
-          suggestions={labelSuggestions}
-          isSaving={isSavingLabel}
+          value={labelEditor.draft}
+          suggestions={labelEditor.suggestions}
+          isSaving={labelEditor.isSaving}
           trigger={
             feature.label ? (
               <FeatureLabelChip label={feature.label} />
@@ -91,9 +89,9 @@ export function FeatureRowMetaLine({
               </span>
             )
           }
-          onChange={onLabelDraftChange}
-          onSave={(override) => onSaveLabel(feature.id, override)}
-          onCancel={onCancelLabelEdit}
+          onChange={labelEditor.onDraftChange}
+          onSave={labelEditor.onSave}
+          onCancel={labelEditor.onCancel}
         />
       ) : (
         <FeatureLabelChip label={feature.label} />

@@ -16,8 +16,7 @@ import {
 } from "@/components/ProjectFeatureRowParts";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
-import { portUrl } from "@/lib/feature-ports";
-import { openLink } from "@/lib/link-routing";
+import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",
@@ -138,13 +137,18 @@ function FeatureRowDetails({
         browserCount={browserCount}
         downloadCount={downloadCount}
         ports={ports}
-        isEditingLabel={isEditingLabel}
-        labelDraft={labelDraft}
-        labelSuggestions={labelSuggestions}
-        isSavingLabel={isSavingLabel}
-        onLabelDraftChange={onLabelDraftChange}
-        onSaveLabel={onSaveLabel}
-        onCancelLabelEdit={onCancelLabelEdit}
+        labelEditor={
+          isEditingLabel
+            ? {
+                draft: labelDraft,
+                suggestions: labelSuggestions,
+                isSaving: isSavingLabel,
+                onDraftChange: onLabelDraftChange,
+                onSave: (override) => onSaveLabel(feature.id, override),
+                onCancel: onCancelLabelEdit,
+              }
+            : undefined
+        }
         onOpenPort={onOpenPort}
       />
     </div>
@@ -234,21 +238,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
     onNavigate(feature);
   }, [feature, onNavigate]);
 
-  // Browser tabs are scoped per feature, so a port opened from another
-  // conversation's row would land in a pane the user isn't looking at.
-  // `openLink` falls back to the system browser off the desktop shell.
-  const handleOpenPort = useCallback(
-    (port: number): void => {
-      onNavigate(feature);
-      void openLink(portUrl(port), {
-        target: "cadencr",
-        scopeId: feature.id,
-        cookieMode: "normal",
-        domains: [],
-      });
-    },
-    [feature, onNavigate],
-  );
+  const handleOpenPort = useOpenFeaturePort(feature, onNavigate);
 
   return (
     <ContextMenu>

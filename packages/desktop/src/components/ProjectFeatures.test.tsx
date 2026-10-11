@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, onTestFinished } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { useListFeatures } from "@/api/generated";
@@ -8,6 +8,12 @@ import { resetMockIds } from "@/test-fixtures";
 import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { useBrowserStore } from "@/stores/browser-store";
+import { resetPersistedIdSets } from "@/test/persisted-id-set-mock";
+
+vi.mock("@/hooks/usePersistedIdSet", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...(await import("@/test/persisted-id-set-mock")),
+}));
 
 type UserEvent = ReturnType<typeof userEvent.setup>;
 
@@ -210,6 +216,7 @@ vi.mock("@/stores/ws-session-store", () => ({
 
 describe("ProjectFeatures", () => {
   beforeEach(() => {
+    resetPersistedIdSets();
     resetMockIds();
     mockNavigate.mockClear();
     mockUpdateLabel.mockClear();
@@ -243,12 +250,19 @@ describe("ProjectFeatures", () => {
   });
 
   it("nests an active child and toggles its subtree without navigating", () => {
-    vi.mocked(useListFeatures).mockReturnValueOnce({
+    // Every render must see the hierarchy: toggling re-renders the list.
+    const hierarchy = {
       data: [
         mockFeatures[0],
         { ...mockFeatures[1], spawned_by_feature_id: 1, spawn_link_type: "spawned" },
       ],
-    } as ReturnType<typeof useListFeatures>);
+    } as ReturnType<typeof useListFeatures>;
+    vi.mocked(useListFeatures).mockReturnValue(hierarchy);
+    onTestFinished(() => {
+      vi.mocked(useListFeatures).mockImplementation(
+        () => ({ data: mockFeatures }) as ReturnType<typeof useListFeatures>,
+      );
+    });
 
     render(
       <ProjectFeatures

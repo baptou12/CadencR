@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -28,6 +28,7 @@ import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { buildFeatureForest } from "@/lib/feature-hierarchy";
 import { normalizeLabel, uniqueLabels } from "@/lib/feature-labels";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
+import { FEATURE_WORKTREES_STALE_MS } from "@/lib/sidebar-queries";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useCloseFeatureActivity } from "@/hooks/useCloseFeatureActivity";
@@ -36,6 +37,9 @@ import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import { useLiveFeatureMeta } from "@/hooks/useLiveFeatureMeta";
 import { useArchiveFeatureAction } from "@/hooks/useArchiveFeatureAction";
+import { useArchivedSectionOpen } from "@/hooks/useArchivedSectionOpen";
+import { SIDEBAR_COLLAPSED_SUBTREES_KEY, usePersistedIdSet } from "@/hooks/usePersistedIdSet";
+import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
 import { useFeatureArchiveConfirmation } from "@/components/useFeatureArchiveConfirmation";
 
 export const ACTIVE_FEATURE_STATUS: FeatureStatus = "active";
@@ -55,15 +59,17 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
   });
   const { data: featureWorktrees = [] } = useListFeatureWorktrees(
     { project_id: projectId },
-    { query: { staleTime: 5 * 60 * 1000 } },
+    { query: { staleTime: FEATURE_WORKTREES_STALE_MS } },
   );
   const { shellCountsByFeatureId, browserCountsByFeatureId, downloadCountsByFeatureId } =
     useFeatureActivityCounts(projectId);
   const portsByFeatureId = useFeaturePorts();
   const liveMeta = useLiveFeatureMeta();
-  const activeFeatures = useMemo(
-    () => features.filter((feature) => feature.status === ACTIVE_FEATURE_STATUS),
-    [features],
+  const activeFeatures = useStableFeatureOrder(
+    useMemo(
+      () => features.filter((feature) => feature.status === ACTIVE_FEATURE_STATUS),
+      [features],
+    ),
   );
   const archivedFeatures = useMemo(
     () => features.filter((feature) => feature.status === ARCHIVED_FEATURE_STATUS),
@@ -84,6 +90,7 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
     () => buildFeatureForest(activeFeatures.filter((feature) => !feature.is_pinned)),
     [activeFeatures],
   );
+  const orderedIds = useMemo(() => activeForest.map((node) => node.feature.id), [activeForest]);
   const rootNodeByFeatureId = useMemo(
     () => new Map(activeForest.map((node) => [node.feature.id, node])),
     [activeForest],
@@ -119,6 +126,7 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
     getLiveTitle,
     isAutoNaming,
     labelSuggestions,
+    orderedIds,
     portsByFeatureId,
     rootNodeByFeatureId,
     shellCountsByFeatureId,
@@ -301,9 +309,13 @@ function createFeatureRenderer(
 }
 
 export function useProjectFeaturesController(props: ProjectFeaturesProps) {
-  const [showArchived, setShowArchived] = useState(false);
   const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
   const data = useProjectFeaturesData(props);
+  const { showArchived, toggleArchived } = useArchivedSectionOpen(
+    props.projectId,
+    data.activeFeature?.status === ARCHIVED_FEATURE_STATUS,
+  );
+  const collapsedSubtrees = usePersistedIdSet(SIDEBAR_COLLAPSED_SUBTREES_KEY);
   const labels = useProjectFeatureLabels(data);
   const actions = useProjectFeatureActions(props, data);
   const confirmation = useFeatureArchiveConfirmation(
@@ -311,9 +323,6 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
     data.features,
     data.worktreeByFeatureId,
   );
-  useEffect(() => {
-    if (data.activeFeature?.status === ARCHIVED_FEATURE_STATUS) setShowArchived(true);
-  }, [data.activeFeature?.status]);
   const renderFeature = useMemo(
     () => createFeatureRenderer(props, data, labels, actions, setConfirmFeatureId),
     [actions, data, labels, props],
@@ -322,15 +331,22 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
     (feature: Feature): ReactNode => {
       const node = data.rootNodeByFeatureId.get(feature.id);
       return node ? (
-        <FeatureSubtree key={feature.id} node={node} renderFeature={renderFeature} />
+        <FeatureSubtree
+          key={feature.id}
+          node={node}
+          renderFeature={renderFeature}
+          collapsedIds={collapsedSubtrees.ids}
+          onSetCollapsed={collapsedSubtrees.setMember}
+        />
       ) : (
         renderFeature(feature)
       );
     },
-    [data.rootNodeByFeatureId, renderFeature],
+    [collapsedSubtrees, data.rootNodeByFeatureId, renderFeature],
   );
   return {
     actions,
+    orderedIds: data.orderedIds,
     renderedActiveFeatureCount: data.activeFeatures.filter((feature) => !feature.is_pinned).length,
     archivedFeatures: data.archivedFeatures,
     confirmFeatureId,
@@ -340,8 +356,8 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
     renderFeature,
     renderSubtree,
     setConfirmFeatureId,
-    setShowArchived,
     showArchived,
+    toggleArchived,
     worktreeGroups: data.worktreeGroups,
   };
 }

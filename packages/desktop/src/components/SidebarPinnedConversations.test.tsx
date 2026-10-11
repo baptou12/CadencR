@@ -58,6 +58,23 @@ vi.mock("@/lib/feature-focus-handoff", () => ({
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
+// Ordering, ports, and activity have their own coverage; keep backend order and no badges.
+vi.mock("@/hooks/useStableFeatureOrder", () => ({
+  useStableFeatureOrder: (features: Feature[]) => features,
+}));
+
+vi.mock("@/hooks/useFeaturePorts", () => ({
+  NO_PORTS: [],
+  useFeaturePorts: () => new Map(),
+}));
+
+vi.mock("@/hooks/usePinnedActivity", () => ({
+  usePinnedActivity: () => ({
+    shellCountByFeatureId: new Map(),
+    liveWorktreeFeatureIds: new Set(),
+  }),
+}));
+
 // Stub the row so this suite stays focused on the section's own behavior
 // (fetch → header/empty, navigate, unpin) without wiring every store the row
 // reads. The stub surfaces the props the section is responsible for.

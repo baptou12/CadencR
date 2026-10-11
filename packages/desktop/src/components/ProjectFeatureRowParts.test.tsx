@@ -62,13 +62,6 @@ function renderLine(
       browserCount={0}
       downloadCount={downloadCount}
       ports={ports}
-      isEditingLabel={false}
-      labelDraft=""
-      labelSuggestions={[]}
-      isSavingLabel={false}
-      onLabelDraftChange={vi.fn()}
-      onSaveLabel={vi.fn()}
-      onCancelLabelEdit={vi.fn()}
       onOpenPort={vi.fn()}
     />,
   );

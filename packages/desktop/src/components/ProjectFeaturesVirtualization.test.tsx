@@ -6,6 +6,7 @@ const { controller } = vi.hoisted(() => ({
   controller: {
     actions: { deleteFeature: vi.fn(), updateStatus: vi.fn() },
     renderedActiveFeatureCount: 1_001,
+    orderedIds: [] as number[],
     archivedFeatures: [] as Array<{ id: number }>,
     confirmFeatureId: null,
     confirmation: { action: "archive", cleanup: {}, feature: undefined },

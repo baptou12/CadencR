@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronRight,
@@ -20,6 +20,7 @@ import {
   useSetProjectSetting,
 } from "../api/generated";
 import { useOrderedProjects } from "@/hooks/useOrderedProjects";
+import { useProjectExpansion } from "@/hooks/useProjectExpansion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
@@ -121,22 +122,18 @@ function useProjectTreeController(props: ProjectTreeProps) {
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const onboarding = useNewProjectOnboarding();
   const mutations = useProjectTreeMutations(ordered.projects, onboarding.maybeOnboard);
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const expansion = useProjectExpansion(props.activeProjectId);
+  const { setExpanded: setProjectExpanded } = expansion;
   const [settingsProject, setSettingsProject] = useState<ProjectDialogTarget | null>(null);
   const [importProject, setImportProject] = useState<ProjectDialogTarget | null>(null);
   const [deleteProject, setDeleteProject] = useState<ProjectDialogTarget | null>(null);
-  useEffect(() => {
-    if (props.activeProjectId != null) {
-      setExpanded((previous) => ({ ...previous, [props.activeProjectId!]: true }));
-    }
-  }, [props.activeProjectId]);
   const startSession = useCallback(
     (projectId: number) => {
-      setExpanded((previous) => ({ ...previous, [projectId]: true }));
+      setProjectExpanded(projectId, true);
       mutations.pendingProjectIdRef.current = projectId;
       mutations.createSession.mutate({ data: { project_id: projectId, type: "ws-session" } });
     },
-    [mutations],
+    [mutations, setProjectExpanded],
   );
   const addProject = useCallback(async () => {
     setIsSelectingFolder(true);
@@ -154,14 +151,13 @@ function useProjectTreeController(props: ProjectTreeProps) {
     () => ({
       addProject,
       deleteProject,
-      expanded,
+      expansion,
       importProject,
       isSelectingFolder,
       mutations,
       onboarding,
       ordered,
       setDeleteProject,
-      setExpanded,
       setImportProject,
       setSettingsProject,
       settingsProject,
@@ -170,7 +166,7 @@ function useProjectTreeController(props: ProjectTreeProps) {
     [
       addProject,
       deleteProject,
-      expanded,
+      expansion,
       importProject,
       isSelectingFolder,
       mutations,
@@ -226,10 +222,9 @@ function ProjectTreeRow({
   props: ProjectTreeProps;
   controller: ProjectTreeController;
 }) {
-  const isExpanded = controller.expanded[project.id] ?? false;
+  const isExpanded = controller.expansion.expandedIds.has(project.id);
   const isActive = props.activeProjectId === project.id;
-  const toggle = (): void =>
-    controller.setExpanded((previous) => ({ ...previous, [project.id]: !previous[project.id] }));
+  const toggle = (): void => controller.expansion.setExpanded(project.id, !isExpanded);
   return (
     <div>
       <ContextMenu>
@@ -277,7 +272,9 @@ function ProjectRowActions({
     authoringTarget: project.authoring_target,
   };
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-0.5">
+    // Hidden (not just transparent) until hover, keyboard focus, or an open menu,
+    // so the actions don't reserve width and truncate the project name.
+    <div className="ml-auto flex shrink-0 items-center gap-0.5 can-hover:hidden can-hover:group-hover/project:flex can-hover:group-focus-visible/project:flex can-hover:has-data-[state=open]:flex">
       <span
         role="button"
         tabIndex={0}
@@ -294,7 +291,7 @@ function ProjectRowActions({
           <span
             role="button"
             tabIndex={0}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent can-hover:opacity-0 can-hover:focus-visible:opacity-100 can-hover:group-hover/project:opacity-100"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
             onClick={(event) => event.stopPropagation()}
           >
             <Ellipsis className="h-3.5 w-3.5" />

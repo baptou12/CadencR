@@ -4,6 +4,12 @@ import { fireEvent, render, screen } from "@/test-utils";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { resetMockIds } from "@/test-fixtures";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
+import { resetPersistedIdSets } from "@/test/persisted-id-set-mock";
+
+vi.mock("@/hooks/usePersistedIdSet", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ...(await import("@/test/persisted-id-set-mock")),
+}));
 
 const mockNavigate = vi.fn();
 const mockUpdateStatus = vi.fn();
@@ -134,6 +140,7 @@ function openFeatureContextMenu(featureTitle: string): void {
 
 describe("ProjectFeatures archived section", () => {
   beforeEach(() => {
+    resetPersistedIdSets();
     resetMockIds();
     mockNavigate.mockClear();
     mockUpdateStatus.mockClear();

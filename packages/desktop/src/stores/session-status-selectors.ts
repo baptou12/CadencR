@@ -85,3 +85,16 @@ export function useLiveActiveSessionIds(): readonly number[] {
     }),
   );
 }
+
+/** Sorted ids of `featureIds` whose agent is mid-turn; stable while unchanged. */
+export function useBusyFeatureIds(featureIds: ReadonlySet<number>): readonly number[] {
+  return useSessionStatusStore(
+    useShallow((s) => {
+      const busy = new Set<number>();
+      for (const entry of Object.values(s.bySession)) {
+        if (entry.status === "agent" && featureIds.has(entry.featureId)) busy.add(entry.featureId);
+      }
+      return [...busy].sort((a, b) => a - b);
+    }),
+  );
+}

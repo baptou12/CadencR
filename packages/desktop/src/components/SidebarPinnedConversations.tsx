@@ -15,6 +15,10 @@ import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { useReorderAnimation } from "@/hooks/useReorderAnimation";
+import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
+import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
+import { usePinnedActivity } from "@/hooks/usePinnedActivity";
 
 /**
  * Global "Pinned" section rendered above the project list. Pinning is a
@@ -27,6 +31,8 @@ import { apiErrorMessage } from "@/lib/api-errors";
  * invalidate the `/api/features` cache prefix (which covers this list); there
  * is no optimistic state — the section re-renders from the refetched data.
  */
+const EMPTY_FEATURES: Feature[] = [];
+
 export function SidebarPinnedConversations({
   activeFeatureId,
   onSelectFeature,
@@ -36,8 +42,14 @@ export function SidebarPinnedConversations({
 }): ReactElement | null {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data: pinnedFeatures = [] } = useListPinnedFeatures();
+  const { data: fetchedPinned = EMPTY_FEATURES } = useListPinnedFeatures();
+  const pinnedFeatures = useStableFeatureOrder(fetchedPinned);
+  const listRef = useRef<HTMLDivElement>(null);
+  const pinnedIds = useMemo(() => pinnedFeatures.map((feature) => feature.id), [pinnedFeatures]);
+  useReorderAnimation(listRef, pinnedIds);
   const { data: projects = [] } = useListProjects();
+  const portsByFeatureId = useFeaturePorts();
+  const activity = usePinnedActivity(fetchedPinned);
 
   const projectsById = useMemo(() => {
     const map = new Map<number, Project>();
@@ -86,7 +98,7 @@ export function SidebarPinnedConversations({
   if (pinnedFeatures.length === 0) return null;
 
   return (
-    <div className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
+    <div ref={listRef} className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
       <div className="flex items-center gap-1.5 px-2 pb-0.5 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
         <PinIcon className="size-3 shrink-0" />
         <span>Pinned</span>
@@ -96,6 +108,9 @@ export function SidebarPinnedConversations({
           key={feature.id}
           feature={feature}
           activeFeatureId={activeFeatureId}
+          ports={portsByFeatureId.get(feature.id) ?? NO_PORTS}
+          shellCount={activity.shellCountByFeatureId.get(feature.id) ?? 0}
+          hasLiveWorktree={activity.liveWorktreeFeatureIds.has(feature.id)}
           onNavigate={handleNavigate}
           onUnpin={handleUnpin}
         />

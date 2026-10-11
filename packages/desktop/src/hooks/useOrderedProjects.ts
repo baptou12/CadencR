@@ -3,7 +3,10 @@ import { getListFeaturesQueryKey, useListProjects, type Project } from "@/api/ge
 import { queryClient } from "@/lib/queryClient";
 import { useSidebarProjectOrderStore } from "@/stores/sidebar-project-order-store";
 
-export function applyOrder(projects: readonly Project[], order: number[] | null): Project[] {
+export function applyOrder<T extends { id: number }>(
+  projects: readonly T[],
+  order: readonly number[] | null,
+): T[] {
   if (order === null) return [...projects];
   const rank = new Map(order.map((id, index) => [id, index]));
   // Unknown ids (newly created, not yet reconciled into `order`) get rank -1

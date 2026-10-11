@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import type { Feature } from "@/api/generated";
 import type { FeatureTreeNode } from "@/lib/feature-hierarchy";
@@ -13,13 +13,18 @@ import { Button } from "@/components/ui/button";
 export function FeatureSubtree({
   node,
   renderFeature,
+  collapsedIds,
+  onSetCollapsed,
   depth = 0,
 }: {
   node: FeatureTreeNode;
   renderFeature: (feature: Feature, hierarchyControl?: ReactNode, depth?: number) => ReactNode;
+  /** Parent conversations the user collapsed (persisted by the caller). */
+  collapsedIds: ReadonlySet<number>;
+  onSetCollapsed: (featureId: number, collapsed: boolean) => void;
   depth?: number;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const expanded = !collapsedIds.has(node.feature.id);
   const hasChildren = node.children.length > 0;
 
   const control = hasChildren ? (
@@ -31,7 +36,7 @@ export function FeatureSubtree({
       aria-label={expanded ? "Collapse child sessions" : "Expand child sessions"}
       onClick={(event) => {
         event.stopPropagation();
-        setExpanded((value) => !value);
+        onSetCollapsed(node.feature.id, expanded);
       }}
     >
       {expanded ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
@@ -48,6 +53,8 @@ export function FeatureSubtree({
               key={child.feature.id}
               node={child}
               renderFeature={renderFeature}
+              collapsedIds={collapsedIds}
+              onSetCollapsed={onSetCollapsed}
               depth={depth + 1}
             />
           ))}

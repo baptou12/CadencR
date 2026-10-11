@@ -34,6 +34,7 @@ import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useSidebarKeyboardNavigation } from "@/hooks/useSidebarKeyboardNavigation";
+import { useBrowserActivityBridge } from "@/hooks/useFeatureActivityCounts";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
@@ -44,6 +45,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
   const { activeProjectId, effectiveFeatureId } = useSidebarActiveIds(selectedFeatureId);
   useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
+  useBrowserActivityBridge();
 
   return (
     <SidebarPreferences>

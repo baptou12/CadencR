@@ -270,6 +270,14 @@ mod tests {
         assert!(!is_project_key_allowed("git_diff_tree_display_mode"));
     }
     #[test]
+    fn workspace_accepts_sidebar_expansion_keys() {
+        // The sidebar remembers what the user expanded; without these the FE
+        // gets a BAD_REQUEST and every reload collapses the tree again.
+        assert!(is_workspace_key_allowed("sidebar_expanded_projects"));
+        assert!(is_workspace_key_allowed("sidebar_collapsed_subtrees"));
+        assert!(is_workspace_key_allowed("sidebar_archived_open_projects"));
+    }
+    #[test]
     fn workspace_accepts_favorite_models() {
         // Starred models in the model pickers; without this the FE gets a
         // BAD_REQUEST and starring silently fails.
