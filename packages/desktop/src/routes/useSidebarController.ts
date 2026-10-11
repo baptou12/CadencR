@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/components/AppShell";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useSidebarAutoCollapse } from "@/hooks/useSidebarAutoCollapse";
 
 function clampSidebarWidth(raw: string | null): number {
   const saved = raw ? Number(raw) : Number.NaN;
@@ -19,7 +20,8 @@ function clampSidebarWidth(raw: string | null): number {
  * at mount, the stored width is applied imperatively once it loads, and every
  * expand resizes back to it. Layout events are ignored until that first load
  * has been applied, so the mount-time `onLayoutChanged` cannot overwrite the
- * stored width with the default.
+ * stored width with the default. A narrow window can fold the sidebar on top
+ * of the stored state (A8, never persisted).
  */
 export function useSidebarController(isMobile: boolean) {
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
@@ -27,7 +29,10 @@ export function useSidebarController(isMobile: boolean) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const sidebarPanelRef = useRef<PanelImperativeHandle>(null);
-  const collapsed = isMobile ? !mobileDrawerOpen : collapsedSetting.value === "true";
+  const autoCollapse = useSidebarAutoCollapse(isMobile);
+  const collapsed = isMobile
+    ? !mobileDrawerOpen
+    : collapsedSetting.value === "true" || autoCollapse.autoCollapsed;
   const storedWidth = clampSidebarWidth(leftWidth.value);
   const [defaultLeftSize] = useState(() => `${storedWidth}px`);
   const widthAppliedRef = useRef(false);
@@ -47,10 +52,11 @@ export function useSidebarController(isMobile: boolean) {
         // it non-collapsible so pointer and keyboard resizing clamp at minSize.
         const panel = sidebarPanelRef.current;
         if (!nextCollapsed && panel) restoreWidth(panel);
+        if (autoCollapse.onUserToggle(nextCollapsed)) return;
         collapsedSetting.setValue(nextCollapsed ? "true" : "false");
       }
     },
-    [collapsedSetting, isMobile, restoreWidth],
+    [autoCollapse, collapsedSetting, isMobile, restoreWidth],
   );
   const closeMobileDrawer = useCallback((): void => setMobileDrawerOpen(false), []);
   useEffect(() => {

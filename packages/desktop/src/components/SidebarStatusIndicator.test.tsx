@@ -117,4 +117,20 @@ describe("sidebar status", () => {
     );
     expect(gate.usePopoverOpen).toHaveBeenLastCalledWith(42, true);
   });
+
+  it("still flashes its row when the status style hides the slot", () => {
+    useSidebarConfigStore.setState({
+      config: { ...DEFAULT_SIDEBAR_CONFIG, forMe: false, status: "hidden" },
+    });
+    const props = { isActive: false, onOpenConversation: vi.fn() };
+    const row = (attention: typeof working | typeof unread) => (
+      <div data-nav-type="feature" data-testid="row">
+        <SidebarStatusIndicator {...props} attention={attention} />
+      </div>
+    );
+    const { rerender } = render(row(working));
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    rerender(row(unread));
+    expect(screen.getByTestId("row")).toHaveAttribute("data-sidebar-flash", "unread");
+  });
 });

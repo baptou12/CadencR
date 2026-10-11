@@ -116,3 +116,27 @@ describe("SidebarConfigProvider", () => {
     expect(useSidebarConfigStore.getState().config.provider).toBe("hidden");
   });
 });
+
+describe("SidebarDisplayOptionsForm tooltips", () => {
+  it.each([
+    [
+      "an option",
+      () => screen.getByText("Block counters"),
+      "What the For me, In progress and Pinned headers show next to their name.",
+    ],
+    [
+      "a value",
+      () => screen.getByRole("radio", { name: "Click" }),
+      "Opens only when you click the pending icon",
+    ],
+    [
+      "a row element",
+      () => screen.getByText("Ports"),
+      "Ports the conversation's processes listen on, under the title. Click one to open it.",
+    ],
+  ])("explains %s on hover", async (_, target, hint) => {
+    const { user } = render(<SidebarDisplayOptionsForm />, { queryClient: clientWith({}) });
+    await user.hover(target());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(hint);
+  });
+});

@@ -1,6 +1,7 @@
-import { memo, type ReactElement } from "react";
+import { memo, useRef, type ReactElement } from "react";
 import { Check, CircleAlert } from "lucide-react";
 import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
+import { useAttentionFlash } from "@/hooks/useAttentionFlash";
 import { isStrongAttention, type Attention } from "@/lib/sidebar-attention";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { useOwnsGateAutoOpen } from "@/stores/sidebar-surface-store";
@@ -9,6 +10,7 @@ import { useOwnsGateAutoOpen } from "@/stores/sidebar-surface-store";
  * Fixed leading slot: status stays legible even when provider branding is
  * hidden. A pending request (answerable from here) and a failed turn always
  * show, whatever the status style: the sidebar never hides what needs you.
+ * Its row flashes when the state turns to something worth a look.
  */
 export const SidebarStatusIndicator = memo(function SidebarStatusIndicator({
   attention,
@@ -18,11 +20,17 @@ export const SidebarStatusIndicator = memo(function SidebarStatusIndicator({
   attention: Attention;
   isActive: boolean;
   onOpenConversation: () => void;
-}): ReactElement | null {
+}): ReactElement {
   const style = useSidebarOption("status");
-  if (style === "hidden" && !isStrongAttention(attention.state)) return null;
+  const slotRef = useRef<HTMLSpanElement>(null);
+  useAttentionFlash(slotRef, attention.state);
+  // An empty, hidden slot still anchors the row's flash.
+  if (style === "hidden" && !isStrongAttention(attention.state)) {
+    return <span ref={slotRef} hidden />;
+  }
   return (
     <span
+      ref={slotRef}
       data-sidebar-status={attention.state}
       className="inline-flex size-3.5 shrink-0 items-center justify-center"
     >

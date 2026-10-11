@@ -29,10 +29,11 @@ interface ResolvedAttentionResult {
   /** The items asking something of the user: agents at work left out. */
   queue: readonly ResolvedAttention[];
   byProject: ReadonlyMap<number, ProjectAttentionCounts>;
-  /** True while a conversation of the index is still being looked up. */
-  isLoading: boolean;
-  /** True while a conversation of the queue is still being looked up. */
-  isQueueLoading: boolean;
+  /**
+   * The states with a conversation still being looked up, each once in index
+   * order: a surface waits only on the states it shows.
+   */
+  loadingStates: readonly ActiveAttentionState[];
 }
 
 interface FeatureResult {
@@ -87,32 +88,28 @@ export function useResolvedAttention(): ResolvedAttentionResult {
       items: resolved.items,
       queue,
       byProject,
-      isLoading: resolved.isLoading,
-      isQueueLoading: resolved.isQueueLoading,
+      loadingStates: resolved.loadingStates,
     }),
-    [entries, resolved.items, queue, byProject, resolved.isLoading, resolved.isQueueLoading],
+    [entries, resolved.items, queue, byProject, resolved.loadingStates],
   );
 }
 
 function resolveEntries(entries: readonly AttentionEntry[], results: FeatureResult[]) {
   const items: ResolvedAttention[] = [];
   let error: unknown = null;
-  let isLoading = false;
-  let isQueueLoading = false;
+  // An array, not a Set: `combine`'s structural sharing keeps it stable while equal.
+  const loadingStates: ActiveAttentionState[] = [];
   results.forEach((result, index) => {
     const entry = entries[index];
     if (!entry) return;
-    if (result.isPending) {
-      isLoading = true;
-      isQueueLoading ||= needsUser(entry.state);
-    }
+    if (result.isPending && !loadingStates.includes(entry.state)) loadingStates.push(entry.state);
     if (result.error && !isNotFound(result.error)) error ??= result.error;
     const feature = result.data;
     if (feature && feature.status !== FeatureStatus.archived) {
       items.push({ feature, state: entry.state });
     }
   });
-  return { items, error, isLoading, isQueueLoading };
+  return { items, error, loadingStates };
 }
 
 /** A deleted conversation can keep a status or unread mark: it simply leaves. */

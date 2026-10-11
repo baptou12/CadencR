@@ -24,6 +24,20 @@ describe("sidebar presets", () => {
     const values = sidebarPresetValues("minimal");
     expect(values).not.toHaveProperty("sidebar_type_to_filter");
     expect(values).not.toHaveProperty("sidebar_reveal_active");
+    expect(values).not.toHaveProperty("sidebar_gate_popover");
+    expect(values).not.toHaveProperty("sidebar_auto_collapse");
+    expect(matchSidebarPreset({ ...DEFAULT_SIDEBAR_CONFIG, gatePopover: "click" })).toBe("classic");
+  });
+
+  it("sets and clears the block switches with the rest", () => {
+    expect(sidebarPresetValues("control")).toMatchObject({
+      sidebar_block_working: "true",
+      sidebar_block_recent: null,
+    });
+    expect(sidebarPresetValues("minimal")).toMatchObject({
+      sidebar_block_counts: "dot",
+      sidebar_flash_on_change: "false",
+    });
   });
 
   it("writes a preset's own values and clears every other key", () => {

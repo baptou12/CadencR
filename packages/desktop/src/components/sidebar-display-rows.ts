@@ -3,7 +3,8 @@ import type { SidebarConfig, SidebarOptionId } from "@/lib/sidebar-config";
 
 /**
  * The sidebar display options as the popover and the Settings section lay them
- * out: one segmented control per choice, one checkbox per row element.
+ * out: one segmented control per choice, one checkbox per row element, one
+ * switch per block or behaviour.
  */
 
 export type ChoiceId = {
@@ -113,7 +114,7 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
     label: "Project badges",
     options: [
       { value: "count", label: "Count" },
-      { value: "dot", label: "Dot" },
+      { value: "dot", label: "Dot", title: "One mark per state, without numbers" },
       { value: "none", label: "None" },
     ],
   },
@@ -155,14 +156,122 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
       { value: "none", label: "None" },
     ],
   },
+  {
+    id: "gatePopover",
+    description:
+      "When a pending request's popover opens: by itself on the newest request, on pointing at its icon, or only on a click.",
+    label: "Gate popover",
+    options: [
+      { value: "auto", label: "Auto", title: "Opens by itself on the newest pending request" },
+      { value: "hover", label: "Hover", title: "Opens while you point at the pending icon" },
+      { value: "click", label: "Click", title: "Opens only when you click the pending icon" },
+    ],
+  },
+  {
+    id: "blockCounts",
+    description: "What the For me, In progress and Pinned headers show next to their name.",
+    label: "Block counters",
+    options: [
+      { value: "count", label: "Count" },
+      { value: "dot", label: "Dot", title: "A dot, amber when something needs an action" },
+      { value: "none", label: "None" },
+    ],
+  },
+  {
+    id: "recentCount",
+    description: "How many conversations the Recent block lists.",
+    label: "Recent shows",
+    options: [
+      { value: "3", label: "3" },
+      { value: "5", label: "5" },
+      { value: "10", label: "10" },
+    ],
+  },
 ];
 
-export const ROW_ELEMENTS: readonly { id: ToggleId; label: string }[] = [
-  { id: "pendingRequest", label: "Pending request" },
-  { id: "worktreeIcon", label: "Worktree icon" },
-  { id: "branch", label: "Branch" },
-  { id: "diff", label: "Diff stats" },
-  { id: "pr", label: "Pull request" },
-  { id: "ports", label: "Ports" },
-  { id: "activity", label: "Shells & tabs" },
+/** The on/off switches, after the choices. */
+export const SWITCH_ROWS: readonly { id: ToggleId; label: string; description: string }[] = [
+  {
+    id: "forMe",
+    label: "For me block",
+    description:
+      "Conversations waiting on you, failed or unread, across every project, oldest first.",
+  },
+  {
+    id: "workingBlock",
+    label: "In progress block",
+    description: "Every agent at work, across every project.",
+  },
+  {
+    id: "recentBlock",
+    label: "Recent block",
+    description: "The conversations you touched last, across every project.",
+  },
+  {
+    id: "hideEmptyBlocks",
+    label: "Hide empty blocks",
+    description: "A block with nothing in it disappears instead of saying so.",
+  },
+  {
+    id: "flashOnChange",
+    label: "Flash on change",
+    description: "A row flashes once when its conversation starts waiting, fails or replies.",
+  },
+  {
+    id: "autoCollapse",
+    label: "Auto-collapse",
+    description:
+      "Fold the sidebar away while the window is narrower than 1024 px; it comes back when the window widens.",
+  },
+  {
+    id: "typeToFilter",
+    label: "Type to filter",
+    description:
+      "Typing while a sidebar row has focus filters conversations. Escape clears the filter.",
+  },
+];
+
+export const PRESET_DESCRIPTION =
+  "Classic is the default. Picking a preset resets every display option it doesn't set; changing any of them makes it yours.";
+
+export const ROW_ELEMENTS_DESCRIPTION =
+  "The worktree marker on the title line, and the details on the line under it.";
+
+export const ROW_ELEMENTS: readonly { id: ToggleId; label: string; description: string }[] = [
+  {
+    id: "pendingRequest",
+    label: "Pending request",
+    description: "Under a waiting row, what it asks for: the command to allow or the question.",
+  },
+  {
+    id: "worktreeIcon",
+    label: "Worktree icon",
+    description: "A branch glyph before the title when the conversation has its own worktree.",
+  },
+  {
+    id: "branch",
+    label: "Branch",
+    description: "The worktree branch, under the title.",
+  },
+  {
+    id: "diff",
+    label: "Diff stats",
+    description: "Lines added and removed in the worktree, under the title.",
+  },
+  {
+    id: "pr",
+    label: "Pull request",
+    description: "The pull request opened from the conversation and its state, under the title.",
+  },
+  {
+    id: "ports",
+    label: "Ports",
+    description:
+      "Ports the conversation's processes listen on, under the title. Click one to open it.",
+  },
+  {
+    id: "activity",
+    label: "Shells & tabs",
+    description: "Open shells, browser tabs and downloads, under the title.",
+  },
 ];

@@ -105,3 +105,26 @@ describe("SidebarForMeSection", () => {
     expect(screen.queryByRole("region", { name: "For me" })).not.toBeInTheDocument();
   });
 });
+
+describe("SidebarForMeSection blocks options", () => {
+  it("keeps an empty block with its empty line when empty blocks are shown", () => {
+    useSidebarConfigStore.setState({
+      config: { ...DEFAULT_SIDEBAR_CONFIG, hideEmptyBlocks: false },
+    });
+    useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {} });
+    useSessionStatusStore.setState({ bySession: {} });
+    renderSection();
+    const section = screen.getByRole("region", { name: "For me" });
+    expect(section).toHaveTextContent("Nothing waiting on you");
+  });
+
+  it("swaps the count for a strong dot", () => {
+    useSidebarConfigStore.setState({ config: { ...DEFAULT_SIDEBAR_CONFIG, blockCounts: "dot" } });
+    renderSection();
+    const header = screen.getByRole("button", { name: /For me/ });
+    expect(header).not.toHaveTextContent(/\d/);
+    expect(within(header).getByRole("img", { name: "4, 3 need an action" })).toHaveClass(
+      "bg-amber-400",
+    );
+  });
+});

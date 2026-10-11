@@ -42,7 +42,7 @@ export const SidebarPendingGatePopover = memo(function SidebarPendingGatePopover
   allowAutoOpen,
   onOpenConversation,
 }: SidebarPendingGatePopoverProps): ReactElement {
-  const { open, setOpen, setHovered, hoveredFeatureId } = usePendingGatePopoverOpen(
+  const { open, setOpen, setHovered, hoveredFeatureId, hoverHandlers } = usePendingGatePopoverOpen(
     featureId,
     allowAutoOpen,
   );
@@ -74,6 +74,7 @@ export const SidebarPendingGatePopover = memo(function SidebarPendingGatePopover
           )}
           onClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
+          {...hoverHandlers}
         >
           {isPermissionTrigger ? (
             <ShieldAlertIcon className="sidebar-pending-indicator size-3.5" />
@@ -93,6 +94,7 @@ export const SidebarPendingGatePopover = memo(function SidebarPendingGatePopover
         )}
         onClick={(event) => event.stopPropagation()}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        {...hoverHandlers}
         onMouseEnter={() => setHovered(featureId)}
         onMouseLeave={() => {
           if (hoveredFeatureId === featureId) setHovered(null);

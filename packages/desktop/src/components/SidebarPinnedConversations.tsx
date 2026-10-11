@@ -9,6 +9,8 @@ import {
   type FeatureWorktreeInfo,
 } from "@/api/generated";
 import { PinnedConversationRow } from "@/components/PinnedConversationRow";
+import { SidebarBlock } from "@/components/SidebarBlock";
+import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -25,7 +27,7 @@ import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
  * feature-level concept (`features.is_pinned`), so a single backend query
  * returns every pinned conversation across all projects — each row carries its
  * project color dot so the user can tell them apart at a glance. Renders
- * nothing when no conversation is pinned.
+ * nothing when no conversation is pinned, unless empty blocks are kept.
  *
  * Unpinning here and pinning from a project row both write the same column and
  * invalidate the `/api/features` cache prefix (which covers this list); there
@@ -45,11 +47,13 @@ export function SidebarPinnedConversations({
   const orderedPinned = useStableFeatureOrder(fetchedPinned);
   const activity = usePinnedActivity(fetchedPinned);
   const pinnedFeatures = useFilteredPinned(orderedPinned, activity.worktreeByFeatureId);
-  const listRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLElement>(null);
   const pinnedIds = useMemo(() => pinnedFeatures.map((feature) => feature.id), [pinnedFeatures]);
   useReorderAnimation(listRef, pinnedIds);
   const portsByFeatureId = useFeaturePorts();
   const handleNavigate = useCrossProjectNavigate(activeFeatureId, onSelectFeature);
+  const hideEmpty = useSidebarOption("hideEmptyBlocks");
+  const filtering = useSidebarFilterQuery() !== "";
 
   const { mutate: updateFeaturePinned } = useUpdateFeaturePinned({
     mutation: {
@@ -67,14 +71,19 @@ export function SidebarPinnedConversations({
     [updateFeaturePinned],
   );
 
-  if (pinnedFeatures.length === 0) return null;
+  const isEmpty = pinnedFeatures.length === 0;
+  // An empty Pinned block only shows when empty blocks are kept and nothing is filtered out.
+  if (isEmpty && (hideEmpty || filtering)) return null;
 
   return (
-    <div ref={listRef} className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
-      <div className="flex items-center gap-1.5 px-2 pb-0.5 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-        <PinIcon className="size-3 shrink-0" />
-        <span>Pinned</span>
-      </div>
+    <SidebarBlock
+      ref={listRef}
+      label="Pinned"
+      icon={PinIcon}
+      count={pinnedFeatures.length}
+      empty="Pin a conversation to keep it here"
+      isEmpty={isEmpty}
+    >
       {pinnedFeatures.map((feature) => (
         <PinnedConversationRow
           key={feature.id}
@@ -88,7 +97,7 @@ export function SidebarPinnedConversations({
           onUnpin={handleUnpin}
         />
       ))}
-    </div>
+    </SidebarBlock>
   );
 }
 

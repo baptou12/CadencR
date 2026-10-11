@@ -11,8 +11,7 @@ const NO_ATTENTION: SidebarAttention = {
   items: [],
   queue: [],
   byProject: new Map(),
-  isLoading: false,
-  isQueueLoading: false,
+  loadingStates: [],
 };
 
 const SidebarAttentionContext = createContext<SidebarAttention>(NO_ATTENTION);

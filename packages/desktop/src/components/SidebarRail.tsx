@@ -16,6 +16,7 @@ import type { ProjectAttentionCounts, ResolvedAttention } from "@/hooks/useResol
 import { formatCombo } from "@/lib/shortcuts/format";
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
+import { needsUser } from "@/lib/sidebar-attention";
 import { cn } from "@/lib/utils";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SidebarSurfaceContext } from "@/stores/sidebar-surface-store";
@@ -175,11 +176,11 @@ function RailConversations({
   activeFeatureId: number | null;
   attentionOnly: boolean;
 }): ReactElement {
-  const { items, queue, isLoading, isQueueLoading } = useSidebarAttention();
+  const { items, queue, loadingStates } = useSidebarAttention();
   const navigate = useCrossProjectNavigate(activeFeatureId, noop);
   const shown = attentionOnly ? queue : items;
   if (shown.length === 0) {
-    return (attentionOnly ? isQueueLoading : isLoading) ? (
+    return (attentionOnly ? loadingStates.some(needsUser) : loadingStates.length > 0) ? (
       <Skeleton aria-label="Loading conversations" className="size-8 shrink-0 rounded-md" />
     ) : (
       <span className="px-1 pt-1 text-center text-[10px] leading-tight text-muted-foreground">
@@ -216,7 +217,7 @@ const RailConversation = memo(function RailConversation({
   const attention = useMemo(() => ({ state, sourceFeatureId: feature.id }), [state, feature.id]);
   const open = useCallback(() => onOpen(feature), [onOpen, feature]);
   return (
-    <div className="relative shrink-0">
+    <div data-sidebar-flash-target className="relative shrink-0 rounded-md">
       <Tooltip>
         <TooltipTrigger asChild>
           <button

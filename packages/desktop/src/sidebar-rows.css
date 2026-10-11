@@ -139,3 +139,24 @@
 html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-working) {
   animation: none;
 }
+
+/* H4: a row (or rail tile) whose conversation starts waiting, fails or gets an
+ * unread reply flashes once in that state's color (useAttentionFlash). */
+[data-sidebar-flash] {
+  animation: sidebar-row-flash 900ms ease-out;
+}
+[data-sidebar-flash="waiting"] {
+  --sidebar-flash-color: var(--color-amber-400);
+}
+[data-sidebar-flash="failed"] {
+  --sidebar-flash-color: var(--acc-red);
+}
+[data-sidebar-flash="unread"] {
+  --sidebar-flash-color: var(--acc-green);
+}
+
+@keyframes sidebar-row-flash {
+  from {
+    background-color: color-mix(in oklab, var(--sidebar-flash-color) 22%, transparent);
+  }
+}

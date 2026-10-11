@@ -1,23 +1,43 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { create } from "zustand";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
 
-/** Where a sidebar row is rendered: the project tree (and Pinned), "For me", the rail. */
-export type SidebarSurface = "tree" | "for-me" | "rail";
+/**
+ * Where a sidebar row is rendered: the project tree (and Pinned), "For me",
+ * "In progress", "Recent", the rail.
+ */
+export type SidebarSurface = "tree" | "for-me" | "working" | "recent" | "rail";
+
+/** The foldable blocks above the project list, named after their surface. */
+export type SidebarFoldableBlock = Extract<SidebarSurface, "for-me" | "working" | "recent">;
 
 interface SidebarSurfaceState {
-  /** Whether the "For me" block is unfolded (it folds from its header). */
-  forMeExpanded: boolean;
-  toggleForMe: () => void;
+  /** Which blocks are unfolded (each folds from its header); all start open. */
+  expanded: Readonly<Record<SidebarFoldableBlock, boolean>>;
+  toggleBlock: (block: SidebarFoldableBlock) => void;
 }
 
 export const useSidebarSurfaceStore = create<SidebarSurfaceState>((set) => ({
-  forMeExpanded: true,
-  toggleForMe: () => set((state) => ({ forMeExpanded: !state.forMeExpanded })),
+  expanded: { "for-me": true, working: true, recent: true },
+  toggleBlock: (block) =>
+    set((state) => ({ expanded: { ...state.expanded, [block]: !state.expanded[block] } })),
 }));
+
+/** A block's fold state and its toggle. */
+export function useSidebarBlockFold(block: SidebarFoldableBlock): {
+  expanded: boolean;
+  toggle: () => void;
+} {
+  const expanded = useSidebarSurfaceStore((state) => state.expanded[block]);
+  const toggleBlock = useSidebarSurfaceStore((state) => state.toggleBlock);
+  return useMemo(
+    () => ({ expanded, toggle: () => toggleBlock(block) }),
+    [block, expanded, toggleBlock],
+  );
+}
 
 export const SidebarSurfaceContext = createContext<SidebarSurface>("tree");
 
@@ -37,7 +57,7 @@ function useGateAutoOpenOwner(): SidebarSurface | null {
   const rail = useSidebarOption("rail");
   const forMe = useSidebarOption("forMe");
   const filtering = useSidebarFilterQuery() !== "";
-  const forMeExpanded = useSidebarSurfaceStore((state) => state.forMeExpanded);
+  const forMeExpanded = useSidebarSurfaceStore((state) => state.expanded["for-me"]);
   if (collapsed && !isMobile) {
     return rail === "conversations" || rail === "attention" ? "rail" : null;
   }

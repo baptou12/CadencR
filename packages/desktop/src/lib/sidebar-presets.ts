@@ -33,13 +33,13 @@ export const SIDEBAR_PRESETS: readonly SidebarPreset[] = [
     id: "control",
     label: "Control tower",
     description:
-      "For many agents at once: compact rows, attention-only rail, idle conversations folded after 3 days.",
-    overrides: { density: "compact", rail: "attention", dormantAfter: "3" },
+      "For many agents at once: compact rows, an In progress block, attention-only rail, idle conversations folded after 3 days.",
+    overrides: { density: "compact", rail: "attention", dormantAfter: "3", workingBlock: true },
   },
   {
     id: "minimal",
     label: "Minimal",
-    description: "Titles and status only: no details under rows, no times, quiet dots.",
+    description: "Titles and status only: no details under rows, no times, quiet dots, no flashes.",
     overrides: {
       status: "dot",
       time: "none",
@@ -51,25 +51,34 @@ export const SIDEBAR_PRESETS: readonly SidebarPreset[] = [
       label: "hidden",
       provider: "hidden",
       projectBadges: "dot",
+      blockCounts: "dot",
+      flashOnChange: false,
       dormantAfter: "3",
     },
   },
   {
     id: "dense",
     label: "Dense pro",
-    description: "Everything at a glance: compact two-line titles, branch, model, every detail.",
+    description:
+      "Everything at a glance: compact two-line titles, branch, model, every detail, a Recent block.",
     overrides: {
       density: "compact",
       fontSize: "12",
       titleLines: "two",
       branch: true,
       provider: "logo_model",
+      recentBlock: true,
     },
   },
 ];
 
 /** How the sidebar behaves rather than looks: no preset sets or resets these. */
-const BEHAVIOUR_OPTIONS: ReadonlySet<SidebarOptionId> = new Set(["typeToFilter", "revealActive"]);
+const BEHAVIOUR_OPTIONS: ReadonlySet<SidebarOptionId> = new Set([
+  "typeToFilter",
+  "revealActive",
+  "gatePopover",
+  "autoCollapse",
+]);
 
 const PRESET_OPTION_IDS = (Object.keys(SIDEBAR_OPTIONS) as SidebarOptionId[]).filter(
   (id) => !BEHAVIOUR_OPTIONS.has(id),

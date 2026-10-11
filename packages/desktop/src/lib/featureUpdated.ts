@@ -2,7 +2,7 @@
  * Shared handler for `feature.updated` WebSocket events.
  * Maps changed aspect names to React Query cache invalidations.
  */
-import { queryClient } from "@/lib/queryClient";
+import { invalidateByUrlPrefix, queryClient } from "@/lib/queryClient";
 import {
   getGetFeatureQueryKey,
   getGetFeatureSettingsQueryKey,
@@ -41,5 +41,7 @@ export function invalidateFeatureQueries(featureId: number, changed: string[]): 
     // 1-element prefix that matches every per-project list query under React
     // Query's default prefix matching.
     void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(), exact: false });
+    // Sibling URLs the prefix above can't reach; both blocks show titles and labels.
+    void invalidateByUrlPrefix(queryClient, ["/api/features/pinned", "/api/features/recent"]);
   }
 }

@@ -12,10 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { HintTooltip } from "@/components/HintTooltip";
 import { UsageSegmentedControl } from "@/components/usage/UsageSegmentedControl";
 import {
   CHOICE_ROWS,
+  PRESET_DESCRIPTION,
   ROW_ELEMENTS,
+  ROW_ELEMENTS_DESCRIPTION,
+  SWITCH_ROWS,
   type ChoiceId,
   type ChoiceRow,
 } from "@/components/sidebar-display-rows";
@@ -99,6 +104,7 @@ export function RowElementGrid({
         <RowElementToggle
           key={element.id}
           label={element.label}
+          hint={element.description}
           checked={form.config[element.id]}
           onChange={(checked) => form.setOption(element.id, checked)}
         />
@@ -136,8 +142,7 @@ export function ResetDisplayOptionsButton({
  */
 export function SidebarDisplayOptionsForm({ className }: { className?: string }): ReactElement {
   const form = useSidebarDisplayForm();
-  const filterId = useId();
-  const forMeId = useId();
+  const switchId = useId();
 
   return (
     <fieldset disabled={form.disabled} className={cn("flex flex-col gap-3", className)}>
@@ -151,34 +156,38 @@ export function SidebarDisplayOptionsForm({ className }: { className?: string })
           title="Restore every display option to its default"
         />
       </div>
-      <OptionRow label="Preset">
-        <PresetControl form={form} />
-      </OptionRow>
-      {CHOICE_ROWS.map((row) => (
-        <OptionRow key={row.id} label={row.label}>
-          <ChoiceControl form={form} row={row} />
+      <TooltipProvider delayDuration={300}>
+        <OptionRow label="Preset" hint={PRESET_DESCRIPTION}>
+          <PresetControl form={form} />
         </OptionRow>
-      ))}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] text-muted-foreground">Show in rows</span>
-        <RowElementGrid form={form} className="gap-x-3 gap-y-1.5" />
-      </div>
-      <OptionRow label="For me block" htmlFor={forMeId}>
-        <Switch
-          id={forMeId}
-          size="sm"
-          checked={form.config.forMe}
-          onCheckedChange={(checked) => form.setOption("forMe", checked)}
-        />
-      </OptionRow>
-      <OptionRow label="Type to filter" htmlFor={filterId}>
-        <Switch
-          id={filterId}
-          size="sm"
-          checked={form.config.typeToFilter}
-          onCheckedChange={(checked) => form.setOption("typeToFilter", checked)}
-        />
-      </OptionRow>
+        {CHOICE_ROWS.map((row) => (
+          <OptionRow key={row.id} label={row.label} hint={row.description}>
+            <ChoiceControl form={form} row={row} />
+          </OptionRow>
+        ))}
+        <div className="flex flex-col gap-1.5">
+          <HintLabel hint={ROW_ELEMENTS_DESCRIPTION} className="self-start">
+            Show in rows
+          </HintLabel>
+          <RowElementGrid form={form} className="gap-x-3 gap-y-1.5" />
+        </div>
+        {SWITCH_ROWS.map((row) => (
+          <OptionRow
+            key={row.id}
+            label={row.label}
+            hint={row.description}
+            htmlFor={`${switchId}-${row.id}`}
+          >
+            <Switch
+              id={`${switchId}-${row.id}`}
+              size="sm"
+              checked={form.config[row.id]}
+              aria-description={row.description}
+              onCheckedChange={(checked) => form.setOption(row.id, checked)}
+            />
+          </OptionRow>
+        ))}
+      </TooltipProvider>
     </fieldset>
   );
 }
@@ -231,20 +240,53 @@ function offsetPastSidebar(trigger: HTMLElement): number {
   return Math.max(0, gap) + POPOVER_GAP_PX;
 }
 
+/**
+ * An option's name, explained in a tooltip on hover: the popover has no room
+ * for the descriptions the Settings page shows under each row. The dotted
+ * underline says there is more to read.
+ */
+function HintLabel({
+  hint,
+  htmlFor,
+  className,
+  children,
+}: {
+  hint: string;
+  htmlFor?: string;
+  className?: string;
+  children: ReactNode;
+}): ReactElement {
+  return (
+    <HintTooltip hint={hint} align="start">
+      <label
+        htmlFor={htmlFor}
+        className={cn(
+          "cursor-help text-[11px] text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-2",
+          className,
+        )}
+      >
+        {children}
+      </label>
+    </HintTooltip>
+  );
+}
+
 function OptionRow({
   label,
+  hint,
   htmlFor,
   children,
 }: {
   label: string;
+  hint: string;
   htmlFor?: string;
   children: ReactNode;
 }): ReactElement {
   return (
     <div className="flex items-center justify-between gap-3">
-      <label htmlFor={htmlFor} className="text-[11px] text-muted-foreground">
+      <HintLabel hint={hint} htmlFor={htmlFor}>
         {label}
-      </label>
+      </HintLabel>
       {children}
     </div>
   );
@@ -252,20 +294,27 @@ function OptionRow({
 
 function RowElementToggle({
   label,
+  hint,
   checked,
   onChange,
 }: {
   label: string;
+  hint: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }): ReactElement {
   const id = useId();
   return (
     <div className="flex items-center gap-2">
-      <Checkbox id={id} checked={checked} onCheckedChange={(next) => onChange(next === true)} />
-      <label htmlFor={id} className="text-xs">
+      <Checkbox
+        id={id}
+        checked={checked}
+        aria-description={hint}
+        onCheckedChange={(next) => onChange(next === true)}
+      />
+      <HintLabel hint={hint} htmlFor={id} className="text-xs text-foreground">
         {label}
-      </label>
+      </HintLabel>
     </div>
   );
 }

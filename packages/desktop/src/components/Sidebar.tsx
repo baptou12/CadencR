@@ -17,6 +17,8 @@ import { SidebarConfigProvider } from "@/components/SidebarConfigProvider";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SidebarPinnedConversations } from "@/components/SidebarPinnedConversations";
 import { SidebarForMeSection } from "@/components/SidebarForMeSection";
+import { SidebarRecentSection } from "@/components/SidebarRecentSection";
+import { SidebarWorkingSection } from "@/components/SidebarWorkingSection";
 import {
   SidebarAttentionShortcuts,
   SidebarRenameDialog,
@@ -98,6 +100,14 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
               onSelectFeature={setSelectedFeatureId}
             />
             <SidebarForMeSection
+              activeFeatureId={effectiveFeatureId}
+              onSelectFeature={setSelectedFeatureId}
+            />
+            <SidebarWorkingSection
+              activeFeatureId={effectiveFeatureId}
+              onSelectFeature={setSelectedFeatureId}
+            />
+            <SidebarRecentSection
               activeFeatureId={effectiveFeatureId}
               onSelectFeature={setSelectedFeatureId}
             />

@@ -55,6 +55,14 @@ export const SIDEBAR_OPTIONS = {
   dormantAfter: enumOption("sidebar_dormant_after", ["never", "3", "7", "14", "30"], "7"),
   revealActive: enumOption("sidebar_reveal_active", ["scroll", "expand", "off"], "scroll"),
   rail: enumOption("sidebar_rail", ["projects", "conversations", "attention", "none"], "projects"),
+  workingBlock: boolOption("sidebar_block_working", false),
+  recentBlock: boolOption("sidebar_block_recent", false),
+  recentCount: enumOption("sidebar_recent_count", ["3", "5", "10"], "5"),
+  blockCounts: enumOption("sidebar_block_counts", ["count", "dot", "none"], "count"),
+  hideEmptyBlocks: boolOption("sidebar_hide_empty_blocks", true),
+  gatePopover: enumOption("sidebar_gate_popover", ["auto", "hover", "click"], "auto"),
+  flashOnChange: boolOption("sidebar_flash_on_change", true),
+  autoCollapse: boolOption("sidebar_auto_collapse", false),
 } as const;
 
 type OptionValue<O> = O extends EnumOption<infer V> ? V : O extends BoolOption ? boolean : never;
