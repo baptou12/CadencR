@@ -4,6 +4,7 @@ import { act, renderHook } from "@testing-library/react";
 import type { ProviderCatalogResponseEntry, UsageStatsEntry } from "@/api/generated";
 import { setProviderCatalogMetadata } from "@/lib/provider-catalog-registry";
 import { useUsageCharts } from "./use-usage-charts";
+import type { UsageMetric } from "./usage-stats-model";
 
 const END_DAY = "2026-07-25";
 
@@ -14,17 +15,22 @@ function entry(partial: Partial<UsageStatsEntry> & { provider_id: string }): Usa
     thinking_effort: "high",
     input_tokens: 10,
     output_tokens: 100,
+    user_messages: 0,
     ...partial,
   };
 }
 
-function render(entries: UsageStatsEntry[], grouping: "provider" | "model" = "provider") {
+function render(
+  entries: UsageStatsEntry[],
+  grouping: "provider" | "model" = "provider",
+  metric: UsageMetric = "total",
+) {
   return renderHook(() =>
     useUsageCharts({
       entries,
       windowDays: 30,
       endDay: END_DAY,
-      metric: "total",
+      metric,
       grouping,
     }),
   ).result.current;
@@ -145,11 +151,34 @@ describe("useUsageCharts", () => {
     expect(summary.topModel).toEqual({ name: "gpt-5.5", label: "Codex · gpt-5.5" });
   });
 
+  it("totals every row in the window, whichever series the measure keeps", () => {
+    const { summary } = render([
+      entry({ provider_id: "claude_code", input_tokens: 0, output_tokens: 0, user_messages: 3 }),
+      entry({ provider_id: "codex_cli", user_messages: 0 }),
+      entry({ provider_id: "codex_cli", day: "2020-01-01", user_messages: 50 }),
+    ]);
+
+    expect(summary.totalUserMessages).toBe(3);
+    expect(summary.totalInputTokens).toBe(10);
+    expect(summary.hasUsage).toBe(true);
+  });
+
+  it("names the provider sent the most messages on the message chart", () => {
+    const entries = [
+      entry({ provider_id: "claude_code", output_tokens: 9_000, user_messages: 1 }),
+      entry({ provider_id: "codex_cli", output_tokens: 10, user_messages: 5 }),
+    ];
+
+    expect(render(entries, "provider", "total").summary.topProvider).toBe("Claude");
+    expect(render(entries, "provider", "messages").summary.topProvider).toBe("Codex");
+  });
+
   it("has no usage to chart when every row falls outside the window", () => {
     const { chart, summary } = render([entry({ provider_id: "claude_code", day: "2020-01-01" })]);
 
     expect(chart.series).toEqual([]);
     expect(summary.topModel).toBeNull();
     expect(summary.totalOutputTokens).toBe(0);
+    expect(summary.hasUsage).toBe(false);
   });
 });

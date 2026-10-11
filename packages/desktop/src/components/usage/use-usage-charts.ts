@@ -78,10 +78,43 @@ function modelLabel(seriesKey: string, providerLabel: (providerId: string) => st
 export interface UsageSummary {
   totalInputTokens: number;
   totalOutputTokens: number;
-  /** Display label of the provider with the most tokens exchanged. */
+  totalUserMessages: number;
+  /** Whether the window holds any tokens or messages at all. */
+  hasUsage: boolean;
+  /**
+   * Display label of the busiest provider: most messages sent when the measure
+   * is messages, most tokens exchanged otherwise.
+   */
   topProvider: string | null;
   /** The busiest model, and its full "provider · model" label for the tile's title. */
   topModel: { name: string; label: string } | null;
+}
+
+/**
+ * Summed from the rows rather than the series: a chart drops the series with
+ * nothing to show for its measure, such as a model that was sent messages but
+ * has not reported tokens yet.
+ */
+function windowTotals(
+  entries: UsageStatsEntry[],
+  axis: string[],
+): Pick<UsageSummary, "totalInputTokens" | "totalOutputTokens" | "totalUserMessages" | "hasUsage"> {
+  const inWindow = new Set(axis);
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalUserMessages = 0;
+  for (const entry of entries) {
+    if (!inWindow.has(entry.day)) continue;
+    totalInputTokens += entry.input_tokens;
+    totalOutputTokens += entry.output_tokens;
+    totalUserMessages += entry.user_messages;
+  }
+  return {
+    totalInputTokens,
+    totalOutputTokens,
+    totalUserMessages,
+    hasUsage: totalInputTokens + totalOutputTokens + totalUserMessages > 0,
+  };
 }
 
 export interface UseUsageChartsParams {
@@ -154,23 +187,23 @@ export function useUsageCharts({
     };
   }, [chart, grouping, providerLabel]);
 
+  // Independent of the measure, so toggling it does not re-sum the window.
+  const totals = useMemo(() => windowTotals(entries, axis), [entries, axis]);
   const summary = useMemo<UsageSummary>(() => {
-    // Series are ranked by total tokens whatever the metric, and "Other" is
-    // always last, so the first series is the busiest.
+    // Series are ranked on the measure's family — messages, or total tokens
+    // for every token metric — and "Other" is always last, so the first series
+    // is the busiest.
     const topProvider = providerChart.series[0];
     const topModel = modelChart.series[0];
     return {
-      // Every in-window row lands in exactly one series — including the folded
-      // "Other" — so the series totals are the window totals.
-      totalInputTokens: providerChart.series.reduce((total, s) => total + s.inputTokens, 0),
-      totalOutputTokens: providerChart.series.reduce((total, s) => total + s.outputTokens, 0),
+      ...totals,
       topProvider: topProvider ? providerLabel(topProvider.key) : null,
       topModel:
         topModel === undefined || topModel.key === OTHER_SERIES_KEY
           ? null
           : { name: modelIdOf(topModel.key), label: modelLabel(topModel.key, providerLabel) },
     };
-  }, [providerChart, modelChart, providerLabel]);
+  }, [totals, providerChart, modelChart, providerLabel]);
 
   return useMemo(() => ({ chart, labelOf, summary }), [chart, labelOf, summary]);
 }

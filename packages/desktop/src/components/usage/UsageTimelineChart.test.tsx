@@ -6,7 +6,7 @@ import type { UsageChartData } from "./usage-stats-model";
 
 function chartOf(days: string[]): UsageChartData {
   return {
-    series: [{ key: "claude", colorIndex: 0, inputTokens: 0, outputTokens: 0 }],
+    series: [{ key: "claude", colorIndex: 0, inputTokens: 0, outputTokens: 0, userMessages: 0 }],
     days: days.map((day, index) => ({
       day,
       total: (index + 1) * 1_000,
@@ -26,7 +26,7 @@ function renderChart(data: UsageChartData) {
       labelOf={String}
       density="comfortable"
       scale="absolute"
-      metricLabel="tokens exchanged"
+      metric="total"
     />,
   );
 }
@@ -82,7 +82,7 @@ describe("UsageTimelineChart", () => {
         labelOf={String}
         density="comfortable"
         scale="absolute"
-        metricLabel="tokens exchanged"
+        metric="total"
       />,
     );
 
@@ -92,8 +92,8 @@ describe("UsageTimelineChart", () => {
   it("stacks the largest series at the base of each column", () => {
     renderChart({
       series: [
-        { key: "big", colorIndex: 0, inputTokens: 0, outputTokens: 0 },
-        { key: "small", colorIndex: 1, inputTokens: 0, outputTokens: 0 },
+        { key: "big", colorIndex: 0, inputTokens: 0, outputTokens: 0, userMessages: 0 },
+        { key: "small", colorIndex: 1, inputTokens: 0, outputTokens: 0, userMessages: 0 },
       ],
       days: [
         {

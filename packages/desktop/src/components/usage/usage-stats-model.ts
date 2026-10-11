@@ -1,7 +1,10 @@
 import type { UsageStatsEntry } from "@/api/generated";
 
-/** Which half of the exchange a chart is showing. */
-export type UsageMetric = "total" | "input" | "output";
+/**
+ * What a chart counts: tokens — both halves of the exchange or one — or the
+ * prompts the user sent.
+ */
+export type UsageMetric = "total" | "input" | "output" | "messages";
 
 /** What a series is: the provider, or the provider and model pair. */
 export type UsageGrouping = "provider" | "model";
@@ -17,6 +20,7 @@ export const USAGE_METRIC_UNIT: Record<UsageMetric, string> = {
   total: "tokens exchanged",
   input: "input tokens",
   output: "output tokens",
+  messages: "messages sent",
 };
 
 /**
@@ -35,6 +39,7 @@ export interface UsageSeries {
   colorIndex: number;
   inputTokens: number;
   outputTokens: number;
+  userMessages: number;
 }
 
 export interface UsageSegment {
@@ -63,6 +68,7 @@ export interface UsageChartData {
 }
 
 export function metricValue(entry: UsageStatsEntry, metric: UsageMetric): number {
+  if (metric === "messages") return entry.user_messages;
   if (metric === "input") return entry.input_tokens;
   if (metric === "output") return entry.output_tokens;
   return entry.input_tokens + entry.output_tokens;
@@ -127,15 +133,21 @@ export function dayAxis(days: number, endDay: string): string[] {
   return axis;
 }
 
-/**
- * Keys that saw usage, busiest first. Ranking is on *total* tokens whatever
- * metric is on screen, and ties break on the key so the order is stable.
- */
-function rankKeysByTotalTokens(totalTokensByKey: Map<string, number>): string[] {
-  return [...totalTokensByKey.entries()]
-    .filter(([, tokens]) => tokens > 0)
+/** Keys that saw usage, busiest first; ties break on the key so the order is stable. */
+function rankKeys(usageByKey: Map<string, number>): string[] {
+  return [...usageByKey.entries()]
+    .filter(([, usage]) => usage > 0)
     .sort(([keyA, a], [keyB, b]) => b - a || keyA.localeCompare(keyB))
     .map(([key]) => key);
+}
+
+/**
+ * What a series is ranked on: messages sent for the message chart, and *total*
+ * tokens for every token chart, so their order holds across Input / Output /
+ * Total.
+ */
+function rankingValue(running: SeriesTotals, metric: UsageMetric): number {
+  return metric === "messages" ? running.userMessages : running.inputTokens + running.outputTokens;
 }
 
 /**
@@ -194,14 +206,16 @@ interface BuildUsageChartParams {
 interface SeriesTotals {
   inputTokens: number;
   outputTokens: number;
+  userMessages: number;
 }
 
 /**
  * Pivot flat per-day buckets into a stacked timeline.
  *
- * Series are ranked by *total* tokens exchanged, never by the metric on screen,
- * so the order of the day card is stable across Input / Output / Total. Colors
- * come from `assignSeriesSlots`, keyed by entity, so they are stable too.
+ * Token series are ranked by *total* tokens exchanged, never by the metric on
+ * screen, so the order of the day card is stable across Input / Output / Total;
+ * message series by messages sent. Colors come from `assignSeriesSlots`, keyed
+ * by entity, so they are stable too.
  */
 export function buildUsageChart({
   entries,
@@ -218,9 +232,10 @@ export function buildUsageChart({
     if (!inWindow.has(entry.day)) continue;
     const key = seriesKeyOf(entry);
 
-    const running = totals.get(key) ?? { inputTokens: 0, outputTokens: 0 };
+    const running = totals.get(key) ?? { inputTokens: 0, outputTokens: 0, userMessages: 0 };
     running.inputTokens += entry.input_tokens;
     running.outputTokens += entry.output_tokens;
+    running.userMessages += entry.user_messages;
     totals.set(key, running);
 
     const day = perDay.get(entry.day) ?? new Map<string, number>();
@@ -228,12 +243,8 @@ export function buildUsageChart({
     perDay.set(entry.day, day);
   }
 
-  const ranking = rankKeysByTotalTokens(
-    new Map(
-      [...totals].map(
-        ([key, running]) => [key, running.inputTokens + running.outputTokens] as const,
-      ),
-    ),
+  const ranking = rankKeys(
+    new Map([...totals].map(([key, running]) => [key, rankingValue(running, metric)] as const)),
   );
   const ranked = ranking.map((key) => [key, totals.get(key)!] as const);
 
@@ -256,6 +267,7 @@ export function buildUsageChart({
       colorIndex: -1,
       inputTokens: folded.reduce((sum, [, running]) => sum + running.inputTokens, 0),
       outputTokens: folded.reduce((sum, [, running]) => sum + running.outputTokens, 0),
+      userMessages: folded.reduce((sum, [, running]) => sum + running.userMessages, 0),
     });
   }
 

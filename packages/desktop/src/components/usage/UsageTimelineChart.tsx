@@ -15,7 +15,13 @@ import {
 } from "./usage-cell-grid";
 import { formatDayLabel, formatExactNumber, seriesColor } from "./usage-chart-palette";
 import { UsageDayCard } from "./UsageDayCard";
-import type { UsageChartData, UsageDay, UsageScale } from "./usage-stats-model";
+import {
+  USAGE_METRIC_UNIT,
+  type UsageChartData,
+  type UsageDay,
+  type UsageMetric,
+  type UsageScale,
+} from "./usage-stats-model";
 
 interface UsageTimelineChartProps {
   /** Must hold some usage: callers show their own empty state. */
@@ -24,8 +30,8 @@ interface UsageTimelineChartProps {
   labelOf: (seriesKey: string) => string;
   density: UsageDensity;
   scale: UsageScale;
-  /** Names the measure the cells encode, for screen readers. */
-  metricLabel: string;
+  /** The measure the cells encode: names it for screen readers, formats the card. */
+  metric: UsageMetric;
 }
 
 const GAP_STYLE = { gap: CELL_GAP_PX };
@@ -101,8 +107,9 @@ function UsageTimelineChartImpl({
   labelOf,
   density,
   scale,
-  metricLabel,
+  metric,
 }: UsageTimelineChartProps): React.JSX.Element {
+  const metricLabel = USAGE_METRIC_UNIT[metric];
   const { rows, dates, rounded } = CELL_DENSITY[density];
   const dayCount = data.days.length;
   const { active, clear, tabStop, handlers } = useColumnFocus(dayCount);
@@ -174,7 +181,9 @@ function UsageTimelineChartImpl({
         onOpenAutoFocus={preventDefault}
         onInteractOutside={preventDefault}
       >
-        {activeDay ? <UsageDayCard day={activeDay} labelOf={labelOf} scale={scale} /> : null}
+        {activeDay ? (
+          <UsageDayCard day={activeDay} labelOf={labelOf} scale={scale} metric={metric} />
+        ) : null}
       </PopoverContent>
     </Popover>
   );
