@@ -20,6 +20,24 @@ export function aggregateFeatureStatus(entries: readonly SessionStatusEntry[]): 
   return best;
 }
 
+/**
+ * Each feature's aggregated status (as `aggregateFeatureStatus` ranks it), in
+ * `featureIds` order, from one pass over the sessions.
+ */
+export function aggregateFeatureStatuses(
+  bySession: Record<number, SessionStatusEntry>,
+  featureIds: readonly number[],
+): LiveAgentStatus[] {
+  const index = new Map(featureIds.map((id, position) => [id, position]));
+  const statuses: LiveAgentStatus[] = featureIds.map(() => "idle");
+  for (const entry of Object.values(bySession)) {
+    const position = index.get(entry.featureId);
+    if (position == null || statuses[position] === "question") continue;
+    if (entry.status === "question" || entry.status === "agent") statuses[position] = entry.status;
+  }
+  return statuses;
+}
+
 const EMPTY_FEATURE_STATUS: {
   status: LiveAgentStatus;
   kind: PendingKind | null;

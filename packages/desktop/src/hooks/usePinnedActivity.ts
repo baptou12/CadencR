@@ -34,23 +34,22 @@ function combineActivity(results: QueryResult<FeatureActivity[]>[]) {
 }
 
 function combineWorktrees(results: QueryResult<FeatureWorktreeInfo[]>[]) {
+  const worktrees = results.flatMap((result) => result.data ?? []);
   return {
     error: results.find((result) => result.error)?.error ?? null,
-    live: new Set(
-      results.flatMap((result) =>
-        (result.data ?? []).filter((worktree) => worktree.live).map((w) => w.feature_id),
-      ),
-    ),
+    live: new Set(worktrees.filter((worktree) => worktree.live).map((w) => w.feature_id)),
+    byFeatureId: new Map(worktrees.map((worktree) => [worktree.feature_id, worktree] as const)),
   };
 }
 
 export interface PinnedActivity {
   shellCountByFeatureId: ReadonlyMap<number, number>;
   liveWorktreeFeatureIds: ReadonlySet<number>;
+  worktreeByFeatureId: ReadonlyMap<number, FeatureWorktreeInfo>;
 }
 
 /**
- * Shell counts and live worktrees for the pinned section: one activity and one
+ * Shell counts and worktrees for the pinned section: one activity and one
  * worktrees query per distinct project, with the project sections' keys and
  * options so an expanded project shares the same cache entries.
  */
@@ -91,7 +90,11 @@ export function usePinnedActivity(pinned: readonly Feature[]): PinnedActivity {
   }, [worktrees.error]);
 
   return useMemo(
-    () => ({ shellCountByFeatureId: activity.counts, liveWorktreeFeatureIds: worktrees.live }),
-    [activity.counts, worktrees.live],
+    () => ({
+      shellCountByFeatureId: activity.counts,
+      liveWorktreeFeatureIds: worktrees.live,
+      worktreeByFeatureId: worktrees.byFeatureId,
+    }),
+    [activity.counts, worktrees.live, worktrees.byFeatureId],
   );
 }

@@ -9,8 +9,9 @@ import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
 import { NO_PORTS } from "@/hooks/useFeaturePorts";
 import { useBrowserStore } from "@/stores/browser-store";
 import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
-import { FeatureRowMetaLine, FeatureRowTitleLine } from "@/components/ProjectFeatureRowParts";
-import type { AllocatedPort, Feature } from "@/api/generated";
+import { FeatureRowMetaLine } from "@/components/ProjectFeatureRowParts";
+import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
+import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 
 interface PinnedConversationRowProps {
   feature: Feature;
@@ -19,6 +20,7 @@ interface PinnedConversationRowProps {
   ports?: readonly AllocatedPort[];
   shellCount?: number;
   hasLiveWorktree?: boolean;
+  worktree?: FeatureWorktreeInfo;
   onNavigate: (feature: Feature) => void;
   onUnpin: (featureId: number) => void;
 }
@@ -39,6 +41,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
   ports = NO_PORTS,
   shellCount = 0,
   hasLiveWorktree = false,
+  worktree,
   onNavigate,
   onUnpin,
 }: PinnedConversationRowProps): ReactElement {
@@ -69,7 +72,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
       data-nav-type="feature"
       data-nav-id={String(feature.id)}
       data-nav-project-id={String(feature.project_id)}
-      className={`group/pinned relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md py-1.5 pl-2 pr-1.5 text-[12.5px] outline-none hover:bg-sidebar-accent ${
+      className={`sidebar-row group/pinned relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1.5 outline-none hover:bg-sidebar-accent ${
         isActive ? "bg-sidebar-accent" : ""
       }`}
       onClick={(e) => {
@@ -98,30 +101,17 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
           isAutoNaming={isAutoNaming}
           isArchived={false}
           hasWorktree={hasLiveWorktree}
-          liveStatus={state.liveStatus}
+          worktree={worktree}
+          attention={state.attention}
           isActive={isActive}
-          isUnread={state.isUnread}
           badgeRef={badgeRef}
           onOpenConversation={handleOpenConversation}
         >
-          <span className="sidebar-row-actions">
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-pressed={true}
-              className="size-6 shrink-0 p-0 text-foreground transition-none hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUnpin(feature.id);
-              }}
-            >
-              <PinOffIcon className="size-3.5" />
-              <span className="sr-only">Unpin</span>
-            </Button>
-          </span>
+          <UnpinAction featureId={feature.id} onUnpin={onUnpin} />
         </FeatureRowTitleLine>
         <FeatureRowMetaLine
           feature={feature}
+          worktree={worktree}
           prStatus={state.prStatus}
           gitStats={state.gitStats}
           shellCount={shellCount}
@@ -134,3 +124,29 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
     </div>
   );
 });
+
+function UnpinAction({
+  featureId,
+  onUnpin,
+}: {
+  featureId: number;
+  onUnpin: (featureId: number) => void;
+}): ReactElement {
+  return (
+    <span className="sidebar-row-actions">
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-pressed={true}
+        className="size-6 shrink-0 p-0 text-foreground transition-none hover:text-foreground"
+        onClick={(e) => {
+          e.stopPropagation();
+          onUnpin(featureId);
+        }}
+      >
+        <PinOffIcon className="size-3.5" />
+        <span className="sr-only">Unpin</span>
+      </Button>
+    </span>
+  );
+}

@@ -72,6 +72,7 @@ vi.mock("@/hooks/usePinnedActivity", () => ({
   usePinnedActivity: () => ({
     shellCountByFeatureId: new Map(),
     liveWorktreeFeatureIds: new Set(),
+    worktreeByFeatureId: new Map(),
   }),
 }));
 

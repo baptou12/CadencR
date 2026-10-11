@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Settings, PanelLeftClose, Search, Maximize, Minimize, Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ import {
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { ProjectTree } from "@/components/ProjectTree";
 import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
-import { SidebarPreferences } from "@/components/SidebarPreferences";
+import { SidebarConfigProvider } from "@/components/SidebarConfigProvider";
+import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SidebarPinnedConversations } from "@/components/SidebarPinnedConversations";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
@@ -46,12 +47,14 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const { activeProjectId, effectiveFeatureId } = useSidebarActiveIds(selectedFeatureId);
   useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
   useBrowserActivityBridge();
+  const displayAttributes = useSidebarDisplayAttributes();
 
   return (
-    <SidebarPreferences>
+    <SidebarConfigProvider>
       <ShortcutHintsProvider enabled={!collapsed}>
         <aside
           data-app-sidebar
+          {...displayAttributes}
           ref={sidebarRef}
           aria-hidden={!isMobile && collapsed ? true : undefined}
           inert={!isMobile && collapsed ? true : undefined}
@@ -93,8 +96,24 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
           <SidebarFooter />
         </aside>
       </ShortcutHintsProvider>
-    </SidebarPreferences>
+    </SidebarConfigProvider>
   );
+}
+
+/** Root attributes the row CSS keys off (`sidebar-rows.css`), so rows never re-render for them. */
+function useSidebarDisplayAttributes(): {
+  "data-sidebar-density": string;
+  "data-sidebar-title-lines": string;
+  style: CSSProperties;
+} {
+  const density = useSidebarOption("density");
+  const titleLines = useSidebarOption("titleLines");
+  const fontSize = useSidebarOption("fontSize");
+  return {
+    "data-sidebar-density": density,
+    "data-sidebar-title-lines": titleLines,
+    style: { "--sidebar-row-font": `${fontSize}px` } as CSSProperties,
+  };
 }
 
 function useSidebarActiveIds(selectedFeatureId: number | null): {

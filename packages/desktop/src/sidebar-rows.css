@@ -48,11 +48,86 @@
   }
 }
 
+/* The "dot" status style: color only, working still breathes so it reads as live. */
+.sidebar-status-dot-working {
+  animation: sidebar-status-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes sidebar-status-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Display options are attributes on the sidebar root (see Sidebar.tsx), so
+ * changing the density, text size or title mode restyles every row without
+ * re-rendering it. Comfortable is 36px per single-line row: 24px title line
+ * plus 6px above and below; compact is 28px, spacious 44px. */
+.sidebar-row {
+  padding-block: var(--sidebar-row-pad, 6px);
+  font-size: var(--sidebar-row-font, 12.5px);
+}
+/* The hover actions (24px buttons) are taller than the project name, so the
+ * row reserves their height: revealing them must not push the list down. */
+.sidebar-project-row {
+  padding-block: var(--sidebar-row-pad, 6px);
+  min-height: calc(1.5rem + 2 * var(--sidebar-row-pad, 6px));
+}
+[data-sidebar-density="compact"] {
+  --sidebar-row-pad: 2px;
+}
+[data-sidebar-density="spacious"] {
+  --sidebar-row-pad: 10px;
+}
+
+/* The time and the row actions share a spot: hovering or focusing a row swaps
+ * the time for the actions. */
+[data-nav-type="feature"]:is(:hover, :focus-within) [data-feature-time] {
+  display: none;
+}
+
+/* Two-line and expand-on-hover titles: the fixed slots stay on the first
+ * 24px line instead of centering on the whole wrapped title. */
+[data-sidebar-title-lines="two"] [data-feature-title] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+[data-sidebar-title-lines="hover"] .sidebar-row:is(:hover, :focus-within) [data-feature-title] {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+:is([data-sidebar-title-lines="two"], [data-sidebar-title-lines="hover"]) {
+  & [data-feature-title-line] {
+    align-items: flex-start;
+  }
+  &
+    [data-feature-title-line]
+    > :is(
+      [data-sidebar-status],
+      svg,
+      .sidebar-row-actions,
+      [data-feature-time],
+      [data-feature-model],
+      [data-sidebar-identity-slot]
+    ) {
+    height: 1.5rem;
+  }
+  /* Margin, not padding: a clamped box shows its padding, so padding would
+   * let the start of a third line peek out under the second. */
+  & [data-feature-title] {
+    margin-block: calc((1.5rem - 1lh) / 2);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-status-working {
+  .sidebar-status-working,
+  .sidebar-status-dot-working {
     animation: none;
   }
 }
-html[data-animations="off"] .sidebar-status-working {
+html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-working) {
   animation: none;
 }

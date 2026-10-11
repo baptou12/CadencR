@@ -1,8 +1,19 @@
 import type { ReactNode } from "react";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import type { Feature } from "@/api/generated";
-import type { FeatureTreeNode } from "@/lib/feature-hierarchy";
+import { descendantIdsOf, type FeatureTreeNode } from "@/lib/feature-hierarchy";
 import { Button } from "@/components/ui/button";
+
+/**
+ * Renders one conversation row. `hiddenDescendantIds` is set when the row's
+ * subtree is collapsed, so the row can signal what is folded under it.
+ */
+export type RenderFeature = (
+  feature: Feature,
+  hierarchyControl?: ReactNode,
+  depth?: number,
+  hiddenDescendantIds?: readonly number[],
+) => ReactNode;
 
 /**
  * Renders an active-feature subtree as a compact, IDE-style indent tree:
@@ -18,7 +29,7 @@ export function FeatureSubtree({
   depth = 0,
 }: {
   node: FeatureTreeNode;
-  renderFeature: (feature: Feature, hierarchyControl?: ReactNode, depth?: number) => ReactNode;
+  renderFeature: RenderFeature;
   /** Parent conversations the user collapsed (persisted by the caller). */
   collapsedIds: ReadonlySet<number>;
   onSetCollapsed: (featureId: number, collapsed: boolean) => void;
@@ -45,7 +56,12 @@ export function FeatureSubtree({
 
   return (
     <>
-      {renderFeature(node.feature, control, depth)}
+      {renderFeature(
+        node.feature,
+        control,
+        depth,
+        hasChildren && !expanded ? descendantIdsOf(node) : undefined,
+      )}
       {expanded && hasChildren && (
         <div data-feature-subtree-children={node.feature.id}>
           {node.children.map((child) => (

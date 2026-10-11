@@ -44,12 +44,12 @@ export function SidebarPinnedConversations({
   const queryClient = useQueryClient();
   const { data: fetchedPinned = EMPTY_FEATURES } = useListPinnedFeatures();
   const pinnedFeatures = useStableFeatureOrder(fetchedPinned);
+  const activity = usePinnedActivity(fetchedPinned);
   const listRef = useRef<HTMLDivElement>(null);
   const pinnedIds = useMemo(() => pinnedFeatures.map((feature) => feature.id), [pinnedFeatures]);
   useReorderAnimation(listRef, pinnedIds);
   const { data: projects = [] } = useListProjects();
   const portsByFeatureId = useFeaturePorts();
-  const activity = usePinnedActivity(fetchedPinned);
 
   const projectsById = useMemo(() => {
     const map = new Map<number, Project>();
@@ -111,6 +111,7 @@ export function SidebarPinnedConversations({
           ports={portsByFeatureId.get(feature.id) ?? NO_PORTS}
           shellCount={activity.shellCountByFeatureId.get(feature.id) ?? 0}
           hasLiveWorktree={activity.liveWorktreeFeatureIds.has(feature.id)}
+          worktree={activity.worktreeByFeatureId.get(feature.id)}
           onNavigate={handleNavigate}
           onUnpin={handleUnpin}
         />

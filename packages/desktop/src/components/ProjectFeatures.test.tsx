@@ -8,6 +8,7 @@ import { resetMockIds } from "@/test-fixtures";
 import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { useBrowserStore } from "@/stores/browser-store";
+import { useSessionStatusStore } from "@/stores/session-status-store";
 import { resetPersistedIdSets } from "@/test/persisted-id-set-mock";
 
 vi.mock("@/hooks/usePersistedIdSet", async (importOriginal) => ({
@@ -300,6 +301,39 @@ describe("ProjectFeatures", () => {
 
     // Active-row color is the shared `bg-sidebar-accent` — identical at every depth.
     expect(childRow).toHaveClass("bg-sidebar-accent");
+  });
+
+  it("shows a collapsed child's activity on its parent row", () => {
+    const hierarchy = {
+      data: [
+        mockFeatures[0],
+        { ...mockFeatures[1], spawned_by_feature_id: 1, spawn_link_type: "spawned" },
+      ],
+    } as ReturnType<typeof useListFeatures>;
+    vi.mocked(useListFeatures).mockReturnValue(hierarchy);
+    useSessionStatusStore.setState({
+      bySession: { 50: { featureId: 2, status: "agent", kind: null, seq: 1 } },
+    });
+    onTestFinished(() => {
+      useSessionStatusStore.setState({ bySession: {} });
+      vi.mocked(useListFeatures).mockImplementation(
+        () => ({ data: mockFeatures }) as ReturnType<typeof useListFeatures>,
+      );
+    });
+
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+    const parentRow = screen.getByText("Feature One").closest("[role=button]") as HTMLElement;
+    expect(within(parentRow).queryByLabelText("Agent working")).not.toBeInTheDocument();
+
+    fireEvent.click(within(parentRow).getByRole("button", { name: "Collapse child sessions" }));
+    expect(within(parentRow).getByLabelText("Agent working")).toBeInTheDocument();
   });
 
   // Real layout (including an empty leaf gutter) is checked by

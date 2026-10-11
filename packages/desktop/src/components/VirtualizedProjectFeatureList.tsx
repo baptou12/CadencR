@@ -12,12 +12,14 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { Feature } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import type { WorktreeFeatureGroup } from "@/lib/feature-grouping";
-import type { FeatureTreeNode } from "@/lib/feature-hierarchy";
+import { descendantIdsOf, type FeatureTreeNode } from "@/lib/feature-hierarchy";
+import type { RenderFeature } from "@/components/FeatureSubtree";
 import { useMeasuredActiveRange, useVirtualFeatureFocus } from "@/hooks/useVirtualFeatureFocus";
 
 type FeatureEntry = {
   kind: "feature";
   feature: Feature;
+  node: FeatureTreeNode;
   depth: number;
   hasChildren: boolean;
   groupKey?: string;
@@ -29,7 +31,7 @@ type ListEntry = FeatureEntry | GroupEntry;
 interface VirtualizedProjectFeatureListProps {
   activeFeatureId: number | null;
   flatActiveFeatures: readonly Feature[];
-  renderFeature: (feature: Feature, hierarchyControl?: ReactNode, depth?: number) => ReactNode;
+  renderFeature: RenderFeature;
   rootNodeByFeatureId: ReadonlyMap<number, FeatureTreeNode>;
   worktreeGroups: readonly WorktreeFeatureGroup[];
 }
@@ -49,6 +51,7 @@ function appendNode(
   entries.push({
     kind: "feature",
     feature: node.feature,
+    node,
     depth,
     hasChildren: node.children.length > 0,
     groupKey,
@@ -274,7 +277,14 @@ function renderEntry(
           : undefined
       }
     >
-      {props.renderFeature(entry.feature, control, entry.depth)}
+      {props.renderFeature(
+        entry.feature,
+        control,
+        entry.depth,
+        entry.hasChildren && collapsed.has(entry.feature.id)
+          ? descendantIdsOf(entry.node)
+          : undefined,
+      )}
     </div>
   );
 }

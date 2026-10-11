@@ -1,5 +1,6 @@
 import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SidebarDisplayOptionsPopover } from "@/components/SidebarDisplayOptions";
 
 interface SidebarProjectsHeaderProps {
   onAddProject: () => void;
@@ -10,10 +11,13 @@ interface SidebarProjectsHeaderProps {
 }
 
 /**
- * "Projects" sidebar header: section label plus the add-project and
- * re-sort (manual refresh) actions. Refresh re-adopts the backend's
+ * "Projects" sidebar header: section label plus the display options, the
+ * add-project and re-sort (manual refresh) actions. Refresh re-adopts the backend's
  * most-recent-user-message ordering for projects (see `useOrderedProjects`).
  */
+const HOVER_REVEAL_CLASS =
+  "can-hover:opacity-0 can-hover:transition-opacity can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100";
+
 export function SidebarProjectsHeader({
   onAddProject,
   isAddingProject,
@@ -25,6 +29,7 @@ export function SidebarProjectsHeader({
     <div className="group flex items-center justify-between px-2">
       <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
       <div className="flex items-center gap-0.5">
+        <SidebarDisplayOptionsPopover className={HOVER_REVEAL_CLASS} />
         <Button
           variant="ghost"
           size="icon-xs"
@@ -32,7 +37,7 @@ export function SidebarProjectsHeader({
           disabled={isRefreshing}
           title="Re-sort projects"
           aria-label="Re-sort projects"
-          className="can-hover:opacity-0 can-hover:transition-opacity can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100"
+          className={HOVER_REVEAL_CLASS}
         >
           <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
         </Button>
@@ -44,7 +49,7 @@ export function SidebarProjectsHeader({
             disabled={isAddingProject}
             title="Add project"
             aria-label="Add project"
-            className="can-hover:opacity-0 can-hover:transition-opacity can-hover:focus-visible:opacity-100 can-hover:group-hover:opacity-100"
+            className={HOVER_REVEAL_CLASS}
           >
             <Plus />
           </Button>

@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode, RefObject } from "react";
+import type { ReactElement } from "react";
 import {
   ArchiveIcon,
   DownloadIcon,
@@ -9,22 +9,27 @@ import {
   TerminalIcon,
   TrashIcon,
 } from "lucide-react";
-import type { AllocatedPort, Feature, GitStats, PrStatusSnapshot } from "@/api/generated";
+import type {
+  AllocatedPort,
+  Feature,
+  FeatureWorktreeInfo,
+  GitStats,
+  PrStatusSnapshot,
+} from "@/api/generated";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { FeatureMetaBadge } from "@/components/FeatureMetaBadge";
 import { FeaturePortsBadge } from "@/components/FeaturePortsBadge";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { FeaturePrIndicator } from "@/components/PrStatusIndicators";
 import { NumStat } from "@/components/NumStat";
-import { SidebarStatusIndicator } from "@/components/SidebarStatusIndicator";
-import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
-import { SidebarProviderBadge } from "@/components/SidebarProviderBadge";
-import type { LiveAgentStatus } from "@/stores/session-status-store";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
+import { useShallow } from "zustand/react/shallow";
+import type { SidebarConfig } from "@/lib/sidebar-config";
 
 interface FeatureRowMetaLineProps {
   feature: Feature;
+  worktree: FeatureWorktreeInfo | undefined;
   prStatus: PrStatusSnapshot | undefined;
   gitStats: GitStats | undefined;
   shellCount: number;
@@ -46,12 +51,14 @@ export interface FeatureLabelEditing {
 }
 
 /**
- * Second line of a sidebar feature row: label, diff stat, pull-request state,
- * and running-activity badges. Renders nothing when the row has none of them,
- * so a bare row stays a single line.
+ * Second line of a sidebar feature row: label, branch, diff stat, pull-request
+ * state, and running-activity badges, each one switchable in the display
+ * options. Renders nothing when the row has none of them to show, so a bare row
+ * stays a single line.
  */
 export function FeatureRowMetaLine({
   feature,
+  worktree,
   prStatus,
   gitStats,
   shellCount,
@@ -61,12 +68,31 @@ export function FeatureRowMetaLine({
   labelEditor,
   onOpenPort,
 }: FeatureRowMetaLineProps): ReactElement | null {
-  const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
+  const show = useSidebarConfigStore(useShallow((state) => metaLineOptions(state.config)));
+  const branch = show.branch ? worktree?.worktree_branch : null;
+  const label = show.label === "hidden" ? null : feature.label;
+  // "Logo + model": the logo keeps its title-line slot, the model reads here.
+  const model =
+    show.provider === "logo_model" && feature.runtime_provider
+      ? feature.model_session?.trim() || "Default"
+      : null;
+  const hasStats =
+    show.diff && gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
   // `FeaturePrIndicator` also renders for an error with no proposal — a forge
   // auth failure must not be the one thing that keeps this line from mounting.
-  const hasPrIndicator = prStatus?.pr != null || prStatus?.error != null;
-  const hasActivity = shellCount > 0 || browserCount > 0 || downloadCount > 0 || ports.length > 0;
-  if (!labelEditor && !feature.label && !hasStats && !hasActivity && !hasPrIndicator) {
+  const hasPrIndicator = show.pr && (prStatus?.pr != null || prStatus?.error != null);
+  const hasActivity = show.activity && (shellCount > 0 || browserCount > 0 || downloadCount > 0);
+  const hasPorts = show.ports && ports.length > 0;
+  if (
+    !labelEditor &&
+    !label &&
+    !branch &&
+    !model &&
+    !hasStats &&
+    !hasActivity &&
+    !hasPorts &&
+    !hasPrIndicator
+  ) {
     return null;
   }
 
@@ -75,26 +101,25 @@ export function FeatureRowMetaLine({
       data-feature-meta-line
       className="flex min-w-0 items-center gap-2 pl-5 text-[11px] leading-tight"
     >
-      {labelEditor ? (
-        <FeatureLabelEditor
-          value={labelEditor.draft}
-          suggestions={labelEditor.suggestions}
-          isSaving={labelEditor.isSaving}
-          trigger={
-            feature.label ? (
-              <FeatureLabelChip label={feature.label} />
-            ) : (
-              <span className="rounded border border-dashed border-border px-1.5 py-0 font-mono text-[10.5px] leading-4 text-muted-foreground">
-                Set label
-              </span>
-            )
-          }
-          onChange={labelEditor.onDraftChange}
-          onSave={labelEditor.onSave}
-          onCancel={labelEditor.onCancel}
-        />
-      ) : (
-        <FeatureLabelChip label={feature.label} />
+      <MetaLineLabel feature={feature} label={label} style={show.label} editor={labelEditor} />
+      {branch && (
+        <span
+          data-feature-branch
+          title={branch}
+          className="inline-flex min-w-0 items-center gap-1 text-muted-foreground"
+        >
+          <GitBranchIcon className="size-3 shrink-0" aria-hidden />
+          <span className="truncate font-mono text-[10.5px]">{branch}</span>
+        </span>
+      )}
+      {model && (
+        <span
+          data-feature-model
+          title={model}
+          className="min-w-0 truncate font-mono text-[10.5px] text-muted-foreground"
+        >
+          {model}
+        </span>
       )}
       {hasStats && (
         <NumStat
@@ -103,81 +128,77 @@ export function FeatureRowMetaLine({
           className="text-[11px] leading-tight"
         />
       )}
-      <FeaturePrIndicator snapshot={prStatus} />
-      <FeatureActivityIndicators
-        shellCount={shellCount}
-        browserCount={browserCount}
-        downloadCount={downloadCount}
-      />
-      <FeaturePortsBadge ports={ports} onOpenPort={onOpenPort} />
+      {show.pr && <FeaturePrIndicator snapshot={prStatus} />}
+      {hasActivity && (
+        <FeatureActivityIndicators
+          shellCount={shellCount}
+          browserCount={browserCount}
+          downloadCount={downloadCount}
+        />
+      )}
+      {hasPorts && <FeaturePortsBadge ports={ports} onOpenPort={onOpenPort} />}
     </div>
   );
 }
 
-/**
- * First line: independent status, optional worktree marker, title, and a
- * trailing mono provider. A skeleton holds the title while auto-naming.
- */
-export function FeatureRowTitleLine({
+function metaLineOptions(config: SidebarConfig) {
+  return {
+    branch: config.branch,
+    label: config.label,
+    diff: config.diff,
+    pr: config.pr,
+    activity: config.activity,
+    ports: config.ports,
+    provider: config.provider,
+  };
+}
+
+/** The label in its chosen style, or its editor while it is being edited. */
+function MetaLineLabel({
   feature,
-  liveTitle,
-  isAutoNaming,
-  isArchived,
-  hasWorktree,
-  liveStatus,
-  isActive,
-  isUnread,
-  onOpenConversation,
-  badgeRef,
-  children,
+  label,
+  style,
+  editor,
 }: {
   feature: Feature;
-  liveTitle: string | undefined;
-  isAutoNaming: boolean;
-  isArchived: boolean;
-  hasWorktree: boolean;
-  liveStatus: LiveAgentStatus;
-  isActive: boolean;
-  isUnread: boolean;
-  onOpenConversation: () => void;
-  badgeRef?: RefObject<HTMLSpanElement | null>;
-  children?: ReactNode;
-}): ReactElement {
+  label: string | null | undefined;
+  style: SidebarConfig["label"];
+  editor: FeatureLabelEditing | undefined;
+}): ReactElement | null {
+  if (!editor) {
+    return style === "dot" ? <FeatureLabelDot label={label} /> : <FeatureLabelChip label={label} />;
+  }
   return (
-    <div data-feature-title-line className="flex min-h-6 min-w-0 flex-1 items-center gap-1.5">
-      <SidebarStatusIndicator
-        featureId={feature.id}
-        liveStatus={liveStatus}
-        isActive={isActive}
-        isUnread={isUnread}
-        onOpenConversation={onOpenConversation}
-      />
-      {hasWorktree && (
-        <GitBranchIcon
-          className="size-3 shrink-0 text-muted-foreground"
-          aria-label="Has worktree"
-        />
-      )}
-      {isAutoNaming ? (
-        <Skeleton className="h-4 w-32 min-w-0 flex-1" />
-      ) : (
-        <span className={`min-w-0 flex-1 truncate ${isArchived ? "text-muted-foreground" : ""}`}>
-          {liveTitle ?? feature.title}
-        </span>
-      )}
-      {children}
-      <span
-        data-sidebar-identity-slot
-        className="relative inline-flex size-4 shrink-0 items-center justify-center"
-      >
-        <SidebarProviderBadge
-          providerId={feature.runtime_provider}
-          modelId={feature.model_session}
-          thinkingEffort={feature.thinking_effort}
-        />
-        {badgeRef && <SidebarShortcutBadge ref={badgeRef} inline />}
-      </span>
-    </div>
+    <FeatureLabelEditor
+      value={editor.draft}
+      suggestions={editor.suggestions}
+      isSaving={editor.isSaving}
+      trigger={
+        feature.label ? (
+          <FeatureLabelChip label={feature.label} />
+        ) : (
+          <span className="rounded border border-dashed border-border px-1.5 py-0 font-mono text-[10.5px] leading-4 text-muted-foreground">
+            Set label
+          </span>
+        )
+      }
+      onChange={editor.onDraftChange}
+      onSave={editor.onSave}
+      onCancel={editor.onCancel}
+    />
+  );
+}
+
+/** The quiet label style: a dot that names the label on hover. */
+function FeatureLabelDot({ label }: { label: string | null | undefined }): ReactElement | null {
+  if (!label) return null;
+  return (
+    <span
+      role="img"
+      aria-label={`Label: ${label}`}
+      title={label}
+      className="size-1.5 shrink-0 rounded-full bg-primary"
+    />
   );
 }
 

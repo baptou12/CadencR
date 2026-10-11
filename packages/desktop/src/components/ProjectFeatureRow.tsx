@@ -9,11 +9,8 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMenu";
-import {
-  FeatureRowActions,
-  FeatureRowMetaLine,
-  FeatureRowTitleLine,
-} from "@/components/ProjectFeatureRowParts";
+import { FeatureRowActions, FeatureRowMetaLine } from "@/components/ProjectFeatureRowParts";
+import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
@@ -67,6 +64,8 @@ interface ProjectFeatureRowProps {
   hierarchyControl?: ReactNode;
   /** Zero-based nesting depth; indentation stays inside the full-width row. */
   hierarchyDepth?: number;
+  /** Children folded under this row (collapsed subtree); it signals their state. */
+  hiddenDescendantIds?: readonly number[];
 }
 
 const FEATURE_NESTING_INDENT_PX = 16;
@@ -93,6 +92,7 @@ function FeatureRowDetails({
     liveTitle,
     isAutoNaming,
     hasWorktree,
+    worktree,
     shellCount,
     browserCount,
     downloadCount,
@@ -115,9 +115,9 @@ function FeatureRowDetails({
         isAutoNaming={isAutoNaming}
         isArchived={state.isArchived}
         hasWorktree={hasWorktree}
-        liveStatus={state.liveStatus}
+        worktree={worktree}
+        attention={state.attention}
         isActive={state.isActive}
-        isUnread={state.isUnread}
         onOpenConversation={onOpenConversation}
         badgeRef={badgeRef}
       >
@@ -131,6 +131,7 @@ function FeatureRowDetails({
       </FeatureRowTitleLine>
       <FeatureRowMetaLine
         feature={feature}
+        worktree={worktree}
         prStatus={state.prStatus}
         gitStats={state.gitStats}
         shellCount={shellCount}
@@ -219,9 +220,16 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
     onStartLabelEdit,
     hierarchyControl,
     hierarchyDepth = 0,
+    hiddenDescendantIds,
   } = props;
   const startLabelEditOnMenuCloseRef = useRef(false);
-  const state = useProjectFeatureRowState(feature, projectId, activeFeatureId, hasLiveWorktree);
+  const state = useProjectFeatureRowState(
+    feature,
+    projectId,
+    activeFeatureId,
+    hasLiveWorktree,
+    hiddenDescendantIds,
+  );
   const { navRef, badgeRef } = useNavShortcutHint<HTMLDivElement>();
   const markStartLabelEditAfterMenuClose = (): void => {
     startLabelEditOnMenuCloseRef.current = true;
@@ -252,7 +260,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
           data-nav-id={String(feature.id)}
           data-nav-project-id={String(projectId)}
           data-feature-depth={hierarchyDepth}
-          className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1.5 text-[12.5px] outline-none transition-colors hover:bg-sidebar-accent ${
+          className={`sidebar-row group/feature relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 outline-none transition-colors hover:bg-sidebar-accent ${
             state.isActive ? "bg-sidebar-accent" : ""
           } ${state.isArchived ? "opacity-50" : ""}`}
           onClick={(e) => {

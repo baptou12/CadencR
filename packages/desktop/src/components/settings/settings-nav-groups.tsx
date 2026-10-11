@@ -9,6 +9,7 @@ import {
   Info,
   MonitorCog,
   Network,
+  PanelLeft,
   Palette,
   Plug,
   Tag,
@@ -36,6 +37,11 @@ export const NAV_GROUPS: SettingsNavGroup[] = [
         id: "interface",
         label: "Interface & Zoom",
         icon: <MonitorCog className="size-4" />,
+      },
+      {
+        id: "sidebar-display",
+        label: "Sidebar",
+        icon: <PanelLeft className="size-4" />,
       },
       {
         id: "notifications",

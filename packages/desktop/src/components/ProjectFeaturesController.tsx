@@ -13,7 +13,7 @@ import {
   type FeatureStatus,
   type FeatureWorktreeInfo,
 } from "@/api/generated";
-import { FeatureSubtree } from "@/components/FeatureSubtree";
+import { FeatureSubtree, type RenderFeature } from "@/components/FeatureSubtree";
 import { ProjectFeatureRow } from "@/components/ProjectFeatureRow";
 import {
   adjacentFeature,
@@ -273,8 +273,8 @@ function createFeatureRenderer(
   labels: ReturnType<typeof useProjectFeatureLabels>,
   actions: ProjectFeatureActions,
   setConfirmFeatureId: (featureId: number | null) => void,
-) {
-  return (feature: Feature, hierarchyControl?: ReactNode, hierarchyDepth = 0): ReactNode => (
+): RenderFeature {
+  return (feature, hierarchyControl, hierarchyDepth = 0, hiddenDescendantIds) => (
     <ProjectFeatureRow
       key={feature.id}
       feature={feature}
@@ -304,6 +304,7 @@ function createFeatureRenderer(
       onCloseActivity={actions.closeActivity}
       hierarchyControl={hierarchyControl}
       hierarchyDepth={hierarchyDepth}
+      hiddenDescendantIds={hiddenDescendantIds}
     />
   );
 }
