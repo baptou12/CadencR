@@ -1644,6 +1644,12 @@ export interface Feature {
   is_pinned: boolean;
   /** @nullable */
   label?: string | null;
+  /**
+   * Latest user message across the conversation's sessions, else its
+   * creation time: the sidebar's sort key. Set by the list endpoints only.
+   * @nullable
+   */
+  last_activity_at?: string | null;
   /** @nullable */
   model_session?: string | null;
   /**
