@@ -264,6 +264,12 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_row_label",
     "sidebar_row_provider",
     "sidebar_type_to_filter",
+    "sidebar_row_pending_request",
+    "sidebar_project_badges",
+    "sidebar_block_for_me",
+    "sidebar_dormant_after",
+    "sidebar_reveal_active",
+    "sidebar_rail",
 ];
 
 #[cfg(test)]

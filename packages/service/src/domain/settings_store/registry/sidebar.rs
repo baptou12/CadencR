@@ -1,4 +1,5 @@
-//! Validators for the sidebar display options (density, row template, filter).
+//! Validators for the sidebar display options (density, row template, filter,
+//! attention surfaces).
 //! The value sets mirror `packages/desktop/src/lib/sidebar-config.ts`.
 
 use super::{SettingSpec, ValueKind, BOOL};
@@ -34,12 +35,28 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
             ValueKind::Enum(&["logo", "logo_model", "hidden"]),
             Some("logo"),
         ),
+        "sidebar_project_badges" => {
+            SettingSpec::new(ValueKind::Enum(&["count", "dot", "none"]), Some("count"))
+        }
+        "sidebar_dormant_after" => {
+            SettingSpec::new(ValueKind::Enum(&["never", "3", "7", "14", "30"]), Some("7"))
+        }
+        "sidebar_reveal_active" => SettingSpec::new(
+            ValueKind::Enum(&["scroll", "expand", "off"]),
+            Some("scroll"),
+        ),
+        "sidebar_rail" => SettingSpec::new(
+            ValueKind::Enum(&["projects", "conversations", "attention", "none"]),
+            Some("projects"),
+        ),
         "sidebar_row_branch" => SettingSpec::new(BOOL, Some("false")),
         "sidebar_row_worktree_icon"
         | "sidebar_row_diff"
         | "sidebar_row_pr"
         | "sidebar_row_ports"
         | "sidebar_row_activity"
+        | "sidebar_row_pending_request"
+        | "sidebar_block_for_me"
         | "sidebar_type_to_filter" => SettingSpec::new(BOOL, Some("true")),
         _ => return None,
     };
@@ -73,5 +90,11 @@ mod tests {
         assert!(!font.is_valid("15"));
         let branch = workspace_spec("sidebar_row_branch").unwrap();
         assert_eq!(branch.default, Some("false"));
+        let dormant = workspace_spec("sidebar_dormant_after").unwrap();
+        assert!(dormant.is_valid("never"));
+        assert!(!dormant.is_valid("5"));
+        let rail = workspace_spec("sidebar_rail").unwrap();
+        assert_eq!(rail.default, Some("projects"));
+        assert!(!rail.is_valid("hidden"));
     }
 }
