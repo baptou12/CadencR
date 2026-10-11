@@ -32,6 +32,9 @@ import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
 import { ProjectRowAttention } from "./SidebarAttentionProvider";
 import { useRevealActiveRow } from "@/hooks/useRevealActiveRow";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
+import { SampleScope, useSidebarSamplePreview } from "./SidebarSampleProvider";
+import { SidebarSampleTree } from "./SidebarSampleTree";
+import { SidebarSampleRail } from "./SidebarSampleRail";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -171,6 +174,7 @@ export function ProjectTree(props: ProjectTreeProps) {
   const filterQuery = useSidebarFilterQuery();
   const treeRef = useRef<HTMLDivElement>(null);
   useRevealActiveRow(treeRef, props.activeFeatureId);
+  const showsSamples = useSidebarSamplePreview() !== null;
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
       <SidebarProjectsHeader
@@ -183,9 +187,18 @@ export function ProjectTree(props: ProjectTreeProps) {
         isRefreshing={controller.ordered.isRefreshing}
       />
       <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
-        <div ref={treeRef} className="flex min-w-0 flex-col gap-0.5 px-1">
-          <ProjectTreeRows props={props} controller={controller} filterQuery={filterQuery} />
-        </div>
+        {showsSamples ? (
+          <div data-sidebar-sample className="flex min-w-0 flex-col gap-0.5 px-1">
+            <SampleScope>
+              <SidebarSampleTree />
+              <SidebarSampleRail />
+            </SampleScope>
+          </div>
+        ) : (
+          <div ref={treeRef} className="flex min-w-0 flex-col gap-0.5 px-1">
+            <ProjectTreeRows props={props} controller={controller} filterQuery={filterQuery} />
+          </div>
+        )}
       </ScrollArea>
       <ProjectTreeDialogs controller={controller} />
     </div>

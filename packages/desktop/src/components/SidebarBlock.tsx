@@ -2,11 +2,14 @@ import type { ReactElement, ReactNode, Ref } from "react";
 import { ChevronDown, ChevronRight, type LucideIcon } from "lucide-react";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { cn } from "@/lib/utils";
+import type { SidebarFoldableBlock } from "@/stores/sidebar-surface-store";
 
-const EYEBROW_CLASS =
+export const EYEBROW_CLASS =
   "flex items-center gap-1.5 rounded-md px-2 pb-0.5 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground";
 
 interface SidebarBlockProps {
+  /** Names the block for the display options' highlight (`sidebar-rows.css`). */
+  block: SidebarFoldableBlock | "pinned";
   label: string;
   icon: LucideIcon;
   /** Shown per the "Block counters" option; omit for blocks whose size is fixed. */
@@ -30,6 +33,7 @@ interface SidebarBlockProps {
  * when "Hide empty blocks" (F9) is off. Callers decide when to render at all.
  */
 export function SidebarBlock({
+  block,
   label,
   icon: Icon,
   count,
@@ -56,7 +60,12 @@ export function SidebarBlock({
     </>
   );
   return (
-    <section ref={ref} aria-label={label} className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
+    <section
+      ref={ref}
+      aria-label={label}
+      data-sidebar-block={block}
+      className="mb-2 flex shrink-0 flex-col gap-0.5 px-1"
+    >
       {fold ? (
         <button
           type="button"
@@ -73,7 +82,11 @@ export function SidebarBlock({
       ) : (
         <div className={EYEBROW_CLASS}>{content}</div>
       )}
-      {open && isEmpty && <p className="px-2 py-1 text-[11px] text-muted-foreground/80">{empty}</p>}
+      {open && isEmpty && (
+        <p data-sidebar-block-empty className="px-2 py-1 text-[11px] text-muted-foreground/80">
+          {empty}
+        </p>
+      )}
       {open && !isEmpty && (
         <div className={cn("flex flex-col gap-0.5", capped && "max-h-[40vh] overflow-y-auto")}>
           {children}
@@ -99,6 +112,7 @@ function BlockCounter({
     return (
       <span
         role="img"
+        data-sidebar-block-counter
         aria-label={`${count}${detail}`}
         className={cn(
           "size-1.5 shrink-0 rounded-full",
@@ -108,7 +122,7 @@ function BlockCounter({
     );
   }
   return (
-    <span className="font-semibold tabular-nums tracking-normal">
+    <span data-sidebar-block-counter className="font-semibold tabular-nums tracking-normal">
       {count}
       {detail && <span className="sr-only">{detail}</span>}
     </span>

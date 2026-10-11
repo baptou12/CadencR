@@ -1,29 +1,31 @@
 import {
   useId,
   useMemo,
-  useRef,
   useState,
   type ComponentProps,
   type ReactElement,
   type ReactNode,
 } from "react";
-import { LoaderCircle, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronRight, LoaderCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { HintTooltip } from "@/components/HintTooltip";
 import { UsageSegmentedControl } from "@/components/usage/UsageSegmentedControl";
 import {
-  CHOICE_ROWS,
+  DISPLAY_GROUPS,
   PRESET_DESCRIPTION,
+  resolveDisplayItem,
   ROW_ELEMENTS,
   ROW_ELEMENTS_DESCRIPTION,
-  SWITCH_ROWS,
   type ChoiceId,
   type ChoiceRow,
+  type DisplayGroup,
+  type DisplayItem,
 } from "@/components/sidebar-display-rows";
+import { useSidebarOptionHighlight } from "@/hooks/useSidebarOptionHighlight";
+import type { SidebarOptionId } from "@/lib/sidebar-config";
 import {
   useSetSidebarOption,
   useSidebarConfigWrites,
@@ -103,6 +105,7 @@ export function RowElementGrid({
       {ROW_ELEMENTS.map((element) => (
         <RowElementToggle
           key={element.id}
+          option={element.id}
           label={element.label}
           hint={element.description}
           checked={form.config[element.id]}
@@ -142,10 +145,22 @@ export function ResetDisplayOptionsButton({
  */
 export function SidebarDisplayOptionsForm({ className }: { className?: string }): ReactElement {
   const form = useSidebarDisplayForm();
-  const switchId = useId();
+  const highlight = useSidebarOptionHighlight();
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const [essentials, ...folded] = DISPLAY_GROUPS;
+  const toggleGroup = (id: string): void =>
+    setOpenGroups((prior) => {
+      const next = new Set(prior);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   return (
-    <fieldset disabled={form.disabled} className={cn("flex flex-col gap-3", className)}>
+    <fieldset
+      disabled={form.disabled}
+      className={cn("flex flex-col gap-3", className)}
+      {...highlight}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold">Display options</span>
         <ResetDisplayOptionsButton
@@ -157,87 +172,96 @@ export function SidebarDisplayOptionsForm({ className }: { className?: string })
         />
       </div>
       <TooltipProvider delayDuration={300}>
-        <OptionRow label="Preset" hint={PRESET_DESCRIPTION}>
-          <PresetControl form={form} />
-        </OptionRow>
-        {CHOICE_ROWS.map((row) => (
-          <OptionRow key={row.id} label={row.label} hint={row.description}>
-            <ChoiceControl form={form} row={row} />
-          </OptionRow>
-        ))}
-        <div className="flex flex-col gap-1.5">
-          <HintLabel hint={ROW_ELEMENTS_DESCRIPTION} className="self-start">
-            Show in rows
-          </HintLabel>
-          <RowElementGrid form={form} className="gap-x-3 gap-y-1.5" />
-        </div>
-        {SWITCH_ROWS.map((row) => (
-          <OptionRow
-            key={row.id}
-            label={row.label}
-            hint={row.description}
-            htmlFor={`${switchId}-${row.id}`}
-          >
-            <Switch
-              id={`${switchId}-${row.id}`}
-              size="sm"
-              checked={form.config[row.id]}
-              aria-description={row.description}
-              onCheckedChange={(checked) => form.setOption(row.id, checked)}
-            />
-          </OptionRow>
+        {essentials && <GroupItems form={form} group={essentials} />}
+        {folded.map((group) => (
+          <div key={group.id} className="flex flex-col gap-3 border-t border-border/60 pt-2">
+            <button
+              type="button"
+              aria-expanded={openGroups.has(group.id)}
+              onClick={() => toggleGroup(group.id)}
+              className="flex items-center gap-1 self-start rounded-sm text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"
+            >
+              {openGroups.has(group.id) ? (
+                <ChevronDown className="size-3" />
+              ) : (
+                <ChevronRight className="size-3" />
+              )}
+              {group.label}
+            </button>
+            {openGroups.has(group.id) && <GroupItems form={form} group={group} />}
+          </div>
         ))}
       </TooltipProvider>
     </fieldset>
   );
 }
 
-/** Space between the sidebar's edge and the popover. */
-const POPOVER_GAP_PX = 8;
-
-/**
- * Header button that opens the display options beside the sidebar, never over
- * it: the rows stay visible, so each change previews live.
- */
-export function SidebarDisplayOptionsPopover({ className }: { className?: string }): ReactElement {
-  const [sideOffset, setSideOffset] = useState(POPOVER_GAP_PX);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+function GroupItems({
+  form,
+  group,
+}: {
+  form: SidebarDisplayForm;
+  group: DisplayGroup;
+}): ReactElement {
+  const switchId = useId();
   return (
-    <Popover
-      onOpenChange={(open) => {
-        if (open && triggerRef.current) setSideOffset(offsetPastSidebar(triggerRef.current));
-      }}
-    >
-      <PopoverTrigger asChild>
-        <Button
-          ref={triggerRef}
-          variant="ghost"
-          size="icon-xs"
-          title="Display options"
-          aria-label="Display options"
-          className={cn("can-hover:data-[state=open]:opacity-100", className)}
-        >
-          <SlidersHorizontal />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="right"
-        align="start"
-        sideOffset={sideOffset}
-        className="max-h-(--radix-popover-content-available-height) w-[24rem] overflow-y-auto p-3"
-      >
-        <SidebarDisplayOptionsForm />
-      </PopoverContent>
-    </Popover>
+    <>
+      {group.items.map((item) => (
+        <DisplayItemRow key={item} form={form} item={item} switchId={switchId} />
+      ))}
+    </>
   );
 }
 
-/** Distance from the trigger to just past the sidebar's right edge. */
-function offsetPastSidebar(trigger: HTMLElement): number {
-  const sidebar = trigger.closest("[data-app-sidebar]");
-  if (!sidebar) return POPOVER_GAP_PX;
-  const gap = sidebar.getBoundingClientRect().right - trigger.getBoundingClientRect().right;
-  return Math.max(0, gap) + POPOVER_GAP_PX;
+/** One option in the popover's compact layout, its description in a tooltip. */
+function DisplayItemRow({
+  form,
+  item,
+  switchId,
+}: {
+  form: SidebarDisplayForm;
+  item: DisplayItem;
+  switchId: string;
+}): ReactElement {
+  const resolved = resolveDisplayItem(item);
+  if (resolved.kind === "preset") {
+    return (
+      <OptionRow label="Preset" hint={PRESET_DESCRIPTION}>
+        <PresetControl form={form} />
+      </OptionRow>
+    );
+  }
+  if (resolved.kind === "rowElements") {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <HintLabel hint={ROW_ELEMENTS_DESCRIPTION} className="self-start">
+          Show in rows
+        </HintLabel>
+        <RowElementGrid form={form} className="gap-x-3 gap-y-1.5" />
+      </div>
+    );
+  }
+  if (resolved.kind === "choice") {
+    const { row } = resolved;
+    return (
+      <OptionRow option={row.id} label={row.label} hint={row.description}>
+        <ChoiceControl form={form} row={row} />
+      </OptionRow>
+    );
+  }
+  const { row } = resolved;
+  const id = `${switchId}-${row.id}`;
+  return (
+    <OptionRow option={row.id} label={row.label} hint={row.description} htmlFor={id}>
+      <Switch
+        id={id}
+        size="sm"
+        checked={form.config[row.id]}
+        aria-description={row.description}
+        onCheckedChange={(checked) => form.setOption(row.id, checked)}
+      />
+    </OptionRow>
+  );
 }
 
 /**
@@ -272,18 +296,21 @@ function HintLabel({
 }
 
 function OptionRow({
+  option,
   label,
   hint,
   htmlFor,
   children,
 }: {
+  /** The option it sets, outlined in the sidebar while pointed at. */
+  option?: SidebarOptionId;
   label: string;
   hint: string;
   htmlFor?: string;
   children: ReactNode;
 }): ReactElement {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div data-sidebar-option={option} className="flex items-center justify-between gap-3">
       <HintLabel hint={hint} htmlFor={htmlFor}>
         {label}
       </HintLabel>
@@ -293,11 +320,13 @@ function OptionRow({
 }
 
 function RowElementToggle({
+  option,
   label,
   hint,
   checked,
   onChange,
 }: {
+  option: SidebarOptionId;
   label: string;
   hint: string;
   checked: boolean;
@@ -305,7 +334,7 @@ function RowElementToggle({
 }): ReactElement {
   const id = useId();
   return (
-    <div className="flex items-center gap-2">
+    <div data-sidebar-option={option} className="flex items-center gap-2">
       <Checkbox
         id={id}
         checked={checked}

@@ -103,7 +103,7 @@ function RailProjects({ onExpand }: { onExpand: () => void }): ReactElement {
   );
 }
 
-const RailProject = memo(function RailProject({
+export const RailProject = memo(function RailProject({
   projectId,
   name,
   counts,
@@ -169,6 +169,14 @@ function ringClass(counts: ProjectAttentionCounts): string {
   return "";
 }
 
+export function RailEmptyLine({ attentionOnly }: { attentionOnly: boolean }): ReactElement {
+  return (
+    <span className="px-1 pt-1 text-center text-[10px] leading-tight text-muted-foreground">
+      {attentionOnly ? "Nothing waiting" : "All quiet"}
+    </span>
+  );
+}
+
 function RailConversations({
   activeFeatureId,
   attentionOnly,
@@ -183,9 +191,7 @@ function RailConversations({
     return (attentionOnly ? loadingStates.some(needsUser) : loadingStates.length > 0) ? (
       <Skeleton aria-label="Loading conversations" className="size-8 shrink-0 rounded-md" />
     ) : (
-      <span className="px-1 pt-1 text-center text-[10px] leading-tight text-muted-foreground">
-        {attentionOnly ? "Nothing waiting" : "All quiet"}
-      </span>
+      <RailEmptyLine attentionOnly={attentionOnly} />
     );
   }
   return (
@@ -204,7 +210,7 @@ function RailConversations({
 
 function noop(): void {}
 
-const RailConversation = memo(function RailConversation({
+export const RailConversation = memo(function RailConversation({
   item,
   isActive,
   onOpen,

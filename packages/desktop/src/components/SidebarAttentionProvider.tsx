@@ -14,7 +14,7 @@ const NO_ATTENTION: SidebarAttention = {
   loadingStates: [],
 };
 
-const SidebarAttentionContext = createContext<SidebarAttention>(NO_ATTENTION);
+export const SidebarAttentionContext = createContext<SidebarAttention>(NO_ATTENTION);
 
 /**
  * Resolves the attention index once for the sidebar and the collapsed rail: the

@@ -77,6 +77,7 @@ export function FeatureRowTitleLine({
       />
       {hasWorktree && showWorktreeIcon && (
         <GitBranchIcon
+          data-feature-worktree-icon
           className="size-3 shrink-0 text-muted-foreground"
           aria-label="Has worktree"
         />

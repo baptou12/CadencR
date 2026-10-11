@@ -78,6 +78,7 @@ export function SidebarPinnedConversations({
   return (
     <SidebarBlock
       ref={listRef}
+      block="pinned"
       label="Pinned"
       icon={PinIcon}
       count={pinnedFeatures.length}

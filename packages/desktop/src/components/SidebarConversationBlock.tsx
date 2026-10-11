@@ -57,6 +57,7 @@ export function SidebarConversationBlock({
   if (filtering || (isEmpty && hideEmpty)) return null;
   return (
     <SidebarBlock
+      block={surface}
       label={label}
       icon={icon}
       count={showCount ? features.length : undefined}

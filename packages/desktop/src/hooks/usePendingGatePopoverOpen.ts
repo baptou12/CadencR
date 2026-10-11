@@ -4,6 +4,7 @@ import {
   useFeaturePendingRequestId,
 } from "@/stores/pending-gate-popover-selectors";
 import { usePendingGatePopoverHoverStore } from "@/stores/pending-gate-popover-hover-store";
+import { useSidebarSample } from "@/lib/sidebar-sample-context";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 
 interface HoverHandlers {
@@ -37,8 +38,12 @@ export function usePendingGatePopoverOpen(
   featureId: number,
   allowAutoOpen: boolean,
 ): UsePendingGatePopoverOpenResult {
-  const mostRecentFeatureId = useMostRecentPendingFeatureId();
-  const pendingRequestId = useFeaturePendingRequestId(featureId);
+  const liveMostRecentFeatureId = useMostRecentPendingFeatureId();
+  const livePendingRequestId = useFeaturePendingRequestId(featureId);
+  // The display options preview stages its own "newest request".
+  const sample = useSidebarSample();
+  const mostRecentFeatureId = sample ? sample.mostRecentPendingFeatureId : liveMostRecentFeatureId;
+  const pendingRequestId = sample ? sample.pendingRequestId : livePendingRequestId;
   const hoveredFeatureId = usePendingGatePopoverHoverStore((s) => s.hoveredFeatureId);
   const setHovered = usePendingGatePopoverHoverStore((s) => s.setHovered);
 

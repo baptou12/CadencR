@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Settings, PanelLeftClose, Search, Maximize, Minimize, Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,15 @@ import { useRouteFeatureIds } from "@/hooks/useRouteFeatureIds";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useSidebarKeyboardNavigation } from "@/hooks/useSidebarKeyboardNavigation";
 import { useBrowserActivityBridge } from "@/hooks/useFeatureActivityCounts";
+import {
+  useSidebarDisplayAttributes,
+  useSidebarHighlightAttribute,
+} from "@/hooks/useSidebarDisplayAttributes";
+import { SidebarSampleBanner } from "@/components/SidebarSampleBanner";
+import { SidebarSampleBlocks } from "@/components/SidebarSampleBlocks";
+import { SampleScope } from "@/components/SidebarSampleProvider";
+import { SidebarSampleProvider } from "@/components/SidebarSampleProvider";
+import { useSidebarShowsSamples } from "@/stores/sidebar-preview-store";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
 
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
@@ -59,7 +68,9 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   useSidebarRowShortcuts();
   useBrowserActivityBridge();
   const displayAttributes = useSidebarDisplayAttributes();
+  useSidebarHighlightAttribute(sidebarRef);
   const typeToFilter = useSidebarOption("typeToFilter");
+  const showsSamples = useSidebarShowsSamples();
 
   return (
     <SidebarConfigProvider>
@@ -84,45 +95,44 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
           <SidebarHeader onCollapse={() => setCollapsed(true)} />
           {/* Flex column so the tree gets the *remaining* height (not 100%, which
           overflows past the search bar and clips the scroll area's bottom). */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
-            <div className="mb-2 shrink-0 px-1">
-              <SidebarSearchButton onSearch={onSearch} />
-            </div>
-            {/* The unified agents grid is desktop-only — hide its entry on phones.
+          <SidebarSampleProvider enabled={showsSamples}>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
+              <div className="mb-2 shrink-0 px-1">
+                <SidebarSearchButton onSearch={onSearch} />
+              </div>
+              {/* The unified agents grid is desktop-only — hide its entry on phones.
             Schedules is a plain list, so it works everywhere. */}
-            <div className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
-              {!isMobile && <UnifiedAgentsSidebarLink />}
-              <SchedulesSidebarLink />
-            </div>
-            <SidebarFilterInput />
-            <SidebarAttentionShortcuts
-              activeFeatureId={effectiveFeatureId}
-              onSelectFeature={setSelectedFeatureId}
-            />
-            <SidebarForMeSection
-              activeFeatureId={effectiveFeatureId}
-              onSelectFeature={setSelectedFeatureId}
-            />
-            <SidebarWorkingSection
-              activeFeatureId={effectiveFeatureId}
-              onSelectFeature={setSelectedFeatureId}
-            />
-            <SidebarRecentSection
-              activeFeatureId={effectiveFeatureId}
-              onSelectFeature={setSelectedFeatureId}
-            />
-            <SidebarPinnedConversations
-              activeFeatureId={effectiveFeatureId}
-              onSelectFeature={setSelectedFeatureId}
-            />
-            <div className="min-h-0 flex-1">
-              <ProjectTree
-                activeProjectId={activeProjectId}
+              <div className="mb-2 flex shrink-0 flex-col gap-0.5 px-1">
+                {!isMobile && <UnifiedAgentsSidebarLink />}
+                <SchedulesSidebarLink />
+              </div>
+              <SidebarSampleBanner />
+              {!showsSamples && <SidebarFilterInput />}
+              <SidebarAttentionShortcuts
                 activeFeatureId={effectiveFeatureId}
                 onSelectFeature={setSelectedFeatureId}
               />
+              {showsSamples ? (
+                <div data-sidebar-sample className="flex shrink-0 flex-col">
+                  <SampleScope>
+                    <SidebarSampleBlocks />
+                  </SampleScope>
+                </div>
+              ) : (
+                <SidebarBlocks
+                  activeFeatureId={effectiveFeatureId}
+                  onSelectFeature={setSelectedFeatureId}
+                />
+              )}
+              <div className="min-h-0 flex-1">
+                <ProjectTree
+                  activeProjectId={activeProjectId}
+                  activeFeatureId={effectiveFeatureId}
+                  onSelectFeature={setSelectedFeatureId}
+                />
+              </div>
             </div>
-          </div>
+          </SidebarSampleProvider>
           <SidebarFooter />
           <SidebarRenameDialog />
         </aside>
@@ -131,20 +141,19 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   );
 }
 
-/** Root attributes the row CSS keys off (`sidebar-rows.css`), so rows never re-render for them. */
-function useSidebarDisplayAttributes(): {
-  "data-sidebar-density": string;
-  "data-sidebar-title-lines": string;
-  style: CSSProperties;
-} {
-  const density = useSidebarOption("density");
-  const titleLines = useSidebarOption("titleLines");
-  const fontSize = useSidebarOption("fontSize");
-  return {
-    "data-sidebar-density": density,
-    "data-sidebar-title-lines": titleLines,
-    style: { "--sidebar-row-font": `${fontSize}px` } as CSSProperties,
-  };
+/** The blocks above the project list, each hidden while its option is off. */
+function SidebarBlocks(props: {
+  activeFeatureId: number | null;
+  onSelectFeature: (featureId: number) => void;
+}): ReactElement {
+  return (
+    <>
+      <SidebarForMeSection {...props} />
+      <SidebarWorkingSection {...props} />
+      <SidebarRecentSection {...props} />
+      <SidebarPinnedConversations {...props} />
+    </>
+  );
 }
 
 function useSidebarActiveIds(selectedFeatureId: number | null): {

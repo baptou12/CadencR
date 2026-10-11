@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useGetProjectSettings } from "@/api/generated";
+import { useProjectSettingsList } from "@/hooks/useProjectColor";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
 import { PROJECT_ICON_SETTING_KEY, projectIconBlob, projectIconQueryKey } from "@/lib/project-icon";
 
@@ -12,9 +12,7 @@ import { PROJECT_ICON_SETTING_KEY, projectIconBlob, projectIconQueryKey } from "
  * list is already fetched once per project per session.
  */
 function useProjectIconPath(projectId: number): string {
-  const { data: settings } = useGetProjectSettings(projectId, {
-    query: { staleTime: Infinity },
-  });
+  const settings = useProjectSettingsList(projectId);
   return settings?.find((s) => s.key === PROJECT_ICON_SETTING_KEY)?.value ?? "";
 }
 

@@ -8,7 +8,7 @@ import { useSidebarOption } from "@/stores/sidebar-config-store";
 
 const NO_NODES: FeatureTreeNode[] = [];
 
-interface DormantSplit {
+export interface DormantSplit {
   awake: FeatureTreeNode[];
   dormant: FeatureTreeNode[];
 }
@@ -27,6 +27,21 @@ function isDormant(
 ): boolean {
   if (keepAwake(node.feature.id) || lastActivityMs(node) >= cutoff) return false;
   return node.children.every((child) => isDormant(child, cutoff, keepAwake));
+}
+
+/**
+ * Splits top-level conversations into the ones shown and the ones idle since
+ * before `cutoff`, subtree included; `null` when none is dormant.
+ */
+export function splitDormant(
+  forest: FeatureTreeNode[],
+  cutoff: number,
+  keepAwake: (featureId: number) => boolean,
+): DormantSplit | null {
+  const awake: FeatureTreeNode[] = [];
+  const dormant: FeatureTreeNode[] = [];
+  for (const node of forest) (isDormant(node, cutoff, keepAwake) ? dormant : awake).push(node);
+  return dormant.length > 0 ? { awake, dormant } : null;
 }
 
 function sameNodes(a: readonly FeatureTreeNode[], b: readonly FeatureTreeNode[]): boolean {
@@ -59,10 +74,7 @@ export function useDormantSplit(
       const needsLook = new Set(entries.map((entry) => entry.featureId));
       const keepAwake = (featureId: number) =>
         featureId === activeFeatureId || needsLook.has(featureId);
-      const awake: FeatureTreeNode[] = [];
-      const dormant: FeatureTreeNode[] = [];
-      for (const node of forest) (isDormant(node, cutoff, keepAwake) ? dormant : awake).push(node);
-      if (dormant.length > 0) next = { awake, dormant };
+      next = splitDormant(forest, cutoff, keepAwake) ?? next;
     }
     const prior = previous.current;
     if (sameNodes(prior.awake, next.awake) && sameNodes(prior.dormant, next.dormant)) return prior;

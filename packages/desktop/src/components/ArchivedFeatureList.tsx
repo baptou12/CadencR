@@ -24,6 +24,7 @@ export function ArchivedFeatureSection({
     <>
       <button
         type="button"
+        data-feature-fold={label.toLowerCase()}
         aria-expanded={expanded}
         className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         onClick={onToggle}

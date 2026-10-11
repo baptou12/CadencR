@@ -21,7 +21,7 @@ export interface ProjectAttentionCounts {
   unread: number;
 }
 
-interface ResolvedAttentionResult {
+export interface ResolvedAttentionResult {
   /** The attention index itself, straight from the stores (no request). */
   entries: readonly AttentionEntry[];
   /** Every conversation needing a look, in the attention index's order. */
@@ -117,7 +117,9 @@ function isNotFound(error: unknown): boolean {
   return isAxiosError(error) && error.response?.status === 404;
 }
 
-function countByProject(items: readonly ResolvedAttention[]): Map<number, ProjectAttentionCounts> {
+export function countByProject(
+  items: readonly ResolvedAttention[],
+): Map<number, ProjectAttentionCounts> {
   const counts = new Map<number, ProjectAttentionCounts>();
   for (const { feature, state } of items) {
     const current = counts.get(feature.project_id) ?? {

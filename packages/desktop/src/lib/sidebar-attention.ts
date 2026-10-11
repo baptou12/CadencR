@@ -31,6 +31,11 @@ const RANK: Record<AttentionState, number> = {
   idle: 0,
 };
 
+/** Whether `a` is more urgent than `b`: the one a collapsed parent shows. */
+export function outranks(a: AttentionState, b: AttentionState): boolean {
+  return RANK[a] > RANK[b];
+}
+
 /** Strong states ask for an action (answer, look at the error); quiet ones only inform. */
 export function isStrongAttention(state: AttentionState): boolean {
   return state === "waiting" || state === "failed";
@@ -61,7 +66,7 @@ export function deriveAttention(
   let best: Attention = { state: attentionState(row), sourceFeatureId: row.featureId };
   for (const input of hidden) {
     const state = attentionState(input);
-    if (RANK[state] > RANK[best.state]) best = { state, sourceFeatureId: input.featureId };
+    if (outranks(state, best.state)) best = { state, sourceFeatureId: input.featureId };
   }
   return best;
 }

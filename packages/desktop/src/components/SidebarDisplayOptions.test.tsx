@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@/test-utils";
+import { act, fireEvent, render, screen, waitFor, within } from "@/test-utils";
 import { getGetWorkspaceSettingQueryKey } from "@/api/generated";
 import { DEFAULT_SIDEBAR_CONFIG, SIDEBAR_SETTING_KEYS } from "@/lib/sidebar-config";
 import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
+import { useSidebarPreviewStore } from "@/stores/sidebar-preview-store";
 import { SidebarConfigProvider } from "./SidebarConfigProvider";
 import { SidebarDisplayOptionsForm } from "./SidebarDisplayOptions";
 
@@ -35,6 +36,13 @@ vi.mock("@/api/generated", async (importOriginal) => ({
     isPending: false,
   }),
 }));
+
+type User = ReturnType<typeof render>["user"];
+
+/** Every group after Essentials starts folded. */
+async function openGroup(user: User, name: string): Promise<void> {
+  await user.click(screen.getByRole("button", { name }));
+}
 
 function clientWith(values: Record<string, string>): QueryClient {
   const client = new QueryClient({
@@ -83,6 +91,7 @@ describe("SidebarDisplayOptionsForm", () => {
 
   it("switches row elements off", async () => {
     const { user } = render(<SidebarDisplayOptionsForm />, { queryClient: clientWith({}) });
+    await openGroup(user, "Rows");
     await user.click(screen.getByRole("checkbox", { name: "Diff stats" }));
     expect(mocks.writes).toEqual([{ key: "sidebar_row_diff", value: "false" }]);
   });
@@ -92,6 +101,29 @@ describe("SidebarDisplayOptionsForm", () => {
     await user.click(screen.getByRole("button", { name: /Reset/ }));
     expect(mocks.batches).toHaveLength(1);
     expect(mocks.batches[0]).toMatchObject({ sidebar_density: null, sidebar_provider_logos: null });
+  });
+
+  it("shows the essentials and folds the other groups", async () => {
+    const { user } = render(<SidebarDisplayOptionsForm />, { queryClient: clientWith({}) });
+    expect(screen.getByRole("radiogroup", { name: "Density" })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Gate popover" })).not.toBeInTheDocument();
+    await openGroup(user, "Attention");
+    expect(screen.getByRole("button", { name: "Attention" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("radiogroup", { name: "Gate popover" })).toBeInTheDocument();
+  });
+
+  it("names the option under the pointer, so the sidebar outlines what it changes", async () => {
+    const { user } = render(<SidebarDisplayOptionsForm />, { queryClient: clientWith({}) });
+    await user.hover(screen.getByRole("radio", { name: "Relative" }));
+    expect(useSidebarPreviewStore.getState().highlight).toBe("time");
+    // The gaps between rows keep the last option instead of flickering it off.
+    fireEvent.pointerOver(screen.getByRole("group"));
+    expect(useSidebarPreviewStore.getState().highlight).toBe("time");
+    await user.unhover(screen.getByRole("group"));
+    expect(useSidebarPreviewStore.getState().highlight).toBeNull();
   });
 
   it("holds the controls until the stored values arrive", () => {
@@ -121,21 +153,25 @@ describe("SidebarDisplayOptionsForm tooltips", () => {
   it.each([
     [
       "an option",
+      "Blocks",
       () => screen.getByText("Block counters"),
       "What the For me, In progress and Pinned headers show next to their name.",
     ],
     [
       "a value",
+      "Attention",
       () => screen.getByRole("radio", { name: "Click" }),
       "Opens only when you click the pending icon",
     ],
     [
       "a row element",
+      "Rows",
       () => screen.getByText("Ports"),
       "Ports the conversation's processes listen on, under the title. Click one to open it.",
     ],
-  ])("explains %s on hover", async (_, target, hint) => {
+  ])("explains %s on hover", async (_, group, target, hint) => {
     const { user } = render(<SidebarDisplayOptionsForm />, { queryClient: clientWith({}) });
+    await openGroup(user, group);
     await user.hover(target());
     expect(await screen.findByRole("tooltip")).toHaveTextContent(hint);
   });

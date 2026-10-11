@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo } from "react";
 import { create } from "zustand";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useSidebarSample } from "@/lib/sidebar-sample-context";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
 
@@ -61,11 +62,18 @@ function useGateAutoOpenOwner(): SidebarSurface | null {
   if (collapsed && !isMobile) {
     return rail === "conversations" || rail === "attention" ? "rail" : null;
   }
-  return forMe && forMeExpanded && !filtering ? "for-me" : "tree";
+  return openSidebarGateOwner(forMe && forMeExpanded, filtering);
+}
+
+/** While the sidebar is open: For me's rows when it is shown and unfolded, else the tree's. */
+export function openSidebarGateOwner(forMeShown: boolean, filtering: boolean): SidebarSurface {
+  return forMeShown && !filtering ? "for-me" : "tree";
 }
 
 /** Whether rows on the caller's surface own the gate popover's auto-open. */
 export function useOwnsGateAutoOpen(): boolean {
   const surface = useContext(SidebarSurfaceContext);
-  return useGateAutoOpenOwner() === surface;
+  const owner = useGateAutoOpenOwner();
+  const sample = useSidebarSample();
+  return (sample ? sample.gateOwner : owner) === surface;
 }

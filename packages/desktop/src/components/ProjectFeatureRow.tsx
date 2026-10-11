@@ -69,7 +69,7 @@ interface ProjectFeatureRowProps {
   hiddenDescendantIds?: readonly number[];
 }
 
-const FEATURE_NESTING_INDENT_PX = 16;
+export const FEATURE_NESTING_INDENT_PX = 16;
 
 type ProjectFeatureRowState = ReturnType<typeof useProjectFeatureRowState>;
 

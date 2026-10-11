@@ -160,3 +160,41 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
     background-color: color-mix(in oklab, var(--sidebar-flash-color) 22%, transparent);
   }
 }
+
+/* Display options: the option under the pointer or focus outlines what it
+ * changes, in the sidebar and in the Settings preview (useSidebarOptionHighlight). */
+[data-sidebar-highlight="density"] :is(.sidebar-row, .sidebar-project-row),
+[data-sidebar-highlight="fontSize"] [data-feature-title],
+[data-sidebar-highlight="titleLines"] [data-feature-title],
+[data-sidebar-highlight="titleSource"] [data-feature-title],
+[data-sidebar-highlight="status"] [data-sidebar-status],
+[data-sidebar-highlight="time"] [data-feature-time],
+[data-sidebar-highlight="label"] [data-feature-label],
+[data-sidebar-highlight="provider"] :is(.sidebar-provider-logo, [data-feature-model]),
+[data-sidebar-highlight="pendingRequest"] [data-feature-pending-request],
+[data-sidebar-highlight="worktreeIcon"] [data-feature-worktree-icon],
+[data-sidebar-highlight="branch"] [data-feature-branch],
+[data-sidebar-highlight="diff"] [data-feature-diff],
+[data-sidebar-highlight="pr"] [data-feature-pr],
+[data-sidebar-highlight="ports"] [data-feature-ports-badge],
+[data-sidebar-highlight="activity"] [data-feature-activity-indicators],
+[data-sidebar-highlight="projectBadges"] [data-project-attention],
+[data-sidebar-highlight="dormantAfter"] [data-feature-fold="dormant"],
+[data-sidebar-highlight="forMe"] [data-sidebar-block="for-me"],
+[data-sidebar-highlight="workingBlock"] [data-sidebar-block="working"],
+[data-sidebar-highlight="recentBlock"] [data-sidebar-block="recent"],
+[data-sidebar-highlight="recentCount"] [data-sidebar-block="recent"],
+[data-sidebar-highlight="blockCounts"] [data-sidebar-block-counter],
+[data-sidebar-highlight="hideEmptyBlocks"] [data-sidebar-block-empty],
+[data-sidebar-highlight="gatePopover"] [data-sidebar-status="waiting"],
+[data-sidebar-highlight="flashOnChange"]
+  :is(
+    [data-sidebar-status="waiting"],
+    [data-sidebar-status="failed"],
+    [data-sidebar-status="unread"]
+  ),
+[data-sidebar-highlight="rail"] [data-sidebar-sample-rail] {
+  outline: 1.5px solid color-mix(in oklab, var(--primary) 75%, transparent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}

@@ -122,11 +122,13 @@ export function FeatureRowMetaLine({
         </span>
       )}
       {hasStats && (
-        <NumStat
-          additions={gitStats.insertions}
-          deletions={gitStats.deletions}
-          className="text-[11px] leading-tight"
-        />
+        <span data-feature-diff className="inline-flex shrink-0">
+          <NumStat
+            additions={gitStats.insertions}
+            deletions={gitStats.deletions}
+            className="text-[11px] leading-tight"
+          />
+        </span>
       )}
       {show.pr && <FeaturePrIndicator snapshot={prStatus} />}
       {hasActivity && (
@@ -195,6 +197,7 @@ function FeatureLabelDot({ label }: { label: string | null | undefined }): React
   return (
     <span
       role="img"
+      data-feature-label
       aria-label={`Label: ${label}`}
       title={label}
       className="size-1.5 shrink-0 rounded-full bg-primary"

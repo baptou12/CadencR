@@ -1,6 +1,6 @@
 import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SidebarDisplayOptionsPopover } from "@/components/SidebarDisplayOptions";
+import { SidebarDisplayOptionsPopover } from "@/components/SidebarDisplayOptionsPopover";
 
 interface SidebarProjectsHeaderProps {
   onAddProject: () => void;
