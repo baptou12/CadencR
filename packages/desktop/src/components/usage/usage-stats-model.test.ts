@@ -21,6 +21,7 @@ function entry(overrides: Partial<UsageStatsEntry> = {}): UsageStatsEntry {
     thinking_effort: "high",
     input_tokens: 10,
     output_tokens: 90,
+    user_messages: 0,
     ...overrides,
   };
 }
@@ -33,6 +34,10 @@ describe("metricValue", () => {
     expect(metricValue(row, "input")).toBe(3);
     expect(metricValue(row, "output")).toBe(7);
     expect(metricValue(row, "total")).toBe(10);
+  });
+
+  it("counts messages sent apart from tokens", () => {
+    expect(metricValue(entry({ user_messages: 4 }), "messages")).toBe(4);
   });
 });
 
@@ -132,6 +137,39 @@ describe("buildUsageChart", () => {
     );
 
     expect(forEachMetric).toEqual(["loud", "loud", "loud"]);
+  });
+
+  it("ranks and charts the message chart on messages sent alone", () => {
+    const entries = [
+      // Busiest on tokens, quietest on prompts.
+      entry({
+        provider_id: "verbose",
+        input_tokens: 9_000,
+        output_tokens: 9_000,
+        user_messages: 1,
+      }),
+      entry({ provider_id: "chatty", input_tokens: 10, output_tokens: 10, user_messages: 6 }),
+      // Tokens but no prompt: nothing to chart in messages.
+      entry({ provider_id: "silent", input_tokens: 500, output_tokens: 500, user_messages: 0 }),
+    ];
+
+    const chart = buildUsageChart({ entries, metric: "messages", seriesKeyOf: byProvider, axis });
+
+    expect(chart.series.map((series) => series.key)).toEqual(["chatty", "verbose"]);
+    expect(chart.series[0]).toMatchObject({ userMessages: 6 });
+    expect(chart.max).toBe(7);
+  });
+
+  it("leaves a model that was only sent messages out of the token chart", () => {
+    const chart = buildUsageChart({
+      entries: [entry({ input_tokens: 0, output_tokens: 0, user_messages: 3 })],
+      metric: "total",
+      seriesKeyOf: byProvider,
+      axis,
+    });
+
+    expect(chart.series).toEqual([]);
+    expect(chart.max).toBe(0);
   });
 
   it("gives every colored series its own slot, even when their preferred slots collide", () => {

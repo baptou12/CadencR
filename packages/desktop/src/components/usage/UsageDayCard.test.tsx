@@ -24,6 +24,7 @@ describe("UsageDayCard", () => {
         }}
         labelOf={labelOf}
         scale="absolute"
+        metric="total"
       />,
     );
 
@@ -34,6 +35,23 @@ describe("UsageDayCard", () => {
     expect(within(rows[0]!).getByText("Claude · opus")).toBeInTheDocument();
     expect(within(rows[0]!).getByText("1K")).toBeInTheDocument();
     expect(screen.queryByText("Codex · gpt-5")).not.toBeInTheDocument();
+  });
+
+  it("keeps message counts exact rather than compact", () => {
+    render(
+      <UsageDayCard
+        day={{
+          day: "2026-07-25",
+          total: 1_234,
+          segments: [{ key: "claude", colorIndex: 0, value: 1_234 }],
+        }}
+        labelOf={labelOf}
+        scale="absolute"
+        metric="messages"
+      />,
+    );
+
+    expect(screen.getAllByText("1,234")).toHaveLength(2);
   });
 
   it("reads each series as its part of the day in the share view", () => {
@@ -49,6 +67,7 @@ describe("UsageDayCard", () => {
         }}
         labelOf={labelOf}
         scale="share"
+        metric="total"
       />,
     );
 

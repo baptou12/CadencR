@@ -4455,7 +4455,8 @@ export interface UsageRecordingIssue {
 
 /**
  * One bucket of the usage timeline: everything the user exchanged with a
- * single provider / model / thinking-effort combination on one UTC day.
+ * single provider / model / thinking-effort combination on one UTC day — the
+ * tokens and the prompts sent.
  *
  * `model_id` and `thinking_effort` are empty strings — never null — when the
  * provider reported none; see the migration for why.
@@ -4470,6 +4471,8 @@ export interface UsageStatsEntry {
   output_tokens: number;
   provider_id: string;
   thinking_effort: string;
+  /** Prompts the user sent, filed under the model selected when sending. */
+  user_messages: number;
 }
 
 export type UsageStatsResponseRecordingIssue = null | UsageRecordingIssue;

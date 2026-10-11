@@ -1,13 +1,46 @@
-import { formatChartTokens, formatExactNumber } from "@/components/usage/usage-chart-palette";
+import {
+  formatChartTokens,
+  formatCompactTokens,
+  formatExactNumber,
+} from "@/components/usage/usage-chart-palette";
 import type { UsageSummary } from "@/components/usage/use-usage-charts";
+import type { UsageMetric } from "@/components/usage/usage-stats-model";
 
 /**
  * The headline numbers, above the chart. A single value with no shape to it is a
- * stat tile, not a chart: the grid below carries the shape.
+ * stat tile, not a chart: the grid below carries the shape. The first two tiles
+ * follow the measure: tokens in and out, or messages sent and their daily rate.
  */
-export function UsageSummaryTiles({ summary }: { summary: UsageSummary }): React.JSX.Element {
+export function UsageSummaryTiles({
+  summary,
+  metric,
+  windowDays,
+}: {
+  summary: UsageSummary;
+  metric: UsageMetric;
+  windowDays: number;
+}): React.JSX.Element {
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      {metric === "messages" ? (
+        <MessageTiles total={summary.totalUserMessages} windowDays={windowDays} />
+      ) : (
+        <TokenTiles summary={summary} />
+      )}
+      <Tile label="Top provider" value={summary.topProvider ?? "None"} name />
+      <Tile
+        label="Top model"
+        value={summary.topModel?.name ?? "None"}
+        title={summary.topModel?.label}
+        name
+      />
+    </div>
+  );
+}
+
+function TokenTiles({ summary }: { summary: UsageSummary }): React.JSX.Element {
+  return (
+    <>
       <Tile
         label="Input"
         value={formatChartTokens(summary.totalInputTokens)}
@@ -18,14 +51,31 @@ export function UsageSummaryTiles({ summary }: { summary: UsageSummary }): React
         value={formatChartTokens(summary.totalOutputTokens)}
         title={`${formatExactNumber(summary.totalOutputTokens)} output tokens`}
       />
-      <Tile label="Top provider" value={summary.topProvider ?? "None"} name />
+    </>
+  );
+}
+
+function MessageTiles({
+  total,
+  windowDays,
+}: {
+  total: number;
+  windowDays: number;
+}): React.JSX.Element {
+  const perDay = formatCompactTokens(total / Math.max(1, windowDays));
+  return (
+    <>
       <Tile
-        label="Top model"
-        value={summary.topModel?.name ?? "None"}
-        title={summary.topModel?.label}
-        name
+        label="Messages sent"
+        value={formatExactNumber(total)}
+        title={`${formatExactNumber(total)} messages sent`}
       />
-    </div>
+      <Tile
+        label="Daily average"
+        value={perDay}
+        title={`${perDay} messages a day over ${windowDays} days`}
+      />
+    </>
   );
 }
 

@@ -282,6 +282,25 @@ pub(crate) async fn make_test_app_state() -> AppState {
     .await
     .unwrap();
 
+    // Persisting a prompt also counts it in the usage stats, in the same
+    // transaction.
+    sqlx::query(
+        r#"CREATE TABLE provider_usage_stats (
+                day TEXT NOT NULL,
+                provider_id TEXT NOT NULL,
+                model_id TEXT NOT NULL DEFAULT '',
+                thinking_effort TEXT NOT NULL DEFAULT '',
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                user_messages INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (day, provider_id, model_id, thinking_effort)
+            )"#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
     sqlx::query(
         r#"CREATE TABLE session_runtime_ids (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

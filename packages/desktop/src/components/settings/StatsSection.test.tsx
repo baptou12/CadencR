@@ -24,6 +24,7 @@ describe("StatsSection", () => {
             thinking_effort: "high",
             input_tokens: 10,
             output_tokens: 20,
+            user_messages: 3,
           },
         ],
       },
@@ -36,6 +37,37 @@ describe("StatsSection", () => {
 
     expect(useGetUsageStats).toHaveBeenLastCalledWith({ days: 90 }, expect.anything());
     expect(screen.getAllByRole("img", { name: /tokens exchanged/ })).toHaveLength(30);
+  });
+
+  it("charts messages sent when that measure is picked, tokens staying the default", async () => {
+    useGetUsageStats.mockReturnValue({
+      data: {
+        days: 30,
+        end_day: "2026-07-25",
+        entries: [
+          {
+            day: "2026-07-25",
+            provider_id: "claude_code",
+            model_id: "opus",
+            thinking_effort: "high",
+            input_tokens: 10,
+            output_tokens: 20,
+            user_messages: 3,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    render(<StatsSection />);
+    expect(screen.getByTitle("10 input tokens")).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole("radio", { name: "Messages" }));
+
+    expect(screen.getByRole("img", { name: "Jul 25: 3 messages sent" })).toBeInTheDocument();
+    expect(screen.getByText("Messages sent")).toBeInTheDocument();
+    expect(screen.getByText("Daily average")).toBeInTheDocument();
+    expect(screen.queryByTitle("10 input tokens")).not.toBeInTheDocument();
   });
 });
 

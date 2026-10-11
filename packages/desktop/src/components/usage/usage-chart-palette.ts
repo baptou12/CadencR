@@ -1,3 +1,5 @@
+import type { UsageMetric } from "./usage-stats-model";
+
 /**
  * Categorical series colors, in fixed assignment order.
  *
@@ -61,6 +63,14 @@ export function formatCompactTokens(tokens: number): string {
 /** Chart, day card and tile figures: "1.8B", "320M", "1.5K". */
 export function formatChartTokens(tokens: number): string {
   return CHART.format(tokens);
+}
+
+/**
+ * A figure of the chart's measure. Token counts read compact; message counts
+ * stay exact, as two significant digits would turn 123 prompts into "120".
+ */
+export function formatUsageValue(value: number, metric: UsageMetric): string {
+  return metric === "messages" ? formatExactNumber(value) : formatChartTokens(value);
 }
 
 /** The precise figure, for titles and screen-reader labels: "1,801,292,560". */
