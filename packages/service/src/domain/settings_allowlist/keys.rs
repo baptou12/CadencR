@@ -184,6 +184,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // allowlist only gates the write endpoint. See
     // packages/desktop/src/lib/agent-verbosity.ts.
     "agent_stream_summary_mode",
+    // Agent tab "Message navigator" rail (ticks marking each user prompt on
+    // the stream's right edge). Stored as "true" / "false"; unset means
+    // enabled. See packages/desktop/src/lib/agent-message-navigator.ts.
+    "agent_message_navigator_enabled",
     // Plays the welcome-step intro animation exactly once, on the very first
     // open of the onboarding overlay. Set to "true" by `WelcomeIntro` after
     // the animation completes (or the user clicks to skip).

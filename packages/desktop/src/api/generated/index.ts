@@ -4042,6 +4042,22 @@ export interface SessionInitPayload {
   thinking_effort?: string | null;
 }
 
+export interface SessionPrompt {
+  attachment_count: number;
+  /** @nullable */
+  created_at?: string | null;
+  /** `agent_messages.id` — matches the transcript block's `messageDbId`. */
+  id: number;
+  image_count: number;
+  /** Start of the prompt's text, whitespace-collapsed. */
+  preview: string;
+}
+
+export interface SessionPromptsResponse {
+  /** Oldest first. */
+  prompts: SessionPrompt[];
+}
+
 /**
  * Discriminant for `SessionStreamStatusPayload`.
  *
@@ -22802,6 +22818,117 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
 > => {
   return useMutation(getSaveSessionDraftMutationOptions(options), queryClient);
 };
+
+export const listSessionPrompts = (sessionId: number, signal?: AbortSignal) => {
+  return customInstance<SessionPromptsResponse>({
+    url: `/api/sessions/${sessionId}/prompts`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListSessionPromptsQueryKey = (sessionId: number) => {
+  return [`/api/sessions/${sessionId}/prompts`] as const;
+};
+
+export const getListSessionPromptsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSessionPrompts>>,
+  TError = ErrorType<void>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSessionPrompts>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSessionPromptsQueryKey(sessionId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSessionPrompts>>> = ({ signal }) =>
+    listSessionPrompts(sessionId, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: sessionId !== null && sessionId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listSessionPrompts>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListSessionPromptsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSessionPrompts>>
+>;
+export type ListSessionPromptsQueryError = ErrorType<void>;
+
+export function useListSessionPrompts<
+  TData = Awaited<ReturnType<typeof listSessionPrompts>>,
+  TError = ErrorType<void>,
+>(
+  sessionId: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSessionPrompts>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSessionPrompts>>,
+          TError,
+          Awaited<ReturnType<typeof listSessionPrompts>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListSessionPrompts<
+  TData = Awaited<ReturnType<typeof listSessionPrompts>>,
+  TError = ErrorType<void>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSessionPrompts>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSessionPrompts>>,
+          TError,
+          Awaited<ReturnType<typeof listSessionPrompts>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListSessionPrompts<
+  TData = Awaited<ReturnType<typeof listSessionPrompts>>,
+  TError = ErrorType<void>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSessionPrompts>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useListSessionPrompts<
+  TData = Awaited<ReturnType<typeof listSessionPrompts>>,
+  TError = ErrorType<void>,
+>(
+  sessionId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSessionPrompts>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSessionPromptsQueryOptions(sessionId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export const runArchivedCleanup = (signal?: AbortSignal) => {
   return customInstance<ArchivedCleanupRunResponse>({
