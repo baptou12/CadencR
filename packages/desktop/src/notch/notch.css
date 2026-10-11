@@ -273,6 +273,12 @@ body {
 .orb[data-state="idle"] .orb-dot {
   opacity: 0.55;
 }
+.orb[data-state="logo"] {
+  color: var(--n-ink);
+}
+.orb[data-state="logo"] .orb-dot {
+  opacity: 1;
+}
 .orb[data-state="running"] {
   color: var(--n-working);
 }
@@ -364,18 +370,8 @@ body {
 }
 
 /* ── Still compact island ("Always animate" off) ───────────────────────── */
-/* Only the endless loops stop; one-shot transitions (a check landing) still play. */
+/* `CompactEars` swaps the orb for the plain logo; the status dots hold still. */
 
-/* A frozen comet: the ring fades from its head, so it still reads as "working". */
-.island[data-still="true"] .orb[data-state="running"] .orb-dot {
-  animation: none;
-  opacity: calc(1 - var(--i) * 0.07);
-}
-.island[data-still="true"] .orb[data-state="question"] .orb-dot {
-  animation: none;
-  opacity: 0.9;
-}
-.island[data-still="true"] .orb[data-state="running"] .orb-core,
-.island[data-still="true"] .compact-dot {
+.compact-dots[data-still="true"] .compact-dot {
   animation: none;
 }

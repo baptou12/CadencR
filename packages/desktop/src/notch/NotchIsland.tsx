@@ -89,15 +89,22 @@ function useHotRect(
   }, [height, width, viewportWidth, onError]);
 }
 
-function CompactEars({ agents }: { agents: readonly NotchAgent[] }): React.JSX.Element {
+/** Aggregate orb (or the plain logo when still) + one dot per agent. */
+function CompactEars({
+  agents,
+  still,
+}: {
+  agents: readonly NotchAgent[];
+  still: boolean;
+}): React.JSX.Element {
   const shown = agents.slice(0, MAX_COMPACT_DOTS);
   const extra = agents.length - shown.length;
   return (
     <>
       <span className="ear">
-        <IndexDotsOrb state={aggregateOrbState(agents)} />
+        <IndexDotsOrb state={still ? "logo" : aggregateOrbState(agents)} />
       </span>
-      <span className="ear compact-dots" aria-label={`${agents.length} agents`}>
+      <span className="ear compact-dots" data-still={still} aria-label={`${agents.length} agents`}>
         {shown.map((agent, i) => (
           <span
             key={agent.featureId}
@@ -189,6 +196,9 @@ function IslandView({
   const [peekHeight, setPeekHeight] = useState(104);
   const bodies = { peek: peekHeight, panel: panelHeight };
   const { open, openAgent, dismissAgent } = useIslandActions(reportError);
+  // Ambient calm: the closed island only animates with "Always animate" on. Not gated on
+  // the mode, so the compact layer keeps the logo while it fades out under a peek or panel.
+  const still = !feed.prefs.alwaysAnimate;
 
   const size = islandSize(mode, geometry, bodies);
   useHotRect(size, geometry.windowWidth, reportError);
@@ -207,8 +217,6 @@ function IslandView({
       data-mode={mode}
       data-shrinking={shrinking}
       data-hidden={mode === "idle" && !geometry.hardware}
-      // Ambient calm: the closed island only animates with "Always animate" on.
-      data-still={mode === "compact" && !feed.prefs.alwaysAnimate}
       style={
         {
           "--iw": `${size.width}px`,
@@ -227,7 +235,7 @@ function IslandView({
         active={mode === "compact"}
         width={islandSize("compact", geometry, bodies).width}
         bandHeight={band}
-        ears={<CompactEars agents={ambient} />}
+        ears={<CompactEars agents={ambient} still={still} />}
       />
       <Layer
         active={mode === "peek"}
