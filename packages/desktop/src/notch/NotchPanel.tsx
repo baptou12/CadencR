@@ -1,12 +1,12 @@
 import { Fragment, useRef } from "react";
 import type { NotchAgent } from "@/shared/notch";
-import { IndexDotsOrb, type OrbState } from "./IndexDotsOrb";
+import { IndexDotsOrb, type OrbStatus } from "./IndexDotsOrb";
 import { NotchAgentRow } from "./NotchAgentRow";
 import { useNow } from "@/hooks/useNow";
 import { useReportHeight } from "./useReportHeight";
 
 /** One state for a group of agents: anyone waiting on you wins, then work, then news. */
-export function aggregateOrbState(agents: readonly NotchAgent[]): OrbState {
+export function aggregateOrbState(agents: readonly NotchAgent[]): OrbStatus {
   if (agents.some((agent) => agent.status === "question")) return "question";
   if (agents.some((agent) => agent.status === "running")) return "running";
   if (agents.some((agent) => agent.unread)) return "done";
