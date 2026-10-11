@@ -133,7 +133,6 @@ pub(super) async fn handle_init(
             Some(std::path::Path::new(&cwd)),
             "session",
             Some(feature_id),
-            Some(project_id),
             profile_for_resolver.as_deref(),
         )
         .await

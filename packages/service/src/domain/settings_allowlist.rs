@@ -387,9 +387,17 @@ mod tests {
             "model_auto_name",
             "agent_runtime_session",
             "agent_runtime_auto_name",
+            "auto_name_system_prompt",
             "sidebar_right_collapsed",
         ] {
             assert!(is_workspace_key_allowed(k), "{k} should be allowed");
+        }
+    }
+
+    #[test]
+    fn project_rejects_session_selection_keys() {
+        for k in ["model_session", "agent_runtime_session"] {
+            assert!(!is_project_key_allowed(k), "{k} is no longer per-project");
         }
     }
 }

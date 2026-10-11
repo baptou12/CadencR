@@ -31,8 +31,6 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
 
 /// Keys writable via `PUT /api/projects/{id}/settings`.
 pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
-    "model_session",
-    "agent_runtime_session",
     "branch_prefix",
     "default_worktree_mode",
     "color",
@@ -142,11 +140,14 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "notch_always_on",
     "notch_always_animate",
     "notch_default_applied",
-    // Workspace-scope agent defaults. `auto_name` is global-only.
+    // Workspace-scope agent selection. `*_session` holds the pair the user
+    // last prompted with (written by the backend, not a configured default);
+    // `auto_name` is global-only, with an optional custom system prompt.
     "model_session",
     "model_auto_name",
     "agent_runtime_session",
     "agent_runtime_auto_name",
+    "auto_name_system_prompt",
     // First-run onboarding overlay state.
     // `onboarding_step` is one of the values defined in
     // packages/desktop/src/lib/onboarding-step.ts; missing/unset is treated as

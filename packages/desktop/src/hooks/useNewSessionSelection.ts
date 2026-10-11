@@ -1,6 +1,6 @@
 /**
- * The agent and model a *new* conversation in a project would start with —
- * `useResolvedModel` minus the feature level, which doesn't exist yet.
+ * The agent and model a *new* conversation would start on — the workspace's
+ * last-used pair, the same in every project (or the provider default).
  *
  * The schedule editor uses it so its model chip shows the concrete model a run
  * will use instead of the words "project default": a schedule is read months
@@ -17,35 +17,31 @@ import { useResolvedSelection, sessionSelectionOf } from "@/api/agentSelection";
 
 const STALE_MS = 5 * 60 * 1000;
 
-export interface ProjectRuntimeSelection extends RuntimeSelection {
-  /** `true` until the backend has answered. Until then the selection
-   *  is a fallback, not the project's real default — a chip that presented it
-   *  as final would be showing the user the wrong model. */
+export interface NewSessionSelection extends RuntimeSelection {
+  /** `true` until the backend has answered. Until then the selection is a
+   *  fallback, not the real new-session pair — a chip that presented it as
+   *  final would be showing the user the wrong model. */
   isLoading: boolean;
 }
 
-export function useProjectRuntimeSelection(projectId: number | undefined): ProjectRuntimeSelection {
+export function useNewSessionSelection(enabled: boolean): NewSessionSelection {
   const catalog = useAgentCatalog({ staleTime: STALE_MS });
-  const selectionQuery = useResolvedSelection({
-    projectId,
-    enabled: projectId != null,
-  });
+  const selectionQuery = useResolvedSelection({ enabled });
 
   const resolved = sessionSelectionOf(selectionQuery.data);
+  const fallbackProviderId = catalog.data?.default_provider ?? DEFAULT_PROVIDER;
   const selection: RuntimeSelection =
     resolved != null
       ? { providerId: resolved.provider_id, modelId: resolved.model_id }
       : {
-          providerId: catalog.data?.default_provider ?? DEFAULT_PROVIDER,
+          providerId: fallbackProviderId,
           modelId:
-            catalog.data?.providers.find(
-              (provider) => provider.id === (catalog.data?.default_provider ?? DEFAULT_PROVIDER),
-            )?.default_model ?? "",
+            catalog.data?.providers.find((provider) => provider.id === fallbackProviderId)
+              ?.default_model ?? "",
         };
 
   const isLoading =
-    catalog.isLoading ||
-    (projectId != null && (selectionQuery.isLoading || selectionQuery.isPending));
+    catalog.isLoading || (enabled && (selectionQuery.isLoading || selectionQuery.isPending));
 
   const { providerId, modelId } = selection;
   return useMemo(() => ({ providerId, modelId, isLoading }), [providerId, modelId, isLoading]);

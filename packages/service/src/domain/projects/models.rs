@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-pub use crate::domain::agents::runtime::ProviderSettings as ProjectProviderSettings;
-
 /// Legacy `projects.kind` used by theme projects created before durable
 /// authoring metadata. New theme projects remain `kind = 'user'` and use
 /// [`ProjectAuthoringTarget::Theme`] plus `plugin_id`; this constant exists only
@@ -69,23 +67,6 @@ pub struct SetProjectSettingRequest {
     pub value: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ProjectModelSettings {
-    pub session: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct SetProjectModelSettingRequest {
-    pub model_type: String,
-    pub model: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct SetProjectProviderSettingRequest {
-    pub provider_type: String,
-    pub provider: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,13 +101,5 @@ mod tests {
         let req: SetProjectSettingRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.key, "branch_prefix");
         assert_eq!(req.value, "feature/");
-    }
-
-    #[test]
-    fn test_set_project_model_setting_request_deserialize() {
-        let json = r#"{"model_type": "session", "model": "claude-3-5-sonnet"}"#;
-        let req: SetProjectModelSettingRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.model_type, "session");
-        assert_eq!(req.model, "claude-3-5-sonnet");
     }
 }

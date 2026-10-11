@@ -497,6 +497,14 @@ export interface ArchivedCleanupRunResponse {
   status: ArchivedCleanupRunStatus;
 }
 
+export interface AutoNamePromptResponse {
+  /**
+   * The built-in auto-naming system prompt, used whenever the workspace
+   * `auto_name_system_prompt` setting is empty.
+   */
+  default_prompt: string;
+}
+
 export type DiscoveredSource = (typeof DiscoveredSource)[keyof typeof DiscoveredSource];
 
 export const DiscoveredSource = {
@@ -3270,10 +3278,6 @@ export interface ProjectIconCandidate {
   size_bytes: number;
 }
 
-export interface ProjectModelSettings {
-  session: string;
-}
-
 export interface ProjectSetting {
   key: string;
   /** @nullable */
@@ -4136,16 +4140,6 @@ export interface SetModelSettingRequest {
   model_id: string;
 }
 
-export interface SetProjectModelSettingRequest {
-  model: string;
-  model_type: string;
-}
-
-export interface SetProjectProviderSettingRequest {
-  provider: string;
-  provider_type: string;
-}
-
 export interface SetProjectSettingRequest {
   key: string;
   value: string;
@@ -4637,11 +4631,7 @@ export type GetAgentProfilesParams = {
 
 export type GetAgentSelectionParams = {
   /**
-   * Resolve at project scope
-   */
-  project_id?: number;
-  /**
-   * Resolve at feature scope; requires project_id
+   * Resolve at feature scope instead of the workspace
    */
   feature_id?: number;
   /**
@@ -20267,402 +20257,6 @@ export function useListProviderConversations<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
-export const getProjectModelSettings = (id: number, signal?: AbortSignal) => {
-  return customInstance<ProjectModelSettings>({
-    url: `/api/projects/${id}/model-settings`,
-    method: "GET",
-    signal,
-  });
-};
-
-export const getGetProjectModelSettingsQueryKey = (id: number) => {
-  return [`/api/projects/${id}/model-settings`] as const;
-};
-
-export const getGetProjectModelSettingsQueryOptions = <
-  TData = Awaited<ReturnType<typeof getProjectModelSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectModelSettings>>, TError, TData>
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetProjectModelSettingsQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProjectModelSettings>>> = ({
-    signal,
-  }) => getProjectModelSettings(id, signal);
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: id !== null && id !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<Awaited<ReturnType<typeof getProjectModelSettings>>, TError, TData> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
-};
-
-export type GetProjectModelSettingsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getProjectModelSettings>>
->;
-export type GetProjectModelSettingsQueryError = ErrorType<unknown>;
-
-export function useGetProjectModelSettings<
-  TData = Awaited<ReturnType<typeof getProjectModelSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectModelSettings>>, TError, TData>
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getProjectModelSettings>>,
-          TError,
-          Awaited<ReturnType<typeof getProjectModelSettings>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetProjectModelSettings<
-  TData = Awaited<ReturnType<typeof getProjectModelSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectModelSettings>>, TError, TData>
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getProjectModelSettings>>,
-          TError,
-          Awaited<ReturnType<typeof getProjectModelSettings>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetProjectModelSettings<
-  TData = Awaited<ReturnType<typeof getProjectModelSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectModelSettings>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-export function useGetProjectModelSettings<
-  TData = Awaited<ReturnType<typeof getProjectModelSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectModelSettings>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getGetProjectModelSettingsQueryOptions(id, options);
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-export const setProjectModelSetting = (
-  id: number,
-  setProjectModelSettingRequest: SetProjectModelSettingRequest,
-  signal?: AbortSignal,
-) => {
-  return customInstance<ProjectsSuccessResponse>({
-    url: `/api/projects/${id}/model-settings`,
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    data: setProjectModelSettingRequest,
-    signal,
-  });
-};
-
-export const getSetProjectModelSettingMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof setProjectModelSetting>>,
-    TError,
-    SetProjectModelSettingMutationVariables,
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof setProjectModelSetting>>,
-  TError,
-  SetProjectModelSettingMutationVariables,
-  TContext
-> => {
-  const mutationKey = ["setProjectModelSetting"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof setProjectModelSetting>>,
-    SetProjectModelSettingMutationVariables
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return setProjectModelSetting(id, data);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type SetProjectModelSettingMutationResult = NonNullable<
-  Awaited<ReturnType<typeof setProjectModelSetting>>
->;
-export type SetProjectModelSettingMutationBody = SetProjectModelSettingRequest;
-export type SetProjectModelSettingMutationError = ErrorType<unknown>;
-export type SetProjectModelSettingMutationVariables = {
-  id: number;
-  data: SetProjectModelSettingRequest;
-};
-
-export const useSetProjectModelSetting = <TError = ErrorType<unknown>, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof setProjectModelSetting>>,
-      TError,
-      SetProjectModelSettingMutationVariables,
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof setProjectModelSetting>>,
-  TError,
-  SetProjectModelSettingMutationVariables,
-  TContext
-> => {
-  return useMutation(getSetProjectModelSettingMutationOptions(options), queryClient);
-};
-
-export const getProjectProviderSettings = (id: number, signal?: AbortSignal) => {
-  return customInstance<ProviderSettings>({
-    url: `/api/projects/${id}/provider-settings`,
-    method: "GET",
-    signal,
-  });
-};
-
-export const getGetProjectProviderSettingsQueryKey = (id: number) => {
-  return [`/api/projects/${id}/provider-settings`] as const;
-};
-
-export const getGetProjectProviderSettingsQueryOptions = <
-  TData = Awaited<ReturnType<typeof getProjectProviderSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectProviderSettings>>, TError, TData>
-    >;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetProjectProviderSettingsQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProjectProviderSettings>>> = ({
-    signal,
-  }) => getProjectProviderSettings(id, signal);
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: id !== null && id !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<Awaited<ReturnType<typeof getProjectProviderSettings>>, TError, TData> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
-};
-
-export type GetProjectProviderSettingsQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getProjectProviderSettings>>
->;
-export type GetProjectProviderSettingsQueryError = ErrorType<unknown>;
-
-export function useGetProjectProviderSettings<
-  TData = Awaited<ReturnType<typeof getProjectProviderSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectProviderSettings>>, TError, TData>
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getProjectProviderSettings>>,
-          TError,
-          Awaited<ReturnType<typeof getProjectProviderSettings>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetProjectProviderSettings<
-  TData = Awaited<ReturnType<typeof getProjectProviderSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectProviderSettings>>, TError, TData>
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getProjectProviderSettings>>,
-          TError,
-          Awaited<ReturnType<typeof getProjectProviderSettings>>
-        >,
-        "initialData"
-      >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-export function useGetProjectProviderSettings<
-  TData = Awaited<ReturnType<typeof getProjectProviderSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectProviderSettings>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-export function useGetProjectProviderSettings<
-  TData = Awaited<ReturnType<typeof getProjectProviderSettings>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof getProjectProviderSettings>>, TError, TData>
-    >;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getGetProjectProviderSettingsQueryOptions(id, options);
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
-    queryKey: DataTag<QueryKey, TData, TError>;
-  };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-export const setProjectProviderSetting = (
-  id: number,
-  setProjectProviderSettingRequest: SetProjectProviderSettingRequest,
-  signal?: AbortSignal,
-) => {
-  return customInstance<ProjectsSuccessResponse>({
-    url: `/api/projects/${id}/provider-settings`,
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    data: setProjectProviderSettingRequest,
-    signal,
-  });
-};
-
-export const getSetProjectProviderSettingMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof setProjectProviderSetting>>,
-    TError,
-    SetProjectProviderSettingMutationVariables,
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof setProjectProviderSetting>>,
-  TError,
-  SetProjectProviderSettingMutationVariables,
-  TContext
-> => {
-  const mutationKey = ["setProjectProviderSetting"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof setProjectProviderSetting>>,
-    SetProjectProviderSettingMutationVariables
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return setProjectProviderSetting(id, data);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type SetProjectProviderSettingMutationResult = NonNullable<
-  Awaited<ReturnType<typeof setProjectProviderSetting>>
->;
-export type SetProjectProviderSettingMutationBody = SetProjectProviderSettingRequest;
-export type SetProjectProviderSettingMutationError = ErrorType<unknown>;
-export type SetProjectProviderSettingMutationVariables = {
-  id: number;
-  data: SetProjectProviderSettingRequest;
-};
-
-export const useSetProjectProviderSetting = <TError = ErrorType<unknown>, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof setProjectProviderSetting>>,
-      TError,
-      SetProjectProviderSettingMutationVariables,
-      TContext
-    >;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof setProjectProviderSetting>>,
-  TError,
-  SetProjectProviderSettingMutationVariables,
-  TContext
-> => {
-  return useMutation(getSetProjectProviderSettingMutationOptions(options), queryClient);
-};
-
 export const getProjectSettings = (id: number, signal?: AbortSignal) => {
   return customInstance<ProjectSetting[]>({
     url: `/api/projects/${id}/settings`,
@@ -23870,6 +23464,105 @@ export const useDismissUsageRecordingIssue = <TError = ErrorType<unknown>, TCont
 > => {
   return useMutation(getDismissUsageRecordingIssueMutationOptions(options), queryClient);
 };
+
+export const getAutoNamePrompt = (signal?: AbortSignal) => {
+  return customInstance<AutoNamePromptResponse>({
+    url: `/api/workspace/auto-name-prompt`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetAutoNamePromptQueryKey = () => {
+  return [`/api/workspace/auto-name-prompt`] as const;
+};
+
+export const getGetAutoNamePromptQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAutoNamePrompt>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAutoNamePrompt>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAutoNamePromptQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAutoNamePrompt>>> = ({ signal }) =>
+    getAutoNamePrompt(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAutoNamePrompt>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAutoNamePromptQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAutoNamePrompt>>
+>;
+export type GetAutoNamePromptQueryError = ErrorType<unknown>;
+
+export function useGetAutoNamePrompt<
+  TData = Awaited<ReturnType<typeof getAutoNamePrompt>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAutoNamePrompt>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAutoNamePrompt>>,
+          TError,
+          Awaited<ReturnType<typeof getAutoNamePrompt>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAutoNamePrompt<
+  TData = Awaited<ReturnType<typeof getAutoNamePrompt>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAutoNamePrompt>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAutoNamePrompt>>,
+          TError,
+          Awaited<ReturnType<typeof getAutoNamePrompt>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAutoNamePrompt<
+  TData = Awaited<ReturnType<typeof getAutoNamePrompt>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAutoNamePrompt>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetAutoNamePrompt<
+  TData = Awaited<ReturnType<typeof getAutoNamePrompt>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getAutoNamePrompt>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAutoNamePromptQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export const getWorkspaceModelSettings = (signal?: AbortSignal) => {
   return customInstance<ModelSettings>({
