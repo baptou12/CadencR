@@ -43,8 +43,8 @@ vi.mock("@/hooks/useFavoriteModels", () => ({
 
 // The project's own default resolution has its own settings cascade; here we
 // only care that the chip shows what it resolves to.
-vi.mock("@/hooks/useProjectRuntimeSelection", () => ({
-  useProjectRuntimeSelection: () => ({ providerId: "claude_code", modelId: "sonnet" }),
+vi.mock("@/hooks/useNewSessionSelection", () => ({
+  useNewSessionSelection: () => ({ providerId: "claude_code", modelId: "sonnet" }),
 }));
 
 vi.mock("@/api/agentRuntime", async (importOriginal) => ({
@@ -140,7 +140,7 @@ describe("ScheduleComposer", () => {
     expect(screen.queryByRole("textbox", { name: /prompt/i })).not.toBeInTheDocument();
   });
 
-  it("shows the model the project would start with, and pins the one you pick", async () => {
+  it("shows the model a new conversation would start with, and pins the one you pick", async () => {
     const { user } = render(<Harness initial={{ kind: "new_conversation", project_id: 1 }} />);
 
     // The resolved default, not the words "project default".

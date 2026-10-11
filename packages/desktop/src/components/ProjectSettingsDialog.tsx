@@ -7,7 +7,6 @@ import {
   getGetProjectSettingsQueryKey,
 } from "../api/generated";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ModelSelector } from "./ModelSelector";
 import { WorktreeList } from "./WorktreeList";
 import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsSection } from "@/components/settings/SettingsSection";
@@ -82,7 +81,6 @@ export function ProjectSettingsDialog({
             saveProjectSetting={saveProjectSetting}
           />
           <EditorToolingSection projectId={projectId} enabled={open} />
-          <RuntimeModelsSection projectId={projectId} />
           <GitAutomationSection
             projectId={projectId}
             branchPrefix={settings[PROJECT_SETTING_KEYS.branchPrefix]}
@@ -156,21 +154,6 @@ function EditorToolingSection({
     >
       <SettingsCard padded>
         <ProjectEditorToolingSettings projectId={projectId} enabled={enabled} />
-      </SettingsCard>
-    </SettingsSection>
-  );
-}
-
-function RuntimeModelsSection({ projectId }: { projectId: number }): React.JSX.Element {
-  return (
-    <SettingsSection
-      size="sm"
-      title="Runtime & Models"
-      subtitle="Per-agent model picks"
-      description="Override the runtime/model used for each agent inside this project."
-    >
-      <SettingsCard>
-        <ModelSelector level="project" projectId={projectId} />
       </SettingsCard>
     </SettingsSection>
   );

@@ -39,8 +39,6 @@ vi.mock("@/contexts/ResolvedModelContext", () => ({
   useResolvedModelContext: () => ({
     resolveProvider: () => "claude_code",
     resolveModel: () => "claude-opus-4-5",
-    handleProviderChange: () => undefined,
-    handleModelChange: () => undefined,
   }),
 }));
 

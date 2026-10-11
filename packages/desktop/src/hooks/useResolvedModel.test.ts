@@ -6,9 +6,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useResolvedModel } from "./useResolvedModel";
 import type { AgentSelectionResponse, ResolvedSelection } from "../api/generated";
 
-const mockSetModelMutate = vi.fn();
-const mockSetProviderMutate = vi.fn();
-
 interface MockCatalogProvider {
   id: string;
   label: string;
@@ -50,28 +47,8 @@ vi.mock("../api/agentSelection", () => ({
     response?.selections?.session ?? null,
 }));
 
-vi.mock("../api/generated", () => ({
-  useSetFeatureModelSetting: vi.fn((opts?: { mutation?: { onSuccess?: () => void } }) => ({
-    mutate: (data: unknown) => {
-      mockSetModelMutate(data);
-      opts?.mutation?.onSuccess?.();
-    },
-  })),
-  getGetFeatureModelSettingsQueryKey: (id: number) => ["features", "modelSettings", id],
-  getGetAgentSelectionQueryKey: () => ["/api/agent-runtime/selection"],
-}));
-
 vi.mock("../api/agentRuntime", () => ({
   useAgentCatalog: () => mockAgentCatalog(),
-  // `useSetFeatureProviderSetting` takes flat callbacks ({ onSuccess }), not a
-  // nested `mutation` object — mirror the real contract so the invalidation
-  // path is actually exercised.
-  useSetFeatureProviderSetting: vi.fn((opts?: { onSuccess?: () => void }) => ({
-    mutate: (data: unknown) => {
-      mockSetProviderMutate(data);
-      opts?.onSuccess?.();
-    },
-  })),
 }));
 
 vi.mock("@/lib/api-errors", () => ({
@@ -85,8 +62,6 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 describe("useResolvedModel", () => {
   beforeEach(() => {
-    mockSetModelMutate.mockClear();
-    mockSetProviderMutate.mockClear();
     mockUseGetAgentSelection.mockReturnValue({
       data: undefined,
       error: undefined,
@@ -114,7 +89,7 @@ describe("useResolvedModel", () => {
       error: undefined,
       isLoading: true,
     });
-    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
+    const { result } = renderHook(() => useResolvedModel(1), { wrapper });
     expect(result.current.resolveSelection("session")).toBeNull();
   });
 
@@ -133,7 +108,7 @@ describe("useResolvedModel", () => {
       error: undefined,
       isLoading: false,
     });
-    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
+    const { result } = renderHook(() => useResolvedModel(1), { wrapper });
     expect(result.current.resolveSelection("session")).toEqual({
       providerId: "opencode",
       modelId: "lmstudio/qwen-3.6:35b-a3b",
@@ -146,7 +121,7 @@ describe("useResolvedModel", () => {
       error: undefined,
       isLoading: true,
     });
-    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
+    const { result } = renderHook(() => useResolvedModel(1), { wrapper });
     expect(result.current.resolveProvider("session")).toBe("claude_code");
     // The mock's default_model is distinct from any hardcoded fallback, so
     // this proves the catalog value (not a literal) is what gets returned.
@@ -162,26 +137,7 @@ describe("useResolvedModel", () => {
         ],
       },
     });
-    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
+    const { result } = renderHook(() => useResolvedModel(1), { wrapper });
     expect(result.current.resolveModel("session")).toBe("");
-  });
-
-  it("handleModelChange calls setModelMutation.mutate", () => {
-    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    result.current.handleModelChange("session", "claude-3-5-sonnet");
-    expect(mockSetModelMutate).toHaveBeenCalledWith({
-      id: 1,
-      data: { model_type: "session", model: "claude-3-5-sonnet" },
-    });
-  });
-
-  it("handleProviderChange calls setProviderMutation.mutate", () => {
-    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    result.current.handleProviderChange("session", "opencode");
-    expect(mockSetProviderMutate).toHaveBeenCalledWith({
-      featureId: 1,
-      providerType: "session",
-      provider: "opencode",
-    });
   });
 });

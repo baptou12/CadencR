@@ -2,7 +2,7 @@
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSelectionResponse } from "@/api/generated";
-import { useProjectRuntimeSelection } from "./useProjectRuntimeSelection";
+import { useNewSessionSelection } from "./useNewSessionSelection";
 
 const mocks = vi.hoisted(() => ({
   selection:
@@ -30,8 +30,8 @@ function resolvedSelection(providerId = "test-provider", modelId = "chosen-model
         session: {
           provider_id: providerId,
           model_id: modelId,
-          provider_origin: "project" as const,
-          model_origin: "project" as const,
+          provider_origin: "global" as const,
+          model_origin: "global" as const,
         },
       },
     },
@@ -40,14 +40,14 @@ function resolvedSelection(providerId = "test-provider", modelId = "chosen-model
   };
 }
 
-describe("useProjectRuntimeSelection", () => {
+describe("useNewSessionSelection", () => {
   beforeEach(() => {
     mocks.selection.mockReset();
     mocks.selection.mockImplementation(() => resolvedSelection());
   });
 
   it("preserves identity when query objects change but selection values do not", () => {
-    const { result, rerender } = renderHook(() => useProjectRuntimeSelection(1));
+    const { result, rerender } = renderHook(() => useNewSessionSelection(true));
     const selection = result.current;
 
     rerender();
@@ -64,7 +64,7 @@ describe("useProjectRuntimeSelection", () => {
     ["another-provider", "chosen-model"],
     ["test-provider", "another-model"],
   ])("updates when the resolved pair becomes %s / %s", (providerId, modelId) => {
-    const { result, rerender } = renderHook(() => useProjectRuntimeSelection(1));
+    const { result, rerender } = renderHook(() => useNewSessionSelection(true));
     const selection = result.current;
 
     mocks.selection.mockReturnValue(resolvedSelection(providerId, modelId));
@@ -76,7 +76,7 @@ describe("useProjectRuntimeSelection", () => {
 
   it("preserves fallback identity and updates when only loading changes", () => {
     mocks.selection.mockReturnValue({ isLoading: true, isPending: true });
-    const { result, rerender } = renderHook(() => useProjectRuntimeSelection(1));
+    const { result, rerender } = renderHook(() => useNewSessionSelection(true));
     const fallback = result.current;
 
     rerender();

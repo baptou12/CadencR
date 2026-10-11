@@ -33,7 +33,7 @@ import { NAV_GROUPS } from "@/components/settings/settings-nav-groups";
 import { IconTile } from "@/components/settings/IconTile";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { APP_VERSION } from "@/lib/app-version";
-import { RuntimeSettingsSection } from "@/components/settings/RuntimeSettingsSection";
+import { AutoNameSettingsSection } from "@/components/settings/AutoNameSettingsSection";
 import { RadioCardGroup, type RadioCardOption } from "@/components/settings/RadioCardGroup";
 import { parseVimModeLevel, type VimModeLevel } from "@/lib/vim-mode-level";
 
@@ -111,7 +111,7 @@ function SettingsPage() {
           <BrowserSection />
           <StorageSection />
           <McpSection />
-          <RuntimeSettingsSection />
+          <AutoNameSettingsSection />
           <GitSection />
           <ProvidersSection />
           <StatsSection />
