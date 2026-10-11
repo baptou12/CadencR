@@ -1,0 +1,77 @@
+//! Validators for the sidebar display options (density, row template, filter).
+//! The value sets mirror `packages/desktop/src/lib/sidebar-config.ts`.
+
+use super::{SettingSpec, ValueKind, BOOL};
+
+/// Spec for a sidebar display key, or `None` for any other key.
+pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
+    let spec = match key {
+        "sidebar_density" => SettingSpec::new(
+            ValueKind::Enum(&["compact", "comfortable", "spacious"]),
+            Some("comfortable"),
+        ),
+        "sidebar_font_size" => {
+            SettingSpec::new(ValueKind::Enum(&["12", "12.5", "13", "14"]), Some("12.5"))
+        }
+        "sidebar_title_lines" => {
+            SettingSpec::new(ValueKind::Enum(&["one", "two", "hover"]), Some("one"))
+        }
+        "sidebar_title_source" => SettingSpec::new(
+            ValueKind::Enum(&["title", "branch", "folder"]),
+            Some("title"),
+        ),
+        "sidebar_row_status" => {
+            SettingSpec::new(ValueKind::Enum(&["shape", "dot", "hidden"]), Some("shape"))
+        }
+        "sidebar_row_time" => SettingSpec::new(
+            ValueKind::Enum(&["none", "relative", "absolute"]),
+            Some("relative"),
+        ),
+        "sidebar_row_label" => {
+            SettingSpec::new(ValueKind::Enum(&["chip", "dot", "hidden"]), Some("chip"))
+        }
+        "sidebar_row_provider" => SettingSpec::new(
+            ValueKind::Enum(&["logo", "logo_model", "hidden"]),
+            Some("logo"),
+        ),
+        "sidebar_row_branch" => SettingSpec::new(BOOL, Some("false")),
+        "sidebar_row_worktree_icon"
+        | "sidebar_row_diff"
+        | "sidebar_row_pr"
+        | "sidebar_row_ports"
+        | "sidebar_row_activity"
+        | "sidebar_type_to_filter" => SettingSpec::new(BOOL, Some("true")),
+        _ => return None,
+    };
+    Some(spec)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::workspace_spec;
+    use crate::domain::settings_allowlist::{is_workspace_key_allowed, SIDEBAR_DISPLAY_KEYS};
+
+    #[test]
+    fn every_sidebar_display_key_is_writable_and_validated() {
+        for key in SIDEBAR_DISPLAY_KEYS {
+            assert!(is_workspace_key_allowed(key), "{key} must be writable");
+            let spec = workspace_spec(key).unwrap_or_else(|| panic!("{key} needs a spec"));
+            let default = spec
+                .default
+                .unwrap_or_else(|| panic!("{key} needs a default"));
+            assert!(spec.is_valid(default), "{key} default must validate");
+        }
+    }
+
+    #[test]
+    fn sidebar_enums_reject_unknown_values() {
+        let density = workspace_spec("sidebar_density").unwrap();
+        assert!(density.is_valid("compact"));
+        assert!(!density.is_valid("cozy"));
+        let font = workspace_spec("sidebar_font_size").unwrap();
+        assert!(font.is_valid("12.5"));
+        assert!(!font.is_valid("15"));
+        let branch = workspace_spec("sidebar_row_branch").unwrap();
+        assert_eq!(branch.default, Some("false"));
+    }
+}

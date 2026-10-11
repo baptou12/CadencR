@@ -13,7 +13,9 @@
 mod keys;
 
 use keys::WORKSPACE_MODEL_PREFIXES;
-pub use keys::{FEATURE_ALLOWED_KEYS, PROJECT_ALLOWED_KEYS, WORKSPACE_ALLOWED_KEYS};
+pub use keys::{
+    FEATURE_ALLOWED_KEYS, PROJECT_ALLOWED_KEYS, SIDEBAR_DISPLAY_KEYS, WORKSPACE_ALLOWED_KEYS,
+};
 
 /// Whether `suffix` is a plausible `<provider>_<model-id>` identifier: non-empty
 /// and free of whitespace and control characters.
@@ -30,7 +32,7 @@ pub fn is_project_key_allowed(key: &str) -> bool {
 }
 
 pub fn is_workspace_key_allowed(key: &str) -> bool {
-    if WORKSPACE_ALLOWED_KEYS.contains(&key) {
+    if WORKSPACE_ALLOWED_KEYS.contains(&key) || SIDEBAR_DISPLAY_KEYS.contains(&key) {
         return true;
     }
     WORKSPACE_MODEL_PREFIXES

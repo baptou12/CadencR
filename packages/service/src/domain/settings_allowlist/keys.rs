@@ -82,6 +82,8 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "sidebar_expanded_projects",
     "sidebar_collapsed_subtrees",
     "sidebar_archived_open_projects",
+    // Sidebar display options (density, row template, filter) live in
+    // `SIDEBAR_DISPLAY_KEYS` below.
     "loader_style",
     // UI zoom is kept per device type: desktop scales via the Electron native
     // zoom factor, mobile (remote browser/PWA) via CSS zoom — independent levels.
@@ -242,6 +244,27 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
 /// any non-empty suffix and reject only whitespace/control characters (which no
 /// real model id contains) rather than maintaining a brittle character set.
 pub(super) const WORKSPACE_MODEL_PREFIXES: &[&str] = &["thinking_effort_model_"];
+
+/// Sidebar display options, also writable via `PUT /api/workspace/settings/{key}`.
+/// Every key has a validator in `settings_store::registry::sidebar`, and the
+/// frontend mirrors the value sets in `packages/desktop/src/lib/sidebar-config.ts`.
+pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
+    "sidebar_density",
+    "sidebar_font_size",
+    "sidebar_title_lines",
+    "sidebar_title_source",
+    "sidebar_row_status",
+    "sidebar_row_time",
+    "sidebar_row_branch",
+    "sidebar_row_worktree_icon",
+    "sidebar_row_diff",
+    "sidebar_row_pr",
+    "sidebar_row_ports",
+    "sidebar_row_activity",
+    "sidebar_row_label",
+    "sidebar_row_provider",
+    "sidebar_type_to_filter",
+];
 
 #[cfg(test)]
 mod tests {

@@ -4486,6 +4486,16 @@ export interface SetSettingRequest {
   value: string;
 }
 
+export type SetSettingsBatchRequestValues = { [key: string]: string | null };
+
+/**
+ * Several workspace keys written in one atomic pass. A `null` value removes the
+ * key, so its default applies again (the sidebar display options' reset).
+ */
+export interface SetSettingsBatchRequest {
+  values: SetSettingsBatchRequestValues;
+}
+
 export interface Setting {
   key: string;
   /** @nullable */
@@ -26069,6 +26079,80 @@ export function useListWorkspaceSettings<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export const setWorkspaceSettingsBatch = (
+  setSettingsBatchRequest: SetSettingsBatchRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<Setting[]>({
+    url: `/api/workspace/settings`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: setSettingsBatchRequest,
+    signal,
+  });
+};
+
+export const getSetWorkspaceSettingsBatchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setWorkspaceSettingsBatch>>,
+    TError,
+    SetWorkspaceSettingsBatchMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setWorkspaceSettingsBatch>>,
+  TError,
+  SetWorkspaceSettingsBatchMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["setWorkspaceSettingsBatch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setWorkspaceSettingsBatch>>,
+    SetWorkspaceSettingsBatchMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return setWorkspaceSettingsBatch(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetWorkspaceSettingsBatchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setWorkspaceSettingsBatch>>
+>;
+export type SetWorkspaceSettingsBatchMutationBody = SetSettingsBatchRequest;
+export type SetWorkspaceSettingsBatchMutationError = ErrorType<unknown>;
+export type SetWorkspaceSettingsBatchMutationVariables = { data: SetSettingsBatchRequest };
+
+export const useSetWorkspaceSettingsBatch = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setWorkspaceSettingsBatch>>,
+      TError,
+      SetWorkspaceSettingsBatchMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof setWorkspaceSettingsBatch>>,
+  TError,
+  SetWorkspaceSettingsBatchMutationVariables,
+  TContext
+> => {
+  return useMutation(getSetWorkspaceSettingsBatchMutationOptions(options), queryClient);
+};
 
 export const getSettingsFile = (signal?: AbortSignal) => {
   return customInstance<SettingsFileResponse>({
