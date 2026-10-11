@@ -29,6 +29,7 @@ import { buildFeatureForest } from "@/lib/feature-hierarchy";
 import { normalizeLabel, uniqueLabels } from "@/lib/feature-labels";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { FEATURE_WORKTREES_STALE_MS } from "@/lib/sidebar-queries";
+import type { ProjectFilterMatch } from "@/hooks/useSidebarFilterMatches";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useCloseFeatureActivity } from "@/hooks/useCloseFeatureActivity";
@@ -50,9 +51,19 @@ export interface ProjectFeaturesProps {
   projectPath: string;
   activeFeatureId: number | null;
   onSelectFeature: (featureId: number) => void;
+  /**
+   * Set while the sidebar filter is active: the matching conversation ids, or
+   * `null` when the project's name matched and everything shows.
+   */
+  filterMatch?: ProjectFilterMatch;
 }
 
-function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: ProjectFeaturesProps) {
+function useProjectFeaturesData({
+  projectId,
+  projectPath,
+  activeFeatureId,
+  filterMatch,
+}: ProjectFeaturesProps) {
   const { data: features = [] } = useListFeatures({
     project_id: projectId,
     include_archived: true,
@@ -71,9 +82,19 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
       [features],
     ),
   );
+  // A quick filter leaves archives out: they are a click away once it clears.
+  const isFiltering = filterMatch !== undefined;
   const archivedFeatures = useMemo(
-    () => features.filter((feature) => feature.status === ARCHIVED_FEATURE_STATUS),
-    [features],
+    () =>
+      isFiltering ? [] : features.filter((feature) => feature.status === ARCHIVED_FEATURE_STATUS),
+    [features, isFiltering],
+  );
+  const shownFeatures = useMemo(
+    () =>
+      filterMatch
+        ? activeFeatures.filter((feature) => filterMatch.has(feature.id))
+        : activeFeatures,
+    [activeFeatures, filterMatch],
   );
   const worktreeData = useMemo(() => {
     const worktreeFeatureIds = new Set<number>();
@@ -87,8 +108,8 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
     return { worktreeFeatureIds, liveWorktreeFeatureIds, worktreeByFeatureId };
   }, [featureWorktrees]);
   const activeForest = useMemo(
-    () => buildFeatureForest(activeFeatures.filter((feature) => !feature.is_pinned)),
-    [activeFeatures],
+    () => buildFeatureForest(shownFeatures.filter((feature) => !feature.is_pinned)),
+    [shownFeatures],
   );
   const orderedIds = useMemo(() => activeForest.map((node) => node.feature.id), [activeForest]);
   const rootNodeByFeatureId = useMemo(
@@ -130,6 +151,7 @@ function useProjectFeaturesData({ projectId, projectPath, activeFeatureId }: Pro
     portsByFeatureId,
     rootNodeByFeatureId,
     shellCountsByFeatureId,
+    shownFeatures,
   };
 }
 
@@ -348,7 +370,7 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
   return {
     actions,
     orderedIds: data.orderedIds,
-    renderedActiveFeatureCount: data.activeFeatures.filter((feature) => !feature.is_pinned).length,
+    renderedActiveFeatureCount: data.shownFeatures.filter((feature) => !feature.is_pinned).length,
     archivedFeatures: data.archivedFeatures,
     confirmFeatureId,
     confirmation,

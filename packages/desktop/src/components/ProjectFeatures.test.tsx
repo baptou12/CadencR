@@ -336,6 +336,21 @@ describe("ProjectFeatures", () => {
     expect(within(parentRow).getByLabelText("Agent working")).toBeInTheDocument();
   });
 
+  it("narrows to the filter's matches and leaves archives out", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+        filterMatch={new Set([2])}
+      />,
+    );
+    expect(screen.getByText("Feature Two")).toBeInTheDocument();
+    expect(screen.queryByText("Feature One")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Archived \(/)).not.toBeInTheDocument();
+  });
+
   // Real layout (including an empty leaf gutter) is checked by
   // docs/qa/sidebar-status-project-alignment.check.js in the running app.
   it("keeps the hierarchy control before the content of every root feature", () => {

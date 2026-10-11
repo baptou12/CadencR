@@ -16,6 +16,7 @@ import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
 import { SidebarConfigProvider } from "@/components/SidebarConfigProvider";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SidebarPinnedConversations } from "@/components/SidebarPinnedConversations";
+import { handleSidebarTypeToFilter, SidebarFilterInput } from "@/components/SidebarFilterInput";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { SchedulesSidebarLink } from "@/components/SchedulesSidebarLink";
@@ -48,6 +49,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
   useBrowserActivityBridge();
   const displayAttributes = useSidebarDisplayAttributes();
+  const typeToFilter = useSidebarOption("typeToFilter");
 
   return (
     <SidebarConfigProvider>
@@ -56,6 +58,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
           data-app-sidebar
           {...displayAttributes}
           ref={sidebarRef}
+          onKeyDown={typeToFilter ? handleSidebarTypeToFilter : undefined}
           aria-hidden={!isMobile && collapsed ? true : undefined}
           inert={!isMobile && collapsed ? true : undefined}
           // Safe-area insets pad the content here (not the mobile drawer wrapper) so
@@ -81,6 +84,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
               {!isMobile && <UnifiedAgentsSidebarLink />}
               <SchedulesSidebarLink />
             </div>
+            <SidebarFilterInput />
             <SidebarPinnedConversations
               activeFeatureId={effectiveFeatureId}
               onSelectFeature={setSelectedFeatureId}

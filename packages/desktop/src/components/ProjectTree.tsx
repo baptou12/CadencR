@@ -47,6 +47,9 @@ import { ProjectFeatures } from "./ProjectFeatures";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { ProjectRowButton } from "./ProjectRowButton";
 import { ProjectTreeDialogs } from "./ProjectTreeDialogs";
+import { FilteredProjectList } from "./FilteredProjectList";
+import type { ProjectFilterMatch } from "@/hooks/useSidebarFilterMatches";
+import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -182,6 +185,7 @@ export type ProjectTreeController = ReturnType<typeof useProjectTreeController>;
 
 export function ProjectTree(props: ProjectTreeProps) {
   const controller = useProjectTreeController(props);
+  const filterQuery = useSidebarFilterQuery();
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
       <SidebarProjectsHeader
@@ -195,14 +199,30 @@ export function ProjectTree(props: ProjectTreeProps) {
       />
       <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
         <div className="flex min-w-0 flex-col gap-0.5 px-1">
-          {controller.ordered.projects.map((project) => (
-            <ProjectTreeRow
-              key={project.id}
-              project={project}
-              props={props}
-              controller={controller}
+          {filterQuery ? (
+            <FilteredProjectList
+              projects={controller.ordered.projects}
+              query={filterQuery}
+              renderProject={(project, match) => (
+                <ProjectTreeRow
+                  key={project.id}
+                  project={project}
+                  props={props}
+                  controller={controller}
+                  filterMatch={match}
+                />
+              )}
             />
-          ))}
+          ) : (
+            controller.ordered.projects.map((project) => (
+              <ProjectTreeRow
+                key={project.id}
+                project={project}
+                props={props}
+                controller={controller}
+              />
+            ))
+          )}
           {controller.ordered.projects.length === 0 && (
             <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
           )}
@@ -217,14 +237,21 @@ function ProjectTreeRow({
   project,
   props,
   controller,
+  filterMatch,
 }: {
   project: ProjectSummary;
   props: ProjectTreeProps;
   controller: ProjectTreeController;
+  /** Set while the sidebar filter is active: the row is held open on its matches. */
+  filterMatch?: ProjectFilterMatch;
 }) {
-  const isExpanded = controller.expansion.expandedIds.has(project.id);
+  const isFiltering = filterMatch !== undefined;
+  const isExpanded = isFiltering || controller.expansion.expandedIds.has(project.id);
   const isActive = props.activeProjectId === project.id;
-  const toggle = (): void => controller.expansion.setExpanded(project.id, !isExpanded);
+  // Folding a project the filter holds open would silently flip its remembered state.
+  const toggle = (): void => {
+    if (!isFiltering) controller.expansion.setExpanded(project.id, !isExpanded);
+  };
   return (
     <div>
       <ContextMenu>
@@ -253,6 +280,7 @@ function ProjectTreeRow({
           projectPath={project.path}
           activeFeatureId={isActive ? props.activeFeatureId : null}
           onSelectFeature={props.onSelectFeature}
+          filterMatch={filterMatch}
         />
       )}
     </div>
