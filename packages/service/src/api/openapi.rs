@@ -21,6 +21,7 @@ use crate::domain::feature_layouts::routes as feature_layouts_routes;
 use crate::domain::features::archive_routes as features_archive_routes;
 use crate::domain::features::auto_name_route as features_auto_name_route;
 use crate::domain::features::models as features_models;
+use crate::domain::features::recent_routes as features_recent_routes;
 use crate::domain::features::routes as features_routes;
 use crate::domain::imports::models as imports_models;
 use crate::domain::imports::routes as imports_routes;
@@ -112,6 +113,7 @@ use crate::domain::ws_session::routes as ws_routes;
         features_routes::list_feature_activity_handler,
         ports_routes::list_feature_ports_handler,
         features_routes::list_pinned_features_handler,
+        features_recent_routes::list_recent_features_handler,
         features_routes::create_feature_handler,
         features_routes::get_feature_handler,
         features_routes::delete_feature_handler,

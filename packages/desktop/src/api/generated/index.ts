@@ -5171,6 +5171,14 @@ export type ListFeatureActivityParams = {
   include_archived?: boolean;
 };
 
+export type ListRecentFeaturesParams = {
+  /**
+   * How many conversations to return (1–50, default 5).
+   * @nullable
+   */
+  limit?: number | null;
+};
+
 export type GetFeatureAgentStateParams = {
   /**
    * JSON-encoded map of session_id -> last_message_id for incremental fetching
@@ -11524,6 +11532,116 @@ export function useListFeaturePorts<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getListFeaturePortsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary The active conversations touched most recently, across every project.
+ */
+export const listRecentFeatures = (params?: ListRecentFeaturesParams, signal?: AbortSignal) => {
+  return customInstance<Feature[]>({ url: `/api/features/recent`, method: "GET", params, signal });
+};
+
+export const getListRecentFeaturesQueryKey = (params?: ListRecentFeaturesParams) => {
+  return [`/api/features/recent`, ...(params ? [params] : [])] as const;
+};
+
+export const getListRecentFeaturesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listRecentFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListRecentFeaturesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listRecentFeatures>>, TError, TData>>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListRecentFeaturesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listRecentFeatures>>> = ({ signal }) =>
+    listRecentFeatures(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listRecentFeatures>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListRecentFeaturesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listRecentFeatures>>
+>;
+export type ListRecentFeaturesQueryError = ErrorType<unknown>;
+
+export function useListRecentFeatures<
+  TData = Awaited<ReturnType<typeof listRecentFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  params: undefined | ListRecentFeaturesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listRecentFeatures>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listRecentFeatures>>,
+          TError,
+          Awaited<ReturnType<typeof listRecentFeatures>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListRecentFeatures<
+  TData = Awaited<ReturnType<typeof listRecentFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListRecentFeaturesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listRecentFeatures>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listRecentFeatures>>,
+          TError,
+          Awaited<ReturnType<typeof listRecentFeatures>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListRecentFeatures<
+  TData = Awaited<ReturnType<typeof listRecentFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListRecentFeaturesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listRecentFeatures>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary The active conversations touched most recently, across every project.
+ */
+
+export function useListRecentFeatures<
+  TData = Awaited<ReturnType<typeof listRecentFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListRecentFeaturesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listRecentFeatures>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListRecentFeaturesQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
