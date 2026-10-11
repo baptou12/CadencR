@@ -270,6 +270,14 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_dormant_after",
     "sidebar_reveal_active",
     "sidebar_rail",
+    "sidebar_block_working",
+    "sidebar_block_recent",
+    "sidebar_recent_count",
+    "sidebar_block_counts",
+    "sidebar_hide_empty_blocks",
+    "sidebar_gate_popover",
+    "sidebar_flash_on_change",
+    "sidebar_auto_collapse",
 ];
 
 #[cfg(test)]

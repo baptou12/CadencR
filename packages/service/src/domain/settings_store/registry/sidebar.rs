@@ -49,7 +49,17 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
             ValueKind::Enum(&["projects", "conversations", "attention", "none"]),
             Some("projects"),
         ),
-        "sidebar_row_branch" => SettingSpec::new(BOOL, Some("false")),
+        "sidebar_recent_count" => SettingSpec::new(ValueKind::Enum(&["3", "5", "10"]), Some("5")),
+        "sidebar_block_counts" => {
+            SettingSpec::new(ValueKind::Enum(&["count", "dot", "none"]), Some("count"))
+        }
+        "sidebar_gate_popover" => {
+            SettingSpec::new(ValueKind::Enum(&["auto", "hover", "click"]), Some("auto"))
+        }
+        "sidebar_row_branch"
+        | "sidebar_block_working"
+        | "sidebar_block_recent"
+        | "sidebar_auto_collapse" => SettingSpec::new(BOOL, Some("false")),
         "sidebar_row_worktree_icon"
         | "sidebar_row_diff"
         | "sidebar_row_pr"
@@ -57,6 +67,8 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
         | "sidebar_row_activity"
         | "sidebar_row_pending_request"
         | "sidebar_block_for_me"
+        | "sidebar_hide_empty_blocks"
+        | "sidebar_flash_on_change"
         | "sidebar_type_to_filter" => SettingSpec::new(BOOL, Some("true")),
         _ => return None,
     };
@@ -96,5 +108,13 @@ mod tests {
         let rail = workspace_spec("sidebar_rail").unwrap();
         assert_eq!(rail.default, Some("projects"));
         assert!(!rail.is_valid("hidden"));
+        let popover = workspace_spec("sidebar_gate_popover").unwrap();
+        assert_eq!(popover.default, Some("auto"));
+        assert!(!popover.is_valid("never"));
+        let recent = workspace_spec("sidebar_recent_count").unwrap();
+        assert!(recent.is_valid("10"));
+        assert!(!recent.is_valid("7"));
+        let auto_collapse = workspace_spec("sidebar_auto_collapse").unwrap();
+        assert_eq!(auto_collapse.default, Some("false"));
     }
 }
