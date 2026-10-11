@@ -2,6 +2,12 @@ import { useMemo, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RefreshCw } from "lucide-react";
+import {
+  MarketplaceSearch,
+  MarketplaceEmpty,
+  MarketplaceDisclosure,
+} from "./MarketplacePresentation";
 import { useTheme } from "@/hooks/useTheme";
 import { useThemeMarketplace } from "@/hooks/useThemeMarketplace";
 import {
@@ -30,39 +36,29 @@ export function ThemeMarketplace(): React.JSX.Element {
   );
   const packages = groups.find((versions) => versions[0].theme.id === selected);
   return (
-    <div className="space-y-4 pt-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          Declarative themes: validated colors and bounded raster data, never executables.
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={state.refresh.isPending || state.catalog.isFetching}
-          onClick={() => state.refresh.mutate()}
-        >
-          {state.refresh.isPending || state.catalog.isFetching
-            ? "Refreshing themes…"
-            : "Refresh theme catalog"}
-        </Button>
+    <div className="space-y-2 pt-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <MarketplaceSearch
+          label="Search marketplace themes"
+          placeholder="Search themes or publishers…"
+          value={search}
+          onChange={setSearch}
+        />
+        <ThemeMarketplaceToolbar state={state} />
       </div>
       <ThemeMarketplaceStatus state={state} />
-      <Input
-        aria-label="Search marketplace themes"
-        placeholder="Search themes or publishers…"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
       {!usableThemeCatalog(state.catalog.data) ? (
-        <p className="text-sm text-muted-foreground">
-          No current verified mixed catalog. Installed themes remain manageable.
-        </p>
+        !state.catalog.error && !state.catalog.data?.error && !state.catalog.isLoading ? (
+          <MarketplaceEmpty>
+            No current verified mixed catalog. Installed themes remain manageable.
+          </MarketplaceEmpty>
+        ) : null
       ) : filtered.length ? (
-        <div className="h-64">
+        <div className="h-64 overflow-hidden rounded-lg border border-border px-3">
           <Virtuoso
             data={filtered}
             itemContent={(_, versions) => (
-              <div className="flex justify-between gap-4 border-b py-3">
+              <div className="flex flex-col items-start justify-between gap-3 border-b border-border py-3 sm:flex-row">
                 <div>
                   <h3 className="text-sm font-medium">{versions[0].theme.name}</h3>
                   <p className="text-xs text-muted-foreground">
@@ -81,13 +77,18 @@ export function ThemeMarketplace(): React.JSX.Element {
           />
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">No matching themes in the verified catalog.</p>
+        <MarketplaceEmpty>No matching themes in the verified catalog.</MarketplaceEmpty>
       )}
       <h3 className="text-sm font-medium">
         Installed themes ({state.inventory.data?.length ?? 0})
       </h3>
+      {!state.inventory.isLoading && !state.inventory.isError && !state.inventory.data?.length && (
+        <MarketplaceEmpty>
+          No managed themes installed. Install a theme to make it available here.
+        </MarketplaceEmpty>
+      )}
       {!!state.inventory.data?.length && (
-        <div className="h-64">
+        <div className="h-64 overflow-hidden rounded-lg border border-border px-3">
           <Virtuoso
             data={state.inventory.data}
             itemContent={(_, entry) => (
@@ -102,6 +103,7 @@ export function ThemeMarketplace(): React.JSX.Element {
         </div>
       )}
       <ThemeRecovery state={state} />
+      <ThemeMarketplaceDiagnostics state={state} />
       {packages && (
         <ThemeMarketplaceDetails
           key={selected}
@@ -127,7 +129,7 @@ function InstalledTheme({
   const [confirmFallback, setConfirmFallback] = useState(false);
   const [label, setLabel] = useState("");
   return (
-    <div className="space-y-2 border-b py-3">
+    <div className="space-y-3 border-b border-border py-3">
       <InstalledThemeSummary entry={entry} displayed={displayed} />
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -175,7 +177,7 @@ function InstalledTheme({
           </Button>
         </div>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           aria-label={`New author project name for ${entry.name}`}
           value={label}
@@ -224,8 +226,10 @@ function ThemeMarketplaceStatus({
         </p>
       ))}
       {state.catalog.data?.error && (
-        <p role="alert" className="text-sm text-destructive">
-          {state.catalog.data.error}
+        <p role="status" className="text-xs text-muted-foreground">
+          {usableThemeCatalog(state.catalog.data)
+            ? "Using verified cached theme catalog. See diagnostics for details."
+            : "Theme catalog unavailable. Installed themes remain manageable."}
         </p>
       )}
       {state.notice && (
@@ -287,5 +291,38 @@ function InstalledThemeSummary({
         Signed revisions are immutable. Duplicate to create an editable plugin project.
       </p>
     </>
+  );
+}
+
+function ThemeMarketplaceToolbar({
+  state,
+}: {
+  state: ReturnType<typeof useThemeMarketplace>;
+}): React.JSX.Element {
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={state.refresh.isPending || state.catalog.isFetching}
+      onClick={() => state.refresh.mutate()}
+    >
+      <RefreshCw aria-hidden="true" className="size-3.5" />
+      {state.refresh.isPending || state.catalog.isFetching
+        ? "Refreshing themes…"
+        : "Refresh theme catalog"}
+    </Button>
+  );
+}
+
+function ThemeMarketplaceDiagnostics({
+  state,
+}: {
+  state: ReturnType<typeof useThemeMarketplace>;
+}): React.JSX.Element {
+  return (
+    <MarketplaceDisclosure label="Theme safety & diagnostics">
+      <p>Declarative themes: validated colors and bounded raster data, never executables.</p>
+      {state.catalog.data?.error && <p>{state.catalog.data.error}</p>}
+    </MarketplaceDisclosure>
   );
 }

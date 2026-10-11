@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@/test-utils";
+import { act, render, screen, waitFor } from "@/test-utils";
 import { catalog, inventory, refreshCatalog } from "@/api/generated";
 import { MarketplaceSection } from "./MarketplaceSection";
 
 vi.unmock("react-virtuoso");
+
+vi.mock("./ThemeMarketplace", () => ({
+  ThemeMarketplace: () => <button type="button">Refresh theme catalog</button>,
+}));
 
 vi.mock("@/api/generated", () => ({
   catalog: vi.fn(),
@@ -43,14 +47,89 @@ describe("MarketplaceSection", () => {
       },
     });
   });
+  it("provides standalone marketplace views without duplicating the route heading", async () => {
+    const { container, user } = render(<MarketplaceSection />);
+    await screen.findByText(/Catalog not available in this build/);
+    expect(container.querySelector("#marketplace")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Marketplace" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "Marketplace views" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Discover providers" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Installed (0)" }));
+    expect(screen.getByText("No managed providers installed.")).toBeInTheDocument();
+  });
+  it("shows only theme catalog controls and availability in the Themes view", async () => {
+    const { user } = render(<MarketplaceSection />);
+    await screen.findByText(/Catalog not available in this build/);
+    await user.click(screen.getByRole("tab", { name: "Themes" }));
+    expect(screen.getByRole("tab", { name: "Themes" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Refresh theme catalog" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Refresh catalog" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Catalog not available in this build/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Security & diagnostics" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Browse" }));
+    expect(screen.getByRole("button", { name: "Refresh catalog" })).toBeInTheDocument();
+    expect(screen.getByText(/Catalog not available in this build/)).toBeInTheDocument();
+  });
+  it.each([
+    { endpoint: catalog, prefix: "Provider catalog: " },
+    { endpoint: inventory, prefix: "Installed providers: " },
+  ])("keeps $prefix query failures visible in Themes", async ({ endpoint, prefix }) => {
+    vi.mocked(endpoint).mockRejectedValue(new Error("Provider request failed"));
+    const { user } = render(<MarketplaceSection />);
+    await screen.findByText("Provider request failed");
+    await user.click(screen.getByRole("tab", { name: "Themes" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(`${prefix}Provider request failed`);
+    expect(screen.getByRole("button", { name: "Retry loading" })).toBeEnabled();
+  });
+  it("keeps genuine catalog response failures visible in Themes", async () => {
+    vi.mocked(catalog).mockResolvedValue({
+      ...unavailable,
+      source_configured: true,
+      error_code: "MANAGED_CATALOG_SIGNATURE_INVALID",
+      error: "Catalog signature invalid",
+    });
+    const { user } = render(<MarketplaceSection />);
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("tab", { name: "Themes" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Provider catalog: Catalog signature invalid",
+    );
+  });
+  it("keeps an in-flight provider refresh failure visible after switching to Themes", async () => {
+    let reject: ((reason: Error) => void) | undefined;
+    vi.mocked(refreshCatalog).mockImplementation(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        }),
+    );
+    const { user } = render(<MarketplaceSection />);
+    await screen.findByText(/Catalog not available in this build/);
+    await user.click(screen.getByRole("button", { name: "Refresh catalog" }));
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("tab", { name: "Themes" }));
+    act(() => reject?.(new Error("Provider refresh failed")));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Provider catalog refresh: Provider refresh failed",
+    );
+    expect(screen.queryByRole("button", { name: "Refresh catalog" })).not.toBeInTheDocument();
+  });
   it("shows progress and honest unavailable state instead of a fixture catalog", async () => {
-    render(<MarketplaceSection />);
+    const { user } = render(<MarketplaceSection />);
     expect(screen.getByText("Loading marketplace…")).toBeInTheDocument();
-    expect(await screen.findByText(/MANAGED_CATALOG_SOURCE_NOT_CONFIGURED/)).toBeInTheDocument();
-    expect(screen.getByText(/No current verified catalog is available/)).toBeInTheDocument();
+    expect(await screen.findByText(/Catalog not available in this build/)).toBeInTheDocument();
+    expect(screen.getByText(/Installed providers remain manageable/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Install / })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Search marketplace" })).toBeInTheDocument();
-    expect(screen.getByText(/Blocklist source:/)).toHaveTextContent(
+    const diagnostics = screen.getByRole("button", { name: "Security & diagnostics" });
+    expect(diagnostics).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Blocklist source:/)).not.toBeInTheDocument();
+    await user.click(diagnostics);
+    expect(diagnostics).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByText(/MANAGED_CATALOG_SOURCE_NOT_CONFIGURED/)).toBeInTheDocument();
+    expect(await screen.findByText(/Blocklist source:/)).toHaveTextContent(
       "not configured · cache: missing. No verified blocklist policy is available.",
     );
     expect(screen.getByText(/Memory limit: unavailable/)).toHaveTextContent(
@@ -62,7 +141,7 @@ describe("MarketplaceSection", () => {
   });
   it("refreshes the real catalog endpoint and keeps installed management reachable offline", async () => {
     const { user } = render(<MarketplaceSection />);
-    await screen.findByText(/MANAGED_CATALOG_SOURCE_NOT_CONFIGURED/);
+    await screen.findByText(/Catalog not available in this build/);
     await user.click(screen.getByRole("button", { name: "Refresh catalog" }));
     expect(refreshCatalog).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole("tab", { name: "Installed (0)" }));

@@ -1,11 +1,8 @@
 import { useMemo, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, Blocks, Package, Palette } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SettingsSection } from "@/components/settings/SettingsSection";
-import { SettingsCard } from "@/components/settings/SettingsCard";
 import { useMarketplace } from "@/hooks/useMarketplace";
 import {
   groupPackages,
@@ -17,9 +14,15 @@ import { MarketplaceDetails } from "./MarketplaceDetails";
 import { MarketplacePolicy } from "./MarketplacePolicy";
 import { InstalledProvider } from "./InstalledProvider";
 import { ThemeMarketplace } from "./ThemeMarketplace";
+import {
+  MarketplaceSearch,
+  MarketplaceEmpty,
+  MarketplaceDisclosure,
+} from "./MarketplacePresentation";
 
 export function MarketplaceSection(): React.JSX.Element {
   const { catalogQuery, inventoryQuery, refresh, mutation, notice } = useMarketplace();
+  const [view, setView] = useState<"browse" | "installed" | "themes">("browse");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const catalog = catalogQuery.data;
@@ -37,84 +40,79 @@ export function MarketplaceSection(): React.JSX.Element {
   const selected = groups.find((entries) => entries[0].agent.id === selectedId);
   const current = usableCatalog(catalog);
   return (
-    <SettingsSection
-      id="marketplace"
-      title="Marketplace"
-      subtitle="Signed providers and declarative themes"
-    >
-      <SettingsCard padded>
-        <MarketplaceToolbar refresh={refresh} catalogQuery={catalogQuery} />
+    <div id="marketplace" className="min-w-0 space-y-2">
+      <Tabs
+        value={view}
+        onValueChange={(value) => {
+          if (value === "browse" || value === "installed" || value === "themes") setView(value);
+        }}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList
+            aria-label="Marketplace views"
+            className="h-auto w-auto flex-1 flex-wrap justify-start gap-1"
+          >
+            <TabsTrigger value="browse">
+              <Blocks aria-hidden="true" className="size-3.5" />
+              Browse
+            </TabsTrigger>
+            <TabsTrigger value="installed">
+              <Package aria-hidden="true" className="size-3.5" />
+              Installed ({inventory?.providers.length ?? 0})
+            </TabsTrigger>
+            <TabsTrigger value="themes">
+              <Palette aria-hidden="true" className="size-3.5" />
+              Themes
+            </TabsTrigger>
+          </TabsList>
+          {view !== "themes" && (
+            <MarketplaceToolbar refresh={refresh} catalogQuery={catalogQuery} />
+          )}
+        </div>
         <MarketplaceStatus
           catalogQuery={catalogQuery}
           inventoryQuery={inventoryQuery}
           refresh={refresh}
           mutation={mutation}
           notice={notice}
+          showCatalog={view !== "themes"}
         />
-        <Tabs defaultValue="browse">
-          <TabsList aria-label="Marketplace views">
-            <TabsTrigger value="browse">Browse</TabsTrigger>
-            <TabsTrigger value="installed">
-              Installed ({inventory?.providers.length ?? 0})
-            </TabsTrigger>
-            <TabsTrigger value="themes">Themes</TabsTrigger>
-          </TabsList>
-          <MarketplaceBrowse
-            search={search}
-            setSearch={setSearch}
-            current={current}
-            loading={catalogQuery.isPending}
-            filtered={filtered}
-            hasPackages={groups.length > 0}
-            onSelect={(id) => {
-              setSelectedId(id);
-            }}
-          />
-          <TabsContent value="installed">
-            {inventoryQuery.isPending ? (
-              <p role="status" className="py-4 text-sm">
-                Loading installed providers…
-              </p>
-            ) : inventory?.providers.length ? (
-              <div className="h-80">
-                <Virtuoso
-                  data={inventory.providers}
-                  itemContent={(_, entry) => (
-                    <InstalledProvider entry={entry} mutation={mutation} />
-                  )}
-                />
-              </div>
-            ) : (
-              <p className="py-4 text-sm text-muted-foreground">
-                {inventoryQuery.isError
-                  ? "Installed providers could not be loaded."
-                  : "No managed providers installed."}
-              </p>
-            )}
-          </TabsContent>
-          <TabsContent value="themes">
-            <ThemeMarketplace />
-          </TabsContent>
-        </Tabs>
-        {selected && (
-          <MarketplaceDetails
-            key={selectedId}
-            packages={selected}
-            recommendedVersion={catalog?.recommended_versions?.[selected[0].agent.id]}
-            installed={inventory?.providers.find((entry) => entry.id === selectedId)}
-            index={catalog?.index}
-            canInstall={
-              current &&
-              !!inventory &&
-              !inventoryQuery.isError &&
-              inventory.trust.status === "configured"
-            }
-            mutation={mutation}
-            onClose={() => setSelectedId(null)}
-          />
+        <MarketplaceBrowse
+          search={search}
+          setSearch={setSearch}
+          current={current}
+          filtered={filtered}
+          hasPackages={groups.length > 0}
+          onSelect={(id) => {
+            setSelectedId(id);
+          }}
+        />
+        <MarketplaceInstalled inventoryQuery={inventoryQuery} mutation={mutation} />
+        <TabsContent value="themes">
+          <ThemeMarketplace />
+        </TabsContent>
+        {view !== "themes" && (
+          <MarketplaceDiagnostics catalogQuery={catalogQuery} inventoryQuery={inventoryQuery} />
         )}
-      </SettingsCard>
-    </SettingsSection>
+      </Tabs>
+      {selected && (
+        <MarketplaceDetails
+          key={selectedId}
+          packages={selected}
+          recommendedVersion={catalog?.recommended_versions?.[selected[0].agent.id]}
+          installed={inventory?.providers.find((entry) => entry.id === selectedId)}
+          index={catalog?.index}
+          canInstall={
+            current &&
+            !!inventory &&
+            !inventoryQuery.isError &&
+            inventory.trust.status === "configured"
+          }
+          mutation={mutation}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+    </div>
   );
 }
 
@@ -124,18 +122,22 @@ function MarketplaceStatus({
   refresh,
   mutation,
   notice,
-}: ReturnType<typeof useMarketplace>): React.JSX.Element {
+  showCatalog,
+}: ReturnType<typeof useMarketplace> & { showCatalog: boolean }): React.JSX.Element {
   const catalog = catalogQuery.data;
   const inventory = inventoryQuery.data;
   const errors = [
-    marketplaceError(catalogQuery.error),
-    marketplaceError(inventoryQuery.error),
-    marketplaceError(refresh.error),
+    catalogQuery.error &&
+      `${showCatalog ? "" : "Provider catalog: "}${marketplaceError(catalogQuery.error)}`,
+    inventoryQuery.error &&
+      `${showCatalog ? "" : "Installed providers: "}${marketplaceError(inventoryQuery.error)}`,
+    refresh.error &&
+      `${showCatalog ? "" : "Provider catalog refresh: "}${marketplaceError(refresh.error)}`,
     marketplaceError(mutation.error),
   ];
   return (
-    <div className="mb-4 space-y-2 text-xs" aria-live="polite">
-      {(catalogQuery.isPending || inventoryQuery.isPending) && (
+    <div className="space-y-1 text-xs break-words" aria-live="polite">
+      {showCatalog && (catalogQuery.isPending || inventoryQuery.isPending) && (
         <p role="status" className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           Loading marketplace…
@@ -146,34 +148,31 @@ function MarketplaceStatus({
           {error}
         </p>
       ))}
-      {catalog?.error && (
-        <p role="alert" className="text-destructive">
-          {catalog.error_code}: {catalog.error}
-        </p>
-      )}
-      {catalog && !catalog.source_configured && (
-        <p className="text-muted-foreground">
-          The catalog source is not configured in this build.
-          {usableCatalog(catalog)
-            ? " A still-valid verified cached catalog is available."
-            : " Browse and installation are unavailable until a release configures it."}
-        </p>
-      )}
-      {usableCatalog(catalog) && (
-        <p className="text-muted-foreground">
-          {catalog?.used_cached_verified_catalog
-            ? "Using verified cached catalog"
-            : "Verified catalog refreshed"}{" "}
-          · signer {catalog?.signer_key_id} · expires {catalog?.expires_at}
-        </p>
-      )}
-      {inventory?.trust.status !== "configured" && inventory && (
-        <p className="text-muted-foreground">
-          Signing trust: {inventory.trust.status}. {inventory.trust.error}
-        </p>
-      )}
-      {inventory && <MarketplacePolicy inventory={inventory} />}
-      {inventory?.blocklist.error && (
+      {catalog?.error &&
+        (showCatalog || catalog.error_code !== "MANAGED_CATALOG_SOURCE_NOT_CONFIGURED") &&
+        (catalog.error_code === "MANAGED_CATALOG_SOURCE_NOT_CONFIGURED" &&
+        !usableCatalog(catalog) ? (
+          <p className="text-muted-foreground">
+            Catalog not available in this build. Installed providers remain manageable.
+          </p>
+        ) : (
+          <p role="alert" className="text-destructive">
+            {!showCatalog && "Provider catalog: "}
+            {catalog.error}
+          </p>
+        ))}
+      {showCatalog &&
+        catalog &&
+        !catalogQuery.isPending &&
+        !catalog.error &&
+        !usableCatalog(catalog) && (
+          <p className="text-muted-foreground">
+            {catalog.source_configured
+              ? "No current verified catalog is available. Refresh to retry; installed providers can still be managed."
+              : "The catalog source is not configured in this build. Browse and installation are unavailable; installed providers remain manageable."}
+          </p>
+        )}
+      {showCatalog && inventory?.blocklist.error && (
         <p role="alert" className="text-destructive">
           Blocklist: {inventory.blocklist.error}
         </p>
@@ -201,7 +200,6 @@ function MarketplaceBrowse({
   search,
   setSearch,
   current,
-  loading,
   filtered,
   hasPackages,
   onSelect,
@@ -209,32 +207,24 @@ function MarketplaceBrowse({
   search: string;
   setSearch: (value: string) => void;
   current: boolean;
-  loading: boolean;
   filtered: ReturnType<typeof groupPackages>;
   hasPackages: boolean;
   onSelect: (id: string) => void;
 }): React.JSX.Element {
   return (
-    <TabsContent value="browse">
-      <Input
-        aria-label="Search marketplace"
+    <TabsContent value="browse" className="space-y-2 pt-2">
+      <MarketplaceSearch
+        label="Search marketplace"
         placeholder="Search providers or publishers…"
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        className="mb-4"
+        onChange={setSearch}
       />
-      {!current ? (
-        <p className="py-4 text-sm text-muted-foreground">
-          {loading
-            ? "Loading signed catalog…"
-            : "No current verified catalog is available. Refresh to retry; installed providers can still be managed."}
-        </p>
-      ) : filtered.length ? (
-        <div className="h-80">
+      {!current ? null : filtered.length ? (
+        <div className="h-80 overflow-hidden rounded-lg border border-border px-3">
           <Virtuoso
             data={filtered}
             itemContent={(_, entries) => (
-              <div className="flex items-start justify-between gap-4 border-b border-border py-4">
+              <div className="flex flex-col items-start justify-between gap-2 border-b border-border py-3 sm:flex-row">
                 <div className="min-w-0">
                   <h3 className="text-sm font-medium">{entries[0].agent.name}</h3>
                   <p className="line-clamp-2 text-sm text-muted-foreground">
@@ -259,11 +249,11 @@ function MarketplaceBrowse({
           />
         </div>
       ) : (
-        <p className="py-4 text-sm text-muted-foreground">
+        <MarketplaceEmpty>
           {hasPackages
             ? "No providers match your search."
             : "The verified catalog has no providers yet."}
-        </p>
+        </MarketplaceEmpty>
       )}
     </TabsContent>
   );
@@ -274,19 +264,77 @@ function MarketplaceToolbar({
   catalogQuery,
 }: Pick<ReturnType<typeof useMarketplace>, "refresh" | "catalogQuery">): React.JSX.Element {
   return (
-    <div className="mb-4 flex items-center justify-between gap-2">
-      <p className="text-sm text-muted-foreground">
-        Discover providers from the official signed catalog.
-      </p>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={refresh.isPending || catalogQuery.isFetching}
-        onClick={() => refresh.mutate()}
-      >
-        <RefreshCw className="size-4" />
-        {refresh.isPending || catalogQuery.isFetching ? "Refreshing…" : "Refresh catalog"}
-      </Button>
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={refresh.isPending || catalogQuery.isFetching}
+      onClick={() => refresh.mutate()}
+    >
+      <RefreshCw className="size-4" />
+      {refresh.isPending || catalogQuery.isFetching ? "Refreshing…" : "Refresh catalog"}
+    </Button>
+  );
+}
+
+function MarketplaceInstalled({
+  inventoryQuery,
+  mutation,
+}: Pick<ReturnType<typeof useMarketplace>, "inventoryQuery" | "mutation">): React.JSX.Element {
+  return (
+    <TabsContent value="installed" className="space-y-2 pt-2">
+      {inventoryQuery.isPending ? (
+        <p role="status" className="py-4 text-sm">
+          Loading installed providers…
+        </p>
+      ) : inventoryQuery.data?.providers.length ? (
+        <div className="h-80 overflow-hidden rounded-lg border border-border px-3">
+          <Virtuoso
+            data={inventoryQuery.data.providers}
+            itemContent={(_, entry) => <InstalledProvider entry={entry} mutation={mutation} />}
+          />
+        </div>
+      ) : (
+        <MarketplaceEmpty>
+          {inventoryQuery.isError
+            ? "Installed providers could not be loaded."
+            : "No managed providers installed."}
+        </MarketplaceEmpty>
+      )}
+    </TabsContent>
+  );
+}
+
+function MarketplaceDiagnostics({
+  catalogQuery,
+  inventoryQuery,
+}: Pick<ReturnType<typeof useMarketplace>, "catalogQuery" | "inventoryQuery">): React.JSX.Element {
+  const catalog = catalogQuery.data;
+  const inventory = inventoryQuery.data;
+  return (
+    <div className="mt-2">
+      {(catalog || inventory) && (
+        <MarketplaceDisclosure>
+          {catalog?.error && (
+            <p>
+              {catalog.error_code}: {catalog.error}
+            </p>
+          )}
+          {usableCatalog(catalog) && (
+            <p className="text-muted-foreground">
+              {catalog?.used_cached_verified_catalog
+                ? "Using verified cached catalog"
+                : "Verified catalog refreshed"}{" "}
+              · signer {catalog?.signer_key_id} · expires {catalog?.expires_at}
+            </p>
+          )}
+          {inventory?.trust.status !== "configured" && inventory && (
+            <p className="text-muted-foreground">
+              Signing trust: {inventory.trust.status}. {inventory.trust.error}
+            </p>
+          )}
+          {inventory && <MarketplacePolicy inventory={inventory} />}
+        </MarketplaceDisclosure>
+      )}
     </div>
   );
 }

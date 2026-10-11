@@ -3,7 +3,13 @@ import { fireEvent, screen } from "@testing-library/react";
 import { render } from "@/test-utils";
 import { ThemeMarketplace } from "./ThemeMarketplace";
 
-const mocks = vi.hoisted(() => ({ themeId: "cadencr-dark", mutate: vi.fn(), damaged: false }));
+const mocks = vi.hoisted(() => ({
+  themeId: "cadencr-dark",
+  mutate: vi.fn(),
+  damaged: false,
+  catalogError: "",
+  usableCatalog: false,
+}));
 vi.mock("@/hooks/useTheme", () => ({
   useTheme: () => ({ themeId: mocks.themeId, isLoading: false }),
 }));
@@ -19,12 +25,12 @@ vi.mock("react-virtuoso", () => ({
 vi.mock("@/lib/theme-marketplace", async (original) => ({
   ...(await original<typeof import("@/lib/theme-marketplace")>()),
   groupThemePackages: () => [],
-  usableThemeCatalog: () => false,
+  usableThemeCatalog: () => mocks.usableCatalog,
   managedThemeDefinition: () => null,
 }));
 vi.mock("@/hooks/useThemeMarketplace", () => ({
   useThemeMarketplace: () => ({
-    catalog: {},
+    catalog: { data: mocks.catalogError ? { error: mocks.catalogError } : undefined },
     inventory: {
       data: [
         mocks.damaged
@@ -51,6 +57,37 @@ describe("marketplace displayed theme versus saved references", () => {
     mocks.themeId = "cadencr-dark";
     mocks.mutate.mockReset();
     mocks.damaged = false;
+    mocks.catalogError = "";
+    mocks.usableCatalog = false;
+  });
+  it("keeps catalog discovery and installed theme management clearly labeled", async () => {
+    const { user } = render(<ThemeMarketplace />);
+    expect(screen.queryByRole("heading", { name: "Discover themes" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Installed themes (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search marketplace themes" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Theme safety & diagnostics" }));
+    expect(await screen.findByText(/never executables/)).toBeInTheDocument();
+    expect(screen.getByText(/No current verified mixed catalog/)).toBeInTheDocument();
+  });
+  it("summarizes an unavailable theme catalog and preserves the full diagnostic on disclosure", async () => {
+    mocks.catalogError = "Could not read verified cache: operating system error 2";
+    const { user } = render(<ThemeMarketplace />);
+    expect(
+      screen.getByText("Theme catalog unavailable. Installed themes remain manageable."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Using verified cached theme catalog/)).not.toBeInTheDocument();
+    expect(screen.queryByText(mocks.catalogError)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Theme safety & diagnostics" }));
+    expect(await screen.findByText(mocks.catalogError)).toBeInTheDocument();
+  });
+  it("describes cached theme availability only when the catalog is usable", () => {
+    mocks.catalogError = "Catalog refresh failed; verified cache retained";
+    mocks.usableCatalog = true;
+    render(<ThemeMarketplace />);
+    expect(
+      screen.getByText("Using verified cached theme catalog. See diagnostics for details."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Theme catalog unavailable/)).not.toBeInTheDocument();
   });
   it("shows corruption and permits confirmed removal, but never applies or duplicates it", () => {
     mocks.damaged = true;

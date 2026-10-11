@@ -2899,6 +2899,10 @@ export interface ManagedThemeCatalogResponse {
 export type ManagedThemeInventoryEntryTheme = null | UserTheme;
 
 export interface ManagedThemeInventoryEntry {
+  /**
+   * Referenced by any saved manual/light/dark selection, not necessarily displayed.
+   * The frontend owns OS appearance and resolves the effective displayed theme.
+   */
   active: boolean;
   /** @nullable */
   error?: string | null;

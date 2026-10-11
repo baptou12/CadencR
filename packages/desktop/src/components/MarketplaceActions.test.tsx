@@ -18,6 +18,10 @@ import { MarketplaceDetails } from "./MarketplaceDetails";
 import { MarketplaceSection } from "./MarketplaceSection";
 import { InstalledProvider } from "./InstalledProvider";
 
+vi.mock("./ThemeMarketplace", () => ({
+  ThemeMarketplace: () => <div>Theme marketplace content</div>,
+}));
+
 vi.mock("@/api/generated", () => ({
   catalog: vi.fn(),
   inventory: vi.fn(),
@@ -345,6 +349,41 @@ describe("InstalledProvider interactions", () => {
 });
 
 describe("marketplace navigation during lifecycle work", () => {
+  it.each(["success", "failure"] as const)(
+    "keeps pending provider work and its %s visible after switching to Themes",
+    async (outcome) => {
+      let finish: ((value: ManagedProviderInventoryEntry) => void) | undefined;
+      let reject: ((reason: Error) => void) | undefined;
+      vi.mocked(enabled).mockImplementation(
+        () =>
+          new Promise((resolve, fail) => {
+            finish = resolve;
+            reject = fail;
+          }),
+      );
+      const { user } = render(<MarketplaceSection />);
+      await user.click(await screen.findByRole("tab", { name: "Installed (1)" }));
+      await user.click(screen.getByRole("button", { name: "Disable" }));
+      await waitFor(() => expect(enabled).toHaveBeenCalledWith("example", { enabled: false }));
+      await user.click(screen.getByRole("tab", { name: "Themes" }));
+      expect(screen.getByText("Applying provider change…")).toBeInTheDocument();
+      expect(screen.getByText("Theme marketplace content")).toBeInTheDocument();
+      if (outcome === "success") {
+        act(() => finish?.({ ...entry, enabled_after_restart: false }));
+        expect(
+          await screen.findByText("example: changes saved. Restart Cadencr to apply them."),
+        ).toHaveAttribute("role", "status");
+      } else {
+        act(() => reject?.(new Error("Provider change rejected")));
+        expect(await screen.findByRole("alert")).toHaveTextContent("Provider change rejected");
+      }
+      await waitFor(() =>
+        expect(screen.queryByText("Applying provider change…")).not.toBeInTheDocument(),
+      );
+      expect(screen.getByRole("tab", { name: "Themes" })).toHaveAttribute("aria-selected", "true");
+      expect(enabled).toHaveBeenCalledTimes(1);
+    },
+  );
   it("preserves pending work and its failure across details navigation", async () => {
     const other = {
       ...packages[0],
