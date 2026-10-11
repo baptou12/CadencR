@@ -91,6 +91,8 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         | "editor_sidebar_collapsed"
         | "git_sidebar_collapsed"
         | "theme_follow_system"
+        | "notch_always_animate"
+        | "notch_default_applied"
         | "claude_bypass_permissions_enabled"
         | "codex_full_access_enabled"
         | "onboarding_intro_shown" => SettingSpec::new(BOOL, Some("false")),
@@ -99,6 +101,7 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         | "sidebar_provider_logos"
         | "layout_auto_mode_default"
         | "animations_enabled"
+        | "notch_always_on"
         | "browser_mcp_enabled"
         | "project_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
         "workspace_mcp_enabled" => SettingSpec::new(BOOL, Some("true")),
@@ -111,7 +114,7 @@ pub fn workspace_spec(key: &str) -> Option<SettingSpec> {
         }
         // Enums (mirrors the frontend option sets).
         "notification_mode" => SettingSpec::new(
-            ValueKind::Enum(&["native", "in_app", "off"]),
+            ValueKind::Enum(&["native", "in_app", "notch", "off"]),
             Some("native"),
         ),
         "browser_default_mode" => {
@@ -205,6 +208,7 @@ mod tests {
     fn enum_spec_validates() {
         let spec = workspace_spec("notification_mode").unwrap();
         assert!(spec.is_valid("native"));
+        assert!(spec.is_valid("notch"));
         assert!(!spec.is_valid("loud"));
     }
 

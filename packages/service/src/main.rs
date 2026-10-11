@@ -177,6 +177,13 @@ async fn main() -> anyhow::Result<()> {
                 Ok(false) => {}
                 Err(e) => tracing::warn!("failed to prune ephemeral settings keys: {e}"),
             }
+            // The macOS notch island became the default notification destination;
+            // move existing installs over once.
+            match domain::settings_store::notch_default::apply_notch_default().await {
+                Ok(true) => info!("switched notifications to the notch island"),
+                Ok(false) => {}
+                Err(e) => tracing::warn!("failed to apply the notch notification default: {e}"),
+            }
 
             // Mark any sessions left as 'running' from a previous crash as 'paused'
             domain::ws_session::persistence::WsSessionPersistence::cleanup_stale_sessions(

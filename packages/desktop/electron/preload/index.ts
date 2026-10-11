@@ -21,6 +21,7 @@ import type {
   BrowserTabMetadata,
   BrowserAgentActivity,
 } from "../main/browser-types";
+import { notchHostBridge } from "./notch-host-bridge";
 
 type RouteType = "workflow" | "session";
 type DesktopTheme = "light" | "dark";
@@ -395,4 +396,5 @@ contextBridge.exposeInMainWorld("cadencr", {
   fetchChangelog: (version: string): Promise<string | null> =>
     ipcRenderer.invoke("app:fetch-changelog", version),
   onUpdateEvent,
+  ...notchHostBridge(onIpc),
 });
