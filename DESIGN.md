@@ -8,7 +8,7 @@ meta:
   source_of_truth: Page - Unified agents.html
   secondary_reference: Page - Session.html
   default_theme: cadencr-dark
-  default_screen: workspace        # Unified agents page lands on "unified"; Session lands on "workspace"
+  default_screen: workspace # Unified agents page lands on "unified"; Session lands on "workspace"
 
 brand:
   direction: Emerald Reserve
@@ -32,8 +32,26 @@ brand:
     hairline: "#D7DADD"
     primary: "#087653"
   functional:
-    dark: { file_change: "#8BCF67", edit_heading: "#F09A5B", deletion: "#EC707B", thinking: "#52BFD0", warning: "#E2B64D", generic_tool: "#6D9BEC", syntax: "#DE7CA7" }
-    light: { file_change: "#3D7D14", edit_heading: "#A84F00", deletion: "#D12D49", thinking: "#007F9B", warning: "#966C00", generic_tool: "#1D5ED8", syntax: "#B52B70" }
+    dark:
+      {
+        file_change: "#8BCF67",
+        edit_heading: "#F09A5B",
+        deletion: "#EC707B",
+        thinking: "#52BFD0",
+        warning: "#E2B64D",
+        generic_tool: "#6D9BEC",
+        syntax: "#DE7CA7",
+      }
+    light:
+      {
+        file_change: "#3D7D14",
+        edit_heading: "#A84F00",
+        deletion: "#D12D49",
+        thinking: "#007F9B",
+        warning: "#966C00",
+        generic_tool: "#1D5ED8",
+        syntax: "#B52B70",
+      }
 
 themes:
   # CadencR Dark and Light are the product defaults. Aurora, Dracula, and
@@ -100,19 +118,19 @@ themes:
     data_theme_key: light
     file: themes/aurora.json
     background: oklch(0.985 0.004 290)
-    surface: oklch(1 0 0)                       # --card
-    surface_elevated: oklch(0.965 0.008 290)    # sidebar / background-deep
+    surface: oklch(1 0 0) # --card
+    surface_elevated: oklch(0.965 0.008 290) # sidebar / background-deep
     border: oklch(0.905 0.015 290)
     text_primary: oklch(0.205 0.040 285)
-    text_secondary: oklch(0.32 0.040 285)       # --foreground-soft
+    text_secondary: oklch(0.32 0.040 285) # --foreground-soft
     text_muted: oklch(0.46 0.040 285)
-    accent: oklch(0.55 0.245 295)               # --primary (also --acc-purple)
-    accent_violet: oklch(0.45 0.20 295)         # blocks.thinking-accent — for Thinking blocks ONLY
+    accent: oklch(0.55 0.245 295) # --primary (also --acc-purple)
+    accent_violet: oklch(0.45 0.20 295) # blocks.thinking-accent — for Thinking blocks ONLY
     accent_thinking_bg: oklch(0.96 0.04 295)
-    success: oklch(0.58 0.18 150)               # --acc-green — ready dot, +diffs
-    danger: oklch(0.58 0.22 25)                 # --acc-red — retry counter, -diffs
-    warning: oklch(0.66 0.18 55)                # --acc-orange — "in progress" / dev pill
-    info: oklch(0.58 0.13 220)                  # --acc-cyan — file refs
+    success: oklch(0.58 0.18 150) # --acc-green — ready dot, +diffs
+    danger: oklch(0.58 0.22 25) # --acc-red — retry counter, -diffs
+    warning: oklch(0.66 0.18 55) # --acc-orange — "in progress" / dev pill
+    info: oklch(0.58 0.13 220) # --acc-cyan — file refs
     code_bg: oklch(0.97 0.008 290)
     code_fg: oklch(0.205 0.04 285)
 
@@ -123,14 +141,14 @@ themes:
     data_theme_key: dark
     file: themes/dracula.json
     background: oklch(0.22 0.022 277.497)
-    surface: oklch(0.22 0.022 277.497)          # --card
+    surface: oklch(0.22 0.022 277.497) # --card
     surface_elevated: oklch(0.23 0.022 277.497) # --sidebar
     border: oklch(0.32 0.032 277.821)
     text_primary: oklch(0.977 0.008 106.793)
-    text_secondary: oklch(0.85 0.012 277.5)     # --foreground-soft
+    text_secondary: oklch(0.85 0.012 277.5) # --foreground-soft
     text_muted: oklch(0.56 0.08 270.087)
-    accent: oklch(0.742 0.149 301.871)          # #bd93f9 — Dracula purple
-    accent_violet: "#dbb1ff"                    # blocks.thinking-accent
+    accent: oklch(0.742 0.149 301.871) # #bd93f9 — Dracula purple
+    accent_violet: "#dbb1ff" # blocks.thinking-accent
     accent_thinking_bg: "#1f1d31"
     success: "#50fa7b"
     danger: "#ff5555"
@@ -138,7 +156,7 @@ themes:
     info: "#8be9fd"
     code_bg: "#1a1b26"
     code_fg: "#f8f8f2"
-    dracula_pink: "#ff79c6"                     # mention chip identity in dark theme
+    dracula_pink: "#ff79c6" # mention chip identity in dark theme
     dracula_yellow: "#f1fa8c"
     dracula_comment: "#6272a4"
 
@@ -148,15 +166,15 @@ themes:
     appearance: dark
     data_theme_key: onedark
     file: themes/one-dark.json
-    background: oklch(0.27 0.014 257)           # ~#282c34
-    surface: oklch(0.27 0.014 257)              # --card
-    surface_elevated: oklch(0.25 0.012 257)     # --sidebar
-    border: oklch(0.34 0.014 257)               # ~#3e4451
-    text_primary: oklch(0.78 0.018 257)         # ~#abb2bf
+    background: oklch(0.27 0.014 257) # ~#282c34
+    surface: oklch(0.27 0.014 257) # --card
+    surface_elevated: oklch(0.25 0.012 257) # --sidebar
+    border: oklch(0.34 0.014 257) # ~#3e4451
+    text_primary: oklch(0.78 0.018 257) # ~#abb2bf
     text_secondary: oklch(0.760 0.014 245)
-    text_muted: oklch(0.58 0.018 257)           # ~#5c6370
-    accent: oklch(0.72 0.13 240)                # #61afef — One Dark blue
-    accent_violet: "#c678dd"                    # blocks.thinking-accent — One Dark magenta
+    text_muted: oklch(0.58 0.018 257) # ~#5c6370
+    accent: oklch(0.72 0.13 240) # #61afef — One Dark blue
+    accent_violet: "#c678dd" # blocks.thinking-accent — One Dark magenta
     accent_thinking_bg: "#2a2533"
     success: "#98c379"
     danger: "#e06c75"
@@ -179,8 +197,20 @@ typography:
       role: Code blocks, terminal, diff gutters, file paths, tool-call bodies, +/- counters
 
   scale:
-    h_section_user: { size: 22px, weight: 700, line_height: 1.25, letter_spacing: -0.01em, role: "Agent stream — user-section heading (.cds-section h3)" }
-    h_section_agent: { size: 17px, weight: 700, role: "Agent stream — agent-section heading (.cds-section h3.green)" }
+    h_section_user:
+      {
+        size: 22px,
+        weight: 700,
+        line_height: 1.25,
+        letter_spacing: -0.01em,
+        role: "Agent stream — user-section heading (.cds-section h3)",
+      }
+    h_section_agent:
+      {
+        size: 17px,
+        weight: 700,
+        role: "Agent stream — agent-section heading (.cds-section h3.green)",
+      }
     body: { size: 14px, weight: 400, line_height: 1.55, role: "Default body — html/body" }
     body_stream: { size: 13.5px, line_height: 1.55, role: "Agent stream prose (.cds-stream)" }
     bubble: { size: 13px, line_height: 1.55, role: "User bubble (.cds-user-bubble)" }
@@ -192,7 +222,14 @@ typography:
     diff: { size: 12px, family: mono, line_height: 1.7, role: "Diff body / code blocks" }
     git_diff: { size: 11.5px, family: mono, line_height: 1.65, role: "Git tab diff body" }
     editor: { size: 11.5px, family: mono, line_height: 1.7, role: "Editor pane code" }
-    eyebrow: { size: 10px, weight: 700, transform: uppercase, letter_spacing: 0.12em, role: "Sidebar section labels (PROJECTS)" }
+    eyebrow:
+      {
+        size: 10px,
+        weight: 700,
+        transform: uppercase,
+        letter_spacing: 0.12em,
+        role: "Sidebar section labels (PROJECTS)",
+      }
     meta_user: { size: 10.5px, family: mono, role: "User/agent timestamp meta" }
     context_bar: { size: 10.5px, family: mono, role: "Context % footer" }
     beta_badge: { size: 8px, weight: 700, transform: uppercase, role: "BETA/dev badge" }
@@ -206,7 +243,7 @@ spacing:
     - 2px
     - 4px
     - 6px
-    - 7px      # used for tab strip (padding 7px 14px) — reserved for tabs
+    - 7px # used for tab strip (padding 7px 14px) — reserved for tabs
     - 8px
     - 9px
     - 10px
@@ -227,24 +264,24 @@ spacing:
 
 # ─── Radii ────────────────────────────────────────────────────────────────
 radii:
-  base: 0.625rem        # --radius
-  sm: 6px               # --radius-sm
-  md: 8px               # --radius-md
-  lg: 10px              # --radius-lg
-  pill: 9999px          # status dots, traffic lights
+  base: 0.625rem # --radius
+  sm: 6px # --radius-sm
+  md: 8px # --radius-md
+  lg: 10px # --radius-lg
+  pill: 9999px # status dots, traffic lights
 
 # ─── Shadows ──────────────────────────────────────────────────────────────
 shadows:
-  pop_dark: "0 8px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.25)"   # dracula
+  pop_dark: "0 8px 30px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.25)" # dracula
   pop_onedark: "0 8px 30px rgba(0,0,0,.40), 0 2px 6px rgba(0,0,0,.22)"
   pop_light: "0 12px 36px -10px oklch(0.50 0.20 295 / 0.22), 0 2px 8px -2px oklch(0.30 0.10 285 / 0.10)"
-  card_subtle: "0 1px 2px rgba(0,0,0,0.06)"   # active button on theme switch
+  card_subtle: "0 1px 2px rgba(0,0,0,0.06)" # active button on theme switch
 
 # ─── Transitions ──────────────────────────────────────────────────────────
 transitions:
   fast: 120ms
   default: 150ms
-  theme_swap: 220ms ease     # html/body background+color
+  theme_swap: 220ms ease # html/body background+color
   hover: 100ms
   easing_default: ease
 
@@ -268,10 +305,10 @@ layouts:
 
 # ─── Status palette (RESERVED — never reuse for decoration) ───────────────
 status:
-  ready: success           # green dot in worktree row, agent feat-title dot
-  in_progress: warning     # orange — feature row "in progress" pill
-  retry: danger            # red — retry counter on prompt action bar
-  thinking: accent_violet  # legacy schema name; resolves to the theme-owned thinking accent
+  ready: success # green dot in worktree row, agent feat-title dot
+  in_progress: warning # orange — feature row "in progress" pill
+  retry: danger # red — retry counter on prompt action bar
+  thinking: accent_violet # legacy schema name; resolves to the theme-owned thinking accent
 
 # ─── Iconography ─────────────────────────────────────────────────────────
 iconography:
@@ -323,34 +360,35 @@ dracula       → Dracula
 one-dark      → One Dark
 ```
 
-**Chrome — the shape of a theme, not its palette.** Three structural traits travel with a theme as data (`chrome` in `theme.json`; `ThemeDefinition.chrome` for a built-in), because a theme duplicated from another one has to *look* like it and not just be colored like it:
+**Chrome — the shape of a theme, not its palette.** Three structural traits travel with a theme as data (`chrome` in `theme.json`; `ThemeDefinition.chrome` for a built-in), because a theme duplicated from another one has to _look_ like it and not just be colored like it:
 
-| Trait | Values | What it decides |
-|---|---|---|
-| `chassis` | `flat` · `rail` | Whether the page tucks into the sidebar rail as a raised card with a rounded top-left corner, sharing one continuous header band (CadencR pair), or sits full-bleed under its own header (everything else). Desktop only — below 768px every theme is flat. |
-| `tabs` | `underline` · `segmented` | Whether the active pane tab is a hairline indicator or a raised pill in a recessed track. |
-| `texture` | layers | What is painted behind the app: a flat `base`, drifting blurred `halos`, an `image` from the theme's own folder, generated `grain`, and a `veil` that washes the field back down with `--background` so surfaces stay legible. The Frost pair is one instance of this vocabulary, not a special case. |
+| Trait     | Values                    | What it decides                                                                                                                                                                                                                                                                                       |
+| --------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chassis` | `flat` · `rail`           | Whether the page tucks into the sidebar rail as a raised card with a rounded top-left corner, sharing one continuous header band (CadencR pair), or sits full-bleed under its own header (everything else). Desktop only — below 768px every theme is flat.                                           |
+| `tabs`    | `underline` · `segmented` | Whether the active pane tab is a hairline indicator or a raised pill in a recessed track.                                                                                                                                                                                                             |
+| `texture` | layers                    | What is painted behind the app: a flat `base`, drifting blurred `halos`, an `image` from the theme's own folder, generated `grain`, and a `veil` that washes the field back down with `--background` so surfaces stay legible. The Frost pair is one instance of this vocabulary, not a special case. |
 
 `applyThemeToDocument` publishes the first two as `<html data-chassis data-tabs>`; the texture is rendered by `<AmbientBackground/>` and laid out by `theme-chrome.css`, which must never contain a `data-theme` selector. A texture that declares a `base` also makes `:root` opaque and `body` transparent — required for `backdrop-filter` to paint at all.
 
-The CadencR pair's *material* (pane elevation, lamplight, machined wells, prompt chrome) stays theme-scoped in `theme-cadencr-material.css`: it depends on tokens only those themes declare, and it is a look rather than a structural choice.
+The CadencR pair's _material_ (pane elevation, lamplight, machined wells, prompt chrome) stays theme-scoped in `theme-cadencr-material.css`: it depends on tokens only those themes declare, and it is a look rather than a structural choice.
 
-**Chrome has colors, and they belong to the theme.** The token vocabulary has two tiers. The required set is the palette every theme defines in full; a short optional set — `--tab-track-bg`, `--tab-track-border`, `--tab-active-bg`, `--pane-border` — colors the shapes a theme opted into, and `theme-chrome.css` derives a fallback from `--foreground`/`--background` for any a theme leaves out. They are optional because most themes draw neither shape; they exist because without them the only way to recolor a segmented tab strip was to edit the app's shared stylesheet — a change no installed Cadencr can receive, applied to every theme at once. An unknown key is still an error: this widens the vocabulary, it does not open it. `--tab-active-shadow` and `--page-shadow` stay out, being `box-shadow` values rather than colors. Duplication carries whichever of them the source theme declares, which is how a copy of CadencR Dark keeps its tab colors and not just its tab *shape*.
+**Chrome has colors, and they belong to the theme.** The token vocabulary has two tiers. The required set is the palette every theme defines in full; a short optional set — `--tab-track-bg`, `--tab-track-border`, `--tab-active-bg`, `--pane-border` — colors the shapes a theme opted into, and `theme-chrome.css` derives a fallback from `--foreground`/`--background` for any a theme leaves out. They are optional because most themes draw neither shape; they exist because without them the only way to recolor a segmented tab strip was to edit the app's shared stylesheet — a change no installed Cadencr can receive, applied to every theme at once. An unknown key is still an error: this widens the vocabulary, it does not open it. `--tab-active-shadow` and `--page-shadow` stay out, being `box-shadow` values rather than colors. Duplication carries whichever of them the source theme declares, which is how a copy of CadencR Dark keeps its tab colors and not just its tab _shape_.
 
 **A theme folder explains itself, and answers back.** A user theme is edited in its own project, which in practice means an agent with `theme.json` open and nothing else to go on — and the document is self-describing for colors and opaque for chrome. Worse, the verdict on what it writes lands on a settings card it cannot see, so a theme could be declared finished while the app quietly refused to apply it. Four files beside `theme.json` close that loop:
 
-| File | For |
-|---|---|
-| `THEME.md` | The loop, the vocabulary, the bounds, and what a rejected file does. Leads with the check command. |
-| `theme.schema.json` | The machine-checkable half; the document's own `$schema` points at it, so an editor completes and flags as you type. |
-| `check-theme` | Runs `cadencr-service check-theme` on this folder: the app's gate, on demand. Prints the settings card's own wording, exits non-zero when the theme is not applicable. |
-| `AGENTS.md` / `CLAUDE.md` | The boundary, in the files an agent loads before its first instruction: this folder is the whole theme, never edit the app's source, run the check, and *say so and stop* when a request isn't expressible here. |
+| File                      | For                                                                                                                                                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `THEME.md`                | The loop, the vocabulary, the bounds, and what a rejected file does. Leads with the check command.                                                                                                               |
+| `theme.schema.json`       | The machine-checkable half; the document's own `$schema` points at it, so an editor completes and flags as you type.                                                                                             |
+| `check-theme`             | Runs `cadencr-service check-theme` on this folder: the app's gate, on demand. Prints the settings card's own wording, exits non-zero when the theme is not applicable.                                           |
+| `AGENTS.md` / `CLAUDE.md` | The boundary, in the files an agent loads before its first instruction: this folder is the whole theme, never edit the app's source, run the check, and _say so and stop_ when a request isn't expressible here. |
 
 All of them are written on every open and excluded from the theme's git via `.git/info/exclude` — the schema generated from the same constants `validate` enforces, the prose held to them by tests — they are the app's, not the theme's. The command is deliberately not a second implementation: it calls `store::read_at`, the same function the gallery calls, so the two can never disagree. It needs no server, database or token, and the launcher is rewritten each open so its path follows the binary across rebuilds and updates.
 
 Chrome additionally denies unknown fields, so a misspelled key is a reported issue rather than a silent default; the label is recovered from the raw JSON when the document won't deserialize, so that costs a message and not the theme's name. Bounds, variant lists and the reference's prose are guarded against drift by tests in `themes/schema.rs` and `themes/scaffold.rs`; a new chrome value belongs in `ThemeChassis::ALL`-style lists and in `THEME.md`, or those tests fail.
 
 **Adding a theme.**
+
 1. Add a complete typed `ThemeDefinition` under `src/lib/themes/`, including a full xterm palette and stable swatch.
 2. Add the theme's semantic CSS selector without changing another theme's tokens.
 3. Register it in `registry.ts`; the picker is registry-driven and must not hardcode a second list.
@@ -360,12 +398,12 @@ Chrome additionally denies unknown fields, so a misspelled key is a reported iss
 
 The pane configuration is a single `tweaks.layout` value with four legal states. Every layout MUST be registered in (a) the `config` `useMemo` in the HTML file's `App` component, (b) the `cds-split` CSS rules in `kit.css`, and (c) the `TweakRadio` options in the Tweaks panel. A layout that is not in all three places is broken.
 
-| Layout | When to use | Default for |
-|---|---|---|
-| `single` | All four tabs in one pane. Use when the viewport is narrow, when the user is reviewing one thing at a time, or as a fallback. | Unified agents (the cards already show many agents — no need for split panes inside a card). |
-| `split` | Two equal-priority surfaces — agent reasoning + one inspection pane. The classic IDE feel. | Generic "I'm doing one feature" sessions. |
-| `split-stacked` | Agent gets the full left column. Right column is vertically split — Terminal top, Git+Editor bottom. Use when terminal output and the diff are both running hot and the user wants to glance at both without tabbing. | **Session view (`Page - Session.html`).** |
-| `wide` | Agent solo on the left, every other tool stacked into one tabbed pane on the right. Use for narrow secondary monitors or when the agent narrative is the main content. | One-off; not a default. |
+| Layout          | When to use                                                                                                                                                                                                           | Default for                                                                                  |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `single`        | All four tabs in one pane. Use when the viewport is narrow, when the user is reviewing one thing at a time, or as a fallback.                                                                                         | Unified agents (the cards already show many agents — no need for split panes inside a card). |
+| `split`         | Two equal-priority surfaces — agent reasoning + one inspection pane. The classic IDE feel.                                                                                                                            | Generic "I'm doing one feature" sessions.                                                    |
+| `split-stacked` | Agent gets the full left column. Right column is vertically split — Terminal top, Git+Editor bottom. Use when terminal output and the diff are both running hot and the user wants to glance at both without tabbing. | **Session view (`Page - Session.html`).**                                                    |
+| `wide`          | Agent solo on the left, every other tool stacked into one tabbed pane on the right. Use for narrow secondary monitors or when the agent narrative is the main content.                                                | One-off; not a default.                                                                      |
 
 **Session vs Unified agents.** Unified agents lands on `screen="unified"` and renders `<UnifiedAgentsView>` — a grid of agent cards. Session lands on `screen="workspace"` and renders the four-pane workspace. They share the same React component tree below the screen switch; the screen value is the only routing concept.
 
@@ -447,7 +485,7 @@ Supported text hunks offer `Accept Current branch` and `Accept Incoming branch` 
 - **Structure:** `.cds-sidebar > [.cds-sidebar-header, .cds-sidebar-nav, .cds-sidebar-scroll, .cds-sidebar-footer]`.
 - **Project group:** `.cds-project-group > [.cds-project-row, .cds-feature-list]`. The feature list has a left rail (`border-left: 1px solid var(--sidebar-border)`).
 - **Active feature:** `.cds-feature-row.active` gets a `--primary` 18% mix bg + a `.cds-active-rail` 2px primary bar at left:-11px.
-- **Worktree group:** conversations sharing one worktree are banded into `.worktree-group` — a `--sidebar-border` rim plus a 5% `--sidebar-foreground` wash. This is the one sidebar surface that does *not* take the neutral `--accent` wash: `--accent` is spoken for by row hover, and a group must never read as a hovered or selected row. The rim carries the grouping; the fill stays below the hover tint. Palette tokens are unusable here — `--muted` equals `--sidebar` in CadencR Light.
+- **Worktree group:** conversations sharing one worktree are banded into `.worktree-group` — a `--sidebar-border` rim plus a 5% `--sidebar-foreground` wash. This is the one sidebar surface that does _not_ take the neutral `--accent` wash: `--accent` is spoken for by row hover, and a group must never read as a hovered or selected row. The rim carries the grouping; the fill stays below the hover tint. Palette tokens are unusable here — `--muted` equals `--sidebar` in CadencR Light.
 - **Conversation row:** a stable 24px title line (including hover/focus), a fixed 14px leading status slot, optional worktree marker, truncating title, then a 16px identity/shortcut slot at the far right of the first line. Metadata stays below; pin/archive actions appear on hover, keyboard focus, or touch devices instead of reserving empty columns.
 - **Provider mark:** always a quiet mono silhouette, never animated or status-tinted. Normalize bundled marks to a 14px longest ink edge, compensating for transparent canvas padding in provider metadata. The Provider display option (logo · logo + model · hidden) changes branding only; "logo + model" adds the model id as 10.5px muted mono text on the meta line, so it never squeezes the title. Holding Command (macOS) or Control (Windows/Linux) replaces the mark with the numeric navigation hint in the same slot.
 - **Display options:** one popover (sliders button in the Projects header, opens to the right, 24rem, scrolling within the window height) and the Settings → Sidebar section edit the same typed `sidebar_*` settings, applied live; Reset clears them all. Density sets the row's block padding around the 24px title line: compact 28px, comfortable 36px (default), spacious 44px per single-line row, project rows included (a project row always reserves its 24px hover actions, so revealing them never shifts the list). Text size is 12 · 12.5 (default) · 13 · 14px. Titles take one truncated line (default), two clamped lines, or wrap in place on hover/focus; in the last two modes the fixed slots stay on the first 24px line. Density, text size and title mode are attributes on the sidebar root read by `sidebar-rows.css`, so rows never re-render for them. Every meta element (label as chip or dot, branch, diff, PR/CI, shells and tabs, ports), the worktree marker and the title source (title · branch · folder) can be switched; a meta line with nothing left to show does not render.
@@ -503,6 +541,7 @@ The "Notch" notification destination: a transparent, click-through window huggin
 ### Status dot
 
 A 7–9px circle with a 2–3px halo (`box-shadow` 0 0 0 spread). Three legal slots:
+
 - `--status-ip` (success/green) — feature in flight, "ready" worktree
 - `--acc-orange` — "in progress" annotation
 - `--acc-pink` (Dracula) — secondary project marker
@@ -542,11 +581,13 @@ The dot's color is the meaning. Do not introduce a fourth color without register
 **Settings panel.** Already covered — uses `--card`, `--border`, `--muted`, sidebar tokens for nav, primary for active row. No new tokens needed; the page goes through `screen="settings"` and renders `<window.SettingsPage>`. ✓
 
 **Empty-state for the agent stream.** Tokens needed:
+
 - `--muted-foreground` for the prose
 - `--accent` for the "What can I help with?" affordance background
 - An icon at 32px stroke-2 (extension of the `iconography.scale` — added "xl: 32" implicitly; explicitly noted that empty states may use `28–40px` icons, the only place above 22).
 
 **Error toast.** Needed tokens:
+
 - `--acc-red` (border + accent strip)
 - `--card` (toast surface)
 - `--shadow-pop` (lift)
