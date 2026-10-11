@@ -71,6 +71,43 @@ export interface AcpAgentEntry {
   [key: string]: unknown;
 }
 
+export interface AgentDigestToolCall {
+  /**
+   * The tool input JSON with long strings and arrays clipped, so a file
+   * write's body never crosses the wire. Still valid JSON when the stored
+   * input was.
+   */
+  args: string;
+  /** Tool name exactly as the provider reported it. */
+  name: string;
+}
+
+export type AgentActivityDigestEntryLastTool = null | AgentDigestToolCall;
+
+export interface AgentActivityDigestEntry {
+  feature_id: number;
+  feature_title: string;
+  /**
+   * ISO-8601 UTC timestamp of the session's latest message.
+   * @nullable
+   */
+  last_activity_at?: string | null;
+  /**
+   * Start of the agent's latest top-level text reply, whitespace-collapsed.
+   * @nullable
+   */
+  last_reply?: string | null;
+  last_tool?: AgentActivityDigestEntryLastTool;
+  project_id: number;
+  project_name: string;
+  /** @nullable */
+  provider?: string | null;
+}
+
+export interface AgentActivityDigestResponse {
+  entries: AgentActivityDigestEntry[];
+}
+
 export type AgentBlockChildBlocksItem = { [key: string]: unknown };
 
 export interface AgentMessageOrigin {
@@ -1084,16 +1121,14 @@ export interface CreateProjectRequest {
 }
 
 /**
- * Existing connector repository to import instead of scaffolding a new one.
- */
-export type CreateProviderWorkspaceRequestDirectory = string | null;
-
-/**
  * The stable identity and human label for a new provider connector project.
  */
 export interface CreateProviderWorkspaceRequest {
-  /** Existing connector repository to import instead of scaffolding a new one. */
-  directory?: CreateProviderWorkspaceRequestDirectory;
+  /**
+   * Existing connector repository to import instead of scaffolding a new one.
+   * @nullable
+   */
+  directory?: string | null;
   /** Human-readable name used in the project and scaffold. */
   display_name: string;
   /** ACP Registry-compatible provider id, e.g. `pi-connector`. */
@@ -4603,6 +4638,13 @@ export type GetAgentSelectionParams = {
   profile?: string;
 };
 
+export type GetAgentActivityDigestParams = {
+  /**
+   * Comma-separated feature ids (at most 32).
+   */
+  feature_ids: string;
+};
+
 export type GetUnifiedAgentsParams = {
   mode?: null | UnifiedAgentsMode;
   /**
@@ -5364,6 +5406,126 @@ export function useGetAgentSelection<
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getGetAgentSelectionQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getAgentActivityDigest = (
+  params: GetAgentActivityDigestParams,
+  signal?: AbortSignal,
+) => {
+  return customInstance<AgentActivityDigestResponse>({
+    url: `/api/agents/activity-digest`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetAgentActivityDigestQueryKey = (params?: GetAgentActivityDigestParams) => {
+  return [`/api/agents/activity-digest`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAgentActivityDigestQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAgentActivityDigest>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentActivityDigestParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAgentActivityDigest>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAgentActivityDigestQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAgentActivityDigest>>> = ({ signal }) =>
+    getAgentActivityDigest(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAgentActivityDigest>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetAgentActivityDigestQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAgentActivityDigest>>
+>;
+export type GetAgentActivityDigestQueryError = ErrorType<void>;
+
+export function useGetAgentActivityDigest<
+  TData = Awaited<ReturnType<typeof getAgentActivityDigest>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentActivityDigestParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAgentActivityDigest>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAgentActivityDigest>>,
+          TError,
+          Awaited<ReturnType<typeof getAgentActivityDigest>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAgentActivityDigest<
+  TData = Awaited<ReturnType<typeof getAgentActivityDigest>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentActivityDigestParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAgentActivityDigest>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getAgentActivityDigest>>,
+          TError,
+          Awaited<ReturnType<typeof getAgentActivityDigest>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetAgentActivityDigest<
+  TData = Awaited<ReturnType<typeof getAgentActivityDigest>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentActivityDigestParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAgentActivityDigest>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetAgentActivityDigest<
+  TData = Awaited<ReturnType<typeof getAgentActivityDigest>>,
+  TError = ErrorType<void>,
+>(
+  params: GetAgentActivityDigestParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getAgentActivityDigest>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetAgentActivityDigestQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;
