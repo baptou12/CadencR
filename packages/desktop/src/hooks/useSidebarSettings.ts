@@ -17,6 +17,7 @@ import {
   type SidebarConfig,
   type SidebarOptionId,
 } from "@/lib/sidebar-config";
+import { sidebarPresetValues, type SidebarPresetId } from "@/lib/sidebar-presets";
 
 interface SidebarSettings {
   config: SidebarConfig;
@@ -83,11 +84,21 @@ export function useSetSidebarOption(): SetSidebarOption {
   );
 }
 
+interface SidebarConfigWrites {
+  /** Clears every display option, so the defaults (the Classic preset) apply. */
+  reset: () => void;
+  /** Writes a preset's values and clears every option it doesn't set (L1). */
+  applyPreset: (presetId: SidebarPresetId) => void;
+  /** A reset or preset write is in flight. */
+  isApplying: boolean;
+}
+
 /**
- * Clears every display option in one write, so the defaults apply again. The
- * response seeds the sidebar keys; the settings watcher's echo refreshes the rest.
+ * Whole-config writes, each one batch so the sidebar never shows half a
+ * preset. The response seeds the sidebar keys; the settings watcher's echo
+ * refreshes the rest.
  */
-export function useResetSidebarConfig(): { reset: () => void; isResetting: boolean } {
+export function useSidebarConfigWrites(): SidebarConfigWrites {
   const queryClient = useQueryClient();
   const { mutate, isPending } = useSetWorkspaceSettingsBatch({
     mutation: {
@@ -98,13 +109,16 @@ export function useResetSidebarConfig(): { reset: () => void; isResetting: boole
         }
       },
       onError: (error) =>
-        toast.error(`Could not reset the sidebar: ${apiErrorMessage(error, "Unknown error")}`),
+        toast.error(`Could not update the sidebar: ${apiErrorMessage(error, "Unknown error")}`),
     },
   });
-  const reset = useCallback(() => {
-    mutate({
-      data: { values: Object.fromEntries(SIDEBAR_SETTING_KEYS.map((key) => [key, null])) },
-    });
-  }, [mutate]);
-  return useMemo(() => ({ reset, isResetting: isPending }), [reset, isPending]);
+  const applyPreset = useCallback(
+    (presetId: SidebarPresetId) => mutate({ data: { values: sidebarPresetValues(presetId) } }),
+    [mutate],
+  );
+  const reset = useCallback(() => applyPreset("classic"), [applyPreset]);
+  return useMemo(
+    () => ({ reset, applyPreset, isApplying: isPending }),
+    [reset, applyPreset, isPending],
+  );
 }

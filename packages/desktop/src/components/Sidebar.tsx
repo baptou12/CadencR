@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Settings, PanelLeftClose, Search, Maximize, Minimize, Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,12 @@ import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
 import { SidebarConfigProvider } from "@/components/SidebarConfigProvider";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SidebarPinnedConversations } from "@/components/SidebarPinnedConversations";
+import { SidebarForMeSection } from "@/components/SidebarForMeSection";
+import {
+  SidebarAttentionShortcuts,
+  SidebarRenameDialog,
+  useSidebarRowShortcuts,
+} from "@/components/SidebarShortcuts";
 import { handleSidebarTypeToFilter, SidebarFilterInput } from "@/components/SidebarFilterInput";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
@@ -34,6 +40,7 @@ import { SIDEBAR_FOOTER_PILL_CLASS } from "@/lib/changelog";
 import { cn } from "@/lib/utils";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useRouteFeatureIds } from "@/hooks/useRouteFeatureIds";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { useSidebarKeyboardNavigation } from "@/hooks/useSidebarKeyboardNavigation";
 import { useBrowserActivityBridge } from "@/hooks/useFeatureActivityCounts";
@@ -47,6 +54,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
   const { activeProjectId, effectiveFeatureId } = useSidebarActiveIds(selectedFeatureId);
   useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
+  useSidebarRowShortcuts();
   useBrowserActivityBridge();
   const displayAttributes = useSidebarDisplayAttributes();
   const typeToFilter = useSidebarOption("typeToFilter");
@@ -85,6 +93,14 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
               <SchedulesSidebarLink />
             </div>
             <SidebarFilterInput />
+            <SidebarAttentionShortcuts
+              activeFeatureId={effectiveFeatureId}
+              onSelectFeature={setSelectedFeatureId}
+            />
+            <SidebarForMeSection
+              activeFeatureId={effectiveFeatureId}
+              onSelectFeature={setSelectedFeatureId}
+            />
             <SidebarPinnedConversations
               activeFeatureId={effectiveFeatureId}
               onSelectFeature={setSelectedFeatureId}
@@ -98,6 +114,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
             </div>
           </div>
           <SidebarFooter />
+          <SidebarRenameDialog />
         </aside>
       </ShortcutHintsProvider>
     </SidebarConfigProvider>
@@ -124,22 +141,8 @@ function useSidebarActiveIds(selectedFeatureId: number | null): {
   activeProjectId: number | null;
   effectiveFeatureId: number | null;
 } {
-  const routerState = useRouterState();
-  const routeParams = (routerState.location.pathname.match(
-    /\/projects\/(\d+)(?:\/features\/(\d+))?/,
-  ) ?? []) as string[];
-  const activeProjectId = routeParams[1]
-    ? Number(routeParams[1])
-    : routerState.location.search?.projectId
-      ? Number(routerState.location.search.projectId)
-      : null;
-  const activeFeatureId = routeParams[2]
-    ? Number(routeParams[2])
-    : routerState.location.search?.featureId
-      ? Number(routerState.location.search.featureId)
-      : null;
-
-  return { activeProjectId, effectiveFeatureId: activeFeatureId ?? selectedFeatureId };
+  const { projectId, featureId } = useRouteFeatureIds();
+  return { activeProjectId: projectId, effectiveFeatureId: featureId ?? selectedFeatureId };
 }
 
 function SidebarSearchButton({ onSearch }: { onSearch: () => void }): ReactElement {

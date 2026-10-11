@@ -10,6 +10,8 @@ import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 import { useBrowserStore } from "@/stores/browser-store";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { resetPersistedIdSets } from "@/test/persisted-id-set-mock";
+import { DEFAULT_SIDEBAR_CONFIG } from "@/lib/sidebar-config";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
 
 vi.mock("@/hooks/usePersistedIdSet", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -217,6 +219,10 @@ vi.mock("@/stores/ws-session-store", () => ({
 
 describe("ProjectFeatures", () => {
   beforeEach(() => {
+    // Fixture dates are fixed in the past: keep every conversation out of "Dormant".
+    useSidebarConfigStore.setState({
+      config: { ...DEFAULT_SIDEBAR_CONFIG, dormantAfter: "never" },
+    });
     resetPersistedIdSets();
     resetMockIds();
     mockNavigate.mockClear();

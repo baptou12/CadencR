@@ -50,6 +50,9 @@ import { ProjectTreeDialogs } from "./ProjectTreeDialogs";
 import { FilteredProjectList } from "./FilteredProjectList";
 import type { ProjectFilterMatch } from "@/hooks/useSidebarFilterMatches";
 import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
+import { ProjectRowAttention } from "./SidebarAttentionProvider";
+import { useRevealActiveRow } from "@/hooks/useRevealActiveRow";
+import { useSidebarOption } from "@/stores/sidebar-config-store";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -125,7 +128,8 @@ function useProjectTreeController(props: ProjectTreeProps) {
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const onboarding = useNewProjectOnboarding();
   const mutations = useProjectTreeMutations(ordered.projects, onboarding.maybeOnboard);
-  const expansion = useProjectExpansion(props.activeProjectId);
+  const revealActive = useSidebarOption("revealActive");
+  const expansion = useProjectExpansion(revealActive === "off" ? null : props.activeProjectId);
   const { setExpanded: setProjectExpanded } = expansion;
   const [settingsProject, setSettingsProject] = useState<ProjectDialogTarget | null>(null);
   const [importProject, setImportProject] = useState<ProjectDialogTarget | null>(null);
@@ -186,6 +190,8 @@ export type ProjectTreeController = ReturnType<typeof useProjectTreeController>;
 export function ProjectTree(props: ProjectTreeProps) {
   const controller = useProjectTreeController(props);
   const filterQuery = useSidebarFilterQuery();
+  const treeRef = useRef<HTMLDivElement>(null);
+  useRevealActiveRow(treeRef, props.activeFeatureId);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
       <SidebarProjectsHeader
@@ -198,7 +204,7 @@ export function ProjectTree(props: ProjectTreeProps) {
         isRefreshing={controller.ordered.isRefreshing}
       />
       <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
-        <div className="flex min-w-0 flex-col gap-0.5 px-1">
+        <div ref={treeRef} className="flex min-w-0 flex-col gap-0.5 px-1">
           {filterQuery ? (
             <FilteredProjectList
               projects={controller.ordered.projects}
@@ -269,6 +275,7 @@ function ProjectTreeRow({
               <ProjectBadge projectId={project.id} className="max-w-none" />
             </span>
             <span className="min-w-0 truncate">{project.name}</span>
+            {!isExpanded && <ProjectRowAttention projectId={project.id} />}
             <ProjectRowActions project={project} controller={controller} />
           </ProjectRowButton>
         </ContextMenuTrigger>

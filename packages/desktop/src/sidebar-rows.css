@@ -17,6 +17,14 @@
   color: var(--acc-green);
 }
 
+/* A failed turn asks for a look, like a pending request: strong red glyph with
+ * the same soft halo as the pending indicators. */
+.sidebar-status-failed {
+  display: inline-flex;
+  color: var(--acc-red);
+  filter: drop-shadow(0 0 4px color-mix(in oklab, currentColor 45%, transparent));
+}
+
 @keyframes sidebar-status-spin {
   to {
     transform: rotate(360deg);

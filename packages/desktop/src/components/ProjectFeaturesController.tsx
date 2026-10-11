@@ -41,6 +41,7 @@ import { useArchiveFeatureAction } from "@/hooks/useArchiveFeatureAction";
 import { useArchivedSectionOpen } from "@/hooks/useArchivedSectionOpen";
 import { SIDEBAR_COLLAPSED_SUBTREES_KEY, usePersistedIdSet } from "@/hooks/usePersistedIdSet";
 import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
+import { useDormantSplit } from "@/hooks/useDormantSplit";
 import { useFeatureArchiveConfirmation } from "@/components/useFeatureArchiveConfirmation";
 
 export const ACTIVE_FEATURE_STATUS: FeatureStatus = "active";
@@ -107,14 +108,16 @@ function useProjectFeaturesData({
     }
     return { worktreeFeatureIds, liveWorktreeFeatureIds, worktreeByFeatureId };
   }, [featureWorktrees]);
-  const activeForest = useMemo(
+  const forest = useMemo(
     () => buildFeatureForest(shownFeatures.filter((feature) => !feature.is_pinned)),
     [shownFeatures],
   );
-  const orderedIds = useMemo(() => activeForest.map((node) => node.feature.id), [activeForest]);
+  const { awake: activeForest, dormant } = useDormantSplit(forest, activeFeatureId, isFiltering);
+  const dormantFeatures = useMemo(() => dormant.map((node) => node.feature), [dormant]);
+  const orderedIds = useMemo(() => forest.map((node) => node.feature.id), [forest]);
   const rootNodeByFeatureId = useMemo(
-    () => new Map(activeForest.map((node) => [node.feature.id, node])),
-    [activeForest],
+    () => new Map(forest.map((node) => [node.feature.id, node])),
+    [forest],
   );
   const groupedFeatures = useMemo(
     () =>
@@ -142,6 +145,7 @@ function useProjectFeaturesData({
     activeFeatures,
     archivedFeatures,
     browserCountsByFeatureId,
+    dormantFeatures,
     downloadCountsByFeatureId,
     features,
     getLiveTitle,
@@ -372,6 +376,7 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
     orderedIds: data.orderedIds,
     renderedActiveFeatureCount: data.shownFeatures.filter((feature) => !feature.is_pinned).length,
     archivedFeatures: data.archivedFeatures,
+    dormantFeatures: data.dormantFeatures,
     confirmFeatureId,
     confirmation,
     flatActiveFeatures: data.flatActiveFeatures,

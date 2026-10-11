@@ -11,9 +11,11 @@ import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generate
 import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMenu";
 import { FeatureRowActions, FeatureRowMetaLine } from "@/components/ProjectFeatureRowParts";
 import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
+import { SidebarPendingRequestLine } from "@/components/SidebarPendingRequestLine";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
+import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",
@@ -129,6 +131,7 @@ function FeatureRowDetails({
           onArchiveOrDelete={onArchiveOrDelete}
         />
       </FeatureRowTitleLine>
+      <SidebarPendingRequestLine attention={state.attention} />
       <FeatureRowMetaLine
         feature={feature}
         worktree={worktree}
@@ -247,6 +250,11 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
   }, [feature, onNavigate]);
 
   const handleOpenPort = useOpenFeaturePort(feature, onNavigate);
+  useSidebarRowActionListener(navRef, {
+    label: () => onStartLabelEdit(feature),
+    archive: () => props.onArchiveOrDelete(feature.id),
+    pin: state.isArchived ? undefined : () => props.onTogglePin(feature.id, !state.isPinned),
+  });
 
   return (
     <ContextMenu>

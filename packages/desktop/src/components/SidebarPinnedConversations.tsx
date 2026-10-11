@@ -1,19 +1,15 @@
 import { useCallback, useMemo, useRef, type ReactElement } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { PinIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
   useListPinnedFeatures,
-  useListProjects,
   useUpdateFeaturePinned,
   type Feature,
   type FeatureWorktreeInfo,
-  type Project,
 } from "@/api/generated";
 import { PinnedConversationRow } from "@/components/PinnedConversationRow";
-import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
-import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
+import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { useReorderAnimation } from "@/hooks/useReorderAnimation";
@@ -44,7 +40,6 @@ export function SidebarPinnedConversations({
   activeFeatureId: number | null;
   onSelectFeature: (featureId: number) => void;
 }): ReactElement | null {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: fetchedPinned = EMPTY_FEATURES } = useListPinnedFeatures();
   const orderedPinned = useStableFeatureOrder(fetchedPinned);
@@ -53,36 +48,8 @@ export function SidebarPinnedConversations({
   const listRef = useRef<HTMLDivElement>(null);
   const pinnedIds = useMemo(() => pinnedFeatures.map((feature) => feature.id), [pinnedFeatures]);
   useReorderAnimation(listRef, pinnedIds);
-  const { data: projects = [] } = useListProjects();
   const portsByFeatureId = useFeaturePorts();
-
-  const projectsById = useMemo(() => {
-    const map = new Map<number, Project>();
-    for (const project of projects) map.set(project.id, project);
-    return map;
-  }, [projects]);
-
-  // Keep navigation stable across active-row changes: read the live active id
-  // through a ref so the click handler's identity doesn't churn every render.
-  const activeFeatureIdRef = useRef(activeFeatureId);
-  activeFeatureIdRef.current = activeFeatureId;
-
-  const handleNavigate = useCallback(
-    (feature: Feature): void => {
-      const project = projectsById.get(feature.project_id);
-      if (!project) return;
-      onSelectFeature(feature.id);
-      const focusTab = getFocusedTabForFeature(activeFeatureIdRef.current);
-      void navigate({
-        to: "/ws-session/$sessionId",
-        params: { sessionId: wsSessionIdFromFeature(feature.id) },
-        search: focusTab
-          ? { cwd: project.path, featureId: feature.id, projectId: project.id, focusTab }
-          : { cwd: project.path, featureId: feature.id, projectId: project.id },
-      });
-    },
-    [navigate, projectsById, onSelectFeature],
-  );
+  const handleNavigate = useCrossProjectNavigate(activeFeatureId, onSelectFeature);
 
   const { mutate: updateFeaturePinned } = useUpdateFeaturePinned({
     mutation: {

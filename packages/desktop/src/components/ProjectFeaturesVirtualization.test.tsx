@@ -4,6 +4,7 @@ import { ProjectFeatures } from "./ProjectFeatures";
 
 const { controller } = vi.hoisted(() => ({
   controller: {
+    dormantFeatures: [] as unknown[],
     actions: { deleteFeature: vi.fn(), updateStatus: vi.fn() },
     renderedActiveFeatureCount: 1_001,
     orderedIds: [] as number[],
@@ -25,6 +26,7 @@ vi.mock("@/components/ArchiveFeatureDialog", () => ({ ArchiveFeatureDialog: () =
 vi.mock("@/components/ConfirmDialog", () => ({ ConfirmDialog: () => null }));
 vi.mock("@/components/ArchivedFeatureList", () => ({
   ArchivedFeatureList: () => <div data-testid="plain-archived-features" />,
+  ArchivedFeatureSection: () => null,
 }));
 vi.mock("@/components/VirtualizedArchivedFeatureList", () => ({
   VirtualizedArchivedFeatureList: () => <div data-testid="virtual-archived-features" />,

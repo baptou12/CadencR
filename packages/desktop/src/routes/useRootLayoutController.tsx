@@ -21,6 +21,7 @@ import { useRemotePairingToast } from "@/hooks/useRemotePairingToast";
 import { useRemoteSleepGuard } from "@/hooks/useRemoteSleepGuard";
 import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { useThemeSync } from "@/hooks/useTheme";
+import { useRouteFeatureIds } from "@/hooks/useRouteFeatureIds";
 import { useVisualViewportHeight } from "@/hooks/useVisualViewportHeight";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 import { resolveFeatureArchiveAction } from "@/lib/feature-archive-decision";
@@ -70,17 +71,7 @@ function useRootRoute(closeMobileDrawer: () => void) {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
   const search = routerState.location.search as Record<string, unknown> | undefined;
-  const routeParams = (pathname.match(/\/projects\/(\d+)(?:\/features\/(\d+))?/) ?? []) as string[];
-  const activeProjectId = routeParams[1]
-    ? Number(routeParams[1])
-    : search?.projectId
-      ? Number(search.projectId)
-      : null;
-  const activeFeatureId = routeParams[2]
-    ? Number(routeParams[2])
-    : search?.featureId
-      ? Number(search.featureId)
-      : null;
+  const { projectId: activeProjectId, featureId: activeFeatureId } = useRouteFeatureIds();
   useEffect(() => {
     if (!isMeaningfulScreenPath(pathname)) return;
     useLastScreenStore.getState().setLastScreen({ pathname, search: search ?? {} });

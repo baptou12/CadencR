@@ -4,7 +4,7 @@ import { deriveAttention } from "./sidebar-attention";
 const row = (featureId: number, status: "idle" | "agent" | "question", isUnread = false) => ({
   featureId,
   status,
-  isUnread,
+  mark: isUnread ? ("unread" as const) : ("none" as const),
 });
 
 describe("deriveAttention", () => {
@@ -27,5 +27,15 @@ describe("deriveAttention", () => {
 
   it("keeps the row itself on a tie", () => {
     expect(deriveAttention(row(1, "agent"), [row(2, "agent")]).sourceFeatureId).toBe(1);
+  });
+
+  it("puts an unseen failure above work and below a pending request", () => {
+    const failed = { featureId: 2, status: "idle" as const, mark: "failed" as const };
+    expect(deriveAttention(failed).state).toBe("failed");
+    expect(deriveAttention(row(1, "agent"), [failed])).toEqual({
+      state: "failed",
+      sourceFeatureId: 2,
+    });
+    expect(deriveAttention(row(1, "question"), [failed]).state).toBe("waiting");
   });
 });

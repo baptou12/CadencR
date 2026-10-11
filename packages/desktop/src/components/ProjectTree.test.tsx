@@ -6,6 +6,8 @@ import userEvent from "@testing-library/user-event";
 import { ProjectTree } from "./ProjectTree";
 import { resetMockIds } from "@/test-fixtures";
 import { resetPersistedIdSets } from "@/test/persisted-id-set-mock";
+import { DEFAULT_SIDEBAR_CONFIG } from "@/lib/sidebar-config";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
 
 vi.mock("@/hooks/usePersistedIdSet", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -170,6 +172,10 @@ function mockKeyboardLayout(
 
 describe("ProjectTree", () => {
   beforeEach(() => {
+    // Fixture dates are fixed in the past: keep every conversation out of "Dormant".
+    useSidebarConfigStore.setState({
+      config: { ...DEFAULT_SIDEBAR_CONFIG, dormantAfter: "never" },
+    });
     resetPersistedIdSets();
     resetMockIds();
     mockNavigate.mockClear();

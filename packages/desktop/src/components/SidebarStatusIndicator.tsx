@@ -1,13 +1,14 @@
 import { memo, type ReactElement } from "react";
-import { Check } from "lucide-react";
+import { Check, CircleAlert } from "lucide-react";
 import { SidebarPendingGatePopover } from "@/components/SidebarPendingGatePopover";
-import type { Attention } from "@/lib/sidebar-attention";
+import { isStrongAttention, type Attention } from "@/lib/sidebar-attention";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
+import { useOwnsGateAutoOpen } from "@/stores/sidebar-surface-store";
 
 /**
  * Fixed leading slot: status stays legible even when provider branding is
- * hidden. A pending request always shows (and stays answerable from here),
- * whatever the status style: the sidebar never hides what is waiting on you.
+ * hidden. A pending request (answerable from here) and a failed turn always
+ * show, whatever the status style: the sidebar never hides what needs you.
  */
 export const SidebarStatusIndicator = memo(function SidebarStatusIndicator({
   attention,
@@ -19,16 +20,16 @@ export const SidebarStatusIndicator = memo(function SidebarStatusIndicator({
   onOpenConversation: () => void;
 }): ReactElement | null {
   const style = useSidebarOption("status");
-  if (style === "hidden" && attention.state !== "waiting") return null;
+  if (style === "hidden" && !isStrongAttention(attention.state)) return null;
   return (
     <span
       data-sidebar-status={attention.state}
       className="inline-flex size-3.5 shrink-0 items-center justify-center"
     >
       {attention.state === "waiting" ? (
-        <SidebarPendingGatePopover
+        <WaitingIndicator
           featureId={attention.sourceFeatureId}
-          allowAutoOpen={!isActive}
+          isActive={isActive}
           onOpenConversation={onOpenConversation}
         />
       ) : style === "dot" ? (
@@ -40,9 +41,34 @@ export const SidebarStatusIndicator = memo(function SidebarStatusIndicator({
   );
 });
 
+/**
+ * The gate popover, auto-opening only on the surface that owns it (a waiting
+ * conversation can show in the rail, "For me" and the tree at once) and never
+ * for the conversation already open.
+ */
+function WaitingIndicator({
+  featureId,
+  isActive,
+  onOpenConversation,
+}: {
+  featureId: number;
+  isActive: boolean;
+  onOpenConversation: () => void;
+}): ReactElement {
+  const ownsAutoOpen = useOwnsGateAutoOpen();
+  return (
+    <SidebarPendingGatePopover
+      featureId={featureId}
+      allowAutoOpen={ownsAutoOpen && !isActive}
+      onOpenConversation={onOpenConversation}
+    />
+  );
+}
+
 type QuietState = Exclude<Attention["state"], "waiting">;
 
 const STATUS_LABELS: Record<QuietState, { label: string; title?: string }> = {
+  failed: { label: "Agent turn failed", title: "Agent stopped on an error · Not seen yet" },
   working: { label: "Agent working", title: "Agent working" },
   unread: { label: "Unread agent messages", title: "Agent finished · Unread messages" },
   idle: { label: "Agent idle" },
@@ -60,12 +86,20 @@ function StatusShape({ state }: { state: QuietState }): ReactElement {
       </span>
     );
   }
+  if (state === "failed") {
+    return (
+      <span role="img" aria-label={label} title={title} className="sidebar-status-failed">
+        <CircleAlert aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+      </span>
+    );
+  }
   return (
     <span role="img" aria-label={label} className="size-1.5 rounded-full bg-muted-foreground/30" />
   );
 }
 
 const DOT_CLASS: Record<QuietState, string> = {
+  failed: "size-2 bg-(--acc-red)",
   working: "sidebar-status-dot-working size-2 bg-blue-500",
   unread: "size-2 bg-(--acc-green)",
   idle: "size-1.5 bg-muted-foreground/30",

@@ -5,12 +5,14 @@ import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { ProjectBadge } from "@/components/ProjectBadge";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
+import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
 import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
 import { NO_PORTS } from "@/hooks/useFeaturePorts";
 import { useBrowserStore } from "@/stores/browser-store";
 import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
 import { FeatureRowMetaLine } from "@/components/ProjectFeatureRowParts";
 import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
+import { SidebarPendingRequestLine } from "@/components/SidebarPendingRequestLine";
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 
 interface PinnedConversationRowProps {
@@ -22,11 +24,13 @@ interface PinnedConversationRowProps {
   hasLiveWorktree?: boolean;
   worktree?: FeatureWorktreeInfo;
   onNavigate: (feature: Feature) => void;
-  onUnpin: (featureId: number) => void;
+  /** Pinned rows offer unpinning on hover; other cross-project rows (For me) pass nothing. */
+  onUnpin?: (featureId: number) => void;
 }
 
 /**
- * A single row in the global "Pinned" section above the project list. It shows
+ * A conversation row outside its project: the global "Pinned" section and the
+ * "For me" block above the project list. It shows
  * the same title and meta line as {@link ProjectFeatureRow} (label, diff, PR,
  * shells, ports) so a conversation reads the same wherever it appears; label
  * editing and the context menu stay on the project row. The project color dot
@@ -59,6 +63,8 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
   );
   const { isActive, prefetchFeature } = state;
   const handleOpenPort = useOpenFeaturePort(feature, onNavigate);
+  // Archive and label live on the project row; a pinned row can still unpin.
+  useSidebarRowActionListener(navRef, { pin: onUnpin && (() => onUnpin(feature.id)) });
   const handleOpenConversation = useCallback((): void => {
     onNavigate(feature);
   }, [feature, onNavigate]);
@@ -107,8 +113,9 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
           badgeRef={badgeRef}
           onOpenConversation={handleOpenConversation}
         >
-          <UnpinAction featureId={feature.id} onUnpin={onUnpin} />
+          {onUnpin && <UnpinAction featureId={feature.id} onUnpin={onUnpin} />}
         </FeatureRowTitleLine>
+        <SidebarPendingRequestLine attention={state.attention} />
         <FeatureRowMetaLine
           feature={feature}
           worktree={worktree}

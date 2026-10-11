@@ -12,136 +12,36 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { UsageSegmentedControl } from "@/components/usage/UsageSegmentedControl";
 import {
-  UsageSegmentedControl,
-  type SegmentedOption,
-} from "@/components/usage/UsageSegmentedControl";
+  CHOICE_ROWS,
+  ROW_ELEMENTS,
+  type ChoiceId,
+  type ChoiceRow,
+} from "@/components/sidebar-display-rows";
 import {
-  useResetSidebarConfig,
   useSetSidebarOption,
+  useSidebarConfigWrites,
   useSidebarSettings,
 } from "@/hooks/useSidebarSettings";
-import type { SidebarConfig, SidebarOptionId } from "@/lib/sidebar-config";
+import { matchSidebarPreset, SIDEBAR_PRESETS, type SidebarPresetId } from "@/lib/sidebar-presets";
 import { cn } from "@/lib/utils";
-
-type ChoiceId = {
-  [K in SidebarOptionId]: SidebarConfig[K] extends string ? K : never;
-}[SidebarOptionId];
-type ToggleId = {
-  [K in SidebarOptionId]: SidebarConfig[K] extends boolean ? K : never;
-}[SidebarOptionId];
-
-interface ChoiceRow<K extends ChoiceId> {
-  id: K;
-  label: string;
-  /** Shown on the Settings page, where there is room to explain. */
-  description: string;
-  options: readonly SegmentedOption<SidebarConfig[K]>[];
-}
-
-// Mapped per key, so each row's options must be that option's own values.
-export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][] = [
-  {
-    id: "density",
-    description: "Height of each row: 28, 36 or 44 px.",
-    label: "Density",
-    options: [
-      { value: "compact", label: "Compact" },
-      { value: "comfortable", label: "Comfortable" },
-      { value: "spacious", label: "Spacious" },
-    ],
-  },
-  {
-    id: "fontSize",
-    description: "Size of conversation titles, in pixels.",
-    label: "Text size",
-    options: [
-      { value: "12", label: "12" },
-      { value: "12.5", label: "12.5" },
-      { value: "13", label: "13" },
-      { value: "14", label: "14" },
-    ],
-  },
-  {
-    id: "titleLines",
-    description: "How much of a long title shows.",
-    label: "Title",
-    options: [
-      { value: "one", label: "1 line" },
-      { value: "two", label: "2 lines" },
-      { value: "hover", label: "Full on hover", title: "One line, the full title on hover" },
-    ],
-  },
-  {
-    id: "titleSource",
-    description: "Lead with the conversation title, its worktree branch, or its worktree folder.",
-    label: "Title from",
-    options: [
-      { value: "title", label: "Title" },
-      { value: "branch", label: "Branch", title: "The worktree branch, else the title" },
-      { value: "folder", label: "Folder", title: "The worktree folder, else the title" },
-    ],
-  },
-  {
-    id: "status",
-    description: "How working, unread and idle conversations show. Pending requests always show.",
-    label: "Status",
-    options: [
-      { value: "shape", label: "Shape" },
-      { value: "dot", label: "Dot" },
-      { value: "hidden", label: "Hidden", title: "Pending requests stay visible" },
-    ],
-  },
-  {
-    id: "time",
-    description: "Last activity on each row. Hovering a row swaps it for the row actions.",
-    label: "Time",
-    options: [
-      { value: "none", label: "None" },
-      { value: "relative", label: "Relative" },
-      { value: "absolute", label: "Absolute" },
-    ],
-  },
-  {
-    id: "label",
-    description: "How a conversation label shows under its title.",
-    label: "Label",
-    options: [
-      { value: "chip", label: "Chip" },
-      { value: "dot", label: "Dot" },
-      { value: "hidden", label: "Hidden" },
-    ],
-  },
-  {
-    id: "provider",
-    description:
-      "The harness logo at the end of each row, optionally with the model under the title.",
-    label: "Provider",
-    options: [
-      { value: "logo", label: "Logo" },
-      { value: "logo_model", label: "Logo + model" },
-      { value: "hidden", label: "Hidden" },
-    ],
-  },
-];
-
-const ROW_ELEMENTS: readonly { id: ToggleId; label: string }[] = [
-  { id: "worktreeIcon", label: "Worktree icon" },
-  { id: "branch", label: "Branch" },
-  { id: "diff", label: "Diff stats" },
-  { id: "pr", label: "Pull request" },
-  { id: "ports", label: "Ports" },
-  { id: "activity", label: "Shells & tabs" },
-];
 
 /** State and actions shared by the popover form and the Settings section. */
 export function useSidebarDisplayForm() {
   const { config, isFetched } = useSidebarSettings();
   const setOption = useSetSidebarOption();
-  const { reset, isResetting } = useResetSidebarConfig();
+  const { reset, applyPreset, isApplying } = useSidebarConfigWrites();
   return useMemo(
-    () => ({ config, setOption, reset, isResetting, disabled: !isFetched || isResetting }),
-    [config, setOption, reset, isResetting, isFetched],
+    () => ({
+      config,
+      setOption,
+      reset,
+      applyPreset,
+      isApplying,
+      disabled: !isFetched || isApplying,
+    }),
+    [config, setOption, reset, applyPreset, isApplying, isFetched],
   );
 }
 
@@ -160,6 +60,27 @@ export function ChoiceControl<K extends ChoiceId>({
       value={form.config[row.id]}
       options={row.options}
       onChange={(value) => form.setOption(row.id, value)}
+    />
+  );
+}
+
+const PRESET_OPTIONS = SIDEBAR_PRESETS.map((preset) => ({
+  value: preset.id,
+  label: preset.label,
+  title: preset.description,
+}));
+
+/** The built-in presets; none is selected once an option is customized. */
+export function PresetControl({ form }: { form: SidebarDisplayForm }): ReactElement {
+  const current = matchSidebarPreset(form.config);
+  return (
+    <UsageSegmentedControl<SidebarPresetId | "custom">
+      ariaLabel="Preset"
+      value={current ?? "custom"}
+      options={PRESET_OPTIONS}
+      onChange={(value) => {
+        if (value !== "custom") form.applyPreset(value);
+      }}
     />
   );
 }
@@ -199,7 +120,7 @@ export function ResetDisplayOptionsButton({
       {form.disabled ? (
         <LoaderCircle
           className="animate-spin"
-          aria-label={form.isResetting ? "Resetting" : "Loading options"}
+          aria-label={form.isApplying ? "Applying" : "Loading options"}
         />
       ) : (
         <RotateCcw />
@@ -216,6 +137,7 @@ export function ResetDisplayOptionsButton({
 export function SidebarDisplayOptionsForm({ className }: { className?: string }): ReactElement {
   const form = useSidebarDisplayForm();
   const filterId = useId();
+  const forMeId = useId();
 
   return (
     <fieldset disabled={form.disabled} className={cn("flex flex-col gap-3", className)}>
@@ -229,6 +151,9 @@ export function SidebarDisplayOptionsForm({ className }: { className?: string })
           title="Restore every display option to its default"
         />
       </div>
+      <OptionRow label="Preset">
+        <PresetControl form={form} />
+      </OptionRow>
       {CHOICE_ROWS.map((row) => (
         <OptionRow key={row.id} label={row.label}>
           <ChoiceControl form={form} row={row} />
@@ -238,6 +163,14 @@ export function SidebarDisplayOptionsForm({ className }: { className?: string })
         <span className="text-[11px] text-muted-foreground">Show in rows</span>
         <RowElementGrid form={form} className="gap-x-3 gap-y-1.5" />
       </div>
+      <OptionRow label="For me block" htmlFor={forMeId}>
+        <Switch
+          id={forMeId}
+          size="sm"
+          checked={form.config.forMe}
+          onCheckedChange={(checked) => form.setOption("forMe", checked)}
+        />
+      </OptionRow>
       <OptionRow label="Type to filter" htmlFor={filterId}>
         <Switch
           id={filterId}
@@ -278,7 +211,12 @@ export function SidebarDisplayOptionsPopover({ className }: { className?: string
           <SlidersHorizontal />
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="start" sideOffset={sideOffset} className="w-[22rem] p-3">
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={sideOffset}
+        className="max-h-(--radix-popover-content-available-height) w-[24rem] overflow-y-auto p-3"
+      >
         <SidebarDisplayOptionsForm />
       </PopoverContent>
     </Popover>

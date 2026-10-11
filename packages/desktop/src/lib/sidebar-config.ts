@@ -49,6 +49,12 @@ export const SIDEBAR_OPTIONS = {
   label: enumOption("sidebar_row_label", ["chip", "dot", "hidden"], "chip"),
   provider: enumOption("sidebar_row_provider", ["logo", "logo_model", "hidden"], "logo"),
   typeToFilter: boolOption("sidebar_type_to_filter", true),
+  pendingRequest: boolOption("sidebar_row_pending_request", true),
+  projectBadges: enumOption("sidebar_project_badges", ["count", "dot", "none"], "count"),
+  forMe: boolOption("sidebar_block_for_me", true),
+  dormantAfter: enumOption("sidebar_dormant_after", ["never", "3", "7", "14", "30"], "7"),
+  revealActive: enumOption("sidebar_reveal_active", ["scroll", "expand", "off"], "scroll"),
+  rail: enumOption("sidebar_rail", ["projects", "conversations", "attention", "none"], "projects"),
 } as const;
 
 type OptionValue<O> = O extends EnumOption<infer V> ? V : O extends BoolOption ? boolean : never;

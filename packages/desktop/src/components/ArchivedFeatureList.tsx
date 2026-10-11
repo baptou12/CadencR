@@ -7,19 +7,24 @@ interface ArchivedFeatureSectionProps {
   expanded: boolean;
   onToggle: () => void;
   children: ReactNode;
+  /** The fold's name; "Dormant" reuses this section for idle conversations. */
+  label?: string;
 }
 
+/** A folded group of a project's conversations behind a "Label (N)" divider. */
 export function ArchivedFeatureSection({
   features,
   expanded,
   onToggle,
   children,
+  label = "Archived",
 }: ArchivedFeatureSectionProps) {
   if (features.length === 0) return null;
   return (
     <>
       <button
         type="button"
+        aria-expanded={expanded}
         className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         onClick={onToggle}
       >
@@ -29,7 +34,9 @@ export function ArchivedFeatureSection({
         ) : (
           <ChevronRightIcon className="size-3 shrink-0" />
         )}
-        <span className="shrink-0">Archived ({features.length})</span>
+        <span className="shrink-0">
+          {label} ({features.length})
+        </span>
         <span className="flex-1 border-t border-border/50" />
       </button>
       {expanded && children}

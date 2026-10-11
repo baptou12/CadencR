@@ -13,7 +13,7 @@ import { toast } from "sonner";
 
 interface UseFeaturePendingGateOptions {
   featureId: number;
-  /** Fetch only while the popover is open — closed rows stay silent. */
+  /** Fetch only when shown: the open popover or the row's request line. */
   enabled: boolean;
 }
 
@@ -39,7 +39,9 @@ export function useFeaturePendingGate({
     queryFn: ({ signal }) => getPendingGate(featureId, signal),
     enabled,
     retry: false,
-    staleTime: 0,
+    // A request id names one immutable request: rows remounting (scroll,
+    // expand) reuse its payload. Without an id, always ask again.
+    staleTime: liveRequestId ? Infinity : 0,
     // Pending gates are driven by WS status; window focus refetch is wasteful.
     refetchOnWindowFocus: false,
     // Drop unused payloads quickly — request ids rotate often.

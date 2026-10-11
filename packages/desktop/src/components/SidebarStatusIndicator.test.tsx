@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
+import { DEFAULT_SIDEBAR_CONFIG } from "@/lib/sidebar-config";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
+import { SidebarContext } from "./SidebarContext";
+import { SidebarSurfaceContext } from "@/stores/sidebar-surface-store";
 import { SidebarStatusIndicator } from "./SidebarStatusIndicator";
 
 const gate = vi.hoisted(() => ({
@@ -25,6 +29,8 @@ vi.mock("@/hooks/useFeaturePendingGate", () => ({
 
 describe("sidebar status", () => {
   beforeEach(() => {
+    // No "For me" block here: the tree owns the gate popover's auto-open.
+    useSidebarConfigStore.setState({ config: { ...DEFAULT_SIDEBAR_CONFIG, forMe: false } });
     gate.setOpen.mockClear();
     gate.usePopoverOpen.mockReset().mockReturnValue({
       open: false,
@@ -80,5 +86,35 @@ describe("sidebar status", () => {
   it("suppresses automatic gate popovers for the active conversation", () => {
     render(<SidebarStatusIndicator attention={waiting} isActive onOpenConversation={vi.fn()} />);
     expect(gate.usePopoverOpen).toHaveBeenCalledWith(42, false);
+  });
+
+  it("auto-opens on one surface only: For me over the tree, the rail when collapsed", () => {
+    useSidebarConfigStore.setState({
+      config: { ...DEFAULT_SIDEBAR_CONFIG, rail: "attention" },
+    });
+    const indicator = (
+      <SidebarStatusIndicator attention={waiting} isActive={false} onOpenConversation={vi.fn()} />
+    );
+    const { rerender } = render(indicator);
+    expect(gate.usePopoverOpen).toHaveBeenLastCalledWith(42, false);
+
+    rerender(
+      <SidebarSurfaceContext.Provider value="for-me">{indicator}</SidebarSurfaceContext.Provider>,
+    );
+    expect(gate.usePopoverOpen).toHaveBeenLastCalledWith(42, true);
+
+    const collapsed = { collapsed: true, setCollapsed: vi.fn() };
+    rerender(
+      <SidebarContext.Provider value={collapsed}>
+        <SidebarSurfaceContext.Provider value="for-me">{indicator}</SidebarSurfaceContext.Provider>
+      </SidebarContext.Provider>,
+    );
+    expect(gate.usePopoverOpen).toHaveBeenLastCalledWith(42, false);
+    rerender(
+      <SidebarContext.Provider value={collapsed}>
+        <SidebarSurfaceContext.Provider value="rail">{indicator}</SidebarSurfaceContext.Provider>
+      </SidebarContext.Provider>,
+    );
+    expect(gate.usePopoverOpen).toHaveBeenLastCalledWith(42, true);
   });
 });

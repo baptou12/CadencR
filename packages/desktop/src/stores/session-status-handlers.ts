@@ -36,7 +36,8 @@ export function isPendingKind(val: unknown): val is PendingKind {
   return typeof val === "string" && (PENDING_KIND_VALUES as string[]).includes(val);
 }
 
-function lookupFeature(featureId: number): Feature | undefined {
+/** A feature's record from any loaded project list, without a request. */
+export function lookupFeature(featureId: number): Feature | undefined {
   // Prefix-match all per-project listFeatures caches via the orval-generated key.
   const queries = queryClient.getQueriesData<Feature[]>({ queryKey: getListFeaturesQueryKey() });
   for (const [, data] of queries) {
@@ -50,7 +51,10 @@ export function notifyTransition(
   featureId: number,
   prevStatus: LiveAgentStatus | undefined,
   nextStatus: LiveAgentStatus,
+  failed = false,
 ): void {
+  const endedTurn = nextStatus === "idle" && (failed || prevStatus === "agent");
+  markUnseenOutcome(featureId, nextStatus, endedTurn, failed);
   const feature = lookupFeature(featureId);
   if (!feature) return;
   const opts = {
@@ -61,14 +65,31 @@ export function notifyTransition(
   };
   if (nextStatus === "question" && prevStatus !== "question") {
     notifyAgentNeedsInput(opts);
-  } else if (nextStatus === "idle" && prevStatus === "agent") {
-    notifyAgentDone({ ...opts, status: "completed" });
-    // The agent finished while the user wasn't looking — flag the sidebar row
-    // unread. (If they're already viewing it, there's nothing unread.)
-    if (!isViewingFeature(featureId)) {
-      useUnreadStore.getState().markUnread(featureId);
-    }
+  } else if (endedTurn) {
+    notifyAgentDone({ ...opts, status: failed ? "error" : "completed" });
   }
+}
+
+/**
+ * Flag a turn that ended while the user wasn't looking: unread when it
+ * completed, failed when it stopped on an error. (If they're already viewing
+ * it, there's nothing unseen.) Independent of the feature lists, so a
+ * collapsed project's conversations are flagged too.
+ */
+function markUnseenOutcome(
+  featureId: number,
+  nextStatus: LiveAgentStatus,
+  endedTurn: boolean,
+  failed: boolean,
+): void {
+  const marks = useUnreadStore.getState();
+  if (nextStatus === "agent") {
+    marks.clearFailed(featureId);
+    return;
+  }
+  if (!endedTurn || isViewingFeature(featureId)) return;
+  if (failed) marks.markFailed(featureId);
+  else marks.markUnread(featureId);
 }
 
 /**
@@ -146,6 +167,8 @@ export function applyUpdate(
   featureId: number | null;
   prevStatus: LiveAgentStatus | undefined;
   nextStatus: LiveAgentStatus | null;
+  /** The update ended a failed turn (`outcome: "failed"`). */
+  failed: boolean;
   entry: Pick<SessionStatusEntry, "status" | "kind" | "requestId" | "turnStartedAtMs"> | null;
 } {
   const sessionId = typeof payload.session_id === "number" ? payload.session_id : null;
@@ -160,6 +183,7 @@ export function applyUpdate(
       featureId: null,
       prevStatus: undefined,
       nextStatus: null,
+      failed: false,
       entry: null,
     };
   }
@@ -170,11 +194,13 @@ export function applyUpdate(
       featureId,
       prevStatus: undefined,
       nextStatus: null,
+      failed: false,
       entry: null,
     };
   }
   const kind = isPendingKind(payload.kind) ? payload.kind : null;
   const requestId = typeof payload.request_id === "string" ? payload.request_id : null;
+  const failed = payload.status === "idle" && payload.outcome === "failed";
 
   const existing = prev[sessionId];
   if (existing && seq <= existing.seq) {
@@ -185,6 +211,7 @@ export function applyUpdate(
       featureId,
       prevStatus: existing.status,
       nextStatus: null,
+      failed: false,
       entry: null,
     };
   }
@@ -204,6 +231,7 @@ export function applyUpdate(
       featureId,
       prevStatus: existing.status,
       nextStatus: payload.status,
+      failed,
       entry: { status: payload.status, kind, requestId, turnStartedAtMs },
     };
   }
@@ -224,6 +252,7 @@ export function applyUpdate(
     featureId,
     prevStatus: existing?.status,
     nextStatus: payload.status,
+    failed,
     entry: { status: payload.status, kind, requestId, turnStartedAtMs },
   };
 }

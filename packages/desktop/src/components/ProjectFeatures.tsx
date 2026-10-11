@@ -1,6 +1,6 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
-import { ArchivedFeatureList } from "@/components/ArchivedFeatureList";
+import { ArchivedFeatureList, ArchivedFeatureSection } from "@/components/ArchivedFeatureList";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   useProjectFeaturesController,
@@ -42,6 +42,7 @@ export function ProjectFeatures(props: ProjectFeaturesProps) {
           {controller.flatActiveFeatures.map(controller.renderSubtree)}
         </>
       )}
+      <DormantFeatureList controller={controller} />
       <ProjectFeatureDialogs projectId={props.projectId} controller={controller} />
       {virtualizeArchived ? (
         <VirtualizedArchivedFeatureList
@@ -60,6 +61,21 @@ export function ProjectFeatures(props: ProjectFeaturesProps) {
         />
       )}
     </div>
+  );
+}
+
+/** Conversations idle for a while, folded until asked for (G9). */
+function DormantFeatureList({ controller }: { controller: ProjectFeaturesController }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <ArchivedFeatureSection
+      label="Dormant"
+      features={controller.dormantFeatures}
+      expanded={expanded}
+      onToggle={() => setExpanded((open) => !open)}
+    >
+      {controller.dormantFeatures.map(controller.renderSubtree)}
+    </ArchivedFeatureSection>
   );
 }
 

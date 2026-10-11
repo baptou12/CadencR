@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { deriveAttention, type Attention } from "@/lib/sidebar-attention";
+import { deriveAttention, type Attention, type FeatureMark } from "@/lib/sidebar-attention";
 import { aggregateFeatureStatuses, useFeatureStatus } from "@/stores/session-status-selectors";
 import { useSessionStatusStore } from "@/stores/session-status-store";
-import { useUnreadStore } from "@/stores/unread-store";
+import { featureMark, useUnreadStore } from "@/stores/unread-store";
 import type { LiveAgentStatus } from "@/types/agent";
 
 const NO_IDS: readonly number[] = [];
 const NO_STATUSES: readonly LiveAgentStatus[] = [];
-const NO_FLAGS: readonly boolean[] = [];
+const NO_MARKS: readonly FeatureMark[] = [];
 
 /**
  * What a sidebar row should signal: its own state, or the most urgent one among
@@ -21,27 +21,27 @@ export function useFeatureAttention(
   hiddenIds: readonly number[] = NO_IDS,
 ): Attention {
   const { status } = useFeatureStatus(featureId);
-  const isUnread = useUnreadStore((state) => state.byFeature[featureId] === true);
+  const mark = useUnreadStore((state) => featureMark(state, featureId));
   const hiddenStatuses = useSessionStatusStore(
     useShallow((state) =>
       hiddenIds.length === 0 ? NO_STATUSES : aggregateFeatureStatuses(state.bySession, hiddenIds),
     ),
   );
-  const hiddenUnread = useUnreadStore(
+  const hiddenMarks = useUnreadStore(
     useShallow((state) =>
-      hiddenIds.length === 0 ? NO_FLAGS : hiddenIds.map((id) => state.byFeature[id] === true),
+      hiddenIds.length === 0 ? NO_MARKS : hiddenIds.map((id) => featureMark(state, id)),
     ),
   );
   return useMemo(
     () =>
       deriveAttention(
-        { featureId, status, isUnread },
+        { featureId, status, mark },
         hiddenIds.map((id, position) => ({
           featureId: id,
           status: hiddenStatuses[position] ?? "idle",
-          isUnread: hiddenUnread[position] ?? false,
+          mark: hiddenMarks[position] ?? "none",
         })),
       ),
-    [featureId, status, isUnread, hiddenIds, hiddenStatuses, hiddenUnread],
+    [featureId, status, mark, hiddenIds, hiddenStatuses, hiddenMarks],
   );
 }
