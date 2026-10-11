@@ -166,6 +166,11 @@ impl WsSessionPersistence {
         .bind(message.id)
         .execute(&mut *tx)
         .await?;
+        // Only the first delivery of a prompt counts: a retry reuses its UUID.
+        if message.inserted {
+            crate::domain::usage_stats::repository::count_user_message(&mut *tx, session_id)
+                .await?;
+        }
         tx.commit().await?;
         Ok(message)
     }
