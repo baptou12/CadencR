@@ -17,6 +17,7 @@ import {
   SAMPLE_GATES,
   SAMPLE_NEWEST_REQUEST_FEATURE_ID,
   SAMPLE_PROJECT_COLORS,
+  SAMPLE_PROJECT_ICONS,
   SAMPLE_SUMMARIES,
   SAMPLE_PROJECTS,
 } from "@/lib/sidebar-sample-data";
@@ -142,6 +143,7 @@ function useSampleState(enabled: boolean): SidebarSamplePreview {
   const data = useMemo<SidebarSampleData>(
     () => ({
       projectColors: SAMPLE_PROJECT_COLORS,
+      projectIcons: SAMPLE_PROJECT_ICONS,
       gates: SAMPLE_GATES,
       summaries: SAMPLE_SUMMARIES,
       mostRecentPendingFeatureId: replays > 0 ? SAMPLE_NEWEST_REQUEST_FEATURE_ID : null,
