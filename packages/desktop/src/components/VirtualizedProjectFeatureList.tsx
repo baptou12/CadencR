@@ -2,19 +2,18 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactElement,
   type ReactNode,
 } from "react";
 import { ChevronDownIcon, ChevronRightIcon, GitBranchIcon } from "lucide-react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso } from "react-virtuoso";
 import type { Feature } from "@/api/generated";
 import { Button } from "@/components/ui/button";
 import type { WorktreeFeatureGroup } from "@/lib/feature-grouping";
 import { descendantIdsOf, type FeatureTreeNode } from "@/lib/feature-hierarchy";
 import type { RenderFeature } from "@/components/FeatureSubtree";
-import { useMeasuredActiveRange, useVirtualFeatureFocus } from "@/hooks/useVirtualFeatureFocus";
+import { useSidebarVirtualList } from "@/hooks/useVirtualFeatureFocus";
 
 type FeatureEntry = {
   kind: "feature";
@@ -34,11 +33,6 @@ interface VirtualizedProjectFeatureListProps {
   renderFeature: RenderFeature;
   rootNodeByFeatureId: ReadonlyMap<number, FeatureTreeNode>;
   worktreeGroups: readonly WorktreeFeatureGroup[];
-}
-
-interface SidebarNavigateDetail {
-  direction: "up" | "down";
-  handled: boolean;
 }
 
 function appendNode(
@@ -127,99 +121,43 @@ function useCollapsedNodes(
   return [collapsed, toggle];
 }
 
-function featureEntryIndexes(entries: readonly ListEntry[]): number[] {
-  return entries.flatMap((entry, index) => (entry.kind === "feature" ? [index] : []));
-}
-
 export function VirtualizedProjectFeatureList(
   props: VirtualizedProjectFeatureListProps,
 ): ReactElement {
   const [collapsed, toggleNode] = useCollapsedNodes(props);
-  const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null);
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
   const entries = useMemo(
     () => buildEntries(props, collapsed),
     [collapsed, props.flatActiveFeatures, props.rootNodeByFeatureId, props.worktreeGroups],
   );
-  const featureIndexes = useMemo(() => featureEntryIndexes(entries), [entries]);
-  const featureIds = useMemo(
-    () => entries.map((entry, index) => (entry.kind === "feature" ? entry.feature.id : -index - 1)),
+  const rowIds = useMemo(
+    () => entries.map((entry) => (entry.kind === "feature" ? entry.feature.id : null)),
     [entries],
   );
-  const activeIndex = entries.findIndex(
-    (entry) => entry.kind === "feature" && entry.feature.id === props.activeFeatureId,
-  );
-  const virtualFocus = useVirtualFeatureFocus(
-    featureIds,
-    rootRef,
-    virtuosoRef,
+  const list = useSidebarVirtualList(
+    rowIds,
+    props.activeFeatureId,
+    true,
     "data-project-feature-index",
   );
-  const handleRangeChanged = useMeasuredActiveRange(
-    activeIndex,
-    props.activeFeatureId,
-    virtuosoRef,
-    virtualFocus.handleRangeChanged,
-    scrollParent,
-  );
-  const wrapperRef = useCallback((element: HTMLDivElement | null): void => {
-    rootRef.current = element;
-    setScrollParent(element?.closest<HTMLElement>("[data-radix-scroll-area-viewport]") ?? null);
-  }, []);
-  const handleNavigate = useCallback(
-    (event: Event): void => {
-      const customEvent = event as CustomEvent<SidebarNavigateDetail>;
-      const row =
-        customEvent.target === rootRef.current
-          ? null
-          : (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
-              "[data-project-feature-index]",
-            );
-      if (!row || !rootRef.current?.contains(row)) {
-        const boundary =
-          customEvent.detail.direction === "down"
-            ? featureIndexes[0]
-            : featureIndexes[featureIndexes.length - 1];
-        if (boundary == null) return;
-        customEvent.detail.handled = true;
-        virtualFocus.focusIndex(boundary);
-        return;
-      }
-      const current = Number(row.dataset.projectFeatureIndex);
-      const position = featureIndexes.indexOf(current);
-      const next = featureIndexes[position + (customEvent.detail.direction === "down" ? 1 : -1)];
-      if (next == null) return;
-      customEvent.detail.handled = true;
-      virtualFocus.focusIndex(next);
-    },
-    [featureIndexes, virtualFocus],
-  );
-
-  useEffect(() => {
-    const root = rootRef.current;
-    root?.addEventListener("cadencr-sidebar-navigate", handleNavigate);
-    return () => root?.removeEventListener("cadencr-sidebar-navigate", handleNavigate);
-  }, [handleNavigate]);
 
   return (
     <div
-      ref={wrapperRef}
+      ref={list.wrapperRef}
       data-virtual-nav-list
       className="flex flex-col gap-0.5"
       role="list"
       aria-label="Conversations"
     >
-      {scrollParent ? (
+      {list.scrollParent ? (
         <Virtuoso
-          ref={virtuosoRef}
-          customScrollParent={scrollParent}
+          ref={list.virtuosoRef}
+          customScrollParent={list.scrollParent}
           data={entries}
-          initialTopMostItemIndex={activeIndex >= 0 ? activeIndex : 0}
+          initialTopMostItemIndex={Math.max(list.revealIndex, 0)}
           computeItemKey={(_index, entry) =>
             entry.kind === "feature" ? `feature-${entry.feature.id}` : `${entry.kind}-${_index}`
           }
-          rangeChanged={handleRangeChanged}
+          rangeChanged={list.handleRangeChanged}
           increaseViewportBy={144}
           itemContent={(index, entry) => (
             <div data-project-feature-index={index}>

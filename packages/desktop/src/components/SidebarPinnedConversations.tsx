@@ -2,12 +2,7 @@ import { useCallback, useMemo, useRef, type ReactElement } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PinIcon } from "lucide-react";
 import { toast } from "sonner";
-import {
-  useListPinnedFeatures,
-  useUpdateFeaturePinned,
-  type Feature,
-  type FeatureWorktreeInfo,
-} from "@/api/generated";
+import { useListPinnedFeatures, useUpdateFeaturePinned, type Feature } from "@/api/generated";
 import { PinnedConversationRow } from "@/components/PinnedConversationRow";
 import { SidebarBlock } from "@/components/SidebarBlock";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
@@ -18,8 +13,7 @@ import { useReorderAnimation } from "@/hooks/useReorderAnimation";
 import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
 import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
 import { usePinnedActivity } from "@/hooks/usePinnedActivity";
-import { useLiveFeatureMeta } from "@/hooks/useLiveFeatureMeta";
-import { featureMatchesSidebarFilter, sidebarFilterTerms } from "@/lib/sidebar-filter";
+import { useSidebarFilteredFeatures } from "@/hooks/useSidebarFilteredFeatures";
 import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
 
 /**
@@ -46,7 +40,7 @@ export function SidebarPinnedConversations({
   const { data: fetchedPinned = EMPTY_FEATURES } = useListPinnedFeatures();
   const orderedPinned = useStableFeatureOrder(fetchedPinned);
   const activity = usePinnedActivity(fetchedPinned);
-  const pinnedFeatures = useFilteredPinned(orderedPinned, activity.worktreeByFeatureId);
+  const pinnedFeatures = useSidebarFilteredFeatures(orderedPinned, activity.worktreeByFeatureId);
   const listRef = useRef<HTMLElement>(null);
   const pinnedIds = useMemo(() => pinnedFeatures.map((feature) => feature.id), [pinnedFeatures]);
   useReorderAnimation(listRef, pinnedIds);
@@ -100,21 +94,4 @@ export function SidebarPinnedConversations({
       ))}
     </SidebarBlock>
   );
-}
-
-/** The pinned rows the sidebar filter keeps (all of them when it is off). */
-function useFilteredPinned(
-  pinned: readonly Feature[],
-  worktreeByFeatureId: ReadonlyMap<number, FeatureWorktreeInfo>,
-): readonly Feature[] {
-  const query = useSidebarFilterQuery();
-  // Live titles only matter to the filter: no stream subscription while it is off.
-  const liveMeta = useLiveFeatureMeta(query !== "");
-  return useMemo(() => {
-    if (!query) return pinned;
-    const terms = sidebarFilterTerms(query);
-    return pinned.filter((feature) =>
-      featureMatchesSidebarFilter(terms, feature, liveMeta, worktreeByFeatureId.get(feature.id)),
-    );
-  }, [liveMeta, pinned, query, worktreeByFeatureId]);
 }

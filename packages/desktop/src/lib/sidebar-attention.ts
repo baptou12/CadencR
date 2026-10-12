@@ -31,6 +31,15 @@ const RANK: Record<AttentionState, number> = {
   idle: 0,
 };
 
+/** How each state reads in a label: the rail's tooltips, the status lens's headers. */
+export const ATTENTION_LABEL: Record<AttentionState, string> = {
+  waiting: "Waiting on you",
+  failed: "Failed",
+  working: "Working",
+  unread: "Unread",
+  idle: "Idle",
+};
+
 /** Whether `a` is more urgent than `b`: the one a collapsed parent shows. */
 export function outranks(a: AttentionState, b: AttentionState): boolean {
   return RANK[a] > RANK[b];

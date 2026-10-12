@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { getGetWorkspaceSettingQueryKey, type SettingValueResponse } from "@/api/generated";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { parseJsonSetting } from "@/lib/json-setting";
 
 /** Workspace settings holding the sidebar's expansion memory, each a JSON array of ids. */
 export const SIDEBAR_EXPANDED_PROJECTS_KEY = "sidebar_expanded_projects";
@@ -12,20 +13,11 @@ export const SIDEBAR_ARCHIVED_OPEN_PROJECTS_KEY = "sidebar_archived_open_project
 
 const idListSchema = z.array(z.number().int());
 
-type ParsedIdList = { ids: number[]; error: null } | { ids: []; error: string };
+type ParsedIdList = { ids: number[]; error: string | null };
 
 export function parseIdList(raw: string | null | undefined): ParsedIdList {
-  if (!raw) return { ids: [], error: null };
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch (error) {
-    return { ids: [], error: error instanceof Error ? error.message : String(error) };
-  }
-  const result = idListSchema.safeParse(json);
-  return result.success
-    ? { ids: result.data, error: null }
-    : { ids: [], error: "expected an array of ids" };
+  const { value, error } = parseJsonSetting(raw, idListSchema, "expected an array of ids");
+  return { ids: value ?? [], error };
 }
 
 export interface PersistedIdSet {

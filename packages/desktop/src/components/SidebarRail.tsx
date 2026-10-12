@@ -16,17 +16,10 @@ import type { ProjectAttentionCounts, ResolvedAttention } from "@/hooks/useResol
 import { formatCombo } from "@/lib/shortcuts/format";
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
-import { needsUser } from "@/lib/sidebar-attention";
+import { ATTENTION_LABEL, needsUser } from "@/lib/sidebar-attention";
 import { cn } from "@/lib/utils";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SidebarSurfaceContext } from "@/stores/sidebar-surface-store";
-
-const STATE_LABEL: Record<ResolvedAttention["state"], string> = {
-  waiting: "Waiting on you",
-  failed: "Failed",
-  working: "Working",
-  unread: "Unread",
-};
 
 /**
  * The collapsed sidebar's 48px rail (A3), so collapsing never hides what
@@ -228,7 +221,7 @@ export const RailConversation = memo(function RailConversation({
         <TooltipTrigger asChild>
           <button
             type="button"
-            aria-label={`${feature.title}: ${STATE_LABEL[state]}`}
+            aria-label={`${feature.title}: ${ATTENTION_LABEL[state]}`}
             onClick={open}
             className={cn(
               "flex size-8 items-center justify-center rounded-md text-xs font-semibold uppercase outline-none",
@@ -246,7 +239,7 @@ export const RailConversation = memo(function RailConversation({
         </TooltipTrigger>
         <TooltipContent side="right">
           <span className="font-medium text-foreground">{feature.title}</span>
-          <span className="block">{STATE_LABEL[state]}</span>
+          <span className="block">{ATTENTION_LABEL[state]}</span>
         </TooltipContent>
       </Tooltip>
       <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-sidebar">
