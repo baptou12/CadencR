@@ -1871,6 +1871,26 @@ export interface FeatureRespondGateResponse {
   resolved: boolean;
 }
 
+/**
+ * How many of the agent's todos are done, out of the whole list.
+ */
+export interface TodoProgress {
+  done: number;
+  total: number;
+}
+
+export type FeatureRowSummaryResponseTodos = null | TodoProgress;
+
+/**
+ * What a sidebar row previews of a conversation: its last agent reply and
+ * how far its todo list has come. Either is `None` until the agent has one.
+ */
+export interface FeatureRowSummaryResponse {
+  /** @nullable */
+  preview?: string | null;
+  todos?: FeatureRowSummaryResponseTodos;
+}
+
 export interface FeatureSetting {
   key: string;
   value: string;
@@ -12790,6 +12810,131 @@ export const useRefreshSession = <TError = ErrorType<void>, TContext = unknown>(
 > => {
   return useMutation(getRefreshSessionMutationOptions(options), queryClient);
 };
+
+/**
+ * @summary What the sidebar row previews: the last agent reply and the todo progress.
+ */
+export const getFeatureRowSummary = (featureId: number, signal?: AbortSignal) => {
+  return customInstance<FeatureRowSummaryResponse>({
+    url: `/api/features/${featureId}/row-summary`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetFeatureRowSummaryQueryKey = (featureId: number) => {
+  return [`/api/features/${featureId}/row-summary`] as const;
+};
+
+export const getGetFeatureRowSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFeatureRowSummary>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureRowSummary>>, TError, TData>
+    >;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetFeatureRowSummaryQueryKey(featureId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFeatureRowSummary>>> = ({ signal }) =>
+    getFeatureRowSummary(featureId, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: featureId !== null && featureId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getFeatureRowSummary>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type GetFeatureRowSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFeatureRowSummary>>
+>;
+export type GetFeatureRowSummaryQueryError = ErrorType<unknown>;
+
+export function useGetFeatureRowSummary<
+  TData = Awaited<ReturnType<typeof getFeatureRowSummary>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureRowSummary>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFeatureRowSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getFeatureRowSummary>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetFeatureRowSummary<
+  TData = Awaited<ReturnType<typeof getFeatureRowSummary>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureRowSummary>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getFeatureRowSummary>>,
+          TError,
+          Awaited<ReturnType<typeof getFeatureRowSummary>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetFeatureRowSummary<
+  TData = Awaited<ReturnType<typeof getFeatureRowSummary>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureRowSummary>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary What the sidebar row previews: the last agent reply and the todo progress.
+ */
+
+export function useGetFeatureRowSummary<
+  TData = Awaited<ReturnType<typeof getFeatureRowSummary>>,
+  TError = ErrorType<unknown>,
+>(
+  featureId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getFeatureRowSummary>>, TError, TData>
+    >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetFeatureRowSummaryQueryOptions(featureId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export const getSessions = (featureId: number, signal?: AbortSignal) => {
   return customInstance<AgentSessionRow[]>({

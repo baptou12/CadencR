@@ -286,6 +286,10 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_conversation_sort",
     "sidebar_project_sort",
     "sidebar_sticky_headers",
+    "sidebar_row_preview",
+    "sidebar_row_todos",
+    "sidebar_uniform_rows",
+    "sidebar_compact_rows",
 ];
 
 #[cfg(test)]

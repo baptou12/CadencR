@@ -66,13 +66,18 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
         "sidebar_project_sort" => {
             SettingSpec::new(ValueKind::Enum(&["frozen", "live", "name"]), Some("frozen"))
         }
+        "sidebar_row_preview" => {
+            SettingSpec::new(ValueKind::Enum(&["none", "last_message"]), Some("none"))
+        }
         "sidebar_gate_popover" => {
             SettingSpec::new(ValueKind::Enum(&["auto", "hover", "click"]), Some("auto"))
         }
         "sidebar_row_branch"
         | "sidebar_block_working"
         | "sidebar_block_recent"
-        | "sidebar_auto_collapse" => SettingSpec::new(BOOL, Some("false")),
+        | "sidebar_auto_collapse"
+        | "sidebar_row_todos"
+        | "sidebar_compact_rows" => SettingSpec::new(BOOL, Some("false")),
         "sidebar_row_worktree_icon"
         | "sidebar_row_diff"
         | "sidebar_row_pr"
@@ -83,6 +88,7 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
         | "sidebar_hide_empty_blocks"
         | "sidebar_flash_on_change"
         | "sidebar_sticky_headers"
+        | "sidebar_uniform_rows"
         | "sidebar_type_to_filter" => SettingSpec::new(BOOL, Some("true")),
         _ => return None,
     };
@@ -137,5 +143,16 @@ mod tests {
         let project_sort = workspace_spec("sidebar_project_sort").unwrap();
         assert!(project_sort.is_valid("name"));
         assert!(!project_sort.is_valid("manual"));
+        let preview = workspace_spec("sidebar_row_preview").unwrap();
+        assert_eq!(preview.default, Some("none"));
+        assert!(!preview.is_valid("summary"));
+        assert_eq!(
+            workspace_spec("sidebar_uniform_rows").unwrap().default,
+            Some("true")
+        );
+        assert_eq!(
+            workspace_spec("sidebar_compact_rows").unwrap().default,
+            Some("false")
+        );
     }
 }
