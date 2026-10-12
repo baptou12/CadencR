@@ -8,8 +8,14 @@ import type {
 } from "@/api/generated";
 import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
 import { FeatureRowMetaLine, type FeatureLabelEditing } from "@/components/ProjectFeatureRowParts";
+import { FeatureRowPreviewLine } from "@/components/FeatureRowSummaryParts";
 import { SidebarPendingRequestLine } from "@/components/SidebarPendingRequestLine";
+import { useFeatureRowSummary } from "@/hooks/useFeatureRowSummary";
 import type { Attention } from "@/lib/sidebar-attention";
+import type { SidebarConfig } from "@/lib/sidebar-config";
+import { rowLayout } from "@/lib/sidebar-row-summary";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
+import { useShallow } from "zustand/react/shallow";
 
 export interface FeatureRowBodyProps {
   feature: Feature;
@@ -36,9 +42,11 @@ export interface FeatureRowBodyProps {
 
 /**
  * What a conversation row shows, wherever it is: the title line, what a
- * waiting conversation asks for, and the meta line. Takes plain values, so the
- * project tree, the blocks above it and the display options preview render the
- * exact same row from their own data.
+ * waiting conversation asks for (else the agent's last reply), and the
+ * details, beside the title (uniform rows) or on their own line. Compact rows
+ * keep only the title line until their conversation waits. Takes plain values,
+ * so the project tree, the blocks above it and the display options preview
+ * render the exact same row from their own data.
  */
 export function FeatureRowBody({
   feature,
@@ -61,6 +69,29 @@ export function FeatureRowBody({
   labelEditor,
   onOpenPort,
 }: FeatureRowBodyProps): ReactElement {
+  const options = useSidebarConfigStore(useShallow((state) => rowOptions(state.config)));
+  const layout = rowLayout(options, attention.state, labelEditor !== undefined);
+  const summary = useFeatureRowSummary(
+    feature.id,
+    attention.state,
+    layout.showsPreview || layout.showsTodos,
+  );
+  const details = layout.compact ? null : (
+    <FeatureRowMetaLine
+      feature={feature}
+      worktree={worktree}
+      prStatus={prStatus}
+      gitStats={gitStats}
+      shellCount={shellCount}
+      browserCount={browserCount}
+      downloadCount={downloadCount}
+      ports={ports}
+      labelEditor={labelEditor}
+      onOpenPort={onOpenPort}
+      summary={summary}
+      inline={layout.foldMeta}
+    />
+  );
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <FeatureRowTitleLine
@@ -74,22 +105,28 @@ export function FeatureRowBody({
         isActive={isActive}
         badgeRef={badgeRef}
         onOpenConversation={onOpenConversation}
+        details={layout.foldMeta ? details : undefined}
       >
         {actions}
       </FeatureRowTitleLine>
-      <SidebarPendingRequestLine attention={attention} />
-      <FeatureRowMetaLine
-        feature={feature}
-        worktree={worktree}
-        prStatus={prStatus}
-        gitStats={gitStats}
-        shellCount={shellCount}
-        browserCount={browserCount}
-        downloadCount={downloadCount}
-        ports={ports}
-        labelEditor={labelEditor}
-        onOpenPort={onOpenPort}
-      />
+      {!layout.compact && (
+        <>
+          <SidebarPendingRequestLine attention={attention} />
+          {layout.showsPreview && <FeatureRowPreviewLine summary={summary} />}
+          {!layout.foldMeta && details}
+        </>
+      )}
     </div>
   );
+}
+
+function rowOptions(config: SidebarConfig) {
+  return {
+    compactRows: config.compactRows,
+    uniformRows: config.uniformRows,
+    titleLines: config.titleLines,
+    preview: config.preview,
+    todos: config.todos,
+    pendingRequest: config.pendingRequest,
+  };
 }

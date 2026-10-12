@@ -15,6 +15,7 @@ import {
   formatSidebarFullTime,
   formatSidebarRelativeTime,
 } from "@/lib/sidebar-time";
+import { cn } from "@/lib/utils";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 
 /**
@@ -37,7 +38,9 @@ export function rowTitle(
 /**
  * First line: status, optional worktree marker, title, then the hover actions,
  * the time they replace, and a trailing mono provider. A skeleton holds the
- * title while auto-naming.
+ * title while auto-naming. `details` (uniform rows) follow the title on the
+ * same line: what doesn't fit beside it wraps onto a clipped second line, so
+ * the row keeps one line's height.
  */
 export function FeatureRowTitleLine({
   feature,
@@ -50,6 +53,7 @@ export function FeatureRowTitleLine({
   isActive,
   onOpenConversation,
   badgeRef,
+  details,
   children,
 }: {
   feature: Feature;
@@ -62,6 +66,7 @@ export function FeatureRowTitleLine({
   isActive: boolean;
   onOpenConversation: () => void;
   badgeRef?: RefObject<HTMLSpanElement | null>;
+  details?: ReactNode;
   children?: ReactNode;
 }): ReactElement {
   const showWorktreeIcon = useSidebarOption("worktreeIcon");
@@ -82,17 +87,32 @@ export function FeatureRowTitleLine({
           aria-label="Has worktree"
         />
       )}
-      {isAutoNaming ? (
-        <Skeleton className="h-4 w-32 min-w-0 flex-1" />
+      {details ? (
+        <div
+          data-feature-title-fold
+          className="flex h-6 min-w-8 flex-1 flex-wrap content-start items-center gap-x-2 overflow-clip"
+        >
+          {/* At least 6rem of title before any detail; it takes what they leave.
+              A full 24px line, so whatever wraps lands below the clip. `min-w-8`
+              on the fold: the trailing time never squeezes the title out. */}
+          <RowTitle
+            title={title}
+            conversationTitle={conversationTitle}
+            isAutoNaming={isAutoNaming}
+            isArchived={isArchived}
+            className="min-w-0 shrink grow basis-24 leading-6"
+          />
+          {details}
+        </div>
       ) : (
         // `min-w-8`: the trailing time never squeezes the title out entirely.
-        <span
-          data-feature-title
-          title={title === conversationTitle ? undefined : conversationTitle}
-          className={`min-w-8 flex-1 truncate ${isArchived ? "text-muted-foreground" : ""}`}
-        >
-          {title}
-        </span>
+        <RowTitle
+          title={title}
+          conversationTitle={conversationTitle}
+          isAutoNaming={isAutoNaming}
+          isArchived={isArchived}
+          className="min-w-8 flex-1"
+        />
       )}
       {children}
       <FeatureRowTime feature={feature} />
@@ -108,6 +128,32 @@ export function FeatureRowTitleLine({
         {badgeRef && <SidebarShortcutBadge ref={badgeRef} inline />}
       </span>
     </div>
+  );
+}
+
+/** The title, or a skeleton while auto-naming; names the full title when it shows another. */
+function RowTitle({
+  title,
+  conversationTitle,
+  isAutoNaming,
+  isArchived,
+  className,
+}: {
+  title: string;
+  conversationTitle: string;
+  isAutoNaming: boolean;
+  isArchived: boolean;
+  className: string;
+}): ReactElement {
+  if (isAutoNaming) return <Skeleton className={cn("h-4 w-32", className)} />;
+  return (
+    <span
+      data-feature-title
+      title={title === conversationTitle ? undefined : conversationTitle}
+      className={cn("truncate", isArchived && "text-muted-foreground", className)}
+    >
+      {title}
+    </span>
   );
 }
 

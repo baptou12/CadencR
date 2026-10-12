@@ -107,6 +107,13 @@
   white-space: normal;
   overflow-wrap: break-word;
 }
+/* Uniform rows hold the details beside the title on one clipped line; a title
+ * shown in full on hover brings the ones that didn't fit along with it. */
+[data-sidebar-title-lines="hover"]
+  .sidebar-row:is(:hover, :focus-within)
+  [data-feature-title-fold] {
+  height: auto;
+}
 :is([data-sidebar-title-lines="two"], [data-sidebar-title-lines="hover"]) {
   & [data-feature-title-line] {
     align-items: flex-start;
@@ -186,6 +193,10 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 [data-sidebar-highlight="pr"] [data-feature-pr],
 [data-sidebar-highlight="ports"] [data-feature-ports-badge],
 [data-sidebar-highlight="activity"] [data-feature-activity-indicators],
+[data-sidebar-highlight="todos"] [data-feature-todos],
+[data-sidebar-highlight="preview"] [data-feature-preview],
+[data-sidebar-highlight="uniformRows"] [data-feature-title-fold],
+[data-sidebar-highlight="compactRows"] .sidebar-row,
 [data-sidebar-highlight="projectBadges"] [data-project-attention],
 [data-sidebar-highlight="dormantAfter"] [data-feature-fold="dormant"],
 [data-sidebar-highlight="lens"] :is([data-sidebar-lens-menu], [data-sidebar-lens-header]),

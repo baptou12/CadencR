@@ -20,7 +20,17 @@ export const DISPLAY_GROUPS: readonly DisplayGroup[] = [
   {
     id: "rows",
     label: "Rows",
-    items: ["fontSize", "titleLines", "titleSource", "label", "provider", "rowElements"],
+    items: [
+      "fontSize",
+      "titleLines",
+      "titleSource",
+      "label",
+      "provider",
+      "preview",
+      "uniformRows",
+      "compactRows",
+      "rowElements",
+    ],
   },
   {
     id: "blocks",

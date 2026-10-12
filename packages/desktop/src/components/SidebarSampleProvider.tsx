@@ -17,6 +17,7 @@ import {
   SAMPLE_GATES,
   SAMPLE_NEWEST_REQUEST_FEATURE_ID,
   SAMPLE_PROJECT_COLORS,
+  SAMPLE_SUMMARIES,
   SAMPLE_PROJECTS,
 } from "@/lib/sidebar-sample-data";
 import { sampleViews, type SampleRow, type SampleViews } from "@/lib/sidebar-sample-views";
@@ -142,6 +143,7 @@ function useSampleState(enabled: boolean): SidebarSamplePreview {
     () => ({
       projectColors: SAMPLE_PROJECT_COLORS,
       gates: SAMPLE_GATES,
+      summaries: SAMPLE_SUMMARIES,
       mostRecentPendingFeatureId: replays > 0 ? SAMPLE_NEWEST_REQUEST_FEATURE_ID : null,
       pendingRequestId: replays > 0 ? `sample-replay-${replays}` : null,
       gateOwner,

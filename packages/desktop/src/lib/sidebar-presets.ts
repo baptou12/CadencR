@@ -33,8 +33,14 @@ export const SIDEBAR_PRESETS: readonly SidebarPreset[] = [
     id: "control",
     label: "Control tower",
     description:
-      "For many agents at once: compact rows, an In progress block, attention-only rail, idle conversations folded after 3 days.",
-    overrides: { density: "compact", rail: "attention", dormantAfter: "3", workingBlock: true },
+      "For many agents at once: compact rows with each agent's last reply, an In progress block, attention-only rail, idle conversations folded after 3 days.",
+    overrides: {
+      density: "compact",
+      rail: "attention",
+      dormantAfter: "3",
+      workingBlock: true,
+      preview: "last_message",
+    },
   },
   {
     id: "minimal",
@@ -60,13 +66,14 @@ export const SIDEBAR_PRESETS: readonly SidebarPreset[] = [
     id: "dense",
     label: "Dense pro",
     description:
-      "Everything at a glance: compact two-line titles, branch, model, every detail, a Recent block.",
+      "Everything at a glance: compact two-line titles, branch, model, todo progress, every detail, a Recent block.",
     overrides: {
       density: "compact",
       fontSize: "12",
       titleLines: "two",
       branch: true,
       provider: "logo_model",
+      todos: true,
       recentBlock: true,
     },
   },

@@ -6,8 +6,10 @@ import type {
   FeatureWorktreeInfo,
   GitStats,
   PrStatusSnapshot,
+  TodoProgress,
 } from "@/api/generated";
 import { DEFAULT_SIDEBAR_CONFIG, type SidebarConfig } from "@/lib/sidebar-config";
+import type { RowSummary } from "@/lib/sidebar-row-summary";
 import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
 import { FeatureRowMetaLine } from "./ProjectFeatureRowParts";
 
@@ -58,13 +60,18 @@ function port(overrides: Partial<AllocatedPort> = {}): AllocatedPort {
   };
 }
 
-function renderLine(
+function lineElement(
   prStatus: PrStatusSnapshot | undefined,
   ports: readonly AllocatedPort[] = [],
   downloadCount = 0,
-  extra: { feature?: Feature; worktree?: FeatureWorktreeInfo; gitStats?: GitStats } = {},
+  extra: {
+    feature?: Feature;
+    worktree?: FeatureWorktreeInfo;
+    gitStats?: GitStats;
+    summary?: RowSummary;
+  } = {},
 ) {
-  return render(
+  return (
     <FeatureRowMetaLine
       feature={extra.feature ?? feature()}
       worktree={extra.worktree}
@@ -75,8 +82,17 @@ function renderLine(
       downloadCount={downloadCount}
       ports={ports}
       onOpenPort={vi.fn()}
-    />,
+      summary={extra.summary}
+    />
   );
+}
+
+function renderLine(...args: Parameters<typeof lineElement>) {
+  return render(lineElement(...args));
+}
+
+function withTodos(todos: TodoProgress | null, error: string | null = null) {
+  return lineElement(undefined, [], 0, { summary: { preview: null, todos, error } });
 }
 
 describe("FeatureRowMetaLine", () => {
@@ -118,6 +134,29 @@ describe("FeatureRowMetaLine", () => {
 
     expect(screen.getByLabelText("2 browser downloads active")).toHaveTextContent("2");
     expect(screen.queryByLabelText(/browser tabs open/)).not.toBeInTheDocument();
+  });
+});
+
+describe("FeatureRowMetaLine todo progress", () => {
+  it("counts todos only when asked to, and only while some are left", () => {
+    const { rerender } = render(withTodos({ done: 3, total: 7 }));
+    expect(document.querySelector("[data-feature-todos]")).toBeNull();
+
+    configure({ todos: true });
+    rerender(withTodos({ done: 3, total: 7 }));
+    expect(screen.getByLabelText("3 of 7 todos done")).toHaveTextContent("3/7");
+
+    rerender(withTodos({ done: 7, total: 7 }));
+    expect(document.querySelector("[data-feature-meta-line]")).toBeNull();
+  });
+
+  it("says when the todo progress couldn't load", () => {
+    configure({ todos: true });
+    render(withTodos(null, "Service unreachable"));
+
+    expect(
+      screen.getByLabelText("Todo progress unavailable: Service unreachable"),
+    ).toBeInTheDocument();
   });
 });
 

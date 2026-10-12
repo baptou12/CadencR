@@ -8,6 +8,7 @@ import type {
 } from "@/api/generated";
 import { PROVIDER_IDS } from "@/lib/providers";
 import type { AttentionState } from "@/lib/sidebar-attention";
+import type { RowSummary } from "@/lib/sidebar-row-summary";
 
 /**
  * The made-up workspace the display options preview renders: a few projects
@@ -263,6 +264,25 @@ export const SAMPLE_GATES: ReadonlyMap<number, FeaturePendingGateResponse> = new
     },
   ],
 ]);
+
+/** What the preview's rows show as the last reply and the todo progress. */
+export const SAMPLE_SUMMARIES: ReadonlyMap<number, RowSummary> = new Map(
+  (
+    [
+      [-11, "The checkout test fails about one run in five; running it in a loop.", [2, 4]],
+      [-12, "Wiring the toggle into the settings menu, then the color variables.", [3, 7]],
+      [-13, "14 tokens have no dark variant; the list is in tokens-audit.md.", null],
+      [-14, "Done: auth and rate limiting are separate middlewares, 12 new tests.", [5, 5]],
+      [-21, "The webhook replay failed: Stripe answered 401 with the test key.", null],
+      [-22, "Release notes drafted in CHANGELOG.md, grouped by area.", null],
+      [-31, "Should the scale start at 4 or 8 px?", null],
+      [-32, "Running the Storybook 8 migration codemod.", [1, 5]],
+    ] as const
+  ).map(([id, preview, todos]) => [
+    id,
+    { preview, todos: todos && { done: todos[0], total: todos[1] }, error: null },
+  ]),
+);
 
 export const SAMPLE_PROJECT_COLORS: ReadonlyMap<number, string> = new Map(
   SAMPLE_PROJECTS.map((project) => [project.id, project.color]),

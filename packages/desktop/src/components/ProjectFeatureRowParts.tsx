@@ -22,6 +22,8 @@ import { FeatureMetaBadge } from "@/components/FeatureMetaBadge";
 import { FeaturePortsBadge } from "@/components/FeaturePortsBadge";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { FeaturePrIndicator } from "@/components/PrStatusIndicators";
+import { FeatureTodoProgress, hasTodoChip } from "@/components/FeatureRowSummaryParts";
+import type { RowSummary } from "@/lib/sidebar-row-summary";
 import { NumStat } from "@/components/NumStat";
 import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
 import { useShallow } from "zustand/react/shallow";
@@ -39,6 +41,10 @@ interface FeatureRowMetaLineProps {
   /** Present while the label is being edited; read-only rows never pass it. */
   labelEditor?: FeatureLabelEditing;
   onOpenPort: (port: number) => void;
+  /** Feeds the todo progress, shown while some are left (when the option is on). */
+  summary?: RowSummary;
+  /** Beside the title (uniform rows): the items join the title line's flow. */
+  inline?: boolean;
 }
 
 export interface FeatureLabelEditing {
@@ -51,10 +57,11 @@ export interface FeatureLabelEditing {
 }
 
 /**
- * Second line of a sidebar feature row: label, branch, diff stat, pull-request
- * state, and running-activity badges, each one switchable in the display
- * options. Renders nothing when the row has none of them to show, so a bare row
- * stays a single line.
+ * A sidebar feature row's details: label, branch, diff stat, pull-request
+ * state, todo progress and running-activity badges, each one switchable in the
+ * display options. Its own line under the title, or (`inline`) items that sit
+ * beside the title as far as they fit. Renders nothing when the row has none of
+ * them to show, so a bare row stays a single line.
  */
 export function FeatureRowMetaLine({
   feature,
@@ -67,6 +74,8 @@ export function FeatureRowMetaLine({
   ports,
   labelEditor,
   onOpenPort,
+  summary,
+  inline = false,
 }: FeatureRowMetaLineProps): ReactElement | null {
   const show = useSidebarConfigStore(useShallow((state) => metaLineOptions(state.config)));
   const branch = show.branch ? worktree?.worktree_branch : null;
@@ -83,6 +92,7 @@ export function FeatureRowMetaLine({
   const hasPrIndicator = show.pr && (prStatus?.pr != null || prStatus?.error != null);
   const hasActivity = show.activity && (shellCount > 0 || browserCount > 0 || downloadCount > 0);
   const hasPorts = show.ports && ports.length > 0;
+  const todos = show.todos && hasTodoChip(summary) ? summary : null;
   if (
     !labelEditor &&
     !label &&
@@ -91,7 +101,8 @@ export function FeatureRowMetaLine({
     !hasStats &&
     !hasActivity &&
     !hasPorts &&
-    !hasPrIndicator
+    !hasPrIndicator &&
+    !todos
   ) {
     return null;
   }
@@ -99,7 +110,11 @@ export function FeatureRowMetaLine({
   return (
     <div
       data-feature-meta-line
-      className="flex min-w-0 items-center gap-2 pl-5 text-[11px] leading-tight"
+      className={
+        inline
+          ? "contents text-[11px]"
+          : "flex min-w-0 items-center gap-2 pl-5 text-[11px] leading-tight"
+      }
     >
       <MetaLineLabel feature={feature} label={label} style={show.label} editor={labelEditor} />
       {branch && (
@@ -131,6 +146,7 @@ export function FeatureRowMetaLine({
         </span>
       )}
       {show.pr && <FeaturePrIndicator snapshot={prStatus} />}
+      {todos && <FeatureTodoProgress summary={todos} />}
       {hasActivity && (
         <FeatureActivityIndicators
           shellCount={shellCount}
@@ -152,6 +168,7 @@ function metaLineOptions(config: SidebarConfig) {
     activity: config.activity,
     ports: config.ports,
     provider: config.provider,
+    todos: config.todos,
   };
 }
 

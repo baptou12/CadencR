@@ -121,6 +121,15 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
     ],
   },
   {
+    id: "preview",
+    description: "A line under the title with the start of the agent's last reply.",
+    label: "Preview",
+    options: [
+      { value: "none", label: "None" },
+      { value: "last_message", label: "Last reply" },
+    ],
+  },
+  {
     id: "lens",
     description:
       "How conversations are grouped below the blocks: under their project, or across projects by status, worktree branch, provider, label or last activity, or one flat list.",
@@ -234,6 +243,18 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
 /** The on/off switches, after the choices. */
 export const SWITCH_ROWS: readonly { id: ToggleId; label: string; description: string }[] = [
   {
+    id: "uniformRows",
+    label: "Uniform rows",
+    description:
+      "Details sit beside the title when they fit, so every row is one line high; the ones that don't fit wait for a wider sidebar. Off: details get a line of their own. Two-line titles always keep it.",
+  },
+  {
+    id: "compactRows",
+    label: "Compact rows",
+    description:
+      "Titles only. A row waiting on you grows back to show its request, details and preview.",
+  },
+  {
     id: "forMe",
     label: "For me block",
     description:
@@ -282,7 +303,7 @@ export const PRESET_DESCRIPTION =
   "Classic is the default. Picking a preset resets every display option it doesn't set; changing any of them makes it yours.";
 
 export const ROW_ELEMENTS_DESCRIPTION =
-  "The worktree marker on the title line, and the details on the line under it.";
+  "The worktree marker on the title line, and the details beside or under the title.";
 
 export const ROW_ELEMENTS: readonly { id: ToggleId; label: string; description: string }[] = [
   {
@@ -320,5 +341,10 @@ export const ROW_ELEMENTS: readonly { id: ToggleId; label: string; description: 
     id: "activity",
     label: "Shells & tabs",
     description: "Open shells, browser tabs and downloads, under the title.",
+  },
+  {
+    id: "todos",
+    label: "Todo progress",
+    description: "How many of the agent's todos are done, until it finishes them all.",
   },
 ];
