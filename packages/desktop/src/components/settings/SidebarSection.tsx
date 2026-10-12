@@ -1,12 +1,13 @@
 import type { ReactElement } from "react";
 import {
   ChoiceControl,
-  PresetControl,
   ResetDisplayOptionsButton,
   RowElementGrid,
   useSidebarDisplayForm,
+  type SidebarDisplayForm,
 } from "@/components/SidebarDisplayOptions";
-import { PRESET_DESCRIPTION, ROW_ELEMENTS_DESCRIPTION } from "@/components/sidebar-display-rows";
+import { ROW_ELEMENTS_DESCRIPTION } from "@/components/sidebar-display-rows";
+import { SidebarConfiguratorSteps } from "@/components/SidebarConfiguratorSteps";
 import {
   DISPLAY_GROUPS,
   resolveDisplayItem,
@@ -18,8 +19,6 @@ import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsSwitchRow } from "./SettingsSwitchRow";
 import { SidebarPreviewPanel } from "./SidebarPreviewPanel";
-
-type SidebarDisplayForm = ReturnType<typeof useSidebarDisplayForm>;
 
 /** Rows a notch denser than the app's other settings: the section lists every display option. */
 const DENSE_ROW = "py-3";
@@ -54,16 +53,18 @@ export function SidebarSection(): ReactElement {
           className="@container flex min-w-0 flex-col gap-5"
           {...highlight}
         >
-          {DISPLAY_GROUPS.map((group) => (
-            <section key={group.id} aria-label={group.label} className="flex flex-col gap-2">
-              <h3 className="px-1 text-xs font-semibold text-muted-foreground">{group.label}</h3>
-              <SettingsCard>
-                {group.items.map((item, index) => (
-                  <SettingsItem key={item} form={form} item={item} divided={index > 0} />
-                ))}
-              </SettingsCard>
-            </section>
-          ))}
+          <SidebarConfiguratorSteps form={form} wide>
+            {DISPLAY_GROUPS.map((group) => (
+              <section key={group.id} aria-label={group.label} className="flex flex-col gap-2">
+                <h4 className="px-1 text-xs font-semibold text-muted-foreground">{group.label}</h4>
+                <SettingsCard>
+                  {group.items.map((item, index) => (
+                    <SettingsItem key={item} form={form} item={item} divided={index > 0} />
+                  ))}
+                </SettingsCard>
+              </section>
+            ))}
+          </SidebarConfiguratorSteps>
           <SettingsCard>
             <SettingsRow
               className={DENSE_ROW}
@@ -88,17 +89,6 @@ function SettingsItem({
   divided: boolean;
 }): ReactElement {
   const resolved = resolveDisplayItem(item);
-  if (resolved.kind === "preset") {
-    return (
-      <SettingsRow
-        divided={divided}
-        className={STACKED}
-        label="Preset"
-        description={PRESET_DESCRIPTION}
-        control={<PresetControl form={form} />}
-      />
-    );
-  }
   if (resolved.kind === "rowElements") {
     return (
       <SettingsRow

@@ -299,9 +299,6 @@ export const SWITCH_ROWS: readonly { id: ToggleId; label: string; description: s
   },
 ];
 
-export const PRESET_DESCRIPTION =
-  "Classic is the default. Picking a preset resets every display option it doesn't set; changing any of them makes it yours.";
-
 export const ROW_ELEMENTS_DESCRIPTION =
   "The worktree marker on the title line, and the details beside or under the title.";
 
