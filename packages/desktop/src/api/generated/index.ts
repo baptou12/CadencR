@@ -2896,6 +2896,17 @@ export interface ManagedThemeCatalogResponse {
   verified: boolean;
 }
 
+export type ManagedThemeDuplicateResponseAllOf = {
+  /**
+   * Offline policy fallback diagnostic for a successfully created author copy.
+   * @nullable
+   */
+  warning?: string | null;
+};
+
+export type ManagedThemeDuplicateResponse = CreateThemeResponse &
+  ManagedThemeDuplicateResponseAllOf;
+
 export type ManagedThemeInventoryEntryTheme = null | UserTheme;
 
 export interface ManagedThemeInventoryEntry {
@@ -2913,6 +2924,11 @@ export interface ManagedThemeInventoryEntry {
   sha256: string;
   theme?: ManagedThemeInventoryEntryTheme;
   version: string;
+  /**
+   * Offline policy fallback diagnostic; the authenticated theme remains usable.
+   * @nullable
+   */
+  warning?: string | null;
 }
 
 export interface MarkViewedRequest {
@@ -24813,7 +24829,7 @@ export const duplicateManagedTheme = (
   duplicateManagedThemeRequest: DuplicateManagedThemeRequest,
   signal?: AbortSignal,
 ) => {
-  return customInstance<CreateThemeResponse>({
+  return customInstance<ManagedThemeDuplicateResponse>({
     url: `/api/themes/managed/${id}/duplicate`,
     method: "POST",
     headers: { "Content-Type": "application/json" },
