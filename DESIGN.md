@@ -478,7 +478,7 @@ Five chips above the prompt: Auto-scroll · Autonomy · Model · Thinking effort
 
 ### Worktree row
 
-A single-line indicator above the tab strip in Session/workspace view: branch icon + worktree path + clipboard chip + ready dot. Sits between TopBar and the pane tabs. Uses `success` for the ready state — never warm-orange or accent.
+A single-line subtitle under the feature title, inside the TopBar's title block: disclosure chevron (under the project badge) + branch icon (on the title's left edge) + branch + clipboard chip + status badge. It never adds a band of its own, so on desktop the TopBar keeps the same height with or without a worktree and still lines up with the sidebar header. The chevron shares the project badge's grid column, so it stays centered under a dot or an icon. The expanded setup details (steps, log, retry) open below the TopBar, above the pane tabs. Uses `success` for the ready state — never warm-orange or accent.
 
 ### Notch island (`src/notch/`, macOS only)
 
