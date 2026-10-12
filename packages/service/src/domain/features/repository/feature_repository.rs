@@ -95,6 +95,16 @@ pub async fn list_recent(pool: &SqlitePool, limit: i64) -> Result<Vec<Feature>, 
     Ok(rows)
 }
 
+/// Every active conversation across all projects, most recently touched
+/// first, for the sidebar's cross-project lenses and saved views.
+pub async fn list_active(pool: &SqlitePool) -> Result<Vec<Feature>, AppError> {
+    let sql = by_activity_sql("f.status = 'active'");
+    let rows = sqlx::query_as::<_, Feature>(AssertSqlSafe(sql))
+        .fetch_all(pool)
+        .await?;
+    Ok(rows)
+}
+
 pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, AppError> {
     let sql =
         format!("SELECT {FEATURE_COLUMNS} FROM features f {LATEST_SESSION_JOIN} WHERE f.id = ?");
@@ -692,6 +702,30 @@ mod tests {
         // row never shows even though it is the newest.
         assert_eq!(ids, vec![2, 3]);
         assert!(recent.iter().all(|f| f.last_activity_at.is_some()));
+    }
+
+    #[tokio::test]
+    async fn list_active_returns_every_active_across_projects() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type, is_pinned, created_at) VALUES \
+             (1, 1, 'old', 'active', 'ws-session', 0, '2026-01-01T00:00:00Z'), \
+             (2, 2, 'newest', 'active', 'ws-session', 1, '2026-01-04T00:00:00Z'), \
+             (3, 1, 'middle', 'active', 'ws-session', 0, '2026-01-02T00:00:00Z'), \
+             (4, 2, 'archived', 'archived', 'ws-session', 0, '2026-01-05T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let ids: Vec<i64> = list_active(&pool)
+            .await
+            .unwrap()
+            .iter()
+            .map(|f| f.id)
+            .collect();
+        // Pinned ones included, archived ones left out, newest first.
+        assert_eq!(ids, vec![2, 3, 1]);
     }
 
     #[tokio::test]

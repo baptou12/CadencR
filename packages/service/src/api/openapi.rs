@@ -114,6 +114,7 @@ use crate::domain::ws_session::routes as ws_routes;
         ports_routes::list_feature_ports_handler,
         features_routes::list_pinned_features_handler,
         features_recent_routes::list_recent_features_handler,
+        features_recent_routes::list_active_features_handler,
         features_routes::create_feature_handler,
         features_routes::get_feature_handler,
         features_routes::delete_feature_handler,

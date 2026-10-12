@@ -278,6 +278,8 @@ mod tests {
         assert!(is_workspace_key_allowed("sidebar_expanded_projects"));
         assert!(is_workspace_key_allowed("sidebar_collapsed_subtrees"));
         assert!(is_workspace_key_allowed("sidebar_archived_open_projects"));
+        assert!(is_workspace_key_allowed("sidebar_views"));
+        assert!(is_workspace_key_allowed("sidebar_active_view"));
     }
     #[test]
     fn workspace_accepts_favorite_models() {

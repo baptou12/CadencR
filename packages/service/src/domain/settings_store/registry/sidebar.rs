@@ -53,6 +53,19 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
         "sidebar_block_counts" => {
             SettingSpec::new(ValueKind::Enum(&["count", "dot", "none"]), Some("count"))
         }
+        "sidebar_lens" => SettingSpec::new(
+            ValueKind::Enum(&[
+                "project", "status", "worktree", "provider", "label", "date", "flat",
+            ]),
+            Some("project"),
+        ),
+        "sidebar_conversation_sort" => SettingSpec::new(
+            ValueKind::Enum(&["activity", "created", "title"]),
+            Some("activity"),
+        ),
+        "sidebar_project_sort" => {
+            SettingSpec::new(ValueKind::Enum(&["frozen", "live", "name"]), Some("frozen"))
+        }
         "sidebar_gate_popover" => {
             SettingSpec::new(ValueKind::Enum(&["auto", "hover", "click"]), Some("auto"))
         }
@@ -69,6 +82,7 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
         | "sidebar_block_for_me"
         | "sidebar_hide_empty_blocks"
         | "sidebar_flash_on_change"
+        | "sidebar_sticky_headers"
         | "sidebar_type_to_filter" => SettingSpec::new(BOOL, Some("true")),
         _ => return None,
     };
@@ -116,5 +130,12 @@ mod tests {
         assert!(!recent.is_valid("7"));
         let auto_collapse = workspace_spec("sidebar_auto_collapse").unwrap();
         assert_eq!(auto_collapse.default, Some("false"));
+        let lens = workspace_spec("sidebar_lens").unwrap();
+        assert_eq!(lens.default, Some("project"));
+        assert!(lens.is_valid("date"));
+        assert!(!lens.is_valid("tree"));
+        let project_sort = workspace_spec("sidebar_project_sort").unwrap();
+        assert!(project_sort.is_valid("name"));
+        assert!(!project_sort.is_valid("manual"));
     }
 }

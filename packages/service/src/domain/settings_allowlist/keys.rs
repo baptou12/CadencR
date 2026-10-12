@@ -82,6 +82,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "sidebar_expanded_projects",
     "sidebar_collapsed_subtrees",
     "sidebar_archived_open_projects",
+    // Saved sidebar views: a JSON array of `{id, name, query}` (queries use the
+    // Agents grid filter language), and the id of the one shown ("" for none).
+    "sidebar_views",
+    "sidebar_active_view",
     // Sidebar display options (density, row template, filter) live in
     // `SIDEBAR_DISPLAY_KEYS` below.
     "loader_style",
@@ -278,6 +282,10 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_gate_popover",
     "sidebar_flash_on_change",
     "sidebar_auto_collapse",
+    "sidebar_lens",
+    "sidebar_conversation_sort",
+    "sidebar_project_sort",
+    "sidebar_sticky_headers",
 ];
 
 #[cfg(test)]

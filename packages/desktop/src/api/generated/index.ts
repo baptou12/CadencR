@@ -11225,6 +11225,109 @@ export const useCreateFeature = <TError = ErrorType<unknown>, TContext = unknown
   return useMutation(getCreateFeatureMutationOptions(options), queryClient);
 };
 
+/**
+ * @summary Every active conversation across all projects, most recently touched first.
+ */
+export const listActiveFeatures = (signal?: AbortSignal) => {
+  return customInstance<Feature[]>({ url: `/api/features/active`, method: "GET", signal });
+};
+
+export const getListActiveFeaturesQueryKey = () => {
+  return [`/api/features/active`] as const;
+};
+
+export const getListActiveFeaturesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listActiveFeatures>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listActiveFeatures>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListActiveFeaturesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listActiveFeatures>>> = ({ signal }) =>
+    listActiveFeatures(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listActiveFeatures>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListActiveFeaturesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listActiveFeatures>>
+>;
+export type ListActiveFeaturesQueryError = ErrorType<unknown>;
+
+export function useListActiveFeatures<
+  TData = Awaited<ReturnType<typeof listActiveFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listActiveFeatures>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listActiveFeatures>>,
+          TError,
+          Awaited<ReturnType<typeof listActiveFeatures>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListActiveFeatures<
+  TData = Awaited<ReturnType<typeof listActiveFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listActiveFeatures>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listActiveFeatures>>,
+          TError,
+          Awaited<ReturnType<typeof listActiveFeatures>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useListActiveFeatures<
+  TData = Awaited<ReturnType<typeof listActiveFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listActiveFeatures>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * @summary Every active conversation across all projects, most recently touched first.
+ */
+
+export function useListActiveFeatures<
+  TData = Awaited<ReturnType<typeof listActiveFeatures>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listActiveFeatures>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListActiveFeaturesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export const listFeatureActivity = (params: ListFeatureActivityParams, signal?: AbortSignal) => {
   return customInstance<FeatureActivity[]>({
     url: `/api/features/activity`,

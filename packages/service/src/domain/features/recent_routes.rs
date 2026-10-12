@@ -32,6 +32,17 @@ pub async fn list_recent_features_handler(
     Ok(Json(service::list_recent(&state.read_pool, limit).await?))
 }
 
+/// Every active conversation across all projects, most recently touched first.
+#[utoipa::path(get, path = "/api/features/active",
+    responses((status = 200, body = Vec<Feature>)))]
+pub async fn list_active_features_handler(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<Feature>>, AppError> {
+    Ok(Json(service::list_active(&state.read_pool).await?))
+}
+
 pub fn recent_routes() -> Router<AppState> {
-    Router::new().route("/api/features/recent", get(list_recent_features_handler))
+    Router::new()
+        .route("/api/features/recent", get(list_recent_features_handler))
+        .route("/api/features/active", get(list_active_features_handler))
 }
