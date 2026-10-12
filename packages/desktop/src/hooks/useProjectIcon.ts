@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useProjectSettingsList } from "@/hooks/useProjectColor";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useSidebarSample } from "@/lib/sidebar-sample-context";
 import { PROJECT_ICON_SETTING_KEY, projectIconBlob, projectIconQueryKey } from "@/lib/project-icon";
 
 /**
@@ -24,9 +25,11 @@ function useProjectIconPath(projectId: number): string {
  * the badge rendered in the sidebar, top bar, and several pickers at once, so a
  * missing file must degrade quietly to the color dot instead of firing a toast
  * from every mounted instance. The Project Settings icon field is where a
- * broken path gets reported — see `ProjectIconField`.
+ * broken path gets reported — see `ProjectIconField`. The display options
+ * preview's sample projects answer with their made-up logos.
  */
 export function useProjectIconUrl(projectId: number): string | null {
+  const sample = useSidebarSample();
   const iconPath = useProjectIconPath(projectId);
 
   const { data: blob } = useQuery({
@@ -36,12 +39,13 @@ export function useProjectIconUrl(projectId: number): string | null {
     // absolute paths the native file picker allows.
     queryKey: projectIconQueryKey(projectId, iconPath),
     queryFn: ({ signal }) => projectIconBlob(projectId, { signal }),
-    enabled: iconPath.length > 0,
+    enabled: sample === null && iconPath.length > 0,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,
   });
 
-  return useObjectUrl(blob);
+  const url = useObjectUrl(blob);
+  return sample ? (sample.projectIcons.get(projectId) ?? null) : url;
 }

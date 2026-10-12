@@ -1,8 +1,8 @@
 import type { SidebarOptionId } from "@/lib/sidebar-config";
 import { CHOICE_ROWS, SWITCH_ROWS } from "./sidebar-display-rows";
 
-/** One line of the display options: an option, the presets, or the row element checkboxes. */
-export type DisplayItem = SidebarOptionId | "preset" | "rowElements";
+/** One line of the display options: an option, or the row element checkboxes. */
+export type DisplayItem = SidebarOptionId | "rowElements";
 
 export interface DisplayGroup {
   id: string;
@@ -11,12 +11,12 @@ export interface DisplayGroup {
 }
 
 /**
- * The options in the order both layouts show them: what changes the sidebar
- * most first, the rest grouped by what they act on. The popover folds every
- * group after the first.
+ * The options in the order both layouts show them, under the presets: what
+ * changes the sidebar most first, the rest grouped by what they act on. The
+ * popover folds every group after the first.
  */
 export const DISPLAY_GROUPS: readonly DisplayGroup[] = [
-  { id: "essentials", label: "Essentials", items: ["preset", "density", "status", "time"] },
+  { id: "essentials", label: "Essentials", items: ["density", "status", "time"] },
   {
     id: "rows",
     label: "Rows",
@@ -72,15 +72,13 @@ const SWITCH_BY_ID = new Map<string, (typeof SWITCH_ROWS)[number]>(
   SWITCH_ROWS.map((row) => [row.id, row]),
 );
 
-/** What a group item renders: a segmented choice, a switch, or one of the two composite lines. */
+/** What a group item renders: a segmented choice, a switch, or the row element checkboxes. */
 export function resolveDisplayItem(
   item: DisplayItem,
 ):
   | { kind: "choice"; row: (typeof CHOICE_ROWS)[number] }
   | { kind: "switch"; row: (typeof SWITCH_ROWS)[number] }
-  | { kind: "preset" }
   | { kind: "rowElements" } {
-  if (item === "preset") return { kind: "preset" };
   if (item === "rowElements") return { kind: "rowElements" };
   const choice = CHOICE_BY_ID.get(item);
   if (choice) return { kind: "choice", row: choice };

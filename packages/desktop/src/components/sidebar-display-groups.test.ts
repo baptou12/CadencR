@@ -7,7 +7,7 @@ import { ROW_ELEMENTS } from "./sidebar-display-rows";
 describe("DISPLAY_GROUPS", () => {
   it("lays out every option exactly once, row elements in their grid", () => {
     const grouped = DISPLAY_GROUPS.flatMap((group) => group.items).filter(
-      (item) => item !== "preset" && item !== "rowElements",
+      (item) => item !== "rowElements",
     );
     const all = [...grouped, ...ROW_ELEMENTS.map((element) => element.id)];
     expect([...all].sort()).toEqual(Object.keys(SIDEBAR_OPTIONS).sort());

@@ -9,6 +9,7 @@ import type {
 import { PROVIDER_IDS } from "@/lib/providers";
 import type { AttentionState } from "@/lib/sidebar-attention";
 import type { RowSummary } from "@/lib/sidebar-row-summary";
+import { sampleLogoUrl, type SampleLogo } from "@/lib/sidebar-sample-logos";
 
 /**
  * The made-up workspace the display options preview renders: a few projects
@@ -22,6 +23,7 @@ export interface SampleProject {
   id: number;
   name: string;
   color: string;
+  logo: SampleLogo;
   /** Starts folded, so its badges show. */
   collapsed?: boolean;
 }
@@ -40,9 +42,9 @@ export interface SampleConversation {
 }
 
 export const SAMPLE_PROJECTS: readonly SampleProject[] = [
-  { id: -1, name: "web-app", color: "3b82f6" },
-  { id: -2, name: "billing-api", color: "f97316" },
-  { id: -3, name: "design-system", color: "10b981", collapsed: true },
+  { id: -1, name: "web-app", color: "3b82f6", logo: "webApp" },
+  { id: -2, name: "billing-api", color: "f97316", logo: "billingApi" },
+  { id: -3, name: "design-system", color: "10b981", logo: "designSystem", collapsed: true },
 ];
 
 /** The conversation the preview shows as open. */
@@ -286,6 +288,10 @@ export const SAMPLE_SUMMARIES: ReadonlyMap<number, RowSummary> = new Map(
 
 export const SAMPLE_PROJECT_COLORS: ReadonlyMap<number, string> = new Map(
   SAMPLE_PROJECTS.map((project) => [project.id, project.color]),
+);
+
+export const SAMPLE_PROJECT_ICONS: ReadonlyMap<number, string> = new Map(
+  SAMPLE_PROJECTS.map((project) => [project.id, sampleLogoUrl(project.logo, project.color)]),
 );
 
 function worktree(featureId: number, project: string, branch: string): FeatureWorktreeInfo {

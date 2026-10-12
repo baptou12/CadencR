@@ -20,8 +20,8 @@ import { Switch } from "@/components/ui/switch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { HintTooltip } from "@/components/HintTooltip";
 import { UsageSegmentedControl } from "@/components/usage/UsageSegmentedControl";
+import { SidebarConfiguratorSteps } from "@/components/SidebarConfiguratorSteps";
 import {
-  PRESET_DESCRIPTION,
   ROW_ELEMENTS,
   ROW_ELEMENTS_DESCRIPTION,
   type ChoiceId,
@@ -34,34 +34,37 @@ import {
   type DisplayItem,
 } from "@/components/sidebar-display-groups";
 import { useSidebarOptionHighlight } from "@/hooks/useSidebarOptionHighlight";
+import { nearestSidebarPreset } from "@/lib/sidebar-presets";
 import type { SidebarOptionId } from "@/lib/sidebar-config";
 import {
   useSetSidebarOption,
   useSidebarConfigWrites,
   useSidebarSettings,
 } from "@/hooks/useSidebarSettings";
-import { matchSidebarPreset, SIDEBAR_PRESETS, type SidebarPresetId } from "@/lib/sidebar-presets";
 import { cn } from "@/lib/utils";
 
 /** State and actions shared by the popover form and the Settings section. */
 export function useSidebarDisplayForm() {
   const { config, isFetched } = useSidebarSettings();
   const setOption = useSetSidebarOption();
-  const { reset, applyPreset, isApplying } = useSidebarConfigWrites();
+  const { reset, applyPreset, restore, isApplying } = useSidebarConfigWrites();
   return useMemo(
     () => ({
       config,
+      /** The preset the options are, or moved from: the base the configurator adjusts. */
+      nearest: nearestSidebarPreset(config),
       setOption,
       reset,
       applyPreset,
+      restore,
       isApplying,
       disabled: !isFetched || isApplying,
     }),
-    [config, setOption, reset, applyPreset, isApplying, isFetched],
+    [config, setOption, reset, applyPreset, restore, isApplying, isFetched],
   );
 }
 
-type SidebarDisplayForm = ReturnType<typeof useSidebarDisplayForm>;
+export type SidebarDisplayForm = ReturnType<typeof useSidebarDisplayForm>;
 
 export function ChoiceControl<K extends ChoiceId>({
   form,
@@ -102,27 +105,6 @@ export function ChoiceControl<K extends ChoiceId>({
       value={form.config[row.id]}
       options={row.options}
       onChange={(value) => form.setOption(row.id, value)}
-    />
-  );
-}
-
-const PRESET_OPTIONS = SIDEBAR_PRESETS.map((preset) => ({
-  value: preset.id,
-  label: preset.label,
-  title: preset.description,
-}));
-
-/** The built-in presets; none is selected once an option is customized. */
-export function PresetControl({ form }: { form: SidebarDisplayForm }): ReactElement {
-  const current = matchSidebarPreset(form.config);
-  return (
-    <UsageSegmentedControl<SidebarPresetId | "custom">
-      ariaLabel="Preset"
-      value={current ?? "custom"}
-      options={PRESET_OPTIONS}
-      onChange={(value) => {
-        if (value !== "custom") form.applyPreset(value);
-      }}
     />
   );
 }
@@ -206,28 +188,30 @@ export function SidebarDisplayOptionsForm({ className }: { className?: string })
           title="Restore every display option to its default"
         />
       </div>
-      <TooltipProvider delayDuration={300}>
-        {essentials && <GroupItems form={form} group={essentials} />}
-        {folded.map((group) => (
-          <div key={group.id} className="flex flex-col gap-3 border-t border-border/50 pt-1.5">
-            <button
-              type="button"
-              aria-expanded={openGroups.has(group.id)}
-              onClick={() => toggleGroup(group.id)}
-              className="-mx-1.5 flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-semibold text-foreground/90 outline-none transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:bg-accent/50"
-            >
-              {group.label}
-              <ChevronRight
-                className={cn(
-                  "ml-auto size-3.5 text-muted-foreground transition-transform duration-150",
-                  openGroups.has(group.id) && "rotate-90",
-                )}
-              />
-            </button>
-            {openGroups.has(group.id) && <GroupItems form={form} group={group} />}
-          </div>
-        ))}
-      </TooltipProvider>
+      <SidebarConfiguratorSteps form={form}>
+        <TooltipProvider delayDuration={300}>
+          {essentials && <GroupItems form={form} group={essentials} />}
+          {folded.map((group) => (
+            <div key={group.id} className="flex flex-col gap-3 border-t border-border/50 pt-1.5">
+              <button
+                type="button"
+                aria-expanded={openGroups.has(group.id)}
+                onClick={() => toggleGroup(group.id)}
+                className="-mx-1.5 flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-foreground/80 outline-none transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:bg-accent/50"
+              >
+                {group.label}
+                <ChevronRight
+                  className={cn(
+                    "ml-auto size-3.5 text-muted-foreground transition-transform duration-150",
+                    openGroups.has(group.id) && "rotate-90",
+                  )}
+                />
+              </button>
+              {openGroups.has(group.id) && <GroupItems form={form} group={group} />}
+            </div>
+          ))}
+        </TooltipProvider>
+      </SidebarConfiguratorSteps>
     </fieldset>
   );
 }
@@ -260,13 +244,6 @@ function DisplayItemRow({
   switchId: string;
 }): ReactElement {
   const resolved = resolveDisplayItem(item);
-  if (resolved.kind === "preset") {
-    return (
-      <OptionRow label="Preset" hint={PRESET_DESCRIPTION}>
-        <PresetControl form={form} />
-      </OptionRow>
-    );
-  }
   if (resolved.kind === "rowElements") {
     return (
       <div className="flex flex-col gap-1.5">

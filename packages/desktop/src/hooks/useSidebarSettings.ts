@@ -17,7 +17,11 @@ import {
   type SidebarConfig,
   type SidebarOptionId,
 } from "@/lib/sidebar-config";
-import { sidebarPresetValues, type SidebarPresetId } from "@/lib/sidebar-presets";
+import {
+  sidebarDisplayValues,
+  sidebarPresetValues,
+  type SidebarPresetId,
+} from "@/lib/sidebar-presets";
 
 interface SidebarSettings {
   config: SidebarConfig;
@@ -89,6 +93,8 @@ interface SidebarConfigWrites {
   reset: () => void;
   /** Writes a preset's values and clears every option it doesn't set (L1). */
   applyPreset: (presetId: SidebarPresetId) => void;
+  /** Writes back every display option of a config, undoing a preset. */
+  restore: (config: SidebarConfig) => void;
   /** A reset or preset write is in flight. */
   isApplying: boolean;
 }
@@ -116,9 +122,13 @@ export function useSidebarConfigWrites(): SidebarConfigWrites {
     (presetId: SidebarPresetId) => mutate({ data: { values: sidebarPresetValues(presetId) } }),
     [mutate],
   );
+  const restore = useCallback(
+    (config: SidebarConfig) => mutate({ data: { values: sidebarDisplayValues(config) } }),
+    [mutate],
+  );
   const reset = useCallback(() => applyPreset("classic"), [applyPreset]);
   return useMemo(
-    () => ({ reset, applyPreset, isApplying: isPending }),
-    [reset, applyPreset, isPending],
+    () => ({ reset, applyPreset, restore, isApplying: isPending }),
+    [reset, applyPreset, restore, isPending],
   );
 }

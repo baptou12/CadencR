@@ -183,10 +183,10 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 .sidebar-project-children[data-active] {
   border-inline-start-color: color-mix(in oklab, var(--foreground) 22%, transparent);
 }
-/* The rows' twisty column (sub-conversation chevrons, the folds' chevrons)
- * sits on the guide instead of taking a column of its own: moved back by the
- * guide's offset, line and padding, its space handed to the status and title.
- * Rows inside a worktree group keep theirs, inside the group's box. */
+/* The rows' twisty column (sub-conversation chevrons) sits on the guide
+ * instead of taking a column of its own: moved back by the guide's offset,
+ * line and padding, its space handed to the status and title. Rows inside a
+ * worktree group keep theirs, inside the group's box. */
 .sidebar-project-children [data-feature-hierarchy-gutter] {
   --sidebar-gutter-shift: calc(var(--sidebar-guide-x) + 1px + var(--sidebar-guide-pad));
   translate: calc(-1 * var(--sidebar-gutter-shift)) 0;
@@ -195,6 +195,14 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 .sidebar-project-children .worktree-group [data-feature-hierarchy-gutter] {
   translate: none;
   margin-inline-end: 0;
+}
+/* The Dormant and Archived folds' chevron lines up with the rows' status
+ * slot instead of crossing the guide: past the rows' gutter (size-3.5) and
+ * gap (gap-1.5), less the shift. The label follows. */
+.sidebar-project-children [data-feature-fold] [data-feature-hierarchy-gutter] {
+  --sidebar-fold-nudge: calc(0.875rem + 0.375rem - var(--sidebar-gutter-shift));
+  translate: var(--sidebar-fold-nudge) 0;
+  margin-inline-end: var(--sidebar-fold-nudge);
 }
 
 /* Idle conversation titles step back (FeatureRowTitleLine); pointing at the
