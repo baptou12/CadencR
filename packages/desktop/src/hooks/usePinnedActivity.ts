@@ -51,15 +51,16 @@ export interface PinnedActivity {
 /**
  * Shell counts and worktrees for the pinned section: one activity and one
  * worktrees query per distinct project, with the project sections' keys and
- * options so an expanded project shares the same cache entries.
+ * options so an expanded project shares the same cache entries. Without
+ * `withShells`, only worktrees: no activity polling.
  */
-export function usePinnedActivity(pinned: readonly Feature[]): PinnedActivity {
+export function usePinnedActivity(pinned: readonly Feature[], withShells = true): PinnedActivity {
   const projectIds = useMemo(
     () => [...new Set(pinned.map((feature) => feature.project_id))].sort((a, b) => a - b),
     [pinned],
   );
   const activity = useQueries({
-    queries: projectIds.map((projectId) =>
+    queries: (withShells ? projectIds : []).map((projectId) =>
       getListFeatureActivityQueryOptions(featureActivityParams(projectId), {
         query: { refetchInterval: FEATURE_ACTIVITY_POLL_MS },
       }),

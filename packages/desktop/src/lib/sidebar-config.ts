@@ -63,6 +63,18 @@ export const SIDEBAR_OPTIONS = {
   gatePopover: enumOption("sidebar_gate_popover", ["auto", "hover", "click"], "auto"),
   flashOnChange: boolOption("sidebar_flash_on_change", true),
   autoCollapse: boolOption("sidebar_auto_collapse", false),
+  lens: enumOption(
+    "sidebar_lens",
+    ["project", "status", "worktree", "provider", "label", "date", "flat"],
+    "project",
+  ),
+  conversationSort: enumOption(
+    "sidebar_conversation_sort",
+    ["activity", "created", "title"],
+    "activity",
+  ),
+  projectSort: enumOption("sidebar_project_sort", ["frozen", "live", "name"], "frozen"),
+  stickyHeaders: boolOption("sidebar_sticky_headers", true),
 } as const;
 
 type OptionValue<O> = O extends EnumOption<infer V> ? V : O extends BoolOption ? boolean : never;

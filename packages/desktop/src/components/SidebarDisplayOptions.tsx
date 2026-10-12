@@ -9,21 +9,30 @@ import {
 import { ChevronDown, ChevronRight, LoaderCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { HintTooltip } from "@/components/HintTooltip";
 import { UsageSegmentedControl } from "@/components/usage/UsageSegmentedControl";
 import {
-  DISPLAY_GROUPS,
   PRESET_DESCRIPTION,
-  resolveDisplayItem,
   ROW_ELEMENTS,
   ROW_ELEMENTS_DESCRIPTION,
   type ChoiceId,
   type ChoiceRow,
+} from "@/components/sidebar-display-rows";
+import {
+  DISPLAY_GROUPS,
+  resolveDisplayItem,
   type DisplayGroup,
   type DisplayItem,
-} from "@/components/sidebar-display-rows";
+} from "@/components/sidebar-display-groups";
 import { useSidebarOptionHighlight } from "@/hooks/useSidebarOptionHighlight";
 import type { SidebarOptionId } from "@/lib/sidebar-config";
 import {
@@ -61,6 +70,32 @@ export function ChoiceControl<K extends ChoiceId>({
   form: SidebarDisplayForm;
   row: ChoiceRow<K>;
 }): ReactElement {
+  if (row.control === "select") {
+    return (
+      <Select
+        value={form.config[row.id]}
+        onValueChange={(value) => {
+          const option = row.options.find((candidate) => candidate.value === value);
+          if (option) form.setOption(row.id, option.value);
+        }}
+      >
+        <SelectTrigger
+          size="sm"
+          aria-label={row.label}
+          className="h-7 min-w-28 gap-1 px-2 py-0.5 text-[11px] data-[size=sm]:h-7 [&_svg:not([class*='size-'])]:size-3.5"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {row.options.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="text-[11px]">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
   return (
     <UsageSegmentedControl
       ariaLabel={row.label}

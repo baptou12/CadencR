@@ -20,7 +20,20 @@ export interface ChoiceRow<K extends ChoiceId> {
   /** Shown on the Settings page, where there is room to explain. */
   description: string;
   options: readonly SegmentedOption<SidebarConfig[K]>[];
+  /** A dropdown instead of segments, for choices too many to sit side by side. */
+  control?: "select";
 }
+
+/** The "Group by" choices, also listed by the Projects header's menu. */
+export const LENS_OPTIONS: readonly SegmentedOption<SidebarConfig["lens"]>[] = [
+  { value: "project", label: "Project" },
+  { value: "status", label: "Status" },
+  { value: "worktree", label: "Worktree" },
+  { value: "provider", label: "Provider" },
+  { value: "label", label: "Label" },
+  { value: "date", label: "Date" },
+  { value: "flat", label: "Flat list" },
+];
 
 // Mapped per key, so each row's options must be that option's own values.
 export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][] = [
@@ -105,6 +118,35 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
       { value: "logo", label: "Logo" },
       { value: "logo_model", label: "Logo + model" },
       { value: "hidden", label: "Hidden" },
+    ],
+  },
+  {
+    id: "lens",
+    description:
+      "How conversations are grouped below the blocks: under their project, or across projects by status, worktree branch, provider, label or last activity, or one flat list.",
+    label: "Group by",
+    control: "select",
+    options: LENS_OPTIONS,
+  },
+  {
+    id: "conversationSort",
+    description: "The order of conversations within a project or group.",
+    label: "Sort conversations",
+    options: [
+      { value: "activity", label: "Activity", title: "Last message first" },
+      { value: "created", label: "Created", title: "Newest conversation first" },
+      { value: "title", label: "Title", title: "Alphabetical" },
+    ],
+  },
+  {
+    id: "projectSort",
+    description:
+      "The order of projects: by activity, re-sorted only when you ask (the refresh button in the Projects header), by activity as it happens, or by name.",
+    label: "Sort projects",
+    options: [
+      { value: "frozen", label: "Frozen", title: "By activity, re-sorted when you ask" },
+      { value: "live", label: "Live", title: "By activity, as it happens" },
+      { value: "name", label: "Name", title: "Alphabetical" },
     ],
   },
   {
@@ -213,6 +255,11 @@ export const SWITCH_ROWS: readonly { id: ToggleId; label: string; description: s
     description: "A block with nothing in it disappears instead of saying so.",
   },
   {
+    id: "stickyHeaders",
+    label: "Sticky headers",
+    description: "A project's or group's header stays at the top while you scroll through it.",
+  },
+  {
     id: "flashOnChange",
     label: "Flash on change",
     description: "A row flashes once when its conversation starts waiting, fails or replies.",
@@ -275,69 +322,3 @@ export const ROW_ELEMENTS: readonly { id: ToggleId; label: string; description: 
     description: "Open shells, browser tabs and downloads, under the title.",
   },
 ];
-
-/** One line of the display options: an option, the presets, or the row element checkboxes. */
-export type DisplayItem = SidebarOptionId | "preset" | "rowElements";
-
-export interface DisplayGroup {
-  id: string;
-  label: string;
-  items: readonly DisplayItem[];
-}
-
-/**
- * The options in the order both layouts show them: what changes the sidebar
- * most first, the rest grouped by what they act on. The popover folds every
- * group after the first.
- */
-export const DISPLAY_GROUPS: readonly DisplayGroup[] = [
-  { id: "essentials", label: "Essentials", items: ["preset", "density", "status", "time"] },
-  {
-    id: "rows",
-    label: "Rows",
-    items: ["fontSize", "titleLines", "titleSource", "label", "provider", "rowElements"],
-  },
-  {
-    id: "blocks",
-    label: "Blocks",
-    items: [
-      "forMe",
-      "workingBlock",
-      "recentBlock",
-      "recentCount",
-      "blockCounts",
-      "hideEmptyBlocks",
-    ],
-  },
-  { id: "projects", label: "Projects", items: ["projectBadges", "dormantAfter", "revealActive"] },
-  { id: "attention", label: "Attention", items: ["gatePopover", "flashOnChange"] },
-  {
-    id: "collapsing",
-    label: "Collapsing & filter",
-    items: ["rail", "autoCollapse", "typeToFilter"],
-  },
-];
-
-const CHOICE_BY_ID = new Map<string, (typeof CHOICE_ROWS)[number]>(
-  CHOICE_ROWS.map((row) => [row.id, row]),
-);
-const SWITCH_BY_ID = new Map<string, (typeof SWITCH_ROWS)[number]>(
-  SWITCH_ROWS.map((row) => [row.id, row]),
-);
-
-/** What a group item renders: a segmented choice, a switch, or one of the two composite lines. */
-export function resolveDisplayItem(
-  item: DisplayItem,
-):
-  | { kind: "choice"; row: (typeof CHOICE_ROWS)[number] }
-  | { kind: "switch"; row: (typeof SWITCH_ROWS)[number] }
-  | { kind: "preset" }
-  | { kind: "rowElements" } {
-  if (item === "preset") return { kind: "preset" };
-  if (item === "rowElements") return { kind: "rowElements" };
-  const choice = CHOICE_BY_ID.get(item);
-  if (choice) return { kind: "choice", row: choice };
-  const toggle = SWITCH_BY_ID.get(item);
-  if (toggle) return { kind: "switch", row: toggle };
-  throw new Error(`Sidebar option ${item} has no display row`);
-}

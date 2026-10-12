@@ -6,13 +6,12 @@ import {
   RowElementGrid,
   useSidebarDisplayForm,
 } from "@/components/SidebarDisplayOptions";
+import { PRESET_DESCRIPTION, ROW_ELEMENTS_DESCRIPTION } from "@/components/sidebar-display-rows";
 import {
   DISPLAY_GROUPS,
-  PRESET_DESCRIPTION,
   resolveDisplayItem,
-  ROW_ELEMENTS_DESCRIPTION,
   type DisplayItem,
-} from "@/components/sidebar-display-rows";
+} from "@/components/sidebar-display-groups";
 import { useSidebarOptionHighlight } from "@/hooks/useSidebarOptionHighlight";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsHeading } from "./SettingsHeading";

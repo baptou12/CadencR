@@ -16,7 +16,7 @@ import {
   type Feature,
 } from "@/api/generated";
 import { invalidateScheduleLists } from "@/lib/schedules/invalidate";
-import { invalidateFeatureQueries } from "@/lib/featureUpdated";
+import { GLOBAL_FEATURE_LIST_URLS, invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
@@ -387,11 +387,11 @@ export function handleAppEnvelope(
     } else {
       void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey() });
     }
-    // The global "Pinned" and "Recent" sidebar blocks are keyed by sibling URLs
+    // The cross-project lists (Pinned, Recent, lenses) are keyed by sibling URLs
     // that the `["/api/features"]` array-prefix above can't reach (React Query
     // only prefix-matches array elements). Refresh them explicitly so a pin, a
     // rename or a delete on any device keeps them in sync.
-    void invalidateByUrlPrefix(queryClient, ["/api/features/pinned", "/api/features/recent"]);
+    void invalidateByUrlPrefix(queryClient, GLOBAL_FEATURE_LIST_URLS);
     return true;
   }
   return false;

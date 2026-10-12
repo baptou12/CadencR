@@ -26,6 +26,7 @@ describe("invalidateFeatureQueries", () => {
     expect(mockInvalidateByUrlPrefix).toHaveBeenCalledWith(expect.anything(), [
       "/api/features/pinned",
       "/api/features/recent",
+      "/api/features/active",
     ]);
     mockInvalidateByUrlPrefix.mockClear();
     invalidateFeatureQueries(42, ["settings"]);

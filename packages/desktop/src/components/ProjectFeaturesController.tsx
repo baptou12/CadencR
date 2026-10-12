@@ -27,6 +27,8 @@ import { partitionActiveFeatures } from "@/lib/feature-grouping";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { buildFeatureForest } from "@/lib/feature-hierarchy";
 import { normalizeLabel, uniqueLabels } from "@/lib/feature-labels";
+import { sortConversations } from "@/lib/sidebar-lens";
+import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { FEATURE_WORKTREES_STALE_MS } from "@/lib/sidebar-queries";
 import type { ProjectFilterMatch } from "@/hooks/useSidebarFilterMatches";
@@ -90,12 +92,14 @@ function useProjectFeaturesData({
       isFiltering ? [] : features.filter((feature) => feature.status === ARCHIVED_FEATURE_STATUS),
     [features, isFiltering],
   );
+  const sort = useSidebarOption("conversationSort");
   const shownFeatures = useMemo(
     () =>
-      filterMatch
-        ? activeFeatures.filter((feature) => filterMatch.has(feature.id))
-        : activeFeatures,
-    [activeFeatures, filterMatch],
+      sortConversations(
+        filterMatch ? activeFeatures.filter((f) => filterMatch.has(f.id)) : activeFeatures,
+        sort,
+      ),
+    [activeFeatures, filterMatch, sort],
   );
   const worktreeData = useMemo(() => {
     const worktreeFeatureIds = new Set<number>();

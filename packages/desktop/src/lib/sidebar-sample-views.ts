@@ -1,3 +1,4 @@
+import type { Feature } from "@/api/generated";
 import {
   countByProject,
   type ResolvedAttention,
@@ -5,6 +6,7 @@ import {
 } from "@/hooks/useResolvedAttention";
 import { buildAttentionIndex } from "@/lib/attention-index";
 import { needsUser, type AttentionState } from "@/lib/sidebar-attention";
+import { lastActivityOf, newestFirst } from "@/lib/sidebar-lens";
 import type { SampleConversation } from "@/lib/sidebar-sample-data";
 
 /** A sample conversation with the state it shows right now. */
@@ -23,8 +25,12 @@ export interface SampleViews {
 }
 
 function lastActivity(row: SampleRow): string {
-  const { feature } = row.conversation;
-  return feature.last_activity_at ?? feature.created_at;
+  return lastActivityOf(row.conversation.feature);
+}
+
+/** The samples' conversations, last activity first: the order every list arrives in. */
+export function byActivity(rows: readonly SampleRow[]): Feature[] {
+  return rows.map((row) => row.conversation.feature).sort(newestFirst(lastActivityOf));
 }
 
 /** Everything the blocks, the folded projects and the rail show, picked the way the live sidebar picks it. */

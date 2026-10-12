@@ -33,6 +33,10 @@ import { ProjectRowAttention } from "./SidebarAttentionProvider";
 import { useRevealActiveRow } from "@/hooks/useRevealActiveRow";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SampleScope, useSidebarSamplePreview } from "./SidebarSampleProvider";
+import { SidebarCrossProjectList } from "./SidebarCrossProjectList";
+import { STICKY_HEADER_CLASS } from "./SidebarLensGroupHeader";
+import { cn } from "@/lib/utils";
+import { useSidebarListMode } from "@/hooks/useSidebarViews";
 import { SidebarSampleTree } from "./SidebarSampleTree";
 import { SidebarSampleRail } from "./SidebarSampleRail";
 
@@ -173,7 +177,10 @@ export function ProjectTree(props: ProjectTreeProps) {
   const controller = useProjectTreeController(props);
   const filterQuery = useSidebarFilterQuery();
   const treeRef = useRef<HTMLDivElement>(null);
-  useRevealActiveRow(treeRef, props.activeFeatureId);
+  const projectSort = useSidebarOption("projectSort");
+  const mode = useSidebarListMode();
+  // A cross-project list reveals its own open row (it is virtualized).
+  useRevealActiveRow(treeRef, mode.kind === "tree" ? props.activeFeatureId : null);
   const showsSamples = useSidebarSamplePreview() !== null;
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
@@ -183,7 +190,11 @@ export function ProjectTree(props: ProjectTreeProps) {
           controller.isSelectingFolder || controller.mutations.createProject.isPending
         }
         canAddProject={isDesktopShell()}
-        onRefresh={() => void controller.ordered.refresh()}
+        onRefresh={
+          mode.kind !== "tree" || projectSort !== "frozen"
+            ? undefined
+            : () => void controller.ordered.refresh()
+        }
         isRefreshing={controller.ordered.isRefreshing}
       />
       <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -195,8 +206,16 @@ export function ProjectTree(props: ProjectTreeProps) {
             </SampleScope>
           </div>
         ) : (
-          <div ref={treeRef} className="flex min-w-0 flex-col gap-0.5 px-1">
-            <ProjectTreeRows props={props} controller={controller} filterQuery={filterQuery} />
+          <div ref={treeRef} data-sidebar-tree className="flex min-w-0 flex-col gap-0.5 px-1">
+            {mode.kind !== "tree" ? (
+              <SidebarCrossProjectList
+                mode={mode}
+                activeFeatureId={props.activeFeatureId}
+                onSelectFeature={props.onSelectFeature}
+              />
+            ) : (
+              <ProjectTreeRows props={props} controller={controller} filterQuery={filterQuery} />
+            )}
           </div>
         )}
       </ScrollArea>
@@ -262,22 +281,29 @@ function ProjectTreeRow({
   const isFiltering = filterMatch !== undefined;
   const isExpanded = isFiltering || controller.expansion.expandedIds.has(project.id);
   const isActive = props.activeProjectId === project.id;
+  const sticky = useSidebarOption("stickyHeaders") && isExpanded;
   // Folding a project the filter holds open would silently flip its remembered state.
   const toggle = (): void => {
     if (!isFiltering) controller.expansion.setExpanded(project.id, !isExpanded);
   };
   return (
     <div>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <ProjectRowButton projectId={project.id} isActive={isActive} onClick={toggle}>
-            <ProjectRowLabel projectId={project.id} name={project.name} expanded={isExpanded} />
-            {!isExpanded && <ProjectRowAttention projectId={project.id} />}
-            <ProjectRowActions project={project} controller={controller} />
-          </ProjectRowButton>
-        </ContextMenuTrigger>
-        <ProjectRowContextMenu project={project} controller={controller} />
-      </ContextMenu>
+      {/* Held at the top while the project's conversations scroll under it. */}
+      <div
+        data-sidebar-sticky-header={sticky || undefined}
+        className={sticky ? cn(STICKY_HEADER_CLASS, "rounded-md") : undefined}
+      >
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <ProjectRowButton projectId={project.id} isActive={isActive} onClick={toggle}>
+              <ProjectRowLabel projectId={project.id} name={project.name} expanded={isExpanded} />
+              {!isExpanded && <ProjectRowAttention projectId={project.id} />}
+              <ProjectRowActions project={project} controller={controller} />
+            </ProjectRowButton>
+          </ContextMenuTrigger>
+          <ProjectRowContextMenu project={project} controller={controller} />
+        </ContextMenu>
+      </div>
       {isExpanded && (
         <ProjectFeatures
           projectId={project.id}

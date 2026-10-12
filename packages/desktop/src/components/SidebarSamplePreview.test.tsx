@@ -160,4 +160,24 @@ describe("sidebar sample preview", () => {
     expect(screen.getByTestId("frame")).not.toHaveAttribute("data-sidebar-highlight");
     expect(renders).toBe(1);
   });
+
+  it("regroups the samples by the chosen lens, and sorts projects by name", () => {
+    configure({ lens: "status" });
+    const { unmount } = renderPreview();
+    const headers = [...document.querySelectorAll("[data-sidebar-lens-header]")].map(
+      (header) => header.textContent,
+    );
+    expect(headers).toEqual(["Waiting on you2", "Working2", "Unread2", "Idle4"]);
+    unmount();
+    configure({ projectSort: "name" });
+    renderPreview();
+    const projects = [...document.querySelectorAll("[data-sidebar-tree] .sidebar-project-row")].map(
+      (row) => row.textContent,
+    );
+    expect(projects.map((name) => name?.replace(/\d+/g, ""))).toEqual([
+      "billing-api",
+      "design-system",
+      "web-app",
+    ]);
+  });
 });

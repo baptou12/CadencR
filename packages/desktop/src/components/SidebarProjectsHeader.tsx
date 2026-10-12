@@ -1,12 +1,14 @@
 import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarDisplayOptionsPopover } from "@/components/SidebarDisplayOptionsPopover";
+import { SidebarLensMenu } from "@/components/SidebarLensMenu";
 
 interface SidebarProjectsHeaderProps {
   onAddProject: () => void;
   isAddingProject: boolean;
   canAddProject: boolean;
-  onRefresh: () => void;
+  /** Omitted when there is nothing to re-sort (projects sorted live or by name, or not shown). */
+  onRefresh?: () => void;
   isRefreshing: boolean;
 }
 
@@ -27,20 +29,22 @@ export function SidebarProjectsHeader({
 }: SidebarProjectsHeaderProps) {
   return (
     <div className="group flex items-center justify-between px-2">
-      <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
+      <SidebarLensMenu />
       <div className="flex items-center gap-0.5">
         <SidebarDisplayOptionsPopover className={HOVER_REVEAL_CLASS} />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          title="Re-sort projects"
-          aria-label="Re-sort projects"
-          className={HOVER_REVEAL_CLASS}
-        >
-          <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
-        </Button>
+        {onRefresh && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            title="Re-sort projects"
+            aria-label="Re-sort projects"
+            className={HOVER_REVEAL_CLASS}
+          >
+            <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
+          </Button>
+        )}
         {canAddProject ? (
           <Button
             variant="ghost"

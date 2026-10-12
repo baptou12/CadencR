@@ -161,6 +161,14 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
   }
 }
 
+/* A header held over scrolling rows (sticky headers): the sidebar's own color,
+ * made near-opaque so frost themes (a translucent sidebar) still hide the rows
+ * passing under it. A backdrop blur would not help: nested under the
+ * sidebar's glass, it has nothing to blur. */
+.sidebar-sticky-fill {
+  background-color: oklch(from var(--sidebar) l c h / calc(alpha + 0.5));
+}
+
 /* Display options: the option under the pointer or focus outlines what it
  * changes, in the sidebar and in the Settings preview (useSidebarOptionHighlight). */
 [data-sidebar-highlight="density"] :is(.sidebar-row, .sidebar-project-row),
@@ -180,6 +188,11 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 [data-sidebar-highlight="activity"] [data-feature-activity-indicators],
 [data-sidebar-highlight="projectBadges"] [data-project-attention],
 [data-sidebar-highlight="dormantAfter"] [data-feature-fold="dormant"],
+[data-sidebar-highlight="lens"] :is([data-sidebar-lens-menu], [data-sidebar-lens-header]),
+[data-sidebar-highlight="conversationSort"] [data-sidebar-tree],
+[data-sidebar-highlight="projectSort"] [data-sidebar-tree] .sidebar-project-row,
+[data-sidebar-highlight="stickyHeaders"]
+  :is([data-sidebar-sticky-header], [data-sidebar-lens-header]),
 [data-sidebar-highlight="forMe"] [data-sidebar-block="for-me"],
 [data-sidebar-highlight="workingBlock"] [data-sidebar-block="working"],
 [data-sidebar-highlight="recentBlock"] [data-sidebar-block="recent"],

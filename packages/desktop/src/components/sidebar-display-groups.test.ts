@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SIDEBAR_OPTIONS } from "@/lib/sidebar-config";
-import { DISPLAY_GROUPS, resolveDisplayItem, ROW_ELEMENTS } from "./sidebar-display-rows";
+import { DISPLAY_GROUPS, resolveDisplayItem } from "./sidebar-display-groups";
+import { ROW_ELEMENTS } from "./sidebar-display-rows";
 
 describe("DISPLAY_GROUPS", () => {
   it("lays out every option exactly once, row elements in their grid", () => {

@@ -78,6 +78,10 @@ const BEHAVIOUR_OPTIONS: ReadonlySet<SidebarOptionId> = new Set([
   "revealActive",
   "gatePopover",
   "autoCollapse",
+  "lens",
+  "conversationSort",
+  "projectSort",
+  "stickyHeaders",
 ]);
 
 const PRESET_OPTION_IDS = (Object.keys(SIDEBAR_OPTIONS) as SidebarOptionId[]).filter(
