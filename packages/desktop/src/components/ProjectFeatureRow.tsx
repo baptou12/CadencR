@@ -10,6 +10,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 import { ProjectFeatureContextMenu } from "@/components/ProjectFeatureContextMenu";
 import { FeatureRowActions } from "@/components/ProjectFeatureRowParts";
+import { FeatureHierarchyGutter } from "@/components/FeatureHierarchyGutter";
 import { FeatureRowBody } from "@/components/FeatureRowBody";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
@@ -68,8 +69,6 @@ interface ProjectFeatureRowProps {
   /** Children folded under this row (collapsed subtree); it signals their state. */
   hiddenDescendantIds?: readonly number[];
 }
-
-export const FEATURE_NESTING_INDENT_PX = 16;
 
 type ProjectFeatureRowState = ReturnType<typeof useProjectFeatureRowState>;
 
@@ -278,13 +277,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
             }
           }}
         >
-          <div
-            data-feature-hierarchy-gutter
-            className="flex size-3.5 shrink-0 items-center justify-center"
-            style={{ marginInlineStart: hierarchyDepth * FEATURE_NESTING_INDENT_PX }}
-          >
-            {hierarchyControl}
-          </div>
+          <FeatureHierarchyGutter depth={hierarchyDepth}>{hierarchyControl}</FeatureHierarchyGutter>
 
           <FeatureRowDetails
             props={props}

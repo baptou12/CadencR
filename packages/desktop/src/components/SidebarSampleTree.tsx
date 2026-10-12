@@ -16,8 +16,7 @@ import { SidebarSampleLens } from "@/components/SidebarSampleLens";
 import { orderProjects } from "@/hooks/useOrderedProjects";
 import { useSidebarListMode } from "@/hooks/useSidebarViews";
 import { sortConversations } from "@/lib/sidebar-lens";
-import { cn } from "@/lib/utils";
-import { STICKY_HEADER_CLASS } from "@/components/SidebarLensGroupHeader";
+import { PROJECT_ROW_CLASS, STICKY_HEADER_CLASS } from "@/components/SidebarLensGroupHeader";
 
 type Preview = ReturnType<typeof useSamplePreview>;
 
@@ -64,20 +63,25 @@ function SampleProjectRow({
   const sticky = useSidebarOption("stickyHeaders") && expanded;
   return (
     <div>
-      <button
-        type="button"
-        aria-expanded={expanded}
+      <div
         data-sidebar-sticky-header={sticky || undefined}
-        onClick={() => preview.setProjectExpanded(project.id, !expanded)}
-        className={cn(
-          "sidebar-project-row relative flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-sm outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50",
-          sticky && STICKY_HEADER_CLASS,
-        )}
+        className={sticky ? STICKY_HEADER_CLASS : undefined}
       >
-        <ProjectRowLabel projectId={project.id} name={project.name} expanded={expanded} />
-        {!expanded && <ProjectRowAttention projectId={project.id} />}
-      </button>
-      {expanded && <SampleConversations rows={rows} preview={preview} />}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => preview.setProjectExpanded(project.id, !expanded)}
+          className={PROJECT_ROW_CLASS}
+        >
+          <ProjectRowLabel projectId={project.id} name={project.name} expanded={expanded} />
+          {!expanded && <ProjectRowAttention projectId={project.id} />}
+        </button>
+      </div>
+      {expanded && (
+        <div className="sidebar-project-children">
+          <SampleConversations rows={rows} preview={preview} />
+        </div>
+      )}
     </div>
   );
 }

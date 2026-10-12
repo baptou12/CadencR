@@ -4,8 +4,14 @@ import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { cn } from "@/lib/utils";
 import type { SidebarFoldableBlock } from "@/stores/sidebar-surface-store";
 
-export const EYEBROW_CLASS =
-  "flex items-center gap-1.5 rounded-md px-2 pb-0.5 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground";
+/** The sidebar's section label type: blocks and the Projects header. */
+export const EYEBROW_TEXT_CLASS =
+  "text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65";
+
+/** A hairline above each sidebar section: the sections read as the top level, above projects. */
+export const SECTION_DIVIDER_CLASS = "border-t border-border/60 pt-2";
+
+export const EYEBROW_CLASS = `flex items-center gap-1.5 rounded-md px-2 py-1 ${EYEBROW_TEXT_CLASS}`;
 
 interface SidebarBlockProps {
   /** Names the block for the display options' highlight (`sidebar-rows.css`). */
@@ -64,7 +70,7 @@ export function SidebarBlock({
       ref={ref}
       aria-label={label}
       data-sidebar-block={block}
-      className="mb-2 flex shrink-0 flex-col gap-0.5 px-1"
+      className={cn("mb-3 flex shrink-0 flex-col gap-0.5 px-1", SECTION_DIVIDER_CLASS)}
     >
       {fold ? (
         <button
@@ -122,7 +128,10 @@ function BlockCounter({
     );
   }
   return (
-    <span data-sidebar-block-counter className="font-semibold tabular-nums tracking-normal">
+    <span
+      data-sidebar-block-counter
+      className="rounded-full bg-foreground/[0.08] px-1.5 text-[10px] leading-4 tabular-nums tracking-normal"
+    >
       {count}
       {detail && <span className="sr-only">{detail}</span>}
     </span>

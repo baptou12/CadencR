@@ -14,17 +14,18 @@ import {
 } from "@/components/sidebar-display-groups";
 import { useSidebarOptionHighlight } from "@/hooks/useSidebarOptionHighlight";
 import { SettingsCard } from "./SettingsCard";
-import { SettingsHeading } from "./SettingsHeading";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
-import { SettingsSubsection } from "./SettingsSubsection";
 import { SettingsSwitchRow } from "./SettingsSwitchRow";
 import { SidebarPreviewPanel } from "./SidebarPreviewPanel";
 
 type SidebarDisplayForm = ReturnType<typeof useSidebarDisplayForm>;
 
+/** Rows a notch denser than the app's other settings: the section lists every display option. */
+const DENSE_ROW = "py-3";
+
 /** In a narrow card (beside the preview, or a small window) controls go under their description. */
-const STACKED = "@max-xl:flex-col @max-xl:items-start @max-xl:gap-2.5";
+const STACKED = `${DENSE_ROW} @max-xl:flex-col @max-xl:items-start @max-xl:gap-2`;
 
 /**
  * The sidebar's display options as settings rows, grouped like the popover,
@@ -46,27 +47,32 @@ export function SidebarSection(): ReactElement {
         <div className="lg:sticky lg:top-6 lg:order-last">
           <SidebarPreviewPanel />
         </div>
-        <SettingsCard>
-          <fieldset disabled={form.disabled} className="@container min-w-0" {...highlight}>
-            {DISPLAY_GROUPS.map((group) => (
-              <SettingsSubsection key={group.id} padded={false}>
-                <div className="px-5 pt-4">
-                  <SettingsHeading title={group.label} />
-                </div>
+        {/* One card per group, its name above it: the groups read as a list of
+            lists rather than one long card of look-alike rows. */}
+        <fieldset
+          disabled={form.disabled}
+          className="@container flex min-w-0 flex-col gap-5"
+          {...highlight}
+        >
+          {DISPLAY_GROUPS.map((group) => (
+            <section key={group.id} aria-label={group.label} className="flex flex-col gap-2">
+              <h3 className="px-1 text-xs font-semibold text-muted-foreground">{group.label}</h3>
+              <SettingsCard>
                 {group.items.map((item, index) => (
                   <SettingsItem key={item} form={form} item={item} divided={index > 0} />
                 ))}
-              </SettingsSubsection>
-            ))}
-            <SettingsSubsection padded={false}>
-              <SettingsRow
-                label="Reset display options"
-                description="Restore every option above to its default."
-                control={<ResetDisplayOptionsButton form={form} variant="outline" size="sm" />}
-              />
-            </SettingsSubsection>
-          </fieldset>
-        </SettingsCard>
+              </SettingsCard>
+            </section>
+          ))}
+          <SettingsCard>
+            <SettingsRow
+              className={DENSE_ROW}
+              label="Reset display options"
+              description="Restore every option above to its default."
+              control={<ResetDisplayOptionsButton form={form} variant="outline" size="sm" />}
+            />
+          </SettingsCard>
+        </fieldset>
       </div>
     </SettingsSection>
   );
@@ -124,6 +130,7 @@ function SettingsItem({
     <div data-sidebar-option={row.id}>
       <SettingsSwitchRow
         divided={divided}
+        className={DENSE_ROW}
         label={row.label}
         description={row.description}
         checked={form.config[row.id]}

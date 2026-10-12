@@ -6,7 +6,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { ChevronDown, ChevronRight, LoaderCircle, RotateCcw } from "lucide-react";
+import { ChevronRight, LoaderCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -197,7 +197,7 @@ export function SidebarDisplayOptionsForm({ className }: { className?: string })
       {...highlight}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold">Display options</span>
+        <span className="text-sm font-semibold tracking-tight">Display options</span>
         <ResetDisplayOptionsButton
           form={form}
           variant="ghost"
@@ -209,19 +209,20 @@ export function SidebarDisplayOptionsForm({ className }: { className?: string })
       <TooltipProvider delayDuration={300}>
         {essentials && <GroupItems form={form} group={essentials} />}
         {folded.map((group) => (
-          <div key={group.id} className="flex flex-col gap-3 border-t border-border/60 pt-2">
+          <div key={group.id} className="flex flex-col gap-3 border-t border-border/50 pt-1.5">
             <button
               type="button"
               aria-expanded={openGroups.has(group.id)}
               onClick={() => toggleGroup(group.id)}
-              className="flex items-center gap-1 self-start rounded-sm text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"
+              className="-mx-1.5 flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-semibold text-foreground/90 outline-none transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:bg-accent/50"
             >
-              {openGroups.has(group.id) ? (
-                <ChevronDown className="size-3" />
-              ) : (
-                <ChevronRight className="size-3" />
-              )}
               {group.label}
+              <ChevronRight
+                className={cn(
+                  "ml-auto size-3.5 text-muted-foreground transition-transform duration-150",
+                  openGroups.has(group.id) && "rotate-90",
+                )}
+              />
             </button>
             {openGroups.has(group.id) && <GroupItems form={form} group={group} />}
           </div>
@@ -301,8 +302,7 @@ function DisplayItemRow({
 
 /**
  * An option's name, explained in a tooltip on hover: the popover has no room
- * for the descriptions the Settings page shows under each row. The dotted
- * underline says there is more to read.
+ * for the descriptions the Settings page shows under each row.
  */
 function HintLabel({
   hint,
@@ -320,7 +320,7 @@ function HintLabel({
       <label
         htmlFor={htmlFor}
         className={cn(
-          "cursor-help text-[11px] text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-2",
+          "cursor-help text-xs text-muted-foreground transition-colors hover:text-foreground",
           className,
         )}
       >
@@ -376,7 +376,7 @@ function RowElementToggle({
         aria-description={hint}
         onCheckedChange={(next) => onChange(next === true)}
       />
-      <HintLabel hint={hint} htmlFor={id} className="text-xs text-foreground">
+      <HintLabel hint={hint} htmlFor={id} className="text-foreground/90">
         {label}
       </HintLabel>
     </div>

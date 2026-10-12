@@ -17,7 +17,8 @@ export function useSidebarDisplayAttributes(): {
   return {
     "data-sidebar-density": density,
     "data-sidebar-title-lines": titleLines,
-    style: { "--sidebar-row-font": `${fontSize}px` } as CSSProperties,
+    // In rem, so the rows follow the app zoom like the rest of the sidebar.
+    style: { "--sidebar-row-font": `${Number(fontSize) / 16}rem` } as CSSProperties,
   };
 }
 

@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, type ReactElement } from "react";
+import { memo, useCallback, useMemo, type CSSProperties, type ReactElement } from "react";
 import { PanelLeft } from "lucide-react";
 import type { Feature } from "@/api/generated";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { ProjectBadge } from "@/components/ProjectBadge";
 import { SidebarStatusIndicator } from "@/components/SidebarStatusIndicator";
 import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
 import { useOrderedProjects } from "@/hooks/useOrderedProjects";
+import { useProjectColor } from "@/hooks/useProjectColor";
 import { useRouteFeatureIds } from "@/hooks/useRouteFeatureIds";
 import { SIDEBAR_EXPANDED_PROJECTS_KEY, usePersistedIdSet } from "@/hooks/usePersistedIdSet";
 import type { ProjectAttentionCounts, ResolvedAttention } from "@/hooks/useResolvedAttention";
@@ -109,6 +110,7 @@ export const RailProject = memo(function RailProject({
 }): ReactElement {
   const summary = counts ? attentionSummary(counts) : "";
   const ring = counts ? ringClass(counts) : "";
+  const tint = useProjectTint(projectId);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -116,14 +118,13 @@ export const RailProject = memo(function RailProject({
           type="button"
           aria-label={summary ? `${name}: ${summary}` : name}
           onClick={() => onOpen(projectId)}
+          style={tint}
           className={cn(
-            "relative flex size-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold uppercase",
-            "bg-sidebar-accent/60 text-foreground/80 outline-none hover:bg-sidebar-accent focus-visible:ring-1 focus-visible:ring-ring",
-            ring && `ring-2 ${ring}`,
+            "sidebar-rail-tile relative size-8 shrink-0",
+            ring && `ring-2 ring-offset-1 ring-offset-sidebar ${ring}`,
           )}
         >
-          {name.slice(0, 1)}
-          <ProjectBadge projectId={projectId} size="xs" className="absolute left-1 top-1" />
+          <ProjectBadge projectId={projectId} size="md" fallback={name.slice(0, 1)} />
           {counts && <StrongCount counts={counts} />}
         </button>
       </TooltipTrigger>
@@ -160,6 +161,12 @@ function ringClass(counts: ProjectAttentionCounts): string {
   if (counts.working > 0) return "ring-blue-500/70";
   if (counts.unread > 0) return "ring-(--acc-green)/70";
   return "";
+}
+
+/** A rail tile's tint (`sidebar-rows.css`): the rail reads by project at a glance. */
+function useProjectTint(projectId: number): CSSProperties {
+  const color = useProjectColor(projectId);
+  return useMemo(() => ({ "--project-tint": `#${color}` }) as CSSProperties, [color]);
 }
 
 export function RailEmptyLine({ attentionOnly }: { attentionOnly: boolean }): ReactElement {
@@ -215,6 +222,7 @@ export const RailConversation = memo(function RailConversation({
   const { feature, state } = item;
   const attention = useMemo(() => ({ state, sourceFeatureId: feature.id }), [state, feature.id]);
   const open = useCallback(() => onOpen(feature), [onOpen, feature]);
+  const tint = useProjectTint(feature.project_id);
   return (
     <div data-sidebar-flash-target className="relative shrink-0 rounded-md">
       <Tooltip>
@@ -222,19 +230,12 @@ export const RailConversation = memo(function RailConversation({
           <button
             type="button"
             aria-label={`${feature.title}: ${ATTENTION_LABEL[state]}`}
+            data-active={isActive || undefined}
             onClick={open}
-            className={cn(
-              "flex size-8 items-center justify-center rounded-md text-xs font-semibold uppercase outline-none",
-              "text-foreground/80 hover:bg-sidebar-accent focus-visible:ring-1 focus-visible:ring-ring",
-              isActive ? "bg-sidebar-accent" : "bg-sidebar-accent/40",
-            )}
+            style={tint}
+            className="sidebar-rail-tile size-8"
           >
             {feature.title.slice(0, 1) || "#"}
-            <ProjectBadge
-              projectId={feature.project_id}
-              size="xs"
-              className="absolute left-1 top-1"
-            />
           </button>
         </TooltipTrigger>
         <TooltipContent side="right">

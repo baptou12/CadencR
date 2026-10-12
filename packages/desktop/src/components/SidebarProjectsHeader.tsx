@@ -1,7 +1,9 @@
 import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarDisplayOptionsPopover } from "@/components/SidebarDisplayOptionsPopover";
+import { SECTION_DIVIDER_CLASS } from "@/components/SidebarBlock";
 import { SidebarLensMenu } from "@/components/SidebarLensMenu";
+import { cn } from "@/lib/utils";
 
 interface SidebarProjectsHeaderProps {
   onAddProject: () => void;
@@ -28,7 +30,7 @@ export function SidebarProjectsHeader({
   isRefreshing,
 }: SidebarProjectsHeaderProps) {
   return (
-    <div className="group flex items-center justify-between px-2">
+    <div className={cn("group flex items-center justify-between px-2", SECTION_DIVIDER_CLASS)}>
       <SidebarLensMenu />
       <div className="flex items-center gap-0.5">
         <SidebarDisplayOptionsPopover className={HOVER_REVEAL_CLASS} />

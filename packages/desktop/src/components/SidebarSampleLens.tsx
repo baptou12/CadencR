@@ -57,12 +57,13 @@ export function SidebarSampleLens({
       {groups.map((group) => (
         <section key={group.key} className="flex flex-col gap-0.5">
           {showHeaders && (
-            <SidebarLensGroupHeader
-              group={group}
-              folded={folded.has(group.key)}
-              onToggle={toggleGroup}
-              className={sticky ? STICKY_HEADER_CLASS : undefined}
-            />
+            <div className={sticky ? STICKY_HEADER_CLASS : undefined}>
+              <SidebarLensGroupHeader
+                group={group}
+                folded={folded.has(group.key)}
+                onToggle={toggleGroup}
+              />
+            </div>
           )}
           {!(showHeaders && folded.has(group.key)) &&
             group.features.map((feature) => {

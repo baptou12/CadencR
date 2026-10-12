@@ -2,7 +2,9 @@ import { forwardRef, type MouseEventHandler, type ReactElement, type ReactNode }
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { ProjectBadge } from "@/components/ProjectBadge";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
+import { PROJECT_ROW_CLASS } from "@/components/SidebarLensGroupHeader";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
+import { cn } from "@/lib/utils";
 
 interface ProjectRowButtonProps {
   projectId: number;
@@ -28,9 +30,7 @@ export const ProjectRowButton = forwardRef<HTMLButtonElement, ProjectRowButtonPr
         data-nav-type="project"
         data-nav-id={String(projectId)}
         onClick={onClick}
-        className={`sidebar-project-row group/project relative flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-sm outline-none transition-colors ${
-          isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
-        }`}
+        className={cn(PROJECT_ROW_CLASS, "group/project", isActive && "text-foreground")}
         {...rest}
       >
         <SidebarShortcutBadge ref={badgeRef} />

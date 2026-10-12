@@ -1,10 +1,8 @@
 import { memo, useCallback, useMemo, type ReactElement, type ReactNode } from "react";
 import { FeatureRowBody } from "@/components/FeatureRowBody";
 import { ProjectBadge } from "@/components/ProjectBadge";
-import {
-  FEATURE_NESTING_INDENT_PX,
-  shouldIgnoreFeatureRowKeyDown,
-} from "@/components/ProjectFeatureRow";
+import { FeatureHierarchyGutter } from "@/components/FeatureHierarchyGutter";
+import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
 import type { SampleRow } from "@/lib/sidebar-sample-views";
 import type { Attention } from "@/lib/sidebar-attention";
 import { cn } from "@/lib/utils";
@@ -69,12 +67,7 @@ export const SidebarSampleRow = memo(function SidebarSampleRow({
           <ProjectBadge projectId={feature.project_id} />
         </span>
       ) : (
-        <div
-          className="flex size-3.5 shrink-0 items-center justify-center"
-          style={{ marginInlineStart: depth * FEATURE_NESTING_INDENT_PX }}
-        >
-          {hierarchyControl}
-        </div>
+        <FeatureHierarchyGutter depth={depth}>{hierarchyControl}</FeatureHierarchyGutter>
       )}
       <FeatureRowBody
         feature={feature}

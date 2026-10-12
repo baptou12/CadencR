@@ -1,6 +1,19 @@
 import type { ReactElement } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown } from "lucide-react";
+import {
+  Bookmark,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  CircleDot,
+  Folder,
+  GitBranch,
+  List,
+  Sparkles,
+  Tag,
+  type LucideIcon,
+} from "lucide-react";
+import { EYEBROW_TEXT_CLASS } from "@/components/SidebarBlock";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +26,7 @@ import { LENS_OPTIONS } from "@/components/sidebar-display-rows";
 import { useSetSidebarOption } from "@/hooks/useSidebarSettings";
 import { useSidebarViews } from "@/hooks/useSidebarViews";
 import type { SidebarLens } from "@/lib/sidebar-lens";
+import { cn } from "@/lib/utils";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 
 /** The name the Projects header takes: the shown view's, else the lens's. */
@@ -22,6 +36,40 @@ function headerName(lens: SidebarLens, viewName: string | undefined): string {
   if (lens === "flat") return "Conversations";
   const label = LENS_OPTIONS.find((option) => option.value === lens)?.label ?? lens;
   return `By ${label.toLowerCase()}`;
+}
+
+/** The header's icon, like the blocks above it: says how the list is grouped. */
+const LENS_ICONS: Record<SidebarLens, LucideIcon> = {
+  project: Folder,
+  status: CircleDot,
+  worktree: GitBranch,
+  provider: Sparkles,
+  label: Tag,
+  date: CalendarDays,
+  flat: List,
+};
+
+/** The header's icon and name, in the sidebar's section label type. */
+function LensLabel({ icon: Icon, name }: { icon: LucideIcon; name: string }): ReactElement {
+  return (
+    <>
+      <Icon className="size-3 shrink-0" />
+      <span className="truncate">{name}</span>
+    </>
+  );
+}
+
+/**
+ * The header's static name and icon, for the Settings preview: the same label
+ * the sidebar's header menu shows for the current lens.
+ */
+export function SidebarLensHeading(): ReactElement {
+  const lens = useSidebarOption("lens");
+  return (
+    <div className={cn(EYEBROW_TEXT_CLASS, "flex min-w-0 items-center gap-1.5")}>
+      <LensLabel icon={LENS_ICONS[lens]} name={headerName(lens, undefined)} />
+    </div>
+  );
 }
 
 function MenuCheck({ on }: { on: boolean }): ReactElement {
@@ -41,10 +89,16 @@ export function SidebarLensMenu(): ReactElement {
     <DropdownMenu>
       <DropdownMenuTrigger
         data-sidebar-lens-menu
-        className="flex min-w-0 items-center gap-1 rounded-sm text-xs font-semibold uppercase text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"
+        className={cn(
+          EYEBROW_TEXT_CLASS,
+          "flex min-w-0 items-center gap-1.5 rounded-sm outline-none hover:text-foreground focus-visible:text-foreground",
+        )}
       >
-        <span className="truncate">{headerName(lens, activeView?.name)}</span>
-        <ChevronDown className="size-3 shrink-0" />
+        <LensLabel
+          icon={activeView ? Bookmark : LENS_ICONS[lens]}
+          name={headerName(lens, activeView?.name)}
+        />
+        <ChevronDown className="size-3 shrink-0 opacity-70" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-44">
         <DropdownMenuLabel className="text-xs text-muted-foreground">Group by</DropdownMenuLabel>

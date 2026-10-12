@@ -35,7 +35,6 @@ import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { SampleScope, useSidebarSamplePreview } from "./SidebarSampleProvider";
 import { SidebarCrossProjectList } from "./SidebarCrossProjectList";
 import { STICKY_HEADER_CLASS } from "./SidebarLensGroupHeader";
-import { cn } from "@/lib/utils";
 import { useSidebarListMode } from "@/hooks/useSidebarViews";
 import { SidebarSampleTree } from "./SidebarSampleTree";
 import { SidebarSampleRail } from "./SidebarSampleRail";
@@ -291,7 +290,7 @@ function ProjectTreeRow({
       {/* Held at the top while the project's conversations scroll under it. */}
       <div
         data-sidebar-sticky-header={sticky || undefined}
-        className={sticky ? cn(STICKY_HEADER_CLASS, "rounded-md") : undefined}
+        className={sticky ? STICKY_HEADER_CLASS : undefined}
       >
         <ContextMenu>
           <ContextMenuTrigger asChild>
@@ -305,13 +304,15 @@ function ProjectTreeRow({
         </ContextMenu>
       </div>
       {isExpanded && (
-        <ProjectFeatures
-          projectId={project.id}
-          projectPath={project.path}
-          activeFeatureId={isActive ? props.activeFeatureId : null}
-          onSelectFeature={props.onSelectFeature}
-          filterMatch={filterMatch}
-        />
+        <div className="sidebar-project-children" data-active={isActive || undefined}>
+          <ProjectFeatures
+            projectId={project.id}
+            projectPath={project.path}
+            activeFeatureId={isActive ? props.activeFeatureId : null}
+            onSelectFeature={props.onSelectFeature}
+            filterMatch={filterMatch}
+          />
+        </div>
       )}
     </div>
   );

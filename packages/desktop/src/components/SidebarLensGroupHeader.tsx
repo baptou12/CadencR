@@ -5,11 +5,18 @@ import { ATTENTION_LABEL, type AttentionState } from "@/lib/sidebar-attention";
 import type { DateGroup, LensGroup } from "@/lib/sidebar-lens";
 import { cn } from "@/lib/utils";
 
-/** The fill of a header held over scrolling rows (`sidebar-rows.css`). */
+/** The fill of a header copy drawn over scrolling rows (`sidebar-rows.css`). */
 export const STICKY_FILL_CLASS = "sidebar-sticky-fill";
 
-/** A header held at the top of the scrolled sidebar (C6). */
-export const STICKY_HEADER_CLASS = `sticky top-0 z-10 ${STICKY_FILL_CLASS}`;
+/**
+ * A wrapper holding its header at the top of the scrolled sidebar (C6). The
+ * header inside takes the fill only while it is stuck (`sidebar-rows.css`).
+ */
+export const STICKY_HEADER_CLASS = "sidebar-sticky sticky top-0 z-10";
+
+/** A project row's box and type, shared by the tree, the lens group headers and the samples. */
+export const PROJECT_ROW_CLASS =
+  "sidebar-project-row relative flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-sm font-medium text-foreground/85 outline-none transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:bg-accent/50";
 
 const DATE_NAMES: Record<DateGroup, string> = {
   today: "Today",
@@ -56,10 +63,7 @@ export function SidebarLensGroupHeader({
       data-sidebar-lens-header={group.key}
       aria-expanded={!folded}
       onClick={() => onToggle(group.key)}
-      className={cn(
-        "sidebar-project-row flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left text-sm outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50",
-        className,
-      )}
+      className={cn(PROJECT_ROW_CLASS, className)}
     >
       {folded ? (
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />

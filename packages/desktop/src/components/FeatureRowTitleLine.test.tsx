@@ -48,7 +48,12 @@ function configure(overrides: Partial<SidebarConfig>): void {
 
 function row(
   state: AttentionState = "idle",
-  overrides: { feature?: Feature; sourceFeatureId?: number; hasWorktree?: boolean } = {},
+  overrides: {
+    feature?: Feature;
+    sourceFeatureId?: number;
+    hasWorktree?: boolean;
+    isActive?: boolean;
+  } = {},
 ) {
   return render(
     <FeatureRowTitleLine
@@ -59,7 +64,7 @@ function row(
       hasWorktree={overrides.hasWorktree ?? false}
       worktree={worktree}
       attention={{ state, sourceFeatureId: overrides.sourceFeatureId ?? 5 }}
-      isActive={false}
+      isActive={overrides.isActive ?? false}
       onOpenConversation={vi.fn()}
     />,
   );
@@ -92,6 +97,20 @@ describe("FeatureRowTitleLine", () => {
     row("unread");
     expect(screen.getByLabelText("Unread agent messages")).toHaveClass("sidebar-status-unread");
     expect(screen.queryByLabelText("Agent working")).not.toBeInTheDocument();
+  });
+
+  it("quiets idle titles, keeping full contrast for the open one and every other state", () => {
+    const tone = () => document.querySelector("[data-feature-title]")?.getAttribute("data-tone");
+    const { unmount } = row("idle");
+    expect(tone()).toBe("quiet");
+    unmount();
+
+    const active = row("idle", { isActive: true });
+    expect(tone()).toBe("normal");
+    active.unmount();
+
+    row("unread");
+    expect(tone()).toBe("normal");
   });
 
   it("answers a hidden child's request from the parent row", () => {

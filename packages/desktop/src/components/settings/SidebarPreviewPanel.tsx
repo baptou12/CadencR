@@ -9,6 +9,9 @@ import {
 } from "@/components/SidebarSampleProvider";
 import { SidebarSampleRail } from "@/components/SidebarSampleRail";
 import { SidebarSampleTree } from "@/components/SidebarSampleTree";
+import { SidebarLensHeading } from "@/components/SidebarLensMenu";
+import { SECTION_DIVIDER_CLASS } from "@/components/SidebarBlock";
+import { cn } from "@/lib/utils";
 import {
   useSidebarDisplayAttributes,
   useSidebarHighlightAttribute,
@@ -41,16 +44,22 @@ function PreviewFrame(): ReactElement {
       {...displayAttributes}
       className="glass-surface flex max-h-[min(36rem,calc(100vh-4rem))] flex-col overflow-hidden rounded-xl border border-border/60 bg-sidebar"
     >
-      <div className="flex shrink-0 items-center gap-1 border-b border-border/60 py-1 pl-3 pr-1 text-[11px] text-muted-foreground">
-        <span className="min-w-0 flex-1 truncate">Preview · sample conversations</span>
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 py-1 pl-3 pr-1 text-[11px] text-muted-foreground">
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+        <span
+          className="min-w-0 flex-1 truncate font-medium text-foreground/85"
+          title="Sample conversations covering every case the options change"
+        >
+          Live preview
+        </span>
         {preview && <SampleReplayButton onReplay={preview.replay} />}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         <SampleScope>
           <SidebarSampleBlocks />
-          {/* As the sidebar's Projects header sets it. */}
-          <div className="px-2 pb-2 text-xs font-semibold uppercase text-muted-foreground">
-            Projects
+          {/* As the sidebar's Projects header names it. */}
+          <div className={cn("mb-2 px-2", SECTION_DIVIDER_CLASS)}>
+            <SidebarLensHeading />
           </div>
           <div className="flex min-w-0 flex-col gap-0.5 px-1">
             <SidebarSampleTree />

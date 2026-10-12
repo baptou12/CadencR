@@ -46,7 +46,9 @@ const PendingRequestLine = memo(function PendingRequestLine({
       title={prompt}
       className={cn(
         LINE_CLASS,
-        effectiveGateKind(gate) === "question" ? "text-primary" : "text-amber-400",
+        effectiveGateKind(gate) === "question"
+          ? "text-primary"
+          : "text-(--acc-yellow,var(--color-amber-400))",
       )}
     >
       {prompt}

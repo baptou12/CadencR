@@ -73,6 +73,13 @@ export function FeatureRowTitleLine({
   const titleSource = useSidebarOption("titleSource");
   const conversationTitle = liveTitle ?? feature.title;
   const title = rowTitle(conversationTitle, worktree, titleSource);
+  // Idle conversations step back; the ones that are working, waiting, failed
+  // or unread (and the open one) keep full contrast.
+  const tone: TitleTone = isArchived
+    ? "archived"
+    : !isActive && attention.state === "idle"
+      ? "quiet"
+      : "normal";
   return (
     <div data-feature-title-line className="flex min-h-6 min-w-0 flex-1 items-center gap-1.5">
       <SidebarStatusIndicator
@@ -99,7 +106,7 @@ export function FeatureRowTitleLine({
             title={title}
             conversationTitle={conversationTitle}
             isAutoNaming={isAutoNaming}
-            isArchived={isArchived}
+            tone={tone}
             className="min-w-0 shrink grow basis-24 leading-6"
           />
           {details}
@@ -110,7 +117,7 @@ export function FeatureRowTitleLine({
           title={title}
           conversationTitle={conversationTitle}
           isAutoNaming={isAutoNaming}
-          isArchived={isArchived}
+          tone={tone}
           className="min-w-8 flex-1"
         />
       )}
@@ -131,26 +138,29 @@ export function FeatureRowTitleLine({
   );
 }
 
+type TitleTone = "normal" | "quiet" | "archived";
+
 /** The title, or a skeleton while auto-naming; names the full title when it shows another. */
 function RowTitle({
   title,
   conversationTitle,
   isAutoNaming,
-  isArchived,
+  tone,
   className,
 }: {
   title: string;
   conversationTitle: string;
   isAutoNaming: boolean;
-  isArchived: boolean;
+  tone: TitleTone;
   className: string;
 }): ReactElement {
   if (isAutoNaming) return <Skeleton className={cn("h-4 w-32", className)} />;
   return (
     <span
       data-feature-title
+      data-tone={tone}
       title={title === conversationTitle ? undefined : conversationTitle}
-      className={cn("truncate", isArchived && "text-muted-foreground", className)}
+      className={cn("truncate", className)}
     >
       {title}
     </span>
