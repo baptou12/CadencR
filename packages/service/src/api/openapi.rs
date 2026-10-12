@@ -261,6 +261,7 @@ use crate::domain::ws_session::routes as ws_routes;
         crate::domain::themes::managed::models::RemoveManagedThemeRequest,
         crate::domain::themes::managed::models::RemoveManagedThemeResponse,
         crate::domain::themes::managed::models::DuplicateManagedThemeRequest,
+        crate::domain::themes::managed::models::ManagedThemeDuplicateResponse,
         crate::domain::themes::managed::models::ManagedThemeCatalogResponse,
         themes_models::UserTheme,
         themes_models::ThemeDocument,
