@@ -1,15 +1,13 @@
 import { useCallback, useMemo, useRef, type ReactElement } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { PinIcon } from "lucide-react";
-import { toast } from "sonner";
-import { useListPinnedFeatures, useUpdateFeaturePinned, type Feature } from "@/api/generated";
+import { useListPinnedFeatures, type Feature } from "@/api/generated";
 import { PinnedConversationRow } from "@/components/PinnedConversationRow";
 import { SidebarBlock } from "@/components/SidebarBlock";
+import { useSidebarAttention } from "@/components/SidebarAttentionProvider";
+import { isStrongAttention } from "@/lib/sidebar-attention";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
 import { skipProjectAutoExpand } from "@/lib/project-auto-expand";
-import { invalidateByUrlPrefix } from "@/lib/queryClient";
-import { apiErrorMessage } from "@/lib/api-errors";
 import { useReorderAnimation } from "@/hooks/useReorderAnimation";
 import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
 import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
@@ -25,9 +23,10 @@ import { useSidebarBlockFold } from "@/stores/sidebar-surface-store";
  * project color dot so the user can tell them apart at a glance. Renders
  * nothing when no conversation is pinned, unless empty blocks are kept.
  *
- * Unpinning here and pinning from a project row both write the same column and
- * invalidate the `/api/features` cache prefix (which covers this list); there
- * is no optimistic state — the section re-renders from the refetched data.
+ * Unpinning here (the sidebar's row actions) and pinning from a project row
+ * both write the same column and invalidate the `/api/features` cache prefix
+ * (which covers this list); there is no optimistic state — the section
+ * re-renders from the refetched data.
  */
 const EMPTY_FEATURES: Feature[] = [];
 
@@ -38,7 +37,6 @@ export function SidebarPinnedConversations({
   activeFeatureId: number | null;
   onSelectFeature: (featureId: number) => void;
 }): ReactElement | null {
-  const queryClient = useQueryClient();
   const { data: fetchedPinned = EMPTY_FEATURES } = useListPinnedFeatures();
   const orderedPinned = useStableFeatureOrder(fetchedPinned);
   const activity = usePinnedActivity(fetchedPinned);
@@ -59,22 +57,7 @@ export function SidebarPinnedConversations({
   const hideEmpty = useSidebarOption("hideEmptyBlocks");
   const filtering = useSidebarFilterQuery() !== "";
   const fold = useSidebarBlockFold("pinned");
-
-  const { mutate: updateFeaturePinned } = useUpdateFeaturePinned({
-    mutation: {
-      onSuccess: () => void invalidateByUrlPrefix(queryClient, "/api/features"),
-      onError: (error) => {
-        toast.error(apiErrorMessage(error, "Failed to update pinned state"));
-      },
-    },
-  });
-
-  const handleUnpin = useCallback(
-    (featureId: number): void => {
-      updateFeaturePinned({ id: featureId, data: { pinned: false } });
-    },
-    [updateFeaturePinned],
-  );
+  const strongCount = usePinnedStrongCount(pinnedFeatures);
 
   const isEmpty = pinnedFeatures.length === 0;
   // An empty Pinned block only shows when empty blocks are kept and nothing is filtered out.
@@ -94,6 +77,8 @@ export function SidebarPinnedConversations({
       label="Pinned"
       icon={PinIcon}
       count={pinnedFeatures.length}
+      // Pinned rows show nowhere else: a folded block still flags who waits on the user.
+      strongCount={strongCount}
       fold={foldWhileFiltering}
       empty="Pin a conversation to keep it here"
       isEmpty={isEmpty}
@@ -109,9 +94,20 @@ export function SidebarPinnedConversations({
           hasLiveWorktree={activity.liveWorktreeFeatureIds.has(feature.id)}
           worktree={activity.worktreeByFeatureId.get(feature.id)}
           onNavigate={handleNavigate}
-          onUnpin={handleUnpin}
+          showUnpin
         />
       ))}
     </SidebarBlock>
   );
+}
+
+/** How many pinned conversations need an action (a request waiting, a failure). */
+function usePinnedStrongCount(pinned: readonly Feature[]): number {
+  const { queue } = useSidebarAttention();
+  return useMemo(() => {
+    const strongIds = new Set(
+      queue.filter((item) => isStrongAttention(item.state)).map((item) => item.feature.id),
+    );
+    return pinned.filter((feature) => strongIds.has(feature.id)).length;
+  }, [pinned, queue]);
 }

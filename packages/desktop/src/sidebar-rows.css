@@ -256,6 +256,7 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 .sidebar-sticky {
   container-type: scroll-state;
 }
+.sidebar-sticky,
 .sidebar-sticky-fill,
 .sidebar-sticky > * {
   --sidebar-sticky-fill:
@@ -271,6 +272,20 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
     background: var(--sidebar-sticky-fill);
     box-shadow: var(--sidebar-sticky-shadow);
   }
+}
+/* WebKit (every iOS browser) has no scroll-state queries: the header would
+ * float bare over the rows. There it is always filled, on the wrapper so the
+ * row's own hover and active fills still paint over it; unstuck, the fill
+ * matches the sidebar it sits on. */
+@supports not (container-type: scroll-state) {
+  .sidebar-sticky {
+    background: var(--sidebar-sticky-fill);
+  }
+}
+/* A row revealed or reached by the keyboard stops below its stuck project
+ * header (the project row's height, plus a gap) instead of under it. */
+[data-sidebar-sticky-header] + .sidebar-project-children [data-nav-item] {
+  scroll-margin-top: calc(2rem + 2 * var(--sidebar-row-pad, 6px));
 }
 
 /* Display options: the option under the pointer or focus outlines what it

@@ -1,26 +1,16 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
-  useDeleteFeature,
   useListFeatures,
   useListFeatureWorktrees,
   useUpdateFeatureLabel,
-  useUpdateFeaturePinned,
-  useUpdateFeatureStatus,
   type Feature,
   type FeatureStatus,
   type FeatureWorktreeInfo,
 } from "@/api/generated";
 import { FeatureSubtree, type RenderFeature } from "@/components/FeatureSubtree";
 import { ProjectFeatureRow } from "@/components/ProjectFeatureRow";
-import {
-  adjacentFeature,
-  closeFeatureSession,
-  navigateToFeatureOrHome,
-  removeFeatureFromCachedLists,
-} from "@/components/project-feature-navigation";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { partitionActiveFeatures } from "@/lib/feature-grouping";
@@ -29,7 +19,6 @@ import { buildFeatureForest } from "@/lib/feature-hierarchy";
 import { normalizeLabel, uniqueLabels } from "@/lib/feature-labels";
 import { sortConversations } from "@/lib/sidebar-lens";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
-import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { FEATURE_WORKTREES_STALE_MS } from "@/lib/sidebar-queries";
 import type { ProjectFilterMatch } from "@/hooks/useSidebarFilterMatches";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
@@ -40,6 +29,7 @@ import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import { useLiveFeatureMeta } from "@/hooks/useLiveFeatureMeta";
 import { useArchiveFeatureAction } from "@/hooks/useArchiveFeatureAction";
+import { useFeatureRowMutations } from "@/hooks/useFeatureRowMutations";
 import { useArchivedSectionOpen } from "@/hooks/useArchivedSectionOpen";
 import { SIDEBAR_COLLAPSED_SUBTREES_KEY, usePersistedIdSet } from "@/hooks/usePersistedIdSet";
 import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
@@ -214,44 +204,16 @@ function useProjectFeatureLabels(data: ProjectFeaturesData) {
 
 function useProjectFeatureActions(props: ProjectFeaturesProps, data: ProjectFeaturesData) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const closeFeatureActivity = useCloseFeatureActivity();
-  const invalidateFeatures = useCallback(
-    () => void invalidateByUrlPrefix(queryClient, "/api/features"),
-    [queryClient],
-  );
   const archiveFeature = useArchiveFeatureAction({
     activeFeatureId: props.activeFeatureId,
     activeFeatures: data.activeFeatures,
     projectId: props.projectId,
   });
-  const updateStatusMutation = useUpdateFeatureStatus({
-    mutation: {
-      onSuccess: invalidateFeatures,
-      onError: (error) => toast.error(apiErrorMessage(error, "Failed to update feature status")),
-    },
-  });
-  const deleteMutation = useDeleteFeature({
-    mutation: {
-      onSuccess: (_data, variables) => {
-        removeFeatureFromCachedLists(queryClient, variables.id);
-        closeFeatureSession(variables.id);
-        if (variables.id === props.activeFeatureId) {
-          navigateToFeatureOrHome(
-            navigate,
-            props.projectId,
-            adjacentFeature(data.activeFeatures, variables.id),
-          );
-        }
-        invalidateFeatures();
-      },
-    },
-  });
-  const pinnedMutation = useUpdateFeaturePinned({
-    mutation: {
-      onSuccess: invalidateFeatures,
-      onError: (error) => toast.error(apiErrorMessage(error, "Failed to update pinned state")),
-    },
+  const mutations = useFeatureRowMutations({
+    activeFeatureId: props.activeFeatureId,
+    activeFeatures: data.activeFeatures,
+    projectId: props.projectId,
   });
   const navigateToFeature = useCallback(
     (feature: Feature): void => {
@@ -285,13 +247,9 @@ function useProjectFeatureActions(props: ProjectFeaturesProps, data: ProjectFeat
         browserCount,
         downloadCount,
       }),
-    deleteFeature: (featureId: number): void => deleteMutation.mutate({ id: featureId }),
+    ...mutations,
     navigateToFeature,
-    togglePin: (featureId: number, pinned: boolean): void =>
-      pinnedMutation.mutate({ id: featureId, data: { pinned } }),
     archiveFeature,
-    unarchive: (featureId: number): void =>
-      updateStatusMutation.mutate({ id: featureId, data: { status: ACTIVE_FEATURE_STATUS } }),
   };
 }
 

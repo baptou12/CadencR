@@ -13,7 +13,10 @@ import { FeatureRowActions } from "@/components/ProjectFeatureRowParts";
 import { FeatureHierarchyGutter } from "@/components/FeatureHierarchyGutter";
 import { FeatureRowBody } from "@/components/FeatureRowBody";
 import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
-import { useProjectFeatureRowState } from "@/hooks/useProjectFeatureRowState";
+import {
+  useProjectFeatureRowState,
+  type ProjectFeatureRowState,
+} from "@/hooks/useProjectFeatureRowState";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
 import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
 
@@ -69,8 +72,6 @@ interface ProjectFeatureRowProps {
   /** Children folded under this row (collapsed subtree); it signals their state. */
   hiddenDescendantIds?: readonly number[];
 }
-
-type ProjectFeatureRowState = ReturnType<typeof useProjectFeatureRowState>;
 
 interface FeatureRowDetailsProps {
   props: ProjectFeatureRowProps;

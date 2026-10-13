@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
-import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { ArchivedFeatureList, ArchivedFeatureSection } from "@/components/ArchivedFeatureList";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { FeatureArchiveDialogs } from "@/components/FeatureArchiveDialogs";
 import {
   useProjectFeaturesController,
   type ProjectFeaturesController,
@@ -10,7 +9,6 @@ import {
 import { WorktreeGroup } from "@/components/WorktreeGroup";
 import { VirtualizedProjectFeatureList } from "@/components/VirtualizedProjectFeatureList";
 import { VirtualizedArchivedFeatureList } from "@/components/VirtualizedArchivedFeatureList";
-import { deleteFeatureDialogTitle } from "@/lib/feature-archive-decision";
 import { useReorderAnimation } from "@/hooks/useReorderAnimation";
 
 export function ProjectFeatures(props: ProjectFeaturesProps) {
@@ -86,36 +84,14 @@ function ProjectFeatureDialogs({
   projectId: number;
   controller: ProjectFeaturesController;
 }) {
-  const { confirmation } = controller;
   return (
-    <>
-      <ArchiveFeatureDialog
-        open={controller.confirmFeatureId != null && confirmation.action === "archive"}
-        feature={confirmation.feature}
-        projectId={projectId}
-        hasLiveWorktree={confirmation.cleanup.hasLiveWorktree}
-        hasResidualWorktreeDirectory={confirmation.cleanup.hasResidualWorktreeDirectory}
-        showWorktreeRemoval={confirmation.cleanup.showWorktreeRemoval}
-        showBranchRemoval={confirmation.cleanup.showBranchRemoval}
-        onOpenChange={(open) => {
-          if (!open) controller.setConfirmFeatureId(null);
-        }}
-        onArchive={controller.actions.archiveFeature}
-      />
-      <ConfirmDialog
-        open={controller.confirmFeatureId != null && confirmation.action === "delete"}
-        onOpenChange={(open) => {
-          if (!open) controller.setConfirmFeatureId(null);
-        }}
-        title={deleteFeatureDialogTitle(confirmation.feature)}
-        description="This cannot be undone."
-        confirmText="Delete"
-        variant="destructive"
-        onConfirm={() => {
-          if (controller.confirmFeatureId == null) return;
-          controller.actions.deleteFeature(controller.confirmFeatureId);
-        }}
-      />
-    </>
+    <FeatureArchiveDialogs
+      projectId={projectId}
+      confirmFeatureId={controller.confirmFeatureId}
+      confirmation={controller.confirmation}
+      onClose={() => controller.setConfirmFeatureId(null)}
+      onArchive={controller.actions.archiveFeature}
+      onDelete={controller.actions.deleteFeature}
+    />
   );
 }

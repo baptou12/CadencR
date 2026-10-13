@@ -12,16 +12,16 @@ import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
  */
 export type SidebarSurface = "tree" | "for-me" | "working" | "recent" | "rail";
 
-/** The foldable blocks above the project list, named after their surface. */
-export type SidebarFoldableBlock = SidebarSurfaceBlock | "pinned";
+/** The conversation blocks above the project list that are surfaces of their own. */
+export type SidebarBlockSurface = Extract<SidebarSurface, "for-me" | "working" | "recent">;
 
-/** Foldable blocks whose rows live on a sidebar surface (not the tree's). */
-export type SidebarSurfaceBlock = Extract<SidebarSurface, "for-me" | "working" | "recent">;
+/** Every block above the project list; Pinned's rows belong to the tree's surface. */
+export type SidebarBlockId = SidebarBlockSurface | "pinned";
 
 interface SidebarSurfaceState {
   /** Which blocks are unfolded (each folds from its header); all start open. */
-  expanded: Readonly<Record<SidebarFoldableBlock, boolean>>;
-  toggleBlock: (block: SidebarFoldableBlock) => void;
+  expanded: Readonly<Record<SidebarBlockId, boolean>>;
+  toggleBlock: (block: SidebarBlockId) => void;
 }
 
 export const useSidebarSurfaceStore = create<SidebarSurfaceState>((set) => ({
@@ -31,7 +31,7 @@ export const useSidebarSurfaceStore = create<SidebarSurfaceState>((set) => ({
 }));
 
 /** A block's fold state and its toggle. */
-export function useSidebarBlockFold(block: SidebarFoldableBlock): {
+export function useSidebarBlockFold(block: SidebarBlockId): {
   expanded: boolean;
   toggle: () => void;
 } {

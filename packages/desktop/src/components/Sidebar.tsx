@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { ProjectTree } from "@/components/ProjectTree";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { SidebarRowActionsProvider } from "@/components/SidebarRowActionsProvider";
 import { ShortcutHintsProvider } from "@/hooks/useNavShortcutHints";
 import { SidebarConfigProvider } from "@/components/SidebarConfigProvider";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
@@ -93,7 +95,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
           )}
         >
           <SidebarHeader onCollapse={() => setCollapsed(true)} />
-          {/* Flex column so the tree gets the *remaining* height (not 100%, which
+          {/* Flex column so the scroller gets the *remaining* height (not 100%, which
           overflows past the search bar and clips the scroll area's bottom). */}
           <SidebarSampleProvider enabled={showsSamples}>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
@@ -112,25 +114,31 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
                 activeFeatureId={effectiveFeatureId}
                 onSelectFeature={setSelectedFeatureId}
               />
-              {showsSamples ? (
-                <div data-sidebar-sample className="flex shrink-0 flex-col">
-                  <SampleScope>
-                    <SidebarSampleBlocks />
-                  </SampleScope>
-                </div>
-              ) : (
-                <SidebarBlocks
-                  activeFeatureId={effectiveFeatureId}
-                  onSelectFeature={setSelectedFeatureId}
-                />
-              )}
-              <div className="min-h-0 flex-1">
-                <ProjectTree
-                  activeProjectId={activeProjectId}
-                  activeFeatureId={effectiveFeatureId}
-                  onSelectFeature={setSelectedFeatureId}
-                />
-              </div>
+              <SidebarRowActionsProvider>
+                {/* One scroller for the blocks and the projects, so every block stays
+                reachable however many are open, on a phone as on desktop. */}
+                <ScrollArea data-sidebar-scroll className="min-h-0 min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-col pb-2">
+                    {showsSamples ? (
+                      <div data-sidebar-sample className="flex flex-col">
+                        <SampleScope>
+                          <SidebarSampleBlocks />
+                        </SampleScope>
+                      </div>
+                    ) : (
+                      <SidebarBlocks
+                        activeFeatureId={effectiveFeatureId}
+                        onSelectFeature={setSelectedFeatureId}
+                      />
+                    )}
+                    <ProjectTree
+                      activeProjectId={activeProjectId}
+                      activeFeatureId={effectiveFeatureId}
+                      onSelectFeature={setSelectedFeatureId}
+                    />
+                  </div>
+                </ScrollArea>
+              </SidebarRowActionsProvider>
             </div>
           </SidebarSampleProvider>
           <SidebarFooter />
