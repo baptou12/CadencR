@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { NotchAgent, NotchGeometry } from "@/shared/notch";
 import { IndexDotsOrb } from "./IndexDotsOrb";
-import { ambientAgents } from "./notch-ambient";
+import { ambientAgents, compactDots } from "./notch-ambient";
 import { notchBridge } from "./notch-bridge";
 import { aggregateOrbState, NotchPanel, PanelEars } from "./NotchPanel";
 import { NotchPeek, PeekEars, peekTone } from "./NotchPeek";
@@ -9,13 +9,12 @@ import { useNotchFeed, type NotchFeed } from "./useNotchFeed";
 
 type IslandMode = "idle" | "compact" | "peek" | "expanded";
 
-const EAR_WIDTH = 52;
+const EAR_WIDTH = 56;
 const PEEK_WIDTH = 440;
 const PANEL_WIDTH = 540;
 const RADII: Record<IslandMode, number> = { idle: 10, compact: 13, peek: 24, expanded: 28 };
 /** Slack around the drawn shape the pointer may stray into before the island lets go. */
 const HOT_SLACK = 10;
-const MAX_COMPACT_DOTS = 4;
 
 interface IslandSize {
   width: number;
@@ -97,8 +96,7 @@ function CompactEars({
   agents: readonly NotchAgent[];
   still: boolean;
 }): React.JSX.Element {
-  const shown = agents.slice(0, MAX_COMPACT_DOTS);
-  const extra = agents.length - shown.length;
+  const { shown, extra } = compactDots(agents);
   return (
     <>
       <span className="ear">
@@ -222,6 +220,7 @@ function IslandView({
           "--iw": `${size.width}px`,
           "--ih": `${size.height}px`,
           "--ir": `${RADII[mode]}px`,
+          "--ear-w": `${EAR_WIDTH}px`,
           "--tone": `var(--n-${tone})`,
         } as CSSProperties
       }
