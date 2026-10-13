@@ -97,6 +97,7 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
   const accessMode = p.access_mode ?? p.codex_permission_mode;
   if (accessMode) {
     updates.accessMode = parseAccessMode(accessMode);
+    if (accessMode === session.pendingInitAccessMode) updates.pendingInitAccessMode = null;
   }
   updates.currentThinkingEffort = p.thinking_effort;
   updates.fastMode = p.fast_mode ?? false;

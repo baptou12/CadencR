@@ -234,7 +234,7 @@ function createConfigurationActions(deps: SimpleSessionActionDeps) {
         sendRaw(sessionId, createAccessModeSet(session.serverSessionId, mode));
         return;
       }
-      set(updateSession(get(), sessionId, { accessMode: mode }));
+      set(updateSession(get(), sessionId, { accessMode: mode, pendingInitAccessMode: mode }));
     },
   };
 }
