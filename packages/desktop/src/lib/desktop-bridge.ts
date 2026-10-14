@@ -110,6 +110,7 @@ const browserBridge: CadencrBrowserBridge = {
   requestQuit: () => Promise.resolve(),
   reportRendererError: () => Promise.resolve(),
   setZoom: () => Promise.resolve(),
+  setTrafficLightsCenter: () => Promise.resolve(),
   currentTheme: () => Promise.resolve(browserTheme()),
   onThemeChange: () => () => undefined,
   setBusy: () => Promise.resolve(),

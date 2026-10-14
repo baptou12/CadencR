@@ -245,8 +245,9 @@ function FeatureHeaderChrome({
         data-mac-controls={HAS_MAC_WINDOW_CONTROLS ? "true" : undefined}
         className={cn(
           draggable && "titlebar-drag",
-          "flex items-center gap-3 px-3 md:px-6",
-          showSidebarChrome && sidebarCollapsed && HAS_MAC_WINDOW_CONTROLS ? "pt-1.5 pb-0" : "py-3",
+          // Same height collapsed or not: the traffic lights move onto this
+          // row (`SidebarCollapsedChrome`), the row never moves to them.
+          "flex items-center gap-3 px-3 py-3 md:px-6",
           className,
         )}
       >

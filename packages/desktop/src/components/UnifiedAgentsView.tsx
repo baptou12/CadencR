@@ -27,7 +27,6 @@ import type { UnifiedAgentsFilterInputHandle } from "@/components/UnifiedAgentsD
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
 import { useUnifiedAgentsData, type UnifiedAgentsData } from "@/components/UnifiedAgentsViewData";
 import { HAS_MAC_WINDOW_CONTROLS } from "@/lib/mac-window-controls";
-import { cn } from "@/lib/utils";
 import { useLiveWorkingCount } from "@/stores/session-status-selectors";
 
 export function UnifiedAgentsView(): ReactElement {
@@ -319,10 +318,7 @@ function UnifiedAgentsHeader({
       data-feature-header
       data-unified-agents-header
       data-mac-controls={HAS_MAC_WINDOW_CONTROLS ? "true" : undefined}
-      className={cn(
-        "titlebar-drag flex shrink-0 items-center gap-3 border-b border-border/40 bg-background px-4 md:px-6",
-        sidebarCollapsed && HAS_MAC_WINDOW_CONTROLS ? "pt-1.5 pb-1.5" : "py-4",
-      )}
+      className="titlebar-drag flex shrink-0 items-center gap-3 border-b border-border/40 bg-background px-4 py-4 md:px-6"
     >
       <SidebarCollapsedChrome
         visible={sidebarCollapsed}

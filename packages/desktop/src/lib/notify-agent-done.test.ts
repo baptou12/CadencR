@@ -82,6 +82,7 @@ function bridge(): CadencrDesktopBridge {
     confirmClose: vi.fn(),
     requestQuit: vi.fn(),
     setZoom: vi.fn(),
+    setTrafficLightsCenter: vi.fn(),
     currentTheme: vi.fn(),
     onThemeChange: vi.fn(() => () => undefined),
     setBusy: vi.fn(() => Promise.resolve()),

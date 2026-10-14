@@ -221,6 +221,8 @@ contextBridge.exposeInMainWorld("cadencr", {
   reportRendererError: (payload: RendererErrorReportPayload): Promise<void> =>
     ipcRenderer.invoke("app:renderer-error", payload),
   setZoom: (factor: number): Promise<void> => ipcRenderer.invoke("webview:set-zoom", factor),
+  setTrafficLightsCenter: (center: number | null): Promise<void> =>
+    ipcRenderer.invoke("window:set-traffic-lights-center", center),
   currentTheme: (): Promise<DesktopTheme> => ipcRenderer.invoke("theme:current"),
   onThemeChange: (cb: (appearance: DesktopTheme) => void): (() => void) =>
     onIpc("theme:updated", cb),

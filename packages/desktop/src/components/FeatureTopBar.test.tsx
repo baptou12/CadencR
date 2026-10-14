@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@/test-utils";
+import { DEFAULT_SIDEBAR_CONFIG } from "@/lib/sidebar-config";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
 import { FeatureTopBar } from "./FeatureTopBar";
+
+function hideRail(): void {
+  useSidebarConfigStore.setState({ config: { ...DEFAULT_SIDEBAR_CONFIG, rail: "none" } });
+}
 
 const platformMock = vi.hoisted(() => ({ hasMacWindowControls: false }));
 
@@ -15,9 +21,9 @@ vi.mock("@/lib/mac-window-controls", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: unknown; to: string }) => {
+  Link: ({ children, to, ...props }: { children: unknown; to: string }) => {
     const React = require("react");
-    return React.createElement("a", { href: to }, children);
+    return React.createElement("a", { ...props, href: to }, children);
   },
 }));
 
@@ -114,6 +120,7 @@ describe("FeatureTopBar", () => {
     mockAutoName.mockClear();
     mockSidebarCollapsed = false;
     platformMock.hasMacWindowControls = false;
+    useSidebarConfigStore.setState({ config: DEFAULT_SIDEBAR_CONFIG });
     mockFeatureData = {
       id: 1,
       title: "My Test Feature",
@@ -198,6 +205,7 @@ describe("FeatureTopBar", () => {
   });
 
   it("keeps collapsed chrome mounted while toggling its accessibility state", () => {
+    platformMock.hasMacWindowControls = true;
     const { container, rerender } = render(<FeatureTopBar featureId={1} projectId={1} />);
     const chrome = container.querySelector("[data-sidebar-collapsed-chrome]");
     expect(chrome).toHaveAttribute("data-visible", "false");
@@ -213,37 +221,35 @@ describe("FeatureTopBar", () => {
     expect(chrome).not.toHaveAttribute("inert");
   });
 
-  it("shows logo and app name when sidebar is collapsed", () => {
+  it("leaves expand and settings to the rail when the sidebar is collapsed", () => {
     mockSidebarCollapsed = true;
-    const { container } = render(<FeatureTopBar featureId={1} projectId={1} />);
-    const chrome = container.querySelector("[data-sidebar-collapsed-chrome]");
-    expect(chrome).toHaveAttribute("data-visible", "true");
-    expect(chrome).not.toHaveAttribute("inert");
-    expect(screen.getByText("Cadencr")).toBeInTheDocument();
-    expect(screen.getByAltText("Cadencr")).toBeInTheDocument();
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+    expect(screen.queryByTitle("Expand sidebar (⌘B)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cadencr")).not.toBeInTheDocument();
   });
 
-  it("shows expand button when sidebar is collapsed", () => {
+  it("shows expand and settings when collapsed without a rail", () => {
     mockSidebarCollapsed = true;
+    hideRail();
     render(<FeatureTopBar featureId={1} projectId={1} />);
     expect(screen.getByTitle("Expand sidebar (⌘B)")).toBeInTheDocument();
-  });
-
-  it("shows settings link when sidebar is collapsed", () => {
-    mockSidebarCollapsed = true;
-    render(<FeatureTopBar featureId={1} projectId={1} />);
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
-  it("uses compact Mac spacing when the sidebar is collapsed", () => {
-    mockSidebarCollapsed = true;
+  it("keeps the Mac header's expanded height when the sidebar collapses", () => {
     platformMock.hasMacWindowControls = true;
-    render(<FeatureTopBar featureId={1} projectId={1} />);
-
+    hideRail();
+    const { rerender } = render(<FeatureTopBar featureId={1} projectId={1} />);
     const header = screen
       .getByRole("heading", { name: "My Test Feature" })
       .closest("[data-feature-header]");
-    expect(header).toHaveClass("pt-1.5", "pb-0");
+    const expandedClasses = header?.className;
+
+    mockSidebarCollapsed = true;
+    rerender(<FeatureTopBar featureId={1} projectId={1} />);
+
+    expect(header?.className).toBe(expandedClasses);
     expect(screen.getByTitle("Expand sidebar (⌘B)")).toHaveClass("size-6");
     expect(screen.getByTitle("Settings")).toHaveClass("size-6");
   });
@@ -264,6 +270,7 @@ describe("FeatureTopBar", () => {
 
   it("calls setCollapsed(false) when expand button is clicked", async () => {
     mockSidebarCollapsed = true;
+    hideRail();
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
     render(<FeatureTopBar featureId={1} projectId={1} />);

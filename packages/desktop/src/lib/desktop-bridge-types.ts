@@ -130,6 +130,8 @@ export interface CadencrDesktopBridge {
   requestQuit: () => Promise<void>;
   reportRendererError?: (payload: RendererErrorReportPayload) => Promise<void>;
   setZoom: (factor: number) => Promise<void>;
+  /** Centers the macOS traffic lights on a band `center` CSS px from the top; null restores them. */
+  setTrafficLightsCenter?: (center: number | null) => Promise<void>;
   currentTheme: () => Promise<DesktopTheme>;
   onThemeChange: (cb: (appearance: DesktopTheme) => void) => () => void;
   setBusy: (busy: boolean) => Promise<void>;
@@ -144,6 +146,7 @@ export interface CadencrDesktopBridge {
 
 export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   reportRendererError: (payload: RendererErrorReportPayload) => Promise<void>;
+  setTrafficLightsCenter: (center: number | null) => Promise<void>;
   // The macOS notch island; the browser fallback resolves them as unsupported.
   notchCapabilities: () => Promise<NotchCapabilities>;
   notchConfigure: (config: NotchConfig) => Promise<void>;

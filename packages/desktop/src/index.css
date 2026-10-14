@@ -119,10 +119,10 @@ html {
   transition: flex-grow 220ms var(--ease-fluid);
 }
 
-/* The collapsed titlebar chrome stays mounted so its actions and brand can
- * animate in both directions. Its hidden negative margin cancels the parent
- * header's 12px flex gap; `interpolate-size` lets Chromium transition between
- * zero and the lockup's intrinsic width. */
+/* The collapsed titlebar chrome stays mounted so it can animate in both
+ * directions. Its hidden negative margin cancels the parent header's 12px flex
+ * gap; `interpolate-size` lets Chromium transition between zero and the
+ * chrome's intrinsic width. */
 [data-sidebar-collapsed-chrome] {
   display: flex;
   width: 0;
