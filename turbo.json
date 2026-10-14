@@ -53,7 +53,7 @@
       "persistent": true
     },
     "@cadencr/desktop#build": {
-      "dependsOn": ["^build", "@cadencr/service#build"],
+      "dependsOn": ["^build"],
       "outputs": ["out/**", "dist-electron/**"],
       "cache": false
     },
@@ -63,7 +63,7 @@
       "cache": false
     },
     "@cadencr/desktop#build:electron": {
-      "dependsOn": ["^build", "@cadencr/service#build"],
+      "dependsOn": ["^build"],
       "outputs": ["out/**", "dist-electron/**"],
       "cache": false
     },
