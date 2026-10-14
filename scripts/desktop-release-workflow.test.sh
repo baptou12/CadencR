@@ -68,11 +68,22 @@ case "$workflow_text" in
 esac
 
 case "$workflow_text" in
-  *"latest-mac.yml"*"Cadencr-\${version}-arm64.dmg"*"Cadencr-\${version}.dmg"*) ;;
-  *) fail "workflow must require updater metadata and both Homebrew DMGs" ;;
+  *"latest-mac.yml"*"Cadencr-\${version}-x64-mac.zip"*"Cadencr-\${version}-arm64-mac.zip"*"Cadencr-\${version}-x64.dmg"*"Cadencr-\${version}-arm64.dmg"*) ;;
+  *) fail "workflow must require updater metadata and both arch-suffixed Homebrew DMGs" ;;
 esac
 
 case "$workflow_text" in
-  *'CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}'*'Validate marketplace build configuration'*'node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build'*) ;;
+  *'Cadencr-${version}.dmg'*|*'Cadencr-${version}-mac.zip'*)
+    fail "macOS assets must carry their arch; the unsuffixed names were the Intel build"
+    ;;
+esac
+
+case "$workflow_text" in
+  *'for arch in arm64 x64; do'*'smoke:packaged-sidecar'*'resources/bin/$arch/cadencr-service'*) ;;
+  *) fail "workflow must smoke test both per-arch service sidecars" ;;
+esac
+
+case "$workflow_text" in
+  *'CADENCR_MANAGED_THEME_INDEX_URL: ${{ vars.CADENCR_MANAGED_THEME_INDEX_URL }}'*'Validate marketplace build configuration'*'node scripts/validate-marketplace-build-env.mjs -- pnpm --filter @cadencr/service build:macos-sidecars'*) ;;
   *) fail "desktop sidecar must validate and forward optional mixed theme feed configuration" ;;
 esac
