@@ -1,6 +1,9 @@
 import { app, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import pkg from "electron-updater";
+import type { ChangelogImageBytes } from "../../src/shared/changelog-image";
+import { fetchChangelogImage } from "./changelog-images";
 import { assertTrustedSender } from "./ipc";
+import { GH_OWNER, GH_REPO } from "./release-repo";
 import { sendToWindow } from "./safe-send";
 
 // `electron-updater` ships as CommonJS; the `autoUpdater` named export is on
@@ -10,10 +13,6 @@ const { autoUpdater } = pkg;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FIRST_CHECK_DELAY_MS = 10_000; // 10 s after ready — let the sidecar boot
 
-// GitHub repo backing the public releases / changelog. Matches the `publish`
-// block in `electron-builder.yml`.
-const GH_OWNER = "merkr-software";
-const GH_REPO = "cadencr";
 const CHANGELOG_FETCH_TIMEOUT_MS = 8_000;
 
 type UpdateChannel =
@@ -69,6 +68,14 @@ export function registerAutoUpdaterIpc({ getMainWindow, prepareInstallUpdate }: 
       assertTrustedSender(event, getMainWindow);
       if (typeof version !== "string" || version.length === 0) return null;
       return fetchChangelog(version);
+    },
+  );
+  ipcMain.handle(
+    "app:fetch-changelog-image",
+    async (event: IpcMainInvokeEvent, src: unknown): Promise<ChangelogImageBytes> => {
+      assertTrustedSender(event, getMainWindow);
+      if (typeof src !== "string") throw new Error("Image source must be a string.");
+      return fetchChangelogImage(src);
     },
   );
 }
