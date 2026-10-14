@@ -21,6 +21,7 @@ import type {
   BrowserTabMetadata,
   BrowserAgentActivity,
 } from "../main/browser-types";
+import type { ChangelogImageBytes } from "../../src/shared/changelog-image";
 import { notchHostBridge } from "./notch-host-bridge";
 
 type RouteType = "workflow" | "session";
@@ -395,6 +396,8 @@ contextBridge.exposeInMainWorld("cadencr", {
   installUpdate: (): Promise<void> => ipcRenderer.invoke("app:install-update"),
   fetchChangelog: (version: string): Promise<string | null> =>
     ipcRenderer.invoke("app:fetch-changelog", version),
+  fetchChangelogImage: (src: string): Promise<ChangelogImageBytes> =>
+    ipcRenderer.invoke("app:fetch-changelog-image", src),
   onUpdateEvent,
   ...notchHostBridge(onIpc),
 });

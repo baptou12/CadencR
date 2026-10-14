@@ -47,6 +47,7 @@ function bridge(): CadencrDesktopBridge {
     onPowerResume: vi.fn(() => () => undefined),
     checkForUpdates: vi.fn(() => Promise.resolve()),
     fetchChangelog: vi.fn(() => Promise.resolve(null)),
+    fetchChangelogImage: vi.fn(),
     installUpdate: vi.fn(() => Promise.resolve()),
     onUpdateEvent: vi.fn(() => () => undefined),
   };

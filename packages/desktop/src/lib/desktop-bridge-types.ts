@@ -5,6 +5,7 @@ import type {
   NotchNotification,
   NotchSnapshot,
 } from "@/shared/notch";
+import type { ChangelogImageBytes } from "@/shared/changelog-image";
 import type { LinkHoverContext, LinkMenuOpenPayload } from "@/lib/link-routing";
 import type {
   BrowserBounds,
@@ -139,6 +140,8 @@ export interface CadencrDesktopBridge {
   checkForUpdates: () => Promise<void>;
   installUpdate: () => Promise<void>;
   fetchChangelog: (version: string) => Promise<string | null>;
+  /** Bytes of an image committed to Cadencr's repo and referenced by release notes. */
+  fetchChangelogImage: (src: string) => Promise<ChangelogImageBytes>;
   onUpdateEvent: (cb: (event: UpdateEvent) => void) => () => void;
 }
 
