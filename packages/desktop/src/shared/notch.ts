@@ -76,8 +76,19 @@ export const notchNotificationSchema = z.object({
 /** The island enriches a notification (provider, project) from its latest snapshot. */
 export type NotchNotification = z.infer<typeof notchNotificationSchema>;
 
+/** The Settings preview: no conversation behind it, and never muted by a snooze. */
+export function isNotchPreview(notification: NotchNotification): boolean {
+  return notification.featureId == null;
+}
+
 export const notchFeatureRefSchema = z.object({ featureId: id, projectId: id });
 export type NotchFeatureRef = z.infer<typeof notchFeatureRefSchema>;
+
+/** How long the island can be snoozed for, in minutes. */
+export const NOTCH_SNOOZE_MINUTES = [5, 30, 60, 90, 120] as const;
+export type NotchSnoozeMinutes = (typeof NOTCH_SNOOZE_MINUTES)[number];
+/** A snooze length, or `null` to resume. */
+export const notchSnoozeSchema = z.literal(NOTCH_SNOOZE_MINUTES).nullable();
 
 /** Window-relative rectangle (CSS px == DIP) the pointer must stay inside. */
 export const notchHotRectSchema = z.object({
@@ -122,6 +133,8 @@ export interface NotchReadyPayload {
   geometry: NotchGeometry | null;
   snapshot: NotchSnapshot;
   prefs: NotchPrefs;
+  /** Epoch ms the island stays muted until; `null` when it isn't snoozed. */
+  snoozedUntil: number | null;
 }
 
 /** The island renderer's bridge, exposed by `electron/preload/notch.ts`. */
@@ -130,11 +143,15 @@ export interface NotchBridge {
   setHotRect: (rect: NotchHotRect) => Promise<void>;
   openFeature: (ref: NotchFeatureRef) => Promise<void>;
   dismiss: (ref: NotchFeatureRef) => Promise<void>;
+  /** Close the island under the pointer until the pointer leaves it. */
+  collapse: () => Promise<void>;
+  snooze: (minutes: NotchSnoozeMinutes | null) => Promise<void>;
   onSnapshot: (cb: (snapshot: NotchSnapshot) => void) => () => void;
   onNotification: (cb: (notification: NotchNotification) => void) => () => void;
   onHover: (cb: (hovering: boolean) => void) => () => void;
   onGeometry: (cb: (geometry: NotchGeometry | null) => void) => () => void;
   onPrefs: (cb: (prefs: NotchPrefs) => void) => () => void;
+  onSnooze: (cb: (snoozedUntil: number | null) => void) => () => void;
 }
 
 export interface NotchCapabilities {

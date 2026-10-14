@@ -1,7 +1,8 @@
 import { Fragment, useRef } from "react";
-import type { NotchAgent } from "@/shared/notch";
+import type { NotchAgent, NotchSnoozeMinutes } from "@/shared/notch";
 import { IndexDotsOrb, type OrbStatus } from "./IndexDotsOrb";
 import { NotchAgentRow } from "./NotchAgentRow";
+import { PanelSnooze } from "./NotchSnooze";
 import { useNow } from "@/hooks/useNow";
 import { useReportHeight } from "./useReportHeight";
 
@@ -71,6 +72,8 @@ export function NotchPanel({
   onOpen,
   onDismiss,
   onHeight,
+  snoozedUntil,
+  onSnooze,
 }: {
   agents: readonly NotchAgent[];
   active: boolean;
@@ -78,6 +81,8 @@ export function NotchPanel({
   onOpen: (agent: NotchAgent) => void;
   onDismiss: (agent: NotchAgent) => void;
   onHeight: (height: number) => void;
+  snoozedUntil: number | null;
+  onSnooze: (minutes: NotchSnoozeMinutes | null) => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   const now = useNow(active && agents.some((agent) => agent.status !== "done"));
@@ -115,6 +120,9 @@ export function NotchPanel({
           ))}
         </div>
       )}
+      <div className="panel-foot">
+        <PanelSnooze snoozedUntil={snoozedUntil} onSnooze={onSnooze} />
+      </div>
     </div>
   );
 }

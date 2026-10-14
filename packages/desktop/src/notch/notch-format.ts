@@ -8,6 +8,13 @@ export function formatElapsed(ms: number): string {
   return `${minutes}:${seconds}`;
 }
 
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
+/** Wall-clock time in the user's locale: "9:30 PM", "21:30". */
+export function formatClock(epochMs: number): string {
+  return CLOCK.format(epochMs);
+}
+
 /** Compact age of a finished turn: "now", "4m", "2h", "3d". */
 export function formatAge(ms: number): string {
   const minutes = Math.floor(Math.max(0, ms) / 60_000);
