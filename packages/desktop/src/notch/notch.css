@@ -187,10 +187,11 @@ body {
 
 /* The band beside the cutout: content may only live in the two ears. */
 .ears {
+  --ear-pad: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
+  padding: 0 var(--ear-pad);
   box-sizing: border-box;
 }
 .ear {
@@ -202,10 +203,16 @@ body {
 
 /* ── Compact live activity ────────────────────────────────────────────── */
 
+/* Fixed to the ear's room (minus a gutter to the cutout) and anchored to the
+   island's edge: whatever the count, the row can never reach under the
+   cutout — at worst it is clipped by its own box. */
 .compact-dots {
   display: flex;
   gap: 3px;
   align-items: center;
+  justify-content: flex-end;
+  width: calc(var(--ear-w) - var(--ear-pad) - 4px);
+  overflow: hidden;
 }
 .compact-dot {
   width: 5px;
@@ -224,11 +231,15 @@ body {
 .compact-dot[data-status="done"] {
   color: var(--n-done);
 }
+/* Reads as one more mark in the row, not a label: dot-scale, muted ink. */
 .compact-count {
-  font-size: 12px;
-  font-weight: 650;
+  margin-left: 1px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--n-soft);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 @keyframes dot-breathe {

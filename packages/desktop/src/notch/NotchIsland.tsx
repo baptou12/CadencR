@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { NotchAgent, NotchGeometry } from "@/shared/notch";
+import type { NotchAgent, NotchGeometry, NotchSnoozeMinutes } from "@/shared/notch";
 import { IndexDotsOrb } from "./IndexDotsOrb";
-import { ambientAgents } from "./notch-ambient";
+import { ambientAgents, compactDots } from "./notch-ambient";
 import { notchBridge } from "./notch-bridge";
 import { aggregateOrbState, NotchPanel, PanelEars } from "./NotchPanel";
 import { NotchPeek, PeekEars, peekTone } from "./NotchPeek";
@@ -9,13 +9,12 @@ import { useNotchFeed, type NotchFeed } from "./useNotchFeed";
 
 type IslandMode = "idle" | "compact" | "peek" | "expanded";
 
-const EAR_WIDTH = 52;
+const EAR_WIDTH = 56;
 const PEEK_WIDTH = 440;
 const PANEL_WIDTH = 540;
 const RADII: Record<IslandMode, number> = { idle: 10, compact: 13, peek: 24, expanded: 28 };
 /** Slack around the drawn shape the pointer may stray into before the island lets go. */
 const HOT_SLACK = 10;
-const MAX_COMPACT_DOTS = 4;
 
 interface IslandSize {
   width: number;
@@ -28,7 +27,7 @@ interface IslandSize {
  * for the list under the cursor.
  */
 function useIslandMode(feed: NotchFeed, hasAmbient: boolean): { mode: IslandMode; held: boolean } {
-  const { engaged, peek, prefs } = feed;
+  const { engaged, peek, prefs, snoozedUntil } = feed;
   // Only the moment of engagement decides between holding a peek and browsing.
   // Decided while rendering, so the panel never flashes in for a frame first.
   const [hold, setHold] = useState<{ engaged: boolean; peekId: string | null }>({
@@ -44,8 +43,9 @@ function useIslandMode(feed: NotchFeed, hasAmbient: boolean): { mode: IslandMode
   const held = peek != null && holdPeekId === peek.id;
   if (peek && (!engaged || held)) return { mode: "peek", held };
   if (engaged) return { mode: "expanded", held: false };
-  // Out while something needs a glance; "always on" off tucks it away between peeks.
-  return { mode: prefs.alwaysOn && hasAmbient ? "compact" : "idle", held: false };
+  // Out while something needs a glance; "always on" off or a snooze tucks it away between peeks.
+  const ambient = prefs.alwaysOn && hasAmbient && snoozedUntil == null;
+  return { mode: ambient ? "compact" : "idle", held: false };
 }
 
 interface BodyHeights {
@@ -97,8 +97,7 @@ function CompactEars({
   agents: readonly NotchAgent[];
   still: boolean;
 }): React.JSX.Element {
-  const shown = agents.slice(0, MAX_COMPACT_DOTS);
-  const extra = agents.length - shown.length;
+  const { shown, extra } = compactDots(agents);
   return (
     <>
       <span className="ear">
@@ -142,13 +141,14 @@ function Layer({
   );
 }
 
-function useIslandActions(reportError: (error: unknown) => void) {
+/** Opening and snoozing close the island in main; `settle` then skips the leave grace. */
+function useIslandActions({ reportError, settle }: NotchFeed) {
   const open = useCallback(
     (featureId: number | null, projectId: number | null) => {
       if (featureId == null || projectId == null) return;
-      notchBridge().openFeature({ featureId, projectId }).catch(reportError);
+      notchBridge().openFeature({ featureId, projectId }).then(settle).catch(reportError);
     },
-    [reportError],
+    [settle, reportError],
   );
   const openAgent = useCallback(
     (agent: NotchAgent) => open(agent.featureId, agent.projectId),
@@ -163,7 +163,19 @@ function useIslandActions(reportError: (error: unknown) => void) {
     [reportError],
   );
 
-  return { open, openAgent, dismissAgent };
+  const snooze = useCallback(
+    (minutes: NotchSnoozeMinutes | null) => {
+      notchBridge()
+        .snooze(minutes)
+        .then(() => {
+          if (minutes != null) settle();
+        })
+        .catch(reportError);
+    },
+    [settle, reportError],
+  );
+
+  return { open, openAgent, dismissAgent, snooze };
 }
 
 /** The shape contracts on a quicker, overshoot-free curve than it grows on. */
@@ -189,13 +201,13 @@ function IslandView({
   feed: NotchFeed;
   geometry: NotchGeometry;
 }): React.JSX.Element {
-  const { snapshot, peek, dropPeek, reportError } = feed;
+  const { snapshot, peek, dropPeek, release, reportError } = feed;
   const ambient = useMemo(() => ambientAgents(snapshot.agents), [snapshot.agents]);
   const { mode, held } = useIslandMode(feed, ambient.length > 0);
   const [panelHeight, setPanelHeight] = useState(120);
   const [peekHeight, setPeekHeight] = useState(104);
   const bodies = { peek: peekHeight, panel: panelHeight };
-  const { open, openAgent, dismissAgent } = useIslandActions(reportError);
+  const { open, openAgent, dismissAgent, snooze } = useIslandActions(feed);
   // Ambient calm: the closed island only animates with "Always animate" on. Not gated on
   // the mode, so the compact layer keeps the logo while it fades out under a peek or panel.
   const still = !feed.prefs.alwaysAnimate;
@@ -222,6 +234,7 @@ function IslandView({
           "--iw": `${size.width}px`,
           "--ih": `${size.height}px`,
           "--ir": `${RADII[mode]}px`,
+          "--ear-w": `${EAR_WIDTH}px`,
           "--tone": `var(--n-${tone})`,
         } as CSSProperties
       }
@@ -250,10 +263,16 @@ function IslandView({
             agent={peekAgent}
             paused={held}
             tone={tone}
+            error={feed.error}
             onOpen={() => {
               open(peek.featureId, peek.projectId);
               dropPeek(peek.id);
             }}
+            onClose={() => {
+              dropPeek(peek.id);
+              release();
+            }}
+            onSnooze={snooze}
             onExpire={() => dropPeek(peek.id)}
             onHeight={setPeekHeight}
           />
@@ -272,6 +291,8 @@ function IslandView({
           onOpen={openAgent}
           onDismiss={dismissAgent}
           onHeight={setPanelHeight}
+          snoozedUntil={feed.snoozedUntil}
+          onSnooze={snooze}
         />
       </Layer>
     </div>

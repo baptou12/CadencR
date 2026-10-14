@@ -19,11 +19,14 @@ const bridge: NotchBridge = {
   setHotRect: (rect) => ipcRenderer.invoke("notch:hot-rect", rect),
   openFeature: (ref) => ipcRenderer.invoke("notch:open-feature", ref),
   dismiss: (ref) => ipcRenderer.invoke("notch:dismiss", ref),
+  collapse: () => ipcRenderer.invoke("notch:collapse"),
+  snooze: (minutes) => ipcRenderer.invoke("notch:snooze", minutes),
   onSnapshot: (cb) => onIpc("notch:snapshot", cb),
   onNotification: (cb) => onIpc("notch:notification", cb),
   onHover: (cb) => onIpc("notch:hover", cb),
   onGeometry: (cb) => onIpc("notch:geometry", cb),
   onPrefs: (cb) => onIpc("notch:prefs", cb),
+  onSnooze: (cb) => onIpc("notch:snoozed", cb),
 };
 
 contextBridge.exposeInMainWorld("cadencrNotch", bridge);

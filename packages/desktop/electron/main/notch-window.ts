@@ -2,6 +2,7 @@ import path from "node:path";
 import { app, BrowserWindow, screen } from "electron";
 import {
   DEFAULT_NOTCH_PREFS,
+  isNotchPreview,
   type NotchCapabilities,
   type NotchConfig,
   type NotchFeatureRef,
@@ -11,6 +12,7 @@ import {
   type NotchPrefs,
   type NotchReadyPayload,
   type NotchSnapshot,
+  type NotchSnoozeMinutes,
 } from "../../src/shared/notch";
 import {
   probeHardwareNotches,
@@ -65,6 +67,8 @@ export class NotchController {
   private pollTimer: NodeJS.Timeout | null = null;
   private placing: Promise<void> | null = null;
   private prefs: NotchPrefs = DEFAULT_NOTCH_PREFS;
+  /** Kept across window rebuilds; read against the wall clock, so it outlasts a sleep correctly. */
+  private snoozedUntil: number | null = null;
   private readonly onDisplaysChanged = (): void => {
     this.probed = undefined;
     void this.place();
@@ -124,6 +128,7 @@ export class NotchController {
 
   pushNotification(notification: NotchNotification): void {
     if (!this.enabled) return;
+    if (this.isSnoozed() && !isNotchPreview(notification)) return;
     if (this.ready) {
       sendToWindow(this.win, "notch:notification", notification);
       return;
@@ -141,7 +146,23 @@ export class NotchController {
       sendToWindow(this.win, "notch:notification", notification);
     }
     this.pendingNotifications = [];
-    return { geometry: this.geometry(), snapshot: this.snapshot, prefs: this.prefs };
+    return {
+      geometry: this.geometry(),
+      snapshot: this.snapshot,
+      prefs: this.prefs,
+      snoozedUntil: this.isSnoozed() ? this.snoozedUntil : null,
+    };
+  }
+
+  /** Mute the island's ears and peeks for a while, closing it; `null` resumes. */
+  snooze(minutes: NotchSnoozeMinutes | null): void {
+    this.snoozedUntil = minutes == null ? null : Date.now() + minutes * 60_000;
+    if (this.ready) sendToWindow(this.win, "notch:snoozed", this.snoozedUntil);
+    if (minutes != null) this.collapse();
+  }
+
+  private isSnoozed(): boolean {
+    return this.snoozedUntil != null && Date.now() < this.snoozedUntil;
   }
 
   setHotRect(rect: NotchHotRect): void {
@@ -302,7 +323,8 @@ export class NotchController {
     return POINTER_POLL_MS;
   }
 
-  private collapse(): void {
+  /** Close the island under the pointer; it stays closed until the pointer leaves. */
+  collapse(): void {
     if (!this.win || !this.hovering) return;
     this.hovering = false;
     this.suppressUntilLeave = true;

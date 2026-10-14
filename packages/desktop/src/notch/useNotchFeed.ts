@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   DEFAULT_NOTCH_PREFS,
+  isNotchPreview,
   type NotchGeometry,
   type NotchPrefs,
   type NotchNotification,
@@ -13,6 +14,8 @@ const MAX_QUEUED_PEEKS = 4;
 const HOVER_INTENT_MS = 70;
 /** Leaving briefly (a diagonal toward a row) must not slam the panel shut. */
 const HOVER_GRACE_MS = 280;
+/** A snooze ends on the wall clock, checked this often (timers stall while the Mac sleeps). */
+const SNOOZE_CHECK_MS = 30_000;
 
 export interface NotchFeed {
   snapshot: NotchSnapshot;
@@ -22,6 +25,12 @@ export interface NotchFeed {
   engaged: boolean;
   peek: NotchNotification | null;
   dropPeek: (id: string) => void;
+  /** Epoch ms the island stays muted until; `null` once it is back. */
+  snoozedUntil: number | null;
+  /** Main closed the island under the pointer: drop it now rather than after the leave grace. */
+  settle: () => void;
+  /** Close the island under the pointer (main lets go of it until the pointer leaves). */
+  release: () => void;
   error: string | null;
   reportError: (error: unknown) => void;
 }
@@ -33,6 +42,7 @@ export function useNotchFeed(): NotchFeed {
   const [hovering, setHovering] = useState(false);
   const [engaged, setEngaged] = useState(false);
   const [queue, setQueue] = useState<NotchNotification[]>([]);
+  const [snoozedUntil, setSnoozedUntil] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reportError = useCallback((cause: unknown) => {
@@ -46,6 +56,11 @@ export function useNotchFeed(): NotchFeed {
       bridge.onGeometry(setGeometry),
       bridge.onPrefs(setPrefs),
       bridge.onHover(setHovering),
+      bridge.onSnooze((until) => {
+        setSnoozedUntil(until);
+        // Muted news is dropped, not deferred.
+        if (until != null) setQueue((current) => current.filter(isNotchPreview));
+      }),
       bridge.onNotification((notification) =>
         setQueue((current) =>
           [
@@ -65,6 +80,7 @@ export function useNotchFeed(): NotchFeed {
         setGeometry(initial.geometry);
         setSnapshot(initial.snapshot);
         setPrefs(initial.prefs);
+        setSnoozedUntil(initial.snoozedUntil);
       })
       .catch(reportError);
     return () => offs.forEach((off) => off());
@@ -87,6 +103,19 @@ export function useNotchFeed(): NotchFeed {
     setQueue((current) => current.filter((queued) => queued.id !== id));
   }, []);
 
+  const settle = useCallback(() => setEngaged(false), []);
+  const release = useCallback(() => {
+    notchBridge().collapse().then(settle).catch(reportError);
+  }, [reportError, settle]);
+
+  useEffect(() => {
+    if (snoozedUntil == null) return;
+    const timer = setInterval(() => {
+      if (Date.now() >= snoozedUntil) setSnoozedUntil(null);
+    }, SNOOZE_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [snoozedUntil]);
+
   return {
     snapshot,
     geometry,
@@ -94,6 +123,9 @@ export function useNotchFeed(): NotchFeed {
     engaged,
     peek: queue[0] ?? null,
     dropPeek,
+    snoozedUntil,
+    settle,
+    release,
     error,
     reportError,
   };

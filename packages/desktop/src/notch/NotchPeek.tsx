@@ -1,7 +1,14 @@
 import { useEffect, useRef, type CSSProperties } from "react";
+import { XIcon } from "lucide-react";
 import { useReportHeight } from "./useReportHeight";
-import type { NotchAgent, NotchNotification } from "@/shared/notch";
+import {
+  isNotchPreview,
+  type NotchAgent,
+  type NotchNotification,
+  type NotchSnoozeMinutes,
+} from "@/shared/notch";
 import { IndexDotsOrb } from "./IndexDotsOrb";
+import { SnoozeChips } from "./NotchSnooze";
 import { NotchTile } from "./NotchTile";
 
 const PEEK_MS: Record<NotchNotification["status"], number> = {
@@ -72,7 +79,10 @@ export function NotchPeek({
   agent,
   paused,
   tone,
+  error,
   onOpen,
+  onClose,
+  onSnooze,
   onExpire,
   onHeight,
 }: {
@@ -80,7 +90,10 @@ export function NotchPeek({
   agent: NotchAgent | undefined;
   paused: boolean;
   tone: NotchTone;
+  error: string | null;
   onOpen: () => void;
+  onClose: () => void;
+  onSnooze: (minutes: NotchSnoozeMinutes) => void;
   onExpire: () => void;
   onHeight: (height: number) => void;
 }): React.JSX.Element {
@@ -88,18 +101,23 @@ export function NotchPeek({
   useReportHeight(ref, onHeight);
   const totalMs = PEEK_MS[notification.status];
   usePeekCountdown(totalMs, paused, onExpire);
-  const clickable = notification.featureId != null;
   const meta = [agent?.projectName, agent?.providerLabel].filter(Boolean).join(" · ");
   return (
     <div
       ref={ref}
       className="peek"
-      data-static={!clickable}
       data-paused={paused}
-      role={clickable ? "button" : undefined}
-      onClick={clickable ? onOpen : undefined}
       style={{ "--peek-ms": `${totalMs}ms` } as CSSProperties}
     >
+      {/* Stretched over the whole peek; its own controls sit above it. */}
+      {isNotchPreview(notification) ? null : (
+        <button
+          type="button"
+          className="peek-open"
+          aria-label={`Open ${notification.title}`}
+          onClick={onOpen}
+        />
+      )}
       <NotchTile
         size="lg"
         agent={{
@@ -115,7 +133,14 @@ export function NotchPeek({
         <div className="peek-title">{notification.title}</div>
         <div className="peek-meta">{meta || "Cadencr"}</div>
       </div>
+      {paused ? (
+        <button type="button" className="peek-close" aria-label="Close" onClick={onClose}>
+          <XIcon strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      ) : null}
       {notification.body ? <p className="peek-body">{notification.body}</p> : null}
+      {paused ? <SnoozeChips onSnooze={onSnooze} /> : null}
+      {error ? <div className="panel-error peek-error">{error}</div> : null}
       <span className={`peek-drain tone-${tone}`} />
     </div>
   );

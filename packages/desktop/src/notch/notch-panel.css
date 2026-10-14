@@ -42,10 +42,15 @@
   grid-template-columns: auto 1fr;
   column-gap: 12px;
   padding: 10px 18px 16px;
-  cursor: pointer;
 }
-.peek[data-static="true"] {
-  cursor: default;
+/* Above the tile (itself positioned), below the held peek's controls. */
+.peek-open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 .peek-head {
   min-width: 0;
