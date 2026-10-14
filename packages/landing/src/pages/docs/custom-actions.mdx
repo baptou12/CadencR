@@ -2,18 +2,20 @@
 layout: "@/layouts/DocLayout.astro"
 title: "Custom actions"
 description: "Reusable shell commands you can run on demand or on a schedule against any feature, with project-defined variables."
+lastReviewed: "2026-10-13"
+version: "0.13.0"
 ---
 
 import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
-import customActionsMenuImage from "@/assets/docs/custom-actions-menu.png";
+import customActionsMenuImage from "@/assets/docs/v0.13.0/custom-actions.png";
 
 Custom actions are **shell commands** you attach to a project. The `+` button in a feature header opens the menu of actions defined for the current project (plus any global ones), and you can either run an action right now or have it run automatically on an interval. Every action gets the same buttons on every feature of the project, but its variables and schedule are tracked **per feature**.
 
 <DocScreenshot
   src={customActionsMenuImage}
-  alt="CadencR custom actions menu showing a list of saved shell commands with status dots and a schedule toggle"
-  caption="The custom actions menu opens from the + button in the feature header."
+  alt="Current custom-action controls for an example reusable project command"
+  caption="The current custom-action controls for an example project command. Open an action’s details to inspect variables, output, and its fixed-interval schedule."
 />
 
 <DocCallout title="One-line mental model" variant="tip">
@@ -56,9 +58,15 @@ Every action can be scheduled to run automatically on the current feature. The s
 | Trigger      | When it fires                                                                                            |
 | ------------ | -------------------------------------------------------------------------------------------------------- |
 | **Manual**   | You click the action in the menu (or run it from the header), optionally opening it in a terminal split. |
-| **Schedule** | A fixed-interval tokio task fires it on the feature in the background, as long as the switch is on.      |
+| **Schedule** | The host runs it at a fixed interval on the feature in the background, as long as the switch is on.      |
 
 Schedules are not cron — they are pure fixed intervals starting from when you enable them. Saving a new interval cancels the previous task and starts fresh, so you can change the cadence safely while the action is enabled. Like variables, the schedule is tracked per `(action, feature)` — the same action can poll every 30 s on one feature and stay off on another.
+
+## Different from scheduled agent prompts
+
+These schedules run a **shell command** at a fixed interval for an action/conversation pair. [Schedules](../schedules/) sends **agent prompts** once, at an interval, or on daily/weekly/monthly rules, into an existing or new conversation.
+
+Choose a custom action for a known repeatable command; choose a prompt schedule when an agent needs to inspect context and decide what work to do.
 
 ## Status dot
 
@@ -77,7 +85,7 @@ Custom actions are most useful for **short, repeatable shell jobs** that you do 
 
 - run a targeted test command on the current feature,
 - poll a CI run or PR status with `gh`,
-- regenerate a small artifact (`pnpm generate:api`, `cargo sqlx prepare`, …),
+- regenerate a small artifact (`npm run generate`, `pnpm --filter @cadencr/desktop generate:api`, …),
 - push a quick metric to a dashboard,
 - ping a deploy that should track this feature's branch.
 
