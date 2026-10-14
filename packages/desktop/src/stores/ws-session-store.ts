@@ -113,8 +113,8 @@ function flushQueuedInitActions(set: WsStoreSet, get: WsStoreGet, sessionId: str
   for (const envelope of buildQueuedInitEnvelopes(session)) {
     sendRawEnvelope(get, sessionId, envelope);
   }
-  if (session.queuedPrompts.length === 0) return;
-  set(updateSession(get(), sessionId, { queuedPrompts: [] }));
+  if (session.queuedPrompts.length === 0 && !session.pendingInitAccessMode) return;
+  set(updateSession(get(), sessionId, { queuedPrompts: [], pendingInitAccessMode: null }));
 }
 
 function reinitOnReconnect(get: WsStoreGet, sessionId: string): void {
