@@ -24,7 +24,6 @@
     "postcss",
     "tailwindcss",
     "@fontsource-variable/inter",
-    "streamdown",
     "tw-animate-css"
   ],
   "tags": [
