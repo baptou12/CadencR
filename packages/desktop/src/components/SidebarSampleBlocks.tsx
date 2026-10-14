@@ -9,7 +9,7 @@ import { useSidebarOption } from "@/stores/sidebar-config-store";
 import {
   SidebarSurfaceContext,
   useSidebarBlockFold,
-  type SidebarFoldableBlock,
+  type SidebarBlockId,
 } from "@/stores/sidebar-surface-store";
 
 /** The blocks above the projects (For me, In progress, Recent, Pinned), filled with samples. */
@@ -21,7 +21,7 @@ export function SidebarSampleBlocks(): ReactElement {
   return (
     <>
       {forMeOn && (
-        <FoldableSampleBlock
+        <SampleBlock
           label="For me"
           icon={InboxIcon}
           block="for-me"
@@ -31,7 +31,7 @@ export function SidebarSampleBlocks(): ReactElement {
         />
       )}
       {workingOn && (
-        <FoldableSampleBlock
+        <SampleBlock
           label="In progress"
           icon={LoaderIcon}
           block="working"
@@ -40,7 +40,7 @@ export function SidebarSampleBlocks(): ReactElement {
         />
       )}
       {recentOn && (
-        <FoldableSampleBlock
+        <SampleBlock
           label="Recent"
           icon={HistoryIcon}
           block="recent"
@@ -49,12 +49,13 @@ export function SidebarSampleBlocks(): ReactElement {
           showCount={false}
         />
       )}
-      <FoldableSampleBlock
+      <SampleBlock
         label="Pinned"
         icon={PinIcon}
         block="pinned"
         rows={views.pinned}
         empty="Pin a conversation to keep it here"
+        strongCount={views.pinned.filter((row) => isStrongAttention(row.state)).length}
       />
     </>
   );
@@ -62,19 +63,12 @@ export function SidebarSampleBlocks(): ReactElement {
 
 interface SampleBlockProps {
   label: string;
+  block: SidebarBlockId;
   icon: LucideIcon;
   rows: readonly SampleRow[];
   empty: string;
   showCount?: boolean;
   strongCount?: number;
-}
-
-/** Folds with the live block of the same name: the preview is the user's sidebar. */
-function FoldableSampleBlock(
-  props: SampleBlockProps & { block: SidebarFoldableBlock },
-): ReactElement | null {
-  const fold = useSidebarBlockFold(props.block);
-  return <SampleBlock {...props} fold={fold} />;
 }
 
 function SampleBlock({
@@ -85,12 +79,10 @@ function SampleBlock({
   empty,
   showCount = true,
   strongCount,
-  fold,
-}: SampleBlockProps & {
-  block: SidebarFoldableBlock;
-  fold?: { expanded: boolean; toggle: () => void };
-}): ReactElement | null {
+}: SampleBlockProps): ReactElement | null {
   const preview = useSamplePreview();
+  // Folds with the live block of the same name: the preview is the user's sidebar.
+  const fold = useSidebarBlockFold(block);
   const hideEmpty = useSidebarOption("hideEmptyBlocks");
   if (rows.length === 0 && hideEmpty) return null;
   return (
@@ -103,7 +95,7 @@ function SampleBlock({
       fold={fold}
       empty={empty}
       isEmpty={rows.length === 0}
-      capped={fold !== undefined}
+      capped
     >
       {/* Pinned rows belong to the tree's surface. */}
       <SidebarSurfaceContext.Provider value={block === "pinned" ? "tree" : block}>

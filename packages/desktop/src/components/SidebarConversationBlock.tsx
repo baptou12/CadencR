@@ -10,13 +10,13 @@ import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
 import {
   SidebarSurfaceContext,
   useSidebarBlockFold,
-  type SidebarSurfaceBlock,
+  type SidebarBlockSurface,
 } from "@/stores/sidebar-surface-store";
 
 interface SidebarConversationBlockProps {
   label: string;
   icon: LucideIcon;
-  surface: SidebarSurfaceBlock;
+  surface: SidebarBlockSurface;
   features: readonly Feature[];
   /** True while rows may still arrive: a skeleton holds the place of an empty list. */
   loading: boolean;

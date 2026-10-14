@@ -4,7 +4,7 @@ import { useFeatureAttention } from "@/hooks/useFeatureAttention";
 import type { Attention } from "@/lib/sidebar-attention";
 import { selectPrStatus, usePrStatusStore } from "@/stores/usePrStatusStore";
 
-interface FeatureRowState {
+export interface ProjectFeatureRowState {
   attention: Attention;
   prStatus: PrStatusSnapshot | undefined;
   gitStats: GitStats | undefined;
@@ -29,7 +29,7 @@ export function useProjectFeatureRowState(
   hasLiveWorktree: boolean,
   /** Conversations folded under this row; their most urgent state shows here. */
   hiddenDescendantIds?: readonly number[],
-): FeatureRowState {
+): ProjectFeatureRowState {
   // Pending request > working > unread reply > idle, across the row and any
   // collapsed children. Subscribes to just those ids, so another
   // conversation's status push doesn't re-render this row.
