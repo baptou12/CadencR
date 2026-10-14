@@ -68,6 +68,15 @@
     [data-feature-layout-shell] {
     border-top-left-radius: 0;
   }
+  /* …unless the collapsed rail is there: it is a slim sidebar, so the page
+   * still tucks into it under the titlebar band. */
+  :root[data-chassis="rail"]
+    [data-sidebar-rail]
+    ~ *
+    [data-feature-chrome="standard"]
+    [data-feature-layout-shell] {
+    border-top-left-radius: 14px;
+  }
 
   /* The feature page header matches the sidebar header band: same height (the
    * `data-mac-controls` variant mirrors SidebarHeader's taller macOS layout),
@@ -100,22 +109,16 @@
     padding-bottom: 0.875rem;
   }
 
-  /* Collapsed sidebar: chrome is a short strip under the traffic lights — don't
-   * force the open-sidebar 4.5rem band (that left empty space under the lockup).
-   * Vertical padding stays on the header components (`pt-1.5 pb-1.5`). */
-  :root[data-chassis="rail"][data-sidebar-collapsed="true"]
-    [data-feature-header][data-mac-controls] {
-    min-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-  }
-
   /* Seamless chassis: the sidebar's own hairline would cut the shared band in
    * two. The page card's left border takes over as the content boundary. On
    * mobile the sidebar is a drawer floating over the content, so it keeps its
    * own hairline to separate itself from what's underneath. */
-  :root[data-chassis="rail"] [data-app-sidebar] {
+  :root[data-chassis="rail"] [data-app-sidebar],
+  :root[data-chassis="rail"] [data-sidebar-rail] {
     border-right-color: transparent;
+  }
+  :root[data-chassis="rail"] [data-sidebar-rail]::before {
+    display: none;
   }
 
   /* Collapse the app-shell sidebar↔main resize handle to zero layout width so

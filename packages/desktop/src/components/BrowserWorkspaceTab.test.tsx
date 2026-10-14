@@ -85,6 +85,7 @@ function bridge(): CadencrBrowserBridge {
     notchNotify: vi.fn(() => Promise.resolve()),
     onNotchDismissed: vi.fn(() => () => undefined),
     setZoom: vi.fn(),
+    setTrafficLightsCenter: vi.fn(() => Promise.resolve()),
     currentTheme: vi.fn<() => Promise<"dark">>(() => Promise.resolve("dark")),
     onThemeChange: vi.fn(() => () => undefined),
     setBusy: vi.fn(),

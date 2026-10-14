@@ -4,6 +4,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useShortcut } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
+import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
+import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MarketplaceSection } from "@/components/MarketplaceSection";
 import { GeneralSettingsSections } from "@/components/settings/GeneralSettingsSections";
@@ -96,8 +98,10 @@ function SettingsPage() {
 }
 
 function SettingsPageHeader({ onBack }: { onBack: () => void }): React.JSX.Element {
+  const { collapsed, setCollapsed } = useSidebarCollapsed();
   return (
-    <header className="flex min-h-11 shrink-0 items-center gap-3 border-b border-border px-4">
+    <header className="titlebar-drag flex min-h-11 shrink-0 items-center gap-3 border-b border-border px-4 md:px-6">
+      <SidebarCollapsedChrome visible={collapsed} onExpand={() => setCollapsed(false)} />
       <h1 className="shrink-0 text-sm font-semibold">Settings</h1>
       <TabsList aria-label="Settings views" className="h-11 min-w-0 flex-1 border-b-0">
         <TabsTrigger value="general" className="px-2">

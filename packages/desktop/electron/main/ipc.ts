@@ -23,6 +23,11 @@ import { sendToWindow } from "./safe-send";
 import { appendRendererErrorLog } from "./renderer-error-log";
 import { setLinkHoverContext, suppressNextNativeContextMenu } from "./context-menu";
 import { assertOpenableLocalFile } from "./openable-local-file";
+import {
+  applyTrafficLights,
+  parseTrafficLightsCenter,
+  setTrafficLightsCenter,
+} from "./traffic-lights";
 
 const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_FILE_HANDLES = 128;
@@ -115,7 +120,13 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
   });
   ipcMain.handle("webview:set-zoom", (event, factor: unknown) => {
     assertTrustedSender(event, getMainWindow);
-    requireMainWindow(getMainWindow).webContents.setZoomFactor(parseZoomFactor(factor));
+    const win = requireMainWindow(getMainWindow);
+    win.webContents.setZoomFactor(parseZoomFactor(factor));
+    applyTrafficLights(win);
+  });
+  ipcMain.handle("window:set-traffic-lights-center", (event, center: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    setTrafficLightsCenter(requireMainWindow(getMainWindow), parseTrafficLightsCenter(center));
   });
   ipcMain.handle("theme:current", (event) => {
     assertTrustedSender(event, getMainWindow);

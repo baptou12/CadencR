@@ -10,6 +10,10 @@ import { SidebarAttentionProvider } from "./SidebarAttentionProvider";
 import { SidebarRail } from "./SidebarRail";
 
 vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, to, ...props }: { children: unknown; to: string }) => {
+    const React = require("react");
+    return React.createElement("a", { ...props, href: to }, children);
+  },
   useNavigate: () => vi.fn(),
   useRouterState: (options?: {
     select?: (state: {
@@ -84,6 +88,16 @@ describe("SidebarRail", () => {
     renderRail("attention");
     expect(screen.getByRole("button", { name: "Waits: Waiting on you" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Works: Working" })).not.toBeInTheDocument();
+  });
+
+  it("expands from its top and opens Settings from its foot", () => {
+    renderRail("projects");
+    const expand = screen.getByRole("button", { name: "Expand sidebar" });
+    const settings = screen.getByRole("link", { name: "Settings" });
+    expect(settings).toHaveAttribute("href", "/settings");
+    const nav = expand.closest("nav");
+    expect(nav?.firstElementChild?.nextElementSibling).toBe(expand);
+    expect(nav?.lastElementChild).toBe(settings);
   });
 
   it("is gone when switched off", () => {
