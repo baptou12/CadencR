@@ -71,7 +71,7 @@ Previous release: v0.12.0 - 2026-09-21
 
 ## v0.12.0 - 2026-09-21
 
-Previous release: v0.11.5 - 2026-09-05
+Previous release: v0.11.5 - 2026-09-02
 
 ### ✨ Added
 

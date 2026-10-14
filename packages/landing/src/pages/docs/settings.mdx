@@ -1,66 +1,86 @@
 ---
 layout: "@/layouts/DocLayout.astro"
 title: "Settings"
-description: "A quick tour of every Settings section, what lives there, and when you actually need it."
+description: "Find the current settings sections and the workflows they control."
+lastReviewed: "2026-10-13"
+version: "0.13.0"
 ---
 
-import DocCallout from "@/components/docs/DocCallout.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
+import auto_namingImage from "@/assets/docs/v0.13.0/auto-naming.png";
+import storageImage from "@/assets/docs/v0.13.0/storage.png";
+import pageImage from "@/assets/docs/v0.13.0/settings.png";
 
-Settings is the app-wide preferences page. You probably will not spend much time here, but most of the “how do I change…?” answers live in one of its sections. Open it any time with <kbd>⌘ ,</kbd>; close it with <kbd>Esc</kbd>. Settings are saved as JSON files, so global and project preferences can travel with the project instead of being hidden only in the app database.
+Open **Settings** from the sidebar or its shortcut. Workspace and project preferences are JSON-backed; the interface validates updates and reports invalid configuration instead of silently applying it.
 
-## Sections at a glance
+<DocScreenshot
+  src={pageImage}
+  alt="The current Settings navigation and appearance controls in CadencR v0.13.0."
+  caption="The current Settings navigation and appearance controls in CadencR v0.13.0."
+  bordered={false}
+  rounded
+  elevated
+/>
 
-| Section              | What lives here                                                                         |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| **Appearance**       | Theme selector (light, dark, follow-system) and per-mode theme IDs                      |
-| **Editor**           | CodeMirror preferences, plus the CodeMirror-vs-Neovim switch for the editor tab         |
-| **Interface & Zoom** | Density and zoom-level preferences for the whole app                                    |
-| **Notifications**    | When (and how loudly) CadencR pings you about agent activity                            |
-| **Browser**          | Default cookie mode for new Browser tabs                                                |
-| **MCP**              | CadencR-owned agent tool servers for Browser, project, and workspace context            |
-| **Runtime & Models** | Provider runtime toggles — bypass permissions, full-access modes, and **Custom models** |
-| **Git**              | Default merge strategy and Git-related behaviour                                        |
-| **CLI Providers**    | Per-provider profiles, binary discovery, and which agent CLI CadencR should use         |
-| **About**            | Build info and a button to replay the onboarding tour                                   |
+## Current sections
 
-## Browser and notifications
+| Group / section            | What you configure                                                             | Guide                                  |
+| -------------------------- | ------------------------------------------------------------------------------ | -------------------------------------- |
+| General → Appearance       | Dark/light/system appearance, themes, animation, monospace font                | [Themes](../themes/)                   |
+| General → Editor           | CodeMirror preferences and the Neovim editor choice                            | [Editor](../editor/)                   |
+| General → Interface & Zoom | Density, zoom, and conversation display controls such as the message navigator | [Session view](../session-view/)       |
+| General → Sidebar          | Presets, row details, grouping, sorting, rail, and preview                     | [Sidebar](../sidebar/)                 |
+| General → Saved views      | Saved sidebar filters and presentation choices                                 | [Sidebar](../sidebar/)                 |
+| General → Notifications    | Notification destination, activity events, and macOS notch presence/animation  | Below                                  |
+| General → Browser          | Defaults for new browser tabs                                                  | [Browser](../browser/)                 |
+| General → Storage          | Optional archived-output retention and manual maintenance                      | Below                                  |
+| MCP                        | Browser, Project, and Workspace tool servers exposed to agents                 | [MCP & orchestration](../mcp/)         |
+| Agents → Auto-naming       | Naming model and editable naming instructions                                  | Below                                  |
+| Source Control → Git       | Git preferences, diff layout, and remote-host connections                      | [Git](../git/)                         |
+| Providers → CLI Providers  | Installed providers, discovery, profiles, access options, and local connectors | [Providers](../providers/)             |
+| Usage → Stats              | Durable token/message activity and daily details                               | [Usage Stats](../usage-stats/)         |
+| About → About Cadencr      | Build information and replaying onboarding                                     | [Workspace pages](../workspace-pages/) |
 
-The **Browser** section controls the default cookie mode for new Browser tabs: normal for reused cookies and logins, or private for an in-memory session that clears when the tab closes.
+Provider controls are grouped under **CLI Providers**. Older references to a separate **Runtime & Models** settings section do not describe the current navigation.
 
-The **Notifications** section covers local notifications and remote Web Push. Remote push is useful when you want CadencR to notify another device about agent progress, but it still depends on CadencR running where the work is happening.
+## Notification destinations
 
-## MCP tool servers
+On macOS, the notch can show live agent activity, brief previews for completed turns and requests, and an attention-first conversation list. Hover to expand it; click a row to open that conversation.
 
-The **MCP** section controls CadencR-owned tool servers that can be exposed to agents on the next turn:
+**Always on** controls its presence between notifications. **Always animate** controls the compact logo's movement. macOS installs use the notch destination while preserving notifications that were explicitly disabled. Unsupported devices fall back to system notifications.
 
-- **Browser MCP** lets agents open local pages, inspect browser state, and drive the Browser tab.
-- **Project MCP** lets agents inspect, compare, spawn, and message sessions in the current project.
-- **Workspace MCP** lets agents search and read conversation history across CadencR projects.
+Paired browser/PWA clients can enable Web Push. Push depends on the host running and the device granting notification permission. The test notification exercises the system-notification path for diagnosis.
 
-Each server is enabled by default; turn off any capability you do not want exposed to agents. See [MCP & orchestration](../mcp/) for the complete Project and Workspace tool reference, and [Browser](../browser/#browser-mcp-tool-reference) for every Browser tool.
+## Name new conversations your way
 
-## Provider profiles & custom models
+<DocScreenshot
+  src={auto_namingImage}
+  alt="Auto-naming has its own model and editable instructions."
+  caption="Auto-naming has its own model and editable instructions."
+  rounded
+  elevated
+/>
 
-CadencR is provider-neutral by design. The **CLI Providers** section is where you set up profiles for Claude Code, Codex, and OpenCode — each provider has its own binary, profile, and (optionally) authentication path. The **Runtime & Models** section lets you register custom models on top of those providers so they show up in the model picker (<kbd>⌘ P</kbd>).
+**Auto-naming** lets you select a naming model and edit its system prompt. The editor starts with the built-in instructions and offers a reset. Adjust the language, length, or naming conventions you want for new tasks.
 
-<DocCallout title="Provider neutrality" variant="tip">
-  Most of the rest of the app does not care which provider you picked. The picker, model selector,
-  and permission prompts adapt — your shortcuts and workflow stay the same.
-</DocCallout>
+The naming model is separate from the provider/model used for task prompts. New task conversations follow your last accepted manual prompt across projects, with conversation overrides taking priority.
 
-## Safety-related settings
+## Storage maintenance
 
-A handful of toggles deserve a deliberate read before you flip them:
+<DocScreenshot
+  src={storageImage}
+  alt="Storage controls let you opt into archived-output retention and inspect maintenance."
+  caption="Storage controls let you opt into archived-output retention and inspect maintenance."
+  rounded
+  elevated
+/>
 
-- **Bypass permissions** (Claude) — skips per-tool approval prompts inside a session.
-- **Full access** (Codex) — equivalent unrestricted mode for Codex.
-- **Dangerous mode** — same idea, broader scope. Reserve for sandboxed worktrees.
+Background optimization deduplicates verified command output and moves pasted images into durable blob storage. Progress is visible and work can resume after interruption.
 
-These pair best with [worktrees](../worktrees/), so a runaway agent only ever touches its own folder.
+Storage also offers an opt-in **1–365 day** policy and a manual run to shorten long command output in inactive archived conversations. This policy does not delete conversations, messages, user text, or agent replies. Read the selected retention scope before running it.
 
-## Related docs
+## Provider and project preferences
 
-- [Approvals & permissions](../approvals/) — the prompts these settings tune
-- [Browser](../browser/) — default Browser mode
-- [Prompt](../prompting/) — model picker and permission-mode cycle from the prompt bar
-- [Shortcuts](../shortcuts/) — <kbd>⌘ ,</kbd> and friends
+Providers expose their own supported profiles, models, thinking levels, and access controls. Local connector registration requires a restart after changes.
+
+Project settings hold task defaults such as accent, worktree setup, and Git context. Inspect the conversation's resolved controls when you need to know what its next prompt will actually use.

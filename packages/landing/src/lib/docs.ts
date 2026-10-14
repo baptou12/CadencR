@@ -11,58 +11,65 @@ const DOC_PAGES: DocPage[] = [
     slug: "",
     title: "Docs",
     navLabel: "Overview",
-    description: "Start here for the short version of what CadencR is and where to click next.",
+    description: "Practical guides to the current CadencR workspace, agents, and review workflows.",
     section: "Start Here",
   },
   {
     slug: "concept",
     title: "The IDE for the era of agents",
     navLabel: "Concept",
-    description:
-      "What CadencR is, who it is for, and why it feels different from regular chat tools.",
+    description: "How projects, conversations, agents, and worktrees fit together.",
     section: "Start Here",
   },
   {
     slug: "workspace-pages",
     title: "Workspace pages",
     navLabel: "Workspace Pages",
-    description: "A guided tour of the major surfaces you will bounce between while working.",
+    description: "Find conversations, schedules, tools, and settings in the current workspace.",
     section: "Start Here",
   },
   {
     slug: "feature-workspace",
     title: "Feature workspace",
     navLabel: "Feature Workspace",
-    description: "How a feature becomes your home base for files, agents, terminal, and Git.",
+    description: "Work with an agent, files, a browser, terminal, and Git in one task workspace.",
     section: "Core Views",
   },
   {
     slug: "session-view",
     title: "Session view",
     navLabel: "Session View",
-    description: "How to read an agent session, stay oriented, and steer work without chaos.",
+    description: "Read, navigate, copy, and continue an agent conversation.",
     section: "Core Views",
   },
   {
     slug: "unified-agent-list",
     title: "Unified agent list",
     navLabel: "Unified Agent List",
-    description: "Find, filter, scan, and pin agent sessions across your workspace.",
+    description: "Supervise several conversations in a searchable, adjustable live grid.",
+    section: "Core Views",
+  },
+  {
+    slug: "sidebar",
+    title: "Sidebar",
+    navLabel: "Sidebar",
+    description:
+      "Shape conversation navigation around focus, supervision, and the work that needs you.",
     section: "Core Views",
   },
   {
     slug: "prompting",
     title: "Prompt",
     navLabel: "Prompt",
-    description:
-      "How to ask for work clearly without turning every prompt into a tiny legal document.",
+    description: "Give agents context, choose their runtime, and send or schedule work.",
     section: "Features",
   },
   {
     slug: "git",
     title: "Git in CadencR",
     navLabel: "Git",
-    description: "How Git shows up in the product and how to stay confident instead of git-scared.",
+    description:
+      "Review changes, manage branches and stashes, and work with GitHub or GitLab review.",
     section: "Features",
   },
   {
@@ -70,21 +77,22 @@ const DOC_PAGES: DocPage[] = [
     title: "Editor",
     navLabel: "Editor",
     description:
-      "Browse files, open diffs, split panes, and stay close to the code without getting buried.",
+      "Navigate files, edit with language tooling, draw diagrams, or use your own Neovim.",
     section: "Features",
   },
   {
     slug: "terminal",
     title: "Terminal",
     navLabel: "Terminal",
-    description: "Use the built-in terminal when agent work needs a little human keyboard energy.",
+    description: "Run commands in persistent shell panes tied to your conversation.",
     section: "Features",
   },
   {
     slug: "browser",
     title: "Browser",
     navLabel: "Browser",
-    description: "Preview local apps, keep tabs feature-scoped, and send page context to agents.",
+    description:
+      "Preview local apps, keep browser tabs scoped to a feature, and send page context back to an agent.",
     section: "Features",
   },
   {
@@ -92,43 +100,89 @@ const DOC_PAGES: DocPage[] = [
     title: "MCP & orchestration",
     navLabel: "MCP & Orchestration",
     description:
-      "Let agents search workspace history, coordinate project sessions, and use CadencR orchestration commands.",
+      "Use CadencR's workspace and project MCP tools to search session history, coordinate agents, and run provider-neutral orchestration commands.",
     section: "Features",
   },
   {
     slug: "custom-actions",
     title: "Custom actions",
     navLabel: "Custom Actions",
-    description: "What the plus button does and why it is more helpful than it first looks.",
+    description:
+      "Reusable shell commands you can run on demand or on a schedule against any feature, with project-defined variables.",
+    section: "Features",
+  },
+  {
+    slug: "schedules",
+    title: "Schedules",
+    navLabel: "Schedules",
+    description: "Send agent prompts once or on a recurring rule, in the conversation you choose.",
+    section: "Features",
+  },
+  {
+    slug: "rewind-and-fork",
+    title: "Rewind & Fork",
+    navLabel: "Rewind & Fork",
+    description:
+      "Return to an earlier turn or branch a conversation while understanding what happens to code.",
+    section: "Features",
+  },
+  {
+    slug: "usage-stats",
+    title: "Usage Stats",
+    navLabel: "Usage Stats",
+    description:
+      "Inspect durable token and message activity by day, provider, model, and thinking level.",
+    section: "Features",
+  },
+  {
+    slug: "themes",
+    title: "Themes & appearance",
+    navLabel: "Themes",
+    description: "Choose a built-in theme or create, edit, and export your own local color theme.",
     section: "Features",
   },
   {
     slug: "shortcuts",
     title: "Shortcuts",
     navLabel: "Shortcuts",
-    description: "A practical keyboard cheat sheet for faster navigation and less mouse mileage.",
+    description:
+      "A practical keyboard shortcuts guide for moving around CadencR with less mouse travel and less hunting around.",
     section: "Features",
   },
   {
     slug: "approvals",
     title: "Approvals & permissions",
     navLabel: "Approvals & Permissions",
-    description:
-      "Plan approval, tool permissions, multi-choice questions, and the permission-mode toggle.",
+    description: "Choose provider modes and answer plan, tool, and question requests.",
     section: "Reference",
   },
   {
     slug: "worktrees",
     title: "Worktrees",
     navLabel: "Worktrees",
-    description: "Why each feature lives in its own Git worktree and how to work with them safely.",
+    description: "Choose a branch and checkout for a task, reuse work safely, and control cleanup.",
+    section: "Reference",
+  },
+  {
+    slug: "providers",
+    title: "Providers & profiles",
+    navLabel: "Providers",
+    description:
+      "Configure local agent CLIs, select native profiles, or author a local ACP connector.",
+    section: "Reference",
+  },
+  {
+    slug: "remote-access",
+    title: "Remote access",
+    navLabel: "Remote Access",
+    description: "Pair a phone, tablet, or browser with the host running your workspace.",
     section: "Reference",
   },
   {
     slug: "settings",
     title: "Settings",
     navLabel: "Settings",
-    description: "A tour of every Settings section and when you actually need it.",
+    description: "Find the current settings sections and the workflows they control.",
     section: "Reference",
   },
 ];
