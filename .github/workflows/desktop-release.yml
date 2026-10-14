@@ -62,7 +62,9 @@ jobs:
 
   release:
     needs: cli-linux
-    runs-on: macos-14
+    # arm64 runner (build:macos-sidecars cross-compiles x64). macos-14 is
+    # retired on 2026-11-02.
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       # Public host-owned trust only; empty repository variables keep acquisition
