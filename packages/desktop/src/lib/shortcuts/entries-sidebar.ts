@@ -2,20 +2,21 @@ import type { Shortcut } from "./types";
 
 /**
  * Sidebar shortcuts: moving through the tree, acting on the focused
- * conversation row, and jumping to the next conversation that needs you.
+ * conversation row, and jumping to the next thing that needs you.
  * The row actions only fire while a conversation row has focus, so they can
  * reuse chords other scopes bind (⌘⌫ is the terminal's delete-line, F2 the
  * editor's rename symbol); printable keys stay free for type-to-filter.
  */
 export const SIDEBAR_SHORTCUTS = [
   {
-    // ⌘J — "jump" to whoever is waiting on you: pending requests oldest first,
-    // then failed turns, cycling from the open conversation.
+    // ⌘J — "jump" to the next action in the "For me" list, in its order:
+    // pending requests, failed turns, blocked pull requests, finished turns,
+    // merges — cycling from the open conversation.
     id: "attention-next-needs-you",
     keys: ["mod", "j"],
-    description: "Next conversation waiting on you",
+    description: "Next action for me",
     scope: "global",
-    aliases: ["for me", "pending", "approval", "inbox"],
+    aliases: ["for me", "next action", "pending", "approval", "pull request", "inbox"],
   },
   {
     id: "attention-next-unread",

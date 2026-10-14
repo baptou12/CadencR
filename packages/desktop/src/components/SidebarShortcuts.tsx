@@ -1,6 +1,6 @@
-import type { ReactElement } from "react";
+import { useRef, type ReactElement, type RefObject } from "react";
 import { toast } from "sonner";
-import { useGetFeature } from "@/api/generated";
+import { useGetFeature, type Feature } from "@/api/generated";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FeatureRenameForm } from "@/components/FeatureRenamePopover";
@@ -10,7 +10,6 @@ import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useShortcut } from "@/hooks/useShortcut";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { getActiveFocusZone } from "@/lib/focus-zones";
-import { isStrongAttention, type AttentionState } from "@/lib/sidebar-attention";
 import { dispatchSidebarRowAction, type SidebarRowAction } from "@/lib/sidebar-row-actions";
 import { useSidebarRenameStore } from "@/stores/sidebar-rename-store";
 import { useUnreadStore } from "@/stores/unread-store";
@@ -68,9 +67,12 @@ export function useSidebarRowShortcuts(): void {
 }
 
 /**
- * Next-in-queue shortcuts (H5): ⌘J goes to the next conversation waiting on
- * you (pending requests oldest first, then failures), ⌥⌘J to the next unread
- * one, each cycling on from the open conversation. Renders nothing.
+ * Next-in-queue shortcuts (H5): ⌘J goes to the next action in the "For me"
+ * list (in its order: pending requests, failures, blocked pull requests,
+ * finished turns, merges), ⌥⌘J to the next unread conversation, each cycling
+ * on from the open conversation. Opening a failure or an unread reply takes it
+ * off its list, so the next press carries on from where it was rather than
+ * starting over. Renders nothing.
  */
 export function SidebarAttentionShortcuts({
   activeFeatureId,
@@ -79,27 +81,62 @@ export function SidebarAttentionShortcuts({
   activeFeatureId: number | null;
   onSelectFeature: (featureId: number) => void;
 }): null {
-  const { items } = useSidebarAttention();
+  const { items, actions } = useSidebarAttention();
   const open = useCrossProjectNavigate(activeFeatureId, onSelectFeature);
+  // One per shortcut: each remembers its stop in its own list.
+  const lastAction = useRef<QueueStop | null>(null);
+  const lastUnread = useRef<QueueStop | null>(null);
   const jump =
-    (matches: (state: AttentionState) => boolean, emptyMessage: string) =>
+    (queueOf: () => readonly Feature[], emptyMessage: string, last: RefObject<QueueStop | null>) =>
     (event: KeyboardEvent) => {
       event.preventDefault();
-      const queue = items.filter((item) => matches(item.state));
+      const queue = queueOf();
       if (queue.length === 0) {
         toast.message(emptyMessage);
         return;
       }
-      const at = queue.findIndex((item) => item.feature.id === activeFeatureId);
-      const next = queue[(at + 1) % queue.length];
-      if (next) open(next.feature);
+      const index = nextQueueIndex(queue, activeFeatureId, last.current);
+      const next = queue[index];
+      if (!next) return;
+      last.current = { featureId: next.id, index };
+      open(next);
     };
-  useShortcut("attention-next-needs-you", jump(isStrongAttention, "Nothing is waiting on you"));
+  useShortcut(
+    "attention-next-needs-you",
+    jump(() => actions.map((action) => action.feature), "Nothing is waiting on you", lastAction),
+  );
   useShortcut(
     "attention-next-unread",
-    jump((state) => state === "unread", "No unread conversations"),
+    jump(
+      () => items.filter((item) => item.state === "unread").map((item) => item.feature),
+      "No unread conversations",
+      lastUnread,
+    ),
   );
   return null;
+}
+
+/** Where the last jump landed: the conversation, and its place in its list then. */
+interface QueueStop {
+  featureId: number;
+  index: number;
+}
+
+/**
+ * The stop after the open conversation. When the open conversation moved since
+ * the last jump landed on it (opening it read it, or its action changed), the
+ * conversation that took its place comes next; off the list, it starts over.
+ */
+export function nextQueueIndex(
+  queue: readonly Feature[],
+  activeFeatureId: number | null,
+  lastJump: QueueStop | null,
+): number {
+  if (lastJump?.featureId === activeFeatureId && queue[lastJump.index]?.id !== activeFeatureId) {
+    return lastJump.index % queue.length;
+  }
+  const at = queue.findIndex((feature) => feature.id === activeFeatureId);
+  return at >= 0 ? (at + 1) % queue.length : 0;
 }
 
 /** The sidebar's one rename dialog, opened from a row's menu or with F2. */

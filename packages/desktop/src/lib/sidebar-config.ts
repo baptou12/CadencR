@@ -56,6 +56,7 @@ export const SIDEBAR_OPTIONS = {
   compactRows: boolOption("sidebar_compact_rows", false),
   projectBadges: enumOption("sidebar_project_badges", ["count", "dot", "none"], "count"),
   forMe: boolOption("sidebar_block_for_me", true),
+  forMeLimit: enumOption("sidebar_for_me_limit", ["3", "5", "all"], "3"),
   dormantAfter: enumOption("sidebar_dormant_after", ["never", "3", "7", "14", "30"], "7"),
   revealActive: enumOption("sidebar_reveal_active", ["scroll", "expand", "off"], "scroll"),
   rail: enumOption("sidebar_rail", ["projects", "conversations", "attention", "none"], "projects"),

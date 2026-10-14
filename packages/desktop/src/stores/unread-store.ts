@@ -6,9 +6,11 @@
  * The sidebar renders a green check for unread and a strong error mark for
  * failed; both clear the moment the conversation is opened.
  *
- * Per-client and in-memory by design — "unread" is relative to *this* window
- * (a remote phone and the host each track their own), and there is nothing to
- * restore on reload: a fresh load has read nothing, so it shows no unread checks.
+ * Per-client by design — "unread" is relative to *this* window (a remote phone
+ * and the host each track their own), so nothing goes to the backend. The
+ * marks and their order are kept in localStorage (`unread-marks-storage.ts`)
+ * so a reload of this window keeps every pending "review this" and "this
+ * failed" instead of silently dropping them from the For me list.
  *
  * Conforms to frontend-performance.md: consumers read the per-feature boolean
  * via `useIsFeatureUnread`, never the whole map.
@@ -16,17 +18,10 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import type { FeatureMark } from "@/lib/sidebar-attention";
+import { loadUnreadMarks, saveUnreadMarks, type UnreadMarks } from "./unread-marks-storage";
 
-interface UnreadState {
-  /** Feature IDs with an unread agent completion (value is always `true`). */
-  byFeature: Record<number, true>;
-  /** Feature IDs whose last turn failed off-screen (value is always `true`). */
-  failedByFeature: Record<number, true>;
-  /**
-   * When each marked feature was first marked, as an increasing counter: the
-   * "For me" block lists the oldest first.
-   */
-  markedOrder: Record<number, number>;
+/** `markedOrder` drives the "For me" block, which lists the oldest mark first. */
+interface UnreadState extends UnreadMarks {
   /** Flag a completed-but-unviewed agent turn (or a hand-marked conversation). */
   markUnread: (featureId: number) => void;
   /** Flag a failed-but-unviewed agent turn. */
@@ -46,7 +41,10 @@ export function featureMark(state: MarkFlags, featureId: number): FeatureMark {
   return state.byFeature[featureId] ? "unread" : "none";
 }
 
-let nextMark = 0;
+const restored = loadUnreadMarks();
+
+/** Continues after the restored marks, so a new mark sorts after every one of them. */
+let nextMark = Object.keys(restored.markedOrder).length;
 
 function withOrder(order: Record<number, number>, featureId: number): Record<number, number> {
   return featureId in order ? order : { ...order, [featureId]: ++nextMark };
@@ -60,9 +58,7 @@ function without<T>(record: Record<number, T>, featureId: number): Record<number
 }
 
 export const useUnreadStore = create<UnreadState>((set, get) => ({
-  byFeature: {},
-  failedByFeature: {},
-  markedOrder: {},
+  ...restored,
   markUnread: (featureId) =>
     set((s) =>
       s.byFeature[featureId]
@@ -104,6 +100,17 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
     else state.markRead(featureId);
   },
 }));
+
+useUnreadStore.subscribe((state, previous) => {
+  if (
+    state.byFeature === previous.byFeature &&
+    state.failedByFeature === previous.failedByFeature &&
+    state.markedOrder === previous.markedOrder
+  ) {
+    return;
+  }
+  saveUnreadMarks(state);
+});
 
 /**
  * Narrow per-feature subscription: re-renders the consumer only when *this*

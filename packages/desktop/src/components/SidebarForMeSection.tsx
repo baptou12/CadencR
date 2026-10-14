@@ -2,7 +2,9 @@ import { useMemo, type ReactElement } from "react";
 import { InboxIcon } from "lucide-react";
 import { SidebarConversationBlock } from "@/components/SidebarConversationBlock";
 import { useSidebarAttention } from "@/components/SidebarAttentionProvider";
-import { isStrongAttention, needsUser } from "@/lib/sidebar-attention";
+import { SidebarShowMoreButton } from "@/components/SidebarShowMore";
+import { useForMeShowMore } from "@/hooks/useForMeShowMore";
+import { isStrongAction, type ResolvedNextAction } from "@/lib/next-actions";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 
 interface SectionProps {
@@ -11,33 +13,48 @@ interface SectionProps {
 }
 
 /**
- * "For me" (F2): every conversation waiting on the user, failed or unread,
- * across all projects, as one queue. Pending requests come first, then
- * failures, then unread replies; each group oldest first (E10), and a failure
- * leaves once opened. Agents at work stay out: nothing to do there yet.
+ * "For me" (F2): the user's next actions across all projects, one row per
+ * conversation, most urgent first: answer a pending request, look at a failed
+ * turn, fix a pull request's checks or address its review, review a finished
+ * reply, merge an approved pull request. Each row names its action under its
+ * title. The first 3 or 5 show (the "For me shows" option), the rest behind
+ * "Show more".
+ * Agents at work stay out: nothing to do there yet.
  */
 export function SidebarForMeSection(props: SectionProps): ReactElement | null {
   return useSidebarOption("forMe") ? <ForMeBlock {...props} /> : null;
 }
 
 function ForMeBlock({ activeFeatureId, onSelectFeature }: SectionProps): ReactElement | null {
-  const { queue, loadingStates } = useSidebarAttention();
-  const features = useMemo(() => queue.map((item) => item.feature), [queue]);
-  const strongCount = useMemo(
-    () => queue.filter((item) => isStrongAttention(item.state)).length,
-    [queue],
+  const { actions, actionsLoading } = useSidebarAttention();
+  const more = useForMeShowMore(actions.length);
+  const { features, kinds } = useMemo(
+    () => visibleActions(actions, more.visibleCount),
+    [actions, more.visibleCount],
   );
+  const strongCount = useMemo(() => actions.filter(isStrongAction).length, [actions]);
   return (
     <SidebarConversationBlock
       label="For me"
       icon={InboxIcon}
       surface="for-me"
       features={features}
-      loading={loadingStates.some(needsUser)}
+      count={actions.length}
+      nextActions={kinds}
+      footer={<SidebarShowMoreButton more={more} />}
+      loading={actionsLoading}
       empty="Nothing waiting on you"
       strongCount={strongCount}
       activeFeatureId={activeFeatureId}
       onSelectFeature={onSelectFeature}
     />
   );
+}
+
+function visibleActions(actions: readonly ResolvedNextAction[], count: number) {
+  const shown = actions.slice(0, count);
+  return {
+    features: shown.map((action) => action.feature),
+    kinds: new Map(shown.map((action) => [action.feature.id, action.kind])),
+  };
 }

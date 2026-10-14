@@ -37,6 +37,7 @@ export const DISPLAY_GROUPS: readonly DisplayGroup[] = [
     label: "Blocks",
     items: [
       "forMe",
+      "forMeLimit",
       "workingBlock",
       "recentBlock",
       "recentCount",

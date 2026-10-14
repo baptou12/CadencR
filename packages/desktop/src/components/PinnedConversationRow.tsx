@@ -26,9 +26,10 @@ import {
 } from "@/hooks/useProjectFeatureRowState";
 import { NO_PORTS } from "@/hooks/useFeaturePorts";
 import { useBrowserStore } from "@/stores/browser-store";
-import { shouldIgnoreFeatureRowKeyDown } from "@/components/ProjectFeatureRow";
+import { openFeatureRowOnKey } from "@/components/ProjectFeatureRow";
 import { FeatureRowBody } from "@/components/FeatureRowBody";
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
+import type { NextActionKind } from "@/lib/next-actions";
 
 interface PinnedConversationRowProps {
   feature: Feature;
@@ -41,6 +42,8 @@ interface PinnedConversationRowProps {
   onNavigate: (feature: Feature) => void;
   /** Pinned rows offer unpinning on hover; other cross-project rows (For me) don't. */
   showUnpin?: boolean;
+  /** "For me" rows name what to do next under their title. */
+  nextAction?: NextActionKind;
 }
 
 /**
@@ -64,6 +67,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
   worktree,
   onNavigate,
   showUnpin = false,
+  nextAction,
 }: PinnedConversationRowProps): ReactElement {
   const { navRef, badgeRef } = useNavShortcutHint<HTMLDivElement>();
   const { title: liveTitle, isAutoNaming } = useFeatureTitle(feature.id);
@@ -116,13 +120,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
         }}
         onMouseEnter={prefetchFeature}
         onFocus={prefetchFeature}
-        onKeyDown={(e) => {
-          if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onNavigate(feature);
-          }
-        }}
+        onKeyDown={(e) => openFeatureRowOnKey(e, handleOpenConversation)}
       >
         {/* Pinned to the title line's height so it stays beside the title when the meta line shows. */}
         <span className="flex h-6 shrink-0 items-center self-start">
@@ -144,6 +142,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
             showUnpin &&
             actions && <UnpinAction onUnpin={() => actions.togglePin(feature.id, false)} />
           }
+          nextAction={nextAction}
           prStatus={state.prStatus}
           gitStats={state.gitStats}
           shellCount={shellCount}

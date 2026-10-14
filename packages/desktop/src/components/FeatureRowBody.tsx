@@ -9,8 +9,10 @@ import type {
 import { FeatureRowTitleLine } from "@/components/FeatureRowTitleLine";
 import { FeatureRowMetaLine, type FeatureLabelEditing } from "@/components/ProjectFeatureRowParts";
 import { FeatureRowPreviewLine } from "@/components/FeatureRowSummaryParts";
+import { SidebarNextActionLine } from "@/components/SidebarNextActionLine";
 import { SidebarPendingRequestLine } from "@/components/SidebarPendingRequestLine";
 import { useFeatureRowSummary } from "@/hooks/useFeatureRowSummary";
+import type { NextActionKind } from "@/lib/next-actions";
 import type { Attention } from "@/lib/sidebar-attention";
 import type { SidebarConfig } from "@/lib/sidebar-config";
 import { rowLayout } from "@/lib/sidebar-row-summary";
@@ -30,6 +32,8 @@ export interface FeatureRowBodyProps {
   onOpenConversation: () => void;
   /** The hover actions, in the title line before the time they replace. */
   actions?: ReactNode;
+  /** The next action, named on its own line under the title: only the "For me" block passes it. */
+  nextAction?: NextActionKind;
   prStatus: PrStatusSnapshot | undefined;
   gitStats: GitStats | undefined;
   shellCount: number;
@@ -44,9 +48,11 @@ export interface FeatureRowBodyProps {
  * What a conversation row shows, wherever it is: the title line, what a
  * waiting conversation asks for (else the agent's last reply), and the
  * details, beside the title (uniform rows) or on their own line. Compact rows
- * keep only the title line until their conversation waits. Takes plain values,
- * so the project tree, the blocks above it and the display options preview
- * render the exact same row from their own data.
+ * keep only the title line until their conversation waits. A "For me" row also
+ * names its next action under the title, in every density, in place of the
+ * request line. Takes plain values, so the project tree, the blocks above it
+ * and the display options preview render the exact same row from their own
+ * data.
  */
 export function FeatureRowBody({
   feature,
@@ -60,6 +66,7 @@ export function FeatureRowBody({
   badgeRef,
   onOpenConversation,
   actions,
+  nextAction,
   prStatus,
   gitStats,
   shellCount,
@@ -109,9 +116,16 @@ export function FeatureRowBody({
       >
         {actions}
       </FeatureRowTitleLine>
+      {nextAction && (
+        <SidebarNextActionLine
+          kind={nextAction}
+          featureId={attention.sourceFeatureId}
+          prStatus={prStatus}
+        />
+      )}
       {!layout.compact && (
         <>
-          <SidebarPendingRequestLine attention={attention} />
+          {!nextAction && <SidebarPendingRequestLine attention={attention} />}
           {layout.showsPreview && <FeatureRowPreviewLine summary={summary} />}
           {!layout.foldMeta && details}
         </>

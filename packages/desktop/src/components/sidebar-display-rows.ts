@@ -229,6 +229,16 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
     ],
   },
   {
+    id: "forMeLimit",
+    description: "How many next actions the For me block lists before a Show more.",
+    label: "For me shows",
+    options: [
+      { value: "3", label: "3" },
+      { value: "5", label: "5" },
+      { value: "all", label: "All" },
+    ],
+  },
+  {
     id: "recentCount",
     description: "How many conversations the Recent block lists.",
     label: "Recent shows",
@@ -258,7 +268,7 @@ export const SWITCH_ROWS: readonly { id: ToggleId; label: string; description: s
     id: "forMe",
     label: "For me block",
     description:
-      "Conversations waiting on you, failed or unread, across every project, oldest first.",
+      "Your next actions across every project: requests to answer, failures, pull requests to fix or merge, replies to read.",
   },
   {
     id: "workingBlock",

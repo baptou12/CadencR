@@ -317,6 +317,7 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
 [data-sidebar-highlight="stickyHeaders"]
   :is([data-sidebar-sticky-header], [data-sidebar-lens-header]),
 [data-sidebar-highlight="forMe"] [data-sidebar-block="for-me"],
+[data-sidebar-highlight="forMeLimit"] [data-sidebar-block="for-me"],
 [data-sidebar-highlight="workingBlock"] [data-sidebar-block="working"],
 [data-sidebar-highlight="recentBlock"] [data-sidebar-block="recent"],
 [data-sidebar-highlight="recentCount"] [data-sidebar-block="recent"],

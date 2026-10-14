@@ -1,10 +1,11 @@
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { Feature } from "@/api/generated";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PinnedConversationRow } from "@/components/PinnedConversationRow";
 import { SidebarBlock } from "@/components/SidebarBlock";
 import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
+import type { NextActionKind } from "@/lib/next-actions";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { useSidebarFilterQuery } from "@/stores/sidebar-filter-store";
 import {
@@ -23,9 +24,13 @@ interface SidebarConversationBlockProps {
   /** Shown inline in place of the rows. */
   error?: string;
   empty: string;
-  /** Omitted for blocks whose size is fixed (Recent). */
-  showCount?: boolean;
+  /** The header's counter; omitted for blocks whose size is fixed (Recent). */
+  count?: number;
   strongCount?: number;
+  /** Each row's next action, named under its title (For me). */
+  nextActions?: ReadonlyMap<number, NextActionKind>;
+  /** Under the rows, e.g. For me's "Show more". */
+  footer?: ReactNode;
   activeFeatureId: number | null;
   onSelectFeature: (featureId: number) => void;
 }
@@ -43,8 +48,10 @@ export function SidebarConversationBlock({
   loading,
   error,
   empty,
-  showCount = true,
+  count,
   strongCount,
+  nextActions,
+  footer,
   activeFeatureId,
   onSelectFeature,
 }: SidebarConversationBlockProps): ReactElement | null {
@@ -60,7 +67,7 @@ export function SidebarConversationBlock({
       block={surface}
       label={label}
       icon={icon}
-      count={showCount ? features.length : undefined}
+      count={count}
       strongCount={strongCount}
       fold={fold}
       empty={empty}
@@ -81,8 +88,10 @@ export function SidebarConversationBlock({
               feature={feature}
               activeFeatureId={activeFeatureId}
               onNavigate={handleNavigate}
+              nextAction={nextActions?.get(feature.id)}
             />
           ))}
+          {footer}
         </SidebarSurfaceContext.Provider>
       )}
     </SidebarBlock>

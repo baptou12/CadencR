@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
   type ReactNode,
   type RefObject,
@@ -270,13 +271,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
           }}
           onMouseEnter={state.prefetchFeature}
           onFocus={state.prefetchFeature}
-          onKeyDown={(e) => {
-            if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onNavigate(feature);
-            }
-          }}
+          onKeyDown={(e) => openFeatureRowOnKey(e, () => onNavigate(feature))}
         >
           <FeatureHierarchyGutter depth={hierarchyDepth}>{hierarchyControl}</FeatureHierarchyGutter>
 
@@ -307,4 +302,12 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
 export function shouldIgnoreFeatureRowKeyDown(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return target.closest(ROW_KEYDOWN_IGNORED_SELECTOR) !== null;
+}
+
+/** Enter or Space on a conversation row (not on a control inside it) opens it. */
+export function openFeatureRowOnKey(event: ReactKeyboardEvent, open: () => void): void {
+  if (shouldIgnoreFeatureRowKeyDown(event.target)) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  open();
 }

@@ -9,14 +9,25 @@ const rows: SampleRow[] = buildSampleConversations(Date.UTC(2026, 9, 11)).map((c
 const titles = (list: readonly SampleRow[]) => list.map((row) => row.conversation.feature.title);
 
 describe("sampleViews", () => {
-  it("lists what needs an action first, then replies to read, oldest first", () => {
-    expect(titles(sampleViews(rows, 5).forMe)).toEqual([
-      "Tokenize the spacing scale",
-      "Fix flaky checkout test",
-      "Migrate billing webhooks",
-      "Write the 2.4 release notes",
-      "Audit the color tokens",
+  it("lists every next action once, most urgent first, without agents at work", () => {
+    const forMe = sampleViews(rows, 5).forMe;
+    expect(forMe.map(({ row, kind }) => [row.conversation.feature.title, kind])).toEqual([
+      ["Tokenize the spacing scale", "waiting"],
+      ["Fix flaky checkout test", "waiting"],
+      ["Migrate billing webhooks", "failed"],
+      // Unread, but its pull request's failing checks come first.
+      ["Write the 2.4 release notes", "fix_ci"],
+      ["Audit the color tokens", "review"],
+      ["Bump the Stripe SDK", "merge"],
     ]);
+  });
+
+  it("feeds the live For me block's actions from the same list", () => {
+    const { attention, forMe } = sampleViews(rows, 5);
+    expect(attention.actionsLoading).toBe(false);
+    expect(attention.actions.map((action) => [action.feature.id, action.kind])).toEqual(
+      forMe.map(({ row, kind }) => [row.conversation.feature.id, kind]),
+    );
   });
 
   it("keeps the chosen number of recent conversations, newest first", () => {
