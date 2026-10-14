@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   handleAppEnvelope,
+  lookupFeature,
   resetEditorInvalidationSchedulingForTest,
 } from "./session-status-handlers";
 import { queryClient } from "@/lib/queryClient";
@@ -88,5 +89,20 @@ describe("handleAppEnvelope · editor/file_tree.changed", () => {
     handleAppEnvelope("app", "theme_event", { id: "managed:midnight" });
     expect(spy).toHaveBeenCalledOnce();
     expect(spy).toHaveBeenCalledWith({ queryKey: ["marketplace", "managed-themes"] });
+  });
+});
+
+describe("lookupFeature", () => {
+  afterEach(() => queryClient.clear());
+
+  it("skips per-feature queries that share the feature lists' key prefix", () => {
+    // A pending gate cached (or restored from the persisted cache) under the
+    // lists' prefix used to throw here and abort the whole status snapshot.
+    queryClient.setQueryData(["/api/features", 7, "pending-gate", "req-1"], {
+      request_id: "req-1",
+    });
+    queryClient.setQueryData(["/api/features", { project_id: 1 }], [{ id: 7, title: "Seven" }]);
+    expect(lookupFeature(7)).toMatchObject({ id: 7, title: "Seven" });
+    expect(lookupFeature(8)).toBeUndefined();
   });
 });

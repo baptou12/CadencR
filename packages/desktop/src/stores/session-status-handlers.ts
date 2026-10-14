@@ -36,12 +36,21 @@ export function isPendingKind(val: unknown): val is PendingKind {
   return typeof val === "string" && (PENDING_KIND_VALUES as string[]).includes(val);
 }
 
+function isFeatureList(data: Feature[] | object | undefined): data is Feature[] {
+  return Array.isArray(data);
+}
+
 /** A feature's record from any loaded project list, without a request. */
 export function lookupFeature(featureId: number): Feature | undefined {
   // Prefix-match all per-project listFeatures caches via the orval-generated key.
-  const queries = queryClient.getQueriesData<Feature[]>({ queryKey: getListFeaturesQueryKey() });
+  // Other per-feature queries share the prefix (a pending gate is
+  // `["/api/features", id, "pending-gate", …]`): only lists hold features.
+  const queries = queryClient.getQueriesData<Feature[] | object>({
+    queryKey: getListFeaturesQueryKey(),
+  });
   for (const [, data] of queries) {
-    const feature = data?.find((f) => f.id === featureId);
+    if (!isFeatureList(data)) continue;
+    const feature = data.find((f) => f.id === featureId);
     if (feature) return feature;
   }
   return undefined;
