@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.13.1 - 2026-10-15
+
+Previous release: v0.13.0 - 2026-10-13
+
+### ✨ Added
+
+- [**Desktop**] Added an Archive all sessions action to project menus, with confirmation and a count of archived and retained conversations; pinned conversations, running agents, and pending questions or permission requests are kept — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Added a 5-minute to 2-hour snooze for macOS notch notifications, with early resume and continued access to the agent list on hover; notification previews can also be closed without opening their conversation — [@rle-mino](https://github.com/rle-mino).
+
+### 🔧 Changed
+
+- [**Desktop**] Made Pinned foldable while keeping attention indicators visible, kept projects reachable beneath long sidebar sections, and added conversation menus, label editing, and row shortcuts to Pinned, For me, In progress, Recent, and cross-project views. Opening a pinned conversation now leaves its parent project folded, and sticky project headers stay readable on iOS — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Improved terminal wheel and trackpad scrolling, Zellij scrollback, selection anchoring and drag-to-scroll, and recovery from WebGPU glyph upload failures; terminal color queries now receive immediate theme-aware replies, avoiding startup delays in tools such as Vibe — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Reduced the installed application's size by removing duplicate copies of libraries already bundled into the interface — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Refreshed the user guides and screenshots for the current interface, clarified provider capabilities and branching behavior, and improved full-size screenshot viewing and wide tables on mobile — [@rle-mino](https://github.com/rle-mino).
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed the Mac Intel application launching without a working backend by packaging the service for the matching processor; Intel downloads now include an explicit x64 suffix — [@rle-mino](https://github.com/rle-mino).
+- [**provider:codex**] Fixed new conversations unexpectedly reverting from AutoReview to Default access mode because of legacy project settings or a selection made before initialization; existing conversations keep their saved mode — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed imported Alacritty font and color settings being ignored, including nested imports and partial palettes; edits to imported files now reload live, and configuration or watcher failures are visible — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed terminal applications reducing truecolor themes to 256 colors, restoring accurate colors in tools such as Vibe — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed newly opened terminal panes missing keyboard focus while their engine initializes, so terminal shortcuts work without an extra click and delayed focus requests are cancelled when you move elsewhere — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Backend**] Fixed installed ACP providers ignoring built-in and custom conversation auto-naming instructions — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed recent settings edits being lost when leaving the page or overwritten by older saves; failed saves report an error and restore the last confirmed value — [@edjubert](https://github.com/edjubert), [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed page headers shifting and sidebar controls appearing twice when collapsing the sidebar on macOS; native window controls now align with the page header — [@rle-mino](https://github.com/rle-mino).
+- [**Desktop**] Fixed compact notch agent indicators and their overflow count disappearing beneath the hardware cutout when several agents are active — [@rle-mino](https://github.com/rle-mino).
+
 ## v0.13.0 - 2026-10-13
 
 Previous release: v0.12.1 - 2026-10-10

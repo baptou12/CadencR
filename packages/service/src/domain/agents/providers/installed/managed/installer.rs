@@ -434,6 +434,8 @@ mod tests {
             "/tests/fixtures/managed_provider_index/v1/valid.json"
         )))
         .unwrap();
+        index.signed.packages[0].host.compatibility.max_app_version =
+            Some(env!("CARGO_PKG_VERSION").into());
         let signing_key = SigningKey::from_bytes(&[23; 32]);
         let signing_bytes = index.signed.signing_bytes().unwrap();
         index.signature.key_id = "managed-installer-test".into();
