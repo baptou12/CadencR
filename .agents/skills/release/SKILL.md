@@ -44,6 +44,7 @@ The helper script creates the local tag only. The agent must push the tag explic
    - Keep each feature and fix bullet focused on user impact, then end that same bullet with `— [@handle](https://github.com/handle).` for every human contributor who materially authored the item. Do not add wording such as `contributed by`. Credit each contributor once per changelog line; exclude bots, merge-only identities, and the release-preparation commit author.
    - When one changelog line folds together work from multiple PRs or commits, include every applicable contributor on that line using linked GitHub handles when available.
    - Keep the changelog factual and concise.
+   - Images are optional. Only add one when a screenshot genuinely helps explain a user-facing change, and follow [Changelog images](#changelog-images-optional).
    - The GitHub release page is populated automatically from this exact changelog section by the release workflow, so write it as publish-ready release notes.
 
 4. **Ask for landing news copy**
@@ -116,6 +117,32 @@ done
 
     - Report the final release URL and asset count.
     - If assets do not appear before the timeout, inspect the GitHub Actions run and report the failure.
+
+## Changelog images (optional)
+
+Most releases need no images. When one helps — typically a screenshot of a new feature — use this technique, because it is the only one that renders in the in-app changelog dialogs:
+
+1. **Commit the image to the repository** under `docs/changelog/vX.Y.Z/`, in the release preparation commit, with a descriptive kebab-case name (`docs/changelog/v0.14.0/sidebar-presets.png`).
+   - Formats: PNG, JPEG, GIF, WebP, AVIF, or SVG. Hard limit 10 MB; compress screenshots and aim for well under 1 MB.
+2. **Reference it by its raw GitHub URL pinned to the release tag**, on its own line indented under the bullet it illustrates, with alt text describing what it shows:
+
+   ```md
+   - [**Desktop**] Added sidebar presets … — [@handle](https://github.com/handle).
+
+     ![Sidebar with the Supervise preset applied](https://raw.githubusercontent.com/merkr-software/cadencr/vX.Y.Z/docs/changelog/vX.Y.Z/sidebar-presets.png)
+   ```
+
+   - To constrain the size, use HTML instead: `<img src="https://raw.githubusercontent.com/…" alt="…" width="720">`.
+   - `https://github.com/merkr-software/cadencr/blob/<ref>/<path>?raw=true` and `…/raw/<ref>/<path>` also work, but prefer the `raw.githubusercontent.com` form.
+
+3. **Do not use** relative paths (`docs/changelog/…`), images hosted on any other site, or GitHub drag-and-drop uploads (`github.com/user-attachments/…`). The desktop app only loads files committed to `merkr-software/cadencr` (its CSP blocks remote images, so the main process fetches them from that repository only); anything else shows as an "image unavailable" chip.
+4. **Verify after pushing the tag.** The tag-pinned URL returns 404 until `git push origin vX.Y.Z`, so check it once the release exists:
+
+   ```bash
+   curl -sI "https://raw.githubusercontent.com/merkr-software/cadencr/$TAG/docs/changelog/$TAG/<name>.png" | head -1
+   ```
+
+   Pinning to the tag (not `main`) keeps old release notes intact if the image is later moved or deleted.
 
 ## Response format
 
