@@ -68,6 +68,8 @@ const RENDERER_FOCUS_SHORTCUTS = new Set<BrowserShortcut>([
   "pane-terminal",
   "pane-git",
   "pane-editor",
+  "navigate-back",
+  "navigate-forward",
 ]);
 
 export function reclaimFocusForShortcut(

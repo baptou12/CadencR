@@ -622,6 +622,8 @@ describe("BrowserWorkspaceTab", () => {
       responsive: { keys: ["mod", "shift", "m"], altKeys: undefined },
       devtools: { keys: ["f12"], altKeys: undefined },
       zoomReset: { keys: ["mod", "0"], altKeys: undefined },
+      navigateBack: { keys: ["mod", "lbracket"], altKeys: undefined },
+      navigateForward: { keys: ["mod", "rbracket"], altKeys: undefined },
     });
     act(() => shortcutRelay?.("find"));
     const input = await screen.findByRole("textbox", { name: "Find in page" });
