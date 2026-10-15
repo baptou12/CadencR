@@ -47,6 +47,19 @@ pub(crate) struct FakeClient {
     pub(crate) drift_assets_after: Cell<Option<u64>>,
 }
 
+impl FakeClient {
+    fn read_release(&self) -> Option<Release> {
+        self.finds.set(self.finds.get() + 1);
+        let mut release = self.release.borrow().clone();
+        if self.promote_on_second_find && self.finds.get() >= 2 {
+            if let Some(value) = &mut release {
+                value.draft = false;
+            }
+        }
+        release
+    }
+}
+
 impl ReleaseClient for FakeClient {
     fn get_tag_commit(&self, _: &str) -> Result<Option<String>, PublisherError> {
         self.tag_checks.set(self.tag_checks.get() + 1);
@@ -60,16 +73,12 @@ impl ReleaseClient for FakeClient {
     }
 
     fn find_release(&self, _: &str) -> Result<Option<Release>, PublisherError> {
-        self.finds.set(self.finds.get() + 1);
-        let mut release = self.release.borrow().clone();
-        if self.promote_on_second_find && self.finds.get() >= 2 {
-            if let Some(value) = &mut release {
-                value.draft = false;
-            }
-        }
-        Ok(release)
+        Ok(self.read_release())
     }
 
+    fn get_release(&self, id: u64) -> Result<Option<Release>, PublisherError> {
+        Ok(self.read_release().filter(|release| release.id == id))
+    }
     fn create_draft(&self, request: CreateDraftRequest<'_>) -> Result<Release, PublisherError> {
         self.creates.set(self.creates.get() + 1);
         let release = Release {
@@ -160,7 +169,9 @@ impl ReleaseClient for FakeClient {
             .ok_or_else(|| PublisherError::new("asset missing"))?;
         if bytes.len() as u64 != request.size
             || crate::hex(&Sha256::digest(bytes)) != request.sha256
-            || request.asset.browser_download_url != request.expected_url
+            || !request
+                .url_policy
+                .matches(&request.asset.browser_download_url, request.expected_url)
         {
             return Err(PublisherError::new("remote bytes mismatch"));
         }
@@ -209,4 +220,21 @@ pub(crate) fn run(
         COMMIT,
         client,
     )
+}
+
+#[test]
+fn direct_lookup_requires_the_requested_fixture_identity() {
+    let client = FakeClient::default();
+    assert!(client.get_release(7).unwrap().is_none());
+    let release = client
+        .create_draft(
+            CreateDraftRequest::builder()
+                .tag("v1")
+                .commit(COMMIT)
+                .body("binding")
+                .build(),
+        )
+        .unwrap();
+    assert_eq!(client.get_release(7).unwrap(), Some(release));
+    assert!(client.get_release(8).unwrap().is_none());
 }

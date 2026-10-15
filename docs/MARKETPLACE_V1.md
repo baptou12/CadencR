@@ -55,6 +55,30 @@ a future desktop release. Publication is not public UI or desktop trust activati
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
 
+### Real GitHub qualification — 2026-10-15
+
+- The explicitly approved public target is
+  [`merkr-software/cadencr-registry-qa`](https://github.com/merkr-software/cadencr-registry-qa),
+  separate from the production registry. Its inert declarative source archive is
+  anonymously downloadable and matches the reviewed SHA-256. A distinct QA-only
+  signing key is stored in this repository's Actions secret with explicit approval;
+  no production key, user profile or database is involved.
+- [Initial run and retry](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38695408981)
+  executed the checksum-pinned distributed `v0.13.0` Linux CLI. The first attempt
+  created a draft but failed when the subsequent release listing omitted it.
+  The retry reused that same draft and uploaded the expected archive, then failed
+  because GitHub reports an `untagged-*` browser URL while the release is a draft,
+  not its planned final URL. The draft and uploaded asset are retained; neither
+  attempt completed catalog publication or discovery.
+- Qualification remains **incomplete**: publication/replay, interrupted recovery,
+  fresh-runner restoration and empty-delta renewal are not passed. Source fixes
+  and regression tests cannot qualify the already distributed executable. A new
+  explicitly approved distributed CLI containing the fixes must repeat these gates
+  before production pins change. Do not normalize QA responses, pre-publish drafts
+  manually or fall back to source-built code to manufacture a qualification pass.
+- Production pins remain `PENDING`; JavaScript cutover/removal, real theme/Pi
+  publication, official trust and marketplace exposure remain separate gates.
+
 ### Official source location decision — 2026-10-14
 
 Official plugins now live under `plugins/providers/` and `plugins/themes/` in
