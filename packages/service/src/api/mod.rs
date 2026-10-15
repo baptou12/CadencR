@@ -16,6 +16,9 @@ use crate::domain::agents::providers::installed::routes::{
     installed_provider_lifecycle_router, installed_providers_router,
 };
 use crate::domain::agents::runtime::AgentCatalogResponse;
+use crate::domain::agents::updates::routes::{
+    provider_update_actions_router, provider_updates_router,
+};
 use crate::domain::agents::ResolvedSelection;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
@@ -237,6 +240,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(claude_code_router())
         .merge(custom_actions_router())
         .merge(discovery_router())
+        .merge(provider_updates_router())
         .merge(installed_providers_router())
         .merge(imports_router())
         .merge(lsp_router())
@@ -282,6 +286,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(installed_provider_lifecycle_router())
         .merge(managed_provider_inventory_router())
         .merge(managed_provider_lifecycle_router())
+        .merge(provider_update_actions_router())
         .merge(crate::domain::mcp::control::control_router())
         .merge(crate::domain::remote::loopback_router())
         .layer(axum::middleware::from_fn_with_state(

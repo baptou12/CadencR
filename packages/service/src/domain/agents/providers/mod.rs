@@ -22,7 +22,9 @@ pub use model_validation::{
     valid_provider_ids, validate_thinking_level_or_error,
 };
 pub(crate) use registry::{builtin_provider_identifiers, provider_identifier_key};
-pub use registry::{provider_registry, ProviderAdapterHandle};
+pub use registry::{
+    provider_registry, ProviderAdapterHandle, ProviderDiscoveryMetadata, RegisteredProvider,
+};
 
 /// Resolve a provider id to its registered adapter.
 ///

@@ -55,7 +55,7 @@ pub(crate) async fn read_overrides(read_pool: &SqlitePool) -> BinaryOverrides {
     .collect()
 }
 
-async fn read_override_setting(read_pool: &SqlitePool, key: &str) -> Option<PathBuf> {
+pub(crate) async fn read_override_setting(read_pool: &SqlitePool, key: &str) -> Option<PathBuf> {
     match crate::domain::workspace::repository::get_nonempty_setting(read_pool, key).await {
         Ok(value) => value.map(PathBuf::from),
         Err(error) => {

@@ -17,6 +17,7 @@ pub mod routes;
 mod runtime_error;
 mod session;
 mod slash_catalog;
+pub mod updates;
 mod worktree_config;
 
 // Only referenced from this crate's test support; re-exported so the

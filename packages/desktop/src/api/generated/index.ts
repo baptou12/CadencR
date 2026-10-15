@@ -450,10 +450,11 @@ export interface AlacrittyConfigResponse {
   parse_error?: string | null;
   /**
    * Set while live reload is unavailable (the file watcher failed to
-   * start or to watch part of the import chain): `config` is still
-   * accurate, but external edits won't show up until a restart. Unlike
-   * `parse_error` this is not fatal — the frontend warns and keeps
-   * rendering.
+   * start, failed to watch part of the import chain, or part of the
+   * chain sits under a missing directory that no existing ancestor can
+   * observe): `config` is still accurate, but external edits won't show
+   * up until a restart. Unlike `parse_error` this is not fatal — the
+   * frontend warns and keeps rendering.
    * @nullable
    */
   watch_error?: string | null;
@@ -3613,6 +3614,103 @@ export interface ProviderSetPayload {
 export interface ProviderSettings {
   auto_name: string;
   session: string;
+}
+
+/**
+ * Work currently running for a provider.
+ */
+export type ProviderUpdateActivity =
+  (typeof ProviderUpdateActivity)[keyof typeof ProviderUpdateActivity];
+
+export const ProviderUpdateActivity = {
+  checking: "checking",
+  updating: "updating",
+} as const;
+
+/**
+ * How a finished update ended. Carried once, on the event that closes it.
+ */
+export interface ProviderUpdateOutcome {
+  /** @nullable */
+  current_version?: string | null;
+  label: string;
+  /**
+   * Failure reason, or the provider's own summary on success.
+   * @nullable
+   */
+  message?: string | null;
+  /** @nullable */
+  previous_version?: string | null;
+  provider_id: string;
+  success: boolean;
+}
+
+export type ProviderUpdateEventOutcome = null | ProviderUpdateOutcome;
+
+/**
+ * Result of the latest version check.
+ */
+export type ProviderUpdateState = (typeof ProviderUpdateState)[keyof typeof ProviderUpdateState];
+
+export const ProviderUpdateState = {
+  unchecked: "unchecked",
+  up_to_date: "up_to_date",
+  update_available: "update_available",
+  not_installed: "not_installed",
+  unsupported: "unsupported",
+  check_failed: "check_failed",
+} as const;
+
+export type ProviderUpdateStatusActivity = null | ProviderUpdateActivity;
+
+export interface ProviderUpdateStatus {
+  activity?: ProviderUpdateStatusActivity;
+  /** Installable versions, newest first. */
+  available_versions: string[];
+  /** @nullable */
+  current_version?: string | null;
+  /**
+   * Why the last check failed, when `state` is `check_failed`.
+   * @nullable
+   */
+  error?: string | null;
+  label: string;
+  /** @nullable */
+  latest_version?: string | null;
+  origin: ProviderOrigin;
+  provider_id: string;
+  state: ProviderUpdateState;
+  /** Whether an explicit version may be requested instead of the latest. */
+  supports_target_version: boolean;
+}
+
+/**
+ * `app/provider_updates` WebSocket payload: the full status list plus, when
+ * an update just finished, its outcome.
+ */
+export interface ProviderUpdateEvent {
+  /** @nullable */
+  checked_at?: string | null;
+  outcome?: ProviderUpdateEventOutcome;
+  providers: ProviderUpdateStatus[];
+}
+
+export interface ProviderUpdateRequest {
+  /**
+   * Version to install. Omit for the latest version.
+   * @nullable
+   */
+  version?: string | null;
+}
+
+export interface ProviderUpdatesResponse {
+  /**
+   * RFC 3339 timestamp of the last completed full check.
+   * @nullable
+   */
+  checked_at?: string | null;
+  /** Every registered provider, in catalog order. */
+  providers: ProviderUpdateStatus[];
 }
 
 /**
@@ -7025,6 +7123,241 @@ export const useUpdate = <TError = ErrorType<unknown>, TContext = unknown>(
   TContext
 > => {
   return useMutation(getUpdateMutationOptions(options), queryClient);
+};
+
+export const getProviderUpdates = (signal?: AbortSignal) => {
+  return customInstance<ProviderUpdatesResponse>({
+    url: `/api/agents/provider-updates`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetProviderUpdatesQueryKey = () => {
+  return [`/api/agents/provider-updates`] as const;
+};
+
+export const getGetProviderUpdatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProviderUpdatesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProviderUpdates>>> = ({ signal }) =>
+    getProviderUpdates(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProviderUpdates>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetProviderUpdatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProviderUpdates>>
+>;
+export type GetProviderUpdatesQueryError = ErrorType<unknown>;
+
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderUpdates>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderUpdates>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProviderUpdates>>,
+          TError,
+          Awaited<ReturnType<typeof getProviderUpdates>>
+        >,
+        "initialData"
+      >;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+export function useGetProviderUpdates<
+  TData = Awaited<ReturnType<typeof getProviderUpdates>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof getProviderUpdates>>, TError, TData>>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getGetProviderUpdatesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const checkProviderUpdates = (signal?: AbortSignal) => {
+  return customInstance<ProviderUpdatesResponse>({
+    url: `/api/agents/provider-updates/check`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getCheckProviderUpdatesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkProviderUpdates>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkProviderUpdates>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["checkProviderUpdates"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkProviderUpdates>>,
+    void
+  > = () => {
+    return checkProviderUpdates();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CheckProviderUpdatesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof checkProviderUpdates>>
+>;
+
+export type CheckProviderUpdatesMutationError = ErrorType<unknown>;
+
+export const useCheckProviderUpdates = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof checkProviderUpdates>>,
+      TError,
+      void,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<Awaited<ReturnType<typeof checkProviderUpdates>>, TError, void, TContext> => {
+  return useMutation(getCheckProviderUpdatesMutationOptions(options), queryClient);
+};
+
+export const updateProvider = (
+  providerId: string,
+  providerUpdateRequest: ProviderUpdateRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<ProviderUpdateStatus>({
+    url: `/api/agents/provider-updates/${providerId}/update`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: providerUpdateRequest,
+    signal,
+  });
+};
+
+export const getUpdateProviderMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProvider>>,
+    TError,
+    UpdateProviderMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProvider>>,
+  TError,
+  UpdateProviderMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["updateProvider"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProvider>>,
+    UpdateProviderMutationVariables
+  > = (props) => {
+    const { providerId, data } = props ?? {};
+
+    return updateProvider(providerId, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProviderMutationResult = NonNullable<Awaited<ReturnType<typeof updateProvider>>>;
+export type UpdateProviderMutationBody = ProviderUpdateRequest;
+export type UpdateProviderMutationError = ErrorType<void>;
+export type UpdateProviderMutationVariables = { providerId: string; data: ProviderUpdateRequest };
+
+export const useUpdateProvider = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateProvider>>,
+      TError,
+      UpdateProviderMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateProvider>>,
+  TError,
+  UpdateProviderMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateProviderMutationOptions(options), queryClient);
 };
 
 export const createProviderWorkspace = (

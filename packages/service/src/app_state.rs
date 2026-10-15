@@ -132,6 +132,8 @@ pub struct AppState {
     /// User-visible lifecycle for first-run optimization and later cleanup.
     /// Every app client subscribes so long-running work has explicit progress.
     pub storage_maintenance_events_tx: StorageMaintenanceBroadcaster,
+    /// Cached provider version checks and background provider updates.
+    pub provider_updates: crate::domain::agents::updates::ProviderUpdateService,
     /// Shared file watcher (one project at a time).
     pub file_watcher: SharedFileWatcher,
     /// Per-launch bearer token required on every HTTP request (via the
@@ -283,6 +285,8 @@ impl AppState {
             }),
         );
         let pty_manager = PtyManager::new();
+        let provider_updates =
+            crate::domain::agents::updates::ProviderUpdateService::new(read_pool.clone());
         Self {
             read_pool: read_pool.clone(),
             write_pool,
@@ -304,6 +308,7 @@ impl AppState {
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
+            provider_updates,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token,
             mcp_control_token: uuid::Uuid::new_v4().to_string(),
@@ -363,6 +368,8 @@ impl AppState {
         let storage_maintenance_events_tx = StorageMaintenanceBroadcaster::new(16);
         let (forge_events_tx, _) = broadcast::channel(64);
         let pty_manager = PtyManager::new();
+        let provider_updates =
+            crate::domain::agents::updates::ProviderUpdateService::new(pool.clone());
         Self {
             read_pool: pool.clone(),
             write_pool: pool.clone(),
@@ -387,6 +394,7 @@ impl AppState {
             alacritty_config_events_tx,
             remote_events_tx,
             storage_maintenance_events_tx,
+            provider_updates,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token: "test-token".to_string(),
             mcp_control_token: "test-mcp-token".to_string(),

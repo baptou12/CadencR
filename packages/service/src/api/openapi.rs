@@ -10,6 +10,7 @@ use crate::domain::agents::discovery::routes as discovery_routes;
 use crate::domain::agents::providers::development::routes as provider_development_routes;
 use crate::domain::agents::providers::installed::managed::routes as managed_provider_routes;
 use crate::domain::agents::providers::installed::routes as installed_provider_routes;
+use crate::domain::agents::updates::routes as provider_update_routes;
 use crate::domain::custom_actions::models as custom_actions_models;
 use crate::domain::custom_actions::routes as custom_actions_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
@@ -196,6 +197,9 @@ use crate::domain::ws_session::routes as ws_routes;
         codex_routes::validate_profile_handler,
         super::get_agent_selection,
         discovery_routes::binary_discovery_handler,
+        provider_update_routes::get_provider_updates,
+        provider_update_routes::check_provider_updates,
+        provider_update_routes::update_provider,
         provider_development_routes::create_provider_workspace_handler,
         installed_provider_routes::installed_providers_handler,
         installed_provider_routes::install_provider_handler,
@@ -311,6 +315,13 @@ use crate::domain::ws_session::routes as ws_routes;
         discovery_routes::ProviderDiscovery,
         discovery_routes::DiscoveredCandidate,
         discovery_routes::DiscoveredSource,
+        crate::domain::agents::updates::ProviderUpdatesResponse,
+        crate::domain::agents::updates::ProviderUpdateStatus,
+        crate::domain::agents::updates::ProviderUpdateState,
+        crate::domain::agents::updates::ProviderUpdateActivity,
+        crate::domain::agents::updates::ProviderUpdateEvent,
+        crate::domain::agents::updates::ProviderUpdateOutcome,
+        crate::domain::agents::updates::ProviderUpdateRequest,
         crate::domain::agents::providers::development::CreateProviderWorkspaceRequest,
         crate::domain::agents::providers::development::ProviderWorkspace,
         installed_provider_routes::InstalledProvidersResponse,

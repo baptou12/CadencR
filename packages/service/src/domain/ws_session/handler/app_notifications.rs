@@ -38,3 +38,16 @@ pub(super) fn subscribe_settings_events(sender: &WsSender, app_state: &AppState)
         OnLag::ResendBare,
     );
 }
+
+/// Provider version checks and update outcomes, starting with the current
+/// list. Each event carries the full list, so a lagged client only needs the
+/// next one; a lost outcome is reconciled from `activity` on the client.
+pub(super) fn subscribe_provider_update_events(sender: &WsSender, app_state: &AppState) {
+    // Subscribe first so a change made while building the snapshot stays queued.
+    let rx = app_state.provider_updates.subscribe();
+    let event = app_state.provider_updates.snapshot().into_event(None);
+    let payload = serde_json::to_value(event).unwrap_or_else(|_| serde_json::json!({}));
+    let update = WsEnvelope::new("app", "provider_updates", payload);
+    let _ = sender.send(Message::Text(String::from(update).into()));
+    forward_app_events(sender, rx, "provider_updates", OnLag::Skip);
+}

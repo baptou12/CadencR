@@ -33,6 +33,9 @@ pub(super) async fn handle_app_action(
         "subscribe.remote_events" => {
             super::app_notifications::subscribe_remote_events(sender, app_state)
         }
+        "subscribe.provider_update_events" => {
+            super::app_notifications::subscribe_provider_update_events(sender, app_state)
+        }
         "subscribe.storage_maintenance_events" => {
             super::app_notifications::subscribe_storage_maintenance(sender, app_state)
         }

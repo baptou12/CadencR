@@ -6,6 +6,9 @@ use std::process::ExitCode;
 
 use agent_client_protocol::schema::v1::SessionConfigOption;
 
+mod updates;
+pub use updates::{UpdateReport, UPDATE_REPORT_FORMAT};
+
 pub const MODEL_DISCOVERY_FORMAT: &str = "acp-config-options-v1";
 pub const ACP_V1_PROTOCOL: &str = "acp-v1";
 
@@ -46,6 +49,18 @@ pub trait CadencrProvider {
     ) -> Result<Vec<SessionConfigOption>, ProviderError>;
     fn run_acp(&self, provider_args: &[OsString]) -> Result<ExitCode, ProviderError>;
     fn version(&self) -> &str;
+
+    /// Versions of whatever this connector can upgrade (usually its native
+    /// CLI). `None` (the default) tells Cadencr updates are not managed here.
+    fn updates(&self) -> Result<Option<UpdateReport>, ProviderError> {
+        Ok(None)
+    }
+
+    /// Install `target` (or the latest version when `None`). Returns an
+    /// optional human-readable summary shown to the user.
+    fn update(&self, _target: Option<&str>) -> Result<Option<String>, ProviderError> {
+        Err(ProviderError::new("this provider does not manage updates"))
+    }
 }
 
 pub fn run_cli(provider: &impl CadencrProvider) -> ExitCode {
@@ -63,11 +78,15 @@ fn execute(
     args: Vec<OsString>,
 ) -> Result<ExitCode, ProviderError> {
     let Some(command) = args.first().and_then(|value| value.to_str()) else {
-        return Err(ProviderError::new("expected `models`, `run`, or `version`"));
+        return Err(ProviderError::new(
+            "expected `models`, `run`, `version`, `updates`, or `update`",
+        ));
     };
     match command {
         "models" => execute_models(provider, &args[1..]),
         "run" => execute_run(provider, &args[1..]),
+        "updates" => updates::execute_updates(provider, &args[1..]),
+        "update" => updates::execute_update(provider, &args[1..]),
         "version" if args.len() == 1 => {
             println!("{}", provider.version());
             Ok(ExitCode::SUCCESS)
@@ -159,6 +178,29 @@ mod tests {
                 "--cwd".into(),
                 "relative".into(),
             ],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn update_commands_default_to_unsupported() {
+        let updates = execute(
+            &FixtureProvider,
+            vec![
+                "updates".into(),
+                "--format".into(),
+                "cadencr-updates-v1".into(),
+            ],
+        );
+        assert_eq!(updates.unwrap(), ExitCode::SUCCESS);
+        assert!(execute(&FixtureProvider, vec!["updates".into()]).is_err());
+        assert_eq!(
+            execute(&FixtureProvider, vec!["update".into()]).unwrap(),
+            ExitCode::FAILURE
+        );
+        assert!(execute(
+            &FixtureProvider,
+            vec!["update".into(), "--version".into(), " ".into()],
         )
         .is_err());
     }

@@ -281,6 +281,7 @@ async fn main() -> anyhow::Result<()> {
             // process, which needs to honor the override on first launch.
             domain::agents::apply_binary_overrides_from_settings(&state.read_pool).await;
             domain::agents::spawn_runtime_startup_warmups();
+            state.provider_updates.spawn_periodic_checks();
             domain::agents::providers::installed::managed::service::spawn_startup_blocklist_refresh(
             );
 

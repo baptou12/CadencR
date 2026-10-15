@@ -37,6 +37,7 @@ pub mod rejection;
 pub mod routes;
 #[cfg(test)]
 mod test_fixtures;
+pub mod updates;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -162,6 +163,9 @@ pub fn installed_registrations() -> Vec<RegisteredProvider> {
                 ProviderAdapterHandle::owned(GenericAcpAdapter::new(installation.clone())),
             )
             .installed_local()
+            .with_updater(Arc::new(updates::PluginUpdater::new(
+                installation.executable().clone(),
+            )))
         })
         .collect()
 }
