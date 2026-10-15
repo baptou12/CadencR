@@ -42,6 +42,23 @@ describe("navigation history", () => {
     expect(history.go(-1, page("/settings"))).toEqual(session(1));
   });
 
+  it("refreshes a spot whose search changed without stacking it again", () => {
+    const history = createNavigationHistory();
+    const moved: NavigationEntry = {
+      kind: "session",
+      sessionId: "ws-1",
+      search: { cwd: "/repo/worktree", featureId: 1, projectId: 1 },
+      tab: "agent",
+    };
+    history.record(session(1));
+    history.record(moved);
+    history.record(page("/settings"));
+
+    expect(history.go(-1, page("/settings"))).toEqual(moved);
+    history.arrive(moved);
+    expect(history.go(-1, moved)).toBeNull();
+  });
+
   it("drops forward entries when the user goes somewhere new after going back", () => {
     const history = createNavigationHistory();
     history.record(session(1));

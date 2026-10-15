@@ -135,6 +135,37 @@ describe("useNavigationHistory", () => {
     );
   });
 
+  it("leaves ⌘⇧[ to the Browser and Editor tab switching", () => {
+    const { rerender } = renderHook(() => useNavigationHistory());
+    open(1, rerender);
+    open(2, rerender);
+
+    // Under Cmd, macOS reports the base character, so the shifted chord still says "[".
+    fireEvent.keyDown(window, { key: "[", code: "BracketLeft", metaKey: true, shiftKey: true });
+
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it("restores a conversation with the search it had when the user left it", () => {
+    const { rerender } = renderHook(() => useNavigationHistory());
+    open(1, rerender);
+    router.session = {
+      params: { sessionId: "ws-1" },
+      search: { ...search(1), cwd: "/repo/worktree" },
+    };
+    rerender();
+    settle();
+    router.session = undefined;
+    rerender();
+    settle();
+
+    pressBack();
+
+    expect(router.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: expect.objectContaining({ cwd: "/repo/worktree" }) }),
+    );
+  });
+
   it("leaves ⌘[ to CodeMirror's indent-less inside an editor buffer", () => {
     const { rerender } = renderHook(() => useNavigationHistory());
     open(1, rerender);

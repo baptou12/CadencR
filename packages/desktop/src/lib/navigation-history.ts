@@ -14,7 +14,7 @@ export type NavigationEntry =
 // Bounds memory over a long-running app session; the oldest entries fall off.
 const MAX_ENTRIES = 100;
 
-export function entryKey(entry: NavigationEntry): string {
+function entryKey(entry: NavigationEntry): string {
   return entry.kind === "page" ? entry.href : `session:${entry.sessionId}:${entry.tab ?? ""}`;
 }
 
@@ -34,7 +34,11 @@ export function createNavigationHistory() {
   function record(entry: NavigationEntry): void {
     landing = null;
     const current = entries[index];
-    if (current && entryKey(current) === entryKey(entry)) return;
+    // Same spot: keep its position but take the latest search (e.g. a new cwd).
+    if (current && entryKey(current) === entryKey(entry)) {
+      entries[index] = entry;
+      return;
+    }
     entries = [...entries.slice(0, index + 1), entry].slice(-MAX_ENTRIES);
     index = entries.length - 1;
   }

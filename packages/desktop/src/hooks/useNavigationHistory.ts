@@ -8,7 +8,7 @@ import {
 
 import { useBrowserShortcutRelay } from "@/hooks/useBrowserShortcutRelay";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
-import { createNavigationHistory, entryKey, type NavigationEntry } from "@/lib/navigation-history";
+import { createNavigationHistory, type NavigationEntry } from "@/lib/navigation-history";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import {
   activateFeatureTab,
@@ -32,7 +32,9 @@ export function useNavigationHistory(): void {
   const entry = useCurrentEntry();
   const entryRef = useRef(entry);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const key = entryKey(entry);
+  // The whole entry, not just its history key: a same-spot search change
+  // (e.g. a new cwd) must refresh the recorded entry too.
+  const signature = JSON.stringify(entry);
 
   // Sync after commit: a discarded render must never become the recorded spot.
   useLayoutEffect(() => {
@@ -42,7 +44,7 @@ export function useNavigationHistory(): void {
     history.arrive(entryRef.current);
     settleTimerRef.current = setTimeout(() => history.record(entryRef.current), SETTLE_MS);
     return () => clearTimeout(settleTimerRef.current);
-  }, [history, key]);
+  }, [history, signature]);
 
   const go = (delta: -1 | 1): void => {
     // `go` records the current spot itself; a pending settle would race the jump.
