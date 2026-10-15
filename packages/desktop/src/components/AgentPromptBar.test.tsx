@@ -118,6 +118,7 @@ vi.mock("./prompt-editor/PromptEditor", () => {
     },
     ref: ForwardedRef<{
       focus: () => void;
+      blur: () => void;
       clear: () => void;
       setText: (text: string) => void;
       getText: () => string;
@@ -141,6 +142,7 @@ vi.mock("./prompt-editor/PromptEditor", () => {
       ref,
       () => ({
         focus: () => textareaRef.current?.focus(),
+        blur: () => textareaRef.current?.blur(),
         clear: () => {
           setValue("");
           setShellMode(false);

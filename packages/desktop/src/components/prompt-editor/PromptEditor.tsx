@@ -11,6 +11,7 @@ import {
   $getRoot,
   $isElementNode,
   $isTextNode,
+  $setSelection,
   type EditorState,
   type LexicalEditor,
 } from "lexical";
@@ -36,6 +37,7 @@ import {
 
 export interface PromptEditorHandle {
   focus: () => void;
+  blur: () => void;
   clear: () => void;
   /** Set text. `moveSelection: false` populates without focusing the editor. */
   setText: (text: string, moveSelection?: boolean) => void;
@@ -99,6 +101,11 @@ function usePromptEditorHandle(
   useImperativeHandle(ref, () => ({
     focus() {
       editorRef.current?.focus();
+    },
+    blur() {
+      // Clear Lexical's selection so a pending update cannot refocus the editor.
+      editorRef.current?.update(() => $setSelection(null));
+      editorRef.current?.blur();
     },
     clear() {
       editorRef.current?.update(() => {

@@ -65,8 +65,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
     interactedRef,
   } = deps;
   const [sending, setSending] = useState(false);
-  // On phones, refocusing the editor after send re-pops the on-screen keyboard
-  // and covers the reply the user just sent. Only auto-focus on desktop.
+  // On phones, dismiss the on-screen keyboard when sending and keep it closed.
   const isMobile = useIsMobile();
 
   const runSend = useCallback(
@@ -87,6 +86,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
       // submission "in flight". On failure we restore it below.
       setText("");
       editorRef.current?.clear();
+      if (isMobile) editorRef.current?.blur();
       clearAttachments({ revokeObjectUrls: false });
       setSending(true);
       try {
@@ -101,7 +101,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
         // The async call site is responsible for the toast (per the
         // PushDialog pattern).
         setText(trimmed);
-        editorRef.current?.setText(trimmed);
+        editorRef.current?.setText(trimmed, !isMobile);
         restoreAttachments(attachments);
         if (!isMobile) requestAnimationFrame(() => editorRef.current?.focus());
       } finally {

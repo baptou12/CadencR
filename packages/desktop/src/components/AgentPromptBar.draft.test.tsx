@@ -59,6 +59,7 @@ vi.mock("./prompt-editor/PromptEditor", () => {
         },
         // Unused by these tests but required by the PromptEditorHandle type.
         focus: () => textareaRef.current?.focus(),
+        blur: () => textareaRef.current?.blur(),
         clear: () => setValue(""),
         getText: () => value,
       }),
