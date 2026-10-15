@@ -57,11 +57,6 @@ describe("guestChrome", () => {
     expect(guestChrome(withMod({ key: "}", code: "BracketRight", shift: true }))).toBe("next-tab");
   });
 
-  it("relays the unshifted bracket chords as app history jumps", () => {
-    expect(guestChrome(withMod({ key: "[", code: "BracketLeft" }))).toBe("navigate-back");
-    expect(guestChrome(withMod({ key: "]", code: "BracketRight" }))).toBe("navigate-forward");
-  });
-
   it("ignores a Shift chord on an unmapped key", () => {
     expect(guestChrome(withMod({ key: "j", code: "KeyJ", shift: true }))).toBeNull();
     expect(guestChrome(withMod({ key: "k", code: "KeyK", shift: true }))).toBeNull();

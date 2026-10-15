@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   useMatch,
   useNavigate,
@@ -31,11 +31,15 @@ export function useNavigationHistory(): void {
   const [history] = useState(createNavigationHistory);
   const entry = useCurrentEntry();
   const entryRef = useRef(entry);
-  entryRef.current = entry;
   const settleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const key = entryKey(entry);
 
+  // Sync after commit: a discarded render must never become the recorded spot.
+  useLayoutEffect(() => {
+    entryRef.current = entry;
+  });
   useEffect(() => {
+    history.arrive(entryRef.current);
     settleTimerRef.current = setTimeout(() => history.record(entryRef.current), SETTLE_MS);
     return () => clearTimeout(settleTimerRef.current);
   }, [history, key]);

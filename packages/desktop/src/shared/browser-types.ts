@@ -154,6 +154,8 @@ export interface BrowserGuestShortcutBindings {
   responsive: BrowserShortcutBinding;
   devtools: BrowserShortcutBinding;
   zoomReset: BrowserShortcutBinding;
+  navigateBack: BrowserShortcutBinding;
+  navigateForward: BrowserShortcutBinding;
 }
 
 export interface BrowserOpenUrlOptions {

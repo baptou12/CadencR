@@ -191,9 +191,6 @@ export function guestChrome(
   const zoom = zoomChord(input.key);
   if (zoom) return zoom;
   if (input.shift) return guestShiftChrome(input);
-  // ⌘[ / ⌘] → app history (Slack-style), on the physical bracket like ⌘⇧[ / ⌘⇧].
-  if (input.code === "BracketLeft") return "navigate-back";
-  if (input.code === "BracketRight") return "navigate-forward";
   switch (input.key.toLowerCase()) {
     case "r":
       return "reload";

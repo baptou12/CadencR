@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, renderHook } from "@testing-library/react";
 
+import { useShortcutOverridesStore } from "@/lib/shortcuts/overrides";
 import {
   activateFeatureTab,
   getFocusedTab,
@@ -58,6 +59,7 @@ describe("useNavigationHistory", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    useShortcutOverridesStore.getState().resetAll();
   });
 
   it("⌘[ reopens the previous conversation on the tab it had", () => {
@@ -73,6 +75,25 @@ describe("useNavigationHistory", () => {
       params: { sessionId: "ws-1" },
       search: { ...search(1), focusTab: "browser" },
     });
+  });
+
+  it("⌘[ from a conversation opened right after a jump returns to the jump target", () => {
+    const { rerender } = renderHook(() => useNavigationHistory());
+    open(1, rerender);
+    open(2, rerender);
+    open(3, rerender);
+    pressBack();
+    // The router lands on ws-2, then the user opens ws-4 before anything settles.
+    router.session = { params: { sessionId: "ws-2" }, search: search(2) };
+    rerender();
+    router.session = { params: { sessionId: "ws-4" }, search: search(4) };
+    rerender();
+
+    pressBack();
+
+    expect(router.navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ params: { sessionId: "ws-2" } }),
+    );
   });
 
   it("⌘[ after switching to the browser tab returns to the previous tab", () => {
@@ -95,6 +116,23 @@ describe("useNavigationHistory", () => {
     pressBack();
 
     expect(router.navigate).toHaveBeenCalledWith({ href: "/settings" });
+  });
+
+  it("follows a registry override of the back shortcut", () => {
+    act(() =>
+      useShortcutOverridesStore.getState().setOverride("navigate-back", { keys: ["mod", "j"] }),
+    );
+    const { rerender } = renderHook(() => useNavigationHistory());
+    open(1, rerender);
+    open(2, rerender);
+
+    pressBack();
+    expect(router.navigate).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "j", code: "KeyJ", metaKey: true });
+
+    expect(router.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ params: { sessionId: "ws-1" } }),
+    );
   });
 
   it("leaves ⌘[ to CodeMirror's indent-less inside an editor buffer", () => {

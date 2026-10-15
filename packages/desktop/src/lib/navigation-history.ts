@@ -21,20 +21,27 @@ export function entryKey(entry: NavigationEntry): string {
 /**
  * Browser-style back/forward stack. `record` appends where the user settled,
  * dropping any forward entries; `go` moves the cursor and returns the entry to
- * restore. Until the next `record`, a jump is still landing, so a further `go`
- * must not record the in-between location.
+ * restore. Until the router reaches that entry (`arrive`) or a spot settles
+ * (`record`), the jump is still landing, so a further `go` must not record the
+ * in-between location.
  */
 export function createNavigationHistory() {
   let entries: NavigationEntry[] = [];
   let index = -1;
-  let landing = false;
+  // Target of a jump the router has not reached yet.
+  let landing: NavigationEntry | null = null;
 
   function record(entry: NavigationEntry): void {
-    landing = false;
+    landing = null;
     const current = entries[index];
     if (current && entryKey(current) === entryKey(entry)) return;
     entries = [...entries.slice(0, index + 1), entry].slice(-MAX_ENTRIES);
     index = entries.length - 1;
+  }
+
+  // Once the jump lands, any later move is the user's own and must be recorded.
+  function arrive(entry: NavigationEntry): void {
+    if (landing && entryKey(landing) === entryKey(entry)) landing = null;
   }
 
   function go(delta: -1 | 1, from: NavigationEntry): NavigationEntry | null {
@@ -42,9 +49,9 @@ export function createNavigationHistory() {
     const target = entries[index + delta];
     if (!target) return null;
     index += delta;
-    landing = true;
+    landing = target;
     return target;
   }
 
-  return { record, go };
+  return { arrive, record, go };
 }

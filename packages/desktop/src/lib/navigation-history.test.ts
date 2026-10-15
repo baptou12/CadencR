@@ -60,6 +60,19 @@ describe("navigation history", () => {
     expect(history.go(1, session(1))).toEqual(session(2));
   });
 
+  it("records a spot the user opens right after a jump landed", () => {
+    const history = createNavigationHistory();
+    history.record(session(1));
+    history.record(session(2));
+    history.record(session(3));
+    history.go(-1, session(3));
+    history.arrive(session(2));
+    // ws-4 is opened and left before it settles.
+    expect(history.go(-1, session(4))).toEqual(session(2));
+    history.arrive(session(2));
+    expect(history.go(1, session(2))).toEqual(session(4));
+  });
+
   it("keeps stepping back while a previous jump is still landing", () => {
     const history = createNavigationHistory();
     history.record(session(1));
