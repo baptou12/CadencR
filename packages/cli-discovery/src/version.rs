@@ -13,16 +13,24 @@ use crate::types::VersionKey;
 /// first match. Useful for both Claude (`1.2.3 (Claude Code)`) and OpenCode
 /// (`opencode 1.4.3`).
 pub fn parse_version_string(raw: &str) -> Option<VersionKey> {
+    parse_version(raw).map(|(key, _)| key)
+}
+
+/// The first version in `raw` as both a sortable key and the printed text,
+/// keeping any `-suffix` (`2026.08.25-3e8eec8`, `1.0.0-beta.1`).
+fn parse_version(raw: &str) -> Option<(VersionKey, String)> {
     static MATCHER: OnceCell<Regex> = OnceCell::new();
     let regex = MATCHER.get_or_init(|| {
-        Regex::new(r"\b(\d+)\.(\d+)\.(\d+)\b").expect("static semver regex compiles")
+        Regex::new(r"\b(\d+)\.(\d+)\.(\d+)\b(?:-[0-9A-Za-z][0-9A-Za-z.]*)?")
+            .expect("static semver regex compiles")
     });
     let captures = regex.captures(raw)?;
-    Some(VersionKey(
+    let key = VersionKey(
         captures.get(1)?.as_str().parse().ok()?,
         captures.get(2)?.as_str().parse().ok()?,
         captures.get(3)?.as_str().parse().ok()?,
-    ))
+    );
+    Some((key, captures.get(0)?.as_str().to_string()))
 }
 
 pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> {
@@ -35,6 +43,7 @@ pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> 
 /// What one `--version` run printed and how it ended.
 pub(crate) struct VersionProbe {
     pub(crate) version: Option<VersionKey>,
+    pub(crate) version_text: Option<String>,
     output: String,
     success: bool,
 }
@@ -67,8 +76,10 @@ pub(crate) async fn probe_version(command: &Path, args: &[String]) -> Option<Ver
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    let (version, version_text) = parse_version(&combined).unzip();
     Some(VersionProbe {
-        version: parse_version_string(&combined),
+        version,
+        version_text,
         output: combined,
         success: output.status.success(),
     })
@@ -95,6 +106,18 @@ mod tests {
             Some(VersionKey(1, 1, 65))
         );
         assert_eq!(parse_version_string("no version here"), None);
+    }
+
+    #[test]
+    fn keeps_the_printed_build_suffix() {
+        assert_eq!(
+            parse_version("2026.08.25-3e8eec8\n"),
+            Some((VersionKey(2026, 8, 25), "2026.08.25-3e8eec8".to_string()))
+        );
+        assert_eq!(
+            parse_version("2.1.299 (Claude Code)").map(|(_, text)| text),
+            Some("2.1.299".to_string())
+        );
     }
 
     #[tokio::test]

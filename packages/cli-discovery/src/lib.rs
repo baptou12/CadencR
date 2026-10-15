@@ -60,7 +60,8 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
                 return vec![Candidate {
                     path: path.to_path_buf(),
                     canonical,
-                    version: probe.and_then(|probe| probe.version),
+                    version: probe.as_ref().and_then(|probe| probe.version),
+                    version_text: probe.and_then(|probe| probe.version_text),
                     source: CandidateSource::Override,
                 }];
             }
@@ -128,7 +129,10 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
                     return None;
                 }
             }
-            candidate.version = probe.and_then(|probe| probe.version);
+            if let Some(probe) = probe {
+                candidate.version = probe.version;
+                candidate.version_text = probe.version_text;
+            }
             Some(candidate)
         })
         .collect()
@@ -213,12 +217,14 @@ mod tests {
                 path: PathBuf::from("/a/thing"),
                 canonical: PathBuf::from("/a/thing"),
                 version: Some(VersionKey(1, 4, 3)),
+                version_text: None,
                 source: CandidateSource::WellKnown,
             },
             Candidate {
                 path: PathBuf::from("/b/thing"),
                 canonical: PathBuf::from("/b/thing"),
                 version: Some(VersionKey(1, 1, 65)),
+                version_text: None,
                 source: CandidateSource::EnvPath,
             },
         ];
@@ -232,12 +238,14 @@ mod tests {
                 path: PathBuf::from("/a/thing"),
                 canonical: PathBuf::from("/a/thing"),
                 version: Some(VersionKey(1, 0, 0)),
+                version_text: None,
                 source: CandidateSource::WellKnown,
             },
             Candidate {
                 path: PathBuf::from("/b/thing"),
                 canonical: PathBuf::from("/b/thing"),
                 version: Some(VersionKey(1, 0, 0)),
+                version_text: None,
                 source: CandidateSource::EnvPath,
             },
         ];
@@ -255,12 +263,14 @@ mod tests {
                 path: PathBuf::from("/a/thing"),
                 canonical: PathBuf::from("/a/thing"),
                 version: None,
+                version_text: None,
                 source: CandidateSource::Override,
             },
             Candidate {
                 path: PathBuf::from("/b/thing"),
                 canonical: PathBuf::from("/b/thing"),
                 version: Some(VersionKey(0, 0, 1)),
+                version_text: None,
                 source: CandidateSource::WellKnown,
             },
         ];
