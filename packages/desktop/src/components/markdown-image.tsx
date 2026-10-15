@@ -1,4 +1,11 @@
-import { createContext, useContext, type ComponentType, type ReactElement } from "react";
+import {
+  createContext,
+  useContext,
+  type ComponentType,
+  type ReactElement,
+  type ReactEventHandler,
+  type ReactNode,
+} from "react";
 
 export interface MarkdownImageProps {
   src?: string;
@@ -10,14 +17,20 @@ export interface MarkdownImageProps {
 
 /**
  * Component the Markdown renderer delegates `<img>` rendering to. Provided
- * only where images may reference on-disk files (the editor preview resolves
- * repo-relative paths to actual files); left null elsewhere (agent chat,
- * changelog), where images are remote URLs rendered as a plain `<img>`.
+ * where images need fetching outside the renderer's CSP (the editor preview
+ * resolves repo-relative paths to files; pull requests and the changelog proxy
+ * remote images); left null elsewhere (agent chat), where images are rendered
+ * as a plain `<img>`.
  */
 export type MarkdownImageRenderer = ComponentType<MarkdownImageProps>;
 
 const MarkdownImageContext = createContext<MarkdownImageRenderer | null>(null);
 export const MarkdownImageProvider = MarkdownImageContext.Provider;
+
+/** `data:` and `blob:` sources are what the CSP already permits. */
+export function isDirectSource(src: string): boolean {
+  return src.startsWith("data:") || src.startsWith("blob:");
+}
 
 /** A plain, overflow-safe `<img>` — the shared presentation for markdown images. */
 export function PlainMarkdownImage({
@@ -26,7 +39,8 @@ export function PlainMarkdownImage({
   title,
   width,
   height,
-}: MarkdownImageProps): ReactElement {
+  onError,
+}: MarkdownImageProps & { onError?: ReactEventHandler<HTMLImageElement> }): ReactElement {
   return (
     <img
       src={src}
@@ -34,9 +48,34 @@ export function PlainMarkdownImage({
       title={title}
       width={width}
       height={height}
+      onError={onError}
       loading="lazy"
       className="my-2 h-auto max-w-full rounded"
     />
+  );
+}
+
+/**
+ * Inline chip standing in for a proxied image that is loading, deferred, or
+ * failed — the icon says which, and `title` carries a failure's reason.
+ */
+export function MarkdownImageNotice({
+  children,
+  label,
+  title,
+}: {
+  children: ReactNode;
+  label: string;
+  title?: string;
+}): ReactElement {
+  return (
+    <span
+      title={title}
+      className="my-2 inline-flex max-w-full items-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-xs text-muted-foreground"
+    >
+      {children}
+      <span className="truncate">{label}</span>
+    </span>
   );
 }
 

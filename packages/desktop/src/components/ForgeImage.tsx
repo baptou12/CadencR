@@ -25,6 +25,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ImageIcon, ImageOffIcon, Loader2Icon } from "lucide-react";
 import type { ForgeUser } from "@/api/generated";
 import {
+  isDirectSource,
+  MarkdownImageNotice,
   MarkdownImageProvider,
   PlainMarkdownImage,
   type MarkdownImageProps,
@@ -84,11 +86,6 @@ interface ForgeImageState {
   direct: boolean;
   /** A feature's forge is in scope, so a proxied fetch is possible at all. */
   scoped: boolean;
-}
-
-/** `data:` and `blob:` sources are what the CSP already permits. */
-function isDirectSource(src: string): boolean {
-  return src.startsWith("data:") || src.startsWith("blob:");
 }
 
 function useForgeImage(
@@ -179,9 +176,9 @@ function DeferredForgeMarkdownImage({
       {inView ? (
         <LoadedForgeMarkdownImage {...props} />
       ) : (
-        <ForgeImageNotice label={label}>
+        <MarkdownImageNotice label={label}>
           <ImageIcon className="size-3.5 shrink-0" aria-hidden />
-        </ForgeImageNotice>
+        </MarkdownImageNotice>
       )}
     </span>
   );
@@ -192,39 +189,19 @@ function LoadedForgeMarkdownImage(props: MarkdownImageProps): ReactElement {
   const label = props.alt || props.src || "image";
   if (errorMessage) {
     return (
-      <ForgeImageNotice title={errorMessage} label={label}>
+      <MarkdownImageNotice title={errorMessage} label={label}>
         <ImageOffIcon className="size-3.5 shrink-0" aria-hidden />
-      </ForgeImageNotice>
+      </MarkdownImageNotice>
     );
   }
   if (!url) {
     return (
-      <ForgeImageNotice label={label}>
+      <MarkdownImageNotice label={label}>
         <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden />
-      </ForgeImageNotice>
+      </MarkdownImageNotice>
     );
   }
   return <PlainMarkdownImage {...props} src={url} />;
-}
-
-function ForgeImageNotice({
-  children,
-  label,
-  title,
-}: {
-  children: ReactNode;
-  label: string;
-  title?: string;
-}): ReactElement {
-  return (
-    <span
-      title={title}
-      className="my-2 inline-flex max-w-full items-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-xs text-muted-foreground"
-    >
-      {children}
-      <span className="truncate">{label}</span>
-    </span>
-  );
 }
 
 /**
