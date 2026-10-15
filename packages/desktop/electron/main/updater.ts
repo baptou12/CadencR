@@ -1,5 +1,6 @@
 import { app, ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import pkg from "electron-updater";
+import { z } from "zod";
 import type { ChangelogImageBytes } from "../../src/shared/changelog-image";
 import { fetchChangelogImage } from "./changelog-images";
 import { assertTrustedSender } from "./ipc";
@@ -74,8 +75,9 @@ export function registerAutoUpdaterIpc({ getMainWindow, prepareInstallUpdate }: 
     "app:fetch-changelog-image",
     async (event: IpcMainInvokeEvent, src: unknown): Promise<ChangelogImageBytes> => {
       assertTrustedSender(event, getMainWindow);
-      if (typeof src !== "string") throw new Error("Image source must be a string.");
-      return fetchChangelogImage(src);
+      const source = z.string().safeParse(src);
+      if (!source.success) throw new Error("Image source must be a string.");
+      return fetchChangelogImage(source.data);
     },
   );
 }

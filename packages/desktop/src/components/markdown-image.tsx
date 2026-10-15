@@ -3,6 +3,7 @@ import {
   useContext,
   type ComponentType,
   type ReactElement,
+  type ReactEventHandler,
   type ReactNode,
 } from "react";
 
@@ -38,7 +39,8 @@ export function PlainMarkdownImage({
   title,
   width,
   height,
-}: MarkdownImageProps): ReactElement {
+  onError,
+}: MarkdownImageProps & { onError?: ReactEventHandler<HTMLImageElement> }): ReactElement {
   return (
     <img
       src={src}
@@ -46,6 +48,7 @@ export function PlainMarkdownImage({
       title={title}
       width={width}
       height={height}
+      onError={onError}
       loading="lazy"
       className="my-2 h-auto max-w-full rounded"
     />
