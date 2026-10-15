@@ -24,6 +24,7 @@
 
 pub mod adapter;
 mod assets;
+mod command_capture;
 pub mod descriptor;
 mod hooks;
 pub mod installation;

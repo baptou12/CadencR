@@ -1,6 +1,7 @@
 #![allow(clippy::single_match)]
 
 pub mod atomic_file;
+pub mod bounded_command;
 pub mod db;
 pub mod disk_space;
 pub mod env_file;
