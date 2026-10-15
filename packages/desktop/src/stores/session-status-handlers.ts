@@ -22,6 +22,7 @@ import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
 import { applyStorageMaintenanceEvent } from "@/stores/storage-maintenance-store";
+import { applyProviderUpdatesEvent } from "@/stores/provider-updates";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import type { SessionStatusEntry } from "@/stores/session-status-store";
 
@@ -326,6 +327,10 @@ export function handleAppEnvelope(
   }
   if (domain === "app" && action === "remote_connected") {
     showRemoteConnectedToast();
+    return true;
+  }
+  if (domain === "app" && action === "provider_updates") {
+    applyProviderUpdatesEvent(payload);
     return true;
   }
   if (domain === "app" && action === "storage_maintenance") {

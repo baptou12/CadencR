@@ -69,6 +69,9 @@ function handleAppWsOpen(connection: AppWsConnection): void {
   void hydratePrStatuses();
   if (!isBrowserRemote()) {
     ws.send(JSON.stringify(createEnvelope("app", "subscribe.remote_events", {})));
+    // Version checks and update outcomes toast on the host only: updates run
+    // on this machine. The subscription starts with the current status list.
+    ws.send(JSON.stringify(createEnvelope("app", "subscribe.provider_update_events", {})));
   }
 }
 
