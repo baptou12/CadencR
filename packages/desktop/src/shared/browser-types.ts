@@ -247,8 +247,9 @@ export interface BrowserStateSnapshot {
  * Chords forwarded from a focused guest page (a native `WebContentsView`
  * swallows keydown before the renderer can see it, so the main process
  * intercepts these via `before-input-event` and relays them). Covers both
- * browser-chrome chords and the feature-pane switches (⌘⇧A/T/G/E/B), which
- * must still work while the guest page holds keyboard focus.
+ * browser-chrome chords, the feature-pane switches (⌘⇧A/T/G/E/B) and the
+ * ⌘[ / ⌘] history jumps, which must still work while the guest page holds
+ * keyboard focus.
  */
 export type BrowserShortcut =
   | "new-tab"
@@ -270,7 +271,9 @@ export type BrowserShortcut =
   | "pane-terminal"
   | "pane-git"
   | "pane-editor"
-  | "pane-browser";
+  | "pane-browser"
+  | "navigate-back"
+  | "navigate-forward";
 
 export interface BrowserBounds {
   x: number;

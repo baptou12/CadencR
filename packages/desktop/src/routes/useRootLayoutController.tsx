@@ -15,6 +15,7 @@ import { useArchiveFeatureAction } from "@/hooks/useArchiveFeatureAction";
 import { useAutoUpdateBridge } from "@/hooks/useAutoUpdateBridge";
 import { useConnectionWatchdog } from "@/hooks/useConnectionWatchdog";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useNavigationHistory } from "@/hooks/useNavigationHistory";
 import { usePowerBusySignal } from "@/hooks/usePowerBusySignal";
 import { usePowerEvents } from "@/hooks/usePowerEvents";
 import { useRemotePairingToast } from "@/hooks/useRemotePairingToast";
@@ -51,6 +52,7 @@ function useRootEnvironment(isMobile: boolean) {
   useRemoteSleepGuard();
   useAutoUpdateBridge();
   useZoomHotkeys();
+  useNavigationHistory();
   useVisualViewportHeight(isMobile);
   const navigate = useNavigate();
   const queryClient = useQueryClient();

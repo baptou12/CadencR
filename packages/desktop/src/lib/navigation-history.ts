@@ -1,0 +1,50 @@
+import type { WsSessionSearch } from "@/routes/-ws-session-search";
+import type { TabKind } from "@/stores/feature-layout-schema";
+
+/** A spot the user settled on: a plain page, or a conversation and its focused tab. */
+export type NavigationEntry =
+  | { kind: "page"; href: string }
+  | {
+      kind: "session";
+      sessionId: string;
+      search: Omit<WsSessionSearch, "focusTab">;
+      tab: TabKind | null;
+    };
+
+// Bounds memory over a long-running app session; the oldest entries fall off.
+const MAX_ENTRIES = 100;
+
+export function entryKey(entry: NavigationEntry): string {
+  return entry.kind === "page" ? entry.href : `session:${entry.sessionId}:${entry.tab ?? ""}`;
+}
+
+/**
+ * Browser-style back/forward stack. `record` appends where the user settled,
+ * dropping any forward entries; `go` moves the cursor and returns the entry to
+ * restore. Until the next `record`, a jump is still landing, so a further `go`
+ * must not record the in-between location.
+ */
+export function createNavigationHistory() {
+  let entries: NavigationEntry[] = [];
+  let index = -1;
+  let landing = false;
+
+  function record(entry: NavigationEntry): void {
+    landing = false;
+    const current = entries[index];
+    if (current && entryKey(current) === entryKey(entry)) return;
+    entries = [...entries.slice(0, index + 1), entry].slice(-MAX_ENTRIES);
+    index = entries.length - 1;
+  }
+
+  function go(delta: -1 | 1, from: NavigationEntry): NavigationEntry | null {
+    if (!landing) record(from);
+    const target = entries[index + delta];
+    if (!target) return null;
+    index += delta;
+    landing = true;
+    return target;
+  }
+
+  return { record, go };
+}

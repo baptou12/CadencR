@@ -41,6 +41,7 @@ vi.mock("@tanstack/react-router", () => ({
       </button>
     );
   },
+  useMatch: () => undefined,
   useNavigate: () => mocks.mockNavigate,
   useRouterState: (options?: {
     select?: (state: {
