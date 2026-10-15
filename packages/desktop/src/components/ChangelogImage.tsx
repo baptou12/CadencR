@@ -6,7 +6,7 @@
  * blocked before the request leaves. The Electron main process fetches the
  * bytes (`electron/main/changelog-images.ts`) and they render from a `blob:` URL.
  */
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ImageOffIcon, Loader2Icon } from "lucide-react";
 import {
@@ -45,7 +45,7 @@ export function ChangelogImage(props: MarkdownImageProps): ReactElement {
   const url = useObjectUrl(query.data);
   const label = props.alt || src || "image";
 
-  if (direct) return <PlainMarkdownImage {...props} />;
+  if (direct) return <DisplayChangelogImage key={src} {...props} />;
   if (query.error || !src) {
     const reason = query.error
       ? apiErrorMessage(query.error, "Could not load this image").replace(IPC_ERROR_PREFIX, "")
@@ -63,5 +63,18 @@ export function ChangelogImage(props: MarkdownImageProps): ReactElement {
       </MarkdownImageNotice>
     );
   }
-  return <PlainMarkdownImage {...props} src={url} />;
+  return <DisplayChangelogImage key={src} {...props} src={url} />;
+}
+
+/** Fetching bytes can succeed even when the browser cannot decode them. */
+function DisplayChangelogImage(props: MarkdownImageProps): ReactElement {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <MarkdownImageNotice title="Could not display this image." label={props.alt || "image"}>
+        <ImageOffIcon className="size-3.5 shrink-0" aria-hidden />
+      </MarkdownImageNotice>
+    );
+  }
+  return <PlainMarkdownImage {...props} onError={() => setFailed(true)} />;
 }

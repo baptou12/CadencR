@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { render } from "@/test-utils";
 import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
 } from "@/lib/desktop-bridge";
 import { ChangelogBody } from "./ChangelogBody";
+import { ChangelogImage } from "./ChangelogImage";
 
 const SCREENSHOT =
   "https://raw.githubusercontent.com/merkr-software/cadencr/v0.14.0/docs/changelog/v0.14.0/sidebar.png";
@@ -110,5 +111,31 @@ describe("ChangelogBody images", () => {
     const notice = await screen.findByTitle("GitHub returned HTTP 404 for this image.");
     expect(notice).toHaveTextContent("Missing shot");
     expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("names an image that fails decoding after its bytes were fetched", async () => {
+    render(
+      <ChangelogBody state={{ kind: "markdown", markdown: `![Damaged shot](${SCREENSHOT})` }} />,
+    );
+    fireEvent.error(await screen.findByAltText("Damaged shot"));
+
+    expect(await screen.findByTitle("Could not display this image.")).toHaveTextContent(
+      "Damaged shot",
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("tries the new source when a failed image is replaced", async () => {
+    const { rerender } = render(<ChangelogImage src={SCREENSHOT} alt="Shot" />);
+    fireEvent.error(await screen.findByAltText("Shot"));
+    await screen.findByTitle("Could not display this image.");
+
+    rerender(<ChangelogImage src={`${SCREENSHOT}?replacement`} alt="Replacement" />);
+
+    expect(await screen.findByAltText("Replacement")).toHaveAttribute(
+      "src",
+      "blob:changelog-image",
+    );
+    expect(screen.queryByTitle("Could not display this image.")).toBeNull();
   });
 });
