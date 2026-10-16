@@ -28,6 +28,8 @@ mod spawn_resolve;
 mod spawn_session;
 mod spawn_thinking;
 
+pub(crate) use scope::is_active_db_state;
+
 /// Trim a borrowed optional string, treating whitespace-only values as absent.
 /// Shared by the spawn submodules (`spawn_session`, `spawn_resolve`, `spawn_persist`).
 fn trimmed_optional(value: Option<&str>) -> Option<String> {

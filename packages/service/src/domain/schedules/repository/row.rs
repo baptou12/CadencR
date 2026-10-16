@@ -1,5 +1,6 @@
 use crate::domain::schedules::models::{
-    Schedule, ScheduleContext, ScheduleLastRun, ScheduleTarget, TargetKind,
+    Schedule, ScheduleCheckStatus, ScheduleCondition, ScheduleContext, ScheduleLastCheck,
+    ScheduleLastRun, ScheduleTarget, TargetKind,
 };
 use crate::domain::schedules::recurrence::Recurrence;
 use crate::error::AppError;
@@ -14,6 +15,9 @@ pub const SELECT: &str = "SELECT
         s.worktree_mode, s.reuse_branch, s.base_branch,
         s.recurrence_kind, s.interval_seconds, s.time_of_day, s.weekdays,
         s.day_of_month, s.timezone, s.enabled,
+        s.condition_command, s.condition_timeout_seconds,
+        strftime('%Y-%m-%dT%H:%M:%SZ', s.last_check_at) AS last_check_at,
+        s.last_check_status, s.last_check_exit_code,
         strftime('%Y-%m-%dT%H:%M:%SZ', s.next_run_at) AS next_run_at,
         strftime('%Y-%m-%dT%H:%M:%SZ', s.last_run_at) AS last_run_at,
         s.last_status, s.last_error, s.last_feature_id, s.run_count,
@@ -52,6 +56,11 @@ pub struct ScheduleRow {
     pub day_of_month: Option<i64>,
     pub timezone: String,
     pub enabled: i64,
+    pub condition_command: Option<String>,
+    pub condition_timeout_seconds: Option<i64>,
+    pub last_check_at: Option<String>,
+    pub last_check_status: Option<ScheduleCheckStatus>,
+    pub last_check_exit_code: Option<i64>,
     pub next_run_at: Option<String>,
     pub last_run_at: Option<String>,
     pub last_status: Option<String>,
@@ -88,6 +97,14 @@ impl ScheduleRow {
             }),
             _ => None,
         };
+        let last_check = match (self.last_check_at, self.last_check_status) {
+            (Some(at), Some(status)) => Some(ScheduleLastCheck {
+                at,
+                status,
+                exit_code: self.last_check_exit_code,
+            }),
+            _ => None,
+        };
         Ok(Schedule {
             id: self.id,
             name: self.name,
@@ -108,9 +125,14 @@ impl ScheduleRow {
             },
             completed: !recurrence.kind.repeats() && self.next_run_at.is_none(),
             recurrence,
+            condition: self.condition_command.map(|command| ScheduleCondition {
+                command,
+                timeout_seconds: self.condition_timeout_seconds,
+            }),
             enabled: self.enabled != 0,
             next_run_at: self.next_run_at,
             last_run,
+            last_check,
             run_count: self.run_count,
             context: ScheduleContext {
                 project_id: self.context_project_id,

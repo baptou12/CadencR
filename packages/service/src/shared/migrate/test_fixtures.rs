@@ -170,6 +170,22 @@ pub(crate) async fn ensure_user_message_count_prerequisites(pool: &SqlitePool) {
     if migration_applied(pool, 20260712200000).await {
         ensure_column(pool, "agent_messages", "message_uuid", "TEXT").await;
     }
+    ensure_schedule_condition_prerequisites(pool).await;
+}
+
+/// The command-condition migration (20261016120000) adds columns to
+/// `schedules`. Fixtures baselined after the runtime-pins migration
+/// (20260725101500) never created it, because nothing later touched it. An
+/// `ADD COLUMN` needs only the table to exist, so the bare shape suffices.
+async fn ensure_schedule_condition_prerequisites(pool: &SqlitePool) {
+    if migration_applied(pool, 20260725101500).await {
+        sqlx::raw_sql(
+            "CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
 }
 
 /// Panics on an unseeded fixture: "not applied" would then silently skip the

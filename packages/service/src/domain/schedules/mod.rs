@@ -1,4 +1,6 @@
+pub mod condition;
 pub mod dispatch;
+pub mod fire;
 pub mod models;
 pub mod pins;
 pub mod planner;
