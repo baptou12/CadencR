@@ -335,3 +335,26 @@ html[data-animations="off"] :is(.sidebar-status-working, .sidebar-status-dot-wor
   outline-offset: 1px;
   border-radius: 4px;
 }
+
+/* Manual order: where a dragged conversation would land, a 2px primary line
+ * across the gap above or below the hovered row (`useRowReorder`), and the
+ * dragged row stepping back while it travels. */
+.sidebar-row[data-drop-position]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+  pointer-events: none;
+  z-index: 1;
+}
+.sidebar-row[data-drop-position="before"]::before {
+  top: -2px;
+}
+.sidebar-row[data-drop-position="after"]::before {
+  bottom: -2px;
+}
+.sidebar-row[data-dragging] {
+  opacity: 0.45;
+}

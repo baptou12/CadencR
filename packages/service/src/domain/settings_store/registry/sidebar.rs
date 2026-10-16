@@ -64,7 +64,7 @@ pub(super) fn sidebar_display_spec(key: &str) -> Option<SettingSpec> {
             Some("project"),
         ),
         "sidebar_conversation_sort" => SettingSpec::new(
-            ValueKind::Enum(&["activity", "created", "title"]),
+            ValueKind::Enum(&["activity", "created", "title", "manual"]),
             Some("activity"),
         ),
         "sidebar_project_sort" => {
@@ -146,6 +146,9 @@ mod tests {
         assert_eq!(for_me_ack.default, Some("open"));
         assert!(for_me_ack.is_valid("manual"));
         assert!(!for_me_ack.is_valid("never"));
+        let conversation_sort = workspace_spec("sidebar_conversation_sort").unwrap();
+        assert!(conversation_sort.is_valid("manual"));
+        assert!(!conversation_sort.is_valid("name"));
         let auto_collapse = workspace_spec("sidebar_auto_collapse").unwrap();
         assert_eq!(auto_collapse.default, Some("false"));
         let lens = workspace_spec("sidebar_lens").unwrap();

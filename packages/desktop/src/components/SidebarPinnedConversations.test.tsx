@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
   return {
     navigate,
     skipProjectAutoExpand: vi.fn(),
+    manualOrder: [] as number[],
     queue: [] as { feature: Feature; state: string }[],
     setPinned: (features: Feature[]) => {
       pinned = features;
@@ -48,6 +49,11 @@ vi.mock("@/lib/project-auto-expand", () => ({
 // Ordering, ports, and activity have their own coverage; keep backend order and no badges.
 vi.mock("@/hooks/useStableFeatureOrder", () => ({
   useStableFeatureOrder: (features: Feature[]) => features,
+}));
+
+vi.mock("@/hooks/useManualConversationOrder", () => ({
+  useManualConversationOrder: () => mocks.manualOrder,
+  moveConversation: vi.fn(),
 }));
 
 vi.mock("@/hooks/useFeaturePorts", () => ({
@@ -88,6 +94,8 @@ vi.mock("@/components/PinnedConversationRow", () => ({
 import { SidebarPinnedConversations } from "./SidebarPinnedConversations";
 import { useSidebarFilterStore } from "@/stores/sidebar-filter-store";
 import { useSidebarSurfaceStore } from "@/stores/sidebar-surface-store";
+import { useSidebarConfigStore } from "@/stores/sidebar-config-store";
+import { DEFAULT_SIDEBAR_CONFIG } from "@/lib/sidebar-config";
 import {
   collectSidebarNavItems,
   useSidebarKeyboardNavigation,
@@ -132,7 +140,9 @@ describe("SidebarPinnedConversations", () => {
     mocks.navigate.mockClear();
     mocks.skipProjectAutoExpand.mockClear();
     mocks.queue = [];
+    mocks.manualOrder = [];
     mocks.setPinned([]);
+    useSidebarConfigStore.setState({ config: DEFAULT_SIDEBAR_CONFIG });
     useSidebarFilterStore.getState().close();
     useSidebarSurfaceStore.setState({
       expanded: { "for-me": true, working: true, recent: true, pinned: true },
@@ -215,6 +225,23 @@ describe("SidebarPinnedConversations", () => {
     expect(screen.getByText("Pinned")).toBeInTheDocument();
     expect(screen.getByText("open-1")).toBeInTheDocument();
     expect(screen.getByText("open-2")).toBeInTheDocument();
+  });
+
+  it("follows the manual rank under the manual sort only", () => {
+    mocks.setPinned([feature(1, 5), feature(2, 9), feature(3, 9)]);
+    mocks.manualOrder = [3, 1];
+    const openOrder = () =>
+      screen.getAllByText(/^open-\d$/).map((button) => button.textContent ?? "");
+    const { unmount } = renderSection();
+    expect(openOrder()).toEqual(["open-1", "open-2", "open-3"]);
+    unmount();
+
+    useSidebarConfigStore.setState({
+      config: { ...DEFAULT_SIDEBAR_CONFIG, conversationSort: "manual" },
+    });
+    renderSection();
+    // 2 is unranked (pinned since the last drag): it shows first.
+    expect(openOrder()).toEqual(["open-2", "open-3", "open-1"]);
   });
 
   it("navigates to the conversation using its own project's path", async () => {

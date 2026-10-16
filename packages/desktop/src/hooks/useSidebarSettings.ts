@@ -1,11 +1,12 @@
 import { useCallback, useMemo } from "react";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   getGetWorkspaceSettingQueryKey,
   getGetWorkspaceSettingQueryOptions,
   useSetWorkspaceSetting,
   useSetWorkspaceSettingsBatch,
+  type Setting,
   type SettingValueResponse,
 } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -88,6 +89,18 @@ export function useSetSidebarOption(): SetSidebarOption {
   );
 }
 
+/** Seeds each written key's cache from a batch write's response (absent means cleared). */
+export function seedSettingsFromBatch(
+  queryClient: QueryClient,
+  keys: readonly string[],
+  saved: readonly Setting[],
+): void {
+  for (const key of keys) {
+    const value = saved.find((setting) => setting.key === key)?.value ?? null;
+    queryClient.setQueryData(getGetWorkspaceSettingQueryKey(key), { value });
+  }
+}
+
 interface SidebarConfigWrites {
   /** Clears every display option, so the defaults (the Classic preset) apply. */
   reset: () => void;
@@ -108,12 +121,7 @@ export function useSidebarConfigWrites(): SidebarConfigWrites {
   const queryClient = useQueryClient();
   const { mutate, isPending } = useSetWorkspaceSettingsBatch({
     mutation: {
-      onSuccess: (settings) => {
-        for (const key of SIDEBAR_SETTING_KEYS) {
-          const value = settings.find((setting) => setting.key === key)?.value ?? null;
-          queryClient.setQueryData(getGetWorkspaceSettingQueryKey(key), { value });
-        }
-      },
+      onSuccess: (settings) => seedSettingsFromBatch(queryClient, SIDEBAR_SETTING_KEYS, settings),
       onError: (error) =>
         toast.error(`Could not update the sidebar: ${apiErrorMessage(error, "Unknown error")}`),
     },

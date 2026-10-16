@@ -20,6 +20,7 @@ import {
 } from "@/hooks/useProjectFeatureRowState";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
 import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
+import { useRowReorder } from "@/hooks/useRowReorder";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",
@@ -249,6 +250,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
     archive: () => props.onArchiveOrDelete(feature.id),
     pin: state.isArchived ? undefined : () => props.onTogglePin(feature.id, !state.isPinned),
   });
+  const reorder = useRowReorder(navRef, feature.id, props.isEditingLabel);
 
   return (
     <ContextMenu>
@@ -262,6 +264,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
           data-nav-id={String(feature.id)}
           data-nav-project-id={String(projectId)}
           data-feature-depth={hierarchyDepth}
+          {...reorder}
           className={`sidebar-row group/feature relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 outline-none transition-colors hover:bg-sidebar-accent ${
             state.isActive ? "bg-sidebar-accent" : ""
           } ${state.isArchived ? "opacity-50" : ""}`}

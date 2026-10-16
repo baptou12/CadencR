@@ -139,12 +139,14 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
   },
   {
     id: "conversationSort",
-    description: "The order of conversations within a project or group.",
+    description:
+      "The order of conversations within a project or group. Dragging a conversation switches to Manual; the other sorts come back by choosing them.",
     label: "Sort conversations",
     options: [
       { value: "activity", label: "Activity", title: "Last message first" },
       { value: "created", label: "Created", title: "Newest conversation first" },
       { value: "title", label: "Title", title: "Alphabetical" },
+      { value: "manual", label: "Manual", title: "The order you drag them into" },
     ],
   },
   {

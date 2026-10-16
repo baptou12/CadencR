@@ -18,6 +18,7 @@ import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { buildFeatureForest } from "@/lib/feature-hierarchy";
 import { normalizeLabel, uniqueLabels } from "@/lib/feature-labels";
 import { sortConversations } from "@/lib/sidebar-lens";
+import { flattenForestIds, projectReorderGroups } from "@/lib/sidebar-manual-order";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { FEATURE_WORKTREES_STALE_MS } from "@/lib/sidebar-queries";
 import type { ProjectFilterMatch } from "@/hooks/useSidebarFilterMatches";
@@ -33,6 +34,7 @@ import { useFeatureRowMutations } from "@/hooks/useFeatureRowMutations";
 import { useArchivedSectionOpen } from "@/hooks/useArchivedSectionOpen";
 import { SIDEBAR_COLLAPSED_SUBTREES_KEY, usePersistedIdSet } from "@/hooks/usePersistedIdSet";
 import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
+import { useManualConversationOrder } from "@/hooks/useManualConversationOrder";
 import { useDormantSplit } from "@/hooks/useDormantSplit";
 import { useFeatureArchiveConfirmation } from "@/components/useFeatureArchiveConfirmation";
 
@@ -82,15 +84,7 @@ function useProjectFeaturesData({
       isFiltering ? [] : features.filter((feature) => feature.status === ARCHIVED_FEATURE_STATUS),
     [features, isFiltering],
   );
-  const sort = useSidebarOption("conversationSort");
-  const shownFeatures = useMemo(
-    () =>
-      sortConversations(
-        filterMatch ? activeFeatures.filter((f) => filterMatch.has(f.id)) : activeFeatures,
-        sort,
-      ),
-    [activeFeatures, filterMatch, sort],
-  );
+  const shownFeatures = useSortedShownFeatures(activeFeatures, filterMatch);
   const worktreeData = useMemo(() => {
     const worktreeFeatureIds = new Set<number>();
     const liveWorktreeFeatureIds = new Set<number>();
@@ -108,7 +102,7 @@ function useProjectFeaturesData({
   );
   const { awake: activeForest, dormant } = useDormantSplit(forest, activeFeatureId, isFiltering);
   const dormantFeatures = useMemo(() => dormant.map((node) => node.feature), [dormant]);
-  const orderedIds = useMemo(() => forest.map((node) => node.feature.id), [forest]);
+  const orderedIds = useMemo(() => flattenForestIds(forest), [forest]);
   const rootNodeByFeatureId = useMemo(
     () => new Map(forest.map((node) => [node.feature.id, node])),
     [forest],
@@ -121,6 +115,10 @@ function useProjectFeaturesData({
         projectPath,
       ),
     [activeForest, projectPath, worktreeData.worktreeByFeatureId],
+  );
+  const reorderGroups = useMemo(
+    () => projectReorderGroups(groupedFeatures, dormantFeatures, forest),
+    [dormantFeatures, forest, groupedFeatures],
   );
   const getLiveTitle = useCallback(
     (id: number): string | undefined =>
@@ -147,6 +145,7 @@ function useProjectFeaturesData({
     labelSuggestions,
     orderedIds,
     portsByFeatureId,
+    reorderGroups,
     rootNodeByFeatureId,
     shellCountsByFeatureId,
     shownFeatures,
@@ -154,6 +153,24 @@ function useProjectFeaturesData({
 }
 
 type ProjectFeaturesData = ReturnType<typeof useProjectFeaturesData>;
+
+/** The active conversations the tree shows: the filter's matches, in the chosen sort. */
+function useSortedShownFeatures(
+  activeFeatures: readonly Feature[],
+  filterMatch: ProjectFilterMatch | undefined,
+): readonly Feature[] {
+  const sort = useSidebarOption("conversationSort");
+  const manualOrder = useManualConversationOrder();
+  return useMemo(
+    () =>
+      sortConversations(
+        filterMatch ? activeFeatures.filter((f) => filterMatch.has(f.id)) : activeFeatures,
+        sort,
+        manualOrder,
+      ),
+    [activeFeatures, filterMatch, manualOrder, sort],
+  );
+}
 
 function useProjectFeatureLabels(data: ProjectFeaturesData) {
   const [editingFeatureId, setEditingFeatureId] = useState<number | null>(null);
@@ -345,6 +362,7 @@ export function useProjectFeaturesController(props: ProjectFeaturesProps) {
     rootNodeByFeatureId: data.rootNodeByFeatureId,
     renderFeature,
     renderSubtree,
+    reorderGroups: data.reorderGroups,
     setConfirmFeatureId,
     showArchived,
     toggleArchived,
