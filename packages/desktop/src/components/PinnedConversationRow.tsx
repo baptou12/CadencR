@@ -1,3 +1,4 @@
+import type { FeatureNavigate } from "@/lib/feature-focus-handoff";
 import {
   memo,
   useCallback,
@@ -18,6 +19,7 @@ import {
 } from "@/components/SidebarRowActionsProvider";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
+import { useOpenFeaturePr } from "@/hooks/useOpenFeaturePr";
 import { useRowLabelEditor } from "@/hooks/useRowLabelEditor";
 import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
 import { useRowReorder, type RowReorderProps } from "@/hooks/useRowReorder";
@@ -41,7 +43,7 @@ interface PinnedConversationRowProps {
   shellCount?: number;
   hasLiveWorktree?: boolean;
   worktree?: FeatureWorktreeInfo;
-  onNavigate: (feature: Feature) => void;
+  onNavigate: FeatureNavigate;
   /** Pinned rows offer unpinning on hover; other cross-project rows (For me) don't. */
   showUnpin?: boolean;
   /** "For me" rows name what to do next under their title. */
@@ -85,6 +87,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
   );
   const { isActive, prefetchFeature } = state;
   const handleOpenPort = useOpenFeaturePort(feature, onNavigate);
+  const handleOpenPr = useOpenFeaturePr(feature, onNavigate);
   const actions = useSidebarRowActions();
   const label = useRowLabelEditor(feature);
   const reorder = useCrossProjectRowControls(navRef, actions, feature, state, label);
@@ -139,14 +142,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
           isActive={isActive}
           badgeRef={badgeRef}
           onOpenConversation={handleOpenConversation}
-          actions={
-            nextAction ? (
-              <SidebarForMeDoneAction featureId={feature.id} kind={nextAction} />
-            ) : (
-              showUnpin &&
-              actions && <UnpinAction onUnpin={() => actions.togglePin(feature.id, false)} />
-            )
-          }
+          actions={rowHoverAction(feature.id, nextAction, showUnpin, actions)}
           nextAction={nextAction}
           prStatus={state.prStatus}
           gitStats={state.gitStats}
@@ -156,11 +152,25 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
           ports={ports}
           labelEditor={label.editor}
           onOpenPort={handleOpenPort}
+          onOpenPr={handleOpenPr}
         />
       </div>
     </CrossProjectRowMenu>
   );
 });
+
+/** The row's hover action: "done" for a For me entry, else unpin where offered. */
+function rowHoverAction(
+  featureId: number,
+  nextAction: PinnedConversationRowProps["nextAction"],
+  showUnpin: boolean,
+  actions: ReturnType<typeof useSidebarRowActions>,
+): ReactNode {
+  if (nextAction) return <SidebarForMeDoneAction featureId={featureId} kind={nextAction} />;
+  return (
+    showUnpin && actions && <UnpinAction onUnpin={() => actions.togglePin(featureId, false)} />
+  );
+}
 
 /**
  * The row shortcuts (pin, archive, label) through the sidebar's row actions,
@@ -194,7 +204,7 @@ interface CrossProjectRowMenuProps {
   shellCount: number;
   browserCount: number;
   downloadCount: number;
-  onNavigate: (feature: Feature) => void;
+  onNavigate: FeatureNavigate;
   onStartLabelEdit: () => void;
   children: ReactElement;
 }

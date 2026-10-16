@@ -40,6 +40,7 @@ fn empty_snapshot(feature_id: i64, target_branch: &str) -> GitStatusSnapshot {
         compare_url: None,
         action_label: None,
         shared_with: Vec::<SharedFeatureRef>::new(),
+        thread_branches: Vec::new(),
         computed_at: chrono::Utc::now().timestamp_millis(),
     }
 }
@@ -134,6 +135,7 @@ async fn compute_status(
         compare_url,
         action_label,
         shared_with: Vec::new(),
+        thread_branches: Vec::new(),
         computed_at: chrono::Utc::now().timestamp_millis(),
     })
 }
@@ -222,7 +224,17 @@ fn derive_provider_fields(
 
 #[cfg(test)]
 mod tests {
+    use super::super::DETACHED_HEAD;
     use super::*;
+
+    #[test]
+    fn a_detached_head_has_no_checked_out_branch() {
+        let mut snapshot = empty_snapshot(1, "main");
+        snapshot.current_branch = DETACHED_HEAD.to_string();
+        assert_eq!(snapshot.checked_out_branch(), None);
+        snapshot.current_branch = "feature/a".to_string();
+        assert_eq!(snapshot.checked_out_branch().as_deref(), Some("feature/a"));
+    }
 
     #[test]
     fn provider_fields_none_when_no_remote() {

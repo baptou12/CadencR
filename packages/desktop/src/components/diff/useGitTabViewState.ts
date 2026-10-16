@@ -10,7 +10,7 @@ import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { apiErrorMessage } from "@/lib/api-errors";
 import type { GitViewMode } from "./GitTabToggle";
 
-const GIT_VIEW_MODE_SETTING = "git_view_mode";
+export const GIT_VIEW_MODE_SETTING = "git_view_mode";
 const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
 
 export function isGitViewMode(value: string | undefined): value is GitViewMode {

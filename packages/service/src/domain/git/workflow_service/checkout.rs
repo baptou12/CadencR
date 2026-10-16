@@ -70,7 +70,7 @@ async fn validate_checkout(
     let status = run_git_safe_refs(&["status"], &["--porcelain", "-uno"], &[], repo).await?;
     let dirty_files = parse_porcelain_dirty_files(&status);
     if dirty_files.is_empty() {
-        return Ok(success());
+        return Ok(SuccessResponse::ok());
     }
 
     let diff = run_git_safe_refs(
@@ -90,7 +90,7 @@ async fn validate_checkout(
         .filter(|p| diff_files.contains(p.as_str()))
         .collect();
     if overlap.is_empty() {
-        return Ok(success());
+        return Ok(SuccessResponse::ok());
     }
     let mut overlap = overlap;
     overlap.sort();
@@ -102,7 +102,7 @@ async fn checkout(state: &AppState, body: CheckoutBody) -> Result<SuccessRespons
     let (project_path, resolved) = prepare(state, body.project_id, &body.branch).await?;
     let repo = Path::new(&project_path);
     run_git_capture(&["checkout"], &[], &[&resolved], repo).await?;
-    Ok(success())
+    Ok(SuccessResponse::ok())
 }
 
 /// Validate inputs, look up the project path, and resolve the user-supplied
@@ -133,14 +133,6 @@ pub(crate) async fn resolve_ref(repo: &Path, branch: &str) -> Result<String, App
     Err(AppError::GitCommandError(format!(
         "error: pathspec '{branch}' did not match any file(s) known to git"
     )))
-}
-
-fn success() -> SuccessResponse {
-    SuccessResponse {
-        success: true,
-        error: None,
-        blocked_reason: None,
-    }
 }
 
 /// Parse `git status --porcelain -uno` (tracked-only). Porcelain v1 lines

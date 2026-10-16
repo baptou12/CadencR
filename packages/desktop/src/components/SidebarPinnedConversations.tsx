@@ -1,3 +1,4 @@
+import type { FeatureNavigateOptions } from "@/lib/feature-focus-handoff";
 import { useCallback, useMemo, useRef, type ReactElement } from "react";
 import { PinIcon } from "lucide-react";
 import { useListPinnedFeatures, type Feature } from "@/api/generated";
@@ -52,9 +53,9 @@ export function SidebarPinnedConversations({
   const crossProjectNavigate = useCrossProjectNavigate(activeFeatureId, onSelectFeature);
   // Opening from the pinned section must not unfold the parent project.
   const handleNavigate = useCallback(
-    (feature: Feature): void => {
+    (feature: Feature, options?: FeatureNavigateOptions): void => {
       skipProjectAutoExpand(feature.project_id);
-      crossProjectNavigate(feature);
+      crossProjectNavigate(feature, options);
     },
     [crossProjectNavigate],
   );

@@ -11,13 +11,14 @@ mod poller;
 mod provider;
 mod repository;
 pub mod routes;
+mod snapshot;
 
 pub use activity::ForgeActivityTracker;
 pub(crate) use auth::{forge_to_app_error, host_configs, resolve_credentials};
 pub use auth::{ForgeAuthStore, FORGE_HOSTS_SETTING};
 pub use cache::ForgeStatusCache;
 pub use http::ForgeHttp;
-pub use poller::spawn;
+pub use poller::{request_refresh, spawn};
 pub use provider::*;
 
 use crate::domain::git::host::GitHost;

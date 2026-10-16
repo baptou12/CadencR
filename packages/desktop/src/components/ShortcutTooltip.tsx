@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 interface ShortcutTooltipProps {
   label: string;
+  /** Richer bubble body than `label`, which still names the tooltip for assistive tech. */
+  content?: ReactNode;
   keys?: string[];
   children: ReactNode;
   /** Align tooltip to the right edge instead of centering */
@@ -41,6 +43,7 @@ interface ShortcutTooltipProps {
  */
 export function ShortcutTooltip({
   label,
+  content,
   keys,
   children,
   alignRight,
@@ -98,7 +101,7 @@ export function ShortcutTooltip({
           </div>
         </TooltipTrigger>
         <TooltipContent side={side} align={align} aria-label={`${label} tooltip`}>
-          <span>{label}</span>
+          {content ?? <span>{label}</span>}
           {keys?.length ? <KbdShortcut keys={keys} size="sm" /> : null}
         </TooltipContent>
       </Tooltip>

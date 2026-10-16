@@ -1,3 +1,4 @@
+import type { FeatureNavigate } from "@/lib/feature-focus-handoff";
 import {
   memo,
   useCallback,
@@ -19,6 +20,7 @@ import {
   type ProjectFeatureRowState,
 } from "@/hooks/useProjectFeatureRowState";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
+import { useOpenFeaturePr } from "@/hooks/useOpenFeaturePr";
 import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
 import { useRowReorder } from "@/hooks/useRowReorder";
 
@@ -53,7 +55,7 @@ interface ProjectFeatureRowProps {
   labelDraft: string;
   labelSuggestions: readonly string[];
   isSavingLabel: boolean;
-  onNavigate: (feature: Feature) => void;
+  onNavigate: FeatureNavigate;
   onStartLabelEdit: (feature: Feature) => void;
   onLabelDraftChange: (value: string) => void;
   onSaveLabel: (featureId: number, override?: string) => void;
@@ -80,6 +82,7 @@ interface FeatureRowDetailsProps {
   state: ProjectFeatureRowState;
   onOpenConversation: () => void;
   onOpenPort: (port: number) => void;
+  onOpenPr: (prNumber: number | null) => void;
   badgeRef: RefObject<HTMLSpanElement | null>;
 }
 
@@ -88,6 +91,7 @@ function FeatureRowDetails({
   state,
   onOpenConversation,
   onOpenPort,
+  onOpenPr,
   badgeRef,
 }: FeatureRowDetailsProps): ReactElement {
   const {
@@ -150,6 +154,7 @@ function FeatureRowDetails({
           : undefined
       }
       onOpenPort={onOpenPort}
+      onOpenPr={onOpenPr}
     />
   );
 }
@@ -245,6 +250,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
   }, [feature, onNavigate]);
 
   const handleOpenPort = useOpenFeaturePort(feature, onNavigate);
+  const handleOpenPr = useOpenFeaturePr(feature, onNavigate);
   useSidebarRowActionListener(navRef, {
     label: () => onStartLabelEdit(feature),
     archive: () => props.onArchiveOrDelete(feature.id),
@@ -283,6 +289,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow(
             state={state}
             onOpenConversation={handleOpenConversation}
             onOpenPort={handleOpenPort}
+            onOpenPr={handleOpenPr}
             badgeRef={badgeRef}
           />
         </div>
