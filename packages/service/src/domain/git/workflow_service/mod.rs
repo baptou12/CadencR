@@ -4,7 +4,7 @@
 //!
 //! - [`branches`]: `GET /api/git/branches` and the worktree-attachment join.
 //! - [`status`]: `GET /api/git/status`, `GET /api/git/compare-url`, plus the
-//!   shared `enrich_with_sharing` helper used by the file-watcher.
+//!   shared `enrich_snapshot` helper used by the file-watcher.
 //! - [`target_branch`]: `PATCH /api/features/{id}/target-branch` and the
 //!   `resolve_target_branch` fallback chain (also called by the watcher).
 //! - [`commit_push`]: `POST /api/git/commit`, `GET /api/git/uncommitted-files`.
@@ -35,7 +35,8 @@ pub use commit_push::{commit, get_uncommitted_files};
 pub use default_branch::{resolve_default_branch, same_branch_identity};
 pub use merge::{merge_feature_branch, MergeFeatureBranchBody};
 pub use push::{push, push_input};
-pub use status::{enrich_with_sharing, get_compare_url, get_git_status};
+pub use status::{enrich_snapshot, get_compare_url, get_git_status};
+pub(crate) use target_branch::branch_exists;
 pub use target_branch::{resolve_target_branch, update_target_branch};
 pub(crate) use update_branch::resolve_configured_update_target;
 pub use update_branch::{
@@ -48,8 +49,6 @@ use crate::app_state::AppState;
 use crate::domain::git::mutation_guard::GitMutationGuardError;
 use crate::error::AppError;
 use crate::shared::git_cli::run_git_safe_refs;
-
-const SETTING_TARGET_BRANCH: &str = "target_branch";
 
 pub(crate) fn mutation_guard_error(error: GitMutationGuardError) -> AppError {
     let message = error.to_string();

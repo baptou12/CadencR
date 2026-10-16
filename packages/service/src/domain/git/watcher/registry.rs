@@ -43,12 +43,8 @@ impl GitWatcherRegistry {
         let (worktree_path, target_branch) = resolve_paths(state, feature_id).await?;
         let mut snapshot =
             git_status::compute_status_or_empty(&worktree_path, feature_id, &target_branch).await?;
-        workflow_service::enrich_with_sharing(
-            state,
-            &mut snapshot,
-            &worktree_path.to_string_lossy(),
-        )
-        .await;
+        workflow_service::enrich_snapshot(state, &mut snapshot, &worktree_path.to_string_lossy())
+            .await;
 
         if !crate::shared::git_context::has_git_metadata(&worktree_path).await? {
             return Ok(snapshot);

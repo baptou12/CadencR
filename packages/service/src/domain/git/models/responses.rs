@@ -159,6 +159,16 @@ pub struct SuccessResponse {
     pub blocked_reason: Option<String>,
 }
 
+impl SuccessResponse {
+    pub fn ok() -> Self {
+        Self {
+            success: true,
+            error: None,
+            blocked_reason: None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateWorktreeResponse {
     pub worktree_path: String,

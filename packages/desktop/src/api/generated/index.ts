@@ -631,6 +631,105 @@ export interface BranchInfo {
   name: string;
 }
 
+/**
+ * How a branch came to belong to a conversation.
+ */
+export type BranchOrigin = (typeof BranchOrigin)[keyof typeof BranchOrigin];
+
+export const BranchOrigin = {
+  provisioned: "provisioned",
+  checked_out: "checked_out",
+  agent: "agent",
+  manual: "manual",
+  head: "head",
+} as const;
+
+export type CiState = (typeof CiState)[keyof typeof CiState];
+
+export const CiState = {
+  none: "none",
+  running: "running",
+  passing: "passing",
+  failing: "failing",
+} as const;
+
+export interface CiCheck {
+  name: string;
+  state: CiState;
+  /** @nullable */
+  url?: string | null;
+}
+
+export interface CiRollup {
+  checks: CiCheck[];
+  state: CiState;
+}
+
+export type BranchPrCi = null | CiRollup;
+
+export interface ForgeUser {
+  /** @nullable */
+  avatar_url?: string | null;
+  /** @nullable */
+  display_name?: string | null;
+  username: string;
+}
+
+export type ReviewState = (typeof ReviewState)[keyof typeof ReviewState];
+
+export const ReviewState = {
+  approved: "approved",
+  changes_requested: "changes_requested",
+  pending: "pending",
+  none: "none",
+} as const;
+
+export type PrState = (typeof PrState)[keyof typeof PrState];
+
+export const PrState = {
+  open: "open",
+  draft: "draft",
+  merged: "merged",
+  closed: "closed",
+} as const;
+
+export interface PrSummary {
+  author: ForgeUser;
+  body_markdown: string;
+  head_sha: string;
+  /** @minimum 0 */
+  number: number;
+  /**
+   * Provider-neutral display noun. Values are currently `Pull request` and
+   * `Merge request` — spelled out, because the abbreviations read as jargon
+   * in the UI surfaces that show them (Git sub-tab, sidebar menu, header).
+   */
+  pr_label: string;
+  review_state: ReviewState;
+  source_branch: string;
+  state: PrState;
+  target_branch: string;
+  title: string;
+  updated_at: string;
+  url: string;
+}
+
+/**
+ * The proposal of one of a conversation's non-current branches, with the
+ * same health signals the snapshot carries for the current one.
+ */
+export interface BranchPr {
+  branch: string;
+  ci?: BranchPrCi;
+  pr: PrSummary;
+  /**
+   * Same contract as [`PrStatusSnapshot::unresolved_threads`].
+   * @minimum 0
+   * @nullable
+   */
+  unresolved_threads?: number | null;
+}
+
 export interface BranchResponse {
   /** @nullable */
   branch?: string | null;
@@ -707,27 +806,6 @@ export interface CheckoutBody {
 export interface CheckoutValidateBody {
   branch: string;
   project_id: number;
-}
-
-export type CiState = (typeof CiState)[keyof typeof CiState];
-
-export const CiState = {
-  none: "none",
-  running: "running",
-  passing: "passing",
-  failing: "failing",
-} as const;
-
-export interface CiCheck {
-  name: string;
-  state: CiState;
-  /** @nullable */
-  url?: string | null;
-}
-
-export interface CiRollup {
-  checks: CiCheck[];
-  state: CiState;
 }
 
 export interface ClaudeCodeSuccessResponse {
@@ -903,14 +981,6 @@ export const ThreadSide = {
 } as const;
 
 export type CommentThreadSide = null | ThreadSide;
-
-export interface ForgeUser {
-  /** @nullable */
-  avatar_url?: string | null;
-  /** @nullable */
-  display_name?: string | null;
-  username: string;
-}
 
 export interface PrComment {
   author: ForgeUser;
@@ -1778,6 +1848,10 @@ export interface FeatureAgentStateResponse {
   sessions: SessionState[];
 }
 
+export interface FeatureBranchBody {
+  branch: string;
+}
+
 export type FeatureGateDecisionOneOfType =
   (typeof FeatureGateDecisionOneOfType)[keyof typeof FeatureGateDecisionOneOfType];
 
@@ -2221,6 +2295,29 @@ export interface SharedFeatureRef {
 }
 
 /**
+ * A conversation branch as the header lists it.
+ */
+export interface ThreadBranch {
+  is_current: boolean;
+  /**
+   * `None` for a branch that has no row of its own (the provisioned branch
+   * before it ever carried a target, or the followed checkout).
+   * @nullable
+   */
+  last_seen_at?: string | null;
+  name: string;
+  origin: BranchOrigin;
+  /**
+   * The branch's compare target. For the current branch this is the
+   * resolved target (the snapshot's `target_branch`); for the others it is
+   * the one configured for them (their own, else the conversation-wide
+   * one), or `None` when they follow the default.
+   * @nullable
+   */
+  target_branch?: string | null;
+}
+
+/**
  * One-shot snapshot of the worktree's git state. Field semantics:
  *
  * - `*_count` fields are derived from `git status --porcelain=v2`.
@@ -2244,6 +2341,9 @@ export interface SharedFeatureRef {
  * - `host` / `compare_url` / `action_label` are populated only when a remote
  *   exists. The frontend disables the open-PR button when `compare_url` is
  *   `None`.
+ * - `thread_branches` lists the conversation's branches; the current one
+ *   (first, `is_current`) can differ from `current_branch` when a
+ *   worktree-free conversation's branch is no longer checked out.
  * - `shared_with` lists OTHER features that point at the same worktree
  *   directory (reuse-branch flow). Filled in by the caller via
  *   `enrich_with_sharing` — `compute_status` itself leaves it empty.
@@ -2291,6 +2391,11 @@ export interface GitStatusSnapshot {
    * from a zero divergence count.
    */
   target_resolved?: boolean;
+  /**
+   * Every branch of the conversation, the current one first. Filled in
+   * by the caller via `enrich_snapshot`, like `shared_with`.
+   */
+  thread_branches?: ThreadBranch[];
   /** @minimum 0 */
   uncommitted_count: number;
   /** @minimum 0 */
@@ -3268,46 +3373,7 @@ export interface PrCommentsResponse {
   threads: CommentThread[];
 }
 
-export type PrState = (typeof PrState)[keyof typeof PrState];
-
-export const PrState = {
-  open: "open",
-  draft: "draft",
-  merged: "merged",
-  closed: "closed",
-} as const;
-
 export type PrStatusSnapshotCi = null | CiRollup;
-
-export type ReviewState = (typeof ReviewState)[keyof typeof ReviewState];
-
-export const ReviewState = {
-  approved: "approved",
-  changes_requested: "changes_requested",
-  pending: "pending",
-  none: "none",
-} as const;
-
-export interface PrSummary {
-  author: ForgeUser;
-  body_markdown: string;
-  head_sha: string;
-  /** @minimum 0 */
-  number: number;
-  /**
-   * Provider-neutral display noun. Values are currently `Pull request` and
-   * `Merge request` — spelled out, because the abbreviations read as jargon
-   * in the UI surfaces that show them (Git sub-tab, sidebar menu, header).
-   */
-  pr_label: string;
-  review_state: ReviewState;
-  source_branch: string;
-  state: PrState;
-  target_branch: string;
-  title: string;
-  updated_at: string;
-  url: string;
-}
 
 export type PrStatusSnapshotPr = null | PrSummary;
 
@@ -3317,6 +3383,11 @@ export interface PrStatusSnapshot {
   error?: string | null;
   feature_id: number;
   fetched_at: number;
+  /**
+   * The proposals of the conversation's other branches — everything above
+   * describes the current branch's. Only branches that have one.
+   */
+  other_prs?: BranchPr[];
   pr?: PrStatusSnapshotPr;
   /**
    * The forge cannot be reached until the user finishes connecting it — no
@@ -4963,6 +5034,13 @@ export interface UpdateStatusRequest {
 }
 
 export interface UpdateTargetBranchBody {
+  /**
+   * The conversation branch this target is for. Defaults to the current
+   * one: targets are per branch, so a stacked branch can target the branch
+   * it was cut from while the others keep theirs.
+   * @nullable
+   */
+  branch?: string | null;
   target_branch: string;
 }
 
@@ -5527,6 +5605,13 @@ export type GetPrParams = {
 
 export type GetPrCommentsParams = {
   feature_id: number;
+  /**
+   * One of the conversation's proposals (the current branch's or another
+   * branch's); the current branch's when absent.
+   * @minimum 0
+   * @nullable
+   */
+  pr_number?: number | null;
 };
 
 export type ListStashesParams = {
@@ -13903,6 +13988,156 @@ export const useAutoNameFeature = <TError = ErrorType<unknown>, TContext = unkno
   TContext
 > => {
   return useMutation(getAutoNameFeatureMutationOptions(options), queryClient);
+};
+
+export const linkFeatureBranch = (
+  id: number,
+  featureBranchBody: FeatureBranchBody,
+  signal?: AbortSignal,
+) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/features/${id}/branches/link`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: featureBranchBody,
+    signal,
+  });
+};
+
+export const getLinkFeatureBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof linkFeatureBranch>>,
+    TError,
+    LinkFeatureBranchMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof linkFeatureBranch>>,
+  TError,
+  LinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["linkFeatureBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof linkFeatureBranch>>,
+    LinkFeatureBranchMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return linkFeatureBranch(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LinkFeatureBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof linkFeatureBranch>>
+>;
+export type LinkFeatureBranchMutationBody = FeatureBranchBody;
+export type LinkFeatureBranchMutationError = ErrorType<unknown>;
+export type LinkFeatureBranchMutationVariables = { id: number; data: FeatureBranchBody };
+
+export const useLinkFeatureBranch = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof linkFeatureBranch>>,
+      TError,
+      LinkFeatureBranchMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof linkFeatureBranch>>,
+  TError,
+  LinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  return useMutation(getLinkFeatureBranchMutationOptions(options), queryClient);
+};
+
+export const unlinkFeatureBranch = (
+  id: number,
+  featureBranchBody: FeatureBranchBody,
+  signal?: AbortSignal,
+) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/features/${id}/branches/unlink`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: featureBranchBody,
+    signal,
+  });
+};
+
+export const getUnlinkFeatureBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+    TError,
+    UnlinkFeatureBranchMutationVariables,
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+  TError,
+  UnlinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["unlinkFeatureBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+    UnlinkFeatureBranchMutationVariables
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return unlinkFeatureBranch(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnlinkFeatureBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unlinkFeatureBranch>>
+>;
+export type UnlinkFeatureBranchMutationBody = FeatureBranchBody;
+export type UnlinkFeatureBranchMutationError = ErrorType<unknown>;
+export type UnlinkFeatureBranchMutationVariables = { id: number; data: FeatureBranchBody };
+
+export const useUnlinkFeatureBranch = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+      TError,
+      UnlinkFeatureBranchMutationVariables,
+      TContext
+    >;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof unlinkFeatureBranch>>,
+  TError,
+  UnlinkFeatureBranchMutationVariables,
+  TContext
+> => {
+  return useMutation(getUnlinkFeatureBranchMutationOptions(options), queryClient);
 };
 
 export const isFeatureEmpty = (id: number, signal?: AbortSignal) => {

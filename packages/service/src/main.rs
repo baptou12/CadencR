@@ -302,6 +302,7 @@ async fn main() -> anyhow::Result<()> {
             domain::schedules::scheduler::spawn(state.clone());
             domain::mcp::control::message_queue::spawn(state.clone());
             domain::git::forge::spawn(state.clone());
+            domain::git::linked_branches::spawn(state.clone());
 
             // Auto-start remote access if the user left it enabled (persisted
             // setting). Failures are non-fatal — the loopback server must come

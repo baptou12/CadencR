@@ -17,6 +17,12 @@
 //! 3. The resolved path's current branch — the "On branch" mode, where the
 //!    feature genuinely follows whatever the project has checked out.
 //!
+//! The recorded branch is only the one a feature was *provisioned* with. A
+//! conversation can work on several (see [`crate::domain::git::linked_branches`]),
+//! so outside its own worktree, when the live checkout is one of its linked
+//! branches, that checkout is the current branch — the header and the forge poller agree on it instead of
+//! the poller sticking to the provisioned branch the agent has since left.
+//!
 //! Without step 2 the forge poller matched pull requests against the project
 //! checkout's HEAD — usually `main` — for every "From branch" feature.
 
@@ -28,7 +34,7 @@ use super::{
     normalize_git_path, SETTING_FEATURE_BRANCH, SETTING_WORKTREE_BRANCH, SETTING_WORKTREE_PATH,
 };
 use crate::domain::git::refs::normalize_branch_identity;
-use crate::domain::git::{commands, repository, workflow_service};
+use crate::domain::git::{commands, linked_branches, repository, workflow_service};
 use crate::error::AppError;
 
 pub const HEAD_REVISION: &str = "HEAD";
@@ -37,7 +43,7 @@ pub const HEAD_REVISION: &str = "HEAD";
 /// isn't one: blank settings, a bare `refs/heads/` prefix, the literal `HEAD`
 /// that `git rev-parse --abbrev-ref` reports for a detached checkout, and any
 /// value git would read as a flag (these reach `git log` as positionals).
-fn branch_identity(value: &str) -> Option<String> {
+pub fn branch_identity(value: &str) -> Option<String> {
     let branch = normalize_branch_identity(value);
     if branch.is_empty() || branch == HEAD_REVISION || branch.starts_with('-') {
         return None;
@@ -51,7 +57,7 @@ fn branch_identity(value: &str) -> Option<String> {
 /// An unusable recorded value falls through to the next key rather than
 /// resolving to nothing — a corrupt `worktree_branch` shouldn't blind a
 /// feature that also recorded a `feature_branch`.
-pub(super) async fn recorded_feature_branch(
+pub async fn recorded_feature_branch(
     read_pool: &SqlitePool,
     feature_id: i64,
 ) -> Result<Option<String>, AppError> {
@@ -72,41 +78,63 @@ pub async fn resolve_feature_branch(
     feature_id: i64,
     path: &Path,
 ) -> Result<Option<String>, AppError> {
-    // Ownership first: it is a settings read, the checkout is a git spawn.
+    let checked_out = checked_out_branch(path).await?;
+    current_feature_branch(read_pool, feature_id, path, checked_out).await
+}
+
+/// The conversation's current branch given what is checked out at `path`: the
+/// checkout when `path` is the feature's own worktree or the checkout is one of
+/// the conversation's branches, otherwise the recorded branch, otherwise the
+/// checkout ("On branch" mode follows it).
+pub async fn current_feature_branch(
+    read_pool: &SqlitePool,
+    feature_id: i64,
+    path: &Path,
+    checked_out: Option<String>,
+) -> Result<Option<String>, AppError> {
+    let Some(head) = checked_out.as_deref() else {
+        return recorded_feature_branch(read_pool, feature_id).await;
+    };
+    // Ownership first: nobody else switches branches in the feature's worktree.
     if is_own_worktree(read_pool, feature_id, path).await? {
-        if let Some(branch) = checked_out_branch(path).await? {
-            return Ok(Some(branch));
-        }
+        return Ok(checked_out);
     }
-    if let Some(branch) = recorded_feature_branch(read_pool, feature_id).await? {
-        return Ok(Some(branch));
+    let recorded = recorded_feature_branch(read_pool, feature_id).await?;
+    let key = linked_branches::BranchRef {
+        feature_id,
+        branch: head,
+    };
+    if recorded.as_deref() == Some(head)
+        || linked_branches::repository::is_linked(read_pool, key).await?
+    {
+        return Ok(checked_out);
     }
-    checked_out_branch(path).await
+    Ok(recorded.or(checked_out))
 }
 
 /// True when `path` is the worktree provisioned for `feature_id` rather than
 /// the project directory the resolvers fall back to once it is gone.
-async fn is_own_worktree(
+pub async fn is_own_worktree(
     read_pool: &SqlitePool,
     feature_id: i64,
     path: &Path,
 ) -> Result<bool, AppError> {
-    let Some(worktree) =
-        repository::get_feature_setting(read_pool, feature_id, SETTING_WORKTREE_PATH).await?
-    else {
+    // One query: every git status recompute asks this.
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT fs.value, p.path FROM feature_settings fs \
+         JOIN features f ON f.id = fs.feature_id \
+         JOIN projects p ON p.id = f.project_id \
+         WHERE fs.feature_id = ? AND fs.key = ?",
+    )
+    .bind(feature_id)
+    .bind(SETTING_WORKTREE_PATH)
+    .fetch_optional(read_pool)
+    .await?;
+    let Some((worktree, project_path)) = row else {
         return Ok(false);
     };
     let path = normalize_git_path(&path.to_string_lossy());
-    if normalize_git_path(&worktree) != path {
-        return Ok(false);
-    }
-    let Some((project_id, _)) =
-        repository::get_feature_type_and_project(read_pool, feature_id).await?
-    else {
-        return Ok(false);
-    };
-    let project_path = repository::get_project_path(read_pool, project_id).await?;
-    Ok(normalize_git_path(&project_path) != path)
+    Ok(normalize_git_path(&worktree) == path && normalize_git_path(&project_path) != path)
 }
 
 async fn checked_out_branch(path: &Path) -> Result<Option<String>, AppError> {
@@ -142,13 +170,7 @@ pub async fn resolve_feature_scope(
     path: &Path,
 ) -> Result<FeatureScope, AppError> {
     let checked_out = checked_out_branch(path).await?;
-    let branch = if checked_out.is_some() && is_own_worktree(read_pool, feature_id, path).await? {
-        checked_out.clone()
-    } else {
-        recorded_feature_branch(read_pool, feature_id)
-            .await?
-            .or_else(|| checked_out.clone())
-    };
+    let branch = current_feature_branch(read_pool, feature_id, path, checked_out.clone()).await?;
     let head_scope = FeatureScope {
         branch: branch.clone(),
         revision: HEAD_REVISION.to_string(),
@@ -316,6 +338,22 @@ mod tests {
         assert_eq!(branch.as_deref(), Some("feature/new"));
         assert_eq!(scope.branch.as_deref(), Some("feature/new"));
         assert_eq!(scope.revision, HEAD_REVISION);
+    }
+
+    #[tokio::test]
+    async fn the_feature_worktree_follows_an_unlinked_checkout_of_the_trunk() {
+        // The trunk is never linked to a conversation, yet it is what the
+        // worktree has checked out: merging or comparing must start from it.
+        let fx = switched_worktree().await;
+        run_git(&fx.worktree, &["checkout", "-q", "--detach"]).await;
+        run_git(&fx.project, &["checkout", "-q", "--detach"]).await;
+        run_git(&fx.worktree, &["checkout", "-q", "main"]).await;
+
+        let branch = resolve_feature_branch(&fx.pool, 1, &fx.worktree)
+            .await
+            .unwrap();
+
+        assert_eq!(branch.as_deref(), Some("main"));
     }
 
     #[tokio::test]

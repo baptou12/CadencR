@@ -396,4 +396,5 @@ pub fn git_router() -> Router<AppState> {
             get(get_uncommitted_files_handler),
         )
         .merge(super::forge::routes::forge_router())
+        .merge(super::linked_branches::routes::router())
 }
