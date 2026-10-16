@@ -11,7 +11,7 @@ pub use mutations::{delete, insert, set_enabled, update};
 pub use reads::{get, list, ScheduleFilter};
 
 #[cfg(test)]
-pub(super) mod test_support {
+pub(crate) mod test_support {
     use sqlx::SqlitePool;
 
     use super::super::models::{RecurrenceInput, SaveScheduleRequest, ScheduleTarget, TargetKind};

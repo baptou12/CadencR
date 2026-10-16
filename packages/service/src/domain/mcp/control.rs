@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 mod audit;
+mod create_schedule;
 mod gate_envelope;
 pub(crate) mod gate_notify;
 pub(crate) mod gate_policy;
@@ -100,6 +101,10 @@ pub fn control_router() -> Router<AppState> {
         .route(
             "/internal/mcp/project/spawn-session",
             post(spawn_session::spawn_session_handler),
+        )
+        .route(
+            "/internal/mcp/project/create-schedule",
+            post(create_schedule::create_schedule_handler),
         )
         .merge(gate_respond::routes())
 }

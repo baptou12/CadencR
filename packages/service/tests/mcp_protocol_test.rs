@@ -125,6 +125,7 @@ fn assert_tool_catalog(agent: AgentType, result: &Value) {
             "project_send_session_message",
             "project_list_pending_gates",
             "project_respond_gate",
+            "project_create_schedule",
         ],
         AgentType::Workspace => &[
             "workspace_list_projects",
