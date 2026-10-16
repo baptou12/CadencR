@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { PopoverModality } from "@/components/ui/popover";
+import { ConditionEditor } from "./ConditionEditor";
 import { RecurrenceEditor } from "./RecurrenceEditor";
 import { ScheduleComposer } from "./ScheduleComposer";
 import { Field, ScheduleTargetEditor } from "./ScheduleTargetEditor";
@@ -33,6 +34,7 @@ export function ScheduleEditorDialog(props: ScheduleEditorDialogProps): ReactEle
   const { open, onOpenChange, schedule, lockedConversation, projects, onDelete } = props;
   const draft = useScheduleDraft(props);
   const projectPath = projects.find((project) => project.id === draft.target.project_id)?.path;
+  const gated = draft.condition.enabled;
 
   // Same ⌘/Ctrl+Enter as every other dialog in the app, and as the composer this
   // one embeds. Captured at the document so it works from inside the prompt
@@ -52,7 +54,9 @@ export function ScheduleEditorDialog(props: ScheduleEditorDialogProps): ReactEle
         <DialogHeader>
           <DialogTitle>{schedule ? "Edit schedule" : "New schedule"}</DialogTitle>
           <DialogDescription>
-            Cadencr sends the prompt at the times you pick, as long as it is running.
+            {gated
+              ? "While Cadencr is running, it runs the command at the times you pick and sends the prompt only when the command fails."
+              : "Cadencr sends the prompt at the times you pick, as long as it is running."}
           </DialogDescription>
         </DialogHeader>
 
@@ -100,6 +104,15 @@ export function ScheduleEditorDialog(props: ScheduleEditorDialogProps): ReactEle
                 value={draft.recurrence}
                 onChange={draft.setRecurrence}
                 now={draft.now}
+                evaluatesCommand={gated}
+              />
+            </Section>
+
+            <Section title="Condition">
+              <ConditionEditor
+                value={draft.condition}
+                onChange={draft.setCondition}
+                targetsExistingConversation={draft.target.kind === "conversation"}
               />
             </Section>
           </div>

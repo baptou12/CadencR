@@ -4307,6 +4307,24 @@ export interface SaveDraftResponse {
 }
 
 /**
+ * Gates a run on a shell command: at each firing the command runs in the
+ * target's working copy, and the prompt is only delivered when it exits
+ * non-zero — "every 15 minutes, if `cargo test` fails, fix it". The command's
+ * output rides along with the prompt so the agent sees what broke.
+ */
+export interface ScheduleCondition {
+  /** Run through the user's login shell, like a custom action. */
+  command: string;
+  /**
+   * Seconds before the evaluation is abandoned. Defaults to 300, at most 600.
+   * @nullable
+   */
+  timeout_seconds?: number | null;
+}
+
+export type SaveScheduleRequestCondition = null | ScheduleCondition;
+
+/**
  * What a schedule delivers into when it fires.
  */
 export type TargetKind = (typeof TargetKind)[keyof typeof TargetKind];
@@ -4383,6 +4401,7 @@ export interface ScheduleTarget {
  * counters are preserved), so the editor can send one shape for both.
  */
 export interface SaveScheduleRequest {
+  condition?: SaveScheduleRequestCondition;
   /**
    * Defaults to `true` on create; on update, omitting it leaves the current
    * paused/active state alone.
@@ -4395,6 +4414,35 @@ export interface SaveScheduleRequest {
   recurrence: RecurrenceInput;
   target: ScheduleTarget;
 }
+
+export type ScheduleConditionProperty = null | ScheduleCondition;
+
+/**
+ * What the latest condition evaluation concluded.
+ */
+export type ScheduleCheckStatus = (typeof ScheduleCheckStatus)[keyof typeof ScheduleCheckStatus];
+
+export const ScheduleCheckStatus = {
+  passed: "passed",
+  triggered: "triggered",
+  busy: "busy",
+  error: "error",
+} as const;
+
+/**
+ * Outcome of the most recent condition evaluation. Separate from
+ * [`ScheduleLastRun`]: a passing check delivers nothing, so it must not
+ * overwrite the record of the last message actually sent.
+ */
+export interface ScheduleLastCheck {
+  /** ISO-8601 UTC. */
+  at: string;
+  /** @nullable */
+  exit_code?: number | null;
+  status: ScheduleCheckStatus;
+}
+
+export type ScheduleLastCheckProperty = null | ScheduleLastCheck;
 
 /**
  * Outcome of the most recent run.
@@ -4450,10 +4498,12 @@ export interface Schedule {
    * rather than being re-derived from two other fields on every render.
    */
   completed: boolean;
+  condition?: ScheduleConditionProperty;
   context: ScheduleContext;
   created_at: string;
   enabled: boolean;
   id: number;
+  last_check?: ScheduleLastCheckProperty;
   last_run?: ScheduleLastRunProperty;
   /** @nullable */
   name?: string | null;
@@ -4477,6 +4527,11 @@ export interface ScheduleDeleted {
  * Result of a manual "run now".
  */
 export interface ScheduleRunResult {
+  /**
+   * The schedule's command exited 0, so there was nothing to send. `ran` is
+   * false without that being a failure.
+   */
+  condition_passed: boolean;
   /** @nullable */
   error?: string | null;
   /**

@@ -5,8 +5,10 @@ use crate::api::middleware::MCP_CONTROL_HEADER;
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::helpers::require_i64;
 
+mod create_schedule;
 mod send_message;
 
+pub(crate) use create_schedule::create_schedule;
 pub(crate) use send_message::{send_session_message, send_workspace_session_message};
 
 const SERVICE_URL_ENV: &str = "CADENCR_SERVICE_URL";

@@ -9,6 +9,7 @@ import {
   Play,
   Repeat,
   Send,
+  SquareTerminal,
 } from "lucide-react";
 import type { Schedule } from "@/api/generated";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   schedulePromptPreview,
   scheduleTitle,
 } from "@/lib/schedules/format";
+import { describeLastCheck } from "@/lib/schedules/condition";
 import { scheduleState, SCHEDULE_STATE_LABELS, type ScheduleState } from "@/lib/schedules/status";
 import { cn } from "@/lib/utils";
 
@@ -102,9 +104,29 @@ export const ScheduleRow = memo(function ScheduleRow({
             <TargetIcon className="size-3 shrink-0" />
             <span className="truncate">{describeTarget(schedule)}</span>
           </span>
+          {schedule.condition && (
+            <span
+              className="inline-flex min-w-0 items-center gap-1"
+              title={`Only sends when \`${schedule.condition.command}\` exits non-zero`}
+            >
+              <SquareTerminal className="size-3 shrink-0" />
+              <span className="shrink-0">If</span>
+              <code className="truncate font-mono text-[11px] text-foreground/80">
+                {schedule.condition.command}
+              </code>
+              <span className="shrink-0">fails</span>
+            </span>
+          )}
         </div>
 
         <NextRunLine schedule={schedule} state={state} nextRun={nextRun} />
+        {/* A check that couldn't run is also a failed run, which the line
+            above already explains. */}
+        {schedule.last_check && schedule.last_check.status !== "error" && state !== "completed" && (
+          <p className="mt-0.5 text-xs text-muted-foreground/80">
+            {describeLastCheck(schedule.last_check)}
+          </p>
+        )}
       </div>
 
       <RowActions

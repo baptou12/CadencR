@@ -46,6 +46,7 @@ const FRIENDLY_LABELS: Record<string, string> = {
   navigate_page: "Navigating page",
   new_page: "Opening page",
   project_compare_sessions: "Comparing sessions",
+  project_create_schedule: "Scheduling a prompt",
   project_find_related_sessions: "Finding related sessions",
   project_get_session_status: "Checking session status",
   project_get_worktree_status: "Checking worktree status",

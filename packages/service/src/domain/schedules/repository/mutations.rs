@@ -3,7 +3,10 @@ use sqlx::{Row, SqlitePool};
 
 use super::reads::get;
 use crate::domain::features::worktree_validation::{validate_reuse_branch, validate_worktree_mode};
-use crate::domain::schedules::models::{SaveScheduleRequest, Schedule, ScheduleTarget, TargetKind};
+use crate::domain::schedules::condition;
+use crate::domain::schedules::models::{
+    SaveScheduleRequest, Schedule, ScheduleCondition, ScheduleTarget, TargetKind,
+};
 use crate::domain::schedules::pins::trimmed;
 use crate::domain::schedules::planner;
 use crate::domain::schedules::recurrence::Recurrence;
@@ -16,6 +19,7 @@ struct ScheduleWrite {
     prompt: String,
     target: ScheduleTarget,
     recurrence: Recurrence,
+    condition: Option<ScheduleCondition>,
     next_run_at: Option<String>,
 }
 
@@ -26,6 +30,7 @@ impl ScheduleWrite {
             return Err(AppError::BadRequest("a prompt is required".into()));
         }
         let target = normalize_target(body.target)?;
+        let condition = condition::normalize(body.condition)?;
         let (recurrence, run_at) = body.recurrence.into_recurrence()?;
         let next_run_at = planner::initial_next_run(&recurrence, run_at.as_deref(), Utc::now())?;
         Ok(Self {
@@ -36,6 +41,7 @@ impl ScheduleWrite {
             prompt,
             target,
             recurrence,
+            condition,
             next_run_at,
         })
     }
@@ -99,7 +105,7 @@ const WORKTREE_MODE_SKIP: &str = "skip";
 
 type Sql<'q> = sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments>;
 
-/// The 20 values `insert` and `update` both write, in one place and one order.
+/// The 22 values `insert` and `update` both write, in one place and one order.
 /// Their SQL stays written out — static strings are what sqlx wants and what
 /// greps find — but a pin bound in one statement and forgotten in the other
 /// would be a silently half-saved schedule, so the binding itself is shared.
@@ -125,6 +131,13 @@ fn bind_write<'q>(query: Sql<'q>, write: &'q ScheduleWrite) -> Sql<'q> {
         .bind(write.recurrence.weekdays_csv())
         .bind(write.recurrence.day_of_month)
         .bind(&write.recurrence.timezone)
+        .bind(write.condition.as_ref().map(|condition| &condition.command))
+        .bind(
+            write
+                .condition
+                .as_ref()
+                .and_then(|condition| condition.timeout_seconds),
+        )
 }
 
 pub async fn insert(pool: &SqlitePool, body: SaveScheduleRequest) -> Result<Schedule, AppError> {
@@ -137,8 +150,9 @@ pub async fn insert(pool: &SqlitePool, body: SaveScheduleRequest) -> Result<Sche
                 provider, model, thinking_level, permission_mode, access_mode, profile,
                 worktree_mode, reuse_branch, base_branch,
                 recurrence_kind, interval_seconds, time_of_day, weekdays, day_of_month, timezone,
+                condition_command, condition_timeout_seconds,
                 enabled, next_run_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING id",
         ),
         &write,
@@ -170,6 +184,7 @@ pub async fn update(
                 worktree_mode = ?, reuse_branch = ?, base_branch = ?,
                 recurrence_kind = ?, interval_seconds = ?, time_of_day = ?, weekdays = ?,
                 day_of_month = ?, timezone = ?,
+                condition_command = ?, condition_timeout_seconds = ?,
                 enabled = COALESCE(?, enabled), next_run_at = ?,
                 updated_at = datetime('now')
              WHERE id = ?",

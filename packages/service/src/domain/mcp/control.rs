@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 mod audit;
+mod create_schedule;
 mod gate_envelope;
 pub(crate) mod gate_notify;
 pub(crate) mod gate_policy;
@@ -27,6 +28,8 @@ mod spawn_persist;
 mod spawn_resolve;
 mod spawn_session;
 mod spawn_thinking;
+
+pub(crate) use scope::is_active_db_state;
 
 /// Trim a borrowed optional string, treating whitespace-only values as absent.
 /// Shared by the spawn submodules (`spawn_session`, `spawn_resolve`, `spawn_persist`).
@@ -98,6 +101,10 @@ pub fn control_router() -> Router<AppState> {
         .route(
             "/internal/mcp/project/spawn-session",
             post(spawn_session::spawn_session_handler),
+        )
+        .route(
+            "/internal/mcp/project/create-schedule",
+            post(create_schedule::create_schedule_handler),
         )
         .merge(gate_respond::routes())
 }

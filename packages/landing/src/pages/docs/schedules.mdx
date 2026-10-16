@@ -2,7 +2,7 @@
 layout: "@/layouts/DocLayout.astro"
 title: "Schedules"
 description: "Send agent prompts once or on a recurring rule, in the conversation you choose."
-lastReviewed: "2026-10-13"
+lastReviewed: "2026-10-16"
 version: "0.13.0"
 ---
 
@@ -52,6 +52,20 @@ Check the target before saving. A schedule created from a conversation uses the 
 
 Daily, weekly, and monthly rules use the selected IANA timezone, so a local wall-clock time follows daylight-saving transitions. Check both the rule and the next-run time after editing.
 
+## Only send when a command fails
+
+Turn on **Only send when a command fails** to gate a schedule on a shell command. The recurrence then decides when the command is checked: at each scheduled time CadencR runs it through your login shell — in the conversation's working copy, or the project's root folder for a schedule that starts a new conversation.
+
+| Command result      | What happens                                                                |
+| ------------------- | --------------------------------------------------------------------------- |
+| Exit code 0         | Nothing is sent. The list shows the check passed.                           |
+| Any other exit      | The prompt is sent with the exit code and the tail of the command's output. |
+| Timeout or no start | The run is marked failed with the reason, and nothing is sent.              |
+
+For example, check `pnpm test` every 15 minutes with the prompt "The test suite is failing — fix it". The timeout defaults to 300 seconds (at most 600). While the targeted conversation's agent is still working — or waiting on you for a permission or an answer — checks are skipped so the same failure isn't queued again and again. **Run now** runs the check too, and reports when it passed.
+
+Agents can create these schedules themselves with the `project_create_schedule` [MCP tool](../mcp/): ask one to "watch the build and fix it when it breaks", and it writes the command and the rule into its own conversation. Agent-created schedules appear in the list like any other.
+
 ## Pause, edit, and inspect runs
 
 <DocScreenshot
@@ -64,7 +78,7 @@ Daily, weekly, and monthly rules use the selected IANA timezone, so a local wall
 
 Pause a schedule to keep its rule without sending prompts. Resuming computes its next run instead of replaying a paused backlog. Edit its prompt or rule from the list, or delete a rule you no longer need.
 
-The list shows next/last run information and results such as sent, failed, or skipped. Open the last conversation when you want to inspect the work produced by that run. Read an error before retrying a failed schedule.
+The list shows next/last run information and results such as sent, failed, or skipped, plus the latest check for a command-gated schedule. Open the last conversation when you want to inspect the work produced by that run. Read an error before retrying a failed schedule.
 
 CadencR must remain running to dispatch scheduled work. It is not a hosted cron service. Existing undelivered scheduled messages from the earlier one-shot system were migrated into schedules.
 
