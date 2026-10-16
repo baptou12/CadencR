@@ -32,10 +32,10 @@ a future desktop release. Publication is not public UI or desktop trust activati
       implementation, not evidence of a published or qualified new binary.
 - [x] Merge and push the CLI workflow to `main`, publish a development CLI from
       its exact green commit, and review its public binary/checksum/provenance.
-      CLI `0.13.1-dev.38947325650.1` is published from `cafc7d0a2d705e9fff29cdad6674e81f3764e530`;
+      CLI `0.13.1-dev.38974097824.1` is published from `b3e3ed5ac9d2cd4580117558a218b4c809af65d5`;
       anonymous bytes/checksum/provenance and isolated Linux `--version` pass.
-      This does not qualify registry publication; no desktop release was triggered.
-- [ ] Qualify real GitHub publication, interruption/resume, fresh-runner recovery
+      Its isolated GitHub lifecycle qualification is recorded below; no desktop release was triggered.
+- [x] Qualify real GitHub publication, interruption/resume, fresh-runner recovery
       and empty-delta renewal against an explicitly reviewed isolated **public**
       QA target. Anonymous archive/discovery verification cannot positively
       qualify a private repository. Use inert fixtures and QA-only signing keys;
@@ -64,6 +64,58 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - [ ] Stop with populated, verified feeds and the desktop marketplace still
       hidden. Public UI exposure and official build roots/URLs require the later
       activation release and a separate acceptance decision.
+
+### Qualified distributed CLI — 2026-10-17
+
+This is the current delivery status; the dated failures below remain historical
+evidence, not outstanding failures of this newly distributed executable.
+
+- Main `b3e3ed5ac9d2cd4580117558a218b4c809af65d5` contains the asset `Accept`
+  correction. [CI](https://github.com/merkr-software/CadencR/actions/runs/38972301362),
+  [CodeQL](https://github.com/merkr-software/CadencR/actions/runs/38972301364) and
+  dependency audit passed before the explicit CLI-only release.
+- [CLI delivery](https://github.com/merkr-software/CadencR/actions/runs/38974097824)
+  published `0.13.1-dev.38974097824.1` with SHA-256
+  `ee3516bb5ad7ed143428f255e9e4dd24d9f13003061a803c99be8f3fd8db9a7e`.
+  Anonymous downloads verify binary, checksum, source provenance and candidate pin;
+  the actual ELF runs in network-disabled Ubuntu. Latest desktop stays `v0.13.1`.
+- [Publication/replay/fresh runner](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38975839952)
+  passed on attempt 2. Initial publication retained draft `413501761` and archive
+  `642988641`, added the required public provenance, and published signed catalog
+  `2ec54e90993787afa7f1d7d97c95438b699fb9aac566f30a4aafaf25e1f4d9be`.
+- [Empty-delta renewal](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38977770141)
+  passed on attempt 2, preserving the exact signed package set. Its catalog is
+  `36f07d142360b5d170c4f2c4e245d3992d559538c0fe471662385cc2a13f0353`.
+  Initial failed harness checks saw stale anonymous API inventories, not CLI
+  failures. Remote IDs/bytes were reconciled before exact-input reruns; no object
+  was deleted, replaced or pre-published to manufacture a pass.
+- [Controlled network interruption](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38980267765)
+  passed on attempt 1 using inert theme `0.0.2`. The actual distributed ELF first
+  proved proxy traversal, then an independent observer saw managed release
+  `415453212` public before the TLS-blind proxy closed its tunnels. The CLI exited
+  normally with code `1` and released its owned lock. Same-request, same-state
+  resume retained archive `648905530` and provenance `648905637`, then completed
+  catalog/discovery. A separate clean runner reconstructed remotely without
+  restored pipeline state. This proves post-publication network interruption,
+  **not** loss of a specific HTTP mutation response or hard-kill recovery.
+- Each scenario's four successful publish/replay observations have identical
+  catalog bytes and remote inventories. Final catalog
+  `81c757faac2d2c83a3587001f70116f1f268162577b25b5d97d3bb5bc45158cd`
+  contains the unchanged original theme plus `0.0.2`. Public archive bytes and
+  provenance match the reviewed fixture/offline plan; the actual released ELF
+  independently verifies catalog signatures in network-disabled Ubuntu.
+- The QA harness now bounds inventory reads with shared deadlines, binds an
+  observed discovery head to the CLI receipt's blob, and passes only a public
+  inventory digest between jobs as an assertion. No CLI state is seeded from it.
+  API identity reads use the ephemeral QA job token; catalog acquisition remains
+  anonymous. Eighteen harness checks and three independent review passes cover
+  the delivered QA code; only allowlisted public evidence is retained.
+- Scope is the isolated public QA repository and inert declarative themes. No
+  production trust/key/pin/feed change, official theme/Pi publication, native Pi
+  runtime certification or desktop marketplace activation is implied. Production
+  pins remain `PENDING`. Next is a reviewed atomic CLI cutover of registry
+  workflows, followed by removal of replaced JavaScript and official-plugin
+  publication gates; those remain open checklist items above.
 
 ### Real GitHub qualification — 2026-10-15
 
@@ -141,12 +193,10 @@ The generated pin is a candidate for review, **not** permission to activate the
 production registry. Existing qualification pins keep identifying the actual
 `v0.13.0` binary until a separate reviewed update selects a new executable.
 
-The first development CLI is now published and independently checked; its real
-GitHub QA exposed the asset content-negotiation defect documented above. Next:
-ship the transport correction in a new development CLI, verify and pin that
-binary, then repeat the retained scenario and remaining lifecycle gates. Only
-that qualification can unblock production pinning/JavaScript cutover. A successful
-CLI build/release does not certify plugin publication or desktop QA.
+The corrected development CLI is now published and independently qualified in
+the isolated public QA repository; see the 2026-10-17 evidence above. Production
+pinning/JavaScript cutover remains a distinct reviewed delivery step. CLI lifecycle
+qualification does not certify official plugins, provider runtime or desktop QA.
 
 ### Official source location decision — 2026-10-14
 

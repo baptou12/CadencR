@@ -19,9 +19,15 @@ Read-only CLI preparation CI and downloaded checksum verification are complete
 source `6d0e2b6ed39ceb22d9fd1fa785d5cb5fa8a09f93`). Its `v0.12.1`
 artifact label belonged to preparation only. The actual
 [v0.13.0 release](https://github.com/merkr-software/CadencR/releases/tag/v0.13.0)
-now contains the Linux Rust CLI and checksums. Distributed-binary lifecycle
-qualification, reviewed registry pins/cutover, JavaScript removal and plugin
-publication remain pending; official desktop trust activation remains separate.
+contains the original Linux Rust CLI and checksums. The corrected standalone
+`0.13.1-dev.38974097824.1` CLI is now published and has passed isolated public
+GitHub publication/replay, fresh-runner reconstruction, empty-delta renewal and
+controlled post-publication network interruption/resume. See the
+[current evidence](./MARKETPLACE_V1.md#qualified-distributed-cli--2026-10-17).
+This uses inert themes and QA-only trust, not production credentials or provider
+runtime certification. Reviewed production registry pins/cutover, JavaScript
+removal and official-plugin publication remain pending; desktop activation is
+still separate.
 
 Internal QA can opt in with `VITE_INTERNAL_MARKETPLACE=true` in a DEV renderer
 only; production builds cannot expose the marketplace through that environment
@@ -211,9 +217,10 @@ not an ordinary delegated-key rotation.
 
 ## Deployment cutover still pending
 
-These changes do not publish a CLI release, populate `PENDING` binary pins, switch
-remote registry workflows, provision official roots/feeds or certify a packaged
-client. Verify the real distributed Rust binary first, then pin both registry
-workflows and commands, then remove replaced JavaScript implementations. The
+The standalone CLI release and isolated lifecycle QA are complete, but production
+`PENDING` binary pins, remote registry workflow cutover, official roots/feeds and
+packaged-client certification remain open. Next, review and pin the qualified
+executable atomically in registry workflows and commands, then remove replaced
+JavaScript implementations. The
 transitional JavaScript validator is not a supported substitute for schema-2 mixed
 contributions or the trust-generation publication protocol.
