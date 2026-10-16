@@ -30,9 +30,11 @@ a future desktop release. Publication is not public UI or desktop trust activati
       checksums and source provenance. The downloader supports these explicit
       tags without changing existing application-release pins. This is workflow
       implementation, not evidence of a published or qualified new binary.
-- [ ] Merge and push the CLI workflow to `main`, publish a development CLI from
+- [x] Merge and push the CLI workflow to `main`, publish a development CLI from
       its exact green commit, and review its public binary/checksum/provenance.
-      No desktop version bump or desktop release is required for this path.
+      CLI `0.13.1-dev.38947325650.1` is published from `cafc7d0a2d705e9fff29cdad6674e81f3764e530`;
+      anonymous bytes/checksum/provenance and isolated Linux `--version` pass.
+      This does not qualify registry publication; no desktop release was triggered.
 - [ ] Qualify real GitHub publication, interruption/resume, fresh-runner recovery
       and empty-delta renewal against an explicitly reviewed isolated **public**
       QA target. Anonymous archive/discovery verification cannot positively
@@ -87,6 +89,39 @@ a future desktop release. Publication is not public UI or desktop trust activati
 - Production pins remain `PENDING`; JavaScript cutover/removal, real theme/Pi
   publication, official trust and marketplace exposure remain separate gates.
 
+### Distributed development CLI QA — 2026-10-16
+
+- [CLI delivery](https://github.com/merkr-software/CadencR/actions/runs/38947325650)
+  succeeded from the exact green `main` merge. The downloaded Linux binary reports
+  `0.13.1-dev.38947325650.1`; SHA-256 is
+  `0cf516ce62da03e52d56502d6da977908282058138e62164ab65eea4982c79f3`.
+  Public binary/checksum/provenance/pin bindings were independently verified, and
+  the actual ELF passed `--version` in a network-disabled Ubuntu container.
+- The reviewed QA-only harness at `476236e1df3a766d76131acccc916514b4f1ad10`
+  pins that binary. It preserves the existing managed draft's original commit
+  binding and creates the previously absent QA `marketplace-v2` branch explicitly.
+  Two serial hosted jobs are configured for publish/replay and fresh-runner
+  reconstruction; no pipeline-state artifact is restored.
+- [Actual QA run](https://github.com/merkr-software/cadencr-registry-qa/actions/runs/38954862458)
+  failed before promotion: the authenticated asset request appends octet-stream
+  `Accept` to the existing JSON `Accept`. GitHub selects JSON metadata instead of
+  archive bytes, causing `archive exceeds the size limit`. Anonymous comparison
+  against the same public QA source asset confirms duplicate headers return JSON
+  (`200`, 1498 bytes), while a single octet-stream header returns the asset redirect.
+- The transport correction replaces the asset request's `Accept` without relaxing
+  size, digest or URL checks. Its regression fails before the fix and passes for
+  direct bytes, redirects and subsequent ordinary JSON requests. All 281 scoped
+  CLI/core/publisher Rust tests, publisher/CLI all-target Clippy and formatting pass;
+  three independent reviewers found no remaining issue. This is source-level
+  verification, not qualification of the already published binary. Next:
+  merge/push it to green `main`, publish a **new** development CLI identity, verify
+  and pin its actual bytes in QA, then repeat publication, replay, fresh-runner,
+  interruption/resume and renewal. No desktop release is needed.
+- Post-failure reconciliation confirms managed draft `413501761` and asset
+  `642988641` (1100 bytes, unchanged digest) remain intact. No catalog release was
+  created and discovery did not advance. Production registry, keys, pins and
+  desktop visibility are unchanged. Lifecycle qualification remains incomplete.
+
 ### Independent development CLI delivery — 2026-10-16
 
 The manual [`cli-dev-release.yml`](../.github/workflows/cli-dev-release.yml)
@@ -106,10 +141,12 @@ The generated pin is a candidate for review, **not** permission to activate the
 production registry. Existing qualification pins keep identifying the actual
 `v0.13.0` binary until a separate reviewed update selects a new executable.
 
-Next: publish the new CLI explicitly, verify its downloaded bytes independently,
-then repeat the retained real GitHub QA scenario and remaining lifecycle gates.
-Only that qualification can unblock production pinning/JavaScript cutover. A
-successful CLI build/release does not certify plugin publication or desktop QA.
+The first development CLI is now published and independently checked; its real
+GitHub QA exposed the asset content-negotiation defect documented above. Next:
+ship the transport correction in a new development CLI, verify and pin that
+binary, then repeat the retained scenario and remaining lifecycle gates. Only
+that qualification can unblock production pinning/JavaScript cutover. A successful
+CLI build/release does not certify plugin publication or desktop QA.
 
 ### Official source location decision — 2026-10-14
 

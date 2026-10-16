@@ -151,11 +151,12 @@ impl Requester {
     }
 
     pub(super) fn asset_response(&self, path: &str) -> Result<AssetResponse, PublisherError> {
+        let mut headers = self.headers.clone();
+        headers.insert(ACCEPT, HeaderValue::from_static("application/octet-stream"));
         let response = self
             .client
             .get(format!("{}{path}", self.base))
-            .headers(self.headers.clone())
-            .header(ACCEPT, "application/octet-stream")
+            .headers(headers)
             .header(ACCEPT_ENCODING, "identity")
             .send()
             .map_err(network)?;
@@ -231,6 +232,46 @@ mod tests {
             String::from_utf8_lossy(&bytes[..count]).into_owned()
         });
         (format!("http://{address}"), handle)
+    }
+
+    #[test]
+    fn asset_accept_replaces_json_without_mutating_json_requests() {
+        for response in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc".as_slice(),
+            b"HTTP/1.1 302 Found\r\nLocation: https://release-assets.githubusercontent.com/x\r\nContent-Length: 0\r\n\r\n".as_slice(),
+        ] {
+            let (base, observed) = serve(response);
+            let mut requester = Requester::fixture("very-secret", base).unwrap();
+            match requester.asset_response("/asset").unwrap() {
+                AssetResponse::Bytes(response) => assert_eq!(response.bytes().unwrap(), "abc"),
+                AssetResponse::Redirect(location) => {
+                    assert_eq!(location, "https://release-assets.githubusercontent.com/x");
+                }
+            }
+            let request = observed.join().unwrap();
+            let accepts: Vec<_> = request
+                .lines()
+                .filter(|line| line.to_ascii_lowercase().starts_with("accept:"))
+                .collect();
+            assert_eq!(accepts, ["accept: application/octet-stream"]);
+            assert!(!request.contains("application/vnd.github+json"));
+            assert!(request.contains("accept-encoding: identity"));
+            assert!(request.contains("authorization: Bearer very-secret"));
+            assert!(request.contains(&format!("x-github-api-version: {API_VERSION}")));
+            assert!(request.contains(&format!("user-agent: {USER_AGENT_VALUE}")));
+            assert!(requester.headers[AUTHORIZATION].is_sensitive());
+
+            let (base, observed) = serve(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
+            requester.base = base;
+            requester.get::<serde_json::Value>("/json").unwrap();
+            let request = observed.join().unwrap();
+            let accepts: Vec<_> = request
+                .lines()
+                .filter(|line| line.to_ascii_lowercase().starts_with("accept:"))
+                .collect();
+            assert_eq!(accepts, ["accept: application/vnd.github+json"]);
+            assert!(!request.contains("application/octet-stream"));
+        }
     }
 
     #[test]
