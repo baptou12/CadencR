@@ -13,7 +13,10 @@ fn help_and_version_succeed_in_real_process() {
 
     let version = cadencr().arg("--version").output().expect("run version");
     assert!(version.status.success());
-    assert!(String::from_utf8_lossy(&version.stdout).starts_with("cadencr "));
+    assert_eq!(
+        String::from_utf8_lossy(&version.stdout),
+        format!("cadencr {}\n", env!("CADENCR_CLI_VERSION"))
+    );
 }
 
 #[test]

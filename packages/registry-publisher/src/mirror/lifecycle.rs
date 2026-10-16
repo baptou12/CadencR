@@ -12,8 +12,19 @@ pub(super) fn mirror_locked(
     let prior = read_mirror_receipt(directory, &binding, repository, registry_commit)?;
     verify_tag(client, &binding.tag, registry_commit)?;
     let release = resolve_release(client, &binding, registry_commit, prior.as_ref())?;
-    let mut assets = validated_assets(client.list_assets(release.id)?, &binding.expected, false)?;
-    verify_present(client, &assets, &binding.expected, directory)?;
+    let policy = crate::github::AssetUrlPolicy::bound_draft()
+        .release(&release)
+        .tag(&binding.tag)
+        .commit(registry_commit)
+        .body(&binding.body)
+        .call()?;
+    let mut assets = artifacts::validated_assets_with_policy(
+        client.list_assets(release.id)?,
+        &binding.expected,
+        false,
+        policy,
+    )?;
+    artifacts::verify_present_with_policy(client, &assets, &binding.expected, directory, policy)?;
     let missing: Vec<String> = binding
         .expected
         .iter()
@@ -33,13 +44,36 @@ pub(super) fn mirror_locked(
         revalidate_release(client, &release, registry_commit, &binding.body)?;
         verify_tag(client, &binding.tag, registry_commit)?;
         validate_local_artifact(artifact)?;
-        let _ = upload_one(client, release.id, artifact, &binding.expected, directory)?;
+        let _ = upload_one(
+            client,
+            release.id,
+            artifact,
+            &binding.expected,
+            directory,
+            policy,
+        )?;
         // Detect foreign assets before the next mutation, retaining this snapshot.
-        assets = validated_assets(client.list_assets(release.id)?, &binding.expected, false)?;
+        assets = artifacts::validated_assets_with_policy(
+            client.list_assets(release.id)?,
+            &binding.expected,
+            false,
+            policy,
+        )?;
     }
-    let final_assets = validated_assets(client.list_assets(release.id)?, &binding.expected, true)?;
+    let final_assets = artifacts::validated_assets_with_policy(
+        client.list_assets(release.id)?,
+        &binding.expected,
+        true,
+        policy,
+    )?;
     if had_missing || final_assets != assets {
-        verify_present(client, &final_assets, &binding.expected, directory)?;
+        artifacts::verify_present_with_policy(
+            client,
+            &final_assets,
+            &binding.expected,
+            directory,
+            policy,
+        )?;
     }
     revalidate_release(client, &release, registry_commit, &binding.body)?;
     verify_tag(client, &binding.tag, registry_commit)?;

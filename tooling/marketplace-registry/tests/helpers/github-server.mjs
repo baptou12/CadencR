@@ -180,6 +180,10 @@ async function handleReleaseApi(request, response, state, url) {
     return json(response, 201, release);
   }
   const releaseMatch = url.pathname.match(/^\/api\/repos\/acme\/registry\/releases\/(\d+)$/);
+  if (releaseMatch && request.method === "GET") {
+    const release = state.releases.find((entry) => entry.id === Number(releaseMatch[1]));
+    return json(response, release ? 200 : 404, release ?? {});
+  }
   if (releaseMatch && request.method === "PATCH") {
     const release = state.releases.find((entry) => entry.id === Number(releaseMatch[1]));
     if (!release) return json(response, 404, {});

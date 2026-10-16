@@ -2,11 +2,14 @@
 
 ## Preparation status
 
-Marketplace UI stays hidden in v0.13.0; this template is not an activated public
-registry. CLI release pins remain `PENDING`; JavaScript is retained for schema-1
+Marketplace UI stays hidden after v0.13.0; the next milestone populates reviewed
+themes and Pi before a later desktop activation. This template is not a deployed
+public registry. The CLI is released in v0.13.0, but lifecycle qualification and
+registry cutover remain pending. CLI pins stay `PENDING`; JavaScript is retained for schema-1
 provider compatibility, **not** mixed schema-2/theme or trust-generation support.
 Use the [contributor paths](CONTRIBUTING.md) and [operator runbook](OPERATIONS.md)
-for preparation. Do not execute remote-write examples below during this milestone.
+for preparation. Remote-write examples require reviewed targets, inputs and
+protected publication authority; local/offline qualification does not grant it.
 
 This directory is a portable bootstrap for the GitHub-only registry described in
 `docs/MARKETPLACE_V1.md`. It is a template, not a deployed registry, and contains
@@ -103,11 +106,20 @@ archives.
 
 The workflow is prepared to run the released Rust CLI from the official
 `merkr-software/CadencR` GitHub release path. `ci/released-cli.env`
-deliberately uses `PENDING` pins until that binary actually exists. Provisioning
+deliberately uses `PENDING` pins until the actual distributed binary passes
+publication, interrupted recovery and renewal qualification. Provisioning
 requires a reviewed exact version and lowercase SHA-256 for the raw
 `cadencr-v<VERSION>-x86_64-unknown-linux-gnu` asset. The trusted helper constructs
 the release URL itself, restricts redirects, verifies SHA-256 before execution,
 and checks `cadencr --version` before invoking any registry command.
+
+Development CLI prereleases use the same asset naming with an explicit third
+pin field, `CADENCR_RELEASE_TAG=cli/v<VERSION>`. This is accepted only when the
+exact version is `<base>-dev.<run-id>.<attempt>` with canonical numeric parts;
+the tag must match that version. Legacy two-field pins still download from
+`v<VERSION>`. Arbitrary URLs, repositories, refs and mismatched tags are refused.
+The main-only manual CLI release workflow emits a candidate pin file but never
+edits this registry's pin or grants it production authority.
 
 Do not accept a contributor-controlled version, digest, or download URL. While
 both pins are `PENDING`, the helper executes the existing trusted JavaScript gate.
@@ -125,7 +137,8 @@ candidate scripts. No additional code change is required for that cutover.
 The protected workflow uses the same `ci/released-cli.env` as contribution CI.
 Shared `scripts/ci/fetch-released-cli.sh` accepts only trusted pin data and a new
 caller-owned output directory. It returns the verified executable path; exit `3`
-means both values are explicitly `PENDING`. Every other failure stops the job.
+means both legacy values are explicitly `PENDING` and no release tag is supplied.
+Every other failure stops the job.
 
 Each isolated runner verifies the download independently. The protected job also
 checks `registry publish-registry --help` before materializing its signing key.
@@ -144,8 +157,10 @@ publication and signing checks rather than weakening them for superficial parity
 
 The pin remains `PENDING`; this preparation neither deploys the template nor
 publishes a CLI release. Superseded JavaScript stays until delivery/parity gates
-pass. An independent CLI release namespace requires coordinated URL/bootstrap
-changes; the current fixed official path is the app's `vX.Y.Z` release namespace.
+pass. Independent development CLI releases use the explicitly bound `cli/v…`
+namespace; stable application releases retain their `vX.Y.Z` namespace. See
+[`packages/cli/README.md`](../../packages/cli/README.md#manual-development-cli-releases)
+for manual delivery and the separate qualification/pinning gates.
 
 ## Verified local archive staging
 

@@ -129,7 +129,7 @@ mod tests {
 
 #[cfg(test)]
 mod http_tests {
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::net::TcpListener;
 
     fn serve(
@@ -155,28 +155,7 @@ mod http_tests {
                         Err(error) => panic!("{error}"),
                     }
                 };
-                stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
-                    .unwrap();
-                let mut request = Vec::new();
-                loop {
-                    let mut buffer = [0; 4096];
-                    let n = stream.read(&mut buffer).unwrap();
-                    assert!(n > 0);
-                    request.extend_from_slice(&buffer[..n]);
-                    if let Some(end) = request.windows(4).position(|b| b == b"\r\n\r\n") {
-                        let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
-                        let length = headers
-                            .lines()
-                            .find_map(|h| h.strip_prefix("content-length:"))
-                            .map(|n| n.trim().parse::<usize>().unwrap())
-                            .unwrap_or(0);
-                        if request.len() >= end + 4 + length {
-                            break;
-                        }
-                    }
-                    assert!(request.len() < 64 * 1024);
-                }
+                let request = super::super::fixture::read_request(&mut stream);
                 observed.push(String::from_utf8(request).unwrap());
                 if status != "lost" {
                     write!(stream,"HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();

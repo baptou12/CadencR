@@ -73,6 +73,14 @@ impl ReleaseClient for Client {
     fn find_release(&self, tag: &str) -> Result<Option<Release>, PublisherError> {
         Ok(self.releases.borrow().get(tag).cloned())
     }
+    fn get_release(&self, id: u64) -> Result<Option<Release>, PublisherError> {
+        Ok(self
+            .releases
+            .borrow()
+            .values()
+            .find(|release| release.id == id)
+            .cloned())
+    }
     fn create_draft(&self, request: CreateDraftRequest<'_>) -> Result<Release, PublisherError> {
         self.write();
         let release = Release {

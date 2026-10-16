@@ -15,7 +15,9 @@ struct State {
     verifies: u64,
     api: u64,
     tag_calls: u64,
-    find_calls: u64,
+    release_reads: u64,
+    listing_calls: u64,
+    omit_listing: bool,
     list_calls: u64,
     lost: bool,
     fail_patch: bool,
@@ -32,6 +34,20 @@ struct State {
     drift_get: Option<u64>,
     drift_release: Option<u64>,
     foreign_lost: bool,
+}
+
+impl State {
+    fn read_release(&mut self) -> Option<Release> {
+        self.api += 1;
+        self.release_reads += 1;
+        let mut release = self.release.clone();
+        if self.drift_release == Some(self.release_reads) {
+            if let Some(value) = &mut release {
+                value.body.push_str(" drift");
+            }
+        }
+        release
+    }
 }
 
 pub(crate) struct Client {
@@ -80,7 +96,7 @@ impl Client {
     }
     pub(crate) fn drift_release_after(&self, offset: u64) {
         let mut state = self.state.borrow_mut();
-        state.drift_release = Some(state.find_calls + offset);
+        state.drift_release = Some(state.release_reads + offset);
     }
     pub(crate) fn drift_asset_id_at(&self, n: u64) {
         self.state.borrow_mut().drift_asset = Some(n);
@@ -155,7 +171,7 @@ impl Client {
             id: 11,
             name: super::super::ASSET.into(),
             state: "uploaded".into(),
-            browser_download_url: self.url.clone(),
+            browser_download_url: self.url.replace(&self.tag, "untagged-fixture"),
             size: self.bytes.len() as u64,
         }
     }
@@ -218,16 +234,17 @@ impl ReleaseClient for Client {
     }
     fn find_release(&self, tag: &str) -> Result<Option<Release>, PublisherError> {
         assert_eq!(tag, self.tag);
-        let mut s = self.state.borrow_mut();
-        s.api += 1;
-        s.find_calls += 1;
-        let mut release = s.release.clone();
-        if s.drift_release == Some(s.find_calls) {
-            if let Some(value) = &mut release {
-                value.body.push_str(" drift");
-            }
-        }
-        Ok(release)
+        let mut state = self.state.borrow_mut();
+        state.listing_calls += 1;
+        let release = state.read_release();
+        Ok(if state.omit_listing { None } else { release })
+    }
+    fn get_release(&self, id: u64) -> Result<Option<Release>, PublisherError> {
+        Ok(self
+            .state
+            .borrow_mut()
+            .read_release()
+            .filter(|release| release.id == id))
     }
     fn create_draft(&self, r: CreateDraftRequest<'_>) -> Result<Release, PublisherError> {
         assert_eq!(r.tag, self.tag);
@@ -290,6 +307,9 @@ impl ReleaseClient for Client {
         let fail = s.fail_verify;
         drop(s);
         assert_eq!(r.expected_url, self.url);
+        assert!(r
+            .url_policy
+            .matches(&r.asset.browser_download_url, r.expected_url));
         assert_eq!(r.sha256, self.sha256);
         assert_eq!(r.size, self.bytes.len() as u64);
         if fail || r.asset.id != 11 {
@@ -308,6 +328,9 @@ impl ReleaseClient for Client {
         }
         let mut r = self.release(false);
         s.release = Some(r.clone());
+        for asset in &mut s.assets {
+            asset.browser_download_url.clone_from(&self.url);
+        }
         if s.wrong_patch_id {
             r.id = 8;
             return Ok(r);
@@ -317,5 +340,33 @@ impl ReleaseClient for Client {
         } else {
             Ok(r)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog_publish::fixture::FlowFixture;
+
+    #[test]
+    fn publication_uses_known_id_when_listing_omits_the_created_release() {
+        let fixture = FlowFixture::new();
+        fixture.client.state.borrow_mut().omit_listing = true;
+        assert!(fixture.client.get_release(7).unwrap().is_none());
+        let receipt = fixture.publish().unwrap();
+        assert_eq!(receipt.release_id, 7);
+        assert_eq!(fixture.client.mutations(), (1, 1, 1));
+        assert_eq!(fixture.client.state.borrow().listing_calls, 1);
+        assert!(!fixture.client.get_release(7).unwrap().unwrap().draft);
+        assert!(fixture
+            .client
+            .find_release(&fixture.client.tag)
+            .unwrap()
+            .is_none());
+        assert!(fixture.client.get_release(8).unwrap().is_none());
+        assert!(fixture
+            .directory
+            .join(super::super::super::RECEIPT)
+            .exists());
     }
 }

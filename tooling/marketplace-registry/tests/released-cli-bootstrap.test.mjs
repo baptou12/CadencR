@@ -13,8 +13,8 @@ test("trusted bootstrap parses inert pins and bounds verified official downloads
   t.after(() => rm(root, { recursive: true, force: true }));
   const tools = path.join(root, "tools");
   await mkdir(tools);
-  // CI uses coreutils timeout; this inert local shim exercises process-group
-  // cancellation quickly on macOS, which does not ship that utility.
+  // Allow startup under load; only deliberately hung fixtures use a short
+  // deadline. Always validate the unchanged production timeout arguments.
   await writeFile(
     path.join(tools, "timeout"),
     `#!/usr/bin/env node
@@ -22,14 +22,15 @@ const { spawn } = require("node:child_process");
 const args = process.argv.slice(2);
 if (args.shift() !== "--kill-after=2s" || args.shift() !== "30s") process.exit(99);
 const child = spawn(args.shift(), args, { stdio: "inherit", detached: true });
-const timer = setTimeout(() => { process.kill(-child.pid, "SIGKILL"); }, 500);
+const timeoutMs = process.env.FIXTURE_SHORT_TIMEOUT === "1" ? 500 : 5000;
+const timer = setTimeout(() => { process.kill(-child.pid, "SIGKILL"); }, timeoutMs);
 child.on("exit", (code) => { clearTimeout(timer); process.exit(code ?? 124); });
 `,
     { mode: 0o700 },
   );
   const marker = path.join(root, "executed");
   const bytes = Buffer.from(
-    `#!/bin/sh\necho version >> '${marker}'\necho "cadencr \${FAKE_VERSION:-1.2.3}"\n`,
+    `#!/bin/sh\nif [ -n "\${FAKE_VERSION_DELAY:-}" ]; then sleep "$FAKE_VERSION_DELAY"; fi\necho version >> '${marker}'\necho "cadencr \${FAKE_VERSION:-1.2.3}"\n`,
   );
   const fixture = path.join(root, "fixture");
   await writeFile(fixture, bytes);
@@ -92,6 +93,41 @@ exit "\${FAKE_CURL_EXIT:-0}"
     await assert.rejects(readFile(requests), /ENOENT/);
     await assert.rejects(readFile(marker), /ENOENT/);
   }
+  const devVersion = "1.2.3-dev.123456.2";
+  const devPin = `CADENCR_RELEASE_VERSION=${devVersion}\nCADENCR_RELEASE_SHA256=${digest}\nCADENCR_RELEASE_TAG=cli/v${devVersion}\n`;
+  const badDevPins = [
+    devPin + `CADENCR_RELEASE_TAG=cli/v${devVersion}\n`,
+    "CADENCR_RELEASE_VERSION=PENDING\nCADENCR_RELEASE_SHA256=PENDING\nCADENCR_RELEASE_TAG=cli/vPENDING\n",
+    ...[
+      "",
+      "v1.2.3",
+      "cli/v1.2.3-dev.123456.3",
+      "../cli/v1.2.3-dev.123456.2",
+      "https://evil.invalid/release",
+      "cli/v1.2.3-dev.123456.2?other=1",
+      "cli/v1.2.3-dev.123456.2/asset",
+      "cli/v$(touch nope)",
+    ].map((tag) =>
+      devPin.replace(`CADENCR_RELEASE_TAG=cli/v${devVersion}`, `CADENCR_RELEASE_TAG=${tag}`),
+    ),
+    ...[
+      "01.2.3-dev.123456.2",
+      "1.02.3-dev.123456.2",
+      "1.2.03-dev.123456.2",
+      "1.2.3-dev.0.2",
+      "1.2.3-dev.123456.0",
+      "1.2.3-dev.0123456.2",
+      "1.2.3-dev.123456.02",
+      "1.2.3-dev.123456.2.extra",
+    ].map((version) => devPin.replaceAll(devVersion, version)),
+  ];
+  for (const pin of badDevPins) {
+    const result = await run(pin);
+    assert.equal(result.status, 2, result.stderr);
+    assert.equal(result.stdout, "");
+    await assert.rejects(readFile(requests), /ENOENT/);
+    await assert.rejects(readFile(marker), /ENOENT/);
+  }
   const collision = await run(validPin, { FAKE_CURL_EXIT: "3" });
   assert.equal(collision.status, 1, collision.stderr);
   await assert.rejects(readFile(marker), /ENOENT/);
@@ -100,7 +136,10 @@ exit "\${FAKE_CURL_EXIT:-0}"
     const replacement = Buffer.from(`#!/bin/sh\n${body}\n`);
     await writeFile(fixture, replacement);
     const replacementDigest = createHash("sha256").update(replacement).digest("hex");
-    const result = await run(validPin.replace(digest, replacementDigest));
+    const result = await run(
+      validPin.replace(digest, replacementDigest),
+      body === "exit 3" ? {} : { FIXTURE_SHORT_TIMEOUT: "1" },
+    );
     assert.equal(result.status, 1, result.stderr);
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /version (?:check|output)/);
@@ -139,11 +178,28 @@ exit "\${FAKE_CURL_EXIT:-0}"
     assert.match(result.stderr, /already exists/);
   }
   assert.equal(await readFile(existing, "utf8"), "preserved");
-  const success = await run(validPin);
+  // A valid CLI slower than the old 500 ms fixture cutoff is not a timeout.
+  const success = await run(validPin, { FAKE_VERSION_DELAY: "0.7" });
   assert.equal(success.status, 0, success.stderr);
   assert.equal(success.stdout, `${await realpath(success.target)}/cadencr\n`);
   assert.equal(await readFile(marker, "utf8"), "version\n");
+  // A development pin uses the same digest-before-execution and version checks.
+  await rm(marker);
+  const badDevDigest = await run(devPin.replace(digest, "0".repeat(64)), {
+    FAKE_VERSION: devVersion,
+  });
+  assert.equal(badDevDigest.status, 1, badDevDigest.stderr);
+  assert.match(badDevDigest.stderr, /SHA-256 mismatch/);
+  await assert.rejects(readFile(marker), /ENOENT/);
+  const devSuccess = await run(devPin, { FAKE_VERSION: devVersion });
+  assert.equal(devSuccess.status, 0, devSuccess.stderr);
+  assert.equal(devSuccess.stdout, `${await realpath(devSuccess.target)}/cadencr\n`);
+  assert.equal(await readFile(marker, "utf8"), "version\n");
   const args = await readFile(requests, "utf8");
+  assert.match(
+    args,
+    /https:\/\/github.com\/merkr-software\/CadencR\/releases\/download\/cli\/v1\.2\.3-dev\.123456\.2\/cadencr-v1\.2\.3-dev\.123456\.2-x86_64-unknown-linux-gnu/,
+  );
   assert.match(args, /--proto =https --max-redirs 0/);
   assert.match(args, /--connect-timeout 15 --max-time 120 --max-filesize 134217728/);
   assert.match(

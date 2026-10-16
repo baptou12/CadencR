@@ -30,9 +30,7 @@ pub(crate) mod release;
 use release::{resolve_release, revalidate_release, verify_tag};
 
 pub(crate) mod artifacts;
-use artifacts::{
-    publish_receipt, upload_one, validate_local_artifact, validated_assets, verify_present,
-};
+use artifacts::{publish_receipt, upload_one, validate_local_artifact};
 
 mod lifecycle;
 use lifecycle::mirror_locked;

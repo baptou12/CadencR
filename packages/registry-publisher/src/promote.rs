@@ -6,7 +6,9 @@ use crate::binding::{
     read_publication_receipt, PublicationReceipt, PUBLICATION_RECEIPT,
 };
 use crate::github::ReleaseClient;
-use crate::mirror::artifacts::{validated_assets, verify_present};
+use crate::mirror::artifacts::{
+    validated_assets, validated_assets_with_policy, verify_present_with_policy,
+};
 use crate::mirror::release::validate_published_release;
 use crate::publication_local::{self, RefusingDownloader};
 use crate::receipt::publish_canonical_receipt;
@@ -75,11 +77,26 @@ fn promote_locked(
             "historically published release is unexpectedly draft",
         ));
     }
-    let assets = validated_assets(client.list_assets(release.id)?, &binding.expected, true)?;
+    let policy = if release.draft {
+        crate::github::AssetUrlPolicy::bound_draft()
+            .release(&release)
+            .tag(&binding.tag)
+            .commit(registry_commit)
+            .body(&binding.body)
+            .call()?
+    } else {
+        crate::github::AssetUrlPolicy::default()
+    };
+    let assets = validated_assets_with_policy(
+        client.list_assets(release.id)?,
+        &binding.expected,
+        true,
+        policy,
+    )?;
     verify_exact_tag(client, &binding.tag, registry_commit, "before publication")?;
 
     if release.draft {
-        verify_present(client, &assets, &binding.expected, directory)?;
+        verify_present_with_policy(client, &assets, &binding.expected, directory, policy)?;
         release = publish_bound_draft(client, &binding, registry_commit, release.id, &assets)?;
     }
     validate_published_release(
@@ -92,7 +109,7 @@ fn promote_locked(
     validate_final(client, &binding, registry_commit, mirror.release_id)?;
     verify_exact_tag(client, &binding.tag, registry_commit, "after publication")?;
     public::verify(&binding.expected, directory, downloader)?;
-    require_same_assets(
+    local::require_same_published_assets(
         &assets,
         &validated_assets(client.list_assets(release.id)?, &binding.expected, true)?,
     )?;
@@ -115,7 +132,6 @@ fn promote_locked(
 }
 
 mod release;
-use local::require_same_assets;
 pub(crate) use release::verify_exact_tag;
 use release::{publish_bound_draft, validate_bound_id, validate_final};
 

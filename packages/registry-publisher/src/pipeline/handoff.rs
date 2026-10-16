@@ -129,6 +129,9 @@ impl ReleaseClient for Remote {
     fn find_release(&self, tag: &str) -> Result<Option<Release>, PublisherError> {
         self.github.find_release(tag)
     }
+    fn get_release(&self, id: u64) -> Result<Option<Release>, PublisherError> {
+        self.github.get_release(id)
+    }
     fn create_draft(&self, request: CreateDraftRequest<'_>) -> Result<Release, PublisherError> {
         self.github.create_draft(request)
     }

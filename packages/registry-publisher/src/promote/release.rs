@@ -1,6 +1,6 @@
 use crate::binding::PublicationBinding;
 use crate::github::{Release, ReleaseClient};
-use crate::mirror::artifacts::validated_assets;
+use crate::mirror::artifacts::validated_assets_with_policy;
 use crate::mirror::release::{validate_bound_release, validate_published_release};
 use crate::promote::local::require_same_assets;
 use crate::PublisherError;
@@ -13,9 +13,20 @@ pub(super) fn publish_bound_draft(
     assets: &[crate::github::Asset],
 ) -> Result<Release, PublisherError> {
     let release = revalidate_draft(client, binding, commit, id)?;
+    let policy = crate::github::AssetUrlPolicy::bound_draft()
+        .release(&release)
+        .tag(&binding.tag)
+        .commit(commit)
+        .body(&binding.body)
+        .call()?;
     require_same_assets(
         assets,
-        &validated_assets(client.list_assets(release.id)?, &binding.expected, true)?,
+        &validated_assets_with_policy(
+            client.list_assets(release.id)?,
+            &binding.expected,
+            true,
+            policy,
+        )?,
     )?;
     verify_exact_tag(
         client,
@@ -25,7 +36,7 @@ pub(super) fn publish_bound_draft(
     )?;
     match client.publish_draft(release.id) {
         Ok(release) => Ok(release),
-        Err(primary) => match client.find_release(&binding.tag)? {
+        Err(primary) => match client.get_release(release.id)? {
             Some(recovered)
                 if validate_published_release(
                     &recovered,
@@ -65,7 +76,7 @@ pub(super) fn revalidate_draft(
     id: u64,
 ) -> Result<Release, PublisherError> {
     let release = client
-        .find_release(&binding.tag)?
+        .get_release(id)?
         .ok_or_else(|| PublisherError::new("release changed before publication"))?;
     validate_bound_id(&release, binding, commit, id)?;
     if !release.draft {
@@ -81,7 +92,7 @@ pub(super) fn validate_final(
     id: u64,
 ) -> Result<(), PublisherError> {
     let release = client
-        .find_release(&binding.tag)?
+        .get_release(id)?
         .ok_or_else(|| PublisherError::new("published release disappeared"))?;
     validate_published_release(&release, &binding.tag, commit, &binding.body, id)
 }
@@ -214,13 +225,18 @@ mod tests {
                         "tag_name":release.tag_name,"target_commitish":release.target_commitish,
                         "body":release.body}]))
                     .unwrap()
+                } else if route.starts_with("GET /repos/cadencr/registry/releases/7 ") {
+                    serde_json::to_vec(&json!({"id":release.id,"draft":draft,"prerelease":false,
+                        "tag_name":release.tag_name,"target_commitish":release.target_commitish,
+                        "body":release.body}))
+                    .unwrap()
                 } else if route.starts_with("GET /repos/cadencr/registry/git/ref/tags/") {
                     serde_json::to_vec(&json!({"ref":format!("refs/tags/{}",release.tag_name),
                         "object":{"type":"commit","sha":release.target_commitish}}))
                     .unwrap()
                 } else if route.starts_with("GET /repos/cadencr/registry/releases/7/assets?") {
                     serde_json::to_vec(&assets.iter().map(|(a,_)| json!({"id":a.id,"name":a.name,
-                        "state":a.state,"size":a.size,"browser_download_url":a.browser_download_url}))
+                        "state":a.state,"size":a.size,"browser_download_url": if draft { a.browser_download_url.replace(&release.tag_name, "untagged-fixture") } else { a.browser_download_url.clone() }}))
                         .collect::<Vec<_>>()).unwrap()
                 } else {
                     let asset = assets
