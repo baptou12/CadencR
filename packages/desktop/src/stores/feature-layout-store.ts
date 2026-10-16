@@ -51,10 +51,18 @@ interface FeatureLayoutStore {
   // ---- moves ----
   /** Drag a tab onto a pane edge; creates a new sibling pane next to `targetPaneId`. */
   splitTabAt(featureId: number, tab: TabKind, targetPaneId: string, edge: SplitEdge): void;
-  /** Drop a tab into an existing pane (center drop or strip insertion). */
-  moveTabToPane(featureId: number, tab: TabKind, targetPaneId: string, index?: number): void;
-  /** Convenience: move a tab back to the root pane's strip. */
-  dockTab(featureId: number, tab: TabKind, index?: number): void;
+  /**
+   * Drop a tab into an existing pane (center drop or strip insertion). With
+   * `activate: false` the pane keeps its current tab unless it had none.
+   */
+  moveTabToPane(
+    featureId: number,
+    tab: TabKind,
+    targetPaneId: string,
+    options?: { index?: number; activate?: boolean },
+  ): void;
+  /** Move a tab back to the root strip; the root takes focus but keeps its active tab. */
+  dockTab(featureId: number, tab: TabKind): void;
   /** Set which tab is shown inside a pane's strip. */
   setPaneActiveTab(featureId: number, paneId: string, tab: TabKind): void;
   // ---- resize ----
@@ -118,7 +126,7 @@ export const useFeatureLayoutStore = create<FeatureLayoutStore>((set, get) => ({
       return { ...st, splitRoot, focusedPaneId: newLeaf.id };
     }),
 
-  moveTabToPane: (featureId, tab, targetPaneId, index) =>
+  moveTabToPane: (featureId, tab, targetPaneId, { index, activate = true } = {}) =>
     update(set, featureId, (st) => {
       const after = pluckTab(st.splitRoot, tab);
       const target = findLeafById(after, targetPaneId);
@@ -127,12 +135,14 @@ export const useFeatureLayoutStore = create<FeatureLayoutStore>((set, get) => ({
         const at = index ?? leaf.tabIds.length;
         const tabIds = [...leaf.tabIds];
         tabIds.splice(at, 0, tab);
-        return { ...leaf, tabIds, activeTabId: tab };
+        return { ...leaf, tabIds, activeTabId: activate ? tab : (leaf.activeTabId ?? tab) };
       });
       return { ...st, splitRoot, focusedPaneId: targetPaneId };
     }),
 
-  dockTab: (featureId, tab, index) => get().moveTabToPane(featureId, tab, ROOT_LEAF_ID, index),
+  // Docking puts a tab back where it came from; it is not a request to look at it.
+  dockTab: (featureId, tab) =>
+    get().moveTabToPane(featureId, tab, ROOT_LEAF_ID, { activate: false }),
 
   setPaneActiveTab: (featureId, paneId, tab) =>
     update(set, featureId, (st) => {

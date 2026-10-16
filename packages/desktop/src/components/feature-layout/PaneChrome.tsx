@@ -1,7 +1,7 @@
 import { type ReactNode, type RefObject } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { XIcon } from "lucide-react";
+import { MinusIcon } from "lucide-react";
 
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -222,17 +222,22 @@ function DraggableTabTrigger({
         </TabsTrigger>
       </ShortcutTooltip>
       {!isRootPane && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          aria-label={`Return ${def.label} to the root tab strip`}
+        <ShortcutTooltip
+          label="Return to main tabs"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2"
         >
-          <XIcon className="size-3" />
-        </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="flex rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label={`Return ${def.label} to the root tab strip`}
+          >
+            <MinusIcon className="size-3" />
+          </button>
+        </ShortcutTooltip>
       )}
     </div>
   );
