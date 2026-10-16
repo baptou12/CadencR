@@ -10,6 +10,7 @@ import { WorktreeGroup } from "@/components/WorktreeGroup";
 import { VirtualizedProjectFeatureList } from "@/components/VirtualizedProjectFeatureList";
 import { VirtualizedArchivedFeatureList } from "@/components/VirtualizedArchivedFeatureList";
 import { useReorderAnimation } from "@/hooks/useReorderAnimation";
+import { SidebarReorderProvider } from "@/components/SidebarReorderProvider";
 
 export function ProjectFeatures(props: ProjectFeaturesProps) {
   const controller = useProjectFeaturesController(props);
@@ -18,47 +19,49 @@ export function ProjectFeatures(props: ProjectFeaturesProps) {
   const listRef = useRef<HTMLDivElement>(null);
   useReorderAnimation(listRef, controller.orderedIds);
   return (
-    <div ref={listRef} className="flex flex-col gap-0.5">
-      {virtualizeActive ? (
-        <VirtualizedProjectFeatureList
-          activeFeatureId={props.activeFeatureId}
-          flatActiveFeatures={controller.flatActiveFeatures}
-          renderFeature={controller.renderFeature}
-          rootNodeByFeatureId={controller.rootNodeByFeatureId}
-          worktreeGroups={controller.worktreeGroups}
-        />
-      ) : (
-        <>
-          {controller.worktreeGroups.map((group) => (
-            <WorktreeGroup
-              key={group.key}
-              label={group.label}
-              features={group.features}
-              renderFeature={controller.renderSubtree}
-            />
-          ))}
-          {controller.flatActiveFeatures.map(controller.renderSubtree)}
-        </>
-      )}
-      <DormantFeatureList controller={controller} />
-      <ProjectFeatureDialogs projectId={props.projectId} controller={controller} />
-      {virtualizeArchived ? (
-        <VirtualizedArchivedFeatureList
-          features={controller.archivedFeatures}
-          expanded={controller.showArchived}
-          onToggle={controller.toggleArchived}
-          renderFeature={controller.renderFeature}
-          activeFeatureId={props.activeFeatureId}
-        />
-      ) : (
-        <ArchivedFeatureList
-          features={controller.archivedFeatures}
-          expanded={controller.showArchived}
-          onToggle={controller.toggleArchived}
-          renderFeature={controller.renderFeature}
-        />
-      )}
-    </div>
+    <SidebarReorderProvider groups={controller.reorderGroups}>
+      <div ref={listRef} className="flex flex-col gap-0.5">
+        {virtualizeActive ? (
+          <VirtualizedProjectFeatureList
+            activeFeatureId={props.activeFeatureId}
+            flatActiveFeatures={controller.flatActiveFeatures}
+            renderFeature={controller.renderFeature}
+            rootNodeByFeatureId={controller.rootNodeByFeatureId}
+            worktreeGroups={controller.worktreeGroups}
+          />
+        ) : (
+          <>
+            {controller.worktreeGroups.map((group) => (
+              <WorktreeGroup
+                key={group.key}
+                label={group.label}
+                features={group.features}
+                renderFeature={controller.renderSubtree}
+              />
+            ))}
+            {controller.flatActiveFeatures.map(controller.renderSubtree)}
+          </>
+        )}
+        <DormantFeatureList controller={controller} />
+        <ProjectFeatureDialogs projectId={props.projectId} controller={controller} />
+        {virtualizeArchived ? (
+          <VirtualizedArchivedFeatureList
+            features={controller.archivedFeatures}
+            expanded={controller.showArchived}
+            onToggle={controller.toggleArchived}
+            renderFeature={controller.renderFeature}
+            activeFeatureId={props.activeFeatureId}
+          />
+        ) : (
+          <ArchivedFeatureList
+            features={controller.archivedFeatures}
+            expanded={controller.showArchived}
+            onToggle={controller.toggleArchived}
+            renderFeature={controller.renderFeature}
+          />
+        )}
+      </div>
+    </SidebarReorderProvider>
   );
 }
 

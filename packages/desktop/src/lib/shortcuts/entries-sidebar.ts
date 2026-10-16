@@ -83,4 +83,21 @@ export const SIDEBAR_SHORTCUTS = [
     description: "Mark the focused conversation read / unread",
     scope: "sidebar",
   },
+  {
+    // Focus moves with ⌥⌘↑/↓; Shift carries the focused row along instead.
+    // One step within its group (project, worktree, parent, lens group); at
+    // the group's edge nothing happens. The first move switches to Manual.
+    id: "sidebar-reorder-up",
+    keys: ["mod", "alt", "shift", "up"],
+    description: "Move the focused conversation up",
+    scope: "sidebar",
+    aliases: ["reorder", "manual order", "drag"],
+  },
+  {
+    id: "sidebar-reorder-down",
+    keys: ["mod", "alt", "shift", "down"],
+    description: "Move the focused conversation down",
+    scope: "sidebar",
+    aliases: ["reorder", "manual order", "drag"],
+  },
 ] as const satisfies readonly Shortcut[];

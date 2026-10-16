@@ -118,3 +118,20 @@ describe("shortcut registry", () => {
       expect(globalChords.has(shortcut.keys.join("+"))).toBe(false);
   });
 });
+
+describe("sidebar reorder shortcuts", () => {
+  it("add Shift to the focus moves and collide with no global or sidebar chord", () => {
+    expect(shortcutKeys("sidebar-reorder-up")).toEqual(["mod", "alt", "shift", "up"]);
+    expect(shortcutKeys("sidebar-reorder-down")).toEqual(["mod", "alt", "shift", "down"]);
+    for (const id of ["sidebar-reorder-up", "sidebar-reorder-down"]) {
+      const chord = shortcutKeys(id).join("+");
+      const clashes = SHORTCUTS.filter(
+        (shortcut) =>
+          shortcut.id !== id &&
+          (shortcut.scope === "global" || shortcut.scope === "sidebar") &&
+          shortcut.keys.join("+") === chord,
+      );
+      expect(clashes).toEqual([]);
+    }
+  });
+});

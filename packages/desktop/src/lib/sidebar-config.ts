@@ -76,7 +76,7 @@ export const SIDEBAR_OPTIONS = {
   ),
   conversationSort: enumOption(
     "sidebar_conversation_sort",
-    ["activity", "created", "title"],
+    ["activity", "created", "title", "manual"],
     "activity",
   ),
   projectSort: enumOption("sidebar_project_sort", ["frozen", "live", "name"], "frozen"),

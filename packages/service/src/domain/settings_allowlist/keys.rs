@@ -86,6 +86,9 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // Agents grid filter language), and the id of the one shown ("" for none).
     "sidebar_views",
     "sidebar_active_view",
+    // The "Manual" conversation order: a JSON array of conversation ids, the
+    // order every sidebar group sorts by (each group keeps its members' order).
+    "sidebar_conversation_order",
     // Sidebar display options (density, row template, filter) live in
     // `SIDEBAR_DISPLAY_KEYS` below.
     "loader_style",

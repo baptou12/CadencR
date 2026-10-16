@@ -43,6 +43,8 @@ export function useSidebarRowShortcuts(): void {
   useShortcut("sidebar-row-pin", rowAction("pin"), ROW_SHORTCUT_OPTIONS);
   useShortcut("sidebar-row-archive", rowAction("archive"), ROW_SHORTCUT_OPTIONS);
   useShortcut("sidebar-row-label", rowAction("label"), ROW_SHORTCUT_OPTIONS);
+  useShortcut("sidebar-reorder-up", rowAction("move-up"), ROW_SHORTCUT_OPTIONS);
+  useShortcut("sidebar-reorder-down", rowAction("move-down"), ROW_SHORTCUT_OPTIONS);
   useShortcut(
     "sidebar-row-rename",
     (event) => {
