@@ -183,8 +183,9 @@ html {
  * call consumes the AppKit event before the native window menu code can
  * run, which is what stops the crash.
  *
- * The carve-out below also marks common interactive children `no-drag`
- * so their click and right-click keep working inside drag regions.
+ * The carve-out further down marks interactive children and every floating
+ * layer (toasts, menus, popovers, dialogs) `no-drag` so their click and
+ * right-click keep working over drag regions.
  */
 @utility titlebar-drag {
   -webkit-app-region: drag;
@@ -341,18 +342,29 @@ html[data-animations="off"] .pr-chip-checks-running::after {
   mask-position: center;
 }
 
+/*
+ * Electron builds the window's drag area from each element's OWN box, in
+ * document order: `drag` boxes are added, `no-drag` boxes are cut out. The
+ * property is not inherited and stacking is ignored, so a box only escapes a
+ * drag band by declaring `no-drag` itself. Floating layers (portals on
+ * <body>, toasts, in-place dialogs/menus) paint over the bands without being
+ * inside them, so they opt out here; otherwise their clicks drag the window.
+ */
 .titlebar-drag button,
 .titlebar-drag input,
 .titlebar-drag a,
 .titlebar-drag textarea,
 .titlebar-drag select,
 .titlebar-drag [role="button"],
-.titlebar-drag [role="dialog"],
-.titlebar-drag [role="alertdialog"],
-.titlebar-drag [role="menu"],
-.titlebar-drag [role="listbox"],
-.titlebar-drag [role="tooltip"],
-.titlebar-drag [data-slot="context-menu-trigger"] {
+.titlebar-drag [data-slot="context-menu-trigger"],
+body > :not(#root),
+body > :not(#root) > *,
+[data-sonner-toast],
+[role="dialog"],
+[role="alertdialog"],
+[role="menu"],
+[role="listbox"],
+[role="tooltip"] {
   -webkit-app-region: no-drag;
 }
 
