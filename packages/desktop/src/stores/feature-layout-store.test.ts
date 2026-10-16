@@ -66,6 +66,29 @@ describe("feature-layout-store", () => {
     expect(state.splitRoot.type).toBe("leaf"); // back to flat
     const root = findLeafById(state.splitRoot, ROOT_LEAF_ID);
     expect(root?.tabIds).toContain("terminal");
+  });
+
+  it("dockTab keeps the root's main tab active and focused", () => {
+    const store = useFeatureLayoutStore.getState();
+    store.splitTabAt(FEATURE, "terminal", ROOT_LEAF_ID, "right");
+    store.splitTabAt(FEATURE, "git", ROOT_LEAF_ID, "bottom");
+    expect(getState().focusedPaneId).not.toBe(ROOT_LEAF_ID);
+    store.dockTab(FEATURE, "terminal");
+    const state = getState();
+    const root = findLeafById(state.splitRoot, ROOT_LEAF_ID);
+    expect(root?.tabIds.at(-1)).toBe("terminal");
+    expect(root?.activeTabId).toBe("agent");
+    expect(state.focusedPaneId).toBe(ROOT_LEAF_ID);
+  });
+
+  it("dockTab activates the tab when the root strip was empty", () => {
+    const store = useFeatureLayoutStore.getState();
+    for (const tab of ["agent", "terminal", "git", "editor", "browser"] as const) {
+      store.splitTabAt(FEATURE, tab, ROOT_LEAF_ID, "right");
+    }
+    store.dockTab(FEATURE, "terminal");
+    const root = findLeafById(getState().splitRoot, ROOT_LEAF_ID);
+    expect(root?.tabIds).toEqual(["terminal"]);
     expect(root?.activeTabId).toBe("terminal");
   });
 
