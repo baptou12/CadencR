@@ -115,6 +115,7 @@ const BEHAVIOUR_OPTIONS: ReadonlySet<SidebarOptionId> = new Set([
   "conversationSort",
   "projectSort",
   "stickyHeaders",
+  "forMeAck",
 ]);
 
 const PRESET_OPTION_IDS = (Object.keys(SIDEBAR_OPTIONS) as SidebarOptionId[]).filter(

@@ -72,6 +72,30 @@ describe("unread marks persistence", () => {
     expect(state.failedByFeature).toEqual({ 1: true, 2: true });
   });
 
+  it("keeps the pull request actions marked done until the conversation is forgotten", async () => {
+    const first = await reload();
+    first.useUnreadStore.getState().markUnread(6);
+    first.useUnreadStore.getState().acknowledge(6, "merge:12:abc");
+    first.useUnreadStore.getState().acknowledge(8, "fix_ci:3:def");
+
+    const second = await reload();
+    expect(second.useUnreadStore.getState()).toMatchObject({
+      byFeature: {},
+      prAcks: { 6: "merge:12:abc", 8: "fix_ci:3:def" },
+    });
+    second.useUnreadStore.getState().forget(8);
+
+    const { useUnreadStore } = await reload();
+    expect(useUnreadStore.getState().prAcks).toEqual({ 6: "merge:12:abc" });
+  });
+
+  it("restores marks saved before pull request actions could be marked done", async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ marks: [[3, "unread"]] }));
+    const { useUnreadStore } = await reload();
+    expect(useUnreadStore.getState()).toMatchObject({ byFeature: { 3: true }, prAcks: {} });
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["invalid JSON", "{not json"],
     ["the wrong shape", JSON.stringify({ marks: [["7", "unread"]] })],

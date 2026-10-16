@@ -75,14 +75,21 @@ export function useResolvedAttention(): ResolvedAttentionResult {
   // The store keeps `byFeature` while pushes change nothing, so this re-derives
   // only on a real pull request change.
   const prByFeature = usePrStatusStore((state) => state.byFeature);
+  const prAcks = useUnreadStore((state) => state.prAcks);
   const actionEntries = useMemo(
-    () => deriveNextActions(entries, prByFeature),
-    [entries, prByFeature],
+    () => deriveNextActions(entries, prByFeature, prAcks),
+    [entries, prByFeature, prAcks],
   );
-  const ids = useMemo(() => lookupIds(entries, actionEntries), [entries, actionEntries]);
+  // Conversations with only a dismissed pull request action are looked up
+  // too, so their dismissal goes with them once they are archived.
+  const ackedIds = useMemo(() => Object.keys(prAcks).map(Number), [prAcks]);
+  const ids = useMemo(
+    () => lookupIds(entries, actionEntries, ackedIds),
+    [entries, actionEntries, ackedIds],
+  );
   const combine = useCallback(
-    (results: FeatureResult[]) => resolveAll(entries, actionEntries, ids, results),
-    [entries, actionEntries, ids],
+    (results: FeatureResult[]) => resolveAll(entries, actionEntries, ackedIds, ids, results),
+    [entries, actionEntries, ackedIds, ids],
   );
   const resolved = useQueries({
     queries: ids.map((featureId) =>
@@ -133,12 +140,13 @@ export function useResolvedAttention(): ResolvedAttentionResult {
 
 /**
  * A persisted unread or failure mark can outlive its conversation: once the
- * lookup finds it archived or deleted, the mark goes, so it never resurfaces.
+ * lookup finds it archived or deleted, the mark goes (with any pull request
+ * action marked done), so it never resurfaces.
  */
 function useClearGoneMarks(featureIds: readonly number[]): void {
   useEffect(() => {
-    const { markRead } = useUnreadStore.getState();
-    for (const featureId of featureIds) markRead(featureId);
+    const { forget } = useUnreadStore.getState();
+    for (const featureId of featureIds) forget(featureId);
   }, [featureIds]);
 }
 
@@ -146,11 +154,15 @@ function useClearGoneMarks(featureIds: readonly number[]): void {
 function lookupIds(
   entries: readonly AttentionEntry[],
   actions: readonly NextActionEntry[],
+  ackedIds: readonly number[],
 ): number[] {
   const ids = entries.map((entry) => entry.featureId);
   const seen = new Set(ids);
-  for (const { featureId } of actions) {
-    if (!seen.has(featureId)) ids.push(featureId);
+  for (const featureId of [...actions.map((action) => action.featureId), ...ackedIds]) {
+    if (!seen.has(featureId)) {
+      seen.add(featureId);
+      ids.push(featureId);
+    }
   }
   return ids;
 }
@@ -158,6 +170,7 @@ function lookupIds(
 function resolveAll(
   entries: readonly AttentionEntry[],
   actionEntries: readonly NextActionEntry[],
+  ackedIds: readonly number[],
   ids: readonly number[],
   results: FeatureResult[],
 ) {
@@ -166,8 +179,15 @@ function resolveAll(
     const featureId = ids[index];
     if (featureId != null) byId.set(featureId, result);
   });
+  const resolvedEntries = resolveEntries(entries, byId);
+  const goneMarks = [...resolvedEntries.goneMarks];
+  for (const featureId of ackedIds) {
+    const result = byId.get(featureId);
+    if (result && isGone(result) && !goneMarks.includes(featureId)) goneMarks.push(featureId);
+  }
   return {
-    ...resolveEntries(entries, byId),
+    ...resolvedEntries,
+    goneMarks,
     ...resolveActions(actionEntries, byId),
     error: firstError(results),
   };

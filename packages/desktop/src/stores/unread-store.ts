@@ -4,18 +4,24 @@
  *   viewing that feature, or the user marked it unread by hand;
  * - failed: the turn stopped on an error while nobody was looking.
  * The sidebar renders a green check for unread and a strong error mark for
- * failed; both clear the moment the conversation is opened.
+ * failed; both clear the moment the conversation is opened, unless "For me
+ * clears" is "When done": then only marking it done (the For me row's check,
+ * the shortcut) or sending it a prompt does (`acknowledgeForMe`).
+ *
+ * It also remembers the pull request actions marked done (`prAcks`), so a
+ * dismissed "Fix CI" or "Merge" stays out of For me until the pull request
+ * moves.
  *
  * Per-client by design — "unread" is relative to *this* window (a remote phone
  * and the host each track their own), so nothing goes to the backend. The
- * marks and their order are kept in localStorage (`unread-marks-storage.ts`)
- * so a reload of this window keeps every pending "review this" and "this
- * failed" instead of silently dropping them from the For me list.
+ * marks, their order and the dismissed actions are kept in localStorage
+ * (`unread-marks-storage.ts`) so a reload or a restart keeps every pending
+ * "review this" and "this failed" instead of silently dropping them from the
+ * For me list.
  *
  * Conforms to frontend-performance.md: consumers read the per-feature boolean
  * via `useIsFeatureUnread`, never the whole map.
  */
-import { useEffect } from "react";
 import { create } from "zustand";
 import type { FeatureMark } from "@/lib/sidebar-attention";
 import { loadUnreadMarks, saveUnreadMarks, type UnreadMarks } from "./unread-marks-storage";
@@ -32,6 +38,13 @@ interface UnreadState extends UnreadMarks {
   markRead: (featureId: number) => void;
   /** Mark as read when flagged, as unread otherwise (the row's menu and shortcut). */
   toggleMarked: (featureId: number) => void;
+  /**
+   * The user is done with the conversation's For me entry: read it, and
+   * dismiss its pull request action (`prKey`, null when it asks none).
+   */
+  acknowledge: (featureId: number, prKey: string | null) => void;
+  /** Drop everything kept about a conversation that was archived or deleted. */
+  forget: (featureId: number) => void;
 }
 
 type MarkFlags = Pick<UnreadState, "byFeature" | "failedByFeature">;
@@ -55,6 +68,18 @@ function without<T>(record: Record<number, T>, featureId: number): Record<number
   const next = { ...record };
   delete next[featureId];
   return next;
+}
+
+type Marks = Pick<UnreadState, "byFeature" | "failedByFeature" | "markedOrder">;
+
+/** The marks once a conversation is read; `state` itself when it had none. */
+function read<S extends Marks>(state: S, featureId: number): S | Marks {
+  if (!state.byFeature[featureId] && !state.failedByFeature[featureId]) return state;
+  return {
+    byFeature: without(state.byFeature, featureId),
+    failedByFeature: without(state.failedByFeature, featureId),
+    markedOrder: without(state.markedOrder, featureId),
+  };
 }
 
 export const useUnreadStore = create<UnreadState>((set, get) => ({
@@ -85,27 +110,31 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
         markedOrder: s.byFeature[featureId] ? s.markedOrder : without(s.markedOrder, featureId),
       };
     }),
-  markRead: (featureId) =>
-    set((s) => {
-      if (!s.byFeature[featureId] && !s.failedByFeature[featureId]) return s;
-      return {
-        byFeature: without(s.byFeature, featureId),
-        failedByFeature: without(s.failedByFeature, featureId),
-        markedOrder: without(s.markedOrder, featureId),
-      };
-    }),
+  markRead: (featureId) => set((s) => read(s, featureId)),
   toggleMarked: (featureId) => {
     const state = get();
     if (featureMark(state, featureId) === "none") state.markUnread(featureId);
     else state.markRead(featureId);
   },
+  acknowledge: (featureId, prKey) =>
+    set((s) => {
+      const next = read(s, featureId);
+      if (prKey === null || s.prAcks[featureId] === prKey) return next;
+      return { ...next, prAcks: { ...s.prAcks, [featureId]: prKey } };
+    }),
+  forget: (featureId) =>
+    set((s) => {
+      const next = read(s, featureId);
+      return featureId in s.prAcks ? { ...next, prAcks: without(s.prAcks, featureId) } : next;
+    }),
 }));
 
 useUnreadStore.subscribe((state, previous) => {
   if (
     state.byFeature === previous.byFeature &&
     state.failedByFeature === previous.failedByFeature &&
-    state.markedOrder === previous.markedOrder
+    state.markedOrder === previous.markedOrder &&
+    state.prAcks === previous.prAcks
   ) {
     return;
   }
@@ -123,17 +152,4 @@ export function useIsFeatureUnread(featureId: number): boolean {
 /** Whether the feature has an unread reply or an unseen failure. */
 export function useIsFeatureMarked(featureId: number): boolean {
   return useUnreadStore((s) => featureMark(s, featureId) !== "none");
-}
-
-/**
- * Clear the unread flag whenever `featureId` is the open conversation. Called
- * at the ws-session route level so opening a feature (by click, keyboard, or
- * notification) reads it on every device. Runs once per opening: marking the
- * open conversation unread by hand sticks until it is opened again.
- */
-export function useMarkFeatureRead(featureId: number | null | undefined): void {
-  const markRead = useUnreadStore((s) => s.markRead);
-  useEffect(() => {
-    if (featureId != null) markRead(featureId);
-  }, [featureId, markRead]);
 }
