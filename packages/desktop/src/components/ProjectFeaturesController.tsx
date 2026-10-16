@@ -12,7 +12,7 @@ import {
 import { FeatureSubtree, type RenderFeature } from "@/components/FeatureSubtree";
 import { ProjectFeatureRow } from "@/components/ProjectFeatureRow";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
+import { getFocusedTabForFeature, type FeatureNavigateOptions } from "@/lib/feature-focus-handoff";
 import { partitionActiveFeatures } from "@/lib/feature-grouping";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { buildFeatureForest } from "@/lib/feature-hierarchy";
@@ -233,9 +233,9 @@ function useProjectFeatureActions(props: ProjectFeaturesProps, data: ProjectFeat
     projectId: props.projectId,
   });
   const navigateToFeature = useCallback(
-    (feature: Feature): void => {
+    (feature: Feature, options?: FeatureNavigateOptions): void => {
       props.onSelectFeature(feature.id);
-      const focusTab = getFocusedTabForFeature(props.activeFeatureId);
+      const focusTab = options?.focusTab ?? getFocusedTabForFeature(props.activeFeatureId);
       const search = {
         cwd: props.projectPath,
         featureId: feature.id,

@@ -12,11 +12,7 @@ import { useCallback, useState, type ReactElement, type ReactNode, type WheelEve
 import type { CiCheck, CiState, PrStatusSnapshot, ReviewState } from "@/api/generated";
 import { relativeTime } from "@/components/FeaturePrViewParts";
 import { ForgeAvatar } from "@/components/ForgeImage";
-import {
-  PR_TONE_DOT,
-  prIndicatorTone,
-  type PrIndicatorTone,
-} from "@/components/PrStatusIndicators";
+import { PrToneDot, type PrIndicatorTone } from "@/components/PrStatusIndicators";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { openExternalUrl } from "@/lib/open-external";
@@ -141,11 +137,7 @@ function PrIdentityLine({ status }: { status: PrStatusSnapshot }): ReactElement 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
       <span className="inline-flex shrink-0 items-center gap-1.5 font-mono tabular-nums text-foreground">
-        <span
-          className={cn("size-1.5 rounded-full", PR_TONE_DOT[prIndicatorTone(status)])}
-          aria-hidden
-        />
-        #{pr.number}
+        <PrToneDot health={status} />#{pr.number}
       </span>
       <span className="shrink-0 capitalize">{pr.state}</span>
       <Segment>

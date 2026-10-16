@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CiState, PrState, PrStatusSnapshot, ReviewState } from "@/api/generated";
 import type { AttentionEntry } from "@/lib/attention-index";
-import { deriveNextActions, prActionKind } from "./next-actions";
+import { deriveNextActions, prActionKey, prActionKind } from "./next-actions";
 
 interface PrInput {
   state?: PrState;
@@ -45,6 +45,36 @@ function pr(
 function byFeature(...snapshots: PrStatusSnapshot[]): Record<number, PrStatusSnapshot> {
   return Object.fromEntries(snapshots.map((snapshot) => [snapshot.feature_id, snapshot]));
 }
+
+/** `snapshot` plus another branch's proposal, as the poller publishes it. */
+function withOther(snapshot: PrStatusSnapshot, other: PrStatusSnapshot): PrStatusSnapshot {
+  return {
+    ...snapshot,
+    other_prs: [{ branch: other.pr!.source_branch, pr: other.pr!, ci: other.ci }],
+  };
+}
+
+describe("prActionKind across a conversation's branches", () => {
+  it("surfaces another branch's failing checks over the current branch's merge", () => {
+    const current = pr(1, { review: "approved", ci: "passing" });
+    const stacked = { ...pr(2, { ci: "failing" }), feature_id: 1 };
+    const snapshot = withOther(current, stacked);
+    expect(prActionKind(snapshot)).toBe("fix_ci");
+    expect(prActionKey(snapshot)).toBe("fix_ci:2:abc");
+  });
+
+  it("asks about another branch even when the current branch has no proposal", () => {
+    const snapshot = withOther({ ...pr(1), pr: null }, pr(2, { review: "changes_requested" }));
+    expect(prActionKind(snapshot)).toBe("address_review");
+  });
+
+  it("does not let the current branch's forge error silence the others", () => {
+    const snapshot = withOther({ ...pr(1, { ci: "failing" }), error: "rate limited" }, pr(2));
+    expect(prActionKind(snapshot)).toBeNull();
+    const stackedFailing = withOther({ ...pr(1), error: "rate limited" }, pr(2, { ci: "failing" }));
+    expect(prActionKind(stackedFailing)).toBe("fix_ci");
+  });
+});
 
 describe("prActionKind", () => {
   it("asks for nothing without an open pull request", () => {

@@ -1,5 +1,6 @@
-import type { Feature, PrStatusSnapshot } from "@/api/generated";
+import type { CiRollup, Feature, PrStatusSnapshot, PrSummary } from "@/api/generated";
 import { prIndicatorTone } from "@/components/PrStatusIndicators";
+import { isOpenPr, threadPrs, type ThreadPr } from "@/lib/thread-prs";
 import type { AttentionEntry } from "@/lib/attention-index";
 import type { SidebarConfig } from "@/lib/sidebar-config";
 
@@ -45,13 +46,39 @@ const TIER: Record<NextActionKind, number> = {
  * while threads are unresolved or checks still run. A snapshot the forge
  * failed to refresh asks nothing: its state may be stale.
  */
-export function prActionKind(snapshot: PrStatusSnapshot | undefined): NextActionKind | null {
-  const pr = snapshot?.pr;
-  if (!pr || snapshot.error || (pr.state !== "open" && pr.state !== "draft")) return null;
-  if (snapshot.ci?.state === "failing") return "fix_ci";
+function entryActionKind(entry: ThreadPr): NextActionKind | null {
+  const { pr } = entry;
+  if (entry.error || !isOpenPr(pr)) return null;
+  if (entry.ci?.state === "failing") return "fix_ci";
   if (pr.review_state === "changes_requested") return "address_review";
-  if (pr.review_state === "approved" && prIndicatorTone(snapshot) === "ready") return "merge";
+  if (pr.review_state === "approved" && prIndicatorTone(entry) === "ready") return "merge";
   return null;
+}
+
+export interface PrAction {
+  kind: NextActionKind;
+  pr: PrSummary;
+  ci?: CiRollup | null;
+}
+
+/**
+ * The most urgent thing any of the conversation's pull requests asks for —
+ * the current branch's wins a tie, the others are not left out: a stacked
+ * branch's failing checks are as much the user's job.
+ */
+export function prAction(snapshot: PrStatusSnapshot | undefined): PrAction | null {
+  let best: PrAction | null = null;
+  for (const entry of threadPrs(snapshot)) {
+    const kind = entryActionKind(entry);
+    if (kind && (!best || TIER[kind] < TIER[best.kind])) {
+      best = { kind, pr: entry.pr, ci: entry.ci };
+    }
+  }
+  return best;
+}
+
+export function prActionKind(snapshot: PrStatusSnapshot | undefined): NextActionKind | null {
+  return prAction(snapshot)?.kind ?? null;
 }
 
 function actionKey(kind: NextActionKind, pr: { number: number; head_sha: string }): string {
@@ -65,9 +92,8 @@ function actionKey(kind: NextActionKind, pr: { number: number; head_sha: string 
  * "Address review" to "Merge").
  */
 export function prActionKey(snapshot: PrStatusSnapshot | undefined): string | null {
-  const kind = prActionKind(snapshot);
-  const pr = snapshot?.pr;
-  return kind && pr ? actionKey(kind, pr) : null;
+  const action = prAction(snapshot);
+  return action ? actionKey(action.kind, action.pr) : null;
 }
 
 /**
@@ -97,24 +123,20 @@ export function deriveNextActions(
 
   const prEntries = Object.values(prByFeature)
     .filter((snapshot) => !working.has(snapshot.feature_id))
-    .map((snapshot) => ({ snapshot, kind: prActionKind(snapshot) }))
+    .map((snapshot) => ({ featureId: snapshot.feature_id, action: prAction(snapshot) }))
     .filter(
-      (item): item is { snapshot: PrStatusSnapshot; kind: NextActionKind } =>
-        item.kind != null &&
-        !(
-          item.snapshot.pr &&
-          prAcks[item.snapshot.feature_id] === actionKey(item.kind, item.snapshot.pr)
-        ),
+      (item): item is { featureId: number; action: PrAction } =>
+        item.action != null &&
+        prAcks[item.featureId] !== actionKey(item.action.kind, item.action.pr),
     )
     .sort(
       (a, b) =>
-        (a.snapshot.pr?.updated_at ?? "").localeCompare(b.snapshot.pr?.updated_at ?? "") ||
-        a.snapshot.feature_id - b.snapshot.feature_id,
+        a.action.pr.updated_at.localeCompare(b.action.pr.updated_at) || a.featureId - b.featureId,
     );
-  prEntries.forEach(({ snapshot, kind }, index) => {
-    const current = best.get(snapshot.feature_id);
-    if (!current || TIER[kind] < TIER[current.kind]) {
-      best.set(snapshot.feature_id, { kind, order: attention.length + index });
+  prEntries.forEach(({ featureId, action }, index) => {
+    const current = best.get(featureId);
+    if (!current || TIER[action.kind] < TIER[current.kind]) {
+      best.set(featureId, { kind: action.kind, order: attention.length + index });
     }
   });
 

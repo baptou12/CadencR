@@ -1,7 +1,11 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useListProjects, type Feature, type Project } from "@/api/generated";
-import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
+import {
+  getFocusedTabForFeature,
+  type FeatureNavigate,
+  type FeatureNavigateOptions,
+} from "@/lib/feature-focus-handoff";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 
 const NO_PROJECTS: Project[] = [];
@@ -14,7 +18,7 @@ const NO_PROJECTS: Project[] = [];
 export function useCrossProjectNavigate(
   activeFeatureId: number | null,
   onSelectFeature: (featureId: number) => void,
-): (feature: Feature) => void {
+): FeatureNavigate {
   const navigate = useNavigate();
   const { data: projects = NO_PROJECTS } = useListProjects();
   const projectsById = useMemo(
@@ -27,11 +31,11 @@ export function useCrossProjectNavigate(
   activeFeatureIdRef.current = activeFeatureId;
 
   return useCallback(
-    (feature: Feature): void => {
+    (feature: Feature, options?: FeatureNavigateOptions): void => {
       const project = projectsById.get(feature.project_id);
       if (!project) return;
       onSelectFeature(feature.id);
-      const focusTab = getFocusedTabForFeature(activeFeatureIdRef.current);
+      const focusTab = options?.focusTab ?? getFocusedTabForFeature(activeFeatureIdRef.current);
       void navigate({
         to: "/ws-session/$sessionId",
         params: { sessionId: wsSessionIdFromFeature(feature.id) },

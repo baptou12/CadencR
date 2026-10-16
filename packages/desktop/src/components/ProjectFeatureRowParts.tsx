@@ -41,6 +41,8 @@ interface FeatureRowMetaLineProps {
   /** Present while the label is being edited; read-only rows never pass it. */
   labelEditor?: FeatureLabelEditing;
   onOpenPort: (port: number) => void;
+  /** Show one of the conversation's pull requests in its Git tab (`null`: the current branch's). */
+  onOpenPr?: (prNumber: number | null) => void;
   /** Feeds the todo progress, shown while some are left (when the option is on). */
   summary?: RowSummary;
   /** Beside the title (uniform rows): the items join the title line's flow. */
@@ -74,6 +76,7 @@ export function FeatureRowMetaLine({
   ports,
   labelEditor,
   onOpenPort,
+  onOpenPr,
   summary,
   inline = false,
 }: FeatureRowMetaLineProps): ReactElement | null {
@@ -89,7 +92,11 @@ export function FeatureRowMetaLine({
     show.diff && gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
   // `FeaturePrIndicator` also renders for an error with no proposal — a forge
   // auth failure must not be the one thing that keeps this line from mounting.
-  const hasPrIndicator = show.pr && (prStatus?.pr != null || prStatus?.error != null);
+  // Any branch's proposal counts: one on another branch of the conversation
+  // still leads the chip while the current branch has none.
+  const hasPrIndicator =
+    show.pr &&
+    (prStatus?.pr != null || (prStatus?.other_prs?.length ?? 0) > 0 || prStatus?.error != null);
   const hasActivity = show.activity && (shellCount > 0 || browserCount > 0 || downloadCount > 0);
   const hasPorts = show.ports && ports.length > 0;
   const todos = show.todos && hasTodoChip(summary) ? summary : null;
@@ -145,7 +152,7 @@ export function FeatureRowMetaLine({
           />
         </span>
       )}
-      {show.pr && <FeaturePrIndicator snapshot={prStatus} />}
+      {show.pr && <FeaturePrIndicator snapshot={prStatus} onOpen={onOpenPr} />}
       {todos && <FeatureTodoProgress summary={todos} />}
       {hasActivity && (
         <FeatureActivityIndicators

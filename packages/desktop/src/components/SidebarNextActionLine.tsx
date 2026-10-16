@@ -7,7 +7,7 @@ import {
   triggerPendingKind,
 } from "@/components/sidebar-pending-gate";
 import { useFeaturePendingGate } from "@/hooks/useFeaturePendingGate";
-import type { NextActionKind } from "@/lib/next-actions";
+import { prAction, type NextActionKind } from "@/lib/next-actions";
 import { cn } from "@/lib/utils";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
 
@@ -110,10 +110,10 @@ function WaitingLine({ featureId }: { featureId: number }): ReactElement {
 
 /** The pull request a PR action is about, and its first failing check when CI fails. */
 function prObject(kind: NextActionKind, prStatus: PrStatusSnapshot | undefined): string | null {
-  const pr = prStatus?.pr;
-  if (!pr) return null;
-  const failing = kind === "fix_ci" ? prStatus.ci?.checks.find((c) => c.state === "failing") : null;
-  return failing ? `#${pr.number} · ${failing.name}` : `#${pr.number}`;
+  const action = prAction(prStatus);
+  if (!action) return null;
+  const failing = kind === "fix_ci" ? action.ci?.checks.find((c) => c.state === "failing") : null;
+  return failing ? `#${action.pr.number} · ${failing.name}` : `#${action.pr.number}`;
 }
 
 function ActionLine({

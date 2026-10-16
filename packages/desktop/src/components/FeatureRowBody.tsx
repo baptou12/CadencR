@@ -42,6 +42,8 @@ export interface FeatureRowBodyProps {
   ports: readonly AllocatedPort[];
   labelEditor?: FeatureLabelEditing;
   onOpenPort: (port: number) => void;
+  /** Show one of the conversation's pull requests in its Git tab (`null`: the current branch's). */
+  onOpenPr?: (prNumber: number | null) => void;
 }
 
 /**
@@ -75,6 +77,7 @@ export function FeatureRowBody({
   ports,
   labelEditor,
   onOpenPort,
+  onOpenPr,
 }: FeatureRowBodyProps): ReactElement {
   const options = useSidebarConfigStore(useShallow((state) => rowOptions(state.config)));
   const layout = rowLayout(options, attention.state, labelEditor !== undefined);
@@ -95,6 +98,7 @@ export function FeatureRowBody({
       ports={ports}
       labelEditor={labelEditor}
       onOpenPort={onOpenPort}
+      onOpenPr={onOpenPr}
       summary={summary}
       inline={layout.foldMeta}
     />
