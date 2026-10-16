@@ -26,6 +26,16 @@ export const SIDEBAR_SHORTCUTS = [
     aliases: ["for me", "inbox"],
   },
   {
+    // ⌥⌘↩ — "confirm": the focused row's For me entry, else the open
+    // conversation's, leaves the list (and its pull request action stays
+    // dismissed until the pull request moves). Fires from the composer too.
+    id: "for-me-done",
+    keys: ["mod", "alt", "enter"],
+    description: "Mark done for me",
+    scope: "global",
+    aliases: ["for me", "done", "acknowledge", "dismiss", "inbox"],
+  },
+  {
     id: "sidebar-focus-down",
     keys: ["mod", "alt", "down"],
     description: "Move focus down",

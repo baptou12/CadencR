@@ -27,6 +27,7 @@ import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import { noteUserPrompt } from "@/lib/auto-layout/auto-layout-controller";
+import { acknowledgeForMe } from "@/stores/for-me-ack";
 import type { SocketHandlerDeps } from "./ws-session-socket-handler";
 import { connectSession } from "./ws-session-connect";
 import { createWsSessionSimpleActions } from "./ws-session-simple-actions";
@@ -266,7 +267,11 @@ function createPromptActions(set: WsStoreSet, get: WsStoreGet): Pick<WsSessionSt
   return {
     sendPrompt(sessionId, text, options: PromptDispatchOptions = {}) {
       const session = getSessionEntry(get, sessionId);
-      if (session.featureId !== null) noteUserPrompt(session.featureId);
+      if (session.featureId !== null) {
+        noteUserPrompt(session.featureId);
+        // Prompting the conversation is acting on what For me asked.
+        acknowledgeForMe(session.featureId);
+      }
       const messageUuid = options.messageUuid ?? crypto.randomUUID();
       if (session.serverSessionId) {
         sendRawEnvelope(

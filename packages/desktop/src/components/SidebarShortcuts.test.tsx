@@ -77,7 +77,7 @@ beforeEach(() => {
   navigate.mockReset();
   toastMessage.mockReset();
   usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
-  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {} });
+  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {}, prAcks: {} });
   useSessionStatusStore.setState({
     bySession: {
       10: { featureId: 2, status: "question", kind: "permission", seq: 1 },
@@ -144,6 +144,34 @@ describe("attention jump shortcuts", () => {
     );
     await user.keyboard("{Meta>}{Alt>}j{/Alt}{/Meta}");
     expect(openedFeatureIds()).toEqual([3]);
+  });
+});
+
+describe("mark done shortcut", () => {
+  const shortcuts = (active: number | null) => (
+    <SidebarAttentionProvider>
+      <SidebarAttentionShortcuts activeFeatureId={active} onSelectFeature={vi.fn()} />
+    </SidebarAttentionProvider>
+  );
+
+  it("⌥⌘↩ marks the open conversation's entry done, its pull request action included", async () => {
+    usePrStatusStore.getState().hydrate([failingPr(3)]);
+    const { user } = render(shortcuts(3), { queryClient: seededClient() });
+    await user.keyboard("{Meta>}{Alt>}{Enter}{/Alt}{/Meta}");
+    expect(useUnreadStore.getState()).toMatchObject({
+      byFeature: {},
+      prAcks: { 3: "fix_ci:3:abc" },
+    });
+  });
+
+  it("⌥⌘↩ leaves a pending request alone and says when there is nothing to mark", async () => {
+    const { user, rerender } = render(shortcuts(2), { queryClient: seededClient() });
+    await user.keyboard("{Meta>}{Alt>}{Enter}{/Alt}{/Meta}");
+    expect(toastMessage).toHaveBeenLastCalledWith("The agent waits on your answer");
+    rerender(shortcuts(4));
+    await user.keyboard("{Meta>}{Alt>}{Enter}{/Alt}{/Meta}");
+    expect(toastMessage).toHaveBeenLastCalledWith("Nothing for you here");
+    expect(useUnreadStore.getState().byFeature[3]).toBe(true);
   });
 });
 

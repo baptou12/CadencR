@@ -239,6 +239,16 @@ export const CHOICE_ROWS: readonly { [K in ChoiceId]: ChoiceRow<K> }[ChoiceId][]
     ],
   },
   {
+    id: "forMeAck",
+    description:
+      "When a For me entry leaves the list. When done: opening the conversation keeps it until you check it off or send a prompt.",
+    label: "For me clears",
+    options: [
+      { value: "open", label: "On open", title: "Opening the conversation clears it" },
+      { value: "manual", label: "When done", title: "Check it off or send a prompt" },
+    ],
+  },
+  {
     id: "recentCount",
     description: "How many conversations the Recent block lists.",
     label: "Recent shows",

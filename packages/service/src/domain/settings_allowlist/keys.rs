@@ -275,6 +275,7 @@ pub const SIDEBAR_DISPLAY_KEYS: &[&str] = &[
     "sidebar_project_badges",
     "sidebar_block_for_me",
     "sidebar_for_me_limit",
+    "sidebar_for_me_ack",
     "sidebar_dormant_after",
     "sidebar_reveal_active",
     "sidebar_rail",

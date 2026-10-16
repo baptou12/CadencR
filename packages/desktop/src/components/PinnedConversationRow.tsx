@@ -28,6 +28,7 @@ import { NO_PORTS } from "@/hooks/useFeaturePorts";
 import { useBrowserStore } from "@/stores/browser-store";
 import { openFeatureRowOnKey } from "@/components/ProjectFeatureRow";
 import { FeatureRowBody } from "@/components/FeatureRowBody";
+import { SidebarForMeDoneAction } from "@/components/SidebarForMeDoneAction";
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 import type { NextActionKind } from "@/lib/next-actions";
 
@@ -139,8 +140,12 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
           badgeRef={badgeRef}
           onOpenConversation={handleOpenConversation}
           actions={
-            showUnpin &&
-            actions && <UnpinAction onUnpin={() => actions.togglePin(feature.id, false)} />
+            nextAction ? (
+              <SidebarForMeDoneAction featureId={feature.id} kind={nextAction} />
+            ) : (
+              showUnpin &&
+              actions && <UnpinAction onUnpin={() => actions.togglePin(feature.id, false)} />
+            )
           }
           nextAction={nextAction}
           prStatus={state.prStatus}

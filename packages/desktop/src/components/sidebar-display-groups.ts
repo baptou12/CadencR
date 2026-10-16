@@ -38,6 +38,7 @@ export const DISPLAY_GROUPS: readonly DisplayGroup[] = [
     items: [
       "forMe",
       "forMeLimit",
+      "forMeAck",
       "workingBlock",
       "recentBlock",
       "recentCount",
