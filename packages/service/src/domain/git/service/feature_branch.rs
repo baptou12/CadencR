@@ -4,6 +4,8 @@
 //! surface that answers "what branch is this conversation working on?" has to
 //! agree on the order:
 //!
+//! 0. The feature's own worktree's checkout. `worktree_branch` only names the
+//!    branch the worktree was created on; an agent may switch branches in it.
 //! 1. `worktree_branch` — written when a worktree is provisioned. It survives
 //!    the worktree being removed (only `worktree_path` is deleted), which is
 //!    deliberate: a deleted worktree whose branch still exists must keep
@@ -22,7 +24,9 @@ use std::path::Path;
 
 use sqlx::SqlitePool;
 
-use super::{SETTING_FEATURE_BRANCH, SETTING_WORKTREE_BRANCH};
+use super::{
+    normalize_git_path, SETTING_FEATURE_BRANCH, SETTING_WORKTREE_BRANCH, SETTING_WORKTREE_PATH,
+};
 use crate::domain::git::refs::normalize_branch_identity;
 use crate::domain::git::{commands, repository, workflow_service};
 use crate::error::AppError;
@@ -60,17 +64,49 @@ pub(super) async fn recorded_feature_branch(
     Ok(None)
 }
 
-/// The branch bound to `feature_id`, or `None` when nothing usable is recorded
-/// and `path` has no branch checked out (detached HEAD, fresh repo).
+/// The branch bound to `feature_id` (see the module docs for the order), or
+/// `None` when nothing usable is recorded and `path` has no branch checked out
+/// (detached HEAD, fresh repo).
 pub async fn resolve_feature_branch(
     read_pool: &SqlitePool,
     feature_id: i64,
     path: &Path,
 ) -> Result<Option<String>, AppError> {
+    // Ownership first: it is a settings read, the checkout is a git spawn.
+    if is_own_worktree(read_pool, feature_id, path).await? {
+        if let Some(branch) = checked_out_branch(path).await? {
+            return Ok(Some(branch));
+        }
+    }
     if let Some(branch) = recorded_feature_branch(read_pool, feature_id).await? {
         return Ok(Some(branch));
     }
     checked_out_branch(path).await
+}
+
+/// True when `path` is the worktree provisioned for `feature_id` rather than
+/// the project directory the resolvers fall back to once it is gone.
+async fn is_own_worktree(
+    read_pool: &SqlitePool,
+    feature_id: i64,
+    path: &Path,
+) -> Result<bool, AppError> {
+    let Some(worktree) =
+        repository::get_feature_setting(read_pool, feature_id, SETTING_WORKTREE_PATH).await?
+    else {
+        return Ok(false);
+    };
+    let path = normalize_git_path(&path.to_string_lossy());
+    if normalize_git_path(&worktree) != path {
+        return Ok(false);
+    }
+    let Some((project_id, _)) =
+        repository::get_feature_type_and_project(read_pool, feature_id).await?
+    else {
+        return Ok(false);
+    };
+    let project_path = repository::get_project_path(read_pool, project_id).await?;
+    Ok(normalize_git_path(&project_path) != path)
 }
 
 async fn checked_out_branch(path: &Path) -> Result<Option<String>, AppError> {
@@ -105,9 +141,14 @@ pub async fn resolve_feature_scope(
     feature_id: i64,
     path: &Path,
 ) -> Result<FeatureScope, AppError> {
-    let recorded = recorded_feature_branch(read_pool, feature_id).await?;
     let checked_out = checked_out_branch(path).await?;
-    let branch = recorded.or_else(|| checked_out.clone());
+    let branch = if checked_out.is_some() && is_own_worktree(read_pool, feature_id, path).await? {
+        checked_out.clone()
+    } else {
+        recorded_feature_branch(read_pool, feature_id)
+            .await?
+            .or_else(|| checked_out.clone())
+    };
     let head_scope = FeatureScope {
         branch: branch.clone(),
         revision: HEAD_REVISION.to_string(),
@@ -213,6 +254,106 @@ mod tests {
         let branch = resolve_feature_branch(&pool, 1, repo.path()).await.unwrap();
 
         assert_eq!(branch.as_deref(), Some("feature/real"));
+    }
+
+    /// Project at `<tmp>/repo`, feature 1 with its own worktree at
+    /// `<tmp>/wt` provisioned on `feature/old`, now switched to `feature/new`.
+    struct SwitchedWorktree {
+        pool: SqlitePool,
+        project: std::path::PathBuf,
+        worktree: std::path::PathBuf,
+        _dir: tempfile::TempDir,
+    }
+
+    async fn switched_worktree() -> SwitchedWorktree {
+        let pool = setup_diff_refs_schema().await;
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("repo");
+        let worktree = dir.path().join("wt");
+        std::fs::create_dir(&project).unwrap();
+        init_repo(&project).await;
+        let wt_arg = worktree.to_string_lossy().to_string();
+        run_git(
+            &project,
+            &["worktree", "add", "-q", "-b", "feature/old", &wt_arg],
+        )
+        .await;
+        run_git(&worktree, &["checkout", "-q", "-b", "feature/new"]).await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'repo', ?)")
+            .bind(project.to_string_lossy().as_ref())
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, SETTING_WORKTREE_PATH, &wt_arg)
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, SETTING_WORKTREE_BRANCH, "feature/old")
+            .await
+            .unwrap();
+        SwitchedWorktree {
+            pool,
+            project,
+            worktree,
+            _dir: dir,
+        }
+    }
+
+    #[tokio::test]
+    async fn the_feature_worktree_follows_its_checked_out_branch() {
+        let fx = switched_worktree().await;
+
+        let branch = resolve_feature_branch(&fx.pool, 1, &fx.worktree)
+            .await
+            .unwrap();
+        let scope = resolve_feature_scope(&fx.pool, 1, &fx.worktree)
+            .await
+            .unwrap();
+
+        assert_eq!(branch.as_deref(), Some("feature/new"));
+        assert_eq!(scope.branch.as_deref(), Some("feature/new"));
+        assert_eq!(scope.revision, HEAD_REVISION);
+    }
+
+    #[tokio::test]
+    async fn the_project_directory_keeps_the_recorded_branch() {
+        let fx = switched_worktree().await;
+
+        let branch = resolve_feature_branch(&fx.pool, 1, &fx.project)
+            .await
+            .unwrap();
+
+        assert_eq!(branch.as_deref(), Some("feature/old"));
+    }
+
+    #[tokio::test]
+    async fn a_worktree_path_naming_the_project_keeps_the_recorded_branch() {
+        let fx = switched_worktree().await;
+        let project = fx.project.to_string_lossy();
+        repository::set_feature_setting(&fx.pool, 1, SETTING_WORKTREE_PATH, &project)
+            .await
+            .unwrap();
+
+        let branch = resolve_feature_branch(&fx.pool, 1, &fx.project)
+            .await
+            .unwrap();
+
+        assert_eq!(branch.as_deref(), Some("feature/old"));
+    }
+
+    #[tokio::test]
+    async fn a_detached_feature_worktree_falls_back_to_the_recorded_branch() {
+        let fx = switched_worktree().await;
+        run_git(&fx.worktree, &["checkout", "-q", "--detach"]).await;
+
+        let branch = resolve_feature_branch(&fx.pool, 1, &fx.worktree)
+            .await
+            .unwrap();
+
+        assert_eq!(branch.as_deref(), Some("feature/old"));
     }
 
     #[tokio::test]
