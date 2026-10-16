@@ -54,15 +54,34 @@ export function prActionKind(snapshot: PrStatusSnapshot | undefined): NextAction
   return null;
 }
 
+function actionKey(kind: NextActionKind, pr: { number: number; head_sha: string }): string {
+  return `${kind}:${pr.number}:${pr.head_sha}`;
+}
+
+/**
+ * Names a pull request action as of the pull request's head commit, so a
+ * dismissed "Fix CI" or "Merge" stays dismissed until a push, or until the
+ * pull request asks for something else (a review verdict turning it from
+ * "Address review" to "Merge").
+ */
+export function prActionKey(snapshot: PrStatusSnapshot | undefined): string | null {
+  const kind = prActionKind(snapshot);
+  const pr = snapshot?.pr;
+  return kind && pr ? actionKey(kind, pr) : null;
+}
+
 /**
  * The "For me" action list: one action per conversation, its most urgent one.
  * `attention` is the attention index (already oldest first within a state);
  * pull request actions are ordered by when the pull request last moved. A
- * conversation whose agent is at work is left out: nothing to do there yet.
+ * conversation whose agent is at work is left out: nothing to do there yet,
+ * and so is a pull request action the user marked done (`prAcks`, keyed by
+ * conversation, holding the {@link prActionKey} they dismissed).
  */
 export function deriveNextActions(
   attention: readonly AttentionEntry[],
   prByFeature: Readonly<Record<number, PrStatusSnapshot>>,
+  prAcks: Readonly<Record<number, string>> = {},
 ): NextActionEntry[] {
   const best = new Map<number, { kind: NextActionKind; order: number }>();
   const working = new Set<number>();
@@ -80,7 +99,12 @@ export function deriveNextActions(
     .filter((snapshot) => !working.has(snapshot.feature_id))
     .map((snapshot) => ({ snapshot, kind: prActionKind(snapshot) }))
     .filter(
-      (item): item is { snapshot: PrStatusSnapshot; kind: NextActionKind } => item.kind != null,
+      (item): item is { snapshot: PrStatusSnapshot; kind: NextActionKind } =>
+        item.kind != null &&
+        !(
+          item.snapshot.pr &&
+          prAcks[item.snapshot.feature_id] === actionKey(item.kind, item.snapshot.pr)
+        ),
     )
     .sort(
       (a, b) =>

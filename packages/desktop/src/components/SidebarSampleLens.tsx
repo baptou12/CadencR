@@ -6,6 +6,7 @@ import { useSamplePreview } from "@/components/SidebarSampleProvider";
 import { SAMPLE_PROJECTS } from "@/lib/sidebar-sample-data";
 import { byActivity } from "@/lib/sidebar-sample-views";
 import type { LensContext } from "@/lib/sidebar-lens";
+import { NO_MANUAL_ORDER } from "@/lib/sidebar-manual-order";
 import { buildSidebarGroups, showsGroupHeaders, type SidebarListMode } from "@/lib/sidebar-views";
 import { useSidebarOption } from "@/stores/sidebar-config-store";
 import { useSidebarLensStore } from "@/stores/sidebar-lens-store";
@@ -43,7 +44,14 @@ export function SidebarSampleLens({
       worktreeOf: (id) => byId.get(id)?.conversation.worktree,
       now: preview.now,
     };
-    return buildSidebarGroups(byActivity(preview.rows), mode, sort, VIEW_PROJECTS, context);
+    return buildSidebarGroups(
+      byActivity(preview.rows),
+      mode,
+      sort,
+      NO_MANUAL_ORDER,
+      VIEW_PROJECTS,
+      context,
+    );
   }, [byId, mode, preview.now, preview.rows, sort]);
   const showHeaders = showsGroupHeaders(mode);
 

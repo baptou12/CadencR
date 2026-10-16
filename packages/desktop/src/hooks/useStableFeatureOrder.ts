@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Feature } from "@/api/generated";
-import { reconcileFrozenOrder } from "@/lib/frozen-order";
+import { applyOrder, reconcileFrozenOrder } from "@/lib/frozen-order";
 import { intArraysEqual } from "@/lib/utils";
-import { applyOrder } from "@/hooks/useOrderedProjects";
 import { useBusyFeatureIds } from "@/stores/session-status-selectors";
 
 /** Minimum gap between two re-sorts, so a burst of finished turns moves rows once. */

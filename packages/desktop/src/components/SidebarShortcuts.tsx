@@ -7,10 +7,11 @@ import { FeatureRenameForm } from "@/components/FeatureRenamePopover";
 import { useSidebarAttention } from "@/components/SidebarAttentionProvider";
 import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
-import { useShortcut } from "@/hooks/useShortcut";
+import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { dispatchSidebarRowAction, type SidebarRowAction } from "@/lib/sidebar-row-actions";
+import { acknowledgeForMe } from "@/stores/for-me-ack";
 import { useSidebarRenameStore } from "@/stores/sidebar-rename-store";
 import { useUnreadStore } from "@/stores/unread-store";
 
@@ -42,6 +43,8 @@ export function useSidebarRowShortcuts(): void {
   useShortcut("sidebar-row-pin", rowAction("pin"), ROW_SHORTCUT_OPTIONS);
   useShortcut("sidebar-row-archive", rowAction("archive"), ROW_SHORTCUT_OPTIONS);
   useShortcut("sidebar-row-label", rowAction("label"), ROW_SHORTCUT_OPTIONS);
+  useShortcut("sidebar-reorder-up", rowAction("move-up"), ROW_SHORTCUT_OPTIONS);
+  useShortcut("sidebar-reorder-down", rowAction("move-down"), ROW_SHORTCUT_OPTIONS);
   useShortcut(
     "sidebar-row-rename",
     (event) => {
@@ -72,7 +75,8 @@ export function useSidebarRowShortcuts(): void {
  * finished turns, merges), ⌥⌘J to the next unread conversation, each cycling
  * on from the open conversation. Opening a failure or an unread reply takes it
  * off its list, so the next press carries on from where it was rather than
- * starting over. Renders nothing.
+ * starting over. ⌥⌘↩ marks the focused row's (else the open conversation's)
+ * For me entry done. Renders nothing.
  */
 export function SidebarAttentionShortcuts({
   activeFeatureId,
@@ -113,6 +117,18 @@ export function SidebarAttentionShortcuts({
       lastUnread,
     ),
   );
+  useGlobalShortcutById("for-me-done", (event) => {
+    const row = focusedFeatureRow();
+    const featureId = (row && focusedFeatureId(row)) ?? activeFeatureId;
+    if (featureId == null) return;
+    // Captured before the composer, which would otherwise take ⌥⌘↩ as Enter (send).
+    event.preventDefault();
+    event.stopPropagation();
+    const kind = actions.find((action) => action.feature.id === featureId)?.kind;
+    if (kind === undefined) toast.message("Nothing for you here");
+    else if (kind === "waiting") toast.message("The agent waits on your answer");
+    else acknowledgeForMe(featureId);
+  });
   return null;
 }
 

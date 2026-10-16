@@ -10,6 +10,9 @@ import { useCrossProjectNavigate } from "@/hooks/useCrossProjectNavigate";
 import { skipProjectAutoExpand } from "@/lib/project-auto-expand";
 import { useReorderAnimation } from "@/hooks/useReorderAnimation";
 import { useStableFeatureOrder } from "@/hooks/useStableFeatureOrder";
+import { useManualConversationOrder } from "@/hooks/useManualConversationOrder";
+import { sortByManualOrder } from "@/lib/sidebar-manual-order";
+import { SidebarReorderProvider } from "@/components/SidebarReorderProvider";
 import { NO_PORTS, useFeaturePorts } from "@/hooks/useFeaturePorts";
 import { usePinnedActivity } from "@/hooks/usePinnedActivity";
 import { useSidebarFilteredFeatures } from "@/hooks/useSidebarFilteredFeatures";
@@ -38,12 +41,13 @@ export function SidebarPinnedConversations({
   onSelectFeature: (featureId: number) => void;
 }): ReactElement | null {
   const { data: fetchedPinned = EMPTY_FEATURES } = useListPinnedFeatures();
-  const orderedPinned = useStableFeatureOrder(fetchedPinned);
+  const orderedPinned = usePinnedOrder(fetchedPinned);
   const activity = usePinnedActivity(fetchedPinned);
   const pinnedFeatures = useSidebarFilteredFeatures(orderedPinned, activity.worktreeByFeatureId);
   const listRef = useRef<HTMLElement>(null);
   const pinnedIds = useMemo(() => pinnedFeatures.map((feature) => feature.id), [pinnedFeatures]);
   useReorderAnimation(listRef, pinnedIds);
+  const reorderGroups = useMemo(() => [pinnedIds], [pinnedIds]);
   const portsByFeatureId = useFeaturePorts();
   const crossProjectNavigate = useCrossProjectNavigate(activeFeatureId, onSelectFeature);
   // Opening from the pinned section must not unfold the parent project.
@@ -84,20 +88,37 @@ export function SidebarPinnedConversations({
       isEmpty={isEmpty}
       capped
     >
-      {pinnedFeatures.map((feature) => (
-        <PinnedConversationRow
-          key={feature.id}
-          feature={feature}
-          activeFeatureId={activeFeatureId}
-          ports={portsByFeatureId.get(feature.id) ?? NO_PORTS}
-          shellCount={activity.shellCountByFeatureId.get(feature.id) ?? 0}
-          hasLiveWorktree={activity.liveWorktreeFeatureIds.has(feature.id)}
-          worktree={activity.worktreeByFeatureId.get(feature.id)}
-          onNavigate={handleNavigate}
-          showUnpin
-        />
-      ))}
+      <SidebarReorderProvider groups={reorderGroups}>
+        {pinnedFeatures.map((feature) => (
+          <PinnedConversationRow
+            key={feature.id}
+            feature={feature}
+            activeFeatureId={activeFeatureId}
+            ports={portsByFeatureId.get(feature.id) ?? NO_PORTS}
+            shellCount={activity.shellCountByFeatureId.get(feature.id) ?? 0}
+            hasLiveWorktree={activity.liveWorktreeFeatureIds.has(feature.id)}
+            worktree={activity.worktreeByFeatureId.get(feature.id)}
+            onNavigate={handleNavigate}
+            showUnpin
+          />
+        ))}
+      </SidebarReorderProvider>
     </SidebarBlock>
+  );
+}
+
+/**
+ * Pinned rows hold their place while agents work, like the tree; under the
+ * manual sort they follow the rank dragged into place instead (the other
+ * sorts never applied here: Pinned is the user's own shortlist).
+ */
+function usePinnedOrder(fetched: readonly Feature[]): readonly Feature[] {
+  const stable = useStableFeatureOrder(fetched);
+  const manual = useSidebarOption("conversationSort") === "manual";
+  const manualOrder = useManualConversationOrder();
+  return useMemo(
+    () => (manual ? sortByManualOrder(stable, manualOrder) : stable),
+    [manual, manualOrder, stable],
   );
 }
 

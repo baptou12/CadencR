@@ -17,3 +17,16 @@ export function reconcileFrozenOrder(
   ];
   return intArraysEqual(next, previous) ? previous : next;
 }
+
+/**
+ * Sorts by a frozen order. Unknown ids (newly created, not yet reconciled into
+ * `order`) sort to the front, keeping their incoming relative order.
+ */
+export function applyOrder<T extends { id: number }>(
+  items: readonly T[],
+  order: readonly number[] | null,
+): T[] {
+  if (order === null) return [...items];
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return [...items].sort((a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1));
+}

@@ -16,6 +16,7 @@ import { SidebarSampleLens } from "@/components/SidebarSampleLens";
 import { orderProjects } from "@/hooks/useOrderedProjects";
 import { useSidebarListMode } from "@/hooks/useSidebarViews";
 import { sortConversations } from "@/lib/sidebar-lens";
+import { NO_MANUAL_ORDER } from "@/lib/sidebar-manual-order";
 import { PROJECT_ROW_CLASS, STICKY_HEADER_CLASS } from "@/components/SidebarLensGroupHeader";
 
 type Preview = ReturnType<typeof useSamplePreview>;
@@ -107,6 +108,7 @@ function SampleConversations({
       sortConversations(
         byActivity(rows).filter((feature) => !feature.is_pinned),
         sort,
+        NO_MANUAL_ORDER,
       ),
     );
     const none = { awake: forest, dormant: [] as FeatureTreeNode[] };

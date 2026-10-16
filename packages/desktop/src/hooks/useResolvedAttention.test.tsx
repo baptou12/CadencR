@@ -58,7 +58,7 @@ beforeEach(() => {
   useSessionStatusStore.setState({
     bySession: { 10: { featureId: 1, status: "question", kind: "permission", seq: 1 } },
   });
-  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {} });
+  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {}, prAcks: {} });
   usePrStatusStore.setState({ byFeature: {}, latestFetchedAtByFeature: {} });
 });
 
@@ -125,6 +125,15 @@ describe("useResolvedAttention gone conversations", () => {
   it("drops an archived pull request conversation from the actions", () => {
     usePrStatusStore.getState().hydrate([failingCi(3)]);
     const { result } = renderAttention([feature(1), feature(3, "archived")]);
+    expect(result.current.actions.map((a) => a.feature.id)).toEqual([1]);
+  });
+
+  it("forgets a dismissed pull request action once its conversation is gone", async () => {
+    request.mockRejectedValue(notFound());
+    useUnreadStore.setState({ prAcks: { 3: "fix_ci:3:abc", 5: "merge:5:def" } });
+    const { result } = renderAttention([feature(1), feature(3)]);
+
+    await waitFor(() => expect(useUnreadStore.getState().prAcks).toEqual({ 3: "fix_ci:3:abc" }));
     expect(result.current.actions.map((a) => a.feature.id)).toEqual([1]);
   });
 });

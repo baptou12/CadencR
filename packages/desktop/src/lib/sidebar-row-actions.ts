@@ -1,5 +1,5 @@
 /** Actions a focused conversation row performs from a keyboard shortcut. */
-export type SidebarRowAction = "pin" | "archive" | "label";
+export type SidebarRowAction = "pin" | "archive" | "label" | "move-up" | "move-down";
 
 export const SIDEBAR_ROW_ACTION_EVENT = "cadencr-sidebar-row-action";
 

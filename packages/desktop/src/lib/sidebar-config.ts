@@ -57,6 +57,7 @@ export const SIDEBAR_OPTIONS = {
   projectBadges: enumOption("sidebar_project_badges", ["count", "dot", "none"], "count"),
   forMe: boolOption("sidebar_block_for_me", true),
   forMeLimit: enumOption("sidebar_for_me_limit", ["3", "5", "all"], "3"),
+  forMeAck: enumOption("sidebar_for_me_ack", ["open", "manual"], "open"),
   dormantAfter: enumOption("sidebar_dormant_after", ["never", "3", "7", "14", "30"], "7"),
   revealActive: enumOption("sidebar_reveal_active", ["scroll", "expand", "off"], "scroll"),
   rail: enumOption("sidebar_rail", ["projects", "conversations", "attention", "none"], "projects"),
@@ -75,7 +76,7 @@ export const SIDEBAR_OPTIONS = {
   ),
   conversationSort: enumOption(
     "sidebar_conversation_sort",
-    ["activity", "created", "title"],
+    ["activity", "created", "title", "manual"],
     "activity",
   ),
   projectSort: enumOption("sidebar_project_sort", ["frozen", "live", "name"], "frozen"),
@@ -112,6 +113,14 @@ function parseOption(option: SidebarOption, raw: string | null | undefined): str
   }
   const parsed = option.schema.safeParse(raw);
   return parsed.success ? parsed.data : option.fallback;
+}
+
+/** One option's stored value; unset or invalid takes the default. */
+export function parseSidebarOption<K extends SidebarOptionId>(
+  id: K,
+  raw: string | null | undefined,
+): SidebarConfig[K] {
+  return parseOption(SIDEBAR_OPTIONS[id], raw) as SidebarConfig[K];
 }
 
 /** Builds the config from stored values; unset or invalid values take the default. */

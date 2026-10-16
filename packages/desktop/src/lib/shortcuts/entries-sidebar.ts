@@ -26,6 +26,16 @@ export const SIDEBAR_SHORTCUTS = [
     aliases: ["for me", "inbox"],
   },
   {
+    // ⌥⌘↩ — "confirm": the focused row's For me entry, else the open
+    // conversation's, leaves the list (and its pull request action stays
+    // dismissed until the pull request moves). Fires from the composer too.
+    id: "for-me-done",
+    keys: ["mod", "alt", "enter"],
+    description: "Mark done for me",
+    scope: "global",
+    aliases: ["for me", "done", "acknowledge", "dismiss", "inbox"],
+  },
+  {
     id: "sidebar-focus-down",
     keys: ["mod", "alt", "down"],
     description: "Move focus down",
@@ -72,5 +82,22 @@ export const SIDEBAR_SHORTCUTS = [
     keys: ["mod", "alt", "u"],
     description: "Mark the focused conversation read / unread",
     scope: "sidebar",
+  },
+  {
+    // Focus moves with ⌥⌘↑/↓; Shift carries the focused row along instead.
+    // One step within its group (project, worktree, parent, lens group); at
+    // the group's edge nothing happens. The first move switches to Manual.
+    id: "sidebar-reorder-up",
+    keys: ["mod", "alt", "shift", "up"],
+    description: "Move the focused conversation up",
+    scope: "sidebar",
+    aliases: ["reorder", "manual order", "drag"],
+  },
+  {
+    id: "sidebar-reorder-down",
+    keys: ["mod", "alt", "shift", "down"],
+    description: "Move the focused conversation down",
+    scope: "sidebar",
+    aliases: ["reorder", "manual order", "drag"],
   },
 ] as const satisfies readonly Shortcut[];

@@ -20,6 +20,7 @@ import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import { useOpenFeaturePort } from "@/hooks/useOpenFeaturePort";
 import { useRowLabelEditor } from "@/hooks/useRowLabelEditor";
 import { useSidebarRowActionListener } from "@/hooks/useSidebarRowActionListener";
+import { useRowReorder, type RowReorderProps } from "@/hooks/useRowReorder";
 import {
   useProjectFeatureRowState,
   type ProjectFeatureRowState,
@@ -28,6 +29,7 @@ import { NO_PORTS } from "@/hooks/useFeaturePorts";
 import { useBrowserStore } from "@/stores/browser-store";
 import { openFeatureRowOnKey } from "@/components/ProjectFeatureRow";
 import { FeatureRowBody } from "@/components/FeatureRowBody";
+import { SidebarForMeDoneAction } from "@/components/SidebarForMeDoneAction";
 import type { AllocatedPort, Feature, FeatureWorktreeInfo } from "@/api/generated";
 import type { NextActionKind } from "@/lib/next-actions";
 
@@ -85,10 +87,8 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
   const handleOpenPort = useOpenFeaturePort(feature, onNavigate);
   const actions = useSidebarRowActions();
   const label = useRowLabelEditor(feature);
-  useCrossProjectRowShortcuts(navRef, actions, feature, state, label.start);
-  const handleOpenConversation = useCallback((): void => {
-    onNavigate(feature);
-  }, [feature, onNavigate]);
+  const reorder = useCrossProjectRowControls(navRef, actions, feature, state, label);
+  const handleOpenConversation = useCallback(() => onNavigate(feature), [feature, onNavigate]);
 
   return (
     <CrossProjectRowMenu
@@ -111,6 +111,7 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
         data-nav-type="feature"
         data-nav-id={String(feature.id)}
         data-nav-project-id={String(feature.project_id)}
+        {...reorder}
         className={`sidebar-row group/pinned relative flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md pl-2 pr-1.5 outline-none hover:bg-sidebar-accent ${
           isActive ? "bg-sidebar-accent" : ""
         }`}
@@ -139,8 +140,12 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
           badgeRef={badgeRef}
           onOpenConversation={handleOpenConversation}
           actions={
-            showUnpin &&
-            actions && <UnpinAction onUnpin={() => actions.togglePin(feature.id, false)} />
+            nextAction ? (
+              <SidebarForMeDoneAction featureId={feature.id} kind={nextAction} />
+            ) : (
+              showUnpin &&
+              actions && <UnpinAction onUnpin={() => actions.togglePin(feature.id, false)} />
+            )
           }
           nextAction={nextAction}
           prStatus={state.prStatus}
@@ -157,22 +162,27 @@ export const PinnedConversationRow = memo(function PinnedConversationRow({
   );
 });
 
-/** The row shortcuts (pin, archive, label) through the sidebar's row actions. */
-function useCrossProjectRowShortcuts(
+/**
+ * The row shortcuts (pin, archive, label) through the sidebar's row actions,
+ * plus the drag props that reorder the row inside its list (none while its
+ * label editor is open).
+ */
+function useCrossProjectRowControls(
   rowRef: RefObject<HTMLDivElement | null>,
   actions: SidebarRowActions | null,
   feature: Feature,
   state: Pick<ProjectFeatureRowState, "isArchived" | "isPinned">,
-  startLabelEdit: () => void,
-): void {
+  label: ReturnType<typeof useRowLabelEditor>,
+): RowReorderProps {
   useSidebarRowActionListener(rowRef, {
-    label: actions ? startLabelEdit : undefined,
+    label: actions ? label.start : undefined,
     archive: actions ? () => actions.archiveOrDelete(feature) : undefined,
     pin:
       actions && !state.isArchived
         ? () => actions.togglePin(feature.id, !state.isPinned)
         : undefined,
   });
+  return useRowReorder(rowRef, feature.id, label.editor !== undefined);
 }
 
 interface CrossProjectRowMenuProps {

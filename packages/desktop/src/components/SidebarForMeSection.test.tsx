@@ -116,7 +116,7 @@ function rowLabels(): string[] {
 beforeEach(() => {
   configure({});
   useSidebarFilterStore.getState().close();
-  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {} });
+  useUnreadStore.setState({ byFeature: {}, failedByFeature: {}, markedOrder: {}, prAcks: {} });
   useSessionStatusStore.setState({
     bySession: {
       10: { featureId: 1, status: "question", kind: "permission", seq: 8, requestId: "request-1" },
@@ -193,6 +193,24 @@ describe("SidebarForMeSection", () => {
       usePrStatusStore.setState({ byFeature: {} });
     });
     expect(screen.queryByRole("region", { name: "For me" })).not.toBeInTheDocument();
+  });
+
+  it("marks an entry done from its row's check, except a pending request", async () => {
+    configure({ forMeLimit: "all" });
+    const { user } = renderSection();
+    const row = (title: string) =>
+      within(section()).getByText(title).closest('[data-nav-type="feature"]') as HTMLElement;
+    expect(within(row("Asks permission")).queryByRole("button", { name: "Mark done" })).toBeNull();
+
+    await user.click(within(row("Checks failing")).getByRole("button", { name: "Mark done" }));
+    await user.click(within(row("Finished")).getByRole("button", { name: "Mark done" }));
+    expect(rowLabels()).toEqual([
+      "Answer Asked first",
+      "Approve Asks permission",
+      "Check error Crashed",
+      "Merge Approved",
+    ]);
+    expect(useUnreadStore.getState().prAcks).toEqual({ 6: "fix_ci:60:" });
   });
 
   it("doesn't flash while only an agent at work is being looked up", () => {

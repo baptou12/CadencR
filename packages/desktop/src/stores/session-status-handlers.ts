@@ -18,6 +18,7 @@ import {
 import { invalidateScheduleLists } from "@/lib/schedules/invalidate";
 import { GLOBAL_FEATURE_LIST_URLS, invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { isViewingFeature, notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
+import { openingClearsForMe } from "@/stores/for-me-ack";
 import { useUnreadStore } from "@/stores/unread-store";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import { showRemoteConnectedToast } from "@/lib/remote/connection-toast";
@@ -83,8 +84,9 @@ export function notifyTransition(
 /**
  * Flag a turn that ended while the user wasn't looking: unread when it
  * completed, failed when it stopped on an error. (If they're already viewing
- * it, there's nothing unseen.) Independent of the feature lists, so a
- * collapsed project's conversations are flagged too.
+ * it, there's nothing unseen, unless For me clears only when done: then the
+ * outcome waits in For me until marked done, viewed or not.) Independent of
+ * the feature lists, so a collapsed project's conversations are flagged too.
  */
 function markUnseenOutcome(
   featureId: number,
@@ -97,7 +99,7 @@ function markUnseenOutcome(
     marks.clearFailed(featureId);
     return;
   }
-  if (!endedTurn || isViewingFeature(featureId)) return;
+  if (!endedTurn || (isViewingFeature(featureId) && openingClearsForMe())) return;
   if (failed) marks.markFailed(featureId);
   else marks.markUnread(featureId);
 }

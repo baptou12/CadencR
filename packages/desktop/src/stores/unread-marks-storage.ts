@@ -1,8 +1,9 @@
 /**
  * localStorage persistence for the unread/failed marks of `unread-store.ts`,
- * so a reload of this window keeps every pending "review this" and "this
- * failed". Still per-client: nothing goes to the backend, and a remote phone
- * and the host each keep their own.
+ * and the pull request actions marked done, so a reload or a restart keeps
+ * every pending "review this" and "this failed", and never brings back a
+ * dismissed "Fix CI". Still per-client: nothing goes to the backend, and a
+ * remote phone and the host each keep their own.
  */
 import { toast } from "sonner";
 import { z } from "zod";
@@ -18,22 +19,38 @@ export interface UnreadMarks {
   failedByFeature: Record<number, true>;
   /** When each marked feature was first marked, as an increasing counter. */
   markedOrder: Record<number, number>;
+  /** The pull request action marked done per feature, as its `prActionKey`. */
+  prAcks: Record<number, string>;
 }
 
 const featureIdSchema = z.number().int().nonnegative();
 
-/** Every marked feature, oldest mark first, with what it has unseen. */
+/**
+ * Every marked feature, oldest mark first, with what it has unseen; then the
+ * pull request actions marked done (absent from values saved before them).
+ */
 const storedMarksSchema = z.object({
   marks: z.array(z.tuple([featureIdSchema, z.enum(["unread", "failed", "both"])])),
+  prAcks: z.array(z.tuple([featureIdSchema, z.string().min(1)])).optional(),
 });
 
 type StoredMarks = z.infer<typeof storedMarksSchema>;
 
-const EMPTY_MARKS: UnreadMarks = { byFeature: {}, failedByFeature: {}, markedOrder: {} };
+const EMPTY_MARKS: UnreadMarks = {
+  byFeature: {},
+  failedByFeature: {},
+  markedOrder: {},
+  prAcks: {},
+};
 
 /** Rebuild the store's records; the stored order becomes 1..n. */
 function toMarks(stored: StoredMarks): UnreadMarks {
-  const marks: UnreadMarks = { byFeature: {}, failedByFeature: {}, markedOrder: {} };
+  const marks: UnreadMarks = {
+    byFeature: {},
+    failedByFeature: {},
+    markedOrder: {},
+    prAcks: Object.fromEntries(stored.prAcks ?? []),
+  };
   stored.marks.forEach(([id, kind], index) => {
     if (kind !== "failed") marks.byFeature[id] = true;
     if (kind !== "unread") marks.failedByFeature[id] = true;
@@ -96,7 +113,7 @@ export function reportUnreadRestoreError(): void {
 }
 
 function toStored(marks: UnreadMarks): StoredMarks {
-  const { byFeature, failedByFeature, markedOrder } = marks;
+  const { byFeature, failedByFeature, markedOrder, prAcks } = marks;
   const ids = Object.keys(markedOrder)
     .map(Number)
     .sort((a, b) => (markedOrder[a] ?? 0) - (markedOrder[b] ?? 0));
@@ -105,6 +122,7 @@ function toStored(marks: UnreadMarks): StoredMarks {
       id,
       byFeature[id] && failedByFeature[id] ? "both" : failedByFeature[id] ? "failed" : "unread",
     ]),
+    prAcks: Object.entries(prAcks).map(([id, key]) => [Number(id), key]),
   };
 }
 
