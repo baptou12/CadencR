@@ -113,6 +113,14 @@ requires a reviewed exact version and lowercase SHA-256 for the raw
 the release URL itself, restricts redirects, verifies SHA-256 before execution,
 and checks `cadencr --version` before invoking any registry command.
 
+Development CLI prereleases use the same asset naming with an explicit third
+pin field, `CADENCR_RELEASE_TAG=cli/v<VERSION>`. This is accepted only when the
+exact version is `<base>-dev.<run-id>.<attempt>` with canonical numeric parts;
+the tag must match that version. Legacy two-field pins still download from
+`v<VERSION>`. Arbitrary URLs, repositories, refs and mismatched tags are refused.
+The main-only manual CLI release workflow emits a candidate pin file but never
+edits this registry's pin or grants it production authority.
+
 Do not accept a contributor-controlled version, digest, or download URL. While
 both pins are `PENDING`, the helper executes the existing trusted JavaScript gate.
 Replacing both pins atomically cuts the same job over to the Rust CLI without
@@ -129,7 +137,8 @@ candidate scripts. No additional code change is required for that cutover.
 The protected workflow uses the same `ci/released-cli.env` as contribution CI.
 Shared `scripts/ci/fetch-released-cli.sh` accepts only trusted pin data and a new
 caller-owned output directory. It returns the verified executable path; exit `3`
-means both values are explicitly `PENDING`. Every other failure stops the job.
+means both legacy values are explicitly `PENDING` and no release tag is supplied.
+Every other failure stops the job.
 
 Each isolated runner verifies the download independently. The protected job also
 checks `registry publish-registry --help` before materializing its signing key.
@@ -148,8 +157,10 @@ publication and signing checks rather than weakening them for superficial parity
 
 The pin remains `PENDING`; this preparation neither deploys the template nor
 publishes a CLI release. Superseded JavaScript stays until delivery/parity gates
-pass. An independent CLI release namespace requires coordinated URL/bootstrap
-changes; the current fixed official path is the app's `vX.Y.Z` release namespace.
+pass. Independent development CLI releases use the explicitly bound `cli/v…`
+namespace; stable application releases retain their `vX.Y.Z` namespace. See
+[`packages/cli/README.md`](../../packages/cli/README.md#manual-development-cli-releases)
+for manual delivery and the separate qualification/pinning gates.
 
 ## Verified local archive staging
 

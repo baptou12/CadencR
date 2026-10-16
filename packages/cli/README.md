@@ -336,8 +336,52 @@ The seven-day workflow artifact contains the executable
 `preparation.json` recording source, version and target. Verify the checksum
 before use. These are preparation artifacts, not an activated registry CLI pin.
 
-The existing bootstrap downloads CLI binaries from `vX.Y.Z` releases. Choosing
-an independent CLI release namespace would require a coordinated bootstrap
-change; otherwise the CLI ships through the existing desktop release workflow.
-Select the version and release topology explicitly before publication. This
-preparation workflow has read-only repository permissions and no signing secrets.
+This preparation workflow has read-only repository permissions and no signing
+secrets. Normal application tags still distribute the stable CLI alongside the
+desktop app; the development-only path below is independent.
+
+## Manual development CLI releases
+
+After `.github/workflows/cli-dev-release.yml` is merged and pushed to `main`,
+launch **Release development CLI** from GitHub Actions on `main` and supply its
+full reviewed current commit SHA:
+
+```bash
+gh workflow run cli-dev-release.yml --ref main \
+  -f source_commit=<full-reviewed-current-main-sha>
+```
+
+The source commit must match the dispatch and fetched `main` tip, and its main
+CI must be green. Tests/build run without write authority; a separate publication
+job publishes only the reviewed artifact. No desktop build, app version bump,
+Apple credentials, updater metadata or registry signing key is involved.
+
+For package base `0.13.1`, a run produces a unique version such as
+`0.13.1-dev.123456789.1`, tag `cli/v0.13.1-dev.123456789.1`, and binary reporting
+`cadencr 0.13.1-dev.123456789.1`. The narrowly validated compile-time
+`CADENCR_CLI_RELEASE_VERSION` override does not edit package manifests or the
+lockfile; ordinary builds continue to report their package version. Existing
+tags/releases/assets are never overwritten. These are prereleases, not the
+latest desktop release.
+
+If publication fails after creating its tag or draft, retain that state and
+rerun the **whole workflow** to obtain a new attempt/version. Do not delete or
+reuse the consumed identity. Rerunning only the publication job is intentionally
+not a resume mechanism: its original build artifact belongs to an earlier
+attempt. This workflow does not qualify registry interruption/recovery behavior.
+
+The release includes the raw Linux executable, its versioned `SHA256SUMS`,
+`provenance.json` and a candidate `released-cli.env`:
+
+```dotenv
+CADENCR_RELEASE_VERSION=0.13.1-dev.123456789.1
+CADENCR_RELEASE_TAG=cli/v0.13.1-dev.123456789.1
+CADENCR_RELEASE_SHA256=<reviewed-64-character-lowercase-sha256>
+```
+
+The trusted downloader accepts this exact tag/version binding as well as legacy
+two-field application-release pins. Independently verify the published source
+binding, checksum and downloaded binary before selecting a candidate for QA.
+No workflow run changes the checked-in qualification or production pins; the
+production pair remains `PENDING` until real lifecycle qualification is complete.
+Marketplace UI remains hidden in production.

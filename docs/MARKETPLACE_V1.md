@@ -25,6 +25,14 @@ a future desktop release. Publication is not public UI or desktop trust activati
       tests. Namespaced tags and canonical Rust packaging do not grant publication
       authority. Production pins remain `PENDING`; see
       [`plugins/RELEASING.md`](../plugins/RELEASING.md).
+- [x] Add an independent, manual development CLI release path from reviewed green
+      `main`, with unique `cli/v<base>-dev.<run-id>.<attempt>` prereleases,
+      checksums and source provenance. The downloader supports these explicit
+      tags without changing existing application-release pins. This is workflow
+      implementation, not evidence of a published or qualified new binary.
+- [ ] Merge and push the CLI workflow to `main`, publish a development CLI from
+      its exact green commit, and review its public binary/checksum/provenance.
+      No desktop version bump or desktop release is required for this path.
 - [ ] Qualify real GitHub publication, interruption/resume, fresh-runner recovery
       and empty-delta renewal against an explicitly reviewed isolated **public**
       QA target. Anonymous archive/discovery verification cannot positively
@@ -78,6 +86,30 @@ a future desktop release. Publication is not public UI or desktop trust activati
   manually or fall back to source-built code to manufacture a qualification pass.
 - Production pins remain `PENDING`; JavaScript cutover/removal, real theme/Pi
   publication, official trust and marketplace exposure remain separate gates.
+
+### Independent development CLI delivery — 2026-10-16
+
+The manual [`cli-dev-release.yml`](../.github/workflows/cli-dev-release.yml)
+workflow decouples marketplace qualification from desktop releases. After this
+workflow is merged and pushed to `main`, an operator supplies the full reviewed
+current `main` commit SHA. The workflow requires that exact commit's main CI to
+pass, tests/builds the Linux CLI with read-only permissions, and publishes only
+the CLI under a unique namespaced development prerelease. It never publishes
+desktop/updater assets, changes app versions, enables marketplace UI, signs a
+registry catalog or modifies registry pins.
+
+Each invocation has a new `cli/v<base>-dev.<run-id>.<attempt>` identity; the binary
+reports the same development version. A release identity is never reused or
+overwritten. Binary, checksum, provenance and candidate pin data are public;
+private keys, credentials, user profiles and databases are not release inputs.
+The generated pin is a candidate for review, **not** permission to activate the
+production registry. Existing qualification pins keep identifying the actual
+`v0.13.0` binary until a separate reviewed update selects a new executable.
+
+Next: publish the new CLI explicitly, verify its downloaded bytes independently,
+then repeat the retained real GitHub QA scenario and remaining lifecycle gates.
+Only that qualification can unblock production pinning/JavaScript cutover. A
+successful CLI build/release does not certify plugin publication or desktop QA.
 
 ### Official source location decision — 2026-10-14
 

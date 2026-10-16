@@ -72,8 +72,8 @@ test("released CLI bytes are verified before the offline fixture is executed", a
   t.after(() => rm(directory, { recursive: true, force: true }));
   const tools = path.join(directory, "tools");
   await mkdir(tools);
-  // CI uses coreutils timeout; this inert local shim exercises process-group
-  // cancellation quickly on macOS, which does not ship that utility.
+  // macOS has no coreutils timeout. Allow fixture process startup under load;
+  // the shim still validates the production deadline arguments.
   await writeFile(
     path.join(tools, "timeout"),
     `#!/usr/bin/env node
@@ -81,7 +81,7 @@ const { spawn } = require("node:child_process");
 const args = process.argv.slice(2);
 if (args.shift() !== "--kill-after=2s" || args.shift() !== "30s") process.exit(99);
 const child = spawn(args.shift(), args, { stdio: "inherit", detached: true });
-const timer = setTimeout(() => { process.kill(-child.pid, "SIGKILL"); }, 500);
+const timer = setTimeout(() => { process.kill(-child.pid, "SIGKILL"); }, 5000);
 child.on("exit", (code) => { clearTimeout(timer); process.exit(code ?? 124); });
 `,
     { mode: 0o700 },
@@ -285,7 +285,12 @@ test("bootstrap bounds the fixed official download and contains both tooling pat
     "utf8",
   );
   assert.match(script, /fetch-released-cli\.sh/);
-  assert.match(helper, /https:\/\/github\.com\/merkr-software\/CadencR\/releases\/download\/v/);
+  assert.match(
+    helper,
+    /https:\/\/github\.com\/merkr-software\/CadencR\/releases\/download\/\$\{tag\}\/\$\{asset\}/,
+  );
+  assert.match(helper, /tag="v\$version"/);
+  assert.match(helper, /"\$tag" != "cli\/v\$version"/);
   assert.match(helper, /--max-filesize 134217728/);
   assert.match(script, /npm ci --ignore-scripts --no-audit --no-fund/);
   assert.match(script, /registry build-index --schema-version 2 --packages/);

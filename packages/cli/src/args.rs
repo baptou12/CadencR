@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "cadencr",
-    version,
+    version = env!("CADENCR_CLI_VERSION"),
     about = "Headless Cadencr package and registry tooling"
 )]
 pub(crate) struct Cli {
