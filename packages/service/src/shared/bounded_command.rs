@@ -27,12 +27,45 @@ impl std::fmt::Display for BoundedCommandError {
 
 impl std::error::Error for BoundedCommandError {}
 
+/// What to do when a stream outgrows [`MAX_OUTPUT_BYTES`].
+#[derive(Clone, Copy)]
+enum Overflow {
+    /// Kill the command and fail: the caller needs the whole output.
+    Fail,
+    /// Keep only the last [`MAX_OUTPUT_BYTES`]: the caller shows the end.
+    KeepTail,
+}
+
 /// Spawn `command` (stdout and stderr must be piped) and collect its output.
 /// The child is killed on timeout or when either stream exceeds 1 MiB.
+///
+/// The child leads its own process group and the whole group is killed: a
+/// command run through `sh -c` is usually a launcher, and killing only the
+/// shell would leave the test runner or installer it started running.
 pub async fn capture_bounded(
-    mut command: tokio::process::Command,
+    command: tokio::process::Command,
     timeout: Duration,
 ) -> Result<Output, BoundedCommandError> {
+    capture(command, timeout, Overflow::Fail).await
+}
+
+/// [`capture_bounded`] for output that is only read from the end, like a
+/// failing test run: a stream past 1 MiB keeps its last 1 MiB instead of
+/// failing the command.
+pub async fn capture_tail(
+    command: tokio::process::Command,
+    timeout: Duration,
+) -> Result<Output, BoundedCommandError> {
+    capture(command, timeout, Overflow::KeepTail).await
+}
+
+async fn capture(
+    mut command: tokio::process::Command,
+    timeout: Duration,
+    overflow: Overflow,
+) -> Result<Output, BoundedCommandError> {
+    #[cfg(unix)]
+    command.process_group(0);
     let mut child = command
         .spawn()
         .map_err(|error| BoundedCommandError::new(format!("could not start: {error}")))?;
@@ -44,8 +77,8 @@ pub async fn capture_bounded(
         .stderr
         .take()
         .ok_or_else(|| BoundedCommandError::new("stderr was unavailable"))?;
-    let mut stdout_task = tokio::spawn(read_bounded(stdout));
-    let mut stderr_task = tokio::spawn(read_bounded(stderr));
+    let mut stdout_task = tokio::spawn(read_bounded(stdout, overflow));
+    let mut stderr_task = tokio::spawn(read_bounded(stderr, overflow));
 
     let capture = async {
         let wait = async {
@@ -76,9 +109,19 @@ pub async fn capture_bounded(
         }
         Ok(Err(error)) => error,
         Err(_) => {
-            BoundedCommandError::new(format!("timed out after {} seconds", timeout.as_secs()))
+            let seconds = timeout.as_secs();
+            let unit = if seconds == 1 { "second" } else { "seconds" };
+            BoundedCommandError::new(format!("timed out after {seconds} {unit}"))
         }
     };
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        // Safety: a bare kill(2) on the child's own group; ESRCH only means the
+        // group is already gone.
+        unsafe {
+            libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+        }
+    }
     // The child may already have exited; the error being reported is the one
     // that matters.
     let _ = child.kill().await;
@@ -87,7 +130,10 @@ pub async fn capture_bounded(
     Err(error)
 }
 
-async fn read_bounded(mut reader: impl AsyncRead + Unpin) -> Result<Vec<u8>, BoundedCommandError> {
+async fn read_bounded(
+    mut reader: impl AsyncRead + Unpin,
+    overflow: Overflow,
+) -> Result<Vec<u8>, BoundedCommandError> {
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 8192];
     loop {
@@ -98,27 +144,52 @@ async fn read_bounded(mut reader: impl AsyncRead + Unpin) -> Result<Vec<u8>, Bou
         if count == 0 {
             break;
         }
-        if bytes.len().saturating_add(count) > MAX_OUTPUT_BYTES {
+        if bytes.len().saturating_add(count) > MAX_OUTPUT_BYTES
+            && matches!(overflow, Overflow::Fail)
+        {
             return Err(BoundedCommandError::new(format!(
                 "output exceeded {MAX_OUTPUT_BYTES} bytes"
             )));
         }
         bytes.extend_from_slice(&buffer[..count]);
+        // Trimmed in batches, so a long stream costs amortized O(1) per byte.
+        if bytes.len() > 2 * MAX_OUTPUT_BYTES {
+            bytes.drain(..bytes.len() - MAX_OUTPUT_BYTES);
+        }
     }
+    let excess = bytes.len().saturating_sub(MAX_OUTPUT_BYTES);
+    bytes.drain(..excess);
     Ok(bytes)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{capture_bounded, read_bounded, MAX_OUTPUT_BYTES};
+    use super::{capture_bounded, capture_tail, read_bounded, Overflow, MAX_OUTPUT_BYTES};
     use std::process::Stdio;
     use std::time::Duration;
 
     #[tokio::test]
     async fn bounded_reader_rejects_output_immediately_after_the_limit() {
         let bytes = vec![b'x'; MAX_OUTPUT_BYTES + 1];
-        let error = read_bounded(std::io::Cursor::new(bytes)).await.unwrap_err();
+        let error = read_bounded(std::io::Cursor::new(bytes), Overflow::Fail)
+            .await
+            .unwrap_err();
         assert!(error.to_string().contains("exceeded"));
+    }
+
+    #[tokio::test]
+    async fn a_tail_capture_keeps_the_end_of_a_long_stream() {
+        let mut command = tokio::process::Command::new("/bin/sh");
+        command
+            .args(["-c", "yes x | head -c 3000000; echo END; exit 1"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let output = capture_tail(command, Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.stdout.len(), MAX_OUTPUT_BYTES);
+        assert!(output.stdout.ends_with(b"END\n"));
     }
 
     #[tokio::test]
@@ -143,5 +214,56 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("timed out"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_timeout_kills_what_the_shell_started() {
+        let pid_file = std::env::temp_dir().join(format!("bounded-{}.pid", std::process::id()));
+        let mut command = tokio::process::Command::new("/bin/sh");
+        command
+            .args([
+                "-c",
+                &format!("sleep 30 & echo $! > {}; wait", pid_file.display()),
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        capture_bounded(command, Duration::from_millis(500))
+            .await
+            .unwrap_err();
+
+        let pid: libc::pid_t = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let _ = std::fs::remove_file(&pid_file);
+        // The orphaned `sleep` is reaped by init asynchronously.
+        let mut alive = true;
+        for _ in 0..40 {
+            alive = unsafe { libc::kill(pid, 0) } == 0;
+            if !alive {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(!alive, "the grandchild `sleep` survived the timeout");
+    }
+
+    #[tokio::test]
+    async fn a_one_second_timeout_reads_in_the_singular() {
+        let mut slow = tokio::process::Command::new("/bin/sh");
+        slow.args(["-c", "sleep 5"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        let error = capture_bounded(slow, Duration::from_secs(1))
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().ends_with("timed out after 1 second"),
+            "{error}"
+        );
     }
 }
