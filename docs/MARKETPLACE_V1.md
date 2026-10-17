@@ -332,6 +332,17 @@ reconstruct remote publication evidence; no recovery artifact is restored.
 This work does not activate privileged workflows, change keys/trust/feed settings,
 or expose the marketplace UI.
 
+Bootstrap [registry PR #1](https://github.com/merkr-software/cadencr-registry/pull/1)
+now proposes only the pin, three helpers and source provenance at
+`93e00587ac4dfc6d10f9bd8c6aa649bd41b31821`. Both existing required checks passed
+in [run 39023006407](https://github.com/merkr-software/cadencr-registry/actions/runs/39023006407).
+These checks still execute the original JavaScript gate; they do not qualify the
+future workflow cutover. The PR is unmerged and requires independent approval:
+its author/last pusher is also the sole current CODEOWNER. No protection was
+changed or bypassed. The local candidate suite passed 271 tests; the downloaded
+Linux CLI also validated an inert theme contribution and built its schema-2 index
+through the final helper, with a PENDING pin rejected.
+
 Use GPT-6.1-Sol parallel advisors/workers and finish each wave with independent
 reuse/quality/efficiency reviews, scoped checks and a commit plan. No production
 database is involved. Initial implementation reviews stop before committing or
