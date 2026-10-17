@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 
 const mocks = vi.hoisted(() => ({
-  search: {} as { tab?: "general" | "marketplace"; section?: string },
+  search: {} as { tab?: string; section?: string },
   navigate: vi.fn(),
   persist: vi.fn(),
   realSetting: false,
@@ -17,10 +17,16 @@ vi.mock("@/lib/marketplace-gate", () => ({
   },
 }));
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (options: { component: ComponentType }) => ({
-    options,
-    useSearch: () => mocks.search,
-  }),
+  createFileRoute:
+    () =>
+    (options: {
+      component: ComponentType;
+      beforeLoad: (context: { search: typeof mocks.search }) => void;
+    }) => ({
+      options,
+      useSearch: () => mocks.search,
+    }),
+  redirect: (options: unknown) => ({ redirect: options }),
   useNavigate: () => mocks.navigate,
 }));
 vi.mock("@/hooks/useShortcut", () => ({ useShortcut: vi.fn() }));
@@ -62,14 +68,14 @@ vi.mock("@/components/settings/GeneralSettingsSections", async () => {
       mocks.realSetting ? <SettingFixture /> : <div id="appearance">General content</div>,
   };
 });
-vi.mock("@/components/MarketplaceSection", () => ({
-  MarketplaceSection: () => <div>Marketplace content</div>,
-}));
 vi.mock("@/components/settings/SettingsNavSidebar", () => ({
   SettingsNavSidebar: () => <nav aria-label="General sections" />,
 }));
 import { Route } from "./settings";
 const SettingsPage = Route.options.component as ComponentType;
+const beforeLoad = Route.options.beforeLoad as unknown as (context: {
+  search: { tab?: string; section?: string };
+}) => void;
 
 afterEach(() => {
   cleanup();
@@ -81,120 +87,54 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("Settings views", () => {
-  it.each([{ tab: "marketplace" as const }, { section: "marketplace" }, {}])(
-    "falls back to General without mounting marketplace when disabled: %j",
+describe("Settings page", () => {
+  it("renders the general sections under a compact header", () => {
+    render(<SettingsPage />);
+    const header = screen.getByRole("heading", { name: "Settings" }).closest("header");
+    expect(header).toContainElement(screen.getByRole("button", { name: "Back to workspace" }));
+    expect(header).toHaveClass("min-h-11", "items-center");
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByText("General content")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "General sections" })).toBeTruthy();
+  });
+
+  it.each([{ tab: "marketplace" }, { section: "marketplace" }])(
+    "redirects the legacy marketplace link %j to the Marketplace page",
     (search) => {
-      mocks.marketplaceEnabled = false;
-      mocks.search = search;
-      render(<SettingsPage />);
-      expect(screen.queryByRole("tab", { name: "Marketplace" })).toBeNull();
-      expect(screen.queryByText("Marketplace content")).toBeNull();
-      expect(screen.getByText("General content")).toBeTruthy();
+      expect(() => beforeLoad({ search })).toThrow();
+      try {
+        beforeLoad({ search });
+      } catch (error) {
+        expect(error).toEqual({ redirect: { to: "/marketplace" } });
+      }
     },
   );
 
-  it("mounts only General by default and exposes accessible tabs", () => {
-    render(<SettingsPage />);
-    expect(screen.getByRole("tablist", { name: "Settings views" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByText("General content")).toBeTruthy();
-    expect(screen.queryByText("Marketplace content")).toBeNull();
+  it("stays on Settings for marketplace links when the marketplace is not in the build", () => {
+    mocks.marketplaceEnabled = false;
+    expect(() => beforeLoad({ search: { tab: "marketplace" } })).not.toThrow();
   });
 
-  it("keeps the heading and tabs in one compact strip without promotional or duplicate copy", () => {
-    mocks.search = { tab: "marketplace" };
-    render(<SettingsPage />);
-    const header = screen.getByRole("heading", { name: "Settings" }).closest("header");
-    expect(header).toContainElement(screen.getByRole("tablist", { name: "Settings views" }));
-    expect(header).toContainElement(screen.getByRole("button", { name: "Back to workspace" }));
-    expect(header).toHaveClass("min-h-11", "items-center");
-    expect(screen.queryByText("Make Cadencr your own.")).toBeNull();
-    expect(screen.queryByText("Cadencr")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Marketplace" })).toBeNull();
-    expect(screen.queryByText(/Discover signed agent providers/)).toBeNull();
-  });
-
-  it("mounts only Marketplace for legacy deep links", () => {
-    mocks.search = { section: "marketplace" };
-    render(<SettingsPage />);
-    expect(screen.getByText("Marketplace content")).toBeTruthy();
-    expect(screen.queryByText("General content")).toBeNull();
-    expect(screen.queryByRole("navigation", { name: "General sections" })).toBeNull();
-  });
-
-  it("supports keyboard tab navigation without a mouse", async () => {
-    render(<SettingsPage />);
-    const general = screen.getByRole("tab", { name: "General" });
-    general.focus();
-    fireEvent.keyDown(general, { key: "ArrowRight" });
-    await waitFor(() =>
-      expect(mocks.navigate).toHaveBeenCalledWith({
-        to: "/settings",
-        search: { tab: "marketplace" },
-      }),
-    );
-  });
-
-  it("persists a real debounced setting once after rapidly switching away", async () => {
+  it("persists a real debounced setting once", async () => {
     vi.useFakeTimers();
     mocks.realSetting = true;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const view = () => (
+    render(
       <QueryClientProvider client={client}>
         <SettingsPage />
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
-    const { rerender } = render(view());
     fireEvent.change(screen.getByRole("textbox", { name: "Setting regression" }), {
       target: { value: "new" },
     });
-    mocks.search = { tab: "marketplace" };
-    rerender(view());
-    expect(screen.queryByRole("textbox", { name: "Setting regression" })).toBeNull();
-    expect(screen.getByLabelText("Setting regression").closest("[role=tabpanel]")).toHaveStyle({
-      display: "none",
-    });
     expect(mocks.persist).not.toHaveBeenCalled();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(600);
     });
     expect(mocks.persist).toHaveBeenCalledTimes(1);
     expect(mocks.persist).toHaveBeenCalledWith({
       key: "regression_setting",
       data: { value: "new" },
     });
-    mocks.search = { tab: "general" };
-    rerender(view());
-    expect(screen.getByRole("textbox", { name: "Setting regression" })).toHaveValue("new");
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(600);
-    });
-    expect(mocks.persist).toHaveBeenCalledTimes(1);
-  });
-
-  it("writes tab selection to router search and follows URL changes", () => {
-    const { rerender } = render(<SettingsPage />);
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Marketplace" }), {
-      button: 0,
-      ctrlKey: false,
-    });
-    expect(mocks.navigate).toHaveBeenCalledWith({
-      to: "/settings",
-      search: { tab: "marketplace" },
-    });
-    mocks.search = { tab: "marketplace" };
-    rerender(<SettingsPage />);
-    expect(screen.getByText("Marketplace content")).toBeTruthy();
-    mocks.search = { tab: "general" };
-    rerender(<SettingsPage />);
-    expect(screen.getByText("General content")).toBeTruthy();
-    expect(screen.getByText("Marketplace content").closest("[role=tabpanel]")).toHaveAttribute(
-      "hidden",
-    );
-    expect(screen.getByText("Marketplace content").closest("[role=tabpanel]")).toHaveAttribute(
-      "aria-hidden",
-      "true",
-    );
   });
 });
