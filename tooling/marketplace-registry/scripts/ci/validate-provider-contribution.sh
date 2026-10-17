@@ -12,8 +12,9 @@ mode=$4
 case "$mode" in validate|tooling) ;; *) echo "unknown validation mode: $mode" >&2; exit 2 ;; esac
 
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/cadencr-registry-validator.XXXXXX")
-cleanup() { rm -rf "$work"; }
-trap cleanup EXIT
+# A released executable may create unexpected state, including a database.
+# Retain the entire owned directory on every outcome rather than deleting it.
+printf 'Registry validation scratch retained at: %s\n' "$work" >&2
 trap 'exit 1' HUP INT TERM
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 bootstrap_status=0

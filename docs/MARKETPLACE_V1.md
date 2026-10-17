@@ -40,6 +40,10 @@ a future desktop release. Publication is not public UI or desktop trust activati
       QA target. Anonymous archive/discovery verification cannot positively
       qualify a private repository. Use inert fixtures and QA-only signing keys;
       offline tests and source-level transport fixtures do not satisfy this gate.
+- [x] Prepare the Rust-only contribution/publisher runtime with trusted-base
+      helpers, a registry-lifecycle-qualified executable pin and fail-closed tests.
+      Contribution execution scratch is retained, including unexpected CLI state;
+      local preparation is not evidence of a deployed Rust contribution check.
 - [ ] Deploy the candidate qualified-executable pin in contribution and protected
       publication workflows; deploy the reviewed registry update and verify CI.
       Only then remove replaced JavaScript business implementations.
@@ -463,6 +467,24 @@ its author/last pusher is also the sole current CODEOWNER. No protection was
 changed or bypassed. The local candidate suite passed 271 tests; the downloaded
 Linux CLI also validated an inert theme contribution and built its schema-2 index
 through the final helper, with a PENDING pin rejected.
+
+The 2026-10-17 pre-commit review confirmed that the Rust-only cutover code is
+already prepared; no new publication engine or pin replacement is needed. The
+registry keeps its lifecycle-qualified CLI pin, separate from the newer binary's
+author-only qualification. Review found two local corrections:
+
+- Contribution validation must retain its execution scratch rather than
+  recursively deleting unexpected CLI-created state/database files. The helper
+  correction is not in bootstrap PR #1 yet.
+- The monorepo's nested registry test runner must remove inherited
+  `NODE_TEST_CONTEXT`; otherwise Node can skip all nested tests while returning
+  success. A regression now proves real execution and failure propagation. An
+  earlier green root wrapper alone was not proof that registry tests executed.
+
+After the local changes are approved/committed, refresh the bootstrap PR with the
+helper correction, obtain independent approval and merge it before the second
+trusted-base workflow cutover. Do not remove JavaScript before the deployed Rust
+checks pass; retain the expiry diagnostic and test fixtures afterward.
 
 Use GPT-6.1-Sol parallel advisors/workers and finish each wave with independent
 reuse/quality/efficiency reviews, scoped checks and a commit plan. No production
