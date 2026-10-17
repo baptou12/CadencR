@@ -5,6 +5,8 @@ import { MARKETPLACE_ENABLED } from "@/lib/marketplace-gate";
 const settingsSearchSchema = z.object({
   tab: z.enum(["general", "marketplace"]).optional().catch(undefined),
   section: z.string().optional().catch(undefined),
+  /** `create` opens the Custom tabs create dialog (`section=custom-tabs`). */
+  action: z.enum(["create"]).optional().catch(undefined),
 });
 
 export type SettingsSearch = z.infer<typeof settingsSearchSchema>;

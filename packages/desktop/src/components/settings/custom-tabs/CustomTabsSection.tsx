@@ -1,0 +1,131 @@
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Plus, Puzzle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SettingsCard } from "@/components/settings/SettingsCard";
+import { SettingsSection } from "@/components/settings/SettingsSection";
+import { ErrorRow, LoadingRow } from "@/components/settings/SettingsStateRows";
+import { SettingsSubsection } from "@/components/settings/SettingsSubsection";
+import { apiErrorMessage } from "@/lib/api-errors";
+import { CUSTOM_TABS_SECTION_ID } from "./custom-tab-model";
+import { CreateCustomTabDialog } from "./CreateCustomTabDialog";
+import { CustomTabCard } from "./CustomTabCard";
+import { CustomTabConsentDialog } from "./CustomTabConsentDialog";
+import { useCustomTabEnablement } from "./useCustomTabEnablement";
+import { useCustomTabsData, type CustomTabsData } from "./useCustomTabsData";
+import { useOpenCustomTabProject } from "./useOpenCustomTabProject";
+
+/**
+ * Settings → Custom tabs: the local tabs, where each is on, what it may read,
+ * its settings, and the way to make a new one.
+ *
+ * URL contract: `/settings?section=custom-tabs` scrolls here;
+ * `&action=create` also opens the create dialog, and the param is then dropped
+ * so a reload or Back does not open it again.
+ */
+export function CustomTabsSection(): React.JSX.Element {
+  const data = useCustomTabsData();
+  const enablement = useCustomTabEnablement();
+  const opener = useOpenCustomTabProject();
+  const [creating, setCreating] = useCreateFromUrl();
+  // The empty state carries its own Create button; anywhere else the header does.
+  const empty = !data.isLoading && !data.error && data.tabs.length === 0;
+
+  return (
+    <SettingsSection id={CUSTOM_TABS_SECTION_ID} title="Custom tabs" subtitle="Desktop only">
+      <SettingsCard>
+        <SettingsSubsection
+          title="Your custom tabs"
+          description="Web apps you build that show up as tabs in a conversation, next to Agent, Terminal and Git. Each one only sees what you allow."
+          action={
+            !empty ? (
+              <Button size="sm" className="gap-1.5" onClick={() => setCreating(true)}>
+                <Plus className="size-3.5" aria-hidden />
+                Create custom tab
+              </Button>
+            ) : undefined
+          }
+        >
+          <CustomTabsList
+            data={data}
+            onCreate={() => setCreating(true)}
+            render={(tab) => (
+              <CustomTabCard
+                key={tab.id}
+                tab={tab}
+                projects={data.projects}
+                overrides={data.overridesFor(tab.id)}
+                enablement={enablement}
+                opener={opener}
+                defaultExpanded={data.tabs.length === 1}
+              />
+            )}
+          />
+        </SettingsSubsection>
+      </SettingsCard>
+      {creating ? <CreateCustomTabDialog onClose={() => setCreating(false)} /> : null}
+      <CustomTabConsentDialog
+        request={enablement.request}
+        accepting={enablement.accepting}
+        onAccept={enablement.accept}
+        onCancel={enablement.cancel}
+      />
+    </SettingsSection>
+  );
+}
+
+function CustomTabsList({
+  data,
+  onCreate,
+  render,
+}: {
+  data: CustomTabsData;
+  onCreate: () => void;
+  render: (tab: CustomTabsData["tabs"][number]) => React.JSX.Element;
+}): React.JSX.Element {
+  if (data.isLoading) return <LoadingRow label="Loading custom tabs…" />;
+  if (data.error) {
+    return <ErrorRow label={apiErrorMessage(data.error, "Could not load your custom tabs.")} />;
+  }
+  if (data.tabs.length === 0) return <CustomTabsEmptyState onCreate={onCreate} />;
+  return <div className="space-y-2">{data.tabs.map(render)}</div>;
+}
+
+function CustomTabsEmptyState({ onCreate }: { onCreate: () => void }): React.JSX.Element {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-6 py-10 text-center">
+      <span className="mb-1 grid size-10 place-items-center rounded-md border border-border bg-card text-muted-foreground">
+        <Puzzle className="size-5" aria-hidden />
+      </span>
+      <h4 className="text-sm font-semibold text-foreground">No custom tabs yet</h4>
+      <p className="max-w-sm text-xs leading-relaxed text-pretty text-muted-foreground">
+        Build the view you keep wishing a conversation had: a graph of the changes, a dashboard,
+        your team&apos;s tools. Cadencr sets up a starter tab and an agent to build it with you.
+      </p>
+      <Button size="sm" className="mt-2 gap-1.5" onClick={onCreate}>
+        <Plus className="size-3.5" aria-hidden />
+        Create custom tab
+      </Button>
+    </div>
+  );
+}
+
+/** `action=create` in the URL opens the dialog once, then leaves the URL. */
+function useCreateFromUrl(): [boolean, (open: boolean) => void] {
+  const navigate = useNavigate();
+  const [creating, setCreating] = useState(false);
+  // The settings route validates `action` (`parseSettingsSearch`).
+  const requested = useSearch({ strict: false, select: (search) => search.action === "create" });
+
+  useEffect(() => {
+    if (!requested) return;
+    setCreating(true);
+    void navigate({
+      to: "/settings",
+      search: { section: CUSTOM_TABS_SECTION_ID },
+      replace: true,
+    });
+  }, [navigate, requested]);
+
+  return useMemo<[boolean, (open: boolean) => void]>(() => [creating, setCreating], [creating]);
+}

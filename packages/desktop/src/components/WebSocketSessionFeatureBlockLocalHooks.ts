@@ -196,6 +196,7 @@ export function useFeatureBlockTabs(args: {
   hotkeysEnabled: boolean;
   sendFromGitTab: (message: string) => void;
   openAgentFileInEditor: OpenDiffInEditor;
+  pluginTabsEnabled: boolean;
 }): ReturnType<typeof useSessionTabs> {
   return useSessionTabs({
     sessionId: args.sessionId,
@@ -210,6 +211,7 @@ export function useFeatureBlockTabs(args: {
     hotkeysEnabled: args.hotkeysEnabled,
     sendFromGitTab: args.sendFromGitTab,
     openAgentFileInEditor: args.openAgentFileInEditor,
+    pluginTabsEnabled: args.pluginTabsEnabled,
   });
 }
 

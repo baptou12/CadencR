@@ -73,6 +73,13 @@ vi.mock("@/components/feature-layout/FeatureLayoutShell", () => ({
   ),
 }));
 
+// Custom tabs read the plugin-tab list and session status, which this
+// test's `@/api/generated` mock doesn't provide; none is placed here anyway.
+vi.mock("@/components/plugin-tabs/usePluginTabContext", () => ({
+  usePluginTabContext: () => null,
+}));
+vi.mock("@/components/plugin-tabs/usePluginTabDefs", () => ({ usePluginTabDefs: () => ({}) }));
+
 vi.mock("@/components/FeatureTerminalTab", () => ({
   FeatureTerminalTab: () => <div data-testid="terminal-tab" />,
 }));

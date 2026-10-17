@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { useDroppable } from "@dnd-kit/core";
 
 import { Tabs, TabsList } from "@/components/ui/tabs";
@@ -128,13 +128,17 @@ function PaneTabs({
   onDockTab,
   onCloseTab,
 }: PaneTabsProps): ReactNode {
+  const listRef = useRef<HTMLDivElement>(null);
+  // Custom tab triggers appear once their definitions load, after the layout.
+  const renderedTabCount = leaf.tabIds.filter((tab) => tabs[tab]).length;
+  useRevealActiveTab(listRef, leaf.activeTabId, renderedTabCount);
   return (
     <Tabs
       value={leaf.activeTabId ?? ""}
       onValueChange={onTabChange}
       className="flex min-w-0 flex-1"
     >
-      <TabsList className="flex-1 overflow-x-auto overflow-y-hidden border-b-0">
+      <TabsList ref={listRef} className="flex-1 overflow-x-auto overflow-y-hidden border-b-0">
         {leaf.tabIds.length === 0 && (
           <span className="px-3 py-2 text-xs italic text-muted-foreground">Drag tabs here</span>
         )}
@@ -263,4 +267,46 @@ function EdgeDropZone({
       )}
     />
   );
+}
+
+/**
+ * Keep the active tab inside a strip that overflows horizontally — a custom tab
+ * added from the "+" menu lands at the end, often past the visible edge. Reads
+ * layout only when the active tab or the tab count changes.
+ */
+function useRevealActiveTab(
+  listRef: RefObject<HTMLDivElement | null>,
+  activeTabId: TabKind | null,
+  tabCount: number,
+): void {
+  useEffect(() => {
+    const list = listRef.current;
+    const target = list && activeTabId ? activeTabTarget(list, activeTabId) : null;
+    if (!list || !target) return;
+    // Tab widths settle after fonts and badges load (any tab before it can
+    // push it out), so follow every tab's size while this one is active.
+    const reveal = (): void => revealInStrip(list, target);
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    for (const child of Array.from(list.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [activeTabId, listRef, tabCount]);
+}
+
+/** The active trigger's wrapper, which also holds its close button. */
+function activeTabTarget(list: HTMLElement, activeTabId: TabKind): HTMLElement | null {
+  const trigger = Array.from(list.querySelectorAll<HTMLElement>("[data-feature-tab-kind]")).find(
+    (element) => element.dataset.featureTabKind === activeTabId,
+  );
+  if (!trigger) return null;
+  return trigger.parentElement && trigger.parentElement !== list ? trigger.parentElement : trigger;
+}
+
+function revealInStrip(list: HTMLElement, target: HTMLElement): void {
+  if (list.scrollWidth <= list.clientWidth) return;
+  const listBox = list.getBoundingClientRect();
+  const box = target.getBoundingClientRect();
+  if (box.left < listBox.left) list.scrollLeft -= listBox.left - box.left;
+  else if (box.right > listBox.right) list.scrollLeft += box.right - listBox.right;
 }

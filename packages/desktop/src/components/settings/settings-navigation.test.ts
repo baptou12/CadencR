@@ -36,6 +36,17 @@ describe("settings navigation", () => {
     ).toBe("marketplace");
   });
 
+  it("keeps the Custom tabs create action and drops unknown actions", () => {
+    expect(parseSettingsSearch({ section: "custom-tabs", action: "create" })).toEqual({
+      section: "custom-tabs",
+      action: "create",
+    });
+    expect(parseSettingsSearch({ action: "delete" }).action).toBeUndefined();
+    expect(NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id))).toContain(
+      "custom-tabs",
+    );
+  });
+
   it("does not offer Marketplace as a general scrolling section", () => {
     const sections = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id));
     expect(sections).not.toContain("marketplace");

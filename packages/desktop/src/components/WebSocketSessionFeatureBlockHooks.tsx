@@ -34,6 +34,9 @@ interface SessionRefs {
 }
 interface SessionFeatureData {
   projectPath: string;
+  projectName: string | undefined;
+  /** Git-verified feature worktree; `null` in the project root, `undefined` while unresolved. */
+  worktreePath: string | null | undefined;
   gitBranch: string | undefined;
   defaultBranch: string | undefined;
   featureSettings: Record<string, string>;
@@ -64,7 +67,9 @@ export function useSessionFeatureData(
   const projectsQuery = useListProjects({
     query: { enabled: projectLookupEnabled },
   });
-  const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
+  const project = projectsQuery.data?.find((p) => p.id === projectId);
+  const projectPath = project?.path;
+  const projectName = project?.name;
   const worktreePath = useFeatureWorktreePath(featureId, projectId);
   useGitStatusSubscription(gitMetadataEnabled ? featureId : null);
   const { data: initialGitStatus } = useGetGitStatus(
@@ -113,6 +118,8 @@ export function useSessionFeatureData(
   return useMemo<SessionFeatureData>(
     () => ({
       projectPath: projectPath ?? cwd,
+      projectName,
+      worktreePath,
       gitBranch,
       defaultBranch,
       featureSettings,
@@ -130,10 +137,12 @@ export function useSessionFeatureData(
       featureSettings,
       gitBranch,
       handleRetryWorktreeSetup,
+      projectName,
       projectPath,
       requestSlashCommands,
       session,
       worktreeBranch,
+      worktreePath,
       worktreeStatus,
     ],
   );

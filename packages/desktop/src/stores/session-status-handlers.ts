@@ -11,6 +11,7 @@ import { createLeadingSettleCoalescer } from "@/lib/coalesceInvalidation";
 import { invalidateChangedDocuments } from "@/lib/document-file";
 import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
 import { scheduleThemeInvalidation } from "@/lib/themeInvalidation";
+import { handlePluginTabChanged } from "@/lib/plugin-tabs/live-instances";
 import {
   getAlacrittyConfigRouteQueryKey,
   getListFeaturesQueryKey,
@@ -371,6 +372,10 @@ export function handleAppEnvelope(
     // The same file holds the label the theme's project is named after, so the
     // sidebar's list is refetched with it.
     scheduleThemeInvalidation(queryClient, typeof payload.id === "string" ? payload.id : undefined);
+    return true;
+  }
+  if (domain === "app" && action === "plugin_tab_changed") {
+    handlePluginTabChanged(payload);
     return true;
   }
   if (domain === "app" && action === "alacritty_config_event") {

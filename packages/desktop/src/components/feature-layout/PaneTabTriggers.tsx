@@ -107,6 +107,7 @@ export function DraggableTabTrigger({
           value={tab}
           data-feature-tab-kind={tab}
           data-feature-id={featureId}
+          data-tab-closable={closeAction ? "" : undefined}
           {...attributes}
           {...listeners}
           onClick={onActivate}
@@ -150,6 +151,7 @@ export function StaticTabTrigger({
         value={tab}
         data-feature-tab-kind={tab}
         data-feature-id={featureId}
+        data-tab-closable={closeAction ? "" : undefined}
         onClick={onActivate}
         className={cn(
           "group",

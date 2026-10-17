@@ -1,4 +1,5 @@
 import type { SettingsNavGroup } from "@/components/settings/SettingsNavSidebar";
+import { CUSTOM_TABS_SECTION_ID } from "@/components/settings/custom-tabs/custom-tab-model";
 import {
   BarChart3,
   Bell,
@@ -13,6 +14,7 @@ import {
   Palette,
   PanelLeft,
   Plug,
+  Puzzle,
   Tag,
 } from "lucide-react";
 
@@ -58,6 +60,12 @@ export const NAV_GROUPS: SettingsNavGroup[] = [
         id: "browser",
         label: "Browser",
         icon: <Globe className="size-4" />,
+      },
+      // Beside Browser: both configure tabs of the conversation page.
+      {
+        id: CUSTOM_TABS_SECTION_ID,
+        label: "Custom tabs",
+        icon: <Puzzle className="size-4" />,
       },
       {
         id: "storage",
