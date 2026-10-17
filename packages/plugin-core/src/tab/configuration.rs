@@ -59,6 +59,8 @@ fn validate_shape(field: &TabConfigField, findings: &mut TabFindings, at: &dyn F
             at("options"),
             "only select fields take options",
         );
+    } else if select {
+        validate_options(&field.options, findings, at);
     }
     let Some(default) = &field.default else {
         return;
@@ -74,6 +76,26 @@ fn validate_shape(field: &TabConfigField, findings: &mut TabFindings, at: &dyn F
             Code::ConfigDefaultInvalid,
             at("default"),
             "does not match the field's type or options",
+        );
+    }
+}
+
+/// Each option is a choice the settings form lists: a blank one (a select
+/// item cannot take an empty value) or the same one twice cannot be told apart.
+fn validate_options(options: &[String], findings: &mut TabFindings, at: &dyn Fn(&str) -> String) {
+    let mut seen = BTreeSet::new();
+    for (index, option) in options.iter().enumerate() {
+        let problem = if option.trim().is_empty() {
+            "cannot be blank"
+        } else if !seen.insert(option.as_str()) {
+            "is listed twice"
+        } else {
+            continue;
+        };
+        findings.error(
+            Code::ConfigOptionInvalid,
+            at(&format!("options[{index}]")),
+            problem,
         );
     }
 }
@@ -154,6 +176,37 @@ mod tests {
                 "CONFIG_SECRET_DEFAULT",
                 "CONFIG_DEFAULT_INVALID",
                 "CONFIG_DEFAULT_INVALID"
+            ]
+        );
+    }
+
+    #[test]
+    fn select_options_are_neither_blank_nor_repeated() {
+        let findings = check(json!([
+            { "key": "a", "type": "select", "label": "A", "scope": "global",
+              "options": ["", "auto"] },
+            { "key": "b", "type": "select", "label": "B", "scope": "global",
+              "options": ["x", " ", "x"] }
+        ]));
+        assert_eq!(
+            codes(&findings.errors),
+            [
+                "CONFIG_OPTION_INVALID",
+                "CONFIG_OPTION_INVALID",
+                "CONFIG_OPTION_INVALID"
+            ]
+        );
+        let fields: Vec<_> = findings
+            .errors
+            .iter()
+            .map(|issue| issue.field.clone())
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                Some("configuration[0].options[0]".to_string()),
+                Some("configuration[1].options[1]".to_string()),
+                Some("configuration[1].options[2]".to_string())
             ]
         );
     }

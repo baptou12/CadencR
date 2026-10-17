@@ -20,11 +20,15 @@ export interface CustomTabsData {
   overridesFor: (tabId: string) => ReadonlyMap<number, ProjectOverride>;
   isLoading: boolean;
   error: Error | null;
+  /** The projects or one project's overrides failed to load: the per-project
+   *  choices shown may be wrong (a missing override reads as Inherit). */
+  overridesError: Error | null;
 }
 
 type ProjectListResult = UseQueryResult<PluginTabSummary[]>;
 
-/** Fold one list per project into tab id → project id → override. */
+/** Fold one list per project into tab id → project id → override, and keep
+ *  the first failed list's error. */
 function combineOverrides(projects: readonly Project[]) {
   return (results: ProjectListResult[]) => {
     const byTab = new Map<string, Map<number, ProjectOverride>>();
@@ -40,7 +44,8 @@ function combineOverrides(projects: readonly Project[]) {
         }
       }
     });
-    return byTab;
+    const error = results.find((result) => result.error)?.error ?? null;
+    return { byTab, error };
   };
 }
 
@@ -67,10 +72,11 @@ export function useCustomTabsData(): CustomTabsData {
     () => ({
       tabs: list.data ?? NO_TABS,
       projects,
-      overridesFor: (tabId: string) => overrides.get(tabId) ?? NO_OVERRIDES,
+      overridesFor: (tabId: string) => overrides.byTab.get(tabId) ?? NO_OVERRIDES,
       isLoading: list.isLoading,
       error: list.error ?? null,
+      overridesError: projectsQuery.error ?? overrides.error,
     }),
-    [list.data, list.error, list.isLoading, overrides, projects],
+    [list.data, list.error, list.isLoading, overrides, projects, projectsQuery.error],
   );
 }

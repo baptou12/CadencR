@@ -13,13 +13,13 @@ then the code.
 
 ## 1. Model
 
-| Term | Meaning |
-| --- | --- |
-| **Custom tab** | A local plugin of kind `tab`: a folder holding `tab.json` and a static `dist/` bundle. |
-| **Tab instance** | One live rendering of a custom tab inside one feature page. Identified by an opaque `instanceId`. |
-| **Grant** | An ephemeral, in-memory, opaque token the service mints for one instance. It names the plugin, project, feature and the consented scopes. Never shown to the guest. |
-| **Guest** | The plugin's web page, running in an isolated `WebContentsView`. |
-| **Broker** | First-party renderer code that owns the guest's `MessagePort`, holds the grant, and relays requests. |
+| Term             | Meaning                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Custom tab**   | A local plugin of kind `tab`: a folder holding `tab.json` and a static `dist/` bundle.                                                                              |
+| **Tab instance** | One live rendering of a custom tab inside one feature page. Identified by an opaque `instanceId`.                                                                   |
+| **Grant**        | An ephemeral, in-memory, opaque token the service mints for one instance. It names the plugin, project, feature and the consented scopes. Never shown to the guest. |
+| **Guest**        | The plugin's web page, running in an isolated `WebContentsView`.                                                                                                    |
+| **Broker**       | First-party renderer code that owns the guest's `MessagePort`, holds the grant, and relays requests.                                                                |
 
 Invariants:
 
@@ -70,8 +70,14 @@ sibling of `plugins/themes`. Cadencr rescans it on startup and watches it
   "configuration": [
     { "key": "gitlab_url", "type": "string", "label": "GitLab URL", "scope": "global" },
     { "key": "gitlab_token", "type": "secret", "label": "Access token", "scope": "global" },
-    { "key": "group", "type": "select", "label": "Grouping", "scope": "project",
-      "options": ["directory", "extension"], "default": "directory" }
+    {
+      "key": "group",
+      "type": "select",
+      "label": "Grouping",
+      "scope": "project",
+      "options": ["directory", "extension"],
+      "default": "directory"
+    }
   ]
 }
 ```
@@ -93,7 +99,8 @@ Rules (validated by `cadencr-plugin-core::tab`, the service and
   `reasoning` is required when the list is non-empty.
 - `configuration`: ≤ 32 fields; `key` `^[a-z][a-z0-9_]{0,47}$`, unique; `type`
   ∈ `string | number | boolean | select | secret`; `scope` ∈ `global | project`;
-  `select` requires non-empty `options`; `secret` cannot have a `default`.
+  `select` requires non-empty `options`, none blank or repeated; `secret`
+  cannot have a `default`.
 - Unknown top-level keys are errors (the format is closed until it is published).
 
 **Permissions hash**: SHA-256 (hex) over the canonical JSON
@@ -107,19 +114,19 @@ against this hash; a widened manifest requires a new consent.
 - `projects.authoring_target` CHECK widens to `('theme','provider','tab')`
   (table rebuild — see the `migration-safety` skill).
 - `plugin_tab_enablements(plugin_id TEXT, project_id INTEGER NULL REFERENCES
-  projects(id) ON DELETE CASCADE, enabled INTEGER NOT NULL, updated_at TEXT)`.
+projects(id) ON DELETE CASCADE, enabled INTEGER NOT NULL, updated_at TEXT)`.
   `project_id IS NULL` is the global row. Unique per `(plugin_id)` for global and
   per `(plugin_id, project_id)` for project rows.
 - `plugin_tab_consents(plugin_id TEXT PRIMARY KEY, permissions_hash TEXT NOT
-  NULL, consented_at TEXT NOT NULL, setup_pending INTEGER NOT NULL)`.
+NULL, consented_at TEXT NOT NULL, setup_pending INTEGER NOT NULL)`.
   `setup_pending` is set by the creation's consent (§8) and cleared by the
   first stored enablement choice.
 - `plugin_tab_config(plugin_id, project_id NULL, key, value TEXT, is_secret,
-  updated_at)` — global and project values; secrets live here too and are
+updated_at)` — global and project values; secrets live here too and are
   never returned. `is_secret` is kept with the value, so a manifest that
   re-declares a secret field as a plain one cannot read the saved secret.
 - `plugin_tab_storage(plugin_id, project_id INTEGER NOT NULL, key, value TEXT,
-  updated_at)` — the plugin's own key/value store, per project.
+updated_at)` — the plugin's own key/value store, per project.
 
 Effective enablement for a project = project row ?? global row ?? off, **and**
 a consent row whose hash equals the current permissions hash, **and** a valid
@@ -127,16 +134,16 @@ manifest.
 
 ### 4.2 Host API (main token, `x-cadencr-token`)
 
-| Method & path | Purpose |
-| --- | --- |
-| `GET /api/plugin-tabs?project_id=` | List local tabs with manifest, validation, enablement. |
-| `GET /api/plugin-tabs/{id}?project_id=` | One tab. |
-| `PUT /api/plugin-tabs/{id}/enablement` | `{project_id: number\|null, enabled: boolean\|null}`; `null` clears a project override. Enabling needs consent. |
-| `PUT /api/plugin-tabs/{id}/consent` | `{permissions_hash}`; must equal the current hash (409 `PLUGIN_TAB_CONSENT_STALE`). |
-| `GET/PUT /api/plugin-tabs/{id}/configuration?project_id=` | Settings form values; secrets come back as `{ "is_set": true }`. |
-| `GET /api/plugin-tabs/{id}/assets/{*path}` | Static bytes from the plugin folder with CSP headers (§5.2). Empty path = `entry`. |
-| `POST /api/plugin-tabs/{id}/grants` | `{feature_id}` → `{token, expires_at, scopes, api_version}`. 403 `PLUGIN_TAB_DISABLED` if not effective for the feature's project. |
-| `POST /api/plugin-tabs/authoring` | `{name, description?}` → `{plugin_id, project_id, feature_id, dir}`. Creates the authoring project (§8). |
+| Method & path                                             | Purpose                                                                                                                            |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/plugin-tabs?project_id=`                        | List local tabs with manifest, validation, enablement.                                                                             |
+| `GET /api/plugin-tabs/{id}?project_id=`                   | One tab.                                                                                                                           |
+| `PUT /api/plugin-tabs/{id}/enablement`                    | `{project_id: number\|null, enabled: boolean\|null}`; `null` clears a project override. Enabling needs consent.                    |
+| `PUT /api/plugin-tabs/{id}/consent`                       | `{permissions_hash}`; must equal the current hash (409 `PLUGIN_TAB_CONSENT_STALE`).                                                |
+| `GET/PUT /api/plugin-tabs/{id}/configuration?project_id=` | Settings form values; secrets come back as `{ "is_set": true }`.                                                                   |
+| `GET /api/plugin-tabs/{id}/assets/{*path}`                | Static bytes from the plugin folder with CSP headers (§5.2). Empty path = `entry`.                                                 |
+| `POST /api/plugin-tabs/{id}/grants`                       | `{feature_id}` → `{token, expires_at, scopes, api_version}`. 403 `PLUGIN_TAB_DISABLED` if not effective for the feature's project. |
+| `POST /api/plugin-tabs/authoring`                         | `{name, description?}` → `{plugin_id, project_id, feature_id, dir}`. Creates the authoring project (§8).                           |
 
 Summary shape (`PluginTabSummary`): `id, name, version, description, label,
 icon_svg (string|null), api_version, entry, entry_present, permissions,
@@ -172,13 +179,13 @@ reserved.
 
 Plugin-only routes (`binding = SelfPlugin`, no scope required):
 
-| Method & path | Purpose |
-| --- | --- |
-| `GET /api/plugin-tabs/self/configuration` | Non-secret config, project values over global over defaults. |
-| `GET /api/plugin-tabs/self/storage` | List keys. |
-| `GET/PUT/DELETE /api/plugin-tabs/self/storage/{key}` | Own key/value store (value ≤ 256 KiB, ≤ 500 keys). |
-| `POST /api/plugin-tabs/self/net/fetch` | Egress relay (§4.5). |
-| `GET /api/plugin-tabs/ws` | Plugin socket (§4.4); token in subprotocol `cadencr-plugin.<token>`. |
+| Method & path                                        | Purpose                                                              |
+| ---------------------------------------------------- | -------------------------------------------------------------------- |
+| `GET /api/plugin-tabs/self/configuration`            | Non-secret config, project values over global over defaults.         |
+| `GET /api/plugin-tabs/self/storage`                  | List keys.                                                           |
+| `GET/PUT/DELETE /api/plugin-tabs/self/storage/{key}` | Own key/value store (value ≤ 256 KiB, ≤ 500 keys).                   |
+| `POST /api/plugin-tabs/self/net/fetch`               | Egress relay (§4.5).                                                 |
+| `GET /api/plugin-tabs/ws`                            | Plugin socket (§4.4); token in subprotocol `cadencr-plugin.<token>`. |
 
 The policy table (`domain/plugin_tabs/policy.rs`) is one ordered list of
 `{method, path, scope, binding, tier}`. It drives enforcement, the filtered
@@ -204,14 +211,14 @@ Server events: `{domain:"plugin", action:"event", payload:{subscription_id,
 topic, seq, envelope:{domain, action, payload}}}` — `seq` is per subscription,
 starting at 1; `envelope` is the internal event, forwarded unchanged.
 
-| Topic | Scope | Source | Binding |
-| --- | --- | --- | --- |
-| `git.status` | `git:read` | `git_watcher` (`git/status`) | grant feature |
-| `session.stream` | `agent:observe` | feature sender registry (session domain, read-only) | grant feature |
-| `files.changes` | `files:read` | file watcher | grant feature |
-| `forge.status` | `forge:read` | forge status | grant feature / project |
-| `feature.events` | `features:read` | feature events | filtered to the grant project |
-| `session.status` | `workspace:read` | app session status | none |
+| Topic            | Scope            | Source                                              | Binding                       |
+| ---------------- | ---------------- | --------------------------------------------------- | ----------------------------- |
+| `git.status`     | `git:read`       | `git_watcher` (`git/status`)                        | grant feature                 |
+| `session.stream` | `agent:observe`  | feature sender registry (session domain, read-only) | grant feature                 |
+| `files.changes`  | `files:read`     | file watcher                                        | grant feature                 |
+| `forge.status`   | `forge:read`     | forge status                                        | grant feature / project       |
+| `feature.events` | `features:read`  | feature events                                      | filtered to the grant project |
+| `session.status` | `workspace:read` | app session status                                  | none                          |
 
 A plugin socket never accepts session-control actions (prompt, permission,
 interrupt…). Outbound envelopes not matching a live subscription are dropped.
@@ -337,14 +344,14 @@ instance and waits for `hello`.
 
 ## 6. Scopes
 
-| Scope | Grants |
-| --- | --- |
-| `features:read` | The bound project and feature, their features list, feature events. |
-| `git:read` | Status, diff, log, branches of the bound feature; `git.status` stream. |
-| `forge:read` | PR/MR status of the bound feature; `forge.status` stream. |
-| `files:read` | File tree and file contents in the bound worktree; `files.changes`. |
-| `agent:observe` | Agent session history of the bound feature; `session.stream`. |
-| `workspace:read` | Projects and features across the workspace; `session.status`. |
+| Scope            | Grants                                                                 |
+| ---------------- | ---------------------------------------------------------------------- |
+| `features:read`  | The bound project and feature, their features list, feature events.    |
+| `git:read`       | Status, diff, log, branches of the bound feature; `git.status` stream. |
+| `forge:read`     | PR/MR status of the bound feature; `forge.status` stream.              |
+| `files:read`     | File tree and file contents in the bound worktree; `files.changes`.    |
+| `agent:observe`  | Agent session history of the bound feature; `session.stream`.          |
+| `workspace:read` | Projects and features across the workspace; `session.status`.          |
 
 Always available, no scope: context, theme, `state`, `storage`, `config`,
 `ui.*`. `net.fetch` requires `network.allowed_origins`.
@@ -416,23 +423,28 @@ Structured-clone objects over the `MessagePort`, `v: 1`.
 type GuestToHost = { v: 1; kind: "request"; id: string; method: string; params?: unknown };
 type HostToGuest =
   | { v: 1; kind: "response"; id: string; result: unknown }
-  | { v: 1; kind: "response"; id: string; error: { code: string; message: string; details?: unknown } }
+  | {
+      v: 1;
+      kind: "response";
+      id: string;
+      error: { code: string; message: string; details?: unknown };
+    }
   | { v: 1; kind: "event"; event: string; payload: unknown };
 ```
 
-| Method | Params → result |
-| --- | --- |
-| `hello` | `{sdkVersion, apiVersions:[min,max]}` → `{apiVersion, instanceId, plugin:{id,version}, context, theme, capabilities: string[], visible}` |
-| `api.request` | `{method, path, query?: Record<string,string>, body?: string (JSON text)}` → `{status, headers, body: ArrayBuffer\|null}` |
-| `streams.subscribe` | `{topic, params?}` → `{subscriptionId}` |
-| `streams.unsubscribe` | `{subscriptionId}` → `null` |
-| `storage.get` / `storage.set` / `storage.delete` / `storage.list` | `{key}` / `{key, value}` / `{key}` / `{}` |
-| `state.get` / `state.set` | `{}` → `unknown` / `{value}` (per instance, host memory, ≤ 1 MiB) |
-| `config.get` | `{}` → `Record<string, unknown>` |
-| `net.fetch` | `{url, method?, headers?, body?: ArrayBuffer}` → `{status, headers, body: ArrayBuffer}` |
-| `ui.toast` | `{title, description?, variant?: "default"\|"success"\|"error"}` |
-| `ui.openExternal` | `{url}` — `https:` only, after a host confirmation |
-| `ui.setBadge` | `{text: string\|null}` — ≤ 4 chars, shown on the tab trigger |
+| Method                                                            | Params → result                                                                                                                          |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `hello`                                                           | `{sdkVersion, apiVersions:[min,max]}` → `{apiVersion, instanceId, plugin:{id,version}, context, theme, capabilities: string[], visible}` |
+| `api.request`                                                     | `{method, path, query?: Record<string,string>, body?: string (JSON text)}` → `{status, headers, body: ArrayBuffer\|null}`                |
+| `streams.subscribe`                                               | `{topic, params?}` → `{subscriptionId}`                                                                                                  |
+| `streams.unsubscribe`                                             | `{subscriptionId}` → `null`                                                                                                              |
+| `storage.get` / `storage.set` / `storage.delete` / `storage.list` | `{key}` / `{key, value}` / `{key}` / `{}`                                                                                                |
+| `state.get` / `state.set`                                         | `{}` → `unknown` / `{value}` (per instance, host memory, ≤ 1 MiB)                                                                        |
+| `config.get`                                                      | `{}` → `Record<string, unknown>`                                                                                                         |
+| `net.fetch`                                                       | `{url, method?, headers?, body?: ArrayBuffer}` → `{status, headers, body: ArrayBuffer}`                                                  |
+| `ui.toast`                                                        | `{title, description?, variant?: "default"\|"success"\|"error"}`                                                                         |
+| `ui.openExternal`                                                 | `{url}` — `https:` only, after a host confirmation                                                                                       |
+| `ui.setBadge`                                                     | `{text: string\|null}` — ≤ 4 chars, shown on the tab trigger                                                                             |
 
 `storage.get`/`state.get` return `null` when empty, `storage.list` returns
 `string[]`; `ui.*`, `storage.set/delete`, `state.set` and
@@ -452,8 +464,13 @@ Error codes: `PLUGIN_API_UNSUPPORTED`, `CAPABILITY_DENIED`,
 ```ts
 interface TabContext {
   project: { id: number; name: string; path: string };
-  feature: { id: number; name: string; branch: string | null; baseBranch: string | null;
-             worktreePath: string | null };
+  feature: {
+    id: number;
+    name: string;
+    branch: string | null;
+    baseBranch: string | null;
+    worktreePath: string | null;
+  };
   pullRequest: { number: number; url: string; state: string; title: string | null } | null;
   session: { id: number | null; provider: string | null; status: string | null } | null;
 }

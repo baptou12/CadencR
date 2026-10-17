@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   /** project id → that project's list (its overrides). */
   perProject: new Map<number, PluginTabSummary[]>(),
   fresh: null as PluginTabSummary | null,
+  /** This project's list (its overrides) fails to load. */
+  failingProject: null as number | null,
+  projectsFail: false,
   search: {} as Record<string, unknown>,
   navigate: vi.fn(() => Promise.resolve()),
   setEnablement: vi.fn(),
@@ -30,13 +33,24 @@ vi.mock("@/api/generated", async (importOriginal) => {
     usePluginTabList: () => useQuery({ queryKey: ["/api/plugin-tabs"], queryFn: () => mocks.tabs }),
     getPluginTabListQueryOptions: (params: { project_id: number }) => ({
       queryKey: ["/api/plugin-tabs", params],
-      queryFn: () => mocks.perProject.get(params.project_id) ?? [],
+      queryFn: () => {
+        if (mocks.failingProject === params.project_id)
+          throw serviceError(500, "INTERNAL", "disk unreadable");
+        return mocks.perProject.get(params.project_id) ?? [];
+      },
     }),
     getPluginTabGetQueryOptions: (id: string) => ({
       queryKey: [`/api/plugin-tabs/${id}`],
       queryFn: () => mocks.fresh,
     }),
-    useListProjects: () => useQuery({ queryKey: ["/api/projects"], queryFn: () => mocks.projects }),
+    useListProjects: () =>
+      useQuery({
+        queryKey: ["/api/projects"],
+        queryFn: () => {
+          if (mocks.projectsFail) throw serviceError(500, "INTERNAL", "projects unavailable");
+          return mocks.projects;
+        },
+      }),
     usePluginTabSetEnablement: () => useMutation({ mutationFn: mocks.setEnablement }),
     usePluginTabConsent: () => useMutation({ mutationFn: mocks.consent }),
     usePluginTabWorkspace: () => useMutation({ mutationFn: mocks.workspace }),
@@ -57,6 +71,8 @@ describe("CustomTabsSection", () => {
     mocks.projects = [];
     mocks.perProject = new Map();
     mocks.fresh = null;
+    mocks.failingProject = null;
+    mocks.projectsFail = false;
     mocks.search = {};
     mocks.setEnablement.mockResolvedValue(tabFixture());
     mocks.consent.mockResolvedValue(tabFixture());
@@ -68,6 +84,26 @@ describe("CustomTabsSection", () => {
     expect(screen.getByText("Desktop only")).toBeInTheDocument();
     await screen.findByRole("button", { name: "Create custom tab" });
     expect(screen.getAllByRole("button", { name: "Create custom tab" })).toHaveLength(1);
+  });
+
+  it("says so when a project's choices could not be loaded, rather than showing Inherit", async () => {
+    mocks.projects = [projectFixture(1, "app"), projectFixture(2, "api")];
+    listFor(1, true);
+    mocks.failingProject = 2;
+    mocks.tabs = [tabFixture()];
+    render(<CustomTabsSection />);
+    expect(
+      await screen.findByText(/Per-project choices could not be loaded.*disk unreadable/),
+    ).toBeInTheDocument();
+  });
+
+  it("says so when the projects could not be loaded", async () => {
+    mocks.projectsFail = true;
+    mocks.tabs = [tabFixture()];
+    render(<CustomTabsSection />);
+    expect(
+      await screen.findByText(/Per-project choices could not be loaded.*projects unavailable/),
+    ).toBeInTheDocument();
   });
 
   it("shows each tab's status and where it is on", async () => {

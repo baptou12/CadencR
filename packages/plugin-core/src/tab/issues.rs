@@ -38,6 +38,7 @@ pub enum TabIssueCode {
     ConfigLabelInvalid,
     ConfigOptionsRequired,
     ConfigOptionsUnexpected,
+    ConfigOptionInvalid,
     ConfigSecretDefault,
     ConfigDefaultInvalid,
 }
@@ -73,6 +74,7 @@ impl TabIssueCode {
             Self::ConfigLabelInvalid => "CONFIG_LABEL_INVALID",
             Self::ConfigOptionsRequired => "CONFIG_OPTIONS_REQUIRED",
             Self::ConfigOptionsUnexpected => "CONFIG_OPTIONS_UNEXPECTED",
+            Self::ConfigOptionInvalid => "CONFIG_OPTION_INVALID",
             Self::ConfigSecretDefault => "CONFIG_SECRET_DEFAULT",
             Self::ConfigDefaultInvalid => "CONFIG_DEFAULT_INVALID",
         }

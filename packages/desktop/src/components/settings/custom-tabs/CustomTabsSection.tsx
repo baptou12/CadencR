@@ -93,6 +93,13 @@ function CustomTabsList({
   if (data.tabs.length === 0) return <CustomTabsEmptyState onCreate={onCreate} />;
   return (
     <KeptDraftsProvider>
+      {data.overridesError ? (
+        <div className="mb-3">
+          <ErrorRow
+            label={`Per-project choices could not be loaded, so the projects shown below may be wrong: ${apiErrorMessage(data.overridesError, "unknown error")}`}
+          />
+        </div>
+      ) : null}
       <VirtualCards tabs={data.tabs} render={render} />
     </KeptDraftsProvider>
   );

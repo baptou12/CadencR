@@ -3530,6 +3530,7 @@ export const TabIssueCode = {
   CONFIG_LABEL_INVALID: "CONFIG_LABEL_INVALID",
   CONFIG_OPTIONS_REQUIRED: "CONFIG_OPTIONS_REQUIRED",
   CONFIG_OPTIONS_UNEXPECTED: "CONFIG_OPTIONS_UNEXPECTED",
+  CONFIG_OPTION_INVALID: "CONFIG_OPTION_INVALID",
   CONFIG_SECRET_DEFAULT: "CONFIG_SECRET_DEFAULT",
   CONFIG_DEFAULT_INVALID: "CONFIG_DEFAULT_INVALID",
 } as const;
@@ -22669,7 +22670,7 @@ export const usePluginTabCreateGrant = <TError = ErrorType<unknown>, TContext = 
 
 /**
  * @summary The tab's authoring project, created if missing. Idempotent; also the retry
-for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation.
+for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation, which it finishes.
  */
 export const pluginTabWorkspace = (id: string, signal?: AbortSignal) => {
   return customInstance<PluginTabWorkspace>({
@@ -22723,7 +22724,7 @@ export type PluginTabWorkspaceMutationVariables = { id: string };
 
 /**
  * @summary The tab's authoring project, created if missing. Idempotent; also the retry
-for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation.
+for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation, which it finishes.
  */
 export const usePluginTabWorkspace = <TError = ErrorType<unknown>, TContext = unknown>(
   options?: {
