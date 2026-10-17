@@ -2,8 +2,10 @@
 
 pub mod atomic_file;
 pub mod bounded_command;
+pub mod capped_read;
 pub mod db;
 pub mod disk_space;
+pub mod document_file;
 pub mod env_file;
 pub mod file_watch;
 pub mod fs_durability;

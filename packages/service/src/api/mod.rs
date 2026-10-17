@@ -22,6 +22,7 @@ use crate::domain::agents::updates::routes::{
 use crate::domain::agents::ResolvedSelection;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
+use crate::domain::editor::document_routes::document_router;
 use crate::domain::editor::file_size::EDITOR_REQUEST_BODY_BYTES;
 use crate::domain::editor::format::format_router;
 use crate::domain::editor::image_routes::image_router;
@@ -233,6 +234,7 @@ pub fn build_api_routes() -> Router<AppState> {
         .merge(editor_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
         .merge(format_router().layer(DefaultBodyLimit::max(EDITOR_REQUEST_BODY_BYTES)))
         .merge(image_router())
+        .merge(document_router())
         // Raw bytes for off-loaded message payloads (screenshots, pasted
         // images). Outside the OpenAPI surface like the other byte routes.
         .merge(crate::domain::blobs::routes::routes())
