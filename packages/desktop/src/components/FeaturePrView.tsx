@@ -225,7 +225,10 @@ function PrTimeline(props: PrTimelineProps): ReactElement {
       />
       <Virtuoso
         ref={band.listRef}
-        className="min-h-0 flex-1"
+        // The well: one step below the pane colour the band and the send bar
+        // sit on, so the thread cards (`bg-card`) lift off it. On one shared
+        // surface the cards were separated by their hairlines alone.
+        className="min-h-0 flex-1 bg-background"
         data={threads}
         context={listContext}
         components={TIMELINE_COMPONENTS}
