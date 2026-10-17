@@ -116,7 +116,6 @@ mod tests {
     use crate::{DownloadRequest, Downloaded};
     use serde_json::json;
     use std::collections::HashMap;
-    use std::process::Command;
     use std::sync::Mutex;
     use tempfile::TempDir;
     struct FixtureDownloader {
@@ -201,6 +200,13 @@ mod tests {
     #[test]
     fn stages_replays_and_matches_javascript_receipt_bytes() {
         let (root, input, downloader) = fixture(&[b"one", b"two"]);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(&input).unwrap()).unwrap(),
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "../tests/fixtures/legacy-v1/stage-submission.json"
+            ))
+            .unwrap()
+        );
         let output = root.path().join("rust");
         let first = stage(request(&input, &output), &downloader).unwrap();
         assert_eq!(first.artifacts.len(), 2);
@@ -215,30 +221,9 @@ mod tests {
         )
         .unwrap();
 
-        let js_output = root.path().join("javascript");
-        let script = format!(
-            "import fs from 'node:fs/promises'; import {{stagePublication}} from '{}';\
-             const s=JSON.parse(await fs.readFile(process.argv[1]));\
-             await stagePublication(s,'cadencr/registry',process.argv[2],{{download:async(o)=>{{\
-             const b=new Map([['{}','one'],['{}','two']]).get(o.sha256);\
-             await fs.writeFile(o.outputPath,b,{{flag:'wx',mode:0o600}});\
-             return {{sha256:o.sha256,size:Buffer.byteLength(b)}};}}}});",
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tooling/marketplace-registry/scripts/publication/stage.mjs")
-                .display(),
-            crate::hex(&Sha256::digest(b"one")),
-            crate::hex(&Sha256::digest(b"two")),
-        );
-        let status = Command::new("node")
-            .args(["--input-type=module", "-e", &script])
-            .arg(&input)
-            .arg(&js_output)
-            .status()
-            .expect("Node is required for the JavaScript staging oracle");
-        assert!(status.success());
         assert_eq!(
             std::fs::read(output.join(RECEIPT)).unwrap(),
-            std::fs::read(js_output.join(RECEIPT)).unwrap()
+            include_bytes!("../tests/fixtures/legacy-v1/stage-receipt.json")
         );
     }
 

@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 use sha2::{Digest as _, Sha256};
 
@@ -87,46 +86,17 @@ pub(super) fn node_oracle(
             "tag_name":release.tag_name,"target_commitish":release.target_commitish,"body":release.body},
         "assets": assets,
     });
-    let module = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tooling/marketplace-registry/scripts/publication/recover-publication.mjs");
-    let script = r#"
-import { readFile, writeFile } from 'node:fs/promises';
-import { pathToFileURL } from 'node:url';
-const { recoverPublishedMirror } = await import(pathToFileURL(process.argv[1]));
-const remote = JSON.parse(process.argv[5]);
-const bytes = (asset) => Buffer.from(asset.body, 'hex');
-const client = {
-  findRelease: async () => remote.release,
-  listAssets: async () => remote.assets.map(({body, ...asset}) => asset),
-  verifyAsset: async ({asset, expectedUrl, sha256, size, outputPath}) => {
-    const source = remote.assets.find((item) => item.id === asset.id);
-    if (asset.browser_download_url !== expectedUrl || source.size !== size) throw new Error('fixture mismatch');
-    await writeFile(outputPath, bytes(source));
-  },
-  getTagCommit: async () => process.argv[4],
-};
-const download = async ({url, outputPath}) => {
-  const source = remote.assets.find((item) => item.browser_download_url === url);
-  await writeFile(outputPath, bytes(source));
-  return {size: source.size};
-};
-const submission = JSON.parse(await readFile(process.argv[2], 'utf8'));
-const receipt = await recoverPublishedMirror({submission, repository:'cadencr/registry', registryCommit:process.argv[4], directory:process.argv[3], client, download, requirePublished:true});
-process.stdout.write(JSON.stringify(receipt));
-"#;
-    let output = Command::new("node")
-        .args(["--input-type=module", "-e", script])
-        .arg(module)
-        .arg(submission)
-        .arg(root.path())
-        .arg(COMMIT)
-        .arg(remote.to_string())
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout).unwrap()
+    let submission: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(submission).unwrap()).unwrap();
+    let input = serde_json::json!({"submission": submission, "remote": remote});
+    let captured: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/fixtures/legacy-v1/recovery-input.json"
+    ))
+    .unwrap();
+    assert_eq!(input, captured, "legacy recovery oracle inputs drifted");
+    // Preserve the original oracle's exact receipt bytes and filesystem side effect:
+    // the caller verifies Rust recovery produces these bytes, then tests raw replay.
+    let bytes = include_bytes!("../../tests/fixtures/legacy-v1/recovery-receipt.json");
+    std::fs::write(root.path().join(MIRROR_RECEIPT), bytes).unwrap();
+    serde_json::from_slice(bytes).unwrap()
 }
