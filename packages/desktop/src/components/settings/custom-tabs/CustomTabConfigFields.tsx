@@ -35,12 +35,13 @@ export function CustomTabConfigFields({
   saving: boolean;
   /** The service's verdict on the last save (`PLUGIN_TAB_CONFIG_INVALID`). */
   error: string | null;
-  onSave: (values: Record<string, unknown>) => void;
+  /** Resolves `true` once the values are saved and reloaded; the form then starts over. */
+  onSave: (values: Record<string, unknown>) => Promise<boolean>;
   /** Where the unsaved draft is kept when the form unmounts (`useKeptDraft`). */
   draftSlot?: { id: string; version: string };
 }): React.JSX.Element {
   const initial = useMemo(() => initialDraft(fields, stored), [fields, stored]);
-  const [edits, setEdits] = useKeptDraft(draftSlot, initial);
+  const [edits, setEdits, resetEdits] = useKeptDraft(draftSlot);
   const draft = useMemo(() => withDeclaredFields(edits, initial), [edits, initial]);
   const payload = useMemo(() => draftPayload(fields, draft, initial), [draft, fields, initial]);
   const dirty = Object.keys(payload.values).length > 0;
@@ -53,7 +54,10 @@ export function CustomTabConfigFields({
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
-        if (dirty && !invalid && !saving) onSave(payload.values);
+        if (!dirty || invalid || saving) return;
+        void onSave(payload.values).then((saved) => {
+          if (saved) resetEdits();
+        });
       }}
     >
       {fields.map((field) => (
@@ -78,7 +82,7 @@ export function CustomTabConfigFields({
           size="sm"
           variant="ghost"
           disabled={!dirty || saving}
-          onClick={() => setEdits(initial)}
+          onClick={resetEdits}
         >
           Discard
         </Button>

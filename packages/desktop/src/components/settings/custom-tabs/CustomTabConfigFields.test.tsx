@@ -14,8 +14,10 @@ const FIELDS: TabConfigField[] = [
   { key: "compact", type: "boolean", label: "Compact", scope: "global" },
 ];
 
+const saved = () => vi.fn(async (_values: Record<string, unknown>) => true);
+
 function renderForm(stored: Record<string, unknown>, error: string | null = null) {
-  const onSave = vi.fn();
+  const onSave = saved();
   const view = render(
     <CustomTabConfigFields
       fields={FIELDS}
@@ -90,7 +92,7 @@ describe("CustomTabConfigFields", () => {
         stored={{}}
         saving={false}
         error={null}
-        onSave={vi.fn()}
+        onSave={saved()}
       />,
     );
     expect(screen.getByLabelText("Team")).toHaveValue("");
@@ -109,7 +111,7 @@ describe("CustomTabConfigFields", () => {
               stored={stored}
               saving={false}
               error={null}
-              onSave={vi.fn()}
+              onSave={saved()}
               draftSlot={{ id: "graph:global", version }}
             />
           ) : null}
@@ -129,5 +131,35 @@ describe("CustomTabConfigFields", () => {
     rerender(form(true, { gitlab_url: "A" }));
     expect(url()).toHaveValue("A");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("starts over once a save resolves, and keeps later edits while it scrolls away", async () => {
+    const onSave = saved();
+    const form = (show: boolean) => (
+      <KeptDraftsProvider>
+        {show ? (
+          <CustomTabConfigFields
+            fields={FIELDS}
+            stored={{ gitlab_token: { is_set: true } }}
+            saving={false}
+            error={null}
+            onSave={onSave}
+            draftSlot={{ id: "graph:global", version: "v1" }}
+          />
+        ) : null}
+      </KeptDraftsProvider>
+    );
+    const { user, rerender } = render(form(true));
+    await user.click(screen.getByRole("button", { name: "Replace Access token" }));
+    await user.type(screen.getByLabelText("Access token"), "n3w");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    // The masked answer is unchanged, yet the replaced secret is gone.
+    expect(await screen.findByText("Set")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    // An edit after that save survives unmounting.
+    await user.type(screen.getByLabelText("GitLab URL"), "https://after.example");
+    rerender(form(false));
+    rerender(form(true));
+    expect(screen.getByLabelText("GitLab URL")).toHaveValue("https://after.example");
   });
 });

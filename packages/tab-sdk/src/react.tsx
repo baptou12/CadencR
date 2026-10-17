@@ -197,26 +197,24 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
   const initialRef = useRef(initial);
   // Last value known to be stored: a failed `set` rolls the UI back to it.
   const stored = useRef<T>(initial);
-  // `set` calls so far, and whether one was confirmed: a read that a write
-  // overtook must not replace the newer value on screen.
-  const writes = useRef(0);
+  // Writes still in flight, and whether one was confirmed: a read must not
+  // replace a value a write put on screen. A write that failed (and rolled
+  // back) no longer counts, so the read still shows what is really stored.
+  const pending = useRef(0);
   const confirmed = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
-    const writesAtRead = writes.current;
     confirmed.current = false;
     setLoading(true);
     client.storage.get<T>(key).then(
       (loaded) => {
         if (cancelled) return;
-        const current = loaded ?? initialRef.current;
-        if (writes.current === writesAtRead) {
-          stored.current = current;
-          setValue(current);
-        } else if (!confirmed.current) {
-          // A write is still in flight: this is what it would roll back to.
-          stored.current = current;
+        // A confirmed write is newer than this read. While one is in flight,
+        // the read is only what that write would roll back to.
+        if (!confirmed.current) {
+          stored.current = loaded ?? initialRef.current;
+          if (pending.current === 0) setValue(stored.current);
         }
         setError(null);
         setLoading(false);
@@ -234,7 +232,7 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
 
   const set = useCallback(
     async (next: T) => {
-      writes.current += 1;
+      pending.current += 1;
       setValue(next);
       try {
         await client.storage.set(key, next);
@@ -247,6 +245,8 @@ export function useStorage<T extends JsonValue>(key: string, initial: T): Storag
         const cadencrError = toCadencrError(failure);
         setError(cadencrError);
         throw cadencrError;
+      } finally {
+        pending.current -= 1;
       }
     },
     [client, key],

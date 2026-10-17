@@ -54,11 +54,11 @@ export function CustomTabConfiguration({
   const data: PluginTabConfiguration = query.data;
   // Forms are keyed on what is stored, not on when it was fetched: a refetch
   // that changed nothing (a watcher event, the other scope's save) keeps the
-  // user's draft; new stored values (a save, an edit elsewhere) reset it. So
-  // does this scope's own save, even when the masked answer is unchanged (a
-  // replaced secret still reads `{is_set: true}`).
-  const globalKey = `global:${save.saves.global}:${JSON.stringify(data.global)}`;
-  const projectKey = `project:${projectId}:${save.saves.project}:${JSON.stringify(data.project ?? null)}`;
+  // user's draft; new stored values (a save, an edit elsewhere) reset it. A
+  // scope's own save also resets its form (`onSave` resolving `true`), even
+  // when the masked answer is unchanged (a replaced secret).
+  const globalKey = `global:${JSON.stringify(data.global)}`;
+  const projectKey = `project:${projectId}:${JSON.stringify(data.project ?? null)}`;
 
   return (
     <div className="space-y-5">
@@ -128,42 +128,46 @@ function useSaveConfiguration(tab: PluginTabSummary) {
   const { mutateAsync } = usePluginTabPutConfiguration();
   const [saving, setSaving] = useState<Scope | null>(null);
   const [errors, setErrors] = useState<Partial<Record<Scope, string>>>({});
-  const [saves, setSaves] = useState<Record<Scope, number>>({ global: 0, project: 0 });
 
+  /**
+   * `true` once saved and reloaded. `saving` lasts until then, so the form
+   * stays locked and no edit made meanwhile is reset with the saved draft.
+   */
   const run = useCallback(
-    (scope: Scope, projectId: number | null, values: Record<string, unknown>): void => {
+    async (scope: Scope, projectId: number | null, values: Record<string, unknown>) => {
       setSaving(scope);
       setErrors((previous) => ({ ...previous, [scope]: undefined }));
-      mutateAsync({
-        id: tab.id,
-        data: { values },
-        ...(projectId === null ? {} : { params: { project_id: projectId } }),
-      })
-        .then(() => {
-          toast.success(`“${tab.name}” settings saved`);
-          // Saved either way; a failed reload only leaves the form showing the old values.
-          // The saved draft is retired once the reload settles, so the form never
-          // flashes the values from before the save.
-          invalidateByUrlPrefix(queryClient, `/api/plugin-tabs/${tab.id}/configuration`)
-            .catch((error: unknown) =>
-              toastError(error, "Saved, but the settings could not be reloaded"),
-            )
-            .finally(() => setSaves((previous) => ({ ...previous, [scope]: previous[scope] + 1 })));
-        })
-        .catch((error: unknown) => {
-          if (apiErrorCode(error) === "PLUGIN_TAB_CONFIG_INVALID") {
-            setErrors((previous) => ({
-              ...previous,
-              [scope]: apiErrorMessage(error, "Invalid value."),
-            }));
-          } else {
-            toastError(error, `Could not save the settings of “${tab.name}”`);
-          }
-        })
-        .finally(() => setSaving(null));
+      try {
+        await mutateAsync({
+          id: tab.id,
+          data: { values },
+          ...(projectId === null ? {} : { params: { project_id: projectId } }),
+        });
+      } catch (error: unknown) {
+        if (apiErrorCode(error) === "PLUGIN_TAB_CONFIG_INVALID") {
+          setErrors((previous) => ({
+            ...previous,
+            [scope]: apiErrorMessage(error, "Invalid value."),
+          }));
+        } else {
+          toastError(error, `Could not save the settings of “${tab.name}”`);
+        }
+        setSaving(null);
+        return false;
+      }
+      toast.success(`“${tab.name}” settings saved`);
+      try {
+        await invalidateByUrlPrefix(queryClient, `/api/plugin-tabs/${tab.id}/configuration`);
+      } catch (error: unknown) {
+        // Saved either way; a failed reload only leaves the form showing the old values.
+        toastError(error, "Saved, but the settings could not be reloaded");
+      } finally {
+        setSaving(null);
+      }
+      return true;
     },
     [mutateAsync, queryClient, tab.id, tab.name],
   );
 
-  return useMemo(() => ({ run, saving, errors, saves }), [errors, run, saves, saving]);
+  return useMemo(() => ({ run, saving, errors }), [errors, run, saving]);
 }

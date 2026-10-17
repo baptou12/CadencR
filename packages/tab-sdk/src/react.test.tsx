@@ -1,3 +1,4 @@
+import { CadencrError } from "./errors.js";
 import { StrictMode, useState } from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -105,11 +106,15 @@ function Notes() {
 }
 
 function EagerNotes() {
-  const { value, set } = useStorage<string>("note", "empty");
+  const { value, error, set } = useStorage<string>("note", "empty");
   return (
-    <button type="button" onClick={() => void set("chosen")}>
-      {value}
-    </button>
+    <>
+      {/* A failed write is reported through `error`, shown below. */}
+      <button type="button" onClick={() => set("chosen").catch(() => undefined)}>
+        {value}
+      </button>
+      {error ? <p role="alert">{error.message}</p> : null}
+    </>
   );
 }
 
@@ -183,5 +188,37 @@ describe("hooks", () => {
     });
     expect(button.textContent).toBe("chosen");
     expect(host.storage.get("note")).toBe("chosen");
+  });
+
+  it("useStorage shows the stored value when a write failed before the first read answered", async () => {
+    host = createTestHost({ storage: { note: "stored" } });
+    let answerRead: (() => void) | undefined;
+    host.handle(
+      "storage.get",
+      () =>
+        new Promise((resolve) => {
+          answerRead = () => resolve("stored");
+        }),
+    );
+    host.handle("storage.set", () => {
+      throw new CadencrError("HOST_ERROR", "disk full");
+    });
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <EagerNotes />
+      </CadencrProvider>,
+    );
+    const button = await screen.findByRole("button");
+    await act(async () => {
+      button.click();
+      await flush();
+    });
+    expect(button.textContent).toBe("empty");
+    expect(screen.getByRole("alert").textContent).toBe("disk full");
+    await act(async () => {
+      answerRead?.();
+      await flush();
+    });
+    expect(button.textContent).toBe("stored");
   });
 });
