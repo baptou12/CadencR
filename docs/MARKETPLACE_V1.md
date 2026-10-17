@@ -83,10 +83,19 @@ a future desktop release. Publication is not public UI or desktop trust activati
       its existing `0.4.0` candidate version unless a different initial release is
       explicitly selected. Establish source provenance, runtime prerequisites and
       supported targets; validate the extracted payload and generic ACP host path.
-- [ ] Prepare original Graphite and Ember dark themes plus Fjord light, review
-      their live previews, and publish source-pinned immutable author releases.
-      Names/version/repository are candidates until reviewed; no placeholder digest
-      or invented provenance may enter the registry.
+      Native arm64 packaging/extraction and prompt-free ACP lifecycle now pass
+      with real Pi and synthetic model configuration; generic service admission
+      and catalog discovery pass. Authenticated turns, generic-host ACP runtime
+      lifecycle, managed installation and x86_64 remain unqualified; see
+      [native evidence](./qa/MARKETPLACE_PI_NATIVE_2026_10_17.md).
+- [x] Validate Graphite and Ember dark themes plus Fjord light and exercise their
+      local live previews, activation, navigation persistence and invalid-creation
+      rejection in an isolated current-source dev app. See
+      [visual QA and limits](./qa/MARKETPLACE_OFFICIAL_THEMES_2026_10_17.md).
+- [ ] Publish source-pinned immutable author releases for those themes.
+      Names/version/repository remain candidates until reviewed; local visual QA
+      is not signed-feed installation or publication approval. No placeholder
+      digest or invented provenance may enter the registry.
 - [ ] Activate the protected author job only after its delivery/readiness gates;
       finish provider/theme registry package metadata and reviewed submissions.
       The author job does not sign catalogs or grant registry-submit authority.
