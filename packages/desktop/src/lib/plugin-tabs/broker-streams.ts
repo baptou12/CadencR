@@ -49,6 +49,13 @@ interface Subscription {
   serverId: string | null;
   /** A `subscribe` for it is in flight (so a reconnect must not send another). */
   binding: boolean;
+  /**
+   * The guest's `seq` stays increasing across reconnects: a re-made server
+   * subscription counts from 1 again, so its events are shifted past the
+   * last one forwarded (`seqBase`) rather than read as duplicates.
+   */
+  seqBase: number;
+  lastSeq: number;
 }
 
 interface PendingReply {
@@ -67,7 +74,7 @@ function asRecord(value: unknown): Record<string, unknown> {
  * closed when the last one goes. Subscription ids handed to the guest are
  * local and stable: after a reconnect every live subscription is re-made on
  * the new socket and the guest gets `stream.resync` (events were lost
- * meanwhile). Reconnects share the app's backoff (`lib/ws-reconnect`).
+ * meanwhile), and its `seq` carries on from where it was. Reconnects share the app's backoff (`lib/ws-reconnect`).
  */
 export class PluginStreamSocket {
   private socket: SocketLike | null = null;
@@ -93,7 +100,14 @@ export class PluginStreamSocket {
 
   async subscribe(topic: string, params?: Record<string, unknown>): Promise<string> {
     const localId = `s${this.nextLocalId++}`;
-    const subscription: Subscription = { topic, params, serverId: null, binding: true };
+    const subscription: Subscription = {
+      topic,
+      params,
+      serverId: null,
+      binding: true,
+      seqBase: 0,
+      lastSeq: 0,
+    };
     this.subscriptions.set(localId, subscription);
     try {
       await this.bind(localId, subscription, await this.open());
@@ -191,6 +205,7 @@ export class PluginStreamSocket {
         return;
       }
       subscription.serverId = serverId;
+      subscription.seqBase = subscription.lastSeq;
       this.byServerId.set(serverId, localId);
     } finally {
       subscription.binding = false;
@@ -246,9 +261,12 @@ export class PluginStreamSocket {
 
   private forwardEvent(payload: Record<string, unknown>): void {
     const localId = this.byServerId.get(String(payload.subscription_id));
-    if (localId === undefined) return;
+    const subscription = localId === undefined ? undefined : this.subscriptions.get(localId);
+    if (localId === undefined || !subscription) return;
     const envelope = asRecord(payload.envelope);
-    this.sink.event(localId, typeof payload.seq === "number" ? payload.seq : 0, {
+    const seq = subscription.seqBase + (typeof payload.seq === "number" ? payload.seq : 0);
+    subscription.lastSeq = Math.max(subscription.lastSeq, seq);
+    this.sink.event(localId, seq, {
       domain: String(envelope.domain ?? ""),
       action: String(envelope.action ?? ""),
       payload: envelope.payload ?? null,

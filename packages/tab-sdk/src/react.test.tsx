@@ -104,6 +104,15 @@ function Notes() {
   );
 }
 
+function EagerNotes() {
+  const { value, set } = useStorage<string>("note", "empty");
+  return (
+    <button type="button" onClick={() => void set("chosen")}>
+      {value}
+    </button>
+  );
+}
+
 describe("hooks", () => {
   it("useStream keeps one subscription across renders", async () => {
     host = createTestHost();
@@ -145,5 +154,34 @@ describe("hooks", () => {
     });
     expect(button.textContent).toBe("saved");
     expect(host.storage.get("note")).toBe("saved");
+  });
+
+  it("useStorage keeps a write made before the first read answered", async () => {
+    host = createTestHost({ storage: { note: "old" } });
+    let answerRead: (() => void) | undefined;
+    host.handle(
+      "storage.get",
+      () =>
+        new Promise((resolve) => {
+          answerRead = () => resolve("old");
+        }),
+    );
+    render(
+      <CadencrProvider connectOptions={{ transport: host.transport }}>
+        <EagerNotes />
+      </CadencrProvider>,
+    );
+    const button = await screen.findByRole("button");
+    await act(async () => {
+      button.click();
+      await flush();
+    });
+    expect(button.textContent).toBe("chosen");
+    await act(async () => {
+      answerRead?.();
+      await flush();
+    });
+    expect(button.textContent).toBe("chosen");
+    expect(host.storage.get("note")).toBe("chosen");
   });
 });

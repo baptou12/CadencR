@@ -54,9 +54,11 @@ export function CustomTabConfiguration({
   const data: PluginTabConfiguration = query.data;
   // Forms are keyed on what is stored, not on when it was fetched: a refetch
   // that changed nothing (a watcher event, the other scope's save) keeps the
-  // user's draft; new stored values (a save, an edit elsewhere) reset it.
-  const globalKey = `global:${JSON.stringify(data.global)}`;
-  const projectKey = `project:${projectId}:${JSON.stringify(data.project ?? null)}`;
+  // user's draft; new stored values (a save, an edit elsewhere) reset it. So
+  // does this scope's own save, even when the masked answer is unchanged (a
+  // replaced secret still reads `{is_set: true}`).
+  const globalKey = `global:${save.saves.global}:${JSON.stringify(data.global)}`;
+  const projectKey = `project:${projectId}:${save.saves.project}:${JSON.stringify(data.project ?? null)}`;
 
   return (
     <div className="space-y-5">
@@ -126,6 +128,7 @@ function useSaveConfiguration(tab: PluginTabSummary) {
   const { mutateAsync } = usePluginTabPutConfiguration();
   const [saving, setSaving] = useState<Scope | null>(null);
   const [errors, setErrors] = useState<Partial<Record<Scope, string>>>({});
+  const [saves, setSaves] = useState<Record<Scope, number>>({ global: 0, project: 0 });
 
   const run = useCallback(
     (scope: Scope, projectId: number | null, values: Record<string, unknown>): void => {
@@ -139,9 +142,13 @@ function useSaveConfiguration(tab: PluginTabSummary) {
         .then(() => {
           toast.success(`“${tab.name}” settings saved`);
           // Saved either way; a failed reload only leaves the form showing the old values.
-          invalidateByUrlPrefix(queryClient, `/api/plugin-tabs/${tab.id}/configuration`).catch(
-            (error: unknown) => toastError(error, "Saved, but the settings could not be reloaded"),
-          );
+          // The saved draft is retired once the reload settles, so the form never
+          // flashes the values from before the save.
+          invalidateByUrlPrefix(queryClient, `/api/plugin-tabs/${tab.id}/configuration`)
+            .catch((error: unknown) =>
+              toastError(error, "Saved, but the settings could not be reloaded"),
+            )
+            .finally(() => setSaves((previous) => ({ ...previous, [scope]: previous[scope] + 1 })));
         })
         .catch((error: unknown) => {
           if (apiErrorCode(error) === "PLUGIN_TAB_CONFIG_INVALID") {
@@ -158,5 +165,5 @@ function useSaveConfiguration(tab: PluginTabSummary) {
     [mutateAsync, queryClient, tab.id, tab.name],
   );
 
-  return useMemo(() => ({ run, saving, errors }), [errors, run, saving]);
+  return useMemo(() => ({ run, saving, errors, saves }), [errors, run, saves, saving]);
 }

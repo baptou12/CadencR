@@ -119,6 +119,14 @@ describe("PluginStreamSocket", () => {
       payload: { subscription_id: "srv-1" },
     });
     const localId = await subscribing;
+    for (const seq of [1, 2, 3]) {
+      sockets[0]!.receive({
+        domain: "plugin",
+        action: "event",
+        payload: { subscription_id: "srv-1", seq, envelope: { domain: "git", action: "status" } },
+      });
+    }
+    expect(sink.event).toHaveBeenLastCalledWith(localId, 3, expect.anything());
 
     vi.useFakeTimers();
     sockets[0]!.drop(1008);
@@ -146,7 +154,8 @@ describe("PluginStreamSocket", () => {
         envelope: { domain: "git", action: "status", payload: null },
       },
     });
-    expect(sink.event).toHaveBeenLastCalledWith(localId, 1, {
+    // The new server subscription counts from 1; the guest's seq carries on.
+    expect(sink.event).toHaveBeenLastCalledWith(localId, 4, {
       domain: "git",
       action: "status",
       payload: null,
