@@ -1,5 +1,12 @@
 import { DndContext } from "@dnd-kit/core";
-import { BotIcon, CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
+import {
+  BotIcon,
+  CodeIcon,
+  GitCompareArrowsIcon,
+  FileTextIcon,
+  GlobeIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
@@ -33,6 +40,7 @@ const tabs: FeatureTabs = {
   git: { label: "Git", Icon: GitCompareArrowsIcon, content: null },
   editor: { label: "Editor", Icon: CodeIcon, content: null },
   browser: { label: "Browser", Icon: GlobeIcon, content: null },
+  preview: { label: "Preview", Icon: FileTextIcon, content: null },
 };
 
 function resetStores(): void {

@@ -264,6 +264,15 @@ export async function customInstance<T>(config: AxiosRequestConfig): Promise<T> 
   return response.data;
 }
 
+/**
+ * A plain GET through the authenticated client that resolves the whole
+ * response, for byte routes whose headers describe the body. None of
+ * `customInstance`'s caching or dedupe applies to these.
+ */
+export function customInstanceResponse<T>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+  return axiosInstance<T>({ ...config, method: "GET" });
+}
+
 function isWorkspaceSettingsWrite(config: Pick<AxiosRequestConfig, "method" | "url">): boolean {
   const method = config.method?.toUpperCase() ?? "GET";
   return method !== "GET" && config.url?.startsWith(WORKSPACE_SETTINGS_PATH) === true;

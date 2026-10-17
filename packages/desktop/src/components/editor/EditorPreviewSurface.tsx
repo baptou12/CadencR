@@ -1,14 +1,16 @@
 /**
  * Dispatch surface for the in-editor "Preview" toggle. Given the
  * current buffer content + the file's `PreviewKind`, renders the
- * matching preview (Markdown, HTML iframe, or sandboxed HTML/SVG iframe).
+ * matching preview (Markdown, HTML iframe, sandboxed HTML/SVG iframe, or the
+ * CSV / TSV table).
  *
  * Lazy-loaded by `CodeMirrorEditor` so the Markdown bundle only
  * downloads when a preview is actually opened. HTML and SVG previews
  * are tiny iframe renderers, so they don't need their own lazy chunks.
  */
 import { memo, useEffect, useMemo, useRef } from "react";
-import type { PreviewKind } from "@/lib/file-language";
+import { CsvTable } from "@/components/document-preview/csv/CsvTable";
+import { getFileName, type PreviewKind } from "@/lib/file-language";
 import { Markdown } from "@/components/Markdown";
 import { MarkdownImageProvider } from "@/components/markdown-image";
 import { CheckerboardBackdrop } from "./CheckerboardBackdrop";
@@ -100,6 +102,12 @@ export const EditorPreviewSurface = memo(function EditorPreviewSurface({
               className="h-full w-full border-0 bg-transparent"
             />
           </CheckerboardBackdrop>
+        </div>
+      );
+    case "csv":
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <CsvTable source={content} fileName={getFileName(filePath)} />
         </div>
       );
     default: {
