@@ -10,7 +10,7 @@ const zero = "0".repeat(64);
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "author-gate-")));
-  for (const dir of ["scripts", "plugins", "mock", "py/urllib"])
+  for (const dir of ["scripts", "plugins", "mock", "py"])
     mkdirSync(join(root, dir), { recursive: true });
   for (const file of [
     "official-plugin-author-gate.sh",
@@ -65,18 +65,12 @@ function fixture() {
       `#!/bin/sh\ncase "$3" in\nls-tree) echo '100644 blob hash' ;;\nshow) cat '${releasePath}' ;;\nrev-parse) printf '%s\\n' '${sha}' ;;\n*) exit 1 ;;\nesac\n`,
       { mode: 0o700 },
     );
-    // Only request is mocked; pathlib also needs the real urllib.parse on Python 3.12.
     writeFileSync(
-      join(root, "py/urllib/__init__.py"),
-      "from pkgutil import extend_path\n__path__ = extend_path(__path__, __name__)\n",
-    );
-    writeFileSync(
-      join(root, "py/urllib/request.py"),
-      `import io,json,os
-class HTTPRedirectHandler: pass
-def Request(url,**k): return url
+      join(root, "py/sitecustomize.py"),
+      `import io,json,os,urllib.request
 class Opener:
- def open(self,url,**k):
+ def open(self,request,**k):
+  url=request.full_url if isinstance(request,urllib.request.Request) else request
   if 'deployment-branch-policies' in url: data={'total_count':1,'branch_policies':[{'name':'main','type':'branch'}]}
   elif 'environments/' in url: data={'id':123,'protection_rules':[{'type':'required_reviewers','prevent_self_review':True,'reviewers':[{'id':1}]}],'deployment_branch_policy':{'protected_branches':False,'custom_branch_policies':True}}
   else: data={'id':42,'full_name':'merkr-software/CadencR'}
@@ -86,6 +80,7 @@ class Opener:
   if os.environ.get('MOCK_REPO_MISMATCH') and 'environments/' not in url: data={'id':43}
   return io.BytesIO(json.dumps(data).encode())
 def build_opener(*a): return Opener()
+urllib.request.build_opener=build_opener
 `,
     );
     writeFileSync(
@@ -107,22 +102,28 @@ def build_opener(*a): return Opener()
     ]);
   return { root, env, approve, run, stage, policyPath };
 }
-test("HTTP mock preserves standard-library urllib submodules", () => {
+test("network fixture preserves stdlib imports and mocks only HTTP access", () => {
   const f = fixture();
   f.approve();
   const result = spawnSync(
     "python3",
     [
       "-c",
-      `import pathlib, sys, urllib.parse, urllib.request
+      `import json,pathlib,sys,urllib.parse,urllib.request
+assert pathlib.Path('fixture').name == 'fixture'
 assert urllib.parse.urlparse('https://example.test/path').hostname == 'example.test'
-assert pathlib.Path(urllib.request.__file__).resolve() == pathlib.Path(sys.argv[1])
+assert urllib.parse.quote('theme / graphite', safe='') == 'theme%20%2F%20graphite'
+assert not pathlib.Path(urllib.request.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]))
+request=urllib.request.Request('https://api.github.com/repos/merkr-software/CadencR')
+with urllib.request.build_opener().open(request) as response:
+ assert json.load(response) == {'id':42,'full_name':'merkr-software/CadencR'}
 `,
-      join(f.root, "py/urllib/request.py"),
+      f.root,
     ],
     { env: f.env, encoding: "utf8" },
   );
   assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
 });
 test("current author pin and policy fail before candidate access", () => {
   const f = fixture();
