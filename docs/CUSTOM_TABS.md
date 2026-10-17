@@ -112,8 +112,10 @@ against this hash; a widened manifest requires a new consent.
   per `(plugin_id, project_id)` for project rows.
 - `plugin_tab_consents(plugin_id TEXT PRIMARY KEY, permissions_hash TEXT NOT
   NULL, consented_at TEXT NOT NULL)`.
-- `plugin_tab_config(plugin_id, project_id NULL, key, value TEXT, updated_at)`
-  — global and project values; secrets live here too and are never returned.
+- `plugin_tab_config(plugin_id, project_id NULL, key, value TEXT, is_secret,
+  updated_at)` — global and project values; secrets live here too and are
+  never returned. `is_secret` is kept with the value, so a manifest that
+  re-declares a secret field as a plain one cannot read the saved secret.
 - `plugin_tab_storage(plugin_id, project_id INTEGER NOT NULL, key, value TEXT,
   updated_at)` — the plugin's own key/value store, per project.
 
@@ -418,7 +420,7 @@ type HostToGuest =
 
 | Method | Params → result |
 | --- | --- |
-| `hello` | `{sdkVersion, apiVersions:[min,max]}` → `{apiVersion, instanceId, plugin:{id,version}, context, theme, capabilities: string[]}` |
+| `hello` | `{sdkVersion, apiVersions:[min,max]}` → `{apiVersion, instanceId, plugin:{id,version}, context, theme, capabilities: string[], visible}` |
 | `api.request` | `{method, path, query?: Record<string,string>, body?: string (JSON text)}` → `{status, headers, body: ArrayBuffer\|null}` |
 | `streams.subscribe` | `{topic, params?}` → `{subscriptionId}` |
 | `streams.unsubscribe` | `{subscriptionId}` → `null` |
@@ -466,16 +468,22 @@ interface ThemeSnapshot {
 
 1. derives the id (`slugify`, unique), creates `~/.cadencr/plugins/tabs/<id>/`,
    `git init`, writes the scaffold, commits;
-2. creates a project (`authoring_target='tab'`, `plugin_id=<id>`), a feature
+2. records consent for the scaffold's permissions;
+3. creates a project (`authoring_target='tab'`, `plugin_id=<id>`), a feature
    with `worktree_mode=skip`, and a conversation;
-3. records consent and enables the tab for that project.
+4. enables the tab for that project.
+
+If steps 2–4 fail, the folder stays and `POST /api/plugin-tabs/{id}/workspace`
+("Retry setup") finishes them: it opens the project and, for a tab whose
+current permissions are consented but that was never switched on or off,
+enables it there. A folder copied in by hand has no consent and stays off.
 
 The scaffold is a Vite + React + Tailwind v4 app depending on
 `@cadencr/tab-sdk` and `@cadencr/tab-kit` (vendored tarballs under `vendor/`
 until the packages are on npm), with `INSTRUCTION.md`, `AGENTS.md` and
 `CLAUDE.md` telling the author's agent the contract, and `npm run build` /
-`npm run dev` (`vite build --watch`). Every change to `tab.json` or `dist/`
-reloads live instances.
+`npm run dev` (`vite build --watch`). Every change to `tab.json` or to the
+folder holding `entry` (`dist/` in the scaffold) reloads live instances.
 
 ## 9. SDK and kit
 

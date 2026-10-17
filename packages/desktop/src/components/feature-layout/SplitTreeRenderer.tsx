@@ -3,6 +3,7 @@ import { type ReactNode } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import type { LayoutNode } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore, type SplitPath } from "@/stores/feature-layout-store";
+import { storedSplitPath } from "@/stores/feature-layout-tree";
 import { noteUserLayoutChange } from "@/lib/auto-layout/auto-layout-controller";
 
 import { TabPane } from "./TabPane";
@@ -74,7 +75,9 @@ export function SplitTreeRenderer({
     if (typeof sizeA !== "number" || typeof sizeB !== "number") return;
     if (isSameSize(sizeA, defaultA) && isSameSize(sizeB, defaultB)) return;
     noteUserLayoutChange(featureId);
-    setSplitSizes(featureId, path, [sizeA, sizeB]);
+    // `node` may come from a view that hid an unavailable plugin pane; size
+    // the split it stands for in the stored layout.
+    setSplitSizes(featureId, storedSplitPath(node, path), [sizeA, sizeB]);
   };
 
   return (

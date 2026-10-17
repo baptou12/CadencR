@@ -1,7 +1,8 @@
 //! Watches `~/.cadencr/plugins/tabs` and broadcasts when a tab changes.
 //!
-//! "Every change to `tab.json` or `dist/` reloads live instances": the author's
-//! `vite build --watch` rewrites `dist/`, and clients subscribed through
+//! "Every change to `tab.json` or the build output reloads live instances": the
+//! author's `vite build --watch` rewrites `dist/` (or whichever folder holds the
+//! manifest's `entry`), and clients subscribed through
 //! `app/subscribe.plugin_tab_events` receive `app/plugin_tab_changed
 //! {plugin_id}` and refetch or reload. `node_modules`, sources and dot-files
 //! are ignored — they are not what Cadencr loads.
@@ -12,6 +13,8 @@ use std::time::Duration;
 use notify_debouncer_mini::notify::RecursiveMode;
 use tokio::sync::broadcast;
 use tracing::warn;
+
+use cadencr_plugin_core::tab::MANIFEST_FILE_NAME;
 
 use crate::shared::file_watch::watch_dir_coalesced;
 
@@ -52,11 +55,14 @@ fn roots_of(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// The tab id when `path` is `<root>/<id>/tab.json`, anything under
-/// `<root>/<id>/dist/`, or an `.svg` (any case, any depth) — never inside a
-/// dot-folder or `node_modules`. Walks the components lazily: a dependency
-/// install reports thousands of paths, and most are refused at the second one.
+/// `<root>/<id>/dist/` or the folder holding the manifest's `entry`, or an
+/// `.svg` (any case, any depth) — never inside a dot-folder or `node_modules`.
+/// Walks the components lazily: a dependency install reports thousands of
+/// paths, and most are refused at the second one.
 fn changed_plugin_id(roots: &[PathBuf], path: &Path) -> Option<String> {
-    let relative = roots.iter().find_map(|root| path.strip_prefix(root).ok())?;
+    let (root, relative) = roots
+        .iter()
+        .find_map(|root| Some((root, path.strip_prefix(root).ok()?)))?;
     let mut segments = relative.components().map(|component| match component {
         Component::Normal(segment) => segment.to_str(),
         _ => None,
@@ -65,20 +71,43 @@ fn changed_plugin_id(roots: &[PathBuf], path: &Path) -> Option<String> {
     if id.starts_with('.') {
         return None;
     }
-    let (mut first, mut last, mut depth) = (None, None, 0);
+    let mut rest = Vec::new();
     for segment in segments {
         let segment = segment?;
         if segment.starts_with('.') || segment == "node_modules" {
             return None;
         }
-        first.get_or_insert(segment);
-        last = Some(segment);
-        depth += 1;
+        rest.push(segment);
     }
-    let relevant = first == Some("dist")
-        || (depth == 1 && first == Some(cadencr_plugin_core::tab::MANIFEST_FILE_NAME))
-        || last.is_some_and(|name| name.to_ascii_lowercase().ends_with(".svg"));
+    let relevant = rest.first() == Some(&"dist")
+        || rest == [MANIFEST_FILE_NAME]
+        || rest
+            .last()
+            .is_some_and(|name| name.to_ascii_lowercase().ends_with(".svg"))
+        || in_web_root(&root.join(id), &rest);
     relevant.then(|| id.to_string())
+}
+
+/// Whether `rest` (inside the tab folder `tab_dir`) is the folder holding the
+/// manifest's `entry` — what `assets` serves — or under it. A manifest that
+/// can't be read names no folder: its own change is reported above.
+fn in_web_root(tab_dir: &Path, rest: &[&str]) -> bool {
+    if rest.is_empty() {
+        return false;
+    }
+    let Ok(text) = std::fs::read_to_string(tab_dir.join(MANIFEST_FILE_NAME)) else {
+        return false;
+    };
+    let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    let Some(entry) = manifest.get("entry").and_then(serde_json::Value::as_str) else {
+        return false;
+    };
+    match entry.rsplit_once('/') {
+        Some((web_root, _)) => rest.starts_with(&web_root.split('/').collect::<Vec<_>>()),
+        None => true,
+    }
 }
 
 #[cfg(test)]
@@ -121,6 +150,21 @@ mod tests {
         ] {
             assert_eq!(id(path), None, "{path}");
         }
+    }
+
+    #[test]
+    fn follows_an_entry_outside_dist() {
+        let root = tempfile::tempdir().unwrap();
+        let tab = root.path().join("site");
+        std::fs::create_dir_all(&tab).unwrap();
+        std::fs::write(tab.join("tab.json"), r#"{ "entry": "public/index.html" }"#).unwrap();
+        let roots = [root.path().to_path_buf()];
+        let id = |relative: &str| changed_plugin_id(&roots, &tab.join(relative));
+        assert_eq!(id("public/index.html").as_deref(), Some("site"));
+        assert_eq!(id("public/assets/app.js").as_deref(), Some("site"));
+        assert_eq!(id("public").as_deref(), Some("site"));
+        assert_eq!(id("src/main.ts"), None);
+        assert_eq!(id("publicity/x.js"), None);
     }
 
     #[test]

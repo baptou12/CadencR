@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { apiErrorMessage, toastError } from "@/lib/api-errors";
+import { noteUserLayoutChange } from "@/lib/auto-layout/auto-layout-controller";
 import { SuppressBrowserViewWhileOpen } from "@/lib/browser-suppression";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { pluginTabInstanceId } from "@/lib/plugin-tabs/instance-id";
@@ -93,9 +94,12 @@ function PluginTabMenuBody({
         state={query}
         tabs={enabledTabs}
         isPlaced={(tab) => placedIds.has(pluginTabKind(tab.id))}
-        onSelect={(tab) =>
-          useFeatureLayoutStore.getState().addTab(featureId, pluginTabKind(tab.id))
-        }
+        onSelect={(tab) => {
+          // A structural user edit: drops any auto-layout undo snapshot, which
+          // would otherwise restore a layout without this tab.
+          noteUserLayoutChange(featureId, { structural: true });
+          useFeatureLayoutStore.getState().addTab(featureId, pluginTabKind(tab.id));
+        }}
       />
       {focused && (
         <>

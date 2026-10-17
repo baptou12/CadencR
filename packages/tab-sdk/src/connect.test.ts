@@ -45,6 +45,7 @@ describe("connect", () => {
       context: createTabContext(),
       theme: host.theme,
       capabilities: [],
+      visible: true,
     }));
     const error = await connect({ transport: host.transport }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CadencrError);

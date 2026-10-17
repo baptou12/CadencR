@@ -38,6 +38,16 @@ pub async fn stored(
     Ok(group(rows).remove(plugin_id).unwrap_or_default())
 }
 
+/// Whether any switch, global or per project, was ever stored for `plugin_id`.
+pub async fn any_stored(pool: &SqlitePool, plugin_id: &str) -> Result<bool, AppError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM plugin_tab_enablements WHERE plugin_id = ?)",
+    )
+    .bind(plugin_id)
+    .fetch_one(pool)
+    .await?)
+}
+
 /// [`stored`] for every plugin at once, keyed by plugin id.
 pub async fn stored_all(
     pool: &SqlitePool,

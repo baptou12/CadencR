@@ -208,6 +208,11 @@ export class CadencrClient {
       theme: sameTheme && previous ? previous.theme : hello.theme,
     };
     if (this.options.applyTheme && !sameTheme) applyTheme(hello.theme);
+    // A page recreated while its tab is hidden must not assume it is shown.
+    if (hello.visible !== this.isVisible) {
+      this.isVisible = hello.visible;
+      this.visibilityChanges.emit(hello.visible);
+    }
     if (!reconnected || !previous) return;
     if (!sameContext) this.contextChanges.emit(hello.context);
     if (!sameTheme) this.themeChanges.emit(hello.theme);

@@ -100,6 +100,13 @@ describe("events", () => {
     client.close();
     host.close();
   });
+
+  it("starts hidden when the host says so in the handshake", async () => {
+    const { host, client } = await connected({ visible: false });
+    expect(client.visible).toBe(false);
+    client.close();
+    host.close();
+  });
 });
 
 describe("theme option", () => {

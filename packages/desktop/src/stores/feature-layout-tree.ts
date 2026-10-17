@@ -163,17 +163,51 @@ export function getPluginTabs(node: LayoutNode): PluginTabKind[] {
  * active tabs fall back to the leaf's first remaining tab and emptied non-root
  * leaves collapse. Returns `state` itself when nothing is hidden: renderers
  * memoize on it (see the #185 notes in `FeatureLayoutShell`/`TabContentRegistry`).
- * Never write the result back to the store.
+ * Never write the result back to the store; resize a split of the view through
+ * `storedSplitPath`, since a collapsed pane shifts the paths below it.
  */
 export function restrictLayoutToTabs(
   state: FeatureLayoutState,
   availableTabIds: ReadonlySet<string>,
 ): FeatureLayoutState {
-  const splitRoot = filterLayoutTabs(state.splitRoot, (tab) => availableTabIds.has(tab));
+  const splitRoot = restrictNode(state.splitRoot, (tab) => availableTabIds.has(tab), []);
   if (splitRoot === null || splitRoot === state.splitRoot) return state;
   return {
     ...state,
     splitRoot,
     focusedPaneId: survivingFocus(splitRoot, state.focusedPaneId, null),
   };
+}
+
+/** Where each split of the latest views sits in the stored layout. */
+const storedPaths = new WeakMap<LayoutSplit, SplitPath>();
+
+/**
+ * The path in the stored layout of `split`, a node of a
+ * `restrictLayoutToTabs` view rendered at `viewPath`. Store mutations must use
+ * it: once a hidden pane collapses, a view path addresses another split.
+ */
+export function storedSplitPath(split: LayoutSplit, viewPath: SplitPath): SplitPath {
+  return storedPaths.get(split) ?? viewPath;
+}
+
+/**
+ * `filterLayoutTabs` that also records every surviving split's stored path —
+ * for all of them, so a split that moved since an earlier view is never read
+ * at its old path.
+ */
+function restrictNode(
+  node: LayoutNode,
+  keep: (tab: TabKind) => boolean,
+  path: SplitPath,
+): LayoutNode | null {
+  if (node.type === "leaf") return filterLayoutTabs(node, keep);
+  const [a, b] = node.children;
+  const newA = restrictNode(a, keep, [...path, 0]);
+  const newB = restrictNode(b, keep, [...path, 1]);
+  if (newA === null) return newB;
+  if (newB === null) return newA;
+  const split: LayoutSplit = newA === a && newB === b ? node : { ...node, children: [newA, newB] };
+  storedPaths.set(split, path);
+  return split;
 }

@@ -13,8 +13,7 @@ use super::models::{
     SetPluginTabEnablementRequest,
 };
 use super::{
-    assets, authoring, config, consent, enablement, registry, summary, workspace,
-    PluginTabChangedEvent,
+    assets, authoring, config, consent, enablement, registry, summary, PluginTabChangedEvent,
 };
 use crate::app_state::AppState;
 use crate::error::AppError;
@@ -222,7 +221,7 @@ pub async fn plugin_tab_authoring_handler(
 }
 
 /// The tab's authoring project, created if missing. Idempotent; also the retry
-/// for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation.
+/// for a `PLUGIN_TAB_PROJECT_SETUP_FAILED` creation, which it finishes.
 #[utoipa::path(
     post,
     path = "/api/plugin-tabs/{id}/workspace",
@@ -233,7 +232,7 @@ pub async fn plugin_tab_workspace_handler(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<PluginTabWorkspace>, AppError> {
-    Ok(Json(workspace::ensure(&state.write_pool, &id).await?))
+    Ok(Json(authoring::open(&state.write_pool, &id).await?))
 }
 
 /// The tab's `entry` document. Outside OpenAPI (opaque bytes; see `assets`).

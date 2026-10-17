@@ -43,6 +43,8 @@ export interface TestHostOptions {
   context?: TabContext;
   theme?: ThemeSnapshot;
   capabilities?: string[];
+  /** Whether the tab starts shown. Default: true. */
+  visible?: boolean;
   instanceId?: string;
   plugin?: { id: string; version: string };
   /** API versions the fake host accepts. Default: the SDK's own range. */
@@ -105,6 +107,7 @@ class FakeHost implements TestHost {
       context: options.context ?? DEFAULT_TEST_CONTEXT,
       theme: options.theme ?? DEFAULT_TEST_THEME,
       capabilities: options.capabilities ?? [],
+      visible: options.visible ?? true,
       instanceId: options.instanceId ?? "test-instance",
       plugin: options.plugin ?? { id: "test-tab", version: "0.0.0" },
       apiVersions: options.apiVersions ?? SUPPORTED_API_VERSIONS,
@@ -174,6 +177,7 @@ class FakeHost implements TestHost {
   }
 
   setVisible(visible: boolean): void {
+    this.host.visible = visible;
     this.emit("visibility.changed", { visible });
   }
 

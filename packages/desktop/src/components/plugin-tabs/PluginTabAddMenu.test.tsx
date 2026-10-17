@@ -15,6 +15,12 @@ import { PluginTabAddMenu } from "./PluginTabAddMenu";
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(() => Promise.resolve()),
   tabs: [] as PluginTabSummary[],
+  noteUserLayoutChange: vi.fn(),
+}));
+
+vi.mock("@/lib/auto-layout/auto-layout-controller", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auto-layout/auto-layout-controller")>()),
+  noteUserLayoutChange: mocks.noteUserLayoutChange,
 }));
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => mocks.navigate }));
@@ -68,6 +74,8 @@ describe("PluginTabAddMenu", () => {
     const { user } = await openMenu();
     await user.click(screen.getByRole("menuitem", { name: "Pipelines" }));
     expect(placedTabs()).toEqual(["plugin:ci"]);
+    // A structural edit, so an auto-layout Undo can't drop the new tab.
+    expect(mocks.noteUserLayoutChange).toHaveBeenCalledWith(7, { structural: true });
 
     await user.click(screen.getByRole("button", { name: "Add custom tab" }));
     expect(screen.getByRole("menuitem", { name: "Pipelines (open)" })).toBeInTheDocument();

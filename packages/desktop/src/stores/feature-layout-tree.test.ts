@@ -5,7 +5,7 @@ import {
   flatLayoutState,
   type FeatureLayoutState,
 } from "./feature-layout-schema";
-import { getPluginTabs, restrictLayoutToTabs } from "./feature-layout-tree";
+import { getPluginTabs, restrictLayoutToTabs, storedSplitPath } from "./feature-layout-tree";
 
 const ALL_BUILTINS = new Set<string>(BUILTIN_TAB_KINDS);
 
@@ -64,5 +64,32 @@ describe("restrictLayoutToTabs", () => {
     expect(view.splitRoot.children[1]).toBe(state.splitRoot.children[1]);
     expect(view.splitRoot.children[0]).toMatchObject({ activeTabId: "agent" });
     expect(view.focusedPaneId).toBe("p");
+  });
+
+  it("maps a split that moved up in the view to its stored path", () => {
+    // root | (plugin-only pane over terminal pane): hiding the plugin collapses
+    // the root split, so the inner split renders at [] but is stored at [1].
+    const state: FeatureLayoutState = {
+      ...flatLayoutState(),
+      splitRoot: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          { type: "leaf", id: "p", tabIds: ["plugin:graph"], activeTabId: "plugin:graph" },
+          {
+            type: "split",
+            orientation: "vertical",
+            children: [
+              { type: "leaf", id: "root", tabIds: ["agent"], activeTabId: "agent" },
+              { type: "leaf", id: "t", tabIds: ["terminal"], activeTabId: "terminal" },
+            ],
+          },
+        ],
+      },
+    };
+    const view = restrictLayoutToTabs(state, ALL_BUILTINS);
+    if (view.splitRoot.type !== "split") throw new Error("expected the inner split");
+    expect(view.splitRoot.orientation).toBe("vertical");
+    expect(storedSplitPath(view.splitRoot, [])).toEqual([1]);
   });
 });

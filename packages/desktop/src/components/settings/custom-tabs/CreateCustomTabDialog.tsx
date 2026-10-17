@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { usePluginTabAuthoring, type PluginTabWorkspace } from "@/api/generated";
+import { setFeatureSetting, usePluginTabAuthoring, type PluginTabWorkspace } from "@/api/generated";
 import { useDialogSubmitShortcut } from "@/components/git-actions/useDialogSubmitShortcut";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,12 +21,33 @@ import { apiErrorCode, apiErrorMessage, toastError } from "@/lib/api-errors";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { goToCustomTabWorkspace } from "./useOpenCustomTabProject";
-import { pluginTabKind } from "@/stores/feature-layout-schema";
+import {
+  LAYOUT_STATE_KEY,
+  pluginTabKind,
+  serializeCurrentLayoutState,
+} from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
 /** The manifest bounds (`docs/CUSTOM_TABS.md` §3) the service checks the request against. */
 export const MAX_NAME_LENGTH = 64;
 const MAX_DESCRIPTION_LENGTH = 280;
+
+/**
+ * A brand-new conversation has no saved layout yet: seed it with the tab
+ * (behind the agent) so the author sees it come alive as it is built. The
+ * persistence hook takes the layout it first sees as already saved, so this
+ * one is saved here or it would be gone after a restart.
+ */
+function seedStarterLayout(opened: PluginTabWorkspace): void {
+  const store = useFeatureLayoutStore.getState();
+  store.addTab(opened.feature_id, pluginTabKind(opened.plugin_id), { activate: false });
+  const layout = useFeatureLayoutStore.getState().features[opened.feature_id];
+  if (!layout) return;
+  setFeatureSetting(opened.feature_id, {
+    key: LAYOUT_STATE_KEY,
+    value: serializeCurrentLayoutState(layout),
+  }).catch((error: unknown) => toastError(error, "Could not save the new tab's placement"));
+}
 
 /**
  * Name a new custom tab. The service scaffolds a starter tab in its own Git
@@ -53,11 +74,7 @@ export function CreateCustomTabDialog({ onClose }: { onClose: () => void }): Rea
       toast.success("Custom tab created", {
         description: "Tell the agent what the tab should show. It builds the tab with you.",
       });
-      // A brand-new conversation has no saved layout yet: seed it with the tab
-      // (behind the agent) so the author sees it come alive as it is built.
-      useFeatureLayoutStore
-        .getState()
-        .addTab(opened.feature_id, pluginTabKind(opened.plugin_id), { activate: false });
+      seedStarterLayout(opened);
       goToCustomTabWorkspace(navigate, queryClient, opened);
     },
     [navigate, onClose, queryClient],

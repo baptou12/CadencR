@@ -77,6 +77,7 @@ function createBroker(
     grant?: GrantDeps;
     origins?: string[];
     socket?: SocketFactory;
+    visible?: boolean;
   } = {},
 ): PluginTabBroker {
   const broker = new PluginTabBroker(
@@ -90,7 +91,7 @@ function createBroker(
         allowedOrigins: options.origins ?? [],
       },
       context: CONTEXT,
-      visible: true,
+      visible: options.visible ?? true,
     },
     {
       grant: options.grant ?? grantDeps(),
@@ -147,6 +148,12 @@ describe("PluginTabBroker handshake", () => {
     expect(capabilities).toContain("git:read");
     // No allowed origins in the manifest: no egress.
     expect(capabilities).not.toContain("net.fetch");
+  });
+
+  it("tells a page recreated while hidden that it is hidden", async () => {
+    const guest = connect(createBroker({ visible: false }));
+    const result = ok(await guest.request("hello", { sdkVersion: "0.1.0", apiVersions: [1, 1] }));
+    expect(result).toMatchObject({ visible: false });
   });
 
   it("refuses a guest whose API range doesn't include v1", async () => {

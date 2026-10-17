@@ -153,6 +153,8 @@ export interface HelloResult {
   context: TabContext;
   theme: ThemeSnapshot;
   capabilities: string[];
+  /** Whether the tab is shown right now; later changes arrive as `visibility.changed`. */
+  visible: boolean;
 }
 
 export interface ApiRequestParams {

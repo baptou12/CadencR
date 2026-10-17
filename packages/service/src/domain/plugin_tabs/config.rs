@@ -1,8 +1,10 @@
 //! Settings-form values a tab declares in `configuration`.
 //!
 //! Values are stored as JSON text, globally or per project, in
-//! `plugin_tab_config`. Secrets are stored the same way and never leave the
-//! service through the host API: a set secret reads `{ "is_set": true }`.
+//! `plugin_tab_config`. Secrets are stored the same way, flagged `is_secret`,
+//! and never leave the service through the host API: a set secret reads
+//! `{ "is_set": true }`. The flag is kept with the value, so a manifest that
+//! re-declares a secret as a plain field cannot read it back.
 //! [`secret_value`] is the one way to read them, for server-side substitution.
 
 use std::collections::BTreeMap;
@@ -19,6 +21,14 @@ use crate::error::AppError;
 const MAX_VALUE_BYTES: usize = 16 * 1024;
 
 type Values = BTreeMap<String, Value>;
+
+/// A stored value and whether it was saved as a secret.
+struct Stored {
+    value: Value,
+    secret: bool,
+}
+
+type StoredValues = BTreeMap<String, Stored>;
 
 /// The form for `project_id` (or global only). Secrets are masked.
 pub async fn read(
@@ -61,27 +71,32 @@ pub async fn write(
                 MAX_VALUE_BYTES / 1024
             )));
         }
-        rows.push((key.as_str(), Some(text)));
+        let secret = field.field_type == TabConfigFieldType::Secret;
+        rows.push((key.as_str(), Some((text, secret))));
     }
     // Two partial unique indexes back the two row kinds, and an upsert's
     // conflict target must name the matching one.
     let upsert = if project_id.is_none() {
-        "INSERT INTO plugin_tab_config (plugin_id, project_id, key, value) VALUES (?, ?, ?, ?) \
-         ON CONFLICT (plugin_id, key) WHERE project_id IS NULL \
-         DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP"
+        "INSERT INTO plugin_tab_config (plugin_id, project_id, key, value, is_secret) \
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT (plugin_id, key) WHERE project_id IS NULL \
+         DO UPDATE SET value = excluded.value, is_secret = excluded.is_secret, \
+         updated_at = CURRENT_TIMESTAMP"
     } else {
-        "INSERT INTO plugin_tab_config (plugin_id, project_id, key, value) VALUES (?, ?, ?, ?) \
-         ON CONFLICT (plugin_id, project_id, key) WHERE project_id IS NOT NULL \
-         DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP"
+        "INSERT INTO plugin_tab_config (plugin_id, project_id, key, value, is_secret) \
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT (plugin_id, project_id, key) \
+         WHERE project_id IS NOT NULL \
+         DO UPDATE SET value = excluded.value, is_secret = excluded.is_secret, \
+         updated_at = CURRENT_TIMESTAMP"
     };
     let mut tx = pool.begin().await?;
     for (key, text) in rows {
         let query = match text {
-            Some(text) => sqlx::query(upsert)
+            Some((text, secret)) => sqlx::query(upsert)
                 .bind(plugin_id)
                 .bind(project_id)
                 .bind(key)
-                .bind(text),
+                .bind(text)
+                .bind(secret),
             None => sqlx::query(
                 "DELETE FROM plugin_tab_config WHERE plugin_id = ? AND project_id IS ? AND key = ?",
             )
@@ -96,7 +111,8 @@ pub async fn write(
 }
 
 /// Non-secret values for `project_id`: project over global over declared
-/// defaults. Secrets and undeclared stored keys are omitted.
+/// defaults. Secrets (declared or saved as one) and undeclared stored keys are
+/// omitted.
 pub async fn resolved_values(
     pool: &SqlitePool,
     plugin_id: &str,
@@ -109,15 +125,22 @@ pub async fn resolved_values(
         if field.field_type == TabConfigFieldType::Secret {
             continue;
         }
-        let value = project
-            .get(&field.key)
-            .or_else(|| global.get(&field.key))
+        let value = plain(&project, &field.key)
+            .or_else(|| plain(&global, &field.key))
             .or(field.default.as_ref());
         if let Some(value) = value.filter(|value| field.accepts(value)) {
             resolved.insert(field.key.clone(), value.clone());
         }
     }
     Ok(resolved)
+}
+
+/// The stored value of `key` unless it was saved as a secret.
+fn plain<'a>(values: &'a StoredValues, key: &str) -> Option<&'a Value> {
+    values
+        .get(key)
+        .filter(|stored| !stored.secret)
+        .map(|stored| &stored.value)
 }
 
 /// The plaintext of secret `key` for `project_id` (project over global), for
@@ -157,18 +180,21 @@ async fn stored(
     pool: &SqlitePool,
     plugin_id: &str,
     project_id: Option<i64>,
-) -> Result<(Values, Values), AppError> {
-    let rows: Vec<(Option<i64>, String, String)> = sqlx::query_as(
-        "SELECT project_id, key, value FROM plugin_tab_config \
+) -> Result<(StoredValues, StoredValues), AppError> {
+    let rows: Vec<(Option<i64>, String, String, bool)> = sqlx::query_as(
+        "SELECT project_id, key, value, is_secret FROM plugin_tab_config \
          WHERE plugin_id = ? AND (project_id IS NULL OR project_id = ?)",
     )
     .bind(plugin_id)
     .bind(project_id)
     .fetch_all(pool)
     .await?;
-    let (mut global, mut project) = (Values::new(), Values::new());
-    for (row_project, key, text) in rows {
-        let value = parse_stored(&key, &text)?;
+    let (mut global, mut project) = (StoredValues::new(), StoredValues::new());
+    for (row_project, key, text, secret) in rows {
+        let value = Stored {
+            value: parse_stored(&key, &text)?,
+            secret,
+        };
         match row_project {
             None => global.insert(key, value),
             Some(_) => project.insert(key, value),
@@ -185,20 +211,23 @@ fn parse_stored(key: &str, text: &str) -> Result<Value, AppError> {
     })
 }
 
-/// Declared, non-secret values as stored; set secrets become `{ "is_set": true }`.
-fn mask(manifest: &TabManifest, stored: Values) -> Values {
+/// Declared, non-secret values as stored; set secrets (declared or saved as
+/// one) become `{ "is_set": true }`.
+fn mask(manifest: &TabManifest, stored: StoredValues) -> Values {
     stored
         .into_iter()
-        .filter_map(|(key, value)| {
+        .filter_map(|(key, stored)| {
             let field = manifest
                 .configuration
                 .iter()
                 .find(|field| field.key == key)?;
-            Some(if field.field_type == TabConfigFieldType::Secret {
-                (key, json!({ "is_set": true }))
-            } else {
-                (key, value)
-            })
+            Some(
+                if stored.secret || field.field_type == TabConfigFieldType::Secret {
+                    (key, json!({ "is_set": true }))
+                } else {
+                    (key, stored.value)
+                },
+            )
         })
         .collect()
 }
@@ -295,6 +324,40 @@ mod tests {
             .unwrap()
             .global
             .contains_key("gitlab_token"));
+    }
+
+    #[tokio::test]
+    async fn a_secret_redeclared_as_plain_stays_hidden() {
+        let pool = pool().await;
+        let manifest = manifest();
+        write(
+            &pool,
+            "graph",
+            &manifest,
+            None,
+            &Values::from([("gitlab_token".into(), json!("glpat-secret"))]),
+        )
+        .await
+        .unwrap();
+        let mut widened = manifest.clone();
+        for field in &mut widened.configuration {
+            if field.key == "gitlab_token" {
+                field.field_type = TabConfigFieldType::String;
+            }
+        }
+        let project = insert_project(&pool, "p").await;
+        let resolved = resolved_values(&pool, "graph", &widened, project)
+            .await
+            .unwrap();
+        assert!(!resolved.contains_key("gitlab_token"));
+        let form = read(&pool, "graph", &widened, None).await.unwrap();
+        assert_eq!(form.global["gitlab_token"], json!({ "is_set": true }));
+        assert_eq!(
+            secret_value(&pool, "graph", &widened, project, "gitlab_token")
+                .await
+                .unwrap(),
+            None
+        );
     }
 
     #[tokio::test]

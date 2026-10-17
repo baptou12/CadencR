@@ -3,13 +3,15 @@
 //! 1. Derive a unique id from the name, create `<tabs>/<id>/`, write the
 //!    scaffold, `git init` and commit it. A failure here removes the folder
 //!    this request created, so no half-built tab is left behind.
-//! 2. Create the authoring project and its conversation (`workspace::ensure_for`).
-//! 3. Record consent for the scaffold's permissions and enable the tab for
-//!    that project, so the author sees it working before writing a line.
+//! 2. Record consent for the scaffold's permissions.
+//! 3. Create the authoring project and its conversation (`workspace::ensure_for`).
+//! 4. Enable the tab for that project, so the author sees it working before
+//!    writing a line.
 //!
-//! The folder outlives a failure in steps 2–3: the error names the retry
-//! (`POST /api/plugin-tabs/{id}/workspace`) instead of pretending the whole
-//! setup is atomic.
+//! The folder outlives a failure in steps 2–4: the error names the retry
+//! (`POST /api/plugin-tabs/{id}/workspace`, [`open`]) instead of pretending
+//! the whole setup is atomic. Consent comes first so the retry can tell an
+//! interrupted creation from a folder copied in by hand.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -112,10 +114,28 @@ async fn discard(dir: &Path, error: AppError) -> AppError {
 
 async fn finish(pool: &SqlitePool, id: &str) -> Result<PluginTabWorkspace, AppError> {
     let tab = registry::get(id).await?;
-    let workspace = workspace::ensure_for(pool, &tab).await?;
     let (_, hash) = tab.require_valid()?;
     consent::record(pool, id, &hash).await?;
+    let workspace = workspace::ensure_for(pool, &tab).await?;
     enablement::set(pool, &tab, Some(workspace.project_id), Some(true)).await?;
+    Ok(workspace)
+}
+
+/// The tab's authoring project, created if missing ("Open project"), and the
+/// retry of a creation that failed after consent ("Retry setup"): a tab whose
+/// current permissions are consented but that was never switched on or off
+/// anywhere is turned on in its project, as creation would have. A folder
+/// copied in by hand has no consent, so opening it enables nothing.
+pub async fn open(pool: &SqlitePool, id: &str) -> Result<PluginTabWorkspace, AppError> {
+    let tab = registry::get(id).await?;
+    let workspace = workspace::ensure_for(pool, &tab).await?;
+    let Ok((_, hash)) = tab.require_valid() else {
+        return Ok(workspace);
+    };
+    let consented = consent::consented_hash(pool, id).await?.as_deref() == Some(hash.as_str());
+    if consented && !enablement::any_stored(pool, id).await? {
+        enablement::set(pool, &tab, Some(workspace.project_id), Some(true)).await?;
+    }
     Ok(workspace)
 }
 
@@ -177,7 +197,7 @@ fn invalid(message: String) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::plugin_tabs::test_support::pool;
+    use crate::domain::plugin_tabs::test_support::{pool, write_tab};
     use crate::shared::git_cli::run_git;
 
     fn request(name: &str) -> CreatePluginTabRequest {
@@ -210,6 +230,28 @@ mod tests {
         let tab = registry::get("changed-files").await.unwrap();
         let other = enablement::resolve(&pool, &tab, None).await.unwrap();
         assert_eq!(other.global, None, "enabled for its own project only");
+    }
+
+    #[tokio::test]
+    async fn opening_finishes_an_interrupted_creation_only() {
+        let pool = pool().await;
+        // Creation consented, then failed before its project existed.
+        write_tab("half", serde_json::json!({}));
+        let half = registry::get("half").await.unwrap();
+        consent::record(&pool, "half", &half.require_valid().unwrap().1)
+            .await
+            .unwrap();
+        let workspace = open(&pool, "half").await.unwrap();
+        assert!(enablement::effective(&pool, "half", workspace.project_id)
+            .await
+            .unwrap());
+        // A folder copied in by hand: its project opens, the tab stays off.
+        write_tab("copied", serde_json::json!({}));
+        let copied = open(&pool, "copied").await.unwrap();
+        assert!(!enablement::any_stored(&pool, "copied").await.unwrap());
+        assert!(!enablement::effective(&pool, "copied", copied.project_id)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -298,7 +340,11 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let retried = workspace::ensure(&pool, "retained").await.unwrap();
+        // "Retry setup" finishes the creation: the tab ends up on in its project.
+        let retried = open(&pool, "retained").await.unwrap();
         assert_eq!(retried.plugin_id, "retained");
+        assert!(enablement::effective(&pool, "retained", retried.project_id)
+            .await
+            .unwrap());
     }
 }

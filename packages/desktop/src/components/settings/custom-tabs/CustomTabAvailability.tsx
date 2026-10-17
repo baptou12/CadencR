@@ -1,4 +1,5 @@
-import { useId } from "react";
+import { useId, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
 import type { PluginTabSummary, Project } from "@/api/generated";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -7,6 +8,12 @@ import {
 } from "@/components/usage/UsageSegmentedControl";
 import { overrideOf, triStateOf, type ProjectOverride, type TriState } from "./custom-tab-model";
 import { enablementKey, type CustomTabEnablement } from "./useCustomTabEnablement";
+import { cn } from "@/lib/utils";
+
+/** The list grows with the workspace up to this height (`max-h-64`), then scrolls. */
+const MAX_LIST_HEIGHT_PX = 256;
+/** A two-line row with its segmented control, until Virtuoso measures them. */
+const ESTIMATED_ROW_HEIGHT_PX = 49;
 
 const TRI_STATE_OPTIONS: readonly SegmentedOption<TriState>[] = [
   { value: "inherit", label: "Inherit" },
@@ -54,13 +61,10 @@ export function CustomTabAvailability({
       {projects.length === 0 ? (
         <p className="text-xs text-muted-foreground">No projects yet.</p>
       ) : (
-        <ul
-          aria-label="Per-project availability"
-          className="max-h-64 divide-y divide-border/50 overflow-y-auto rounded-lg border border-border/60 bg-card"
-        >
-          {projects.map((project) => (
+        <ProjectList
+          projects={projects}
+          renderRow={(project) => (
             <ProjectRow
-              key={project.id}
               project={project}
               isAuthoring={project.plugin_id === tab.id}
               override={overrides.get(project.id) ?? null}
@@ -69,10 +73,40 @@ export function CustomTabAvailability({
               pending={enablement.pendingKey === enablementKey(tab.id, project.id)}
               onChange={(state) => enablement.change(tab, project.id, overrideOf(state))}
             />
-          ))}
-        </ul>
+          )}
+        />
       )}
     </div>
+  );
+}
+
+/**
+ * Virtualized: the list grows with the user's projects, and every row mounts a
+ * segmented control. As tall as its rows up to `MAX_LIST_HEIGHT_PX`.
+ */
+function ProjectList({
+  projects,
+  renderRow,
+}: {
+  projects: Project[];
+  renderRow: (project: Project) => React.ReactNode;
+}): React.JSX.Element {
+  const [listHeight, setListHeight] = useState(projects.length * ESTIMATED_ROW_HEIGHT_PX);
+  return (
+    <Virtuoso
+      role="list"
+      aria-label="Per-project availability"
+      className="rounded-lg border border-border/60 bg-card"
+      style={{ height: Math.min(listHeight, MAX_LIST_HEIGHT_PX) + 2 }}
+      data={projects}
+      computeItemKey={(_, project) => project.id}
+      totalListHeightChanged={setListHeight}
+      itemContent={(index, project) => (
+        <div role="listitem" className={cn(index > 0 && "border-t border-border/50")}>
+          {renderRow(project)}
+        </div>
+      )}
+    />
   );
 }
 
@@ -95,7 +129,7 @@ function ProjectRow({
 }): React.JSX.Element {
   const state = triStateOf(override);
   return (
-    <li className="flex items-center gap-3 px-3 py-2">
+    <div className="flex items-center gap-3 px-3 py-2">
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium">{project.name}</p>
         <p className="truncate text-[11px] text-muted-foreground">
@@ -115,6 +149,6 @@ function ProjectRow({
         className="shrink-0"
         onChange={(next) => next !== state && onChange(next)}
       />
-    </li>
+    </div>
   );
 }

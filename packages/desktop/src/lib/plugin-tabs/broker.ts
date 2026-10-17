@@ -234,6 +234,8 @@ export class PluginTabBroker {
       context: this.context,
       theme: this.theme(),
       capabilities: await this.capabilities(),
+      // A page recreated while hidden (a rebuild) gets no visibility change.
+      visible: this.visible,
     };
     return { result };
   }

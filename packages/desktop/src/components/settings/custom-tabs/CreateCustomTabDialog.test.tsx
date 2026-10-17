@@ -7,6 +7,7 @@ import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(() => Promise.resolve()),
   authoring: vi.fn(),
+  setFeatureSetting: vi.fn(() => Promise.resolve({})),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -18,6 +19,7 @@ vi.mock("@/api/generated", async (importOriginal) => {
   return {
     ...(await importOriginal<typeof import("@/api/generated")>()),
     usePluginTabAuthoring: () => useMutation({ mutationFn: mocks.authoring }),
+    setFeatureSetting: mocks.setFeatureSetting,
   };
 });
 
@@ -54,6 +56,11 @@ describe("CreateCustomTabDialog", () => {
     const root = useFeatureLayoutStore.getState().features[9]?.splitRoot;
     expect(root?.type === "leaf" && root.tabIds).toContain("plugin:graph");
     expect(root?.type === "leaf" && root.activeTabId).toBe("agent");
+    // ...and that placement is saved, since nothing else would save it.
+    expect(mocks.setFeatureSetting).toHaveBeenCalledWith(9, {
+      key: "layout_state",
+      value: expect.stringContaining("plugin:graph"),
+    });
   });
 
   it("shows the service's refusal inline", async () => {
