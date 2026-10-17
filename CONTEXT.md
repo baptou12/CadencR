@@ -7,13 +7,14 @@ plugin is a separate, later workflow from creating and using it locally.
 
 ### Plugin
 
-An extension authored for Cadencr. The local delivery scope includes themes and
-provider connectors; a plugin does not inherently grant general UI extension powers.
+An extension authored for Cadencr. The local delivery scope includes themes,
+provider connectors and custom tabs; a plugin does not inherently grant general
+UI extension powers.
 
 ### Plugin project
 
-A developer's Cadencr project dedicated to authoring an identifiable plugin,
-either a theme or a provider connector. Its identity persists independently of
+A developer's Cadencr project dedicated to authoring an identifiable plugin:
+a theme, a provider connector or a custom tab. Its identity persists independently of
 its display name or folder, so it can later enter the publication workflow.
 
 ### Provider connector
@@ -26,6 +27,28 @@ not the upstream agent itself and is distinct from an installation of that plugi
 A declarative plugin defining Cadencr's visual appearance through supported
 theme values and inert visual assets. It does not execute an agent or script.
 Its authoring project is distinct from the theme selected in the application.
+
+### Custom tab
+
+A plugin that adds a web UI tab to the feature page. It runs isolated from the
+application, reaches Cadencr only through the tab SDK, and sees only what its
+consented permissions allow. Enabling it is a per-project or global choice.
+
+### Tab instance
+
+One live rendering of a custom tab inside one feature page. Two features showing
+the same custom tab are two instances with separate context and grants.
+
+### Grant
+
+The short-lived authority Cadencr issues to one tab instance: which plugin,
+project, feature and permissions it may act for. It is never handed to the
+plugin's code and expires on its own.
+
+### Consent
+
+The user's acceptance of a custom tab's declared permissions and network
+origins. Widening either requires consent again.
 
 ### Managed theme
 
