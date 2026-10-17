@@ -10,6 +10,7 @@ pub mod project_links;
 pub mod project_list;
 pub mod project_providers;
 pub mod project_search;
+pub mod project_status;
 pub mod project_tail;
 pub mod project_worktree;
 pub mod session_graph;

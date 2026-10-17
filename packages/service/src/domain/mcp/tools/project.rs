@@ -18,18 +18,16 @@ use crate::domain::mcp::tools::project_links;
 use crate::domain::mcp::tools::project_list;
 use crate::domain::mcp::tools::project_providers;
 use crate::domain::mcp::tools::project_search;
+use crate::domain::mcp::tools::project_status;
 use crate::domain::mcp::tools::project_tail;
 use crate::domain::mcp::tools::project_worktree;
-use crate::domain::session_status::{
-    derive_status_from_db, AgentStatus, DbStatusInputs, PendingKind,
-};
 
 const DEFAULT_LIMIT: i64 = 50;
 const MAX_LIMIT: i64 = 50;
 
 #[derive(FromRow, serde::Serialize)]
-struct ProjectSummary {
-    id: i64,
+pub(super) struct ProjectSummary {
+    pub(super) id: i64,
     name: String,
     path: String,
 }
@@ -63,7 +61,7 @@ pub async fn run_project_tool(
     let result = match name {
         "project_list_sessions" => project_list::list_sessions(&ctx, &args).await,
         "project_read_session" => read_session(&ctx, &args).await,
-        "project_get_session_status" => get_session_status(&ctx, &args).await,
+        "project_get_session_status" => project_status::get_session_status(&ctx, &args).await,
         "project_find_related_sessions" => project_search::find_related_sessions(&ctx, &args).await,
         "project_read_session_tail" => project_tail::read_session_tail(&ctx, &args).await,
         "project_link_sessions" => project_links::link_sessions(&ctx, &args).await,
@@ -106,7 +104,7 @@ fn is_project_read_tool(name: &str) -> bool {
     )
 }
 
-async fn current_project(ctx: &McpContext) -> Result<ProjectSummary, String> {
+pub(super) async fn current_project(ctx: &McpContext) -> Result<ProjectSummary, String> {
     sqlx::query_as(
         "SELECT p.id, p.name, p.path
          FROM features f
@@ -140,7 +138,7 @@ async fn session_scope(ctx: &McpContext, session_id: i64) -> Result<SessionScope
     .ok_or_else(|| format!("Session {session_id} was not found"))
 }
 
-async fn ensure_current_project_session(
+pub(super) async fn ensure_current_project_session(
     ctx: &McpContext,
     session_id: i64,
     project_id: i64,
@@ -342,60 +340,4 @@ async fn query_session_messages(
         .fetch_all(&ctx.read_pool)
         .await
         .map_err(|e| format!("Failed to read session messages: {e}"))
-}
-
-async fn get_session_status(
-    ctx: &McpContext,
-    args: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let project = current_project(ctx).await?;
-    let session_id = require_i64(args, "session_id")?;
-    ensure_current_project_session(ctx, session_id, project.id).await?;
-
-    let (status, pending_permission, pending_questions): (String, Option<String>, Option<String>) =
-        sqlx::query_as(
-            "SELECT status, pending_permission, pending_questions
-         FROM agent_sessions WHERE id = ?",
-        )
-        .bind(session_id)
-        .fetch_one(&ctx.read_pool)
-        .await
-        .map_err(|e| format!("Failed to read session status: {e}"))?;
-    let derived = derive_status_from_db(DbStatusInputs {
-        status_col: &status,
-        pending_permission: pending_permission.is_some(),
-        pending_question: pending_questions.is_some(),
-    });
-    let turn_state = match (derived.status, derived.kind) {
-        (AgentStatus::Agent, _) => "working",
-        (AgentStatus::Question, Some(PendingKind::Permission)) => "awaiting_permission",
-        (AgentStatus::Question, Some(PendingKind::Question)) => "awaiting_question",
-        _ => "idle",
-    };
-    let lifecycle = match status.as_str() {
-        "completed" => "completed",
-        "error" => "error",
-        _ => "open",
-    };
-    let pending_queue_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM agent_session_message_queue
-         WHERE target_session_id = ? AND status = 'pending'",
-    )
-    .bind(session_id)
-    .fetch_one(&ctx.read_pool)
-    .await
-    .map_err(|e| format!("Failed to read pending queue count: {e}"))?;
-
-    Ok(json!({
-        "session_id": session_id,
-        "project_id": project.id,
-        "source_session_id": ctx.source_session_id,
-        "status": status,
-        "lifecycle": lifecycle,
-        "turn_state": turn_state,
-        "pending_queue_count": pending_queue_count,
-        "has_pending_queue": pending_queue_count > 0,
-        "delivery_mode": "reactive_push",
-        "polling_guidance": "Recovery snapshot only. Followed gates and awaited replies are delivered automatically; do not poll status or session tails."
-    }))
 }
