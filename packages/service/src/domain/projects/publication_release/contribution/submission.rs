@@ -91,16 +91,13 @@ fn invalid(message: impl Into<String>) -> AppError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::process::Command;
-
     use serde_json::json;
 
     use super::*;
     use crate::domain::projects::publication_release::plan::Plan;
 
     #[test]
-    fn generated_documents_pass_the_trusted_node_submission_validator() {
+    fn generated_documents_pass_shared_registry_validators() {
         let fixture: Value = serde_json::from_str(include_str!(
             "../../../../../tests/fixtures/managed_provider_index/v1/valid.json"
         ))
@@ -155,20 +152,7 @@ mod tests {
             json!({"preserved":true})
         );
         let root = tempfile::tempdir().unwrap();
-        let submission = root.path().join("submission.json");
-        std::fs::write(&submission, &documents.submission).unwrap();
-        let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tooling/marketplace-registry/scripts/validate-submission.mjs");
-        let output = Command::new("node")
-            .arg(script)
-            .arg(submission)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        cadencr_registry_core::validate_submission(&generated).unwrap();
 
         let base = root.path().join("base");
         let candidate = root.path().join("candidate");
@@ -185,22 +169,23 @@ mod tests {
             &documents.submission,
         )
         .unwrap();
-        let contribution_script = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tooling/marketplace-registry/scripts/validate-contribution.mjs");
-        let contribution = Command::new("node")
-            .arg(contribution_script)
-            .args([
-                "--base",
-                base.to_str().unwrap(),
-                "--candidate",
-                candidate.to_str().unwrap(),
-            ])
-            .output()
-            .unwrap();
+        cadencr_registry_core::validate_contribution(&base, &candidate).unwrap();
+
+        // A separately valid submission must still describe the exact paired package.
+        let mut mismatched = generated.clone();
+        mismatched["package"]["agent"]["x-author-note"] = json!({"preserved":false});
+        cadencr_registry_core::validate_submission(&mismatched).unwrap();
+        std::fs::write(
+            candidate.join("submissions").join(&documents.filename),
+            serde_json::to_vec(&mismatched).unwrap(),
+        )
+        .unwrap();
+        let error = cadencr_registry_core::validate_contribution(&base, &candidate).unwrap_err();
         assert!(
-            contribution.status.success(),
-            "{}",
-            String::from_utf8_lossy(&contribution.stderr)
+            error
+                .to_string()
+                .contains("submission.package must exactly match"),
+            "{error}"
         );
     }
 }
