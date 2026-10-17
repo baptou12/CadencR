@@ -42,6 +42,7 @@ import {
   notifyTransition,
 } from "@/stores/session-status-handlers";
 import { createAppWsConnect, createAppWsDisconnect } from "@/stores/session-status-connection";
+import { revealAgentDocument } from "@/lib/auto-layout/agent-document-activity";
 
 export type { LiveAgentStatus, PendingKind };
 
@@ -84,6 +85,9 @@ function createEnvelopeDispatcher(
   get: SessionStatusGet,
 ): EnvelopeDispatcher {
   return (domain, action, payload): void => {
+    if (domain === "editor" && action === "file_tree.changed") {
+      revealAgentDocument(payload, get().bySession);
+    }
     if (handleAppEnvelope(domain, action, payload)) return;
     if (domain !== "app") return;
     if (action === "session_status.snapshot") {

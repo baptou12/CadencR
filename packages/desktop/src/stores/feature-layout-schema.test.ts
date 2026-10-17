@@ -9,11 +9,18 @@ import {
 } from "./feature-layout-schema";
 
 describe("parseLayoutState", () => {
-  it("includes browser in the flat default tab ids", () => {
+  it("includes browser and preview in the flat default tab ids", () => {
     const state = flatLayoutState();
     expect(state.splitRoot.type).toBe("leaf");
     if (state.splitRoot.type === "leaf") {
-      expect(state.splitRoot.tabIds).toEqual(["agent", "terminal", "git", "editor", "browser"]);
+      expect(state.splitRoot.tabIds).toEqual([
+        "agent",
+        "terminal",
+        "git",
+        "editor",
+        "browser",
+        "preview",
+      ]);
     }
   });
 
@@ -38,7 +45,7 @@ describe("parseLayoutState", () => {
     expect(parsed?.splitRoot).toEqual({
       type: "leaf",
       id: "root",
-      tabIds: ["agent", "terminal", "git", "editor", "browser"],
+      tabIds: ["agent", "terminal", "git", "editor", "browser", "preview"],
       activeTabId: "agent",
     });
   });
@@ -73,7 +80,12 @@ describe("parseLayoutState", () => {
       splitRoot: {
         ...state.splitRoot,
         children: [
-          { type: "leaf", id: "root", tabIds: ["agent", "browser"], activeTabId: "agent" },
+          {
+            type: "leaf",
+            id: "root",
+            tabIds: ["agent", "browser", "preview"],
+            activeTabId: "agent",
+          },
           state.splitRoot.children[1],
         ],
       },

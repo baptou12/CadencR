@@ -19,13 +19,14 @@
  * when their last tab is pulled out.
  */
 
-export type TabKind = "agent" | "terminal" | "git" | "editor" | "browser";
+export type TabKind = "agent" | "terminal" | "git" | "editor" | "browser" | "preview";
 export const ALL_TAB_KINDS: readonly TabKind[] = [
   "agent",
   "terminal",
   "git",
   "editor",
   "browser",
+  "preview",
 ] as const;
 
 export const ROOT_LEAF_ID = "root";

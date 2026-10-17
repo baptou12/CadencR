@@ -1,5 +1,11 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, type ReactElement } from "react";
-import { CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
+import {
+  CodeIcon,
+  FileTextIcon,
+  GitCompareArrowsIcon,
+  GlobeIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { AgentBrowserActivityDot } from "@/components/feature-layout/AgentBrowserActivityDot";
@@ -18,6 +24,11 @@ import {
 import type { NonAgentTabReadiness } from "@/components/useAgentFirstNonAgentWork";
 import { useAgentTab } from "./WebSocketSessionAgentTab";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
+const FeaturePreviewTab = lazy(() =>
+  import("@/components/document-preview/FeaturePreviewTab").then((module) => ({
+    default: module.FeaturePreviewTab,
+  })),
+);
 const BrowserWorkspaceTab = lazy(() =>
   import("@/components/BrowserWorkspaceTab").then((module) => ({
     default: module.BrowserWorkspaceTab,
@@ -50,6 +61,7 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
   const gitTab = useGitTab(args);
   const editorTab = useEditorTab(args);
   const browserTab = useBrowserTab(args);
+  const previewTab = usePreviewTab(args);
   return useMemo(
     () => ({
       agent: agentTab,
@@ -57,8 +69,9 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
       git: gitTab,
       editor: editorTab,
       browser: browserTab,
+      preview: previewTab,
     }),
-    [agentTab, browserTab, editorTab, gitTab, terminalTab],
+    [agentTab, browserTab, editorTab, gitTab, previewTab, terminalTab],
   );
 }
 
@@ -166,6 +179,25 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
       ),
     }),
     [featureId, browserReady, sendContext],
+  );
+}
+
+function usePreviewTab(args: UseSessionTabsArgs): FeatureTabDef {
+  const { featureId, projectId } = args;
+  const previewReady = args.tabReady.preview;
+  return useMemo(
+    () => ({
+      label: "Preview",
+      Icon: FileTextIcon,
+      content: previewReady ? (
+        <Suspense fallback={null}>
+          <FeaturePreviewTab featureId={featureId} projectId={projectId} />
+        </Suspense>
+      ) : (
+        <DeferredTabContent label="Preview" />
+      ),
+    }),
+    [featureId, previewReady, projectId],
   );
 }
 

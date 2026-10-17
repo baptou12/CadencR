@@ -387,6 +387,11 @@ fn build_cors_layer(frontend_port: u16) -> CorsLayer {
             Method::DELETE,
             Method::PATCH,
         ])
+        // The renderer is cross-origin (file:// in packaged builds): response
+        // headers it reads must be exposed explicitly.
+        .expose_headers([HeaderName::from_static(
+            domain::editor::document_routes::FORMULAS_HEADER,
+        )])
 }
 
 /// MCP subprocess mode writes to stderr to keep stdout clean for JSON-RPC.

@@ -394,7 +394,7 @@ async fn handle_subscribe_file_watcher(
                 poisoned.into_inner()
             }
         };
-        if let Err(e) = watcher.start(&project_path, app_state.file_change_tx.clone()) {
+        if let Err(e) = watcher.start(&project_path, feature_id, app_state.file_change_tx.clone()) {
             warn!(error = %e, "failed to start file watcher");
             super::send_error(sender, &envelope.id, "WATCHER_ERROR", &e);
             return;
@@ -418,11 +418,7 @@ async fn handle_subscribe_file_watcher(
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    let update = WsEnvelope::new(
-                        "editor",
-                        "file_tree.changed",
-                        serde_json::json!({ "project_path": event.project_path }),
-                    );
+                    let update = WsEnvelope::new("editor", "file_tree.changed", event.payload());
                     if sender
                         .send(Message::Text(String::from(update).into()))
                         .is_err()

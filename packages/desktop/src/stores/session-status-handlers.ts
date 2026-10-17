@@ -8,6 +8,7 @@
  */
 import { invalidateByExactUrl, invalidateByUrlPrefix, queryClient } from "@/lib/queryClient";
 import { createLeadingSettleCoalescer } from "@/lib/coalesceInvalidation";
+import { invalidateChangedDocuments } from "@/lib/document-file";
 import { scheduleSettingsInvalidation } from "@/lib/settingsInvalidation";
 import { scheduleThemeInvalidation } from "@/lib/themeInvalidation";
 import {
@@ -321,6 +322,8 @@ export function handleAppEnvelope(
     // file-tree change was a second, unprotected route to the exact storm that
     // path already guards against.
     scheduleEditorInvalidation();
+    // Document previews refetch only for the documents the event names.
+    invalidateChangedDocuments(queryClient, payload);
     return true;
   }
   if (domain === "git") {

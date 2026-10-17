@@ -1,4 +1,11 @@
-import { BotIcon, CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
+import {
+  BotIcon,
+  CodeIcon,
+  GitCompareArrowsIcon,
+  FileTextIcon,
+  GlobeIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 
@@ -17,6 +24,7 @@ const tabs: FeatureTabs = {
   git: { label: "Git", Icon: GitCompareArrowsIcon, content: <span>git-body</span> },
   editor: { label: "Editor", Icon: CodeIcon, content: <span>editor-body</span> },
   browser: { label: "Browser", Icon: GlobeIcon, content: <span>browser-body</span> },
+  preview: { label: "Preview", Icon: FileTextIcon, content: <span>preview-body</span> },
 };
 
 function mountedTabs(): TabKind[] {
@@ -64,7 +72,14 @@ describe("TabContentRegistry", () => {
         layoutState={flatLayoutState("agent")}
       />,
     );
-    expect(mountedTabs().sort()).toEqual(["agent", "browser", "editor", "git", "terminal"]);
+    expect(mountedTabs().sort()).toEqual([
+      "agent",
+      "browser",
+      "editor",
+      "git",
+      "preview",
+      "terminal",
+    ]);
   });
 
   // The visited-tab effect is keyed on a joined string rather than on
