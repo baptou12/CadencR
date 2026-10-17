@@ -107,3 +107,17 @@ export function restoreTabFocus(memory: FocusMemory | null): void {
       ?.setBaseAndExtent(caret.anchor, caret.anchorOffset, caret.focus, caret.focusOffset);
   }
 }
+
+/**
+ * Releases keyboard focus left in another tab's mount after `tab` was
+ * activated from the keyboard. Unsplit, the previous tab is hidden and loses
+ * focus on its own; in a split it stays visible and would keep it (and with it
+ * the keystrokes the activated tab's shortcuts are waiting for). Focus outside
+ * every tab mount — sidebar, palette, dialogs — is left alone.
+ */
+export function releaseFocusOutsideTab(tab: TabKind): void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return;
+  const owner = active.closest<HTMLElement>("[data-tab-mount]");
+  if (owner && owner.dataset.tabMount !== tab) active.blur();
+}

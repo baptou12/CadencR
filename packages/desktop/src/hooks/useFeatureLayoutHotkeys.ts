@@ -8,6 +8,7 @@ import { activateFeatureTab } from "@/stores/feature-layout-store";
 import { noteUserLayoutChange } from "@/lib/auto-layout/auto-layout-controller";
 import type { BuiltinTabKind } from "@/stores/feature-layout-schema";
 import type { FeatureTabActivationHandlers } from "@/components/feature-layout/types";
+import { releaseFocusOutsideTab } from "@/components/feature-layout/tab-focus-preservation";
 
 type FeatureLayoutHotkeysOptions = FeatureTabActivationHandlers & { enabled?: boolean };
 
@@ -27,6 +28,7 @@ const PANE_BY_SHORTCUT: Partial<Record<BrowserShortcut, BuiltinTabKind>> = {
  *   1. Locates the pane currently hosting the requested tab.
  *   2. Sets that pane's active tab.
  *   3. Records the pane as `focusedPaneId` so the renderer can give it focus.
+ *   4. Releases DOM focus stranded in another visible split pane.
  *
  * If the tab isn't placed yet (shouldn't happen — every tab is always in
  * exactly one pane), the hotkey is a no-op rather than crashing.
@@ -43,6 +45,9 @@ export function useFeatureLayoutHotkeys(
       noteUserLayoutChange(featureId);
       if (tab === "terminal") onTerminalActivate?.();
       if (tab === "editor") onEditorActivate?.();
+      // Runs after the handlers' own next-frame focus, so it only clears focus
+      // still stranded in another split pane.
+      requestAnimationFrame(() => releaseFocusOutsideTab(tab));
     },
     [featureId, onTerminalActivate, onEditorActivate],
   );
