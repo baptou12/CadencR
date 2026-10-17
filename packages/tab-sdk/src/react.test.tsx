@@ -270,7 +270,7 @@ describe("hooks", () => {
     expect(shown()).toBe("value-b");
   });
 
-  it("useStorage shows an older write that saved after a newer one failed", async () => {
+  it("useStorage rolls a failed write back to the one saved before it", async () => {
     host = createTestHost({ storage: { note: "stored" } });
     const writes: Array<{ value: unknown; finish: (ok: boolean) => void }> = [];
     host.handle(
@@ -311,13 +311,15 @@ describe("hooks", () => {
       await flush();
     });
     expect(shown()).toBe("B");
-    // B fails while A is still in flight, then A is saved.
-    await act(async () => {
-      writes[1]?.finish(false);
-      await flush();
-    });
+    // B waits for A: it cannot be saved first and leave A stored.
+    expect(writes.map((write) => write.value)).toEqual(["A"]);
     await act(async () => {
       writes[0]?.finish(true);
+      await flush();
+    });
+    expect(writes.map((write) => write.value)).toEqual(["A", "B"]);
+    await act(async () => {
+      writes[1]?.finish(false);
       await flush();
     });
     expect(shown()).toBe("A");

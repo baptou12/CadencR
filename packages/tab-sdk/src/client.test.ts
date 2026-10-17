@@ -20,6 +20,40 @@ describe("requests", () => {
     host.close();
   });
 
+  it("runs one key's storage writes in call order, other keys alongside", async () => {
+    const { host, client } = await connected();
+    const sent: string[] = [];
+    const answers = new Map<string, (ok: boolean) => void>();
+    const answer = (label: string) =>
+      new Promise<null>((resolve, reject) => {
+        sent.push(label);
+        answers.set(label, (ok) => (ok ? resolve(null) : reject(new Error(label))));
+      });
+    host.handle("storage.set", ({ key, value }) => answer(`${key}=${String(value)}`));
+    host.handle("storage.delete", ({ key }) => answer(`${key} deleted`));
+    const first = client.storage.set("a", 1);
+    const second = client.storage.set("a", 2);
+    const removed = client.storage.delete("a");
+    const other = client.storage.set("b", 1);
+    await flush();
+    expect(sent).toEqual(["a=1", "b=1"]);
+    answers.get("a=1")?.(false);
+    await expect(first).rejects.toThrow();
+    await flush();
+    // A failed write does not hold back the next one.
+    expect(sent).toEqual(["a=1", "b=1", "a=2"]);
+    answers.get("a=2")?.(true);
+    await expect(second).resolves.toBeUndefined();
+    await flush();
+    expect(sent.at(-1)).toBe("a deleted");
+    answers.get("a deleted")?.(true);
+    answers.get("b=1")?.(true);
+    await expect(removed).resolves.toBeUndefined();
+    await expect(other).resolves.toBeUndefined();
+    client.close();
+    host.close();
+  });
+
   it("times out one request without breaking the connection", async () => {
     const { host, client } = await connected({}, { requestTimeoutMs: 30 });
     host.handle("config.get", () => new Promise(() => {}));

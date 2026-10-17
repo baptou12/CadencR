@@ -57,16 +57,41 @@ function toArrayBuffer(body: NetFetchInit["body"]): ArrayBuffer | undefined {
   return view.slice().buffer as ArrayBuffer;
 }
 
+/**
+ * Runs the writes to one key one after another, in call order. The host relays
+ * each write as its own request: two in flight at once could reach storage in
+ * either order, leaving the older value stored. Each caller still gets its
+ * own write's outcome; the chain only waits for the previous one to settle.
+ */
+function oneWriteAtATimePerKey(): (key: string, write: () => Promise<void>) => Promise<void> {
+  const last = new Map<string, Promise<void>>();
+  return (key, write) => {
+    const run = (last.get(key) ?? Promise.resolve()).then(write);
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    last.set(key, settled);
+    void settled.then(() => {
+      if (last.get(key) === settled) last.delete(key);
+    });
+    return run;
+  };
+}
+
 export function createStorage(send: Requester): CadencrStorage {
+  const write = oneWriteAtATimePerKey();
   return {
     get: async <T extends JsonValue>(key: string) =>
       ((await send("storage.get", { key })) ?? null) as T | null,
-    set: async (key, value) => {
-      await send("storage.set", { key, value });
-    },
-    delete: async (key) => {
-      await send("storage.delete", { key });
-    },
+    set: (key, value) =>
+      write(key, async () => {
+        await send("storage.set", { key, value });
+      }),
+    delete: (key) =>
+      write(key, async () => {
+        await send("storage.delete", { key });
+      }),
     list: () => send("storage.list", {}),
   };
 }

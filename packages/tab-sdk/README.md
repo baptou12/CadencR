@@ -84,7 +84,7 @@ Cadencr custom tab).
 | `api.request({ method, path, query?, body? })`                        | Call the plugin surface of the Cadencr service. Resolves an `ApiResponse` for every status.                       |
 | `api.get/post/put/patch/delete<T>(path, …)`                           | JSON helpers: resolve the body, throw `CadencrError` (service `code`, `status`) on non-2xx.                       |
 | `streams.subscribe(topic, handler, { params?, onResync?, onError? })` | Live events. Returns `{ unsubscribe() }`. A `seq` gap, a host resync or a reconnect calls `onResync`: refetch.    |
-| `storage.get/set/delete/list`                                         | The plugin's key/value store, per project (JSON values, ≤ 256 KiB each).                                          |
+| `storage.get/set/delete/list`                                         | The plugin's key/value store, per project (JSON values, ≤ 256 KiB each). Writes to one key run in call order.     |
 | `state.get/set`                                                       | Per-instance state in host memory; survives the view being recreated.                                             |
 | `config.get()`                                                        | Non-secret configuration from the manifest's `configuration` fields.                                              |
 | `net.fetch(url, { method?, headers?, body?, timeoutMs? })`            | Fetch from an origin in `network.allowed_origins`. `{{secret:<key>}}` in header values is filled in server-side.  |
